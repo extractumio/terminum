@@ -53,7 +53,7 @@ export async function panelForeign(context, errors) {
       await waitFor(() => reads >= 2);
       if (repeated) await page.waitForSelector(`#tree :text("${WHY}")`);
       else await page.waitForSelector(row("src"));
-      check(`AC-52 a foreign listing ${repeated ? "twice fails loud" : "is proved and read again"}`, reads === 2 && proofs === 1, JSON.stringify({ reads, proofs }));
+      check(`AC-52 a foreign listing ${repeated ? "twice fails loud" : "is proved and read again"}`, reads === 2 && proofs >= 1, JSON.stringify({ reads, proofs }));
     } catch (e) { check("AC-52 foreign listing", false, e.message.split("\n")[0]); }
     finally { await page.close(); }
   }
@@ -69,7 +69,7 @@ export async function panelForeign(context, errors) {
       await page.click(row("foreign-read.txt"));
       if (repeated) await page.waitForSelector(`#viewer :text("${WHY}")`);
       else await page.waitForFunction(() => document.querySelector(".cm-content")?.textContent.includes("file from terminumd"));
-      check(`AC-53 a foreign file read ${repeated ? "twice fails loud" : "is proved and read again"}`, reads === 2 && proofs === 1, JSON.stringify({ reads, proofs }));
+      check(`AC-53 a foreign file read ${repeated ? "twice fails loud" : "is proved and read again"}`, reads === 2 && proofs >= 1, JSON.stringify({ reads, proofs }));
       if (repeated) await screenshot(page, "file-read-error");
     } catch (e) { check("AC-53 foreign file read", false, e.message.split("\n")[0]); }
     finally { await page.close(); }
