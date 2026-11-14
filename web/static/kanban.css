@@ -78,7 +78,7 @@ body.board-page { margin: 0; overflow: hidden; background: var(--surface-0); col
 /* its window's When: a label over a line of the kind's parts, the days as keys, terminumd's words under it;
    no box: its fields stand on the form's edge, as tall as the others (terminum-schedules.md AC-160) */
 .whenbox { min-width: 0; margin: 0; padding: 0; border: 0; }
-.whenbox legend, .autoticks legend { padding: 0 0 var(--sp-1); font-size: var(--fs-label); color: var(--muted); }
+.whenbox legend, .autoticks legend, .integrationred legend { padding: 0 0 var(--sp-1); font-size: var(--fs-label); color: var(--muted); }
 .whenline { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); font-size: var(--fs-label); color: var(--muted); }
 .whenline select.field { width: auto; min-width: 150px; }
 .whenline input.field { width: auto; }
@@ -288,3 +288,8 @@ body.board-page { margin: 0; overflow: hidden; background: var(--surface-0); col
 @media (max-width: 860px) { .cboxes .stbox { min-height: 34px; min-width: 34px; justify-content: center; } }
 /* what an agent's command must carry: it runs with no one watching (terminum-dispatcher.md AC-156) */
 #agentbox .hint { margin: 0; font-size: var(--fs-small); color: var(--muted-text); overflow-wrap: anywhere; }
+/* a project's integration (terminum-integration.md AC-186): what happens to a red batch, one group of fields */
+.integrationgroup { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; }   /* a dialog's rows' own gap, inside a group */
+.integrationgroup[hidden] { display: none; }
+.integrationred { margin: var(--sp-2) 0 0; padding: 0; border: 0; }
+#integrationruns { margin: var(--sp-2) 0 0; padding-left: var(--sp-4); }

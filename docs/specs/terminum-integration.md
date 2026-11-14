@@ -88,7 +88,7 @@ Scenario: AC-186 happy path — the window
   Then it is kept at once, every page shows INTEGRATION for Billing (AC-193), and the next batch runs by it
 
 Scenario: AC-186 happy path — what will run
-  Then "What runs", open, says in terminumd's words, before Save: where the candidate is built ("~/.terminum/integration/billing"), each command's line in full with the folder it runs in (Check and Publish in the candidate's tree, After in /Users/alex/billing), and the variables they get (§9)
+  Then "What runs", open, says in terminumd's words, for the settings as saved: where the candidate is built ("~/.terminum/integration/billing"), each command's line in full with the folder it runs in (Check and Publish in the candidate's tree, After in /Users/alex/billing), and the variables they get (§9)
   And the commands run by the user's login shell, as a + Session's shell does: the user's PATH and logins, nothing of terminum's token
 
 Scenario Outline: AC-186 happy path — three ways to check
@@ -107,8 +107,8 @@ Scenario: AC-186 happy path — a manager reads it
   Then it is told whether integration is on, the target, the three commands and the batch's size; no tool changes them: a signed-in page does
 
 Scenario: AC-186 failure — refused
-  When Save is pressed on, and the project has no folder, the folder is no git checkout, git is older than 2.38, Target names no remote branch of it, a command is over 2,000 characters or holds a control character, the batch's most is not 1 to 8, the minutes not 1 to 1440, the agent's budget not 5 to 1440 minutes, the red rounds not 1 to 10, the prompt over 8 KiB, or the agent has no slot left to keep (AC-194)
-  Then the window says which: "Billing has no folder: set it in its window.", "/Users/alex/billing is not a git checkout.", "git 2.38 or later is needed: this is 2.30.", "origin/main: no such branch at origin.", "Check: one line, at most 2,000 characters.", "Tasks in a batch: 1 to 8.", "Check ends after: 1 to 1440 minutes.", "Time budget: 5 to 1440 minutes.", "Red rounds: 1 to 10.", "Prompt: at most 8 KiB.", "Opus reviewer runs 1 at once, kept for SCH-1: raise its at once, or choose another agent."; nothing is kept and what was typed stays
+  When Save is pressed on, and the project has no folder, the folder is no git checkout, git is older than 2.38, Target names no remote branch of it, a command is over 2,000 characters or holds a control character, the batch's most is not 1 to 8, the minutes not 1 to 1440, the agent's budget not 5 to 1440 minutes, the red rounds not 1 to 10, the prompt over 8 KiB, Target is not a remote's branch, or the agent is not of the project's own pool
+  Then the window says which: "Billing has no folder: set it in its window.", "/Users/alex/billing is not a git checkout.", "git 2.38 or later is needed: this is 2.30.", "origin/main: no such branch at origin.", "Check: one line, at most 2,000 characters.", "Tasks in a batch: 1 to 8.", "Check ends after: 1 to 1440 minutes.", "Time budget: 5 to 1440 minutes.", "Red rounds: 1 to 10.", "Prompt: at most 8 KiB.", "main: name a remote's branch, as origin/main.", "Web coder is Web's agent, not Billing's: choose one of its own."; nothing is kept and what was typed stays
   When the project is on another server
   Then Integration… says "Integration runs for projects on this Mac." and has no switch
 
@@ -526,6 +526,8 @@ Scenario: AC-194 edge — its kept slot
   Given Billing's integration Agent Opus reviewer with 2 at once
   Then it keeps one slot for integration, as a schedule keeps one (terminum-schedules.md AC-161): the agent's card shows "kept for integration" and a red batch never waits for room; an agent that several projects name keeps one slot for them all, as one batch is in work at a time
   And a project's integration turned off, or its Agent set to none, frees it
+  When the user saves as Agent one with no slot left to keep
+  Then the Integration window says "Opus reviewer runs 1 at once, kept for SCH-1: raise its at once, or choose another agent." and nothing is kept
 
 Scenario: AC-194 edge — terminumd restarts
   When terminumd starts with I_API-31 IN PROGRESS and its agent's session live
@@ -576,7 +578,7 @@ sequenceDiagram
 
 | AC | Gap | Evidence |
 |---|---|---|
-| AC-186 … AC-193 | Not built: each tree lands by itself with the project's own `scripts/land.py` (`terminum-lifecycle.md` AC-104). | `scripts/land.py` |
+| AC-187 … AC-194 | Not built (the settings of AC-186 are kept, nothing runs from them): each tree lands by itself with the project's own `scripts/land.py` (`terminum-lifecycle.md` AC-104). | `scripts/land.py` |
 
 ## 8. Recommendation and ownership
 
@@ -715,14 +717,14 @@ Every page hears `{"t": "integration"}` when a batch or the queue changes.
 
 | Stage | Cases | What |
 |---|---|---|
-| Stage 1 | AC-186 | A project's Integration… settings, its integration agent chosen from the pool and its kept slot; saved values only, nothing runs from them. |
-| Stage 2 | AC-187, AC-188, AC-189, AC-190, AC-191, AC-194 | The queue, batches, conflicts, the check, publishing, the integration task and its agent; notices as comments and by the waiting command; the column as a plain list. Ends when, in the commit that brings the push, CLAUDE.md §2 (what Dispatcher types: the integration task's prompt), §9 (the one standing permission to push, who moves the primary checkout) and SECURITY.md say the queue, after an independent review; this repository's settings are set and `make land` queues. |
+| Stage 1 | AC-186 | A project's Integration… settings, its integration agent chosen from the pool; saved values only, nothing runs from them and no slot is kept for them. |
+| Stage 2 | AC-187, AC-188, AC-189, AC-190, AC-191, AC-194 | The queue, batches, conflicts, the check, publishing, the integration task and its agent with its kept slot; notices as comments and by the waiting command; the column as a plain list. Ends when, in the commit that brings the push, CLAUDE.md §2 (what Dispatcher types: the integration task's prompt), §9 (the one standing permission to push, who moves the primary checkout) and SECURITY.md say the queue, after an independent review; this repository's settings are set and `make land` queues. |
 | Stage 3 | AC-192 | Overlaps while tasks are in work; notices by hooks and the gate. |
 | Stage 4 | AC-193 | The INTEGRATION column: the batch's group, its keys, Batches…. |
 
 ## 11. Checklist with Definition of Done
 
-- [ ] AC-186 — `cargo test integration::settings` (each refusal's words, off runs no git), `web/test/e2e_liveintegration.mjs` (the window, What runs, the three ways on a private repository with a stand-in pipeline script)
+- [x] AC-186 — `cargo test tasks::integration` (defaults, kept and read back, the default prompt, the agent of its own pool, each refusal's words, a checkout, its target and git's version, What runs), `web/test/e2e_liveintegration.mjs` (the window from the project's, the pool's dropdown, refusals where pressed, what is kept, on for a git checkout)
 - [ ] AC-187 — `cargo test integration::queue` (queued, again, taken out, each refusal, a task made), `cargo test cli::integration` (the wait's exit statuses), `cargo test dispatcher` (no budget, no idle clock, no closing in INTEGRATION)
 - [ ] AC-188 — `cargo test integration::batch` on private repositories (`crate::testutil::temp_root()`): the queue's order, the size's doubling and halving, two projects' turns, everything conflicting gives one task a round
 - [ ] AC-189 — `cargo test integration::conflicts` (with the target, with a batch-mate, judged again after that batch, a foreseen one)

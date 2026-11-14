@@ -290,7 +290,7 @@
     </div>
     <label class="fieldrow">Agents at once <input id="projectatonce" class="field" type="number" min="1" max="100" step="1" placeholder="No limit"></label>
     <section id="projectagents" aria-label="Agents" hidden>
-      <div class="edithead"><span>Agents</span><span class="agentkeys"><button id="projectarchived" class="textkey" type="button">Archived…</button><button id="projectlimits" class="textkey" type="button">Memory limits…</button><button id="projectaddagent" class="textkey" type="button">Add agent</button></span></div>
+      <div class="edithead"><span>Agents</span><span class="agentkeys"><button id="projectarchived" class="textkey" type="button">Archived…</button><button id="projectlimits" class="textkey" type="button">Memory limits…</button><button id="projectintegration" class="textkey" type="button">Integration…</button><button id="projectaddagent" class="textkey" type="button">Add agent</button></span></div>
       <div id="projectagentlist" class="agentlist"></div>
     </section>
     <p id="projecterror" role="alert" hidden></p>
@@ -372,6 +372,41 @@
       <button id="limitsglobal" type="button">Use the global ones</button>
       <button value="cancel" type="submit" class="fromright" formnovalidate>Cancel</button>
       <button id="limitsok" type="button" class="primary">Save</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="integrationbox" data-size="form" class="box dlg" aria-labelledby="integrationhead">
+  <form method="dialog">
+    <div class="dhead"><h2 id="integrationhead">Integration</h2><button class="icon x" type="button" title="Close (Esc)" aria-label="Close"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
+    <p id="integrationtext">Finished tasks queue their commits; terminum merges up to the batch's size that merge cleanly, runs Check once on the candidate, and publishes only a candidate whose check was green. A red one goes to the agent below.</p>
+    <p id="integrationelsewhere" role="status" hidden>Integration runs for projects on this Mac.</p>
+    <div id="integrationfields" class="integrationgroup">
+      <label class="fieldrow checkrow">On: this project's tasks integrate by the queue <input id="integrationon" type="checkbox" role="switch"></label>
+      <label class="fieldrow">Target <input id="integrationtarget" class="field" type="text" spellcheck="false" autocomplete="off"></label>
+      <label class="fieldrow">Check <input id="integrationcheck" class="field" type="text" spellcheck="false" autocomplete="off"><span id="integrationcheckhint" class="colempty">No check: a candidate that merges is published.</span></label>
+      <label class="fieldrow">Publish <input id="integrationpublish" class="field" type="text" spellcheck="false" autocomplete="off"><span id="integrationpublishhint" class="colempty"></span></label>
+      <label class="fieldrow">After <input id="integrationafter" class="field" type="text" spellcheck="false" autocomplete="off"><span id="integrationafterhint" class="colempty">Nothing runs after.</span></label>
+      <div class="fieldgrid">
+        <label class="fieldrow">Tasks in a batch, at most <input id="integrationbatch" class="field" type="number" min="1" max="8" step="1" inputmode="numeric"></label>
+        <label class="fieldrow">Check ends after, minutes <input id="integrationminutes" class="field" type="number" min="1" max="1440" step="1" inputmode="numeric"></label>
+      </div>
+      <fieldset class="integrationgroup integrationred"><legend>When a check is red</legend>
+        <label class="fieldrow">Agent: reads the log and returns the task that caused it <select id="integrationagent" class="field"></select><span id="integrationnoagent" class="colempty">No agent: a red batch waits for you.</span></label>
+        <div class="fieldgrid">
+          <label class="fieldrow">Time budget, minutes <input id="integrationbudget" class="field" type="number" min="5" max="1440" step="1" inputmode="numeric"></label>
+          <label class="fieldrow">Red rounds, at most <input id="integrationrounds" class="field" type="number" min="1" max="10" step="1" inputmode="numeric"></label>
+        </div>
+        <div class="fieldrow"><label for="integrationprompt">Prompt: what the agent is told of a red batch</label>
+          <div class="xbox"><textarea id="integrationprompt" class="field" rows="12" spellcheck="false"></textarea></div>
+          <div class="actions"><button id="integrationpromptreset" class="textkey" type="button">Reset to default</button></div></div>
+      </fieldset>
+      <details id="integrationwhat" class="more"><summary>What runs</summary><ul id="integrationruns"></ul></details>
+    </div>
+    <p id="integrationerror" role="alert" hidden></p>
+    <div class="actions">
+      <button value="cancel" type="submit" class="fromright" formnovalidate>Cancel</button>
+      <button id="integrationok" type="button" class="primary">Save</button>
     </div>
   </form>
 </dialog>
