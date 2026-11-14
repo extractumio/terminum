@@ -10,6 +10,7 @@ helper removed. Exits non-zero when a check fails.
     python3 scripts/e2e_remote.py      (needs terminumd built: cd terminumd && cargo build)
 """
 import json
+import contextlib
 import os
 import shutil
 import signal
@@ -325,7 +326,9 @@ def main():
         t.stop()
         bin_dir = os.path.join(remote_home, ".terminum/bin")
         for f in os.listdir(bin_dir):
-            os.remove(os.path.join(bin_dir, f))
+            # an install's temporary file the stopped helper's ssh still renames or removes: gone is fine
+            with contextlib.suppress(FileNotFoundError):
+                os.remove(os.path.join(bin_dir, f))
         with open(os.path.join(bin_dir, "terminusd-agent-0123456789ab"), "w") as f:
             f.write("#!/bin/sh\necho terminusd-agent ready 0123456789ab h u darwin-aarch64\nexec cat >/dev/null\n")
         os.chmod(os.path.join(bin_dir, "terminusd-agent-0123456789ab"), 0o755)
