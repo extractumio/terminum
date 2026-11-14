@@ -388,3 +388,24 @@ fn ac185_a_main_tasks_press_of_its_own_runs_tasks_goes_on_in_its_conversation() 
         Ok(())
     }).unwrap();
 }
+
+#[test]
+fn ac185_a_main_tasks_press_goes_on_in_its_live_session_that_asked_a_human() {
+    store_of("api-main-live").with(|tx| {
+        let main = made(tx, "main", "");
+        let a = subtask(tx, &main, "a");
+        let pane = "tmux:local:t:%4".to_string();
+        let run = runs::add(tx, &Run { agent_id: "x".into(), agent_session: Some("c0ffee".into()), ..Default::default() }, &[main.key.clone(), a.key.clone()], Default::default(), 2)?;
+        for t in [&main, &a] {
+            ops::link(tx, HUMAN, &t.id, Some(&pane), 2)?;
+            ops::move_to(tx, HUMAN, &t.id, "WAIT FOR HUMAN", 3)?;
+        }
+        runs::change(tx, &run, |r| { r.state = Phase::Working; r.pane_key = Some(pane.clone()); })?;
+        let (tasks, w, _) = ways(tx, &main.id, &[], None, false)?;
+        assert_eq!(tasks.len(), 2);
+        assert!(matches!(&w, Ok(Way::Live(r)) if r.id == run), "the answers go into the session that asked, its subtask with it");
+        let refused = ways(tx, &main.id, &[], None, true).err().unwrap_or_default();
+        assert!(refused.contains("shares its session with"), "from scratch, its live run would be left unwatched: {refused}");
+        Ok(())
+    }).unwrap();
+}

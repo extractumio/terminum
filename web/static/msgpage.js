@@ -15,6 +15,7 @@ export const $ = (id) => document.getElementById(id);
 /** The filters' projects, the first day kept, the theme; the page's colors from it. */
 export async function loadMeta() {
   const meta = await api("/api/messages/meta");
+  if (!Array.isArray(meta.projects)) throw new Error("terminumd's answer holds no projects");
   if (meta.theme) pageColors(withScheme(meta.theme, meta.scheme));
   return meta;
 }

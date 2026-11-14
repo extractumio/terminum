@@ -1438,6 +1438,7 @@ Scenario: AC-185 edge — asking a human
   Then the session closes as AC-157 says
   When the human answers in comments and presses Run on API-12
   Then the run's conversation goes on for what is not DONE, and its prompt carries each human comment since the last questions on a task of the run, under its task's ID, whatever column the task stands in; an agent's comment is never in it
+  And while the session that asked still stands open, the answers go into it, its subtasks of the run with them; only Run from scratch is refused there, the run still being watched
   And RUN's window shows them: one written or changed after it was read is "The task's text changed: look at it again." (AC-121)
   And any run of several tasks carries them so (AC-138)
   When the human presses Run on the subtask that asked instead
