@@ -1,15 +1,16 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // A project's window (terminum-kanban.md AC-139): a new empty one, or one to change: its name, server,
 // folder (typed, or chosen in its picker), the letters of its tasks' IDs (AC-148), the language its agents write
-// in on the board (terminum-dispatcher.md AC-166), the template its agents write tasks by (AC-145) and memory limits, the pool's keys beside them. terminumd checks what is
+// in on the board (terminum-dispatcher.md AC-166), the template its agents write tasks by (AC-145), memory limits and integration (terminum-integration.md AC-186), the pool's keys beside them. terminumd checks what is
 // kept and says what is wrong.
 import { oneAtATime } from "./dialogs.js";
 import { folderPicker } from "./kanbanfolder.js";
+import { integrationWindow } from "./kanbanintegration.js";
 import { $, DEFAULT, api, fillSelect, hostOptions } from "./kanbanutil.js";
 
 /** `agents`: the agents' section; `archived`: its Archived list (AC-118); `deleteProject(id)`: asks, as the session list's menu does; `chosen(id)`: a project just made is shown. */
 export function projectWindow({ getMeta, reload, agents, archived, deleteProject, chosen }) {
-  const box = $("projectbox"), picker = folderPicker();
+  const box = $("projectbox"), picker = folderPicker(), integration = integrationWindow({ getMeta });
   let shown = null;
 
   const say = (text) => { $("projecterror").textContent = text; $("projecterror").hidden = !text; };
@@ -117,6 +118,7 @@ export function projectWindow({ getMeta, reload, agents, archived, deleteProject
   $("projectaddagent").addEventListener("click", () => agents.add(shown.id));
   $("projecttemplatereset").addEventListener("click", () => { $("projecttemplate").value = templateOf(null); });
   $("projectlimits").addEventListener("click", () => openLimits(shown.id));
+  $("projectintegration").addEventListener("click", () => integration.open(shown.id));
   $("projectarchived").addEventListener("click", () => archived.open(shown));
   $("projectdelete").addEventListener("click", () => { box.close(); deleteProject(shown.id); });
   /** What terminumd now says of the pool. */
