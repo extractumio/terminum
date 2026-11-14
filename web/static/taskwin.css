@@ -133,7 +133,7 @@ dialog .markdown img { max-width: 100%; }
 .stbox { display: inline-flex; align-items: center; min-height: 20px; padding: 0 var(--sp-1); border-radius: var(--r-xs); font: 600 var(--fs-micro)/1 var(--ui); font-variant-numeric: tabular-nums; white-space: nowrap; flex: none;
   color: var(--t-fg); background: color-mix(in srgb, var(--t-fg) 18%, var(--t-bg)); }
 .stbox.st-in-progress { color: #1d1a05; background: #e6cf3c; }
-.stbox.st-wait-for-human { color: #1f1300; background: var(--waiting); }
+.stbox.st-wait-for-human { color: var(--waiting-ink); background: var(--waiting); }
 .stbox.st-failed { color: var(--danger-ink); background: var(--danger-fill); }
 .stbox.st-done { color: #ffffff; background: var(--ok-fill); }
 .stbox.word { font-size: var(--fs-meta); padding: 0 var(--sp-2); }   /* a status in words, not an ID */

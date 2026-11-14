@@ -66,7 +66,7 @@
   /* ---- fixed hues by meaning (§2.2); text in a hue is mixed with --t-fg so it reads on a light theme ---- */
   --local: #4f9dff; --remote: #a98bff; --host-label: cornflowerblue;
   --said-human: cornflowerblue; --said-agent: #6fa8a1; --said-system: #8e96b5;   /* who wrote a task's comment: its bar (taskwin.css) */
-  --danger: #ff6b5e; --danger-fill: #b3372e; --danger-ink: #ffffff; --ok: #5cc285; --ok-fill: #2f7d4f; --warn-fill: #9a6a12; --waiting: #ffb020;
+  --danger: #ff6b5e; --danger-fill: #b3372e; --danger-ink: #ffffff; --ok: #5cc285; --ok-fill: #2f7d4f; --warn-fill: #9a6a12; --waiting: #ffb020; --waiting-ink: #1f1300;
   --danger-text: color-mix(in srgb, var(--danger) 80%, var(--t-fg));
   --ring: var(--accent);   /* the focus ring: the accent reads on --t-bg (contrast.js), so it shows */
   /* a folder's bar (dircolors.js gives the hue): pastel on a dark theme, deeper on a light one (3:1) */

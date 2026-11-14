@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // A task that needs a human (terminum-kanban.md AC-117): a line as a waiting agent's, on both pages,
-// and how many on Kanban in the page's head. terminumd says which lines are up and keeps which a human
+// and how many on Kanban in the page's head: those waiting for a human in yellow, those failed in red. terminumd says which lines are up and keeps which a human
 // closed or saw, so every browser shows the same; a line being closed stays hidden while the close goes.
 import { icon } from "./icons.js";
 import { el, iconButton, plural } from "./listparts.js";
@@ -48,18 +48,22 @@ export function taskLines(box, open, say) {
   }
 
   return {
-    /** terminumd's `taskmarks`: the lines due, and how many tasks need a human. */
+    /** terminumd's `taskmarks`: the lines due, and how many cards wait for a human and how many failed. */
     came(m) {
       last = m.lines ?? [];
       const now = new Set(last.map((l) => l.key));
       for (const k of closing) if (!now.has(k)) closing.delete(k);
       draw();
       for (const a of kanbanLinks()) {
-        a.querySelector(".taskneed")?.remove();
-        if (!m.need) continue;
-        const n = el("span", "taskneed", m.need);
-        n.title = `${plural(m.need, "task")} wait for you or failed`;
-        a.append(n);
+        a.querySelector(".taskneeds")?.remove();
+        const badges = el("span", "taskneeds");
+        for (const [kind, n, says] of [["waiting", m.waiting, m.waiting === 1 ? "waits for you" : "wait for you"], ["failed", m.failed, "failed"]]) {
+          if (!n) continue;
+          const b = el("span", `taskneed ${kind}`, n);
+          b.title = `${plural(n, "task")} ${says}`;
+          badges.append(b);
+        }
+        if (badges.childElementCount) a.append(badges);
       }
     },
     /** A task's window opened: its line is seen, in every browser. */
