@@ -36,7 +36,7 @@ pub(super) fn caller(ctx: &Ctx) -> Result<Caller, String> {
 }
 
 /// One call to terminumd as `who`: (the answer's text, whether it is a refusal).
-pub(super) fn call(ctx: &Ctx, who: &Caller, tool: &str, args: &Value) -> Result<(String, bool), String> {
+fn call(ctx: &Ctx, who: &Caller, tool: &str, args: &Value) -> Result<(String, bool), String> {
     let text = |v: &Value| v.as_str().unwrap_or_default().to_string();
     match who {
         Caller::Token(token) => {
@@ -54,6 +54,14 @@ pub(super) fn call(ctx: &Ctx, who: &Caller, tool: &str, args: &Value) -> Result<
     }
 }
 
+/// One call as `who`, its arguments checked first: the answer, or the refusal as the error.
+pub(super) fn ask(ctx: &Ctx, who: &Caller, tool: &str, args: &Value) -> Result<String, String> {
+    match call(ctx, who, tool, &mcp::checked(tool, args)?)? {
+        (text, false) => Ok(text),
+        (why, true) => Err(why),
+    }
+}
+
 /// A pane's call to the first sink that knows it.
 fn forward(body: &Value) -> Result<(u16, Option<Value>), Down> {
     super::sinks::first_knowing(&super::sinks::all(), |p| super::sockhttp::call(p, "POST", "/agent", Some(body), BUDGET))
@@ -63,10 +71,7 @@ fn forward(body: &Value) -> Result<(u16, Option<Value>), Down> {
 fn manager(ctx: &Ctx, who: &Caller) -> Result<bool, String> {
     match who {
         Caller::Pane(env) => Ok(mcp::manager(env, &|body| forward(body))),
-        Caller::Token(_) => match call(ctx, who, "probe", &json!({}))? {
-            (why, true) => Err(why),
-            (role, false) => Ok(role == crate::roles::name(true)),
-        },
+        Caller::Token(_) => Ok(ask(ctx, who, "probe", &json!({}))? == crate::roles::name(true)),
     }
 }
 
@@ -87,12 +92,7 @@ pub fn tool(ctx: &Ctx, name: &str, given: Option<&str>) -> Result<i32, String> {
     if super::mcp_catalog::card(name).is_none() {
         return Err(format!("No tool is named {name:?}: terminum tools lists them."));
     }
-    let args = mcp::checked(name, &args)?;
-    let (text, refused) = call(ctx, &who, name, &args)?;
-    if refused {
-        return Err(text);
-    }
-    ctx.say(text);
+    ctx.say(ask(ctx, &who, name, &args)?);
     Ok(0)
 }
 

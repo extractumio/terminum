@@ -187,19 +187,11 @@ pub fn status(store: &Store, who: &Who, args: &Value) -> Result<String, String> 
 }
 
 /// A task as `terminum integration wait` follows it (AC-187): its status, Dispatcher's newest words on it, and,
-/// out of INTEGRATION, how it left: landed, red (returned for a red check), conflict, or out (taken out, given
-/// up, integration turned off).
+/// out of INTEGRATION, how it left (the mark its words carry): landed, red, conflict, or out (taken out, given up,
+/// integration turned off).
 fn of_task(tx: &Transaction, t: &Task) -> Result<Value, String> {
-    let said: Vec<Value> = ops::rows(tx, "SELECT id, text FROM (SELECT id, text, at, rowid FROM events WHERE task = ?1 AND kind = 'comment' AND author = ?2 ORDER BY at DESC, rowid DESC LIMIT 20) ORDER BY at, rowid",
-        (&t.key, super::store::DISPATCHER), |r| Ok(json!({"id": r.get::<_, String>(0)?, "text": r.get::<_, Option<String>>(1)?.unwrap_or_default()})))?;
-    let last = said.last().and_then(|e| e["text"].as_str()).unwrap_or_default();
-    let left = match t.status.as_str() {
-        INTEGRATION => Value::Null,
-        "DONE" if last.contains("Integrated into") => json!("landed"),
-        _ if last.contains("returned: red check") || last.contains(&format!("{} returned by ", t.id)) => json!("red"),
-        _ if last.contains("returned: conflict") || last.contains("returned: it carries") || last.contains("returned: git could not merge") => json!("conflict"),
-        _ => json!("out"),
-    };
+    let said: Vec<Value> = ops::newest_by(tx, &t.key, super::store::DISPATCHER, 20)?.into_iter().map(|(id, text)| json!({"id": id, "text": text})).collect();
+    let left = if t.status == INTEGRATION { None } else { Some(ops::how_left(tx, &t.key)?.unwrap_or_else(|| "out".into())) };
     Ok(json!({"id": t.id, "status": t.status, "left": left, "said": said}))
 }
 

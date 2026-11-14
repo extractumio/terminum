@@ -649,7 +649,7 @@ CREATE TABLE integration_rounds (batch INTEGER NOT NULL REFERENCES integration_b
   candidate_sha TEXT, started INTEGER, ended INTEGER, result TEXT NOT NULL, why TEXT, PRIMARY KEY (batch, round));
 ```
 
-A task's status `INTEGRATION` is the one fact that it is queued; its entry holds with what. `state`: `building`, `checking`, `red` (its task decides), `green`, `publishing`, `published`, `after`, `not published`, `given up`. `told` holds the notices given, so each is said once.
+A task's status `INTEGRATION` is the one fact that it is queued; its entry holds with what. `state`: `building`, `checking`, `red` (its task decides), `green`, `publishing`, `published`, `after`, `not published`, `given up`. `told` holds the notices given, so each is said once. The notice of a task leaving the queue carries `{"left": "landed" | "red" | "conflict" | "out"}` in its event's data: what `terminum integration wait` exits by; a task moved out with no such notice since it was last queued is out.
 
 **Notices.** Fixed words with names filled in; a file's lines are those git's conflict names in the merge's written tree.
 

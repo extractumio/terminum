@@ -39,7 +39,7 @@ pub fn return_all(tx: &Transaction, id: i64, at: i64) -> Result<String, String> 
     }
     let who = ops::user_name(tx, HUMAN)?;
     for k in &b.tasks {
-        bs::give_back(tx, k, &format!("{} returned: batch {} was given up by {who}. Integrate again when you are told to, or ask.", bs::slug(tx, k)?, b.number), at)?;
+        bs::give_back(tx, k, &format!("{} returned: batch {} was given up by {who}. Integrate again when you are told to, or ask.", bs::slug(tx, k)?, b.number), bs::Left::Out, at)?;
     }
     bs::set_state(tx, b.id, "given up", Some(&format!("given up by {who}")), at)?;
     close_task(tx, &b, &format!("Batch {}: nothing published, its {} tasks returned by {who}.", b.number, b.tasks.len()), at)?;
@@ -58,7 +58,9 @@ pub fn return_one(tx: &Transaction, id: i64, task: &str, why: &str, at: i64) -> 
     }
     let who = ops::user_name(tx, HUMAN)?;
     // leaving the queue takes it out of the batch, and gives the batch up with its last task (store::left)
-    bs::give_back(tx, &t.key, &format!("{} returned by {who} from batch {}: {}", t.id, b.number, why.trim()), at)?;
+    // from a red batch, the human returns it for its check, as its agent would; from one not published, it is taken out
+    let how = if b.state == bs::RED { bs::Left::Red } else { bs::Left::Out };
+    bs::give_back(tx, &t.key, &format!("{} returned by {who} from batch {}: {}", t.id, b.number, why.trim()), how, at)?;
     let b = bs::by_id(tx, b.id)?;
     if b.state == bs::RED {
         bs::check_again(tx, &b, None, at)?;

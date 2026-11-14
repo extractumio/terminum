@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 
 use serde_json::{json, Value};
 
-use super::tool::{call, caller, Caller};
+use super::tool::{ask, caller, Caller};
 use super::Ctx;
 
 pub const USAGE: &str = "usage: terminum integration queue <ID> --result-file <path> [--commit <sha>] [--wait] | wait <ID> | status [<ID>]";
@@ -23,14 +23,6 @@ pub fn run(ctx: &Ctx, rest: &[String]) -> Result<i32, String> {
         [s] if s == "status" => status(ctx, None),
         [s, id] if s == "status" => status(ctx, Some(id)),
         _ => Err(USAGE.into()),
-    }
-}
-
-/// One tool's answer, or its refusal as the error.
-fn ask(ctx: &Ctx, who: &Caller, tool: &str, args: Value) -> Result<String, String> {
-    match call(ctx, who, tool, &super::mcp::checked(tool, &args)?)? {
-        (text, false) => Ok(text),
-        (why, true) => Err(why),
     }
 }
 
@@ -53,33 +45,36 @@ fn queue(ctx: &Ctx, id: &str, more: &[String]) -> Result<i32, String> {
     if let Some(c) = commit {
         args["commit"] = json!(c);
     }
-    ctx.say(ask(ctx, &who, "integrate", args)?);
+    ctx.say(ask(ctx, &who, "integrate", &args)?);
     if waits { wait(ctx, &who, id) } else { Ok(0) }
 }
 
 /// `status [<ID>]`: integration_status's answer as it gives it.
 fn status(ctx: &Ctx, id: Option<&str>) -> Result<i32, String> {
     let args = id.map_or_else(|| json!({}), |i| json!({"id": i}));
-    ctx.say(ask(ctx, &caller(ctx)?, "integration_status", args)?);
+    ctx.say(ask(ctx, &caller(ctx)?, "integration_status", &args)?);
     Ok(0)
 }
 
 /// What a waiting command exits with, by how its task left the queue (AC-187); none while it stands there.
-pub fn exit_of(left: &Value) -> Option<i32> {
-    match left.as_str()? {
-        "landed" => Some(0),
-        "red" => Some(1),
-        "conflict" => Some(2),
-        _ => Some(3),
-    }
+fn exit_of(left: &Value) -> Result<Option<i32>, String> {
+    Ok(match left.as_str() {
+        None => None,
+        Some("landed") => Some(0),
+        Some("red") => Some(1),
+        Some("conflict") => Some(2),
+        Some("out") => Some(3),
+        Some(other) => return Err(format!("terminum says the task left as {other:?}: not known to this command.")),
+    })
 }
 
-/// `wait <ID>`: each of Dispatcher's notices on the task printed as it comes, until the task leaves INTEGRATION.
+/// `wait <ID>`: each of Dispatcher's notices on the task printed as it comes, until the task leaves INTEGRATION;
+/// what was said before the wait is not news, but the words its task left with are.
 fn wait(ctx: &Ctx, who: &Caller, id: &str) -> Result<i32, String> {
     let mut seen: Option<HashSet<String>> = None;
     let mut down_since: Option<Instant> = None;
     loop {
-        let text = match ask(ctx, who, "integration_status", json!({"id": id})) {
+        let text = match ask(ctx, who, "integration_status", &json!({"id": id})) {
             Err(why) if why == super::mcp::DOWN => {
                 if down_since.get_or_insert_with(Instant::now).elapsed() > DOWN_MOST {
                     return Err(format!("terminum did not come back for {} minutes: {id} may still be queued.", DOWN_MOST.as_secs() / 60));
@@ -90,20 +85,20 @@ fn wait(ctx: &Ctx, who: &Caller, id: &str) -> Result<i32, String> {
             other => other?,
         };
         down_since = None;
-        let task = serde_json::from_str::<Value>(&text).map_err(|e| format!("terminum's answer: {e}"))?["task"].take();
-        let said = task["said"].as_array().cloned().unwrap_or_default();
-        let ended = exit_of(&task["left"]);
-        // what was said before the wait is not news, but the words its task left with are
-        let first = seen.is_none();
-        let known = seen.get_or_insert_with(|| said.iter().filter_map(|e| e["id"].as_str().map(str::to_string)).collect());
-        let fresh: Vec<&Value> = said.iter().filter(|e| e["id"].as_str().is_some_and(|i| known.insert(i.to_string()))).collect();
-        for e in &fresh {
-            ctx.say(e["text"].as_str().unwrap_or_default());
+        let mut task = serde_json::from_str::<Value>(&text).map_err(|e| format!("terminum's answer: {e}"))?["task"].take();
+        let said = task["said"].as_array_mut().map(std::mem::take).unwrap_or_default();
+        let ended = exit_of(&task["left"])?;
+        let text_of = |e: &Value| e["text"].as_str().unwrap_or_default().to_string();
+        match &mut seen {
+            None => {
+                seen = Some(said.iter().filter_map(|e| e["id"].as_str().map(str::to_string)).collect());
+                if ended.is_some() && let Some(e) = said.last() {
+                    ctx.say(text_of(e));
+                }
+            }
+            Some(known) => said.iter().filter(|e| e["id"].as_str().is_some_and(|i| known.insert(i.to_string()))).for_each(|e| ctx.say(text_of(e))),
         }
         if let Some(code) = ended {
-            if first && let Some(e) = said.last() {
-                ctx.say(e["text"].as_str().unwrap_or_default());
-            }
             return Ok(code);
         }
         std::thread::sleep(BEAT);
@@ -136,7 +131,8 @@ mod tests {
 
     #[test]
     fn ac187_a_wait_ends_by_how_its_task_left() {
-        assert_eq!([json!("landed"), json!("red"), json!("conflict"), json!("out")].map(|l| exit_of(&l)), [Some(0), Some(1), Some(2), Some(3)]);
-        assert_eq!(exit_of(&Value::Null), None, "still queued");
+        assert_eq!([json!("landed"), json!("red"), json!("conflict"), json!("out")].map(|l| exit_of(&l)), [Ok(Some(0)), Ok(Some(1)), Ok(Some(2)), Ok(Some(3))]);
+        assert_eq!(exit_of(&Value::Null), Ok(None), "still queued");
+        assert!(exit_of(&json!("lost")).unwrap_err().contains("not known"), "a word it does not know is said, never read as taken out");
     }
 }

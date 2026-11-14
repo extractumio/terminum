@@ -89,7 +89,7 @@ pub fn give_back(tx: &Transaction, who: &Who, args: &Value, at: i64) -> Result<S
     }
     let i_id = bs::task_of(tx, &b)?.unwrap_or_default();
     tx.execute("INSERT OR IGNORE INTO integration_returns (task, commit_sha, why, at) SELECT task, commit_sha, 'red', ?2 FROM integration_entries WHERE task = ?1", (&task.key, at)).map_err(sql)?;
-    bs::give_back(tx, &task.key, &format!("{} returned: red check. Batch {}'s check was red and {i_id} found its cause in {}. Its analysis:\n\n{analysis}", task.id, b.number, task.id), at)?;
+    bs::give_back(tx, &task.key, &format!("{} returned: red check. Batch {}'s check was red and {i_id} found its cause in {}. Its analysis:\n\n{analysis}", task.id, b.number, task.id), bs::Left::Red, at)?;
     Ok(format!("{} went back to its agent. Call integration_recheck when you have returned every task that caused it.", task.id))
 }
 

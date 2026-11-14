@@ -102,13 +102,30 @@ pub fn slug(tx: &Transaction, key: &str) -> Result<String, String> {
     tx.query_row("SELECT slug FROM tasks WHERE id = ?1", [key], |r| r.get(0)).map_err(sql)
 }
 
-/// Back to its agent: IN PROGRESS, out of the queue, told why (§9 "returned").
-pub fn give_back(tx: &Transaction, key: &str, words: &str, at: i64) -> Result<(), String> {
+/// How a task went back from the queue, as `terminum integration wait` exits for it (AC-187).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Left {
+    /// returned for a red check
+    Red,
+    /// it does not merge
+    Conflict,
+    /// its batch given up, or integration turned off
+    Out,
+}
+
+impl Left {
+    fn word(self) -> &'static str {
+        match self { Left::Red => "red", Left::Conflict => "conflict", Left::Out => "out" }
+    }
+}
+
+/// Back to its agent: IN PROGRESS, out of the queue, told why (§9 "returned"), marked how.
+pub fn give_back(tx: &Transaction, key: &str, words: &str, how: Left, at: i64) -> Result<(), String> {
     let t = ops::get(tx, &slug(tx, key)?)?;
     if t.status == INTEGRATION {
         ops::place(tx, DISPATCHER, &t, "IN PROGRESS", at)?;
     }
-    ops::comment(tx, DISPATCHER, &t.id, words, at).map(drop)
+    ops::left_queue(tx, DISPATCHER, &t.id, words, how.word(), at).map(drop)
 }
 
 use super::git::short;
@@ -126,7 +143,7 @@ pub fn conflict_words(q: &Queued, c: &Conflict, s: &Settings, base: &str) -> Str
 /// told what they wait for. None when nothing was chosen.
 pub fn open(tx: &Transaction, project: &str, s: &Settings, base: &str, c: &Choice, at: i64) -> Result<Option<Batch>, String> {
     for (q, why) in &c.returned {
-        give_back(tx, &q.task, &conflict_words(q, why, s, base), at)?;
+        give_back(tx, &q.task, &conflict_words(q, why, s, base), Left::Conflict, at)?;
     }
     let number: i64 = tx.query_row("SELECT coalesce(max(number), 0) + 1 FROM integration_batches WHERE project = ?1", [project], |r| r.get(0)).map_err(sql)?;
     for (q, waits) in &c.held {
@@ -209,7 +226,7 @@ pub fn close_task(tx: &Transaction, b: &Batch, words: &str, at: i64) -> Result<(
 pub fn give_up(tx: &Transaction, b: &Batch, why: &str, at: i64) -> Result<(), String> {
     for k in &b.tasks {
         if let Ok(id) = slug(tx, k) && tx.query_row("SELECT 1 FROM integration_entries WHERE task = ?1", [k], |_| Ok(())).optional().map_err(sql)?.is_some() {
-            give_back(tx, k, &format!("{id} returned: batch {} was given up: {why}. Integrate again when you are told to, or ask.", b.number), at)?;
+            give_back(tx, k, &format!("{id} returned: batch {} was given up: {why}. Integrate again when you are told to, or ask.", b.number), Left::Out, at)?;
         }
     }
     set_pane(tx, b.id, None, at)?;
@@ -300,7 +317,7 @@ pub fn done_all(tx: &Transaction, b: &Batch, target: &str, candidate: &str, at: 
         ops::comment(tx, &author, &id, &result, at)?;
         let mates: Vec<&str> = ids.iter().map(String::as_str).filter(|i| *i != id).collect();
         let with = if mates.is_empty() { String::new() } else { format!(", with {}", and_list(&mates)) };
-        ops::comment(tx, DISPATCHER, &id, &format!("Integrated into {target} at {} in batch {}{with}.", short(candidate), b.number), at)?;
+        ops::left_queue(tx, DISPATCHER, &id, &format!("Integrated into {target} at {} in batch {}{with}.", short(candidate), b.number), "landed", at)?;
         let t = ops::get(tx, &id)?;
         ops::place(tx, DISPATCHER, &t, "DONE", at)?;
     }
