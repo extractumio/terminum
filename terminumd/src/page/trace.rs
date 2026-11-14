@@ -100,14 +100,15 @@ pub fn clean(rec: &Value) -> Option<Map<String, Value>> {
     Some(out)
 }
 
-/// `trace-YYYYMMDD-HHMMSS.jsonl` in local time.
+/// A new recording includes fractional seconds; create_new refuses any clock collision.
 #[allow(deprecated)] // the libc crate marks musl's time_t deprecated ahead of its move to 64 bits
 fn file_name() -> String {
-    let now = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs()) as libc::time_t;
+    let stamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default();
+    let now = stamp.as_secs() as libc::time_t;
     // SAFETY: localtime_r writes only into the zeroed tm it is given.
     let mut tm: libc::tm = unsafe { std::mem::zeroed() };
     unsafe { libc::localtime_r(&now, &mut tm) };
-    format!("trace-{:04}{:02}{:02}-{:02}{:02}{:02}.jsonl", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec)
+    format!("trace-{:04}{:02}{:02}-{:02}{:02}{:02}-{:09}.jsonl", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec, stamp.subsec_nanos())
 }
 
 struct Inner {
@@ -165,7 +166,8 @@ impl Recorder {
 
     /// A new file (the oldest beyond the newest 10 go); the lag watch runs while it is on.
     pub fn start(self: &Arc<Self>) -> std::io::Result<()> {
-        self.stop();
+        let mut i = self.inner.lock();
+        Self::close(&mut i);
         fs::create_dir_all(&self.dir)?;
         let mut old: Vec<PathBuf> = fs::read_dir(&self.dir)?
             .flatten()
@@ -178,13 +180,10 @@ impl Recorder {
             let _ = fs::remove_file(p);
         }
         let path = self.dir.join(file_name());
-        let file = OpenOptions::new().create(true).append(true).mode(0o600).open(&path)?;
-        let run = {
-            let mut i = self.inner.lock();
-            let run = i.run + 1;
-            *i = Inner { file: Some(Box::new(file)), path: Some(path.clone()), until: Instant::now() + self.lasts, size: 0, run };
-            run
-        };
+        let file = OpenOptions::new().create_new(true).write(true).mode(0o600).open(&path)?;
+        let run = i.run + 1;
+        *i = Inner { file: Some(Box::new(file)), path: Some(path.clone()), until: Instant::now() + self.lasts, size: 0, run };
+        drop(i);
         tracing::info!(event = "trace.on", path = %path.display());
         if let Ok(rt) = tokio::runtime::Handle::try_current() {
             rt.spawn(watch(self.clone(), run));
@@ -192,8 +191,9 @@ impl Recorder {
         Ok(())
     }
 
-    pub fn stop(&self) {
-        let mut i = self.inner.lock();
+    pub fn stop(&self) { Self::close(&mut self.inner.lock()); }
+
+    fn close(i: &mut Inner) {
         if i.file.take().is_some() {
             tracing::info!(event = "trace.off", path = %i.path.as_ref().map_or(String::new(), |p| p.display().to_string()), bytes = i.size);
         }

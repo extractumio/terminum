@@ -197,7 +197,6 @@ fn the_file_stops_at_its_size_cap_and_keeps_the_newest_ten() {
     }
     assert!(!rec.on());
     assert!(fs::metadata(rec.path().unwrap()).unwrap().len() <= 300);
-    fs::remove_file(rec.path().unwrap()).unwrap(); // the next start may fall in the same second
     for i in 0..12 {
         fs::write(dir.join(format!("trace-2026010{}-0000{:02}.jsonl", i % 9, i)), "").unwrap();
     }
@@ -246,4 +245,22 @@ async fn the_lag_watch_closes_the_file_when_the_time_is_up() {
     rec.start().unwrap();
     tokio::time::sleep(Duration::from_millis(400)).await;
     assert!(rec.inner.lock().file.is_none(), "closed by the watch");
+}
+
+/// AC-196: each recording owns its byte counter and file, even within the same second.
+#[test]
+fn ac196_rapid_trace_restarts_keep_each_file_under_its_limit() {
+    let dir = logs("restart-cap");
+    let rec = Recorder::with_limits(dir.clone(), 300, TRACE_FOR);
+    let mut names = std::collections::HashSet::new();
+    for _ in 0..15 {
+        rec.start().unwrap();
+        assert!(names.insert(rec.path().unwrap()), "a fresh file for each counter");
+        for _ in 0..20 { rec.note("lag", json!({"ms": 25.0})); }
+        assert!(fs::metadata(rec.path().unwrap()).unwrap().len() <= 300);
+    }
+    let files: Vec<_> = fs::read_dir(&dir).unwrap().map(|e| e.unwrap().path()).collect();
+    assert_eq!(files.len(), KEEP_FILES);
+    assert!(files.iter().all(|p| fs::metadata(p).unwrap().len() <= 300));
+    rec.stop();
 }

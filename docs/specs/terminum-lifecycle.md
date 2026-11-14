@@ -796,6 +796,12 @@ Scenario: Rotation does not hold an async worker
   And rotation uses renames and deletes, with no copying or compression of existing files
   And only one log maintenance operation runs at once per process, with a cross-process directory lock
 
+Scenario: A bounded trace restarts within the same second
+  Given a recording reached its byte limit
+  When the user starts more recordings immediately
+  Then each recording opens a fresh file with its own byte count
+  And every trace file stays within its limit and only the newest ten remain
+
 Scenario: Recent diagnostics cross a rotation
   Given terminumd's active log has rotated
   When the user runs "terminum logs -n 100" or "terminum logs -f"
@@ -951,7 +957,7 @@ All sizes are bytes (MiB = 1,048,576 bytes). `logs.rs` owns rotation and complet
 | Daemon `logs/terminumd.log`, adopted `terminusd.log` | 10 MiB per segment; 7 older segments | Rotate at 24 h or size | Shared rotation; archives expire after 7 days; `terminum logs` spans retained files. |
 | Host `logs/agent.log` | 1 MiB per segment; 3 older segments | Rotate at 24 h or size, while running | Same writer and rotation; archives expire after 3 days; agents share the directory lock. |
 | `integration/<project>/batch-<n>.<round>.<step>.log` | Newest 2 MiB per file; newest 100 files per project | 30 days | Shared incremental completed-file sweep each minute, including idle or disabled projects; at most 500 entries and 16 deletes per minute across projects (a legacy backlog converges over later passes); snapshots are saved only after their step ends. |
-| `logs/trace-*.jsonl` (AC-38) | 20 MiB per file; newest 10 files | Each recording ends after 15 min | Bounded recording exception: one diagnostic run must stay one file; its existing stop and newest-ten rule stays. |
+| `logs/trace-*.jsonl` (AC-38) | 20 MiB per file; newest 10 files | Each recording ends after 15 min | Bounded recording exception: one diagnostic run must stay one file; the stop and newest-ten rule stays; every restart creates a fresh file, with fractional seconds in its name so the byte counter cannot reset on an existing file. |
 | `sessions/<id>/ends.jsonl` (AC-90) | Trim at 2,500 entries to newest 2,000; over 4 MiB to newest 2 MiB | 180 days, trimmed at writes and filtered on reads | Record-index exception: bounded answer-location data is compacted as records, preserving its single-file readers. |
 | SQLite `inputs` and `messages` (AC-147) | 500,000 rows each | 180 days | Store exception: transactional `trim_rows`, hourly on the input writer; no file rotation of SQLite. |
 | SQLite `user_interaction` (AC-175) | 1,000,000 rows | 180 days | Same transactional hourly trim. |
