@@ -33,6 +33,10 @@ echo "$*" >> "$HOME/claude-argv"
 case "$*" in
   "plugin install"*) touch "$HOME/.claude-plugin-on" ;;
   "plugin uninstall"*) rm -f "$HOME/.claude-plugin-on" ;;
+  "plugin list --json")
+    if [ -f "$HOME/.claude-plugin-on" ]; then
+      printf '[{"id":"terminum@terminum-local","scope":"user","enabled":true,"installPath":"%s/.terminum/hooks/claude/plugins/terminum"}]\\n' "$HOME"
+    else echo '[]'; fi ;;
   "plugin list"*) [ -f "$HOME/.claude-plugin-on" ] && echo "terminum@terminum-local" ;;
 esac
 exit 0

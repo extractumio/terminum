@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 //! `terminum-host hooks install|remove|status --host-mode --marker <m> [--claude <path>] [--refresh]`:
 //! terminum's hooks and MCP server put into the coding agents of an ssh host, run there by the
-//! helper (`~/.terminum/bin/terminumd-agent`) the Mac copied. The same code as on a Mac
+//! helper (`~/.terminum/bin/terminumd-agent`) the Mac copied (AC-99). The same code as on a Mac
 //! (agentsetup) with one stable command, `~/.terminum/bin/terminum-host`, a link to the helper.
 //! One line per agent after the Mac's random marker, `<m> <agent> <result>`, so a login file
 //! printing to stdout never confuses the Mac; every other line is only said.
@@ -138,6 +138,40 @@ fn plugin_current(ctx: &Ctx) -> bool {
         && read_json(&plugin_dir(ctx).join(".mcp.json")) == Some(json!({"mcpServers": {"terminum": {"command": program(ctx), "args": ["mcp"]}}}))
 }
 
+/// Actual user registration, including a disabled plugin: a cancelled mutation can leave
+/// the installation marker behind or never write it. Unknown state must not become "off".
+#[derive(PartialEq)]
+enum ClaudeState { Absent, Enabled, Disabled, Own }
+
+fn claude_state(ctx: &Ctx) -> Result<ClaudeState, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Registration {
+        id: String,
+        scope: String,
+        enabled: bool,
+        install_path: Option<String>,
+        read_from_folder: Option<String>,
+    }
+    let list = agentsetup::claude(ctx, super::agentrefresh::QUICK, &["plugin", "list", "--json"])?;
+    let entries: Vec<Registration> = serde_json::from_str(&list).map_err(|e| format!("claude plugin list: invalid JSON ({e})"))?;
+    let mut state = ClaudeState::Absent;
+    for entry in entries.iter().filter(|e| e.id == agentsetup::PLUGIN && e.scope == "user") {
+        let path = entry.install_path.as_deref().or(entry.read_from_folder.as_deref()).ok_or("claude plugin list: missing installPath")?;
+        let mcp = read_json(&std::path::Path::new(path).join(".mcp.json"))
+            .ok_or("claude plugin list: cannot read registered terminum plugin's .mcp.json")?;
+        let cmd = mcp["mcpServers"]["terminum"]["command"].as_str().unwrap_or("");
+        if ctx.bin().join("terminum").is_file() && cmd == ctx.bin().join("terminum").to_string_lossy() {
+            return Ok(ClaudeState::Own);
+        }
+        if cmd != program(ctx) {
+            return Err(format!("an entry named terminum runs {cmd}, not {}", program(ctx)));
+        }
+        state = if entry.enabled { ClaudeState::Enabled } else { ClaudeState::Disabled };
+    }
+    Ok(state)
+}
+
 /// The result for one agent.
 fn one(ctx: &Ctx, args: &HostArgs, agent: &str) -> String {
     if own(ctx, agent) {
@@ -150,19 +184,33 @@ fn one(ctx: &Ctx, args: &HostArgs, agent: &str) -> String {
     if let Some(cmd) = foreign(ctx, agent) {
         return format!("refused: an entry named terminum runs {cmd}, not {}", program(ctx));
     }
+    let claude = if agent == "claude" {
+        match claude_state(ctx) {
+            Ok(state) => state,
+            Err(e) if e.starts_with("an entry named terminum") => return format!("refused: {}", one_line(&e)),
+            Err(e) => return format!("failed: {}", one_line(&e)),
+        }
+    } else { ClaudeState::Absent };
+    if claude == ClaudeState::Own {
+        return "skipped-own".into();
+    }
     let res = match (args.action.as_str(), agent) {
+        ("status", "claude") => return if claude == ClaudeState::Enabled { "installed".into() } else { "off".into() },
         ("status", a) => return if installed(ctx, a) { "installed".into() } else { "off".into() },
         // a refresh also installs an agent found without terminum's (installed after the host's
         // agents were turned on): the host's agents are on or off as a whole (AC-99)
-        ("install", "claude") if installed(ctx, "claude") && plugin_current(ctx) => Ok("installed"),
-        ("install", "claude") if args.refresh && installed(ctx, "claude") => super::agentrefresh::update_claude(ctx).map(|_| "installed"),
+        ("install", "claude") if claude == ClaudeState::Enabled && plugin_current(ctx) => Ok("installed"),
+        ("install", "claude") if args.refresh && claude == ClaudeState::Enabled => super::agentrefresh::update_claude(ctx).map(|_| "installed"),
         ("install", "claude") => agentsetup::install_claude(ctx, agentsetup::ASKED).map(|_| "installed"),
         ("install", _) => {
             let path = codex_home(ctx).join("hooks.json");
             let before = std::fs::read_to_string(&path).ok();
             agentsetup::install_codex(ctx).map(|_| if std::fs::read_to_string(&path).ok() != before { "needs-trust" } else { "installed" })
         }
-        (_, "claude") if !installed(ctx, "claude") => Ok("off"),
+        (_, "claude") if claude == ClaudeState::Absent => {
+            let _ = std::fs::remove_file(agentsetup::marker(ctx));
+            Ok("off")
+        }
         (_, "claude") => agentsetup::remove_claude(ctx, agentsetup::ASKED).map(|_| "removed"),
         _ => agentsetup::remove_codex(ctx).map(|_| "removed"),
     };
@@ -177,17 +225,24 @@ fn one_line(s: &str) -> String {
     s.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
+/// A result that confirms this agent no longer calls the host helper.
+pub fn removed(result: &str) -> bool {
+    matches!(result, "off" | "removed")
+}
+
 /// `hooks … --host-mode`: the link made (install), then one marker line per agent.
 pub fn run(ctx: &Ctx, args: &HostArgs) -> Result<(), String> {
     let linked = if args.action == "install" { link(ctx) } else { Ok(()) };
+    let mut all_removed = true;
     for a in AGENTS {
         let r = match &linked {
             Err(e) => format!("failed: {}", one_line(e)),
             Ok(()) => one(ctx, args, a),
         };
+        all_removed &= removed(&r);
         ctx.say(format!("{} {a} {r}", args.marker));
     }
-    if args.action == "remove" && !AGENTS.iter().any(|a| installed(ctx, a)) {
+    if args.action == "remove" && all_removed {
         let _ = std::fs::remove_file(ctx.bin().join(HOST_PROGRAM));
     }
     Ok(())
