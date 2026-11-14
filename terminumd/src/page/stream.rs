@@ -106,13 +106,13 @@ pub async fn run(app: Shared, page: Arc<Page>, server: Arc<Server>, pane: String
         }
         // the terminal hidden behind Files or View (once opened): its fields only, for the folder
         let hidden = page.state.lock().screens_off && ctl.fields.lock().is_some();
-        let started = Instant::now();
         let prev_cursor = ctl.fields.lock().as_ref().map(|f| (f.cx, f.cy));
         let mut cmds = vec![format!("display -p -t {pane} '{FIELDS}'")];
         if !hidden {
             cmds.push(format!("capture-pane -p -e -J -t {pane}"));
         }
-        let answers: Result<Vec<Vec<String>>, String> = client.run_all(cmds).await.into_iter().collect();
+        let (started, pending) = super::timing::capture(&page, &client, cmds);
+        let answers: Result<Vec<Vec<String>>, String> = pending.await.into_iter().collect();
         let Ok(answers) = answers else {
             let e = answers.err().unwrap_or_default();
             if e.contains("can't find") || e.contains("no such") {
