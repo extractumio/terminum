@@ -74,9 +74,11 @@ export async function liveBoardIds(page, opts) {
   }
   await page.goto(`${base}/kanban/?project=${project}`);
   await page.waitForSelector(`${card(parent)} .cboxes`, { state: "attached", timeout: 8000 });
-  const needs = () => page.$$eval(`${card(parent)} .cneeds .stbox`, (b) => b.map((x) => [x.textContent, getComputedStyle(x).backgroundColor, x.getAttribute("aria-label"), x.innerText.trim()]));
+  const needs = () => page.$$eval(`${card(parent)} .cneeds .stbox`, (b) => b.map((x) => ({ words: x.innerText.trim(), color: getComputedStyle(x).backgroundColor, said: x.getAttribute("aria-label") })));
   const [title, row] = await Promise.all([".ctitle", ".cneeds"].map((p) => page.$eval(`${card(parent)} ${p}`, (x) => x.getBoundingClientRect().toJSON())));
-  check("AC-112 a folded card counts its subtasks that need a human on a line under its own, its title kept", (await needs()).map((b) => b[3]).join(",") === "1 failed,1 waiting" && title.width > 40 && row.top >= title.bottom, JSON.stringify([title, row, await needs()]));
+  const folded = await needs();
+  check("AC-112 a folded card counts its subtasks that need a human on a line under its own, its title kept",
+    folded.map((b) => b.words).join(",") === "1 failed,1 waiting" && title.width > 40 && row.top >= title.bottom, JSON.stringify([title, row, folded]));
   if (shots) await page.locator(card(parent)).screenshot({ path: path.join(shots, "card-needs-folded.png") });
   await page.click(`${card(parent)} .ctitle`);      // a folded TODO card shown whole (terminum-kanban.md AC-159)
   const boxes = await page.$$eval(`${card(parent)} .cboxes .stbox`, (b) => b.map((x) => [x.textContent, getComputedStyle(x).backgroundColor, x.getAttribute("aria-label")]));
@@ -85,9 +87,8 @@ export async function liveBoardIds(page, opts) {
   check("AC-112 its status in words too", boxes[3][2] === `${kids[3]} · FAILED · kid FAILED`, boxes[3][2]);
   check("AC-112 the card counts the done", (await page.textContent(`${card(parent)} .csubs`)) === "1/5");
   const [failed, waiting] = await needs();
-  check("AC-112 the failed count on the FAILED box's red, the waiting one on WAIT FOR HUMAN's color", failed[1] === boxes[3][1] && waiting[1] === boxes[2][1] && failed[1] !== waiting[1], JSON.stringify([failed, waiting]));
-  check("AC-112 a card shown whole says the counts in words", failed[3] === "1 failed" && waiting[3] === "1 waiting", JSON.stringify([failed[3], waiting[3]]));
-  check("AC-112 a count says its subtasks in words", failed[2] === `1 subtask FAILED: ${kids[3]}` && waiting[2] === `1 subtask WAIT FOR HUMAN: ${kids[2]}`, JSON.stringify([failed[2], waiting[2]]));
+  check("AC-112 the failed count on the FAILED box's red, the waiting one on WAIT FOR HUMAN's color", failed.color === boxes[3][1] && waiting.color === boxes[2][1] && failed.color !== waiting.color, JSON.stringify([failed, waiting]));
+  check("AC-112 a count says its subtasks in words", failed.said === `1 subtask FAILED: ${kids[3]}` && waiting.said === `1 subtask WAIT FOR HUMAN: ${kids[2]}`, JSON.stringify([failed.said, waiting.said]));
   await page.click(`${card(parent)} .cneeds .stbox >> nth=0`);
   check("AC-112 a count opens its first subtask", await until(async () => (await page.textContent("#tasktitle")).startsWith(kids[3])));
   await page.click("#taskclose");

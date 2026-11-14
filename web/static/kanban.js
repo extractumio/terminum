@@ -179,9 +179,7 @@ function card(t, under = "") {
   // its subtasks as boxes, each its ID on its status's color; a press opens one (AC-112)
   const boxes = t.boxes?.length ? el("div", "cboxes") : null;
   boxes?.append(...t.boxes.map((k) => statusBox(k, openTask)));
-  const needs = needBoxes(t.boxes ?? [], openTask);   // and how many of them failed or wait for a human, in their colors
-  const needRow = needs.length ? el("div", "cneeds") : null;
-  needRow?.append(...needs);
+  const needRow = t.boxes?.length ? needBoxes(t.boxes, openTask) : null;   // how many of them failed or wait for a human
   if (t.files) foot.append(el("span", "cfiles", plural(t.files, "file")));
   if (t.spent) foot.append(spentLine(t.spent));
   showState(foot, t);
