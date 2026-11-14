@@ -351,9 +351,11 @@ fn ac195_a_write_that_waited_for_its_turn_names_its_caller_and_is_kept() {
     assert!(said.contains("event=\"store.slow\"") && said.contains("store_tests.rs"), "{said}");
     let waited: u64 = said.split("wait_ms=").nth(1).and_then(|r| r.split(' ').next()).and_then(|n| n.parse().ok()).unwrap_or(0);
     assert!(waited >= 100, "its wait is said: {said}");
-    // a quick call says nothing
-    s.slow.reset();
+    // under 100 ms waited and held says nothing (a real call's times would follow the machine's load)
     let (quiet, _guard) = crate::testutil::logs();
-    number_of_tasks(&s).unwrap();
+    let throttle = crate::slow::Throttle::default();
+    said_slow(&throttle, Location::caller(), Duration::from_millis(99), Duration::from_millis(99));
     assert_eq!(quiet.text(), "", "nothing waited, nothing said");
+    said_slow(&throttle, Location::caller(), Duration::ZERO, Duration::from_millis(100));
+    assert!(quiet.text().contains("hold_ms=100"), "a hold alone is said: {}", quiet.text());
 }
