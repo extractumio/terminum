@@ -23,7 +23,7 @@ pub mod procs;
 pub mod runs;
 pub mod screen;
 pub mod subscriptions;
-mod start;
+pub(crate) mod start;
 mod walk;
 pub mod waits;
 

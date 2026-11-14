@@ -13,6 +13,7 @@ CREATE TABLE integration_entries (
   project TEXT NOT NULL REFERENCES projects ON DELETE CASCADE,
   commit_sha TEXT NOT NULL,
   result TEXT NOT NULL,
+  author TEXT NOT NULL,
   queued_at INTEGER NOT NULL,
   batch INTEGER,
   waits_for TEXT,
@@ -27,3 +28,37 @@ CREATE TABLE integration_returns (
   PRIMARY KEY (task, commit_sha)
 );
 ALTER TABLE project_integration ADD COLUMN size INTEGER NOT NULL DEFAULT 4;
+-- A batch and its rounds (AC-188, AC-190, AC-194): one in work on the machine at a time; why a project's queue waits.
+CREATE TABLE integration_batches (
+  id INTEGER PRIMARY KEY,
+  project TEXT NOT NULL REFERENCES projects ON DELETE CASCADE,
+  number INTEGER NOT NULL,
+  task TEXT REFERENCES tasks ON DELETE SET NULL,
+  tasks TEXT NOT NULL,
+  base_sha TEXT NOT NULL,
+  candidate_sha TEXT,
+  state TEXT NOT NULL,
+  why TEXT,
+  pane TEXT,
+  round INTEGER NOT NULL DEFAULT 1,
+  red_rounds INTEGER NOT NULL DEFAULT 0,
+  unchanged_rechecks INTEGER NOT NULL DEFAULT 0,
+  step_started INTEGER,
+  created_at INTEGER NOT NULL,
+  ended_at INTEGER
+);
+CREATE INDEX integration_batches_state ON integration_batches (state);
+CREATE TABLE integration_rounds (
+  batch INTEGER NOT NULL REFERENCES integration_batches ON DELETE CASCADE,
+  round INTEGER NOT NULL,
+  tasks TEXT NOT NULL,
+  base_sha TEXT NOT NULL,
+  candidate_sha TEXT,
+  started INTEGER,
+  ended INTEGER,
+  result TEXT NOT NULL,
+  why TEXT,
+  PRIMARY KEY (batch, round)
+);
+ALTER TABLE project_integration ADD COLUMN waits_why TEXT;
+ALTER TABLE project_integration ADD COLUMN paused INTEGER NOT NULL DEFAULT 0;

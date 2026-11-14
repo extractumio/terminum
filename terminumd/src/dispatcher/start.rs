@@ -29,6 +29,11 @@ fn start_scaled(d: Duration) -> Duration {
 /// The `trap`: with job control a dash or ash dies of its job's Ctrl-C, and the window with it; a caught
 /// signal goes back to its default in the agent and the shell after.
 const WRAPPER: &str = r#"trap : INT; set -m; d=$1; c=$2; t=$3; case $d in "~"|"~/"*) d=$HOME${d#"~"};; esac; s=${SHELL:-/bin/sh}; if cd -- "$d"; then "$s" -lic "$c"; e=$?; else e=-1; fi; "$t" set -p -t "$TMUX_PANE" @terminum-exit "$e"; stty -icanon min 0 time 0 2>/dev/null; cat >/dev/null 2>&1; stty sane 2>/dev/null; exec "$s" -l"#;
+/// The wrapper a window's line runs in: its status as `@terminum-exit`, the pane kept (terminum-integration.md AC-190).
+pub(crate) fn window_wrapper() -> &'static str {
+    WRAPPER
+}
+
 /// What the wrapper records when it could not enter the folder: no process exits with it.
 const NO_FOLDER: i32 = -1;
 

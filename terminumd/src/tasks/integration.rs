@@ -185,7 +185,12 @@ pub(crate) fn local_dir(dir: &str) -> PathBuf {
 
 /// Where the candidate is built, for "What runs".
 pub fn tree_of(project: &str) -> PathBuf {
-    crate::config::tm_home().join("integration").join(project).join("tree")
+    tree_in(&crate::config::tm_home(), project)
+}
+
+/// The candidate's tree under terminum's folder `home`; its logs beside it.
+pub fn tree_in(home: &FsPath, project: &str) -> PathBuf {
+    home.join("integration").join(project).join("tree")
 }
 
 /// "What runs", in terminumd's words: each line with the folder it runs in, and what it gets.
