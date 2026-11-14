@@ -371,10 +371,23 @@ Scenario Outline: AC-102 edge — cancel the outer targeted runner
     | SIGINT  | 130    |
     | SIGHUP  | 129    |
 
+Scenario: AC-102 edge — a signal while the guarded command starts
+  Given the guarded command starts before its parent has returned from starting it
+  When the guard receives SIGTERM, SIGHUP or SIGINT
+  Then it forwards that signal to the command's own process group once that group is known, waits for the command and performs the same leftover report and cleanup
+  And a process group that has already ended needs no signal
+
 Scenario: AC-102 failure — a step that leaves something fails
   Given a step that passes but leaves a file in its folder, or a process in its private process group or working in that folder or a folder under it
   When it ends
   Then each is printed as "LEFT …", the process is ended by its pid (SIGTERM, then SIGKILL when it is still there 2 s later: an interactive shell ignores SIGTERM), the folder is removed and the step fails
+
+Scenario: AC-102 failure — working-directory inspection times out
+  Given macOS working-directory inspection exceeds its 15 s deadline twice or fails
+  When guarded cleanup runs
+  Then the inspection error fails the check visibly, leftover files are reported and processes proven owned by the private group or registry are ended by identity
+  And the private folder stays for diagnosis; unknown directory ownership is never an empty process set
+  And one timed-out inspection is retried once, without using its partial output or retrying other errors
 
 Scenario: AC-102 edge — real pane programs keep temporary files inside the run's cleanup
   Given the Linux live Chromium suite runs under scripts/check_step.py with Midnight Commander installed
@@ -454,6 +467,13 @@ Scenario: AC-103 happy path — a review before a minor release
 ### AC-104 — A green worktree lands by itself [SHOULD / P1]
 
 ```gherkin
+Scenario: AC-104 edge — worktree inventory survives unknown process ownership
+  Given working-directory inspection times out twice or fails
+  When scripts/worktree.py list runs
+  Then every worktree's branch, changes and merge state remain listed with an explicit unknown process count and the inspection error
+  And removal and sweeping keep any tree whose process ownership cannot be inspected, even with discard requested
+  And a listing takes one shared working-directory snapshot for all its trees
+
 Scenario: AC-104 happy path — targeted checks green, the tree lands
   Given the worktree fix-paste has its work committed, and scripts/check_changed.py passed on it: the security scan, the tests of the changed files, the tests citing the acceptance cases on the changed lines, and the critical functions, recorded as .checks/changed-<id>.ok, <id> naming the tree's content
   When the agent runs make land SLUG=fix-paste from the primary checkout
