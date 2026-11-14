@@ -10,12 +10,16 @@ use std::path::Path;
 // Darwin and Linux's stable open(2) flags; keep this module independent of Cargo dependencies.
 #[cfg(target_os = "macos")]
 pub const NOFOLLOW: i32 = 0x100;
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
 pub const NOFOLLOW: i32 = 0x20000;
+#[cfg(all(target_os = "linux", target_arch = "aarch64"))]
+pub const NOFOLLOW: i32 = 0x8000;
 #[cfg(target_os = "macos")]
-const DIRECTORY: i32 = 0x100000;
-#[cfg(target_os = "linux")]
-const DIRECTORY: i32 = 0x10000;
+pub const DIRECTORY: i32 = 0x100000;
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+pub const DIRECTORY: i32 = 0x10000;
+#[cfg(all(target_os = "linux", target_arch = "aarch64"))]
+pub const DIRECTORY: i32 = 0x4000;
 
 unsafe extern "C" { fn flock(fd: std::ffi::c_int, operation: std::ffi::c_int) -> std::ffi::c_int; }
 
