@@ -44,9 +44,9 @@ Assumptions:
 | ID | Assumption | Owner | Status |
 |---|---|---|---|
 | AS-186 | A project's folder is a checkout of one git repository, and its agents work in worktrees of it, so every queued commit is in that repository's store. | Owner | stated |
-| AS-187 | `git merge-tree --write-tree` (git 2.38) says whether two commits merge cleanly, and in which files not, without a checkout, in well under a second for this size of repository. | Claude | to verify |
+| AS-187 | `git merge-tree --write-tree` (git 2.38) says whether two commits merge cleanly, and in which files not, without a checkout, in well under a second for this size of repository. | Claude | measured: 32 ms in the middle, 207 ms at most over 780 pairs of this repository's landed commits (git 2.44) |
 | AS-188 | A check is right to run on the candidate alone: a task's own targeted checks passed before it queued (the project's rule, not terminum's). | Owner | stated |
-| AS-189 | A command started in a window of terminum's tmux server outlives terminumd and leaves its exit status in the dead pane (`remain-on-exit`, `#{pane_dead_status}`). | Claude | to verify |
+| AS-189 | A command started in a window of terminum's tmux server outlives terminumd and leaves its exit status in the dead pane (`remain-on-exit`, `#{pane_dead_status}`). | Claude | measured: on a private terminumd and tmux, a marked window's command outlived two restarts, one of them while it ended, and left its status, its mark and its output |
 
 Dependencies:
 
@@ -715,8 +715,10 @@ Every page hears `{"t": "integration"}` when a batch or the queue changes.
 
 | Stage | Cases | What |
 |---|---|---|
-| Stage 1 | AC-186, AC-187, AC-188, AC-189, AC-190, AC-191, AC-194 | The settings, the queue, batches, the integration task and its agent, publishing; notices as comments and by the waiting command; the column as a plain list. Ends when, in the commit that brings the push: CLAUDE.md §2 (what Dispatcher types: the integration task's prompt), §9 (the one standing permission to push, who moves the primary checkout) and SECURITY.md say the queue, after an independent review; AS-187 and AS-189 are measured; this repository's settings are set and `make land` queues. |
-| Stage 2 | AC-192, AC-193 | Overlaps while tasks are in work, notices by hooks and the gate, the batch's group, keys and Batches…. |
+| Stage 1 | AC-186 | A project's Integration… settings, its integration agent chosen from the pool and its kept slot; saved values only, nothing runs from them. |
+| Stage 2 | AC-187, AC-188, AC-189, AC-190, AC-191, AC-194 | The queue, batches, conflicts, the check, publishing, the integration task and its agent; notices as comments and by the waiting command; the column as a plain list. Ends when, in the commit that brings the push, CLAUDE.md §2 (what Dispatcher types: the integration task's prompt), §9 (the one standing permission to push, who moves the primary checkout) and SECURITY.md say the queue, after an independent review; this repository's settings are set and `make land` queues. |
+| Stage 3 | AC-192 | Overlaps while tasks are in work; notices by hooks and the gate. |
+| Stage 4 | AC-193 | The INTEGRATION column: the batch's group, its keys, Batches…. |
 
 ## 11. Checklist with Definition of Done
 
