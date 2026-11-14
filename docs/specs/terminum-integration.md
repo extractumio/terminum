@@ -63,7 +63,7 @@ Open questions: none.
 
 | ID | Priority | Case |
 |---|---|---|
-| AC-186 | [MUST / P0] | A project's window holds Integration…: a switch, the target branch, the commands Check, Publish and After, the most tasks in a batch, the check's time limit, and the agent that analyses a red batch with its time budget, its prompt and the most red rounds; Check is a command run on this machine (which may itself drive a CI and wait for it) or empty for no check; the window shows what will run and where; off by default, and off nothing is merged or pushed. |
+| AC-186 | [MUST / P0] | A project's window holds an Integration tab: a switch, the target branch, the commands Check, Publish and After, the most tasks in a batch, the check's time limit, and the agent that analyses a red batch with its time budget, its prompt and the most red rounds; Check is a command run on this machine (which may itself drive a CI and wait for it) or empty for no check; the window shows what will run and where; off by default, and off nothing is merged or pushed. |
 | AC-187 | [MUST / P0] | An agent queues its task's commit with its result by `integrate`: the task stands in INTEGRATION, its budget and idle clocks stopped, its session kept; queued again it replaces its commit; taken out it is IN PROGRESS again. |
 | AC-188 | [MUST / P0] | terminumd alone builds a batch: from the fresh target, the queued commits in queue order that merge cleanly together, each its own merge commit named by its task's ID, at most the batch's size, which starts at 4, doubles after a green batch up to the project's most (8) and halves after a red one; each batch is an integration task, I_<ID>, made by Dispatcher, and one batch is in work on the machine at a time. |
 | AC-189 | [MUST / P0] | A commit that conflicts with the target returns to its agent at once with the target's commit and the files; one that conflicts only with a task of the batch stays queued, told once which task it waits for, and is judged again when that one's batch ends. |
@@ -80,8 +80,8 @@ Open questions: none.
 ```gherkin
 Scenario: AC-186 happy path — the window
   Given Billing on this Mac, its folder /Users/alex/billing a git checkout
-  When the user presses Integration… in Billing's window (terminum-kanban.md AC-139), beside Memory limits…
-  Then a window "Integration of Billing" shows: On (a switch, off), Target "origin/main", Check, Publish, After (each one line in a field's well), "Tasks in a batch, at most" 8, "Check ends after, minutes" 90, and under "When a check is red": Agent (the project's pool, none chosen), "Time budget, minutes" 60, "Red rounds, at most" 3 and Prompt (the default of §9, a Markdown editor, with Reset to default)
+  When the user chooses the Integration tab of Billing's window (terminum-kanban.md AC-139)
+  Then the tab shows, the window as wide as a writing window: On (a switch, off), Target "origin/main", Check, Publish, After (each one line in a field's well), "Tasks in a batch, at most" 8, "Check ends after, minutes" 90, and under "When a check is red": Agent (the project's pool, none chosen), "Time budget, minutes" 60, "Red rounds, at most" 3 and Prompt (the default of §9, a Markdown editor, with Reset to default)
   And under no Agent stands "No agent: a red batch waits for you."
   And under an empty Check stands "No check: a candidate that merges is published.", under an empty Publish "terminum pushes the candidate to origin/main, never forced.", under an empty After "Nothing runs after."
   When the user turns it on, types Check "make smoke" and presses Save
@@ -110,7 +110,7 @@ Scenario: AC-186 failure — refused
   When Save is pressed on, and the project has no folder, the folder is no git checkout, git is older than 2.38, Target names no remote branch of it, a command is over 2,000 characters or holds a control character, the batch's most is not 1 to 8, the minutes not 1 to 1440, the agent's budget not 5 to 1440 minutes, the red rounds not 1 to 10, the prompt over 8 KiB, Target is not a remote's branch, or the agent is not of the project's own pool
   Then the window says which: "Billing has no folder: set it in its window.", "/Users/alex/billing is not a git checkout.", "git 2.38 or later is needed: this is 2.30.", "origin/main: no such branch at origin.", "Check: one line, at most 2,000 characters.", "Tasks in a batch: 1 to 8.", "Check ends after: 1 to 1440 minutes.", "Time budget: 5 to 1440 minutes.", "Red rounds: 1 to 10.", "Prompt: at most 8 KiB.", "main: name a remote's branch, as origin/main.", "Web coder is Web's agent, not Billing's: choose one of its own."; nothing is kept and what was typed stays
   When the project is on another server
-  Then Integration… says "Integration runs for projects on this Mac." and has no switch
+  Then the Integration tab says "Integration runs for projects on this Mac." and has no switch
 
 Scenario: AC-186 edge — turned off, changed
   Given a batch under check and two tasks queued
@@ -591,7 +591,7 @@ sequenceDiagram
 | The queue, batches, git, the check's and After's windows, publishing, notices | terminumd |
 | A batch's integration task, its run, its budget | Dispatcher |
 | Why a check is red and which task caused it | the project's integration agent, by tools; else the human |
-| The column, the Integration… window, Batches… | Page |
+| The column, the project window's Integration tab, Batches… | Page |
 | What a check is, how to publish where a push is not enough, what runs after | the project, in its settings |
 | A task's own targeted checks before it queues; resolving conflicts | the task's agent, by its project's rules |
 
@@ -721,7 +721,7 @@ Every page hears `{"t": "integration"}` when a batch or the queue changes.
 
 | Stage | Cases | What |
 |---|---|---|
-| Stage 1 | AC-186 | A project's Integration… settings, its integration agent chosen from the pool; saved values only, nothing runs from them and no slot is kept for them. |
+| Stage 1 | AC-186 | A project's Integration settings, its integration agent chosen from the pool; saved values only, nothing runs from them and no slot is kept for them. |
 | Stage 2 | AC-187, AC-188, AC-189, AC-190, AC-191, AC-194 | The queue, batches, conflicts, the check, publishing, the integration task and its agent with its kept slot; notices as comments and by the waiting command; the column as a plain list. Ends when, in the commit that brings the push, CLAUDE.md §2 (what Dispatcher types: the integration task's prompt), §9 (the one standing permission to push, who moves the primary checkout) and SECURITY.md say the queue, after an independent review; this repository's settings are set and `make land` queues. |
 | Stage 3 | AC-192 | Overlaps while tasks are in work; notices by hooks and the gate. |
 | Stage 4 | AC-193 | The INTEGRATION column: the batch's group, its keys, Batches…. |

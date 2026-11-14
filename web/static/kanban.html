@@ -266,9 +266,13 @@
   </form>
 </dialog>
 
-<dialog id="projectbox" data-size="form" class="box dlg" aria-labelledby="projecthead">
+<dialog id="projectbox" data-size="write" class="box dlg" aria-labelledby="projecthead">
   <form method="dialog" id="projectform">
     <div class="dhead"><h2 id="projecthead">New project</h2><button class="icon x" type="button" title="Close (Esc)" aria-label="Close"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
+    <div id="projecttabs" class="seg projtabs" role="tablist" aria-label="The project's settings">
+      <button id="projecttabgeneral" type="button" role="tab" data-tab="general" aria-selected="true">General</button><button id="projecttabagents" type="button" role="tab" data-tab="agents" aria-selected="false">Agents</button><button id="projectintegration" type="button" role="tab" data-tab="integration" aria-selected="false">Integration</button><button id="projectlimits" type="button" role="tab" data-tab="limits" aria-selected="false">Memory limits</button><button id="projectarchived" type="button" role="tab" data-tab="archived" aria-selected="false">Archived</button>
+    </div>
+    <section class="projpanel" data-tab="general" role="tabpanel">
     <div id="projectfields">
       <div class="fieldgrid">
         <label class="fieldrow">Name <input id="projectname" class="field" type="text" maxlength="40" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"></label>
@@ -289,15 +293,61 @@
       </details>
     </div>
     <label class="fieldrow">Agents at once <input id="projectatonce" class="field" type="number" min="1" max="100" step="1" placeholder="No limit"></label>
-    <section id="projectagents" aria-label="Agents" hidden>
-      <div class="edithead"><span>Agents</span><span class="agentkeys"><button id="projectarchived" class="textkey" type="button">Archived…</button><button id="projectlimits" class="textkey" type="button">Memory limits…</button><button id="projectintegration" class="textkey" type="button">Integration…</button><button id="projectaddagent" class="textkey" type="button">Add agent</button></span></div>
+    </section>
+    <section id="projectagents" class="projpanel" data-tab="agents" role="tabpanel" aria-label="Agents" hidden>
+      <div class="edithead"><span id="projectagentsfor" class="colempty">Each runs the project's tasks; drop a task on one to run it.</span><span class="agentkeys"><button id="projectaddagent" class="textkey" type="button">Add agent</button></span></div>
       <div id="projectagentlist" class="agentlist"></div>
+    </section>
+    <section id="integrationpanel" class="projpanel" data-tab="integration" role="tabpanel" hidden>
+      <p id="integrationtext" class="colempty">Finished tasks queue their commits; terminum merges up to the batch's size that merge cleanly, runs Check once on the candidate, and publishes only a candidate whose check was green. A red one goes to the agent below.</p>
+      <p id="integrationelsewhere" role="status" hidden>Integration runs for projects on this Mac.</p>
+      <div id="integrationfields" class="integrationgroup">
+        <label class="fieldrow checkrow">On: this project's tasks integrate by the queue <input id="integrationon" type="checkbox" role="switch"></label>
+        <label class="fieldrow">Target <input id="integrationtarget" class="field" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"></label>
+        <label class="fieldrow">Check <input id="integrationcheck" class="field" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"><span id="integrationcheckhint" class="colempty">No check: a candidate that merges is published.</span></label>
+        <label class="fieldrow">Publish <input id="integrationpublish" class="field" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"><span id="integrationpublishhint" class="colempty"></span></label>
+        <label class="fieldrow">After <input id="integrationafter" class="field" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"><span id="integrationafterhint" class="colempty">Nothing runs after.</span></label>
+        <div class="fieldgrid">
+          <label class="fieldrow">Tasks in a batch, at most <input id="integrationbatch" class="field" type="number" min="1" max="8" step="1" inputmode="numeric"></label>
+          <label class="fieldrow">Check ends after, minutes <input id="integrationminutes" class="field" type="number" min="1" max="1440" step="1" inputmode="numeric"></label>
+        </div>
+        <fieldset class="integrationgroup integrationred"><legend>When a check is red</legend>
+          <label class="fieldrow">Agent: reads the log and returns the task that caused it <select id="integrationagent" class="field"></select><span id="integrationnoagent" class="colempty">No agent: a red batch waits for you.</span></label>
+          <div class="fieldgrid">
+            <label class="fieldrow">Time budget, minutes <input id="integrationbudget" class="field" type="number" min="5" max="1440" step="1" inputmode="numeric"></label>
+            <label class="fieldrow">Red rounds, at most <input id="integrationrounds" class="field" type="number" min="1" max="10" step="1" inputmode="numeric"></label>
+          </div>
+          <div class="fieldrow"><label for="integrationprompt">Prompt: what the agent is told of a red batch</label>
+            <div class="xbox"><textarea id="integrationprompt" class="field" rows="12" spellcheck="false"></textarea></div>
+            <div class="actions"><button id="integrationpromptreset" class="textkey" type="button">Reset to default</button></div></div>
+        </fieldset>
+        <details id="integrationwhat" class="more"><summary>What runs</summary><ul id="integrationruns"></ul></details>
+      </div>
+      <p id="integrationerror" role="alert" hidden></p>
+    </section>
+    <section id="limitspanel" class="projpanel" data-tab="limits" role="tabpanel" hidden>
+      <p id="limitstext" class="colempty">terminum adds up the memory of the agent's processes every 30 s. Two readings in a row over Warn tell the agent; over End its tasks fail and it is ended. Nothing stops a process between readings: this is a watch, not a limit the system holds.</p>
+      <p id="limitsfor" class="colempty"></p>
+      <div class="fieldgrid">
+        <label class="fieldrow">Warn the agent, GiB <input id="limitwarn" class="field" type="number" min="0" step="0.5"></label>
+        <label class="fieldrow">End the session, GiB <input id="limitend" class="field" type="number" min="0" step="0.5"></label>
+      </div>
+      <p id="limitserror" role="alert" hidden></p>
+    </section>
+    <section id="archivedpanel" class="projpanel" data-tab="archived" role="tabpanel" hidden>
+      <input id="archivedfind" class="field" type="search" placeholder="Find" aria-label="Find archived tasks" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
+      <ul id="archivedlist" class="filelist"></ul>
+      <p id="archivednone" class="colempty" hidden>Nothing here.</p>
+      <div class="actions"><button id="archivedmore" type="button" hidden>More</button></div>
     </section>
     <p id="projecterror" role="alert" hidden></p>
     <div class="actions">
       <button id="projectdelete" type="button" class="danger" hidden>Delete project</button>
+      <button id="limitsglobal" type="button" hidden>Use the global ones</button>
       <button value="cancel" type="submit" class="fromright" formnovalidate>Cancel</button>
       <button id="projectok" type="button" class="primary">Create</button>
+      <button id="integrationok" type="button" hidden class="primary">Save</button>
+      <button id="limitsok" type="button" hidden class="primary">Save</button>
     </div>
   </form>
 </dialog>
@@ -311,19 +361,6 @@
     <div class="actions">
       <button value="cancel" type="submit" formnovalidate>Cancel</button>
       <button id="folderok" type="button" class="primary">Choose</button>
-    </div>
-  </form>
-</dialog>
-
-<dialog id="archivedbox" data-size="list" class="box dlg" aria-labelledby="archivedhead">
-  <form method="dialog">
-    <div class="dhead"><h2 id="archivedhead">Archived</h2><button class="icon x" type="button" title="Close (Esc)" aria-label="Close"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
-    <input id="archivedfind" class="field" type="search" placeholder="Find" aria-label="Find archived tasks" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
-    <ul id="archivedlist" class="filelist" data-grow></ul>
-    <p id="archivednone" class="colempty" hidden>Nothing here.</p>
-    <div class="actions">
-      <button id="archivedmore" type="button" hidden>More</button>
-      <button value="cancel" type="submit" formnovalidate>Close</button>
     </div>
   </form>
 </dialog>
@@ -354,59 +391,6 @@
     <div class="actions">
       <button value="cancel" type="submit" formnovalidate>Cancel</button>
       <button id="autook" type="button" class="primary">Save</button>
-    </div>
-  </form>
-</dialog>
-
-<dialog id="limitsbox" data-size="form" class="box dlg" aria-labelledby="limitshead">
-  <form method="dialog">
-    <div class="dhead"><h2 id="limitshead">Memory limits</h2><button class="icon x" type="button" title="Close (Esc)" aria-label="Close"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
-    <p id="limitstext">terminum adds up the memory of the agent's processes every 30 s. Two readings in a row over Warn tell the agent; over End its tasks fail and it is ended. Nothing stops a process between readings: this is a watch, not a limit the system holds.</p>
-    <p id="limitsfor" class="colempty"></p>
-    <div class="fieldgrid">
-      <label class="fieldrow">Warn the agent, GiB <input id="limitwarn" class="field" type="number" min="0" step="0.5"></label>
-      <label class="fieldrow">End the session, GiB <input id="limitend" class="field" type="number" min="0" step="0.5"></label>
-    </div>
-    <p id="limitserror" role="alert" hidden></p>
-    <div class="actions">
-      <button id="limitsglobal" type="button">Use the global ones</button>
-      <button value="cancel" type="submit" class="fromright" formnovalidate>Cancel</button>
-      <button id="limitsok" type="button" class="primary">Save</button>
-    </div>
-  </form>
-</dialog>
-
-<dialog id="integrationbox" data-size="form" class="box dlg" aria-labelledby="integrationhead">
-  <form method="dialog">
-    <div class="dhead"><h2 id="integrationhead">Integration</h2><button class="icon x" type="button" title="Close (Esc)" aria-label="Close"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
-    <p id="integrationtext">Finished tasks queue their commits; terminum merges up to the batch's size that merge cleanly, runs Check once on the candidate, and publishes only a candidate whose check was green. A red one goes to the agent below.</p>
-    <p id="integrationelsewhere" role="status" hidden>Integration runs for projects on this Mac.</p>
-    <div id="integrationfields" class="integrationgroup">
-      <label class="fieldrow checkrow">On: this project's tasks integrate by the queue <input id="integrationon" type="checkbox" role="switch"></label>
-      <label class="fieldrow">Target <input id="integrationtarget" class="field" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"></label>
-      <label class="fieldrow">Check <input id="integrationcheck" class="field" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"><span id="integrationcheckhint" class="colempty">No check: a candidate that merges is published.</span></label>
-      <label class="fieldrow">Publish <input id="integrationpublish" class="field" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"><span id="integrationpublishhint" class="colempty"></span></label>
-      <label class="fieldrow">After <input id="integrationafter" class="field" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"><span id="integrationafterhint" class="colempty">Nothing runs after.</span></label>
-      <div class="fieldgrid">
-        <label class="fieldrow">Tasks in a batch, at most <input id="integrationbatch" class="field" type="number" min="1" max="8" step="1" inputmode="numeric"></label>
-        <label class="fieldrow">Check ends after, minutes <input id="integrationminutes" class="field" type="number" min="1" max="1440" step="1" inputmode="numeric"></label>
-      </div>
-      <fieldset class="integrationgroup integrationred"><legend>When a check is red</legend>
-        <label class="fieldrow">Agent: reads the log and returns the task that caused it <select id="integrationagent" class="field"></select><span id="integrationnoagent" class="colempty">No agent: a red batch waits for you.</span></label>
-        <div class="fieldgrid">
-          <label class="fieldrow">Time budget, minutes <input id="integrationbudget" class="field" type="number" min="5" max="1440" step="1" inputmode="numeric"></label>
-          <label class="fieldrow">Red rounds, at most <input id="integrationrounds" class="field" type="number" min="1" max="10" step="1" inputmode="numeric"></label>
-        </div>
-        <div class="fieldrow"><label for="integrationprompt">Prompt: what the agent is told of a red batch</label>
-          <div class="xbox"><textarea id="integrationprompt" class="field" rows="12" spellcheck="false"></textarea></div>
-          <div class="actions"><button id="integrationpromptreset" class="textkey" type="button">Reset to default</button></div></div>
-      </fieldset>
-      <details id="integrationwhat" class="more"><summary>What runs</summary><ul id="integrationruns"></ul></details>
-    </div>
-    <p id="integrationerror" role="alert" hidden></p>
-    <div class="actions">
-      <button value="cancel" type="submit" class="fromright" formnovalidate>Cancel</button>
-      <button id="integrationok" type="button" class="primary">Save</button>
     </div>
   </form>
 </dialog>

@@ -247,7 +247,12 @@ body.board-page { margin: 0; overflow: hidden; background: var(--surface-0); col
 .folderrow .name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #projectform, #projectfields { display: flex; flex-direction: column; gap: var(--sp-3); }
 #projectagents { display: flex; flex-direction: column; gap: var(--sp-2); }
-#projectagents .agentlist { display: flex; flex-direction: column; gap: var(--sp-2); }
+/* a project's window (terminum-kanban.md AC-139): its tabs, one panel shown; its agents as the board's tiles */
+.projtabs { align-self: flex-start; }
+.projpanel { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; }
+.projpanel[hidden] { display: none; }
+#projectagents .agentlist { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: var(--sp-2); }
+#projectagents .agentlist .item { width: auto; }
 #projectagents .item { width: auto; }
 
 #archivedlist { overflow-y: auto; }
