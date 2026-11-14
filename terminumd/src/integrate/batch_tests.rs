@@ -72,7 +72,7 @@ fn ac189_a_commit_carrying_another_s_never_goes_without_it() {
     // queued before the one it carries: held for it; after it in the queue, it joins with it
     let got = choose(&r.dir, &r.base, &[b.clone(), a.clone()], 4).unwrap();
     assert_eq!(got.held, [(b.clone(), vec!["API-1".into()])]);
-    assert_eq!(got.chosen, [a.clone()]);
+    assert_eq!(got.chosen, std::slice::from_ref(&a));
     let both = choose(&r.dir, &r.base, &[a.clone(), b.clone()], 4).unwrap();
     assert_eq!(both.chosen, [a, b]);
 }

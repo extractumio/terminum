@@ -113,7 +113,7 @@ pub fn choose(repo: &Path, base: &str, queue: &[Queued], size: usize) -> Result<
                 Ok(Ok(_)) => {
                     let mut waits = Vec::new();
                     for ch in &c.chosen {
-                        if matches!(merge(repo, &ch.commit, &q.commit)?, Err(_)) {
+                        if merge(repo, &ch.commit, &q.commit)?.is_err() {
                             waits.push(ch.id.clone());
                         }
                     }
