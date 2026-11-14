@@ -24,8 +24,9 @@ export function linkAt(x, y) {
 }
 
 /** Opens a token: an address in a new tab of this browser, a path in File: where its file was
- *  found (pathOf: from the agent's folder or the pane's), else from the pane's folder. */
-export async function openLink(tok, { paneInfo, openFile, toast, pathOf = () => null }) {
+ *  found (pathOf: from the agent's folder or the pane's), else from the pane's folder; a folder
+ *  (isFolder) is shown in Files instead. */
+export async function openLink(tok, { paneInfo, openFile, openFolder, toast, pathOf = () => null, isFolder = () => false }) {
   if (tok.kind === "url") {
     window.open(tok.value, "_blank", "noopener,noreferrer");
     return;
@@ -35,7 +36,7 @@ export async function openLink(tok, { paneInfo, openFile, toast, pathOf = () => 
   if (pane.error) return toast(pane.error, 6000);
   const path = pathOf(tok.value) ?? absolutePath(tok.value, pane.cwd, pane.home);
   if (!path) return toast(`Cannot tell where ${tok.value} is: this session's folder is not known.`, 6000);
-  openFile(path, pane.host ?? null);
+  (isFolder(tok.value) ? openFolder : openFile)(path, pane.host ?? null);
 }
 
 // With a mouse a link opens with ⌘ (Ctrl elsewhere; on a Mac Ctrl+click is the context menu):
@@ -44,7 +45,7 @@ const MAC = /Mac|iPhone|iPad/.test(navigator.platform);
 const held = (e) => (MAC ? e.metaKey : e.ctrlKey);
 
 /** Pointer feedback and clicks for a terminal element; `tap(x, y)` is for touch screens. A path
- *  is a link only when actions.state(path) says its file is there (as it is underlined); when
+ *  is a link only when actions.state(path) says its file or folder is there (as it is underlined); when
  *  the pane's folder is not known a click says why (openLink). */
 export function bindLinks(term, actions) {
   const usable = (x, y) => {

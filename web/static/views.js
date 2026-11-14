@@ -17,6 +17,9 @@ const $ = (id) => document.getElementById(id);
 const NAMES = ["term", "files", "file"];
 const WIDE = matchMedia("(min-width: 1400px)");
 
+/** The folder Files shows for a pane: the one its coding agent works in while Files follows it (AC-51), else the pane's. */
+const rootOf = (pane) => (following() && pane.agent ? pane.agent : pane.cwd);
+
 export class Views {
   constructor({ send, store, onShow, onBack }) {
     Object.assign(this, { send, store });
@@ -28,6 +31,8 @@ export class Views {
     this.docked = true;            // Files is open on the right at WIDE, for the shown session
     this.floating = false;         // File is open over the terminal at WIDE
     this.filesSrc = "";            // what the Files frame shows: its pane, folder and host
+    this.filesLoaded = "";         // the one it has loaded
+    this.revealing = null;         // a path Files is to show in its tree once it has the pane's folder
     this.filesError = null;        // why the pane has no Files
     this.filesShown = false;
     this.fileHost = null;          // the host the File frame's files are on
@@ -35,7 +40,11 @@ export class Views {
     this.theme = null;             // the shown pane's, for both frames (fbd's is the focused pane's)
     for (const f of ["files", "file"]) { const el = $(f); el.addEventListener("load", () => { if (el.id === f) this.tellTheme(el); if (el.id === "file") this.tellRoot(); }); }
     // another session's Files show once its own folder is in (the last one asked for)
-    $("files").addEventListener("load", () => { if ($("files").getAttribute("src") === this.filesSrc) $("files").classList.remove("moving"); });
+    $("files").addEventListener("load", () => {
+      this.filesLoaded = $("files").getAttribute("src");
+      if (this.filesLoaded === this.filesSrc) $("files").classList.remove("moving");
+      this.tellReveal();
+    });
     for (const b of document.querySelectorAll("button[data-view]")) b.addEventListener("click", () => this.show(b.dataset.view, true));
     $("sideclose").addEventListener("click", () => this.setDocked(false));
     $("fileclose").addEventListener("click", () => this.show("term"));
@@ -122,6 +131,7 @@ export class Views {
     this.follow(sid);
     this.filesSrc = "";
     this.filesError = null;
+    this.revealing = null;
     // hidden, not emptied: WebKit may load an emptied frame's about:blank after the next folder
     // set meanwhile, and the frame stays blank (a quick switch away and back)
     $("files").classList.add("moving");
@@ -216,7 +226,8 @@ export class Views {
     if (m.sid && this.sid && m.sid !== this.sid) return;   // a slow server's answer about a pane left meanwhile (AC-132)
     this.answered(m);
     this.filesError = m.error ?? null;
-    const cwd = following() && m.agent ? m.agent : m.cwd;
+    const cwd = rootOf(m);
+    if (m.error) this.revealing = null;
     this.filesRoot = m.error || !cwd ? null : { cwd, host: m.host ?? null };
     this.tellRoot();
     if (!m.error && this.filesShown) {         // the Files frame loads only while it is shown
@@ -225,6 +236,7 @@ export class Views {
       const src = `/fb/?${q}`;
       if (src !== this.filesSrc) frameTo($("files"), this.filesSrc = src);   // reloaded only when it moved
     } else $("files").classList.remove("moving");
+    this.tellReveal();
     this.layout();
   }
 
@@ -241,6 +253,29 @@ export class Views {
     }
     document.querySelector('button[data-view="file"]').disabled = false;
     this.show("file");
+  }
+
+  /** Files opens and shows `path` in its tree: a folder printed in the terminal, View's "Reveal
+   *  in tree". Files hidden so far first hears where its pane is now (onFiles), and a frame still
+   *  loading gets it once loaded: a message sent earlier would be lost. */
+  reveal(path) {
+    const shown = this.filesShown;
+    this.revealing = path;
+    this.show("files");
+    if (shown) this.tellReveal();
+  }
+
+  tellReveal() {
+    if (this.revealing === null || !this.filesSrc || this.filesLoaded !== this.filesSrc) return;
+    // the tree's own folder has no row to show: Files open is all of it
+    if (this.revealing !== this.filesRoot?.cwd) $("files").contentWindow?.postMessage({ type: "fb-reveal", path: this.revealing }, location.origin);
+    this.revealing = null;
+  }
+
+  /** Whether Files can show the folder at `path`: the one it shows for `pane` (paneInfo's answer), or one under it. */
+  showsFolder(path, pane) {
+    const root = rootOf(pane);
+    return !!root && (path === root || path.startsWith(root === "/" ? root : `${root}/`));
   }
 
   /** Files asks to open a file; View asks to reveal one in Files, or says its last file was
@@ -269,9 +304,6 @@ export class Views {
           vector: /\.svg$/i.test(url.searchParams.get("path") ?? ""), onClose: () => { URL.revokeObjectURL(got.url); frame.focus(); } }));
       }
     }
-    if (e.source === $("file").contentWindow && e.data.type === "fb-reveal") {
-      this.show("files");
-      $("files").contentWindow?.postMessage({ type: "fb-reveal", path: e.data.path }, location.origin);
-    }
+    if (e.source === $("file").contentWindow && e.data.type === "fb-reveal") this.reveal(e.data.path);
   }
 }

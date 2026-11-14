@@ -64,7 +64,7 @@ Open questions:
 | AC-32 | [SHOULD / P1] | Diffs, written files, long tool output, blank runs, encoded data, repeated and similar lines in the history are folded into one line each with Show and Copy, found by terminumd before the page sees them. |
 | AC-33 | [SHOULD / P1] | A selection in the terminal becomes a bookmark with a note, kept on the Mac for every signed-in client; marks on the terminal's edge and a list bring the text back into view, also in older, folded or rendered lines; a bookmark whose lines are gone keeps its text. |
 | AC-34 | [SHOULD / P1] | The shown pane's whole loadable history is searched by terminumd: the count, the first match in view and marked, next and previous, every match a mark on the edge. |
-| AC-35 | [SHOULD / P1] | Web addresses and file paths in the output are underlined and open: addresses in a new tab of the reader's browser, files in View on the pane's host, only when the file exists. |
+| AC-35 | [SHOULD / P1] | Web addresses and file paths in the output are underlined and open: addresses in a new tab of the reader's browser, files in View on the pane's host, only when the file exists; a folder's path opens it in Files, only when Files can show it. |
 | AC-36 | [SHOULD / P1] | The user pastes an image, uploads a file or drops files onto the page; they are saved where the pane's shell runs and their paths are pasted into the pane without Enter. |
 | AC-37 | [MUST / P0] | The user selects and copies terminal text on a computer, a tablet and a phone with the system's own menus and handles, with line ends kept, while the screen pauses under a selection and catches up after. |
 | AC-38 | [SHOULD / P1] | With `?trace=1` terminumd and the page record each key's stages and session opens for 15 minutes into a log a script sums up; with `?trace=2` the page keeps a ring of events and input-box snapshots a button copies for a coding agent. |
@@ -318,6 +318,10 @@ Scenario: AC-35 happy path — addresses and paths
   When the user clicks or taps a file path or name the pane printed (absolute, "~/…", "./…", "../…", a path with a slash, or a name with a known extension, with ":line" or ":line:col")
   Then the page opens it in View as a tab on the pane's host; a relative one from the folder the pane's coding agent works in, as its hooks last said (its own events, not a subagent's: Claude Code may work in a worktree below the folder it started in, which stays the pane's), then from the pane's folder, where its file is; "~" is the home on the pane's machine
   But only a file that is there is a link: its folder is listed on the pane's host through the Files API (one page answers every name of a folder up to 500 entries; at most 4 listings at once, newest first; a file not there is looked for again after 10, 30 and 60 s, a found one after a minute); "and/or", dates and version numbers are not paths
+  When the user clicks or taps a folder's path the pane printed (as a file's, or any path ending in a slash: "docs/specs/")
+  Then Files opens (docked beside the terminal on a wide page, else in its place) with the folder's row selected, the folders above it and the folder itself open; the folder Files shows needs no row: Files opens
+  But only a folder that is there (found as a file is) and is the folder Files shows for the pane or one under it is a link; in a quick shell's page, which has no Files, none is
+  And a click made while Files is closed or still loading is kept until Files has the pane's folder, then shown; another session shown meanwhile drops it
   When the program printed a link with a text of its own (an OSC 8 hyperlink: "⧉ Fix the retry loop — MR !318", its address https://…/merge_requests/318)
   Then its text is a link as an address is (the same underline, ⌘-click or tap), its hover names the address; an http or https address opens in a new tab, a file:// one with no host or "localhost" opens its path as a printed absolute path does; any other scheme (javascript:, data:, ssh:…) or an address over 2,048 characters or with a control or bidi formatting character stays text; a file:// link whose file is not there says so when pressed; a link that runs past a row is a link on its first row only (tmux 3.6a's capture, terminum.md AS-03)
 
@@ -737,7 +741,7 @@ Limits a scenario states are in §5. Only these are not:
 
 - Terminal output reaches only the panel's Markdown rules (raw HTML off, `http(s)`, `mailto` and relative links only, no image loaded) and Mermaid `securityLevel: "strict"` without HTML labels; a diagram is an image element of its SVG.
 - The page cannot name lines outside a fold terminumd told of (AC-32).
-- A path's underline only lists its folder (AC-35); nothing is read until the user opens it.
+- A path's underline only lists the folder it is in (AC-35); nothing is read until the user opens it.
 - Bookmarks hold selected terminal text: sent only over a signed-in WebSocket, shown as text.
 - Pasted files: the name is terminumd's (AC-36).
 - Traces: AC-38.
@@ -768,7 +772,7 @@ All cases are shipped; nothing is staged.
 - [x] AC-32 — `cargo test page::folds`, `web/test/e2e_widgetfolds.mjs`, `web/test/e2e_screenfolds.mjs`, `web/test/e2e_livefolds.mjs`, `scripts/e2e_core.py`
 - [x] AC-33 — `cargo test page::bookmarks`, `web/test/marktext.test.mjs`, `web/test/e2e_marks.mjs`, `web/test/e2e_marknav.mjs`, `web/test/e2e_requests.mjs`, `web/test/e2e_requestowners.mjs`, `web/test/e2e_marksdata.mjs`, `web/test/e2e_marksscope.mjs`, `web/test/e2e_phonerow.mjs`, `web/test/e2e_panewin.mjs`
 - [x] AC-34 — `cargo test page::search`, `web/test/review-regressions.test.mjs`, `web/test/e2e_marks.mjs`, `web/test/e2e_review_regressions.mjs`
-- [x] AC-35 — `web/test/links.test.mjs`, `web/test/panefiles.test.mjs`, `web/test/e2e_term.mjs`, `web/test/e2e_pathfold.mjs`, `web/test/e2e_livelinks.mjs`, `web/test/e2e_app.mjs`
+- [x] AC-35 — `web/test/links.test.mjs`, `web/test/panefiles.test.mjs`, `web/test/e2e_term.mjs`, `web/test/e2e_pathfold.mjs`, `web/test/e2e_livelinks.mjs`, `web/test/e2e_app.mjs`, `ui/test/tree-reveal.test.mjs`
 - [x] AC-36 — `cargo test page::upload`, `cargo test dragged`, `web/test/upload.test.mjs`, `web/test/e2e_livepaste.mjs`, `web/test/e2e_app.mjs`, `scripts/e2e_remote.py`
 - [x] AC-37 — `cargo test sent::`, `web/test/seltext.test.mjs`, `web/test/ask.test.mjs`, `web/test/e2e_clip.mjs`, `web/test/e2e_touch.mjs`, `web/test/e2e_ask.mjs`, `web/test/e2e_dialogcenter.mjs`, `web/test/e2e_liveclip.mjs`, `web/test/e2e_phonerow.mjs`, `web/test/e2e_switch.mjs`
 - [x] AC-38 — `cargo test page::trace`, `cargo test page::timing`, `web/test/trace.test.mjs`, `web/test/tracereplay.test.mjs`, `web/test/e2e_trace.mjs`, `web/test/e2e_ctxtrace.mjs`, `scripts/e2e_core.py`, `scripts/e2e_trace.py`

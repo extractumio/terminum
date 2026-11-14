@@ -46,6 +46,8 @@ export class Tree {
   epoch = 0;                 // bumps on re-root; stale async results are dropped
   private expandRun = 0;             // bumps on expand all and any collapse; cancels a running one
   selectionRun = 0;          // cancels a paged range on another interaction
+  private rooting: Promise<void> | null = null;   // the newest setRoot still restoring
+  private rooted: (() => void)[] = [];           // reveals waiting for it
   private picks = 0;                 // bumps on each newer selection (pick); an older reveal yields to it
   private spacer = document.createElement("div");
   private layer = document.createElement("div");
@@ -85,6 +87,13 @@ export class Tree {
 
   /** Show `root`, restoring `expanded`, `selected` and the scroll position. */
   async setRoot(root: string, expanded: string[], selected: string[], scroll = 0) {
+    const run = this.rooting = this.restore(root, expanded, selected, scroll);
+    try { await run; } finally {
+      if (this.rooting === run) { this.rooting = null; for (const go of this.rooted.splice(0)) go(); }
+    }
+  }
+
+  private async restore(root: string, expanded: string[], selected: string[], scroll: number) {
     this.epoch++;
     this.edit.cancel();
     this.nodes.clear();
@@ -290,8 +299,10 @@ export class Tree {
   /** The cursor onto `path`, scrolled into sight; `open`: its folders expand first (Reveal in tree).
    *  False when it is not under the root or not found; null, the cursor untouched, when the tree was
    *  re-rooted or the user picked a newer selection than `picks` meanwhile (expanding and refreshing
-   *  folders do not count). */
+   *  folders do not count). With `open` it first waits for a root being shown or restored: the page
+   *  may ask as soon as the panel has loaded. */
   async reveal(path: string, open = false, picks = this.picks): Promise<boolean | null> {
+    if (open && (!this.root || this.rooting)) await new Promise<void>((go) => this.rooted.push(go));
     const epoch = this.epoch, root = this.root?.path;
     const alive = () => epoch === this.epoch && picks === this.picks;
     if (open && root && isUnder(path, root) && path !== root) {

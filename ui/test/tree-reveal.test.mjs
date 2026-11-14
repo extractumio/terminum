@@ -25,7 +25,7 @@ function fixture() {
   const gate = new Promise((r) => { release = r; });
   const t = Object.assign(Object.create(Tree.prototype), {
     root, nodes, expanded: new Set(), selected: new Set(), cursor: -1, anchor: -1, rowH: 20, version: 0,
-    el: { clientHeight: 200, scrollTop: 0 }, epoch: 0, expandRun: 0, selectionRun: 0, picks: 0,
+    el: { clientHeight: 200, scrollTop: 0 }, epoch: 0, expandRun: 0, selectionRun: 0, picks: 0, rooting: null, rooted: [],
     edit: { cancel() {} }, cb: { changed() {} }, queue() {}, touch() { t.version++; },
     load: async (n) => fill(n),
     locate: async (n, name) => { await gate; return n.pages.get(0).findIndex((r) => r.n === name); },
@@ -145,4 +145,19 @@ test("a new file is selected and revealed, unless the user picked something whil
     assert.deepEqual([...tree.selected], [clicked ? "/r/c.rs" : "/r/new.txt"], `clicked: ${clicked}`);
     assert.deepEqual(revealed, [["/r/new.txt", false, 1]], `clicked: ${clicked}`);
   }
+});
+
+test("Reveal in tree asked while a root is being restored waits for it (AC-35: the page asks as the panel loads)", async () => {
+  const { t, release } = fixture();
+  let restored;
+  t.restore = () => new Promise((r) => { restored = r; });
+  const rooting = t.setRoot("/r", [], []);
+  let done = false;
+  const pending = t.reveal("/r/a", true, t.pick()).then((found) => { done = true; return found; });
+  await release();
+  assert.equal(done, false, "not before the root is in");
+  restored();
+  await rooting;
+  assert.equal(await pending, true);
+  assert.equal(t.cursor, 0);
 });

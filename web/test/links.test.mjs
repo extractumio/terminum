@@ -21,6 +21,14 @@ test("file paths and names, with a line number", () => {
   assert.deepEqual(at("/etc/hosts", "etc"), { kind: "path", value: "/etc/hosts" });
 });
 
+test("a folder's path: anchored, or ending in a slash (AC-35)", () => {
+  assert.deepEqual(at("saved under /Users/alex/p/shots/iPad_13in/", "shots"), { kind: "path", value: "/Users/alex/p/shots/iPad_13in/" });
+  assert.deepEqual(at("see docs/specs/.", "specs"), { kind: "path", value: "docs/specs/" });
+  assert.deepEqual(at("target/  src/", "src"), { kind: "path", value: "src/" });
+  assert.deepEqual(at("in ~/p/shots", "shots"), { kind: "path", value: "~/p/shots" });
+  for (const [text, word] of [["on 10/07/ then", "07"], ["a // b", "//"], ["1.2/", "1.2"]]) assert.equal(at(text, word), null, text);
+});
+
 test("prose, numbers and versions are not paths", () => {
   for (const [text, word] of [["read and/or write", "and"], ["on 10/07/2026", "07"], ["version 1.2.3", "1.2"],
     ["the end.", "end"], ["e.g. this", "e.g"], ["foo.bar", "foo"], ["just /", "/"]]) {
