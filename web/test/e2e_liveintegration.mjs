@@ -38,6 +38,8 @@ export async function integrationChecks(page, { j, fresh, work, pressAt, shots }
   }
   check("AC-186 What runs says where and how, in terminumd's words", /integration\/[^/]+\/tree: origin\/main/.test(await page.textContent("#integrationruns")) && /login shell/.test(await page.textContent("#integrationruns")));
 
+  await commandTyping(page);
+
   await page.check("#integrationon");
   await pressAt(page, "#integrationok");
   check("AC-186 on, a project with no folder is refused where it was pressed",
@@ -85,4 +87,42 @@ export async function integrationChecks(page, { j, fresh, work, pressAt, shots }
     }
   }
   await pressAt(page, "#projecttabgeneral");
+}
+
+/** AC-186: play the browser's substitutions on the real fields; paste, drop, IME and prose keep their text. */
+async function commandTyping(page) {
+  const wide = page.viewportSize();
+  const smart = (field, value, inputType, isComposing = false) => page.$eval(`#integration${field}`, (f, [v, t, composing]) => {
+    f.value = v;
+    f.setSelectionRange(v.length, v.length);
+    f.dispatchEvent(new InputEvent("input", { inputType: t, isComposing: composing, bubbles: true }));
+    return { value: f.value, at: f.selectionEnd };
+  }, [value, inputType, isComposing]);
+  for (const viewport of [wide, { width: 390, height: 844 }]) {
+    await page.setViewportSize(viewport);
+    for (const field of ["check", "publish", "after"]) {
+      const sel = `#integration${field}`, was = await page.inputValue(sel);
+      await page.focus(sel);
+      await smart(field, "make -", "insertText");
+      const dash = await smart(field, "make —", "insertText");
+      check(`AC-186 ${viewport.width}px ${field}: typed -- and its caret survive Smart Dashes`, dash.value === "make --" && dash.at === 7, JSON.stringify(dash));
+      const quotes = await smart(field, "make -- “two” ‘one’ –", "insertReplacementText");
+      check(`AC-186 ${viewport.width}px ${field}: typed quotes and en dash return to command syntax`, quotes.value === `make -- "two" 'one' -` && quotes.at === quotes.value.length, JSON.stringify(quotes));
+      for (const [type, composing] of [["insertFromPaste", false], ["insertFromDrop", false], ["insertCompositionText", false], ["insertText", true]]) {
+        const text = `make “verbatim — ${type} ${composing}”`;
+        const kept = await smart(field, text, type, composing);
+        const continued = await smart(field, `${text} x`, "insertText");
+        check(`AC-186 ${viewport.width}px ${field}: ${type} composing=${composing} stays verbatim when typing continues`, kept.value === text && continued.value === `${text} x`, JSON.stringify({ kept, continued }));
+      }
+      await page.fill(sel, was);
+    }
+    for (const field of ["target", "prompt"]) {
+      const sel = `#integration${field}`, was = await page.inputValue(sel), text = "origin/“smart”—‘text’";
+      await page.focus(sel);
+      const kept = await smart(field, text, "insertReplacementText");
+      check(`AC-186 ${viewport.width}px ${field} keeps typed Unicode punctuation`, kept.value === text, JSON.stringify(kept));
+      await page.fill(sel, was);
+    }
+  }
+  await page.setViewportSize(wide);
 }
