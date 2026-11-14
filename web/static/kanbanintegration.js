@@ -42,13 +42,10 @@ export function integrationWindow({ getMeta }) {
     try {
       s = await api(`/api/task-projects/${id}/integration`);
     } catch (e) {
-      $("integrationfields").hidden = true;
-      $("integrationok").hidden = true;
       return say(e.message);
     }
     defaultPrompt = s.default_prompt;
     $("integrationelsewhere").hidden = s.here;
-
     $("integrationon").checked = s.on;
     for (const [k, field] of Object.entries(FIELDS)) $(field).value = s[k];
     for (const [k, field] of Object.entries(NUMBERS)) $(field).value = s[k];
@@ -60,7 +57,7 @@ export function integrationWindow({ getMeta }) {
     $("integrationok").hidden = !s.here;
   }
 
-  /** Kept, the window closes; refused, it says terminumd's words and keeps what was typed. One at a time. */
+  /** Kept, a toast says so and the tab shows what was kept; refused, it says terminumd's words and keeps what was typed. One at a time. */
   const save = oneAtATime(box, async () => {
     const body = { on: $("integrationon").checked, agent: $("integrationagent").value || null, prompt: $("integrationprompt").value };
     for (const [k, field] of Object.entries(FIELDS)) body[k] = $(field).value;
