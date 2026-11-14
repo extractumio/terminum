@@ -123,3 +123,17 @@ fn ac169_a_queue_is_its_agents_waits_in_the_order_the_human_gave() {
         Ok(())
     }).unwrap();
 }
+
+#[test]
+fn ac158_a_task_in_a_queue_is_moved_or_finished_by_no_agent() {
+    let (s, dir) = (store("waits-held"), crate::testutil::fresh_dir("waits-held-dir"));
+    let t = s.with(|tx| Ok(task(tx, "api"))).unwrap();
+    s.with(|tx| add(tx, &t, "a", "api", &json!({}), 2)).unwrap();
+    let who = crate::tasks::tools::Who { key: "tmux:local:t:%5".into(), agent: "codex".into(), title: "other".into(), project: Some("api".into()), dir: None };
+    let said = format!("{} waits in Smith's queue: it starts when there is room. You can read it and comment.", t.id);
+    for (tool, args) in [("move_task", json!({"id": t.id, "to": "FAILED"})), ("finish_task", json!({"id": t.id, "result": "x"}))] {
+        assert_eq!(crate::tasks::tools::run(&s, &dir, &who, tool, &args).unwrap_err(), said, "{tool}: another session's agent never calls off a human's press");
+    }
+    assert!(crate::tasks::tools::run(&s, &dir, &who, "add_comment", &json!({"id": t.id, "text": "blocked by TERM-9"})).is_ok(), "it can comment");
+    s.with(|tx| { assert!(of_task(tx, &t.key)?.is_some(), "the press still waits"); assert_eq!(ops::get(tx, &t.id)?.status, "TODO"); Ok(()) }).unwrap();
+}
