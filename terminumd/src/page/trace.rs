@@ -175,8 +175,8 @@ impl Recorder {
             .filter(|p| p.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.starts_with("trace-") && n.ends_with(".jsonl")))
             .collect();
         old.sort();
-        let drop = old.len().saturating_sub(KEEP_FILES - 1);
-        for p in &old[..drop] {
+        let remove_count = old.len().saturating_sub(KEEP_FILES - 1);
+        for p in &old[..remove_count] {
             let _ = fs::remove_file(p);
         }
         let path = self.dir.join(file_name());
