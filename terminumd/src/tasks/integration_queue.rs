@@ -4,7 +4,6 @@
 //! any move out of INTEGRATION, or by its batch's end. git runs outside the store's transaction.
 
 use std::path::Path;
-use std::process::Command;
 
 use rusqlite::{OptionalExtension, Transaction};
 use serde_json::{json, Value};
@@ -24,9 +23,14 @@ pub struct Entry {
     pub batch: Option<i64>,
 }
 
-/// Whatever moved it out of INTEGRATION, the task is no longer queued.
+/// Whatever moved it out of INTEGRATION, the task is no longer queued; a batch it was in goes on without it.
 pub(crate) fn leave(tx: &Transaction, task_key: &str) -> Result<(), String> {
-    tx.execute("DELETE FROM integration_entries WHERE task = ?1", [task_key]).map(drop).map_err(sql)
+    let batch: Option<i64> = tx.query_row("SELECT batch FROM integration_entries WHERE task = ?1", [task_key], |r| r.get(0)).optional().map_err(sql)?.flatten();
+    tx.execute("DELETE FROM integration_entries WHERE task = ?1", [task_key]).map_err(sql)?;
+    match batch {
+        Some(b) => crate::integrate::store::left(tx, task_key, b, ops::now()),
+        None => Ok(()),
+    }
 }
 
 /// A project's queue in its order: first queued first, then by task number.
@@ -47,8 +51,10 @@ pub fn ordinal(n: usize) -> String {
     format!("{n}{suffix}")
 }
 
+use crate::integrate::git::{output as git_output, short};
+
 fn git(dir: &Path, args: &[&str]) -> Result<std::process::Output, String> {
-    Command::new("git").arg("-C").arg(dir).args(args).output().map_err(|e| format!("git: {e}"))
+    git_output(dir, args)
 }
 
 /// The commit to queue: `given`, else the caller's folder's HEAD with nothing uncommitted; one of the project's
@@ -72,7 +78,7 @@ fn commit_to_queue(repo: &Path, s: &Settings, given: Option<&str>, folder: Optio
     let full = String::from_utf8_lossy(&found.stdout).trim().to_string();
     let (remote, branch) = integration::target_parts(&s.target).ok_or_else(|| integration::not_a_target(&s.target))?;
     if git(repo, &["merge-base", "--is-ancestor", &full, &format!("refs/remotes/{remote}/{branch}")])?.status.success() {
-        return Err(format!("{} is already in {}: finish the task with finish_task.", &full[..9.min(full.len())], s.target));
+        return Err(format!("{} is already in {}: finish the task with finish_task.", short(&full), s.target));
     }
     Ok(full)
 }
@@ -113,12 +119,12 @@ pub fn integrate(store: &Store, who: &Who, args: &Value) -> Result<(String, Vec<
         let (t, s, _) = ready(tx, who, id, &result)?;
         let returned: Option<String> = tx.query_row("SELECT why FROM integration_returns WHERE task = ?1 AND commit_sha = ?2", (&t.key, &commit), |r| r.get(0)).optional().map_err(sql)?;
         if returned.is_some() {
-            return Err(format!("{} was returned for a red check: commit a fix first, or ask a human to queue it.", &commit[..9]));
+            return Err(format!("{} was returned for a red check: commit a fix first, or ask a human to queue it.", short(&commit)));
         }
         let me = author(tx, who)?;
         tx.execute("INSERT INTO integration_entries (task, project, commit_sha, result, author, queued_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)
                     ON CONFLICT (task) DO UPDATE SET commit_sha = ?3, result = ?4, author = ?5", (&t.key, &t.project, &commit, &result, &me, at)).map_err(sql)?;
-        let short = &commit[..9];
+        let short = short(&commit);
         if t.status == INTEGRATION {
             ops::log(tx, &t.key, &me, "queue", &format!("Queued {short} for integration into {} in its place.", s.target), None, at)?;
         } else {
@@ -170,7 +176,7 @@ pub fn status(store: &Store, who: &Who, args: &Value) -> Result<String, String> 
         };
         let s = integration::read(tx, &project)?;
         let queue: Vec<Value> = queue_of(tx, &project)?.iter().enumerate()
-            .map(|(i, e)| json!({"task": e.id, "place": ordinal(i + 1), "commit": &e.commit[..9.min(e.commit.len())], "batch": e.batch})).collect();
+            .map(|(i, e)| json!({"task": e.id, "place": ordinal(i + 1), "commit": short(&e.commit), "batch": e.batch})).collect();
         let v = json!({"on": s.on, "target": s.target, "check": s.check, "publish": s.publish, "after": s.after, "batch_size": s.size(), "batch_most": s.batch_most, "queue": queue});
         Ok(v.to_string())
     })

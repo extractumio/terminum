@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 //! The integration queue (terminum-integration.md AC-187), on a real repository in a temporary folder.
 use std::path::PathBuf;
+use std::process::Command;
 
 use super::*;
 use crate::tasks::ops::NewTask;

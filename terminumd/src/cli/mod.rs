@@ -6,7 +6,7 @@
 
 pub(crate) mod agentrefresh;
 pub mod agentsetup;
-mod commands;
+pub(crate) mod commands;
 pub mod hook;
 mod hookargv;
 mod hookopts;

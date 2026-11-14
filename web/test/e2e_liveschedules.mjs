@@ -49,7 +49,7 @@ export async function liveFolded(page, live) {
   check("AC-159 shown whole stays so as the columns are read again", await until(async () => (await page.textContent(`${card(a)} .ctitle`)) === "Folded first, renamed again") && await shown(`${card(a)} .cfoot`));
 
   // AC-138: an agent a column wide, four a row, + Agent in the fifth track
-  const cols = await page.evaluate(() => [...document.querySelectorAll("#board .col")].map((c) => { const r = c.getBoundingClientRect(); return [Math.round(r.x), Math.round(r.width)]; }));
+  const cols = await page.evaluate(() => [...document.querySelectorAll("#board .col:not([hidden])")].map((c) => { const r = c.getBoundingClientRect(); return [Math.round(r.x), Math.round(r.width)]; }));
   const agents = await page.evaluate(() => [...document.querySelectorAll(".agents .agentcard")].map((c) => { const r = c.getBoundingClientRect(); return [Math.round(r.x), Math.round(r.width), Math.round(r.y)]; }));
   const add = await box("#addagent");
   const wide = page.viewportSize().width >= 860;
@@ -197,7 +197,7 @@ export async function liveSchedules(page, live) {
   r = await ring(page, "#newschedule");
   check("AC-163 Tab still reaches + Schedule and rings it", r.focused && r.lit, JSON.stringify(r));
   await page.evaluate(() => document.activeElement?.blur());
-  const cols =await page.evaluate(() => [...document.querySelectorAll("#board .col")].map((c) => Math.round(c.getBoundingClientRect().width)));
+  const cols =await page.evaluate(() => [...document.querySelectorAll("#board .col:not([hidden])")].map((c) => Math.round(c.getBoundingClientRect().width)));
   const w = await page.evaluate((s) => Math.round(document.querySelector(s).getBoundingClientRect().width), sched);
   if (page.viewportSize().width >= 860) check("AC-163 a card a column wide", Math.abs(w - cols[0]) <= 1, `${w} ${cols}`);
   const owl = `#agentbar .agentcard[data-agent="${agent}"]`;

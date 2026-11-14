@@ -21,14 +21,9 @@ pub trait Runner: Send + Sync {
     fn close(&self, handle: &str);
 }
 
-/// A line's words for the shell: each value one single-quoted word.
-pub fn sh_quote(v: &str) -> String {
-    format!("'{}'", v.replace('\'', r"'\''"))
-}
-
 /// `export K='v'; …; line`: the variables before the human's line, which runs as typed.
 pub fn with_vars(line: &str, vars: &[(&str, String)]) -> String {
-    let mut out: String = vars.iter().map(|(k, v)| format!("export {k}={}; ", sh_quote(v))).collect();
+    let mut out: String = vars.iter().map(|(k, v)| format!("export {k}={}; ", crate::cli::commands::quote(v))).collect();
     out.push_str(line);
     out
 }
@@ -91,15 +86,20 @@ impl Runner for Tmux {
         let Ok(pid) = pid.parse::<i32>() else { return };
         // the wrapper runs the line in a process group of its own (set -m): its children's group is the line's
         let groups = child_groups(pid);
-        for sig in [libc::SIGTERM, libc::SIGKILL] {
-            for g in &groups {
-                // SAFETY: a signal to a process group this pane's wrapper made, read just now
-                unsafe { libc::killpg(*g, sig) };
+        let signal = |sig| groups.iter().for_each(|g| {
+            // SAFETY: a signal to a process group this pane's wrapper made, read just now
+            unsafe { libc::killpg(*g, sig) };
+        });
+        signal(libc::SIGTERM);
+        // SIGKILL 10 s later, off the engine's step: its beat goes on meanwhile
+        let late = groups.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_secs(10));
+            for g in late {
+                // SAFETY: as above; a group that ended meanwhile gets ESRCH
+                unsafe { libc::killpg(g, libc::SIGKILL) };
             }
-            if sig == libc::SIGTERM {
-                std::thread::sleep(std::time::Duration::from_secs(10));
-            }
-        }
+        });
     }
 
     fn close(&self, pane: &str) {
@@ -127,7 +127,7 @@ mod tests {
     #[test]
     fn ac190_the_variables_go_before_the_line_quoted_and_the_line_as_typed() {
         let got = with_vars("make smoke && echo \"$TM_INTEGRATION_SHA\"", &[("TM_INTEGRATION_SHA", "3e9b5c2".into()), ("TM_INTEGRATION_TASKS", "API-1 it's".into())]);
-        assert_eq!(got, "export TM_INTEGRATION_SHA='3e9b5c2'; export TM_INTEGRATION_TASKS='API-1 it'\\''s'; make smoke && echo \"$TM_INTEGRATION_SHA\"");
+        assert_eq!(got, "export TM_INTEGRATION_SHA=3e9b5c2; export TM_INTEGRATION_TASKS='API-1 it'\"'\"'s'; make smoke && echo \"$TM_INTEGRATION_SHA\"");
         let o = Command::new("/bin/sh").arg("-c").arg(format!("{}; printf %s \"$TM_INTEGRATION_TASKS\"", with_vars("true", &[("TM_INTEGRATION_TASKS", "API-1 it's".into())]))).output().unwrap();
         assert_eq!(String::from_utf8_lossy(&o.stdout), "API-1 it's", "a value's quote stays");
     }

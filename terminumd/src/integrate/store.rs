@@ -63,7 +63,7 @@ pub fn next_project(tx: &Transaction) -> Result<Option<String>, String> {
 /// A project's queued commits not in a batch, in the queue's order.
 pub fn waiting(tx: &Transaction, project: &str) -> Result<Vec<Queued>, String> {
     ops::rows(tx, "SELECT e.task, t.slug, e.commit_sha FROM integration_entries e JOIN tasks t ON t.id = e.task
-                   WHERE e.project = ?1 AND e.batch IS NULL ORDER BY e.queued_at, t.number", [project],
+                   WHERE e.project = ?1 AND e.batch IS NULL AND t.archived_at IS NULL ORDER BY e.queued_at, t.number", [project],
         |r| Ok(Queued { task: r.get(0)?, id: r.get(1)?, commit: r.get(2)? }))
 }
 
@@ -95,9 +95,7 @@ pub fn give_back(tx: &Transaction, key: &str, words: &str, at: i64) -> Result<()
     ops::comment(tx, DISPATCHER, &t.id, words, at).map(drop)
 }
 
-fn short(sha: &str) -> &str {
-    &sha[..9.min(sha.len())]
-}
+use super::git::short;
 
 /// The returned's words (§9 Notices).
 pub fn conflict_words(q: &Queued, c: &Conflict, s: &Settings, base: &str) -> String {
@@ -160,4 +158,121 @@ pub fn set_pane(tx: &Transaction, id: i64, pane: Option<&str>, at: i64) -> Resul
 pub fn round_ends(tx: &Transaction, b: &Batch, result: &str, why: Option<&str>, at: i64) -> Result<(), String> {
     tx.execute("UPDATE integration_rounds SET result = ?3, why = ?4, ended = ?5, started = coalesce(started, ?6) WHERE batch = ?1 AND round = ?2",
                rusqlite::params![b.id, b.round, result, why, at, b.step_started]).map(drop).map_err(sql)
+}
+
+/// The batch's integration task's ID, while it has one.
+fn task_of(tx: &Transaction, b: &Batch) -> Result<Option<String>, String> {
+    b.task.as_deref().map(|k| slug(tx, k)).transpose()
+}
+
+/// A word on the batch's integration task, while it has one.
+pub fn tell_task(tx: &Transaction, b: &Batch, words: &str, at: i64) -> Result<(), String> {
+    match task_of(tx, b)? {
+        Some(id) => ops::comment(tx, DISPATCHER, &id, words, at).map(drop),
+        None => Ok(()),
+    }
+}
+
+/// The integration task waits for a human, saying why (until its agent comes, AC-194).
+pub fn wait_for_human(tx: &Transaction, b: &Batch, words: &str, at: i64) -> Result<(), String> {
+    let Some(id) = task_of(tx, b)? else { return Ok(()) };
+    ops::questions(tx, DISPATCHER, &id, words, at)?;
+    let t = ops::get(tx, &id)?;
+    ops::place(tx, DISPATCHER, &t, "WAIT FOR HUMAN", at)
+}
+
+/// The integration task DONE with `words`.
+pub fn close_task(tx: &Transaction, b: &Batch, words: &str, at: i64) -> Result<(), String> {
+    let Some(id) = task_of(tx, b)? else { return Ok(()) };
+    ops::comment(tx, DISPATCHER, &id, words, at)?;
+    let t = ops::get(tx, &id)?;
+    if t.status == "DONE" { Ok(()) } else { ops::place(tx, DISPATCHER, &t, "DONE", at) }
+}
+
+/// The batch given up: each task back to its agent, its integration task DONE.
+pub fn give_up(tx: &Transaction, b: &Batch, why: &str, at: i64) -> Result<(), String> {
+    for k in &b.tasks {
+        if let Ok(id) = slug(tx, k) && tx.query_row("SELECT 1 FROM integration_entries WHERE task = ?1", [k], |_| Ok(())).optional().map_err(sql)?.is_some() {
+            give_back(tx, k, &format!("{id} returned: batch {} was given up: {why}. Integrate again when you are told to, or ask.", b.number), at)?;
+        }
+    }
+    set_pane(tx, b.id, None, at)?;
+    set_state(tx, b.id, "given up", Some(why), at)?;
+    close_task(tx, b, &format!("Batch {}: nothing published, {why}.", b.number), at)
+}
+
+/// The batch's tasks still queued in it, as the chooser takes them.
+pub fn queued_of(tx: &Transaction, b: &Batch) -> Result<Vec<Queued>, String> {
+    let mut out = Vec::new();
+    for k in &b.tasks {
+        let commit: Option<String> = tx.query_row("SELECT commit_sha FROM integration_entries WHERE task = ?1", [k], |r| r.get(0)).optional().map_err(sql)?;
+        if let Some(commit) = commit {
+            out.push(Queued { task: k.clone(), id: slug(tx, k)?, commit });
+        }
+    }
+    Ok(out)
+}
+
+/// Back in the queue, for the next batch.
+pub fn unbatch(tx: &Transaction, key: &str) -> Result<(), String> {
+    tx.execute("UPDATE integration_entries SET batch = NULL WHERE task = ?1", [key]).map(drop).map_err(sql)
+}
+
+/// A new round of `chosen` on `target`, in `state`.
+pub fn new_round(tx: &Transaction, b: &Batch, chosen: &[Queued], target: &str, candidate: Option<&str>, state: &str) -> Result<(), String> {
+    let keys = serde_json::to_string(&chosen.iter().map(|q| &q.task).collect::<Vec<_>>()).unwrap_or_default();
+    tx.execute("UPDATE integration_batches SET tasks = ?2, base_sha = ?3, candidate_sha = ?4, round = round + 1, state = ?5, pane = NULL WHERE id = ?1",
+               rusqlite::params![b.id, keys, target, candidate, state]).map_err(sql)?;
+    tx.execute("INSERT INTO integration_rounds (batch, round, tasks, base_sha, candidate_sha, result) VALUES (?1, ?2, ?3, ?4, ?5, 'built')",
+               rusqlite::params![b.id, b.round + 1, keys, target, candidate]).map(drop).map_err(sql)
+}
+
+/// The batch's size: doubled after a green batch up to the project's most, halved after its first red round.
+pub fn resize(tx: &Transaction, project: &str, green: bool) -> Result<(), String> {
+    let set = if green { "size = min(batch_most, size * 2)" } else { "size = max(1, size / 2)" };
+    tx.execute(&format!("UPDATE project_integration SET {set} WHERE project = ?1"), [project]).map(drop).map_err(sql)
+}
+
+/// A red round counted; the first halves the size.
+pub fn red_round(tx: &Transaction, b: &Batch) -> Result<(), String> {
+    if b.red_rounds == 0 {
+        resize(tx, &b.project, false)?;
+    }
+    tx.execute("UPDATE integration_batches SET red_rounds = red_rounds + 1 WHERE id = ?1", [b.id]).map(drop).map_err(sql)
+}
+
+/// Each task of a published batch DONE with its kept result, said where it landed; a task gone meanwhile skipped.
+pub fn done_all(tx: &Transaction, b: &Batch, target: &str, candidate: &str, at: i64) -> Result<Vec<String>, String> {
+    let ids: Vec<String> = b.tasks.iter().filter_map(|k| slug(tx, k).ok()).collect();
+    for (k, id) in b.tasks.iter().filter_map(|k| slug(tx, k).ok().map(|id| (k, id))) {
+        let kept: Option<(String, String)> = tx.query_row("SELECT result, author FROM integration_entries WHERE task = ?1", [k], |r| Ok((r.get(0)?, r.get(1)?))).optional().map_err(sql)?;
+        let Some((result, author)) = kept else { continue };
+        ops::comment(tx, &author, &id, &result, at)?;
+        let mates: Vec<&str> = ids.iter().map(String::as_str).filter(|i| *i != id).collect();
+        let with = if mates.is_empty() { String::new() } else { format!(", with {}", and_list(&mates)) };
+        ops::comment(tx, DISPATCHER, &id, &format!("Integrated into {target} at {} in batch {}{with}.", short(candidate), b.number), at)?;
+        let t = ops::get(tx, &id)?;
+        ops::place(tx, DISPATCHER, &t, "DONE", at)?;
+    }
+    Ok(ids)
+}
+
+/// Task `key` left the queue while in batch `batch`: the batch goes on without it, built anew (AC-187); with none
+/// left, given up. A batch already published or given up keeps its tasks as they are.
+pub fn left(tx: &Transaction, key: &str, batch: i64, at: i64) -> Result<(), String> {
+    let b = by_id(tx, batch)?;
+    if !BUSY.contains(&b.state.as_str()) && !["red", "not published"].contains(&b.state.as_str()) {
+        return Ok(());
+    }
+    let rest: Vec<&String> = b.tasks.iter().filter(|k| *k != key).collect();
+    if rest.is_empty() {
+        set_state(tx, b.id, "given up", Some("its last task left"), at)?;
+        return close_task(tx, &b, &format!("Batch {}: nothing published, its last task left the queue.", b.number), at);
+    }
+    tx.execute("UPDATE integration_batches SET tasks = ?2, state = 'rebuild' WHERE id = ?1", (b.id, serde_json::to_string(&rest).unwrap_or_default())).map_err(sql)?;
+    if let Some(id) = task_of(tx, &b)? && ops::get(tx, &id)?.status != INTEGRATION {
+        let t = ops::get(tx, &id)?;
+        ops::place(tx, DISPATCHER, &t, INTEGRATION, at)?;
+    }
+    Ok(())
 }

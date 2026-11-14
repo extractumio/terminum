@@ -188,7 +188,7 @@ export async function liveBoardSessions(page, opts) {
 export async function liveBoardSessionsPhone(page, { base }) {
   await page.goto(`${base}/kanban/`);
   await page.waitForSelector("#colswitch button");
-  const tabs = await page.evaluate(() => [...document.querySelectorAll("#colswitch button")].map((t) => t.dataset.status));
+  const tabs = await page.evaluate(() => [...document.querySelectorAll("#colswitch button:not([hidden])")].map((t) => t.dataset.status));
   check("AC-135 a phone's switch has the five columns, no Sessions", tabs.join() === "TODO,IN PROGRESS,WAIT FOR HUMAN,FAILED,DONE", tabs.join());
   check("AC-135 the project key stands left of Find", await page.evaluate(() => { const p = document.querySelector("#fproject").getBoundingClientRect(), f = document.querySelector("#filters .search").getBoundingClientRect(); return p.right <= f.left && Math.abs(p.top - f.top) < 8; }));
   const onScreen = () => page.evaluate(() => { const r = document.querySelector("#nav").getBoundingClientRect(); return r.left > -5 && r.right < innerWidth + 5; });

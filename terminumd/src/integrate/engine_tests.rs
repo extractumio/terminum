@@ -2,11 +2,12 @@
 //! The integration queue's steps (terminum-integration.md AC-188…AC-191) on real repositories in a temporary
 //! folder: a bare remote, the project's clone, tasks' commits; the check's window stood in for by `sh`.
 use std::collections::HashMap;
+use std::process::Command;
 use std::sync::Mutex;
 
 use super::*;
 use crate::integrate::runner::with_vars;
-use crate::tasks::ops::{NewTask, INTEGRATION};
+use crate::tasks::ops::{sql, NewTask, INTEGRATION};
 use crate::tasks::store::HUMAN;
 
 /// Runs a line at once with `sh`, or, `hang`, never ends it.
@@ -115,9 +116,11 @@ fn on_origin(w: &World) -> String {
 fn ac191_no_check_a_batch_is_published_its_tasks_done_and_the_folder_follows() {
     let w = world("ie-plain", Settings::default());
     let (a, b) = (queued(&w, 1, "b.txt", "b\n"), queued(&w, 2, "c.txt", "c\n"));
+    let old = sh(&w.origin, &["rev-parse", "main"]);
     go(&w, &Sh::default(), 2);
     assert_eq!((status(&w, &a), status(&w, &b)), ("DONE".into(), "DONE".into()));
-    assert_eq!(on_origin(&w), "a.txt\nb.txt\nc.txt", "pushed, never forced");
+    assert_eq!(on_origin(&w), "a.txt\nb.txt\nc.txt");
+    assert!(Command::new("git").arg("-C").arg(&w.origin).args(["merge-base", "--is-ancestor", &old, "main"]).status().unwrap().success(), "never forced: the old main stays under the new");
     let bt = batch(&w);
     assert_eq!(bt.state, "ended");
     let i = w.s.with(|tx| bs::slug(tx, bt.task.as_deref().unwrap())).unwrap();
@@ -280,4 +283,41 @@ fn ac191_a_refused_push_is_not_published_and_publish_again_tries_once_more() {
     w.s.with(|tx| super::super::keys::publish_again(tx, bt.id, 300)).unwrap();
     go(&w, &Sh::default(), 1);
     assert_eq!(status(&w, &a), "DONE");
+}
+
+#[test]
+fn ac187_a_task_taken_out_of_a_batch_under_check_is_left_out_and_the_rest_checked_again() {
+    let w = world("ie-out", Settings { check: "true".into(), ..Settings::default() });
+    let (a, b) = (queued(&w, 1, "b.txt", "b\n"), queued(&w, 2, "c.txt", "c\n"));
+    let r = Sh { hang: true, ..Default::default() };
+    go(&w, &r, 2);
+    assert!(batch(&w).pane.is_some(), "its check runs");
+    w.s.with(|tx| { let t = ops::get(tx, &a)?; ops::place(tx, HUMAN, &t, "IN PROGRESS", 150) }).unwrap();   // a human's drag, withdraw_integration, a hook
+    assert_eq!(batch(&w).state, "rebuild");
+    go(&w, &Sh::default(), 4);
+    assert_eq!((status(&w, &a), status(&w, &b)), ("IN PROGRESS".into(), "DONE".into()));
+    assert_eq!(on_origin(&w), "a.txt\nc.txt", "what was taken out is never published");
+}
+
+#[test]
+fn ac186_integration_turned_off_mid_batch_publishes_nothing_and_gives_the_tasks_back() {
+    for state_steps in [1, 3] {
+        let w = world(&format!("ie-off-{state_steps}"), Settings { check: "true".into(), ..Settings::default() });
+        let a = queued(&w, 1, "b.txt", "b\n");
+        go(&w, &Sh::default(), state_steps);
+        w.s.with(|tx| { let s = integration::read(tx, "api")?; integration::keep(tx, "api", &Settings { on: false, ..s }) }).unwrap();
+        go(&w, &Sh::default(), 2);
+        assert_eq!((batch(&w).state.as_str(), status(&w, &a).as_str()), ("given up", "IN PROGRESS"), "after {state_steps} steps");
+        assert_eq!(on_origin(&w), "a.txt");
+    }
+}
+
+#[test]
+fn ac194_a_batch_s_integration_task_moves_with_its_batch_only() {
+    let w = world("ie-itask", Settings { check: "true".into(), ..Settings::default() });
+    queued(&w, 1, "b.txt", "b\n");
+    go(&w, &Sh { hang: true, ..Default::default() }, 2);
+    let bt = batch(&w);   // read outside: the store's lock is not taken twice
+    let i = w.s.with(|tx| bs::slug(tx, bt.task.as_deref().unwrap())).unwrap();
+    assert_eq!(w.s.with(|tx| ops::move_to(tx, HUMAN, &i, "DONE", 200)).unwrap_err(), format!("{i} is batch 1's integration task: it ends with its batch."));
 }
