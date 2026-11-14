@@ -145,10 +145,10 @@ export async function panelForeign(context, errors) {
 
 // A focused reproduction on either browser and at either viewport, using the same private harness.
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const browsers = await import(process.env.PLAYWRIGHT_CORE ?? "playwright-core");
   let browser;
   const errors = [];
   try {
+    const browsers = await import(process.env.PLAYWRIGHT_CORE ?? "playwright-core");
     browser = await browsers[process.argv[2] ?? "chromium"].launch(NO_SIGNALS);
     const width = Number(process.argv[3] ?? 1400);
     const context = await browser.newContext({ viewport: { width, height: width === 390 ? 844 : 900 }, hasTouch: width === 390, isMobile: width === 390 });
