@@ -12,10 +12,17 @@ pub const DEFAULT_LANGUAGE: &str = "English";
 /// At most this many characters: a language's name, typed into a pane in RUN's prompt.
 pub const LANGUAGE_MOST: usize = 40;
 
+/// A cause that can be removed, as agents are told it (terminum-dispatcher.md AC-157): its task waits for a human,
+/// never DONE or FAILED. A macro, so the prompts' constants (`concat!`) and the answers (`format!`) share its words.
+macro_rules! removable {
+    () => { "(another task or a prerequisite not done, a check that fails for another task's reason or cannot run here, missing access)" };
+}
+pub(crate) use removable;
+
 /// The result's sections, in order, each with what it holds; the finishing tool's description names them
 /// too (cli/mcp_tasks.rs).
 pub const SECTIONS: [(&str, &str); 9] = [
-    ("Outcome", "done, partly done or not done; where the work stands (merged, committed on a branch, nothing committed)"),
+    ("Outcome", "Done, first and in English: work not done takes no result, a human is asked or it is FAILED; where the work stands (merged, committed on a branch)"),
     ("Done", "each change, why, and where (files, commits, tasks by ID); each choice the task left open, and why"),
     ("Checked", "how each was verified, on what, with what result; what was not verified, and why"),
     ("Not done", "what of the task is left or dropped, and why; what is left names its task's ID"),
@@ -119,6 +126,25 @@ pub fn untracked_words(names: &[&str]) -> String {
 /// turn goes on to write it again.
 pub fn missing_words(id: &str, status: &str, names: &[&str]) -> String {
     format!("Not a result: it lacks {}. Your text is kept as a comment and {id} stays {status}. Write each section as a line \"Name:\" or a heading, its name as given (\"None\" when empty), then call it again.", names.join(", "))
+}
+
+/// Whether a close-out's Outcome says its work is not done, by its first words in English as the form asks: such a
+/// result is no DONE (AC-123).
+pub fn not_done(result: &str) -> bool {
+    let mut lines = result.lines();
+    let Some(rest) = lines.by_ref().find_map(|l| after_name(head(l), "Outcome")) else {
+        return false;
+    };
+    // its words, on its heading's line or the next one: read as text, since "Not done" is also a section's name
+    let words = if rest.trim().is_empty() { lines.find(|l| !l.trim().is_empty()).unwrap_or_default() } else { rest };
+    let o = head(words).to_ascii_lowercase();
+    o.starts_with("partly") || o.starts_with("not done")
+}
+
+/// What finishing answers on such a result: its words stay a comment, the task where it was, and the agent's turn goes
+/// on to ask or fail it.
+pub fn not_done_words(id: &str, status: &str) -> String {
+    format!("Not finished: its Outcome says the work is not done, and a result is for done work. Your text is kept as a comment and {id} stays {status}; give its result again only once its work is done. If a cause that can be removed {} holds it, ask by execute_tool(\"ask_human\", {{id, questions}}): it waits for a human. If it cannot be done at all, move it to FAILED by execute_tool(\"move_task\", {{id, to}}) with a comment saying why.", removable!())
 }
 
 /// The language a project's agents write in on the board.
@@ -230,6 +256,16 @@ mod tests {
         assert!(words("English", "F", true).starts_with("Before each F, close that task out") && words("English", "F", true).contains("that task's scope"));
         assert!(w.contains("The session closes minutes after the result: work left that is in no task is lost then.") && w.contains("(what is left of the task's own work, "), "nothing is left in the session alone: {w}");
         assert!(w.contains("\nNot done: what of the task is left or dropped, and why; what is left names its task's ID.\n") && w.contains("each one a human would plan names its task's ID."));
+    }
+
+    #[test]
+    fn ac123_an_outcome_of_work_not_done_is_no_done() {
+        for r in ["Outcome: Partly done. Committed on fix/x.\nDone: a", "## Outcome\n**Not done**: blocked by TERM-9", "outcome: not done", "Outcome:\nNot done: blocked by TERM-218"] {
+            assert!(not_done(r), "{r:?}");
+        }
+        for r in ["Outcome: Done, merged.\nNot done: None", "Outcome: done; nothing was not done", "Done: x"] {
+            assert!(!not_done(r), "{r:?}");
+        }
     }
 
     #[test]

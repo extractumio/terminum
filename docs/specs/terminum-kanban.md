@@ -636,7 +636,7 @@ Scenario: AC-116 failure — not kept
 ```gherkin
 Scenario: AC-117 happy path — banner and count
   When API-12 moves to WAIT FOR HUMAN or FAILED by an agent or Dispatcher
-  Then a line as terminum-agents.md AC-39's reminder says "API-12 waits for you" or "API-12 failed: <reason>" and opens its window, on both pages
+  Then a line as terminum-agents.md AC-39's reminder says "API-12 waits for you" or "API-12 failed: <reason>" and opens its window, the reason being what was said with its move to FAILED, else who moved it, never what an older move said, on both pages
   And Kanban among the sections counts those tasks
 
 Scenario: AC-117 edge — closed and seen
