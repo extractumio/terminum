@@ -778,6 +778,11 @@ Scenario: AC-133 edge — answers out of order, a drag under a change
   Then the card is the same, and the press lands
   When the board's connection to terminumd opens, or opens again
   Then the board reads its columns again: a change made before it opened shows; signed out, the board goes to sign in (AC-09)
+  When two fields of a task's window are changed quickly, terminumd slow to answer the first
+  Then the second goes only once the first is answered: the last choice made stands, and the window shows it
+  And a choice terminumd refuses goes back to what stands in its field, even while another edit is open
+  When a text or a comment is saved or cancelled while another edit is open in the window
+  Then nothing is drawn over that edit; the closed editor's keys go off until the window is drawn anew
 
 Scenario: AC-133 edge — closing while a task is being read
   Given a task's window open, with another read to open a task still waiting
@@ -1157,7 +1162,6 @@ Comments and history are one table, `events`: a window lists them in one order. 
 |---|---|---|
 | AC-113, AC-115 | A refusal names a session by its pane (Session %7), not its title. | `terminumd/src/tasks/ops.rs` |
 | AC-119 | The session list says nothing of a store that cannot be read; the board's banner does. | `web/static/kanban.js` |
-| AC-133 | A task window's fields go as separate PATCHes, unordered: two choices made quickly may land in the other order, so the first may stand. Only its text has a revision (`text_rev`). | `web/static/kanbanwin.js` |
 | AC-154 | An agent may take a human's free task (take_task) and finish it (finish_task): DONE, then archived after 2 days (AC-118), with no human deciding. | `terminumd/src/tasks/tools.rs` |
 
 ## 8. Recommendation and ownership
@@ -1258,7 +1262,7 @@ Depends on: nothing more.
 - [x] AC-118 — `cargo test tasks::archiving`, `web/test/e2e_liveboardtasks.mjs`
 - [x] AC-119 — `cargo test tasks::store`
 - [x] AC-136 — `cargo test tasks::tell`, `web/test/e2e_liveboardedge.mjs`, `web/test/cardstate.test.mjs` (its background work)
-- [x] AC-133 — `web/test/e2e_taskclose.mjs` (pending reads after ×, Esc and Back; a deliberate reopen; a Save press under a refresh), `web/test/e2e_liveclose.mjs` (a real subtask read held while its parent's window closes, a real change under a Save press; `node web/test/e2e_live.mjs boardtasks`), `web/test/e2e_liveboardedge.mjs`, `web/test/e2e_liveboard.mjs`, `web/test/e2e_liveboardbusy.mjs` (a file that lands late; alone: `node web/test/e2e_live.mjs boardpool`) (`node web/test/e2e_live.mjs board` also measures §9's budgets on AS-112's tasks: `liveBoardScale`)
+- [x] AC-133 — `web/test/e2e_taskclose.mjs` (pending reads after ×, Esc and Back; a deliberate reopen; a Save press under a refresh), `web/test/e2e_liveclose.mjs` (a real subtask read held while its parent's window closes, a real change under a Save press, two quick field changes with the first answer held, a refused one going back, a text saved under a comment's edit; `node web/test/e2e_live.mjs boardtasks`), `web/test/e2e_liveboardedge.mjs`, `web/test/e2e_liveboard.mjs`, `web/test/e2e_liveboardbusy.mjs` (a file that lands late; alone: `node web/test/e2e_live.mjs boardpool`) (`node web/test/e2e_live.mjs board` also measures §9's budgets on AS-112's tasks: `liveBoardScale`)
 - [x] AC-134 — `web/test/e2e_liveboardsession.mjs`, `cargo test page::plans`
 - [x] AC-139 — `cargo test page::projects`, `cargo test tasks::folder`, `web/test/e2e_liveboardagents.mjs` (a 200-character folder, the picker up, in, Cancel and Choose)
 - [x] AC-135 — `web/test/e2e_liveboardsession.mjs`, `web/test/e2e_liveboard.mjs`
