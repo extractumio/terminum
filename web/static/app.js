@@ -487,7 +487,7 @@ function showKeys(on) {
   view.keepBottom(syncControls);
 }
 $("keysbtn").onclick = () => showKeys($("hotkeys").hidden);
-const keyboards = oneKeyboard({ kbd: $("kbd"), panel: $("hotkeys"), show: showKeys });   // the on-screen keyboard or the hot keys
+const keyboards = oneKeyboard({ kbd: $("kbd"), panel: $("hotkeys"), show: showKeys, button: $("kbdbtn") });   // the on-screen keyboard or the hot keys
 $("keysfab").onclick = () => keyboards.toggle();
 $("keysfab").onmousedown = (e) => e.preventDefault();      // the iOS keyboard stays up
 document.addEventListener("keydown", (e) => { if (e.key === "Escape") { menu.close(); closeDrawer(); } });

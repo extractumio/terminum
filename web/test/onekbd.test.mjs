@@ -9,12 +9,15 @@ function page({ height = 800, width = 390 } = {}) {
   const listeners = [];
   const view = { height, addEventListener: (_, f) => listeners.push(f) };
   const win = { innerWidth: width };
-  const state = { focused: false, blurred: 0, panel: { hidden: true } };
-  const kbd = { blur: () => { state.blurred++; state.focused = false; view.height = 800; } };
+  const state = { focused: false, blurred: 0, panel: { hidden: true }, hard: false, lit: null };
+  const on = {};
+  const kbd = { blur: () => { state.blurred++; state.focused = false; view.height = 800; on.blur?.(); }, addEventListener: (t, f) => { on[t] = f; } };
   const show = (on) => { state.panel.hidden = !on; };
-  const k = oneKeyboard({ kbd, panel: state.panel, show, view, win, focused: () => state.focused });
+  const button = { setAttribute: (_, v) => { state.lit = v; } };
+  const k = oneKeyboard({ kbd, panel: state.panel, show, view, win, button, focused: () => state.focused, mark: (h) => { state.hard = h; } });
   const resize = (h) => { view.height = h; for (const f of listeners) f(); };
-  return { k, state, resize, win };
+  const focus = () => { state.focused = true; on.focus(); };
+  return { k, state, resize, win, focus, key: () => on.keydown(), blur: () => { state.focused = false; on.blur(); } };
 }
 
 test("the on-screen keyboard coming up closes the panel", () => {
@@ -55,4 +58,36 @@ test("turning the device sets a new full height: a shorter landscape view is no 
   resize(360);
   k.toggle();
   assert.deepEqual([state.blurred, state.panel.hidden], [0, false]);
+});
+
+test("the keyboard's button is lit only while the on-screen keyboard is up", () => {
+  const { state, resize, focus, blur } = page();
+  focus();
+  assert.equal(state.lit, "false", "the field has the keys, no keyboard yet");
+  resize(470);
+  assert.equal(state.lit, "true");
+  blur(); resize(800);
+  assert.equal(state.lit, "false");
+});
+
+test("a key with no on-screen keyboard up is a hardware keyboard's, until the keys go or one comes up (AC-18)", () => {
+  const { state, resize, focus, key, blur } = page({ height: 1000, width: 1024 });
+  focus();
+  resize(940);                          // the shortcut bar only
+  key();
+  assert.deepEqual([state.hard, state.lit], [true, "false"]);
+  blur();
+  assert.equal(state.hard, false, "the field let the keys go");
+  focus(); key();
+  assert.equal(state.hard, true);
+  resize(600);                          // an on-screen keyboard after all (the hardware one went)
+  assert.deepEqual([state.hard, state.lit], [false, "true"]);
+});
+
+test("a key of the on-screen keyboard is no hardware keyboard's", () => {
+  const { state, resize, focus, key } = page();
+  focus();
+  resize(470);
+  key();
+  assert.equal(state.hard, false);
 });

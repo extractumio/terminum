@@ -76,10 +76,11 @@ import { webNewTask } from "./e2e_newtask.mjs";
 import { webQueueOrder } from "./e2e_queueorder.mjs";
 import { webTaskLines } from "./e2e_tasklines.mjs";
 import { webAskFold } from "./e2e_askfold.mjs";
+import { webTouchKeys } from "./e2e_touchkeys.mjs";
 import { webDraftFiles } from "./e2e_draftfiles.mjs";
 
 const CHECKS = { webRequestOwners, webRequests, webTerm, webApp, webMove, webTrace, webCtxTrace, webClip, webWidgets, webWidgetFolds, webWidgetTables, webWidgetPng, webWidgetSteady, webTableForms, webDialogCenter, webMarks, webProgCopy, webTouch, webEdit, webBoxNav,
-  webSignin, webTmux, webScreen, webLook, webMotion, webCodex, webSplit, webSent, webIdeKeys, webScreenFolds, webProjects, webListDrag, webPhoneRow, webRows, webResize, webOpenEnd, webSwitch, webDock, webSheets, webFold, webHeader, webNotes, webFoot, webMarksScope, webListOrder, webPlans, webLastLines, webPlansFind, webPathFold, webMarkNav, webPaneWin, webReview, webTips, webHold, webListPlace, webIsolation, webSections, webDialogSize, webTaskWin, webTaskRun, webTaskClose, webExpand, webKanbanSort, webSwitches, webNewTask, webQueueOrder, webTaskLines, webAskFold, webDraftFiles };
+  webSignin, webTmux, webScreen, webLook, webMotion, webCodex, webSplit, webSent, webIdeKeys, webScreenFolds, webProjects, webListDrag, webPhoneRow, webRows, webResize, webOpenEnd, webSwitch, webDock, webSheets, webFold, webHeader, webNotes, webFoot, webMarksScope, webListOrder, webPlans, webLastLines, webPlansFind, webPathFold, webMarkNav, webPaneWin, webReview, webTips, webHold, webListPlace, webIsolation, webSections, webDialogSize, webTaskWin, webTaskRun, webTaskClose, webExpand, webKanbanSort, webSwitches, webNewTask, webQueueOrder, webTaskLines, webAskFold, webTouchKeys, webDraftFiles };
 const BROWSERS = ["chromium", "webkit"], KNOWN = [...BROWSERS, "firefox"];
 // Checks a user saw fail in Firefox and that need no touch screen (Firefox has no isMobile).
 const FIREFOX_TOO = ["webProgCopy"];
