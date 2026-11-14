@@ -69,7 +69,7 @@ Open questions: none.
 | AC-145 | [MUST / P0] | What an agent leaves undone reaches its project's board by `create_task`: only what must be done, its title saying Bug:, Feat: or Debt:, with its severity, a bug's never below P2, its text in the sections of its project's template (a setting of the project; by default problem or goal, context, expected result, prerequisites). |
 | AC-154 | [SHOULD / P1] | An agent grooms its project's board with `update_task`: the severity and parent of any task it reaches, a human's with its reason; the title and text of an agents' task; such a task archived with its reason; an agent's change of title or severity never sets a bug below P2. |
 | AC-116 | [SHOULD / P1] | A bookmark or reminder becomes a TODO task in one small window (severity, project, session), its text linking its session, the board not opened; the record goes once the task is kept. |
-| AC-117 | [MUST / P0] | WAIT FOR HUMAN and FAILED raise the banner of waiting agents and a count on the Kanban tab. |
+| AC-117 | [MUST / P0] | WAIT FOR HUMAN and FAILED raise the banner of waiting agents and a count on the Kanban tab, the same in every browser: terminumd keeps which lines a human closed or saw. |
 | AC-118 | [SHOULD / P1] | Archive hides a task from the board and can return it; DONE archives itself after 2 days; each project has an Archived list. |
 | AC-119 | [MUST / P0] | One SQLite file holds tasks and projects; writes are atomic; authors and roles name users, so a central store can follow; an unreadable file is set aside and said, never overwritten. |
 | AC-136 | [MUST / P0] | A card says what became of its session's agent: working, waiting, failed with why, stopped with its task open, gone; the task's history says so once; nothing moves by it unless Dispatcher started the session. |
@@ -333,6 +333,7 @@ Scenario: AC-110 happy path — delete
   Then it asks "Delete the project Billing? Its 2 sessions and 7 tasks move to Default; nothing is closed." and, confirmed, does that in one transaction, each task's history saying so
   And its sessions stand in their tmux groups again
   And Close Project… closes its sessions and leaves the project and tasks
+  And deleting a project with schedules follows terminum-schedules.md AC-160
 
 Scenario: AC-110 edge — first start
   Given a projects.json and no store
@@ -634,6 +635,17 @@ Scenario: AC-117 edge — closed and seen
   Then the line goes; the count falls when it leaves those columns
   When the human made the move
   Then no line comes
+  When API-12 moves into WAIT FOR HUMAN or FAILED again, even with the same words
+  Then its line comes again
+  And a failed line's reason is the one its move gave, never a later note of a human's
+
+Scenario: AC-117 edge — every browser
+  Given the lines of API-12 and API-13 on the Mac's Chrome, the Mac's Safari and the iPhone
+  When the user closes API-12's line or opens API-12's window in one of them
+  Then terminumd keeps it and API-12's line goes in all of them at once, on the session page and the board, and stays gone after a reload
+  And a close of a line whose words changed meanwhile leaves the newer line up
+  When terminumd refuses the close
+  Then the line stays, and the refusal is said where it was pressed
 
 Scenario: AC-117 edge — a filter
   Then the count is of every project, whatever the board's filter
@@ -1190,13 +1202,14 @@ Sample event: `{"task":"API-12","at":1792003600,"author":"Dispatcher","kind":"co
 |---|---|
 | `GET /`, `/sessions/`, `/kanban/`, `/kanban/API-12` | redirect keeping the query (`?trace=1`); the session page; the board |
 | `GET /api/tasks?project=&severity=&owner=&status=&q=&id=&made_in=&sort=&after=&limit=&counts=1` | a page of 200 at most; `sort=recent` orders by updated time descending, `sort=priority` by severity then updated time descending, both breaking ties by task number descending; omitted, severity then saved rank for tool callers; archived tasks keep archive-time order; each card with its subtasks' `boxes` (AC-112); with `counts=1`, each column's count under the same filters; with `id=API-12`, whether they show that task; with `made_in=<key>`, the tasks made in that pane, subtasks too (AC-150) |
+| `POST /api/tasks/API-12/seen {key?}` | the human closed API-12's line of that key, as `taskmarks` gave it (its move and words), or, with none, saw the line it has now: its window opened (AC-117); every page hears `taskmarks` when that changed |
 | `POST /api/tasks`, `PATCH /api/tasks/API-12`, `POST /api/tasks/API-12/comments`, `/files` | changes; the answer is the new state or `{"error": "<message>"}`; `PATCH {parent: "API-3" \| null}` puts it under a task or takes it out (AC-112); `POST {made_in, record}` counts it as made in that pane and lets the record go, 409 when it went already (AC-116) |
 | `PATCH /api/task-projects/<id> {prefix?, template?}` | a project's ID letters (AC-148) and its template (AC-145), besides its name and folder |
 | `GET /api/task-files/<id>` | header sign-in only, never an address (terminum.md AC-09): the page fetches and shows a blob, as `web/static/shown.js` does; `Content-Disposition: attachment` and `X-Content-Type-Options: nosniff`; inline only for PNG, JPEG, GIF, WebP |
 
 `PATCH` takes `text_rev`, as a task's window gave it, for the text the human began from: another now, it answers 412 and changes nothing (AC-133). A `session` that is not in the list is refused.
 
-Pages hear over the page's WebSocket: `taskchange {id, history?}` (`""` for several: a server's links), upon which a board reads its columns and an open window of that task reads it, and with `history: true`, a line of a task's history that changes no card, only the window reads; `taskmarks {marks, counts}` when the open tasks by session or the tasks by project change, for the session list; the `layout` it hears anyway gives a board its cards' session rows and its Sessions column, a row's plan carrying `doing`; `/sessions/?open=<key>` shows that session once and cleans its address (AC-134); `board.project` in the browser's storage keeps the project chosen (AC-135); `board.sort.<project>` keeps the columns' display sorts (`*` for All projects and multiple projects, AC-105).
+Pages hear over the page's WebSocket: `taskchange {id, history?}` (`""` for several: a server's links), upon which a board reads its columns and an open window of that task reads it, and with `history: true`, a line of a task's history that changes no card, only the window reads; `taskmarks {marks, counts, need, lines}` when the open tasks by session, the tasks by project or the tasks that need a human change, for the session list and both pages' lines (AC-117: `lines` only those no human closed or saw); the `layout` it hears anyway gives a board its cards' session rows and its Sessions column, a row's plan carrying `doing`; `/sessions/?open=<key>` shows that session once and cleans its address (AC-134); `board.project` in the browser's storage keeps the project chosen (AC-135); `board.sort.<project>` keeps the columns' display sorts (`*` for All projects and multiple projects, AC-105).
 
 **MCP tools** added to `terminum mcp`'s catalog: `list_tasks`, `get_task`, `create_task`, `update_task` (AC-154), `take_task`, `move_task`, `ask_human` (terminum-dispatcher.md AC-157), `add_comment`, `attach_file`, `get_file`, `finish_task`; none is listed: each is found with `search_tools` and run with `execute_tool`, and terminum's own words write the call, `execute_tool("finish_task", {id, result})` (terminum-agents.md AC-155). `add_notes_for_user`, `update_notes_for_user`, `get_notes_for_user` and `delete_notes_for_user` go (AC-98).
 
@@ -1236,7 +1249,7 @@ Depends on: nothing more.
 - [x] AC-113 — `cargo test tasks::ops` (a task whose session could not follow goes back), `web/test/e2e_liveboard.mjs`
 - [x] AC-115 — `cargo test tasks::tools`, `cargo test cli::mcp`, `web/test/e2e_livenotes.mjs`
 - [x] AC-116 — `web/test/e2e_livenotes.mjs` (Convert to task from the list and the bar, Cancel, a refusal, Create, pressed twice, two tabs at once, the link to its line; `node web/test/e2e_live.mjs notes`)
-- [x] AC-117 — `cargo test tasks::marks`, `web/test/e2e_livedispatcher.mjs`
+- [x] AC-117 — `cargo test tasks::marks`, `web/test/e2e_livedispatcher.mjs`, `web/test/e2e_tasklines.mjs`
 - [x] AC-118 — `cargo test tasks::archiving`, `web/test/e2e_liveboardtasks.mjs`
 - [x] AC-119 — `cargo test tasks::store`
 - [x] AC-136 — `cargo test tasks::tell`, `web/test/e2e_liveboardedge.mjs`, `web/test/cardstate.test.mjs` (its background work)

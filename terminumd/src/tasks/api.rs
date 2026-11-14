@@ -38,6 +38,7 @@ pub fn routes() -> Router<Shared> {
         .route("/api/tasks/{id}/comments/{event}", patch(edit_comment).delete(drop_comment))
         .route("/api/tasks/{id}/purge", post(purge))
         .route("/api/tasks/{id}/archive", post(archive))
+        .route("/api/tasks/{id}/seen", post(seen))
         .merge(super::fileapi::routes())
 }
 
@@ -455,6 +456,23 @@ async fn archive(State(app): State<Shared>, Path(id): Path<String>, Json(body): 
         ops::archive(tx, HUMAN, &wanted, on, ops::now())
     }).await;
     told_answer(&app, &id, done.map(|()| json!({"ok": true})))
+}
+
+/// The longest key a close names: a move and a line's words.
+const KEY_MOST: usize = 64 * 1024;
+
+/// `{key?}`: the human closed that line of the task, or, with none, saw the line it has now: kept for every browser,
+/// every page hears it (AC-117).
+async fn seen(State(app): State<Shared>, Path(id): Path<String>, Json(body): Json<Value>) -> Response {
+    let key = text(&body, "key");
+    if key.as_ref().is_some_and(|k| k.is_empty() || k.len() > KEY_MOST) {
+        return refuse(StatusCode::BAD_REQUEST, "Name the line by its key, as terminumd gave it, or none for the line it has now.");
+    }
+    let done = store(&app, move |tx| super::marks::keep_seen(tx, &id, key.as_deref())).await;
+    if done == Ok(true) {
+        super::marks::read_later(&app);
+    }
+    answer(done.map(|_| json!({"ok": true})))
 }
 
 async fn purge(State(app): State<Shared>, Path(id): Path<String>) -> Response {

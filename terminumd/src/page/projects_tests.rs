@@ -140,6 +140,102 @@ fn ac110_a_project_is_not_lost_when_the_store_refuses_its_deletion() {
     assert!(ps.of(A).is_some(), "nothing changed");
 }
 
+/// A schedule in the project's own pool (AC-160); the same agent has room for several.
+fn schedule_in(store: &Store, project: &str, paused: bool) -> String {
+    use crate::tasks::{ops::sql, schedules, store::HUMAN};
+    store.with(|tx| {
+        let agent = format!("agent-{project}");
+        tx.execute("INSERT OR IGNORE INTO agents (id, project, name, kind, command, color, at_once) VALUES (?1, ?2, 'Reviewer', 'claude', 'claude', 0, 5)", (&agent, project)).map_err(sql)?;
+        let given = schedules::Given::of(tx, &json!({"project": project, "title": "Review", "body": "Review dependencies.", "agent": agent, "cron": "0 3 * * *", "budget_minutes": 30, "paused": paused}), 1_794_256_500)?;
+        schedules::add(tx, HUMAN, &given, 1_794_256_500).map(|(id, _)| id)
+    }).unwrap()
+}
+
+#[test]
+fn ac160_project_deletion_names_existing_schedules_and_changes_nothing() {
+    use crate::tasks::{agents, ops::sql, schedules};
+    for paused in [false, true] {
+        let (store, json) = stored(&format!("projects-schedule-{paused}"));
+        let mut ps = reloaded(&store, &json);
+        let project = ps.add_new(A, Some("Billing"), None, "/srv/billing".into()).unwrap();
+        let other = ps.create("Other", None, "/srv/other".into()).unwrap();
+        task_in(&store, &project, 1);
+        let ids = [schedule_in(&store, &project, paused), schedule_in(&store, &project, paused)];
+        schedule_in(&store, &other, false);
+        let before = ps.list().to_vec();
+        let schedules_before = store.with(|tx| Ok(serde_json::to_value(schedules::all(tx)?).unwrap())).unwrap();
+        assert_eq!(ps.delete(&project).unwrap_err(), "Billing has schedules SCH-1, SCH-2: move or delete them first.");
+        assert_eq!(ps.list(), before, "memory keeps its project and session");
+        assert_eq!(reloaded(&store, &json).list(), before, "the store keeps them too");
+        assert_eq!(project_of_task(&store, 1), project);
+        store.with(|tx| {
+            assert_eq!(serde_json::to_value(schedules::all(tx)?).unwrap(), schedules_before);
+            for id in &ids {
+                let s = schedules::by_id(tx, id)?;
+                assert_eq!(agents::chosen(tx, &s.agent, &project)?.project, project);
+            }
+            assert_eq!(tx.query_row("SELECT count(*) FROM events WHERE task = 't1'", [], |r| r.get::<_, i64>(0)).map_err(sql)?, 0, "no move logged");
+            Ok(())
+        }).unwrap();
+    }
+}
+
+#[test]
+fn ac160_project_deletion_keeps_deleted_schedules_and_their_firings_in_default() {
+    use crate::tasks::{agents, ops::sql, schedules};
+    let (store, json) = stored("projects-schedule-deleted");
+    let mut ps = reloaded(&store, &json);
+    let project = ps.add_new(A, Some("Billing"), None, "/srv/billing".into()).unwrap();
+    let other = ps.create("Other", None, "/srv/other".into()).unwrap();
+    task_in(&store, &project, 1);
+    let id = schedule_in(&store, &project, false);
+    let untouched = schedule_in(&store, &other, false);
+    store.with(|tx| {
+        schedules::remove(tx, &id, 1_794_256_501)?;
+        tx.execute("INSERT INTO schedule_fires (schedule, due_at, at, task, state, prompt) VALUES (?1, 1, 1, 't1', 'started', 'Kept prompt')", [&id]).map_err(sql)?;
+        Ok(())
+    }).unwrap();
+    ps.delete(&project).unwrap();
+    assert!(ps.of(A).is_none());
+    assert!(reloaded(&store, &json).by_id(&project).is_none());
+    assert_eq!(project_of_task(&store, 1), "default");
+    store.with(|tx| {
+        let kept: (String, String, String, String, i64, i64) = tx.query_row("SELECT project, 'SCH-' || number, title, body, deleted_at, updated_at FROM schedules WHERE id = ?1", [&id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?))).map_err(sql)?;
+        assert_eq!(kept, ("default".into(), "SCH-1".into(), "Review".into(), "Review dependencies.".into(), 1_794_256_501, 1_794_256_501));
+        assert_eq!(agents::chosen(tx, &format!("agent-{project}"), "default")?.project, "default");
+        assert_eq!(schedules::by_id(tx, &id).unwrap_err(), "That schedule is gone.", "never revived");
+        assert_eq!(schedules::by_id(tx, &untouched)?.project, other);
+        let fire: (String, String) = tx.query_row("SELECT task, prompt FROM schedule_fires WHERE schedule = ?1", [&id], |r| Ok((r.get(0)?, r.get(1)?))).map_err(sql)?;
+        assert_eq!(fire, ("t1".into(), "Kept prompt".into()));
+        assert_eq!(tx.query_row("SELECT count(*) FROM pragma_foreign_key_check", [], |r| r.get::<_, i64>(0)).map_err(sql)?, 0);
+        Ok(())
+    }).unwrap();
+}
+
+#[test]
+fn ac160_deleted_schedules_stay_in_the_project_if_deletion_rolls_back() {
+    use crate::tasks::{ops::sql, schedules};
+    let (store, json) = stored("projects-schedule-rollback");
+    let mut ps = reloaded(&store, &json);
+    let project = ps.add_new(A, Some("Billing"), None, "/srv/billing".into()).unwrap();
+    task_in(&store, &project, 1);
+    let id = schedule_in(&store, &project, false);
+    store.with(|tx| {
+        schedules::remove(tx, &id, 1_794_256_501)?;
+        tx.execute_batch("CREATE TRIGGER no BEFORE DELETE ON projects BEGIN SELECT RAISE(ABORT, 'refused'); END;").map_err(sql)
+    }).unwrap();
+    assert!(ps.delete(&project).unwrap_err().contains("refused"));
+    assert_eq!(ps.of(A).unwrap().id, project);
+    assert!(reloaded(&store, &json).by_id(&project).is_some());
+    assert_eq!(project_of_task(&store, 1), project);
+    store.with(|tx| {
+        let kept: (String, String) = tx.query_row("SELECT s.project, a.project FROM schedules s JOIN agents a ON a.id = s.agent_id WHERE s.id = ?1", [&id], |r| Ok((r.get(0)?, r.get(1)?))).map_err(sql)?;
+        assert_eq!(kept, (project.clone(), project));
+        assert_eq!(tx.query_row("SELECT count(*) FROM events WHERE task = 't1'", [], |r| r.get::<_, i64>(0)).map_err(sql)?, 0);
+        Ok(())
+    }).unwrap();
+}
+
 #[test]
 fn ac119_projects_are_never_written_over_a_store_that_could_not_be_read() {
     let (store, json, mut failed) = unread("projects-failed");
