@@ -3,7 +3,7 @@
 // text, in TODO unless said. A draft survives closing and a reload on this browser.
 import { askConfirm, oneAtATime } from "./dialogs.js";
 import { el, iconButton, read, write } from "./listparts.js";
-import { $, AT_LIMIT, agentsOf, api, fileMarkdown, fillAgents, fillSelect, onFiles, onSend, onlyProject, projectOptions, sessionOptions, showError, upload, withFileLink, writePreview } from "./kanbanutil.js";
+import { $, AT_LIMIT, agentsOf, api, fileMarkdown, FILE_GONE, fillAgents, fillSelect, goneFiles, goneSaid, onFiles, onSend, onlyProject, projectOptions, sessionOptions, showError, upload, withFileLink, withoutFileLinks, writePreview } from "./kanbanutil.js";
 
 const DRAFT = "tm.taskdraft";
 
@@ -31,14 +31,28 @@ export function taskForm({ getMeta, getFilter, onMade, onRun, slots }) {
   function showFiles() {
     $("newfiles").replaceChildren(...files.map((f) => {
       const li = el("li", null, f.name);
-      li.append(iconButton("icon", "x", `Remove ${f.name}`, "Remove this file", () => {
-        files = files.filter((o) => o.id !== f.id);
-        $("newtext").value = $("newtext").value.replaceAll(fileMarkdown(f), "");
-        showFiles();
-        keep();
-      }));
+      li.append(iconButton("icon", "x", `Remove ${f.name}`, "Remove this file", () => { forget([f]); keep(); }));
       return li;
     }));
+  }
+
+  /** Files out of the draft, their links too. */
+  function forget(gone) {
+    files = files.filter((o) => !gone.includes(o));
+    $("newtext").value = withoutFileLinks($("newtext").value, gone.map((f) => f.id)).text;
+    showFiles();
+  }
+
+  /** Its files terminumd let go leave the draft shown, and the window names them; Create keeps the rest (AC-106).
+   *  Whether any went. */
+  async function prune() {
+    const key = draftKey(), gone = await goneFiles(files.map((f) => f.id));
+    const lost = files.filter((f) => gone.includes(f.id));
+    if (!lost.length || key !== draftKey() || !box.open) return false;
+    forget(lost);
+    keep();
+    error(goneSaid(lost.map((f) => f.name)));
+    return true;
   }
 
   function insert(text) {
@@ -109,6 +123,7 @@ export function taskForm({ getMeta, getFilter, onMade, onRun, slots }) {
     error(unchosen ? "Choose the project to make it in." : null);
     box.showModal();
     $("newtitle").focus();
+    prune();
   }
 
   /** Made once: while terminumd answers, a second press, Enter or ⌘Enter sends nothing, Esc waits and the text
@@ -120,7 +135,7 @@ export function taskForm({ getMeta, getFilter, onMade, onRun, slots }) {
       end();
       box.close();
       if (run) onRun(made, agent); else onMade(made);
-    } catch (e) { error(e.message); $("newtitle").focus(); }
+    } catch (e) { if (e.message !== FILE_GONE || !await prune()) error(e.message); $("newtitle").focus(); }   // a file let go meanwhile: named
   });
   function create(run = false) {
     if ($("newcreate").disabled) return;           // a file on its way, or the task being made

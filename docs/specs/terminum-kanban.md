@@ -54,7 +54,7 @@ Open questions: none.
 
 | ID | Priority | Case |
 |---|---|---|
-| AC-105 | [MUST / P0] | `/kanban/` shows five columns of task cards, each sorted by recent updates or by priority then recent updates, chosen by two icons before its count and remembered per project in this browser; `/sessions/` is the session list, `/` leads to it; a phone shows one column at a time. |
+| AC-105 | [MUST / P0] | `/kanban/` shows five columns of task cards (a sixth, INTEGRATION, where a shown project's integration is on: `terminum-integration.md` AC-193), each sorted by recent updates or by priority then recent updates, chosen by two icons before its count and remembered per project in this browser; `/sessions/` is the session list, `/` leads to it; a phone shows one column at a time. |
 | AC-159 | [MUST / P0] | TODO and DONE show each card as one line, its ID, severity, title and its state's dot; a press shows one whole, folding the one before; the other columns show cards whole. |
 | AC-106 | [MUST / P0] | A window makes a task (title, Markdown with preview, files dropped or pasted, project, severity, owner, parent), in TODO unless said; a draft survives closing; a selection in a terminal can start one. |
 | AC-107 | [MUST / P0] | A human moves a task only by running it (terminum-dispatcher.md AC-138); agents and Dispatcher move it; every change is kept in the task's history with who and when. |
@@ -69,7 +69,7 @@ Open questions: none.
 | AC-145 | [MUST / P0] | What an agent leaves undone reaches its project's board by `create_task`: only what must be done, its title saying Bug:, Feat: or Debt:, with its severity, a bug's never below P2, its text in the sections of its project's template (a setting of the project; by default problem or goal, context, expected result, prerequisites). |
 | AC-154 | [SHOULD / P1] | An agent grooms its project's board with `update_task`: the severity and parent of any task it reaches, a human's with its reason; the title and text of an agents' task; such a task archived with its reason; an agent's change of title or severity never sets a bug below P2. |
 | AC-116 | [SHOULD / P1] | A bookmark or reminder becomes a TODO task in one small window (severity, project, session), its text linking its session, the board not opened; the record goes once the task is kept. |
-| AC-117 | [MUST / P0] | WAIT FOR HUMAN and FAILED raise the banner of waiting agents and a count on the Kanban tab, the same in every browser: terminumd keeps which lines a human closed or saw. |
+| AC-117 | [MUST / P0] | WAIT FOR HUMAN and FAILED raise the banner of waiting agents and a count on the Kanban tab, the same in every browser: terminumd keeps which lines a human closed or saw; so does a task returned from integration with no live agent (`terminum-integration.md` AC-192). |
 | AC-118 | [SHOULD / P1] | Archive hides a task from the board and can return it; DONE archives itself after 2 days; each project has an Archived list. |
 | AC-119 | [MUST / P0] | One SQLite file holds tasks and projects; writes are atomic; authors and roles name users, so a central store can follow; an unreadable file is set aside and said, never overwritten. |
 | AC-136 | [MUST / P0] | A card says what became of its session's agent: working, waiting, failed with why, stopped with its task open, gone; the task's history says so once; nothing moves by it unless Dispatcher started the session. |
@@ -78,7 +78,7 @@ Open questions: none.
 | AC-135 | [MUST / P0] | The board's head chooses the project; left of the columns stands the session page's own list, as wide as there, with its menus and its head, without its foot; it hides and shows; a press opens a session. |
 | AC-139 | [MUST / P0] | New project…, the last row of the project's menu, makes an empty project on its server, in a window with its name, its full folder path, a picker for it and Agents at once; a project's pencil opens the same window, with its pool's keys beside. |
 | AC-120 | [SHOULD / P1] | An agent on a remote host sees and works with its whole project through the Mac's link. |
-| AC-148 | [MUST / P0] | A task's ID is its project's letters and the project's own count (TERM-7), "S_" before them for a task a schedule made (S_TERM-8): the letters come from the project's folder and can be set; every ID a task had, and its key's start, still find it. |
+| AC-148 | [MUST / P0] | A task's ID is its project's letters and the project's own count (TERM-7), "S_" before them for a task a schedule made (S_TERM-8), "I_" for a batch's integration task (`terminum-integration.md` AC-194): the letters come from the project's folder and can be set; every ID a task had, and its key's start, still find it. |
 | AC-149 | [MUST / P0] | A task's window sets the task apart from its subtasks and from its comments and history, read as a conversation: a comment's kind shows by its bar, oldest first, the comment field last; what the human must react to (questions, a result, a failure) stands first, the field under it; tasks, subtasks and comments say when they were made and changed. |
 | AC-150 | [SHOULD / P1] | The session page counts the tasks made in the shown session, says new ones as reminders are said, lists them and opens the board's own task window. |
 
@@ -223,6 +223,9 @@ Scenario: AC-106 happy path — from a session and from a terminal's selection
 Scenario: AC-106 edge — a draft
   When the user closes the window with text typed, or reloads the page
   Then the next new task on that browser offers the draft with its files; Discard drops them, and files of a draft not used for 7 days go, as a paste's do
+  When a draft is offered after its file shot.png went, or Create is refused as a file of it is gone
+  Then shot.png leaves the draft's Files and its text, the window says "shot.png: gone, this draft was not saved for 7 days. Drop it again to keep it." and Create keeps the rest
+  And only terminumd's answer that the file is gone (404) drops it: no answer, or another, keeps it
 
 Scenario: AC-106 failure — refused
   When Create has no title, or a title over 200 characters, or a text over 1 MiB
@@ -265,6 +268,12 @@ Scenario: AC-108 happy path — a human's comment
   And RUN stands only where the task can be run; SAVE is off while the field is empty
   When the window is closed by ×, Esc or Back with a comment not saved
   Then nothing is kept on the task: the comment stays in this browser as that task's draft
+
+Scenario: AC-108 edge — a draft's file gone
+  Given API-12's comment draft links log.txt and shot.png, kept 7 days without a Save, and terminumd let log.txt go (AC-106)
+  When API-12 opens, or its SAVE or RUN is refused as a file of it is gone (another refusal says its own words)
+  Then log.txt's link leaves the draft, the window says "log.txt: gone, this draft was not saved for 7 days. Drop it again to keep it." and SAVE keeps the comment with shot.png
+  And only terminumd's answer that the file is gone (404) drops it: no answer, or another, keeps it
 
 Scenario: AC-108 happy path — shown
   Then a comment shows as the Panel's Markdown (raw HTML off, javascript: links dropped, remote images not loaded), an agent's marked as the agent's and Dispatcher's as Dispatcher's
@@ -769,6 +778,11 @@ Scenario: AC-133 edge — answers out of order, a drag under a change
   Then the card is the same, and the press lands
   When the board's connection to terminumd opens, or opens again
   Then the board reads its columns again: a change made before it opened shows; signed out, the board goes to sign in (AC-09)
+  When two fields of a task's window are changed quickly, terminumd slow to answer the first
+  Then the second goes only once the first is answered: the last choice made stands, and the window shows it
+  And a choice terminumd refuses goes back to what stands in its field, even while another edit is open
+  When a text or a comment is saved or cancelled while another edit is open in the window
+  Then nothing is drawn over that edit; the closed editor's keys go off until the window is drawn anew
 
 Scenario: AC-133 edge — closing while a task is being read
   Given a task's window open, with another read to open a task still waiting
@@ -1148,7 +1162,6 @@ Comments and history are one table, `events`: a window lists them in one order. 
 |---|---|---|
 | AC-113, AC-115 | A refusal names a session by its pane (Session %7), not its title. | `terminumd/src/tasks/ops.rs` |
 | AC-119 | The session list says nothing of a store that cannot be read; the board's banner does. | `web/static/kanban.js` |
-| AC-133 | A task window's fields go as separate PATCHes, unordered: two choices made quickly may land in the other order, so the first may stand. Only its text has a revision (`text_rev`). | `web/static/kanbanwin.js` |
 | AC-154 | An agent may take a human's free task (take_task) and finish it (finish_task): DONE, then archived after 2 days (AC-118), with no human deciding. | `terminumd/src/tasks/tools.rs` |
 
 ## 8. Recommendation and ownership
@@ -1249,7 +1262,7 @@ Depends on: nothing more.
 - [x] AC-118 — `cargo test tasks::archiving`, `web/test/e2e_liveboardtasks.mjs`
 - [x] AC-119 — `cargo test tasks::store`
 - [x] AC-136 — `cargo test tasks::tell`, `web/test/e2e_liveboardedge.mjs`, `web/test/cardstate.test.mjs` (its background work)
-- [x] AC-133 — `web/test/e2e_taskclose.mjs` (pending reads after ×, Esc and Back; a deliberate reopen; a Save press under a refresh), `web/test/e2e_liveclose.mjs` (a real subtask read held while its parent's window closes, a real change under a Save press; `node web/test/e2e_live.mjs boardtasks`), `web/test/e2e_liveboardedge.mjs`, `web/test/e2e_liveboard.mjs`, `web/test/e2e_liveboardbusy.mjs` (a file that lands late; alone: `node web/test/e2e_live.mjs boardpool`) (`node web/test/e2e_live.mjs board` also measures §9's budgets on AS-112's tasks: `liveBoardScale`)
+- [x] AC-133 — `web/test/e2e_taskclose.mjs` (pending reads after ×, Esc and Back; a deliberate reopen; a Save press under a refresh), `web/test/e2e_liveclose.mjs` (a real subtask read held while its parent's window closes, a real change under a Save press, two quick field changes with the first answer held, a refused one going back, a text saved under a comment's edit; `node web/test/e2e_live.mjs boardtasks`), `web/test/e2e_liveboardedge.mjs`, `web/test/e2e_liveboard.mjs`, `web/test/e2e_liveboardbusy.mjs` (a file that lands late; alone: `node web/test/e2e_live.mjs boardpool`) (`node web/test/e2e_live.mjs board` also measures §9's budgets on AS-112's tasks: `liveBoardScale`)
 - [x] AC-134 — `web/test/e2e_liveboardsession.mjs`, `cargo test page::plans`
 - [x] AC-139 — `cargo test page::projects`, `cargo test tasks::folder`, `web/test/e2e_liveboardagents.mjs` (a 200-character folder, the picker up, in, Cancel and Choose)
 - [x] AC-135 — `web/test/e2e_liveboardsession.mjs`, `web/test/e2e_liveboard.mjs`

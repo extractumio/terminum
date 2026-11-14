@@ -22,6 +22,7 @@ import { liveQuick } from "./e2e_livequick.mjs";
 import { liveSplit } from "./e2e_livesplit.mjs";
 import { liveView } from "./e2e_liveview.mjs";
 import { liveRequests } from "./e2e_liverequests.mjs";
+import { liveBoardSignin } from "./e2e_livesignin.mjs";
 import { liveFolds } from "./e2e_livefolds.mjs";
 import { liveJitter } from "./e2e_livejitter.mjs";
 import { liveLinks } from "./e2e_livelinks.mjs";
@@ -52,7 +53,7 @@ import { liveQueue } from "./e2e_livequeue.mjs";
 import { liveAuto } from "./e2e_liveauto.mjs";
 import { liveIconKeys } from "./e2e_liveiconkeys.mjs";
 import { SORT_ALONE, BOARD_ALONE, TASKS_ALONE, WAITING_ALONE, POOL_ALONE, SMOKE, HISTORY_ALONE,
-  AUTO_ALONE, SCHEDULES_ALONE, NOTES_ALONE, ICONS_ALONE, REQUESTS_ALONE, QUEUE_ALONE, MAIN_ALONE } from "./e2e_livemodes.mjs";
+  AUTO_ALONE, SCHEDULES_ALONE, NOTES_ALONE, ICONS_ALONE, REQUESTS_ALONE, SIGNIN_ALONE, QUEUE_ALONE, MAIN_ALONE } from "./e2e_livemodes.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const BIN = process.env.TERMINUMD_BIN ?? path.join(ROOT, "terminumd/target/debug/terminumd");
@@ -185,10 +186,11 @@ async function wide(browser, name) {
   const live = { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP, stop, start, shots: process.env.TM_TEST_SHOTS };
   /** The board's suites, each on a page of its own */
   const edge = [0, 1].map((part) => (p, o) => liveBoardEdge(p, { ...o, part }));
-  const boards = async (suites = [liveBoard, liveBoardSort, ...edge, liveBoardSessions, liveBoardAgents, liveBoardBusy, liveBoardTasks, liveBoardIds, liveDispatcher, liveHistory, liveFolded, liveSchedules, liveQueue, liveAuto, liveMain, liveIconKeys, liveWaitingRun]) => {
+  const boards = async (suites = [liveBoard, liveBoardSort, ...edge, liveBoardSessions, liveBoardAgents, liveBoardBusy, liveBoardSignin, liveBoardTasks, liveBoardIds, liveDispatcher, liveHistory, liveFolded, liveSchedules, liveQueue, liveAuto, liveMain, liveIconKeys, liveWaitingRun]) => {
     for (const suite of suites) { await renew(); await suite(page, live); }
   };
   await renew();
+  if (SIGNIN_ALONE) { await boards([liveBoardBusy, liveBoardSignin, liveBoardTasks]); return ctx; }
   if (REQUESTS_ALONE) { await liveRequests(page, live); return ctx; }
   if (process.env.TM_TEST_REAL_AGENTS) {
     await liveDispatcherReal(page, { base: BASE, tmux, work: process.env.TM_TEST_REAL_DIR ?? WORK, bin: BIN, home: HOME, app: APP });
@@ -472,7 +474,7 @@ try {
     const browser = await pw[name].launch(NO_SIGNALS);
     try {
       const ctx = await wide(browser, name);
-      if (!SMOKE) await phone(browser, name);
+      if (!SMOKE && !SIGNIN_ALONE) await phone(browser, name);
       await ctx.close();
     } catch (e) {
       ranToItsEnd(e);

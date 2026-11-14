@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // AC-133: a visible subtask link starts a real opening read; closing its parent cancels it. Save keeps a comment
-// once under a real change of its task (AC-108).
-import { boardKit, pressCard } from "./boardkit.mjs";
-import { check } from "./check.mjs";
+// once under a real change of its task (AC-108). Two quick field changes land in the order made; a text saved under
+// another edit redraws nothing over it.
+import { boardKit, hold, nap, pressCard } from "./boardkit.mjs";
+import { check, until } from "./check.mjs";
 
 export async function liveTaskClose(page, opts) {
   const { j, open } = boardKit(page, opts);
@@ -58,6 +59,61 @@ export async function liveTaskClose(page, opts) {
   const kept = (await j(`/api/tasks/${parent}`)).history.filter((e) => e.kind === "comment" && e.text === "Kept under a live change").length;
   check("AC-133 live a real task change during a Save press keeps its key, the comment once, the window open and its field empty",
     changed.code === 200 && kept === 1 && await page.evaluate(() => window.pressedSave.isConnected) && await page.$eval("#taskbox", (b) => b.open) && await page.inputValue(".newcomment textarea") === "");
+  await page.click("#taskclose");
+  await page.waitForFunction(() => location.pathname === "/kanban/");
+  await liveFieldOrder(page, j, open, parent);
+}
+
+/** Severity changed twice at once, terminumd's first answer held back: the second waits for it and stands (AC-133). */
+async function liveFieldOrder(page, j, open, id) {
+  await j(`/api/tasks/${id}`, "PATCH", { severity: "P3" });
+  await open(`?project=${(await j(`/api/tasks/${id}`)).project}`);
+  await pressCard(page, id);
+  await page.waitForSelector("#taskbox[open]");
+  const route = `**/api/tasks/${id}`, held = await hold(page, route, "PATCH");
+  const severity = page.locator("#taskbody .fieldrow", { hasText: "Severity" }).locator("select");
+  try {
+    await severity.selectOption("P1");
+    await until(() => held.sent() === 1);
+    await severity.selectOption("P0");
+    await nap(300);
+    check("AC-133 live a field's second change waits for the answer to the first", held.sent() === 1, `sent ${held.sent()}`);
+    held.release();
+    const stood = await until(async () => held.sent() === 2 && (await j(`/api/tasks/${id}`)).severity === "P0" && await severity.inputValue() === "P0");
+    check("AC-133 live the last choice of two quick ones stands, in terminumd and in the window", stood, `shown ${await severity.inputValue()}`);
+  } finally {
+    held.release();
+    await held.end();
+  }
+  // refused while the text's editor holds the window's redraw: the field goes back to what stands
+  const refuse = (r) => r.request().method() === "PATCH" ? r.fulfill({ status: 400, contentType: "application/json", body: '{"error":"Refused for the check."}' }) : r.continue();
+  await page.click('#taskbody .tasktext button[aria-label="Edit"]');
+  await page.route(route, refuse);
+  try {
+    await severity.selectOption("P2");
+    check("AC-133 live a refused choice goes back to what stands while an edit is open",
+      await until(async () => await severity.inputValue() === "P0") && (await j(`/api/tasks/${id}`)).severity === "P0", await severity.inputValue());
+  } finally { await page.unroute(route, refuse); }
+  await page.locator(".tasktext").getByRole("button", { name: "Cancel", exact: true }).click();
+  // a text saved while a comment of the task is being edited: the comment's edit stays as typed
+  await j(`/api/tasks/${id}/comments`, "POST", { text: "Edited while the text is saved" });
+  const comment = page.locator('#taskbody .ev-comment.by-human:has-text("Edited while the text is saved")');
+  await comment.locator('button[aria-label="Edit"]').waitFor();   // drawn before the text's editor holds the window
+  await page.click('#taskbody .tasktext button[aria-label="Edit"]');
+  // its edit cancelled first while the text's editor holds the window, then opened again: the new one holds too
+  await comment.locator('button[aria-label="Edit"]').click();
+  await comment.locator(".markdown").getByRole("button", { name: "Cancel", exact: true }).click();
+  await comment.locator('button[aria-label="Edit"]').click();
+  await page.fill("#taskbody .ev-comment.by-human .markdown textarea:not(:disabled)", "Comment being rewritten");
+  await page.fill(".tasktext textarea", "Text saved under another edit");
+  await page.locator(".tasktext").getByRole("button", { name: "Save", exact: true }).click();
+  const saved = await until(async () => (await j(`/api/tasks/${id}`)).text === "Text saved under another edit");
+  await nap(300);
+  const typed = await page.$eval("#taskbody .ev-comment.by-human .markdown textarea:not(:disabled)", (a) => a.value).catch(() => "its editor gone");
+  check("AC-133 live Save of a text redraws nothing over a comment being edited", saved && typed === "Comment being rewritten", typed);
+  await page.locator("#taskbody .ev-comment.by-human .markdown").getByRole("button", { name: "Cancel", exact: true }).click();
+  check("AC-133 live the comment's edit closed, the window shows the saved text",
+    await until(async () => (await page.textContent("#taskbody .tasktext")).includes("Text saved under another edit") && !await page.$("#taskbody .tasktext textarea, #taskbody .markdown textarea")));
   await page.click("#taskclose");
   await page.waitForFunction(() => location.pathname === "/kanban/");
 }
