@@ -134,16 +134,16 @@ export async function liveHistory(page, opts) {
   check("AC-152 the project's menu stands opaque over the tiles, its names in one column", !/rgba\(0, 0, 0, 0\)|transparent/.test(menu.bg) && menu.over && menu.lefts.length > 1 && new Set(menu.lefts).size === 1, JSON.stringify(menu));
   await page.click("#dproject summary");
   // the projects' answer cut off (as a navigation leaves a read in WebKit, TERM-167): said, the numbers drawn, read again with the next numbers
-  const thrown = [], onThrow = (e) => thrown.push(String(e));
+  const thrown = [], onThrow = (e) => thrown.push(String(e)), said = async () => `${await page.textContent("#derr")} | ${thrown.join(" | ")}`;
   page.on("pageerror", onThrow);
   await page.route("**/api/messages/meta", (r) => r.fulfill({ contentType: "application/json", body: '{"projects": [' }), { times: 1 });
   await page.reload();
   await page.waitForSelector("#tiles .tile");
   check("AC-152 a projects' answer that cannot be read is said, the numbers still drawn, no page error", await until(async () => (await page.textContent("#derr")).startsWith("The projects could not be read:"))
-    && await tileOf("Active time") !== "0 min" && thrown.length === 0, `${await page.textContent("#derr")} | ${thrown.join(" | ")}`);
+    && await tileOf("Active time") !== "0 min" && thrown.length === 0, await said());
   await page.click('#dperiod [data-period="2w"]');
   check("AC-152 the next numbers read the projects again: the message goes, the menu holds them", await until(async () => await page.textContent("#derr") === "" && (await page.$$("#dproject .box .pname")).length > 1, 6000)
-    && thrown.length === 0, `${await page.textContent("#derr")} | ${thrown.join(" | ")}`);
+    && thrown.length === 0, await said());
   page.off("pageerror", onThrow);
   await page.goto(`${base}/dashboard/`);
   await page.waitForSelector("#tiles .tile");

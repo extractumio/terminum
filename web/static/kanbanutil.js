@@ -63,14 +63,14 @@ export function signInElsewhere() {
 export async function api(path, { method = "GET", body } = {}) {
   const sent = method === "GET" ? undefined : JSON.stringify(body ?? {});
   const r = await fetch(path, { method, headers: sent ? { "Content-Type": "application/json" } : undefined, body: sent });
-  let m = {}, unread = null;
+  let m = {}, unread;
   try {
     const text = await r.text();
     if (text) m = JSON.parse(text);
   } catch (e) { unread = e; }
   if (r.status === 401) refused();
   if (!r.ok) {
-    const e = new Error(m?.error ?? `terminumd answered ${r.status}`);
+    const e = new Error(m.error ?? `terminumd answered ${r.status}`);
     e.status = r.status;
     throw e;
   }

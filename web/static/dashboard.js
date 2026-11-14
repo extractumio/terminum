@@ -16,8 +16,8 @@ const TABS = { you, tasks, system, costs }, PERIODS = ["day", "2w", "month", "qu
 /** What the address leaves unsaid. */
 const FIRST = { tab: "you", period: "month" };
 let state = readQuery(KEYS), meta = { projects: [] }, data = null, shown = [], loading = 0;
-/** Why the projects could not be read; null before the first read, "" once one worked. */
-let metaError = null;
+/** Why the projects are not read yet, or could not be; empty once read. */
+let metaError = "not read yet";
 const tab = () => (TABS[state.tab] ? state.tab : FIRST.tab);
 const period = () => (PERIODS.includes(state.period) ? state.period : FIRST.period);
 
@@ -63,22 +63,21 @@ function change(next) {
 /** The projects' menu from terminumd; a failed read is said and tried again with the next numbers. */
 async function readMeta() {
   try {
-    const got = await loadMeta();
-    if (!Array.isArray(got.projects)) throw new Error("terminumd's answer holds no projects");
-    meta = got;
+    meta = await loadMeta();
     metaError = "";
+    drawKeys();
   } catch (e) { metaError = `The projects could not be read: ${e.message}`; }
-  drawKeys();
 }
 
 async function load() {
   const mine = ++loading;
   $("cards").classList.add("busy");
-  if (metaError !== "") await readMeta();
+  const metaRead = metaError ? readMeta() : null;   // beside the numbers; it never throws
   try {
     const asked = tab(), q = new URLSearchParams({ tab: asked, period: period() });
     if (state.project) q.set("project", state.project);
     const got = await api(`/api/dashboard?${q}`);
+    await metaRead;
     if (mine !== loading) return;
     data = { ...got, tab: asked };
     showError($("derr"), metaError);
