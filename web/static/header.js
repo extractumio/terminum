@@ -14,6 +14,7 @@ import { planPane } from "./planpane.js";
 
 const $ = (id) => document.getElementById(id);
 const PEEK = 3000;             // ms the full name and path show
+const TABLET = matchMedia("(min-width: 861px) and (pointer: coarse)");   // the folder's Copy a key beside ✎ (layout.css)
 const span = (cls, text) => el("span", cls, text);
 
 /** The second line's parts, in order: the folder (and its full path, to copy), the window, the rest;
@@ -37,7 +38,9 @@ export function pageHeader({ narrow, copy, renaming, setAgent, send, sid, toChat
   // a coding agent's full-screen TUI (style.css): its why on hover, as a toast on a press (a phone); not the header's own click (the list)
   $("curscreenwhy").addEventListener("click", (e) => { e.stopPropagation(); toast(e.currentTarget.title, 6000); });
   const full = (title, path) => { $("curfull").querySelector(".ft").textContent = title; $("curfull").querySelector(".fp").textContent = path; };
+  let last = null;
   function show(found) {
+    last = found;
     onShown();                                       // what is said over the terminal follows the pane (AC-132)
     // drawn again with every change of the list: the full name and path stay up, kept current, until another session shows
     if ((found?.item.id ?? null) !== shown) unpeek();
@@ -46,16 +49,18 @@ export function pageHeader({ narrow, copy, renaming, setAgent, send, sid, toChat
     $("curstate").replaceChildren(...[found && stateIcon(shownState(found.item))].filter(Boolean));
     setAgent(found?.item.agent ?? null);
     plan.header(found?.item ?? null);
+    $("current").querySelector(".tline .copydir")?.remove();
     if (!found) { $("cursub").replaceChildren(); $("curbar").replaceChildren(); $("curagent").replaceChildren(); full("", ""); }
     else {
       const { group: g, item: it } = found, { folder, path, where, rest } = headerParts(g, it), parts = [];
       if (folder) {
-        const b = pointerKey(el("button", "copydir"));
+        const b = pointerKey(el("button", TABLET.matches ? "copydir icon" : "copydir"));
         b.type = "button";
         b.title = b.ariaLabel = `Copy ${path}`;
-        b.append(icon("copy", 13));
+        b.append(icon("copy", TABLET.matches ? 16 : 13));
         b.addEventListener("click", (e) => { e.stopPropagation(); copy(path); });   // not the header's own click (the list)
-        parts.push([span("dir", folder), b]);
+        if (TABLET.matches) $("current").querySelector(".tline").append(b);   // a key with ✎ and Plan
+        parts.push(TABLET.matches ? [span("dir", folder)] : [span("dir", folder), b]);
       }
       parts.push([span("where", where)]);
       if (rest.length) {                             // one part: it gives way as a whole, its words keep the list's colors
@@ -72,6 +77,7 @@ export function pageHeader({ narrow, copy, renaming, setAgent, send, sid, toChat
     if (!renaming()) $("rename").hidden = !found;
   }
   show.plan = plan;
+  TABLET.addEventListener("change", () => show(last));   // the Copy's place
   // its buttons (✎, Plan, Copy) are theirs; a narrow window's title shows the full name and path (☰ opens the list)
   $("current").onclick = (e) => { if (!e.target.closest("button")) narrow.matches ? show.peek() : $("filter").focus(); };
   /** The full name and path for PEEK ms, the header's buttons slid aside; again: back at once. */

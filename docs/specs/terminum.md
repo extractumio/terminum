@@ -610,6 +610,9 @@ Scenario: AC-18 happy path — the panel
   And the panel is four rows of six: Copy, Paste, Upload, ⇧↩, Tab, Enter; Esc, ^C, ^D, ^Z, ^R, Fn; Ctrl, Alt, arrows; Home, End, PgUp, PgDn, ⇧←, ⇧Tab; Fn swaps the last two rows for F1–F12
   And a hot key held repeats after 400 ms 30 times a second, but not Copy, Paste, Upload, Fn, Ctrl, Alt, Enter, ^C, ^D, ^Z; a character key held on a keyboard repeats although macOS sends no repeat
   And the phone's or tablet's own keyboard and the hot keys panel are never up together, so the line being typed stays in sight: when the on-screen keyboard comes up the panel closes, and opening the panel while it is up puts it away; with a hardware keyboard (an iPad's: no on-screen keyboard, only its small shortcut bar) the panel stays open while the user types
+  And the keyboard's button is lit only while the on-screen keyboard is up; while a hardware keyboard types (the terminal has the keys and the view did not shrink by an on-screen keyboard's height, or a key came that an on-screen keyboard does not send: an arrow, Esc, Tab, a ⌘, ⌃ or ⌥ chord) the keyboard's and the hot keys' buttons are not shown (the hot keys' while its panel is open is); they come back when the terminal lets the keys go or the on-screen keyboard comes up
+  And the cursor where the terminal does not have the keys is a dim block on a touch screen, never a hollow box (which reads as a character the font lacks)
+  And on a tablet (a touch screen 861 px wide or wider) the header is laid out as a computer's (AC-01) with a finger's keys: every key in it (☰, the sections, ✎, Plan, Copy, the quick shell, Files and View, ⚙) one height and one look, their middles on one line, none touching the header's edge; ✎, Plan and the folder's Copy stand together right of the title
 Scenario: AC-18 happy path — a layout of the user's
   Given "~/.terminum/hotkeys.json" lists rows of keys by name ("F5", "C-r", "text:git status", "Paste")
   Then the panel shows those rows within 1 s of the file changing; a key tmux has no name for is refused with its line number in a toast and the default panel stays
@@ -1468,7 +1471,7 @@ All cases are shipped; nothing is staged.
 - [x] AC-10 — terminumd/src/auth/checks_tests.rs, scripts/e2e_access.py
 - [x] AC-12 — terminumd/src/theme_tests.rs, web/test/e2e_live.mjs, web/test/e2e_split.mjs, web/test/e2e_liveprogs.mjs
 - [x] AC-13 — `cargo test page::zoom`, `cargo test page::sizing` (a refused resize undone), scripts/e2e_sizing.py, scripts/e2e_attach.py, scripts/e2e_sizestale.py, scripts/e2e_core.py, web/test/e2e_screen.mjs, web/test/e2e_livesplit.mjs, web/test/e2e_live.mjs
-- [x] AC-18 — web/test/e2e_tmux.mjs, web/test/e2e_hold.mjs, web/test/e2e_phonerow.mjs, web/test/e2e_sheets.mjs, web/test/e2e_fold.mjs, web/test/onekbd.test.mjs
+- [x] AC-18 — web/test/e2e_tmux.mjs, web/test/e2e_hold.mjs, web/test/e2e_phonerow.mjs, web/test/e2e_sheets.mjs, web/test/e2e_fold.mjs, web/test/onekbd.test.mjs, web/test/e2e_touchkeys.mjs (the keyboard's light, a hardware keyboard, the cursor)
 - [x] AC-19 — terminumd/src/settings_tests.rs, web/test/e2e_signin.mjs, web/test/e2e_live.mjs, web/test/e2e_tmux.mjs
 - [x] AC-20 — scripts/bench_load.py, scripts/bench_echo.py, terminumd/benches/frame.rs (`cargo bench frame`)
 - [x] AC-88 — web/test/e2e_split.mjs, web/test/e2e_livequick.mjs

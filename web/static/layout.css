@@ -47,6 +47,18 @@
   #views { order: 3; flex-basis: 100%; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); padding: 3px; border-radius: var(--r-sm); }
   #views button { height: 34px; justify-content: center; font-size: 13.5px; border-radius: var(--r-sm); }
 }
+/* a tablet (a touch screen 861 px wide or wider, AC-18): the computer's header (style.css) with a finger's keys: the
+   title row 22 px, its middle on the keys' middle line, ✎, Plan and the folder's Copy (header.js) 44 px keys centered
+   on it, the folder line under; the sections and the views' segments as tall as the keys */
+@media (min-width: 861px) and (pointer: coarse) {
+  :root { --h-head: 64px; --title-in: calc((var(--icon-key) - 22px) / 2); }
+  #current .lines { padding-top: var(--title-in); }
+  #current .tline { height: 22px; }
+  #current .tline > :is(#rename, #curplan, .copydir) { margin-block: calc(-1 * var(--title-in)); }
+  #current .tline .copydir { --ik: var(--icon-key); margin-left: 2px; }
+  #curbar { height: calc(var(--title-in) + 22px + 3px + 16px); }
+  #bar :is(.sections a, #views button) { height: calc(var(--icon-key) - 2 * var(--sp-0)); }
+}
 /* wide screens: the terminal is always shown; Files and File are toggles beside it */
 body.wide #views { background: none; padding: 0; gap: var(--sp-1); }
 body.wide #views button[data-view="term"] { display: none; }
