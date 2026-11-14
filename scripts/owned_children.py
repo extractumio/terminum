@@ -72,3 +72,10 @@ def active(registry):
     expected = records(registry)
     now = identities(expected)
     return {pid for pid, started in expected.items() if pid != os.getpid() and now.get(pid) == started}
+
+
+def cleanup_identities(pids, registry):
+    """Snapshot discovered ownership, retaining original identities for explicitly registered PIDs."""
+    current = identities(pids)
+    recorded = records(registry)
+    return {pid: recorded.get(pid, started) for pid, started in current.items()}

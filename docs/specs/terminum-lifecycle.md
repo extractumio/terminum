@@ -356,6 +356,21 @@ Scenario: AC-102 happy path — a run leaves nothing
   When the step passes, fails or gets a signal
   Then its folders, tmux servers, tmux socket files and processes have gone and that folder is removed
 
+Scenario Outline: AC-102 edge — cancel the outer targeted runner
+  Given scripts/check_changed.py has an active private guard, a foreground child that ignores signals, and a registered detached child outside the private folder
+  When the outer runner receives <signal>, and another signal during cleanup
+  Then it forwards cancellation to its guard once and waits for owned-child cleanup before exiting with <status>
+  And the guard notifies its private process group once so shell descendants can finish orderly cleanup; cancellation first received during settling starts a fresh 15 s grace period, and repeated signals neither notify again nor extend it
+  And both children and the private folder are gone, an unrelated process is untouched, no later step starts, and no passing result is recorded
+  And a guard that fails or exceeds the 60 s cancellation wait is recovered using its private group, folder and registered children, with PID start identities checked before each signal and the guard kept unreaped until its children are ended
+  And failed metadata queries fail cleanup visibly and retain the private folder for diagnosis
+
+  Examples:
+    | signal  | status |
+    | SIGTERM | 143    |
+    | SIGINT  | 130    |
+    | SIGHUP  | 129    |
+
 Scenario: AC-102 failure — a step that leaves something fails
   Given a step that passes but leaves a file in its folder, or a process in its private process group or working in that folder or a folder under it
   When it ends
@@ -874,7 +889,7 @@ All cases are shipped; nothing is staged.
 - [x] AC-16 — `scripts/e2e_install.sh`; `ui/test/e2e_panel.mjs` (a Files panel's held reload); `cargo test cli::tests` (`install_tests`, `upgrade_tests`, `refresh_tests`, `import_tests`)
 - [x] AC-17 — `cargo test update::`; `web/test/e2e_tmux.mjs`
 - [x] AC-96 — `scripts/e2e_lastlines.py`; `cargo test lastlines` (a failed write tried again); `web/test/e2e_lastlines.mjs`
-- [x] AC-102 — `scripts/check_step.py` guards each step of `scripts/check_all.sh` and `scripts/check_changed.py`; `scripts/tests/test_check_step.py`; `scripts/tests/test_process_ownership.py` (metadata only, directory boundaries and query failures on both platforms); `scripts/tests/test_leftovers.py`; `cargo test cli::tests::the_fake_terminumd_ends_when_its_home_goes`; `scripts/tests/test_testrun.py` (`WithItsFolder`)
+- [x] AC-102 — `scripts/check_step.py` guards each step of `scripts/check_all.sh` and `scripts/check_changed.py`; `scripts/tests/test_check_step.py`; `scripts/tests/test_check_cancel.py` (outer cancellation and guard recovery); `scripts/tests/test_process_ownership.py` (metadata only, directory boundaries and query failures on both platforms); `scripts/tests/test_leftovers.py`; `cargo test cli::tests::the_fake_terminumd_ends_when_its_home_goes`; `scripts/tests/test_testrun.py` (`WithItsFolder`)
 - [x] AC-104 — `scripts/tests/test_land.py`, `scripts/tests/test_check_changed.py`, `scripts/tests/test_package.py`, `scripts/tests/test_release_turn.py`, `scripts/tests/test_release.py`, `scripts/tests/test_ci_mac.py`, `scripts/tests/test_check_docker.py`, `scripts/tests/test_worktree_fresh.py`
 - [x] AC-146 — `scripts/tests/test_load_gate.py`, `scripts/tests/test_release_turn.py`, `scripts/tests/test_check_changed.py`
 - [x] AC-103 — `scripts/tests/test_check_docs.py`; `python3 scripts/check_docs.py`

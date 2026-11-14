@@ -7,11 +7,14 @@ let shownTheme = "";
 let seq = 0;
 let redraws = 0;   // bumps at each theme redraw: an older one stops, a fence drawn meanwhile redraws
 
+// Chrome keeps a module that failed to load for the page's life: only a reload helps there
+const NOT_LOADED ="Mermaid's code did not load: reload the page";
+
 /** A Mermaid diagram's SVG markup. Strict: no click handlers, no HTML labels (the SVG is shown
  *  as an image, where HTML inside it would not draw). Throws Mermaid's message on bad source. */
 export async function mermaidSvg(source: string, dark: boolean): Promise<string> {
   // a failed import (a gap, an upgrade) is tried again by the next diagram, not kept
-  mermaidLib ??= import("mermaid").then((m) => m.default, (e) => { mermaidLib = null; throw e; });
+  mermaidLib ??= import("mermaid").then((m) => m.default, () => { mermaidLib = null; throw new Error(NOT_LOADED); });
   const mermaid = await mermaidLib;
   const theme = dark ? "dark" : "default";
   if (theme !== shownTheme) {
@@ -76,7 +79,7 @@ export async function drawFence(pre: HTMLElement, source: string): Promise<void>
   try {
     img = await diagramImage(source, dark);
   } catch (e: any) {
-    const say = Object.assign(document.createElement("div"), { className: "md-diagram-error", textContent: `Mermaid: ${e?.message ?? e}` });
+    const say = Object.assign(document.createElement("div"), { className: "md-diagram-error", textContent: e?.message === NOT_LOADED ? NOT_LOADED : `Mermaid: ${e?.message ?? e}` });
     pre.before(say);
     return;
   }
