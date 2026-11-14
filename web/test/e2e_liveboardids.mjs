@@ -77,6 +77,7 @@ export async function liveBoardIds(page, opts) {
   const needs = () => page.$$eval(`${card(parent)} .cneeds .stbox`, (b) => b.map((x) => [x.textContent, getComputedStyle(x).backgroundColor, x.getAttribute("aria-label"), x.innerText.trim()]));
   const [title, row] = await Promise.all([".ctitle", ".cneeds"].map((p) => page.$eval(`${card(parent)} ${p}`, (x) => x.getBoundingClientRect().toJSON())));
   check("AC-112 a folded card counts its subtasks that need a human on a line under its own, its title kept", (await needs()).map((b) => b[3]).join(",") === "1 failed,1 waiting" && title.width > 40 && row.top >= title.bottom, JSON.stringify([title, row, await needs()]));
+  if (shots) await page.locator(card(parent)).screenshot({ path: path.join(shots, "card-needs-folded.png") });
   await page.click(`${card(parent)} .ctitle`);      // a folded TODO card shown whole (terminum-kanban.md AC-159)
   const boxes = await page.$$eval(`${card(parent)} .cboxes .stbox`, (b) => b.map((x) => [x.textContent, getComputedStyle(x).backgroundColor, x.getAttribute("aria-label")]));
   check("AC-112 a box for each subtask, in the order made, saying its ID", JSON.stringify(boxes.map((b) => b[0])) === JSON.stringify(kids), JSON.stringify(boxes));
