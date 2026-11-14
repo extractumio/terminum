@@ -5,6 +5,10 @@ import hashlib
 import os
 from pathlib import Path
 import subprocess
+import sys
+
+
+DRAIN_SECONDS = 10
 
 
 def sink(root):
@@ -30,12 +34,13 @@ def bounded_log(root, path):
     try:
         yield proc.stdin
     finally:
+        aborting = sys.exc_info()[0] is not None
         try:
             proc.stdin.close()
         except BrokenPipeError:
             pass
         try:
-            status = proc.wait(timeout=10)
+            status = proc.wait(timeout=DRAIN_SECONDS)
         except subprocess.TimeoutExpired:
             proc.terminate()
             try:
@@ -43,8 +48,10 @@ def bounded_log(root, path):
             except subprocess.TimeoutExpired:
                 proc.kill()
                 proc.wait()
-            raise RuntimeError(f"check log sink did not finish: {path}")
-        if status:
+            status = proc.returncode
+            if not aborting:
+                raise RuntimeError(f"check log sink did not finish: {path}")
+        if status and not aborting:
             raise RuntimeError(f"check log sink failed ({status}): {path}")
 
 

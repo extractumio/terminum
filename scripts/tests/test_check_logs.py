@@ -60,3 +60,17 @@ class Logs(unittest.TestCase):
         self.assertTrue(processes)
         self.assertTrue(all(proc.poll() is not None for proc in processes))
         self.assertIn("before cancellation", self.path.read_text())
+
+    def test_cancellation_result_survives_an_inherited_output_pipe(self):
+        holder = None
+        try:
+            with mock.patch.object(check_logs, "DRAIN_SECONDS", 0.1):
+                with self.assertRaisesRegex(ValueError, "canceled"):
+                    with check_logs.bounded_log(self.root, self.path) as out:
+                        holder = check_logs.subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"], stdout=out)
+                        out.write(b"before cancellation\n")
+                        raise ValueError("canceled")
+        finally:
+            if holder is not None:
+                holder.terminate()
+                holder.wait(timeout=10)
