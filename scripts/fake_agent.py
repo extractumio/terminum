@@ -84,7 +84,9 @@ def main():
         if kind == "claude":
             hook("SessionStart", source="resume" if "--resume" in args else "startup")
         if start == "quits":
-            os.read(fd, 65536)         # force the gate's paste to win the race; never echo it or take Enter
+            got = b""                 # the whole paste, however many reads it takes: nothing of it is left to the shell
+            while b"\x1b[201~" not in got and (more := os.read(fd, 65536)):
+                got += more
             return                    # its session opened, but it never took the task (an update's restart)
         while True:
             data = os.read(fd, 65536).decode("utf8", "replace")

@@ -131,7 +131,7 @@ export async function webTaskWin(browser, name) {
     const back = await f.page.evaluate(() => ({ full: !!document.querySelector(".xbox.full"), open: document.getElementById("taskbox").open }));
     check("AC-184 its text being edited, the comment field and a quoted screen have their key; the screen's covers the window, Esc gives it back",
       keyed.every(Boolean) && held && screen.covers && !back.full && back.open, JSON.stringify({ keyed, held, screen, back }));
-    await f.page.evaluate(() => window.taskwin.refresh(true));
+    await f.page.evaluate(() => window.taskwin.refresh(document.querySelector("#taskbody .tasktext")));   // its text editor closed
     const c = await conversation(f.page), told = JSON.stringify(c);
     check("AC-149 a task that waits with questions shows them first, the comment field under them, then the task, the rest, its subtasks",
       c.asked.parts.join() === "leads,newcomment,taskown,activity,subtasks" && c.asked.lead.length === 1 && /ev-questions/.test(c.asked.lead[0]) && c.asked.heading === "Asks you" && /^Your answer/.test(c.asked.field), told);

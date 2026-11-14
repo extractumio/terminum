@@ -222,6 +222,11 @@ class Terminumd:
 
     def start(self):
         end_tmux(self.tmux_socket)
+        settings = os.path.join(self.home, "settings.json")
+        if not os.path.exists(settings):   # no usage command: the user's own claude and codex never run for a test (AC-168)
+            os.makedirs(self.home, exist_ok=True)
+            with open(settings, "w") as f:
+                json.dump({"dispatcher": {"usageCommands": {"claude": "", "codex": ""}}}, f)
         log = open(self.log_path, "a")
         self.proc = subprocess.Popen([BIN], env=self.env, stdout=log, stderr=log)
         for _ in range(100):

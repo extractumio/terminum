@@ -30,5 +30,6 @@ A spec is a snapshot of what terminum must do: never a chronicle or a change log
 | [terminum-kanban.md](specs/terminum-kanban.md) | Tasks, the board at `/kanban/`, projects shared with the session list, agents' task tools, the store | AC-105…120 |
 | [terminum-dispatcher.md](specs/terminum-dispatcher.md) | Dispatcher: RUN, a task's status as its session lives, time budgets, watching and closing sessions, an agent's queue, Auto-Dispatcher | AC-121…131 |
 | [terminum-schedules.md](specs/terminum-schedules.md) | Scheduled tasks: a schedule's window and cadence, its kept slot, its firings, the board's section, the Scheduled page | AC-160…164 |
+| [terminum-integration.md](specs/terminum-integration.md) | The integration queue: a project's check, publish and after commands, batches of finished tasks merged and checked together, conflicts, notices to agents, the board's INTEGRATION column | AC-186…193 |
 
 Each spec has the same sections: 0 Metadata (status only), 1 Overview, 2 Scope and non-goals, 3 Assumptions, dependencies, open questions, 4 Acceptance cases, 5 BDD scenarios, 6 Flow and sequence diagrams, 7 Current behavior and gaps (open gaps only), 8 Recommendation and ownership, 9 Technical details and specifications, 10 Delivery stages (only what is not shipped), 11 Checklist with Definition of Done (one line per case: what proves it).

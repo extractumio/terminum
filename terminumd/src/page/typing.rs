@@ -167,7 +167,7 @@ pub fn paste(app: &Shared, page: &Arc<Page>, data: String, bracket: bool) {
 
 async fn run(app: Shared, page: Arc<Page>, server: Arc<Server>) {
     loop {
-        let mut batch: Vec<Typed> = {
+        let batch: Vec<Typed> = {
             let mut st = page.state.lock();
             if page.is_closed() {
                 st.queue.clear();                      // nobody to type for: what waits is dropped
@@ -178,7 +178,6 @@ async fn run(app: Shared, page: Arc<Page>, server: Arc<Server>) {
         };
         let (pane, key) = (batch[0].pane.clone(), batch[0].key.clone());
         let keys = batch.iter().any(|t| t.mouse.is_empty());
-        let ks: Vec<Option<super::trace::KeyRec>> = batch.iter_mut().map(|t| t.k.take()).collect();
         let Some(client) = server.client(&pane) else {
             let what = if keys { "the keys were not sent" } else { "the mouse event was not sent" };
             error(&page, format!("Not connected: tmux on {} does not answer — {what}", server.label()), Some(&key));
@@ -195,10 +194,10 @@ async fn run(app: Shared, page: Arc<Page>, server: Arc<Server>) {
             app.dispatcher.touched(&key);
         }
         let mut logged = Vec::new();                   // for the input log, once the lock is let go (AC-147)
-        for run in runs(&batch) {
+        for run in runs(batch) {
             result = match run {
-                Run::Keys(data) => {
-                    let sent = send(&app, &client, &server, &pane, &data).await;
+                Run::Keys(data, mut rec) => {
+                    let sent = send(&app, &page, &client, &server, &pane, &data, &mut rec).await;
                     logged.push((data, sent.as_ref().err().cloned()));
                     sent
                 }
@@ -209,7 +208,6 @@ async fn run(app: Shared, page: Arc<Page>, server: Arc<Server>) {
             }
         }
         drop(held);
-        super::timing::typed(&page, ks, "keys");
         for (data, error) in logged {
             crate::inputs::typed(&app, &page, &server, &pane, &key, &data, error.as_deref());
         }
@@ -229,18 +227,21 @@ async fn run(app: Shared, page: Arc<Page>, server: Arc<Server>) {
 /// A batch in order as runs of one kind: keys joined, mouse reports joined; a run is a round
 /// trip of its own (typing while scrolling on a host: one each, rare and short).
 enum Run {
-    Keys(String),
+    Keys(String, Vec<super::trace::KeyRec>),
     Mouse(Vec<u8>),
 }
 
-fn runs(batch: &[Typed]) -> Vec<Run> {
+fn runs(batch: Vec<Typed>) -> Vec<Run> {
     let mut out: Vec<Run> = Vec::new();
     for t in batch {
         match (out.last_mut(), t.mouse.is_empty()) {
-            (Some(Run::Keys(d)), true) => d.push_str(&t.data),
+            (Some(Run::Keys(d, recs)), true) => {
+                d.push_str(&t.data);
+                recs.extend(t.k);
+            },
             (Some(Run::Mouse(b)), false) => b.extend_from_slice(&t.mouse),
-            (_, true) => out.push(Run::Keys(t.data.clone())),
-            (_, false) => out.push(Run::Mouse(t.mouse.clone())),
+            (_, true) => out.push(Run::Keys(t.data, t.k.into_iter().collect())),
+            (_, false) => out.push(Run::Mouse(t.mouse)),
         }
     }
     out
@@ -253,7 +254,7 @@ fn mouse_line(pane: &str, bytes: &[u8]) -> String {
 }
 
 /// Hands `data` to tmux: bracketed pastes through a buffer, the rest as keys.
-async fn send(app: &Shared, client: &crate::tmux::control::Control, server: &Server, pane: &str, data: &str) -> Result<(), String> {
+async fn send(app: &Shared, page: &Page, client: &crate::tmux::control::Control, server: &Server, pane: &str, data: &str, rec: &mut Vec<super::trace::KeyRec>) -> Result<(), String> {
     let mut rest = data;
     while !rest.is_empty() {
         let (before, pasted, after) = match rest.find(PASTE_START) {
@@ -275,7 +276,7 @@ async fn send(app: &Shared, client: &crate::tmux::control::Control, server: &Ser
             let n = cmds.len();
             for (i, part) in cmds.into_iter().enumerate() {
                 let seen = server.printed(pane);
-                for a in client.run_all(part).await {
+                for a in super::timing::submit(page, client, rec, part).await {
                     a.map_err(|e| format!("tmux did not take the keys: {e}"))?;
                 }
                 let until = tokio::time::Instant::now() + PART_WAIT;
@@ -286,7 +287,7 @@ async fn send(app: &Shared, client: &crate::tmux::control::Control, server: &Ser
         }
         if let Some(text) = pasted {
             let wake = server.wake(pane);
-            paste_buffer(app, client, server, pane, text).await?;
+            paste_buffer_with_trace(app, client, server, pane, text, Some((page, &mut *rec))).await?;
             let agent = || super::marks::find_item(&app.layout.read(), &server.key(pane)).is_some_and(|it| it["agent"] == "claude");
             if super::pastefold::folds(text) && agent() && super::pastefold::unfolds(client, pane, text, wake).await {
                 paste_buffer(app, client, server, pane, text).await?;
@@ -300,11 +301,24 @@ async fn send(app: &Shared, client: &crate::tmux::control::Control, server: &Ser
 /// A paste through a tmux buffer: a 0600 file and `load-buffer` on this Mac, `set-buffer`
 /// in parts on a host; then `paste-buffer -p` (bracketed, the buffer deleted).
 pub(crate) async fn paste_buffer(app: &Shared, client: &crate::tmux::control::Control, server: &Server, pane: &str, text: &str) -> Result<(), String> {
+    paste_buffer_with_trace(app, client, server, pane, text, None).await
+}
+
+async fn paste_buffer_with_trace(app: &Shared, client: &crate::tmux::control::Control, server: &Server, pane: &str, text: &str,
+    trace: Option<(&Page, &mut Vec<super::trace::KeyRec>)>) -> Result<(), String>
+{
     if text.is_empty() {
         return Ok(());                                 // tmux makes no buffer of nothing ("no buffer tm-…")
     }
     let name = load_buffer(app, client, server, text).await?;
-    client.run(format!("paste-buffer -p -d -b {name} -t {pane}")).await.map_err(|e| format!("tmux did not take the paste: {e}"))?;
+    let lines = vec![format!("paste-buffer -p -d -b {name} -t {pane}")];
+    let answers = match trace {
+        Some((page, rec)) => super::timing::submit(page, client, rec, lines).await,
+        None => client.run_all(lines).await,
+    };
+    for answer in answers {
+        answer.map_err(|e| format!("tmux did not take the paste: {e}"))?;
+    }
     Ok(())
 }
 
@@ -366,13 +380,29 @@ mod tests {
 
     #[test]
     fn a_batch_keeps_its_order_and_joins_each_kind() {
-        let batch = [item("a", b""), item("b", b""), item("", b"\x1b[<64;1;1M"), item("", b"\x1b[<64;1;1M"), item("c", b"")];
-        let got: Vec<String> = runs(&batch).into_iter().map(|r| match r {
-            Run::Keys(d) => format!("keys:{d}"),
+        let batch = vec![item("a", b""), item("b", b""), item("", b"\x1b[<64;1;1M"), item("", b"\x1b[<64;1;1M"), item("c", b"")];
+        let got: Vec<String> = runs(batch).into_iter().map(|r| match r {
+            Run::Keys(d, _) => format!("keys:{d}"),
             Run::Mouse(b) => format!("mouse:{}", String::from_utf8_lossy(&b)),
         }).collect();
         assert_eq!(got, ["keys:ab", "mouse:\x1b[<64;1;1M\x1b[<64;1;1M", "keys:c"]);
         assert_eq!(mouse_line("%3", b"\x1b["), "send-keys -t %3 -H 1b 5b");
+    }
+
+    #[test]
+    fn traced_keys_still_coalesce_but_do_not_cross_mouse_reports() {
+        let rec = super::super::trace::Recorder::new(crate::testutil::temp_root().join("trace-no-file"));
+        let mut tracer = super::super::trace::Tracer::new(rec);
+        tracer.handle(&serde_json::json!({"stages": true}), "test");
+        let mut a = item("a", b"");
+        a.k = tracer.key(Some(1));
+        let mut b = item("b", b"");
+        b.k = tracer.key(Some(2));
+        let runs = runs(vec![item("plain", b""), a, b, item("", b"mouse"), item("tail", b"")]);
+        assert_eq!(runs.len(), 3, "AC-03, AC-38: traced repeats still share one round trip");
+        assert!(matches!(&runs[0], Run::Keys(data, recs) if data == "plainab" && recs.len() == 2));
+        assert!(matches!(&runs[1], Run::Mouse(bytes) if bytes == b"mouse"));
+        assert!(matches!(&runs[2], Run::Keys(data, recs) if data == "tail" && recs.is_empty()));
     }
 
     #[test]

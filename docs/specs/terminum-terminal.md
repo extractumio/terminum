@@ -133,7 +133,7 @@ Scenario: AC-31 happy path — the viewer
 
 Scenario: AC-31 edge — the terminal stays the terminal
   Then rows' text does not change: a selection across a widget copies the region's lines; link underlines, cursor taps and the agent's input box keep working; output a program colored itself (bat, glow, delta, an agent's own rendering) is never a widget
-  And a table drawn with rules is a widget in the frame its last rule appears, no frame showing its lines; its rows before that (a frame caught midway, a slow link, a program redrawing it) stay out of sight for at most 150 ms from the first, then show as text; an ASCII table's rule with no line after it and no part above a rule (its head or its only row) may not be its last: out of sight the same way, a widget after 150 ms unchanged; a Markdown table in pipes, which has no last line of its own, once a line follows it, else after 500 ms unchanged, as a table with no bottom rule; so one printed slowly is drawn once it stops, not again per row
+  And a table drawn with rules is a widget in the frame its last rule appears, no frame showing its lines; its rows before that (a frame caught midway, a slow link, a program redrawing it) stay out of sight while they keep coming: until 150 ms pass with none new, at most 1 s from the first, then show as text until it is whole; an ASCII table's rule with no line after it and no part above a rule (its head or its only row) may not be its last: out of sight the same way, a widget after 150 ms unchanged; a Markdown table in pipes, which has no last line of its own, once a line follows it, else after 500 ms unchanged, as a table with no bottom rule; so one printed slowly is drawn once it stops, not again per row
   And a table is drawn once, its HTML kept as it scrolls into the history, as a program redraws it unchanged and when the same table is also printed elsewhere; in the history it is a widget however far from the view: scrolling to it changes nothing. Known limits: a table in a Markdown document is that document's widget (150 ms, then near the view); a table cut by the top of the history loaded so far is whole once the lines above it are loaded
   And when output scrolls a table off the screen in one batch, the history's lines arriving before the screen's, the widget keeps its top rule and whole head: a scan starts at no line inside a table
   And another region on the screen becomes a widget once unchanged for 150 ms and stays one while the screen changes below it; the cursor's row and below are never part of one, nor an agent's input box; streaming output is looked at every 100 ms at most and never further back than 2000 lines; in the history only regions within two screens of the view are drawn (a 10,000-line chat loads as fast as without widgets); at most 150 widgets are kept (out of sight: a table in the history stays attached)
@@ -442,6 +442,13 @@ Scenario: AC-38 happy path — ?trace=1
   When the user types
   Then each key carries a number k; terminumd records how long it took to hand the key to tmux, how long until a capture showed a change, captures that found none, what woke the capture (the key, %output, the poll), the capture, cut and encode times, and whether the cursor moved; the page records the input path, the key kind, event-to-send, buffered bytes, send-to-screen, parse, draw and the next frame; a session opened records click-to-first-screen and first frame with the session's mode (local or remote)
   And every 2 s a ping measures the round trip; frames over 100 ms apart, draws over 16 ms, terminumd messages handled over 20 ms, its loop late over 20 ms, list refreshes and a tmux "display" round trip every 6 s are noted
+
+Scenario: AC-38 edge — a capture races with a key on a busy machine
+  Given key submission and screen captures run concurrently
+  When a capture shows a traced key's echo before its tmux reply is handled
+  Then that frame carries the key's stages and its key record is written without typed text
+  And the handoff stage ends at the first input command's submission; registering it and submitting captures follow the same order
+  And tracing preserves the order of keys and mouse reports; a multi-part input is traced once and its intermediate screens keep arriving
 
 Scenario: AC-38 happy path — ?trace=2 for a coding agent
   Given the page is opened with "?trace=2"
@@ -764,7 +771,7 @@ All cases are shipped; nothing is staged.
 - [x] AC-35 — `web/test/links.test.mjs`, `web/test/panefiles.test.mjs`, `web/test/e2e_term.mjs`, `web/test/e2e_pathfold.mjs`, `web/test/e2e_livelinks.mjs`, `web/test/e2e_app.mjs`
 - [x] AC-36 — `cargo test page::upload`, `cargo test dragged`, `web/test/upload.test.mjs`, `web/test/e2e_livepaste.mjs`, `web/test/e2e_app.mjs`, `scripts/e2e_remote.py`
 - [x] AC-37 — `cargo test sent::`, `web/test/seltext.test.mjs`, `web/test/ask.test.mjs`, `web/test/e2e_clip.mjs`, `web/test/e2e_touch.mjs`, `web/test/e2e_ask.mjs`, `web/test/e2e_dialogcenter.mjs`, `web/test/e2e_liveclip.mjs`, `web/test/e2e_phonerow.mjs`, `web/test/e2e_switch.mjs`
-- [x] AC-38 — `cargo test page::trace`, `web/test/trace.test.mjs`, `web/test/tracereplay.test.mjs`, `web/test/e2e_trace.mjs`, `web/test/e2e_ctxtrace.mjs`, `scripts/e2e_core.py`
+- [x] AC-38 — `cargo test page::trace`, `cargo test page::timing`, `web/test/trace.test.mjs`, `web/test/tracereplay.test.mjs`, `web/test/e2e_trace.mjs`, `web/test/e2e_ctxtrace.mjs`, `scripts/e2e_core.py`, `scripts/e2e_trace.py`
 - [x] AC-90 — `cargo test sent::`, `cargo test messages::`, `cargo test sock::hook_tests`, `web/test/sent.test.mjs`, `web/test/e2e_sent.mjs`, `web/test/e2e_panewin.mjs`, `scripts/e2e_hooks.py`
 - [x] AC-91 — `cargo test page::bookmarks` (an orphan never up, a bookmark not settled), `web/test/e2e_sent.mjs`, `web/test/e2e_fold.mjs`, `web/test/e2e_panewin.mjs`, `web/test/e2e_marks.mjs`, `scripts/e2e_hooks.py`
 - [x] AC-40 — `web/test/boxnav.test.mjs`, `web/test/agentbox.test.mjs`, `web/test/rejoin.test.mjs`, `web/test/heldelete.test.mjs`, `web/test/kbdtouch.test.mjs`, `web/test/e2e_boxnav.mjs`, `web/test/e2e_codex.mjs`, `web/test/e2e_touch.mjs`

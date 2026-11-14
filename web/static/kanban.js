@@ -27,10 +27,11 @@ import { runWindow } from "./kanbanrun.js";
 import { sessionStarter } from "./kanbansession.js";
 import { taskLines } from "./tasklines.js";
 import { liveSession } from "./cardstate.js";
-import { el, iconButton, plural, projectInk } from "./listparts.js";
+import { el, iconButton, plural, projectInk, textKey } from "./listparts.js";
 import { $, COLUMNS, agentChip, api, button, guardQueuedRun, hasFiles, placeChildren, say, sessionLine, showError, signInElsewhere, statusBox, underParents } from "./kanbanutil.js";
 
 const signIn = signInElsewhere();                  // with no sign-in the board goes to /sessions/, whose form signs in
+document.querySelectorAll(".textkey").forEach(textKey);   // the page's own text keys; button()'s have it
 
 const PAGE = 200;
 let meta = { projects: [], users: [], sessions: [], agents: [], hosts: [] };
@@ -379,7 +380,7 @@ const project = projectWindow({ getMeta: () => meta, reload: loadMeta, agents, a
 /** What goes by the pool and the projects shown. */
 const drawPool = () => { agents.draw(); scheduled.draw(); project.refresh(); auto.draw(); };
 const auto = autoDispatcher({ getMeta: () => meta, chosen: () => filters().project, reload: loadMeta });
-const needs = taskLines($("asks"), (id) => openTask(id));
+const needs = taskLines($("asks"), (id) => openTask(id), say);
 const windowed = taskWindow({ getMeta: () => meta, runs, openTask, newSubtask: (t) => form.open({ parent: t.id, project: t.project }), openSchedule: (key) => scheduled.openKey(key) });
 const address = taskAddress({ windowed, needs });
 const form = taskForm({ getMeta: () => meta, getFilter: filters, onMade: madeHidden, onRun: runMade, slots: () => slots });

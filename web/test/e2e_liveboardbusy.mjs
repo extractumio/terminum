@@ -3,22 +3,8 @@
 // board against a real private terminumd (e2e_live.mjs): terminumd's answer is held back, Enter pressed
 // again meanwhile; two questions asked at once, one Enter answers one. What is typed meanwhile is never
 // lost, and a file that lands late never lands in another draft (terminum-kanban.md AC-133).
-import { boardKit, nap, pressRun } from "./boardkit.mjs";
+import { boardKit, hold, nap, pressRun } from "./boardkit.mjs";
 import { check, until } from "./check.mjs";
-
-/** terminumd's answers to `method` on `url` held until `release()`, or lost by `release("abort")`; `sent()` counts
- *  the requests. */
-async function hold(page, url, method) {
-  let release, sent = 0;
-  const gate = new Promise((r) => { release = r; });
-  const handler = async (route) => {
-    if (route.request().method() !== method) return route.fallback();
-    sent++;
-    return await gate === "abort" ? route.abort() : route.continue();
-  };
-  await page.route(url, handler);
-  return { sent: () => sent, release, end: () => page.unroute(url, handler) };
-}
 
 /** Enter pressed in `field` three times while terminumd has not answered: one request, the window
  *  waits (Esc too), then closes once kept. */

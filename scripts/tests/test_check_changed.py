@@ -135,14 +135,14 @@ class Run(unittest.TestCase):
         self.root, self.events = Path(tmp.name), []
 
     def run_steps(self, steps, busy=None, **kw):
-        def fake(cmd, **_):
-            self.events.append(cmd)
-            return subprocess.CompletedProcess(cmd, 0)
+        def fake(guard, command, **_):
+            self.events.append(guard + command)
+            return 0
 
         def gate(_):
             self.events.append("gate")
             return busy
-        with mock.patch.object(check_changed.subprocess, "run", fake), \
+        with mock.patch.object(check_changed, "run_guard", fake), \
                 mock.patch.object(check_changed, "for_task", gate), mock.patch("sys.stdout"):
             return check_changed.run(steps, root=self.root, **kw)
 
