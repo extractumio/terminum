@@ -31,10 +31,13 @@ def sink(root):
 def bounded_log(root, path):
     """The parent owns and reaps the sink on success, failure, cancellation and exceptions."""
     proc = subprocess.Popen([str(sink(root)), str(path)], stdin=subprocess.PIPE)
+    aborting = False
     try:
         yield proc.stdin
+    except BaseException:
+        aborting = True
+        raise
     finally:
-        aborting = sys.exc_info()[0] is not None
         try:
             proc.stdin.close()
         except BrokenPipeError:
@@ -77,7 +80,6 @@ def main(argv):
         return 0
     if len(argv) < 2:
         raise SystemExit("usage: check_logs.py <log> <command...> | --tail <log>")
-    import sys
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     from check_cancel import run_guard
     root = Path(__file__).resolve().parent.parent
@@ -86,5 +88,4 @@ def main(argv):
 
 
 if __name__ == "__main__":
-    import sys
     sys.exit(main(sys.argv[1:]))

@@ -74,3 +74,12 @@ class Logs(unittest.TestCase):
             if holder is not None:
                 holder.terminate()
                 holder.wait(timeout=10)
+
+    def test_handled_callers_exception_does_not_hide_a_sink_failure(self):
+        self.path.mkdir(parents=True)
+        try:
+            raise ValueError("already handled by caller")
+        except ValueError:
+            with self.assertRaisesRegex(RuntimeError, "sink failed"):
+                with check_logs.bounded_log(self.root, self.path):
+                    pass
