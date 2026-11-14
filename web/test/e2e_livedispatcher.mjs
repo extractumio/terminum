@@ -341,8 +341,26 @@ export async function liveDispatcher(page, opts) {
   // AC-117 on the session page too, every project's
   await page.goto(`${base}/sessions/`);
   check("AC-117 the session page says so too, and counts", await until(() => page.isVisible("#asks .taskline"), 8000) && await until(async () => /\d+/.test(await page.textContent('.nav-head .sections a[href^="/kanban/"] .taskneed').catch(() => "")), 8000));
-  await page.click("#asks .taskline .x");
-  const left = await page.evaluate(() => document.querySelectorAll("#asks .taskline").length);
+  // another browser, signed in as this one, on the board: terminumd keeps the close, so every browser loses the line
+  const other = await page.context().browser().newContext({ viewport: { width: 1000, height: 700 }, reducedMotion: "reduce", storageState: await page.context().storageState() });
+  let left;
+  try {
+    const board = await other.newPage();
+    await board.goto(`${base}/kanban/?project=${project}`);
+    const shown = () => board.evaluate(() => [...document.querySelectorAll("#asks .taskline")].map((c) => c.dataset.task));
+    await until(async () => (await shown()).length > 0, 8000);
+    const gone = await page.$eval("#asks .taskline", (c) => c.dataset.task), before = await shown();
+    await page.click("#asks .taskline .x");
+    left = await page.evaluate(() => document.querySelectorAll("#asks .taskline").length);
+    check("AC-117 a line closed in one browser goes in another at once, on the board", before.includes(gone) && await until(async () => !(await shown()).includes(gone), 8000), `${before} → ${await shown()}`);
+    const seen = before.find((id) => id !== gone);
+    await board.goto(`${base}/kanban/${seen}`);
+    const here = () => page.evaluate(() => [...document.querySelectorAll("#asks .taskline")].map((c) => c.dataset.task));
+    check("AC-117 a task's window opened in one browser takes its line from another", await until(async () => !(await here()).includes(seen), 8000), `${seen}: ${await here()}`);
+    left = (await here()).length;
+  } finally {
+    await other.close();
+  }
   await page.reload();
   await page.waitForSelector("#sessions .item");
   check("AC-117 a closed line stays closed", await until(async () => await page.evaluate(() => document.querySelectorAll("#asks .taskline").length) <= left, 4000));
