@@ -201,13 +201,14 @@ body.board-page { margin: 0; overflow: hidden; background: var(--surface-0); col
 @media (hover: hover) { .card:not(:hover, :focus-within) .crun { opacity: 0; } }
 /* TODO and DONE: a line a card, its ID, severity and title; a press shows one whole, folding the one before (terminum-kanban.md AC-159) */
 .card.compact:not(.open) { flex-direction: row; align-items: center; gap: var(--sp-2); }
-.card.compact:not(.open) > :not(.chead, .ctitle, .cfoot), .card.compact:not(.open) .chead > :not(.cid, .csev, .crun), .card.compact:not(.open) .cfoot > :not(.cstate) { display: none; }
+.card.compact:not(.open) > :not(.chead, .ctitle, .cneeds, .cfoot), .card.compact:not(.open) .chead > :not(.cid, .csev, .crun), .card.compact:not(.open) .cfoot > :not(.cstate) { display: none; }
 .card.compact:not(.open) :is(.chead, .cfoot) { display: contents; }
 /* its session's state as its dot alone, the words on hover, as the card shown whole says them (waits for an agent's room) */
 .card.compact:not(.open) .cstate { flex: none; display: inline-flex; font-size: 0; }
 .card.compact:not(.open) .cstate::before { margin-right: 0; vertical-align: 0; }
 .card.compact:not(.open) .cid { flex: none; font-size: var(--fs-meta); color: var(--muted); }
 .card.compact:not(.open) .csev { flex: none; }
+.card.compact:not(.open) .cneeds { flex: none; flex-wrap: nowrap; }
 .card.compact:not(.open) .ctitle { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .card.compact:not(.open) .crun { order: 1; margin: calc(var(--sp-1) * -1) 0; }
 .card.compact:not(.open, .onagent) .crun { display: none; }   /* no agent ran it: Run is on the card shown whole */
@@ -218,6 +219,8 @@ body.board-page { margin: 0; overflow: hidden; background: var(--surface-0); col
 .cfoot > span { overflow-wrap: anywhere; }
 /* its subtasks: a box each, its ID on its status's color (terminum-kanban.md AC-112) */
 .cboxes { display: flex; flex-wrap: wrap; gap: var(--sp-1); }
+/* how many of them failed and wait for a human, in red and in the waiting color; a folded card keeps them (AC-112, AC-117) */
+.cneeds { display: flex; flex-wrap: wrap; gap: var(--sp-1); }
 .cproj { color: color-mix(in srgb, var(--proj, var(--muted)) 75%, var(--t-fg)); }
 /* a session's state: as a group's in the list (tmux.css): a dot in its severity, then words */
 
@@ -285,7 +288,7 @@ body.board-page { margin: 0; overflow: hidden; background: var(--surface-0); col
   .cfoot { font-size: var(--fs-label); }
 }
 /* a phone: a subtask's box takes a finger (AC-105, AC-112) */
-@media (max-width: 860px) { .cboxes .stbox { min-height: 34px; min-width: 34px; justify-content: center; } }
+@media (max-width: 860px) { :is(.cboxes, .cneeds) .stbox { min-height: 34px; min-width: 34px; justify-content: center; } }
 /* what an agent's command must carry: it runs with no one watching (terminum-dispatcher.md AC-156) */
 #agentbox .hint { margin: 0; font-size: var(--fs-small); color: var(--muted-text); overflow-wrap: anywhere; }
 /* a project's integration (terminum-integration.md AC-186): what happens to a red batch, one group of fields */

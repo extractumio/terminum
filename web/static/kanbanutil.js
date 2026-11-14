@@ -110,6 +110,22 @@ export function statusBox(t, open) {
   return b;
 }
 
+/** A parent's subtasks that need a human (AC-112, AC-117): a box each for those FAILED and WAIT FOR HUMAN, the number
+ *  of them on that status's color; a press opens the first of them. */
+export function needBoxes(kids, open) {
+  return [["FAILED", "failed"], ["WAIT FOR HUMAN", "waiting"]].flatMap(([status, word]) => {
+    const of = kids.filter((k) => k.status === status);
+    if (!of.length) return [];
+    const b = el("button", `${statusClass(status)} word`, `${of.length} ${word}`);
+    const said = `${of.length} ${of.length === 1 ? "subtask" : "subtasks"} ${status}: ${of.map((k) => k.id).join(", ")}`;
+    b.type = "button";
+    b.title = said;
+    b.setAttribute("aria-label", said);
+    b.addEventListener("click", (e) => { e.stopPropagation(); open(of[0].id); });
+    return [b];
+  });
+}
+
 /** `parent` holding `nodes` in this order, moving only what must move: one that stays is never taken out, as a node
  *  taken out and put back between a press's down and up loses its click (Chromium). */
 export function placeChildren(parent, nodes) {

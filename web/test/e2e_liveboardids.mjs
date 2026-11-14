@@ -74,12 +74,20 @@ export async function liveBoardIds(page, opts) {
   }
   await page.goto(`${base}/kanban/?project=${project}`);
   await page.waitForSelector(`${card(parent)} .cboxes`, { state: "attached", timeout: 8000 });
+  const needs = () => page.$$eval(`${card(parent)} .cneeds .stbox`, (b) => b.map((x) => [x.textContent, getComputedStyle(x).backgroundColor, x.getAttribute("aria-label"), x.getBoundingClientRect().height > 0]));
+  check("AC-112 a folded card still counts its subtasks that need a human", (await needs()).map((b) => b[0] + (b[3] ? "" : " hidden")).join(",") === "1 failed,1 waiting", JSON.stringify(await needs()));
   await page.click(`${card(parent)} .ctitle`);      // a folded TODO card shown whole (terminum-kanban.md AC-159)
   const boxes = await page.$$eval(`${card(parent)} .cboxes .stbox`, (b) => b.map((x) => [x.textContent, getComputedStyle(x).backgroundColor, x.getAttribute("aria-label")]));
   check("AC-112 a box for each subtask, in the order made, saying its ID", JSON.stringify(boxes.map((b) => b[0])) === JSON.stringify(kids), JSON.stringify(boxes));
   check("AC-112 each status its own color", new Set(boxes.map((b) => b[1])).size === 5, JSON.stringify(boxes.map((b) => b[1])));
   check("AC-112 its status in words too", boxes[3][2] === `${kids[3]} · FAILED · kid FAILED`, boxes[3][2]);
   check("AC-112 the card counts the done", (await page.textContent(`${card(parent)} .csubs`)) === "1/5");
+  const [failed, waiting] = await needs();
+  check("AC-112 the failed count on the FAILED box's red, the waiting one on WAIT FOR HUMAN's color", failed[1] === boxes[3][1] && waiting[1] === boxes[2][1] && failed[1] !== waiting[1], JSON.stringify([failed, waiting]));
+  check("AC-112 a count says its subtasks in words", failed[2] === `1 subtask FAILED: ${kids[3]}` && waiting[2] === `1 subtask WAIT FOR HUMAN: ${kids[2]}`, JSON.stringify([failed[2], waiting[2]]));
+  await page.click(`${card(parent)} .cneeds .stbox >> nth=0`);
+  check("AC-112 a count opens its first subtask", await until(async () => (await page.textContent("#tasktitle")).startsWith(kids[3])));
+  await page.click("#taskclose");
   if (shots) await page.locator(card(parent)).screenshot({ path: path.join(shots, "card-boxes.png") });
   await page.click(`${card(parent)} .cboxes .stbox >> nth=2`);
   check("AC-112 a box opens its subtask", await until(async () => (await page.textContent("#tasktitle")).startsWith(kids[2])));

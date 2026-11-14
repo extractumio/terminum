@@ -62,7 +62,7 @@ Open questions: none.
 | AC-109 | [MUST / P0] | Files up to 100 MB each stay with their task: images shown, other files downloaded, nothing run; a human can purge a file or a text. |
 | AC-110 | [MUST / P0] | The session list and the board share projects; a project needs no session, its last session closing leaves it; Default holds what has no project and is no real project; deleting a project moves its sessions and tasks to Default. |
 | AC-111 | [SHOULD / P1] | Filters by severity, owner and text, and the projects chosen (AC-135), kept in the URL. |
-| AC-112 | [SHOULD / P1] | One level of subtasks, each a full task with a parent: made, put under another task, taken out; the parent's card shows each as a box of its ID in its status's color. |
+| AC-112 | [SHOULD / P1] | One level of subtasks, each a full task with a parent: made, put under another task, taken out; the parent's card shows each as a box of its ID in its status's color, and how many FAILED and WAIT FOR HUMAN in a red and a waiting-colored box, folded too. |
 | AC-113 | [MUST / P0] | A task has at most one session, a session one IN PROGRESS task at most; moving a task across projects asks about its session; a closed session is said on the card. |
 | AC-114 | [MUST / P0] | [DROPPED — a human no longer moves a task across the board: AC-107] |
 | AC-115 | [MUST / P0] | `terminum mcp` lists, reads, makes, moves, comments and finishes tasks of the agent's project, whatever session made or holds them, but one a human's RUN holds in another session; a free task can be taken. |
@@ -406,6 +406,7 @@ Scenario: AC-112 happy path — boxes on the card
   Given API-12 with subtasks API-13 in TODO, API-14 IN PROGRESS, API-15 WAIT FOR HUMAN, API-16 FAILED and API-17 DONE
   Then API-12's card shows "1/5" and a box for each, its ID on gray, yellow, amber, red and green, in the order they were made
   And each box says its ID, status and title in words to a pointer and a screen reader; a press opens that subtask's window
+  And under them a red box "1 failed" and one "1 waiting" in WAIT FOR HUMAN's color, only for a status some subtask has, each saying its subtasks' IDs in words; a press opens the first; a folded card (AC-159) keeps them on its line
 
 Scenario: AC-112 happy path — put under, moved, taken out
   When the user presses Add existing in API-12's window and types API-20, a task of api with no subtasks
