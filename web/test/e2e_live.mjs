@@ -47,6 +47,7 @@ import { liveBoardTasks } from "./e2e_liveboardtasks.mjs";
 import { liveBoardIds } from "./e2e_liveboardids.mjs";
 import { liveDispatcher, liveDispatcherReal } from "./e2e_livedispatcher.mjs";
 import { liveBackground } from "./e2e_livebackground.mjs";
+import { layoutKept } from "./e2e_livelayout.mjs";
 import { liveWaitingRun } from "./e2e_livewaiting.mjs";
 import { liveHistory, liveHistoryPhone } from "./e2e_livehistory.mjs";
 import { liveFolded, liveSchedules } from "./e2e_liveschedules.mjs";
@@ -97,18 +98,6 @@ const purge = () => {
   ours.clear();
 };
 
-/** Whether layout.json holds the panes tmux has now (quick shells apart: never kept). terminumd writes it within
- *  5 s of a change (AC-15), so a browser's last window closed just before the stop would be made again for the next
- *  browser, a shell under that window's name: one named claude is a coding agent's row (titles.rs), first in the list */
-const layoutKept = () => {
-  const quick = new Set(tmux("list-windows", "-a", "-F", "#{window_id} #{@tm-quick}").split("\n").map((l) => l.split(" ")).filter(([, q]) => q).map(([w]) => w));
-  const live = tmux("list-panes", "-a", "-F", "#{window_id} #{pane_id}").split("\n").map((l) => l.split(" ")).filter(([w, p]) => p && !quick.has(w)).map(([, p]) => p).sort();
-  let kept = [];
-  try {
-    kept = JSON.parse(fs.readFileSync(path.join(APP, "layout.json"), "utf8")).sessions.flatMap((s) => s.windows.flatMap((w) => w.panes.map((p) => p.id))).sort();
-  } catch { /* not written yet */ }
-  return live.length > 0 && live.join() === kept.join();
-};
 let proc = null;
 const onSocket = (method, p, body) => new Promise((resolve, reject) => {
   const req = http.request({ socketPath: path.join(APP, "terminumd.sock"), method, path: p, headers: { "Content-Type": "application/json" } }, (res) => {
@@ -486,7 +475,7 @@ try {
     } catch (e) {
       ranToItsEnd(e);
     } finally { await browser.close(); }
-    check("the next browser starts on the layout this one left: terminumd kept it", await until(layoutKept, 10000));
+    check("the next browser starts on the layout this one left: terminumd kept it", await until(() => layoutKept(tmux, APP), 10000));
     await stop();
     purge();
     fs.rmSync(path.join(HOME, "themes"), { recursive: true, force: true });
