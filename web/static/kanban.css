@@ -200,7 +200,7 @@ body.board-page { margin: 0; overflow: hidden; background: var(--surface-0); col
 .crun { --ik: var(--icon-key-list); margin-left: auto; }
 @media (hover: hover) { .card:not(:hover, :focus-within) .crun { opacity: 0; } }
 /* TODO and DONE: a line a card, its ID, severity and title; a press shows one whole, folding the one before (terminum-kanban.md AC-159) */
-.card.compact:not(.open) { flex-direction: row; align-items: center; gap: var(--sp-2); }
+.card.compact:not(.open) { flex-direction: row; flex-wrap: wrap; align-items: center; gap: var(--sp-2); }
 .card.compact:not(.open) > :not(.chead, .ctitle, .cneeds, .cfoot), .card.compact:not(.open) .chead > :not(.cid, .csev, .crun), .card.compact:not(.open) .cfoot > :not(.cstate) { display: none; }
 .card.compact:not(.open) :is(.chead, .cfoot) { display: contents; }
 /* its session's state as its dot alone, the words on hover, as the card shown whole says them (waits for an agent's room) */
@@ -208,8 +208,8 @@ body.board-page { margin: 0; overflow: hidden; background: var(--surface-0); col
 .card.compact:not(.open) .cstate::before { margin-right: 0; vertical-align: 0; }
 .card.compact:not(.open) .cid { flex: none; font-size: var(--fs-meta); color: var(--muted); }
 .card.compact:not(.open) .csev { flex: none; }
-.card.compact:not(.open) .cneeds { flex: none; flex-wrap: nowrap; }
-.card.compact:not(.open) .ctitle { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.card.compact:not(.open) .cneeds { order: 2; flex-basis: 100%; }   /* a line of their own under the card's */
+.card.compact:not(.open) .ctitle { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .card.compact:not(.open) .crun { order: 1; margin: calc(var(--sp-1) * -1) 0; }
 .card.compact:not(.open, .onagent) .crun { display: none; }   /* no agent ran it: Run is on the card shown whole */
 .card.picked { box-shadow: var(--m-edge), inset 0 0 0 2px var(--accent); }

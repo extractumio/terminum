@@ -406,7 +406,7 @@ Scenario: AC-112 happy path — boxes on the card
   Given API-12 with subtasks API-13 in TODO, API-14 IN PROGRESS, API-15 WAIT FOR HUMAN, API-16 FAILED and API-17 DONE
   Then API-12's card shows "1/5" and a box for each, its ID on gray, yellow, amber, red and green, in the order they were made
   And each box says its ID, status and title in words to a pointer and a screen reader; a press opens that subtask's window
-  And under them a red box "1 failed" and one "1 waiting" in WAIT FOR HUMAN's color, only for a status some subtask has, each saying its subtasks' IDs in words; a press opens the first; a folded card (AC-159) keeps them on its line
+  And under them a red box "1 failed" and one "1 waiting" in WAIT FOR HUMAN's color, only for a status some subtask has, each saying its subtasks' IDs in words; a press opens the first; a folded card (AC-159) keeps them on a line under its own
 
 Scenario: AC-112 happy path — put under, moved, taken out
   When the user presses Add existing in API-12's window and types API-20, a task of api with no subtasks
