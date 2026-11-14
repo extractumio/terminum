@@ -6,7 +6,7 @@
 // the comment field under it, then the task and the rest. The board and the session page open the same one (AC-150).
 import { askConfirm, choose, oneAtATime } from "./dialogs.js";
 import { el, iconButton, read, write } from "./listparts.js";
-import { $, SEVERITIES, agentChip, agentsOf, api, button, download, fillSelect, guardQueuedRun, knownAgent, onFiles, onSend, madeChanged, renderInto, row, say, sessionOptions, statusTag, upload, withFileLink } from "./kanbanutil.js";
+import { $, SEVERITIES, agentChip, agentsOf, api, button, download, fillSelect, guardQueuedRun, knownAgent, onFiles, onSend, madeChanged, renderInto, row, say, sessionOptions, statusTag, upload, withFileLink, withoutFileLinks, goneFiles, goneSaid, FILE_GONE } from "./kanbanutil.js";
 import { taskBoxes } from "./taskboxes.js";
 import { activity, editor } from "./kanbanactivity.js";
 import { family } from "./kanbansubs.js";
@@ -242,6 +242,19 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
     const n = note = { id, area, wrap, uploads: 0, keys: [], dropped: () => read(filesKey) ?? [] };
     /** What was sent goes: the field is empty, the draft and its files too. */
     n.sent = () => { write(draft, null); write(filesKey, null); area.value = area.defaultValue = ""; };
+    /** Its files terminumd let go leave it, their links too, and the window names them; Save keeps the rest
+     *  (AC-108). Whether any went. */
+    n.prune = async () => {
+      const asked = await goneFiles(n.dropped()), now = n.dropped(), gone = asked.filter((f) => now.includes(f));   // none if sent meanwhile
+      if (!gone.length) return false;
+      const { text, names } = withoutFileLinks(area.value, gone);
+      write(filesKey, now.filter((f) => !gone.includes(f)));
+      area.value = text;
+      area.dispatchEvent(new Event("input"));     // kept as its draft
+      if (box.open && shown?.id === id) say(goneSaid(names.map((m) => m ?? "A file")));
+      return true;
+    };
+    n.prune();
     takesFiles(area, async (list) => {
       if (box.dataset.busy) return say("Wait until this action finishes, then add the files.");
       n.uploads += list.length;
@@ -262,7 +275,7 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
     if (!n.area.value.trim()) return;
     try {
       await api(`/api/tasks/${t.id}/comments`, { method: "POST", body: { text: n.area.value, files: n.dropped() } });
-    } catch (e) { say(e.message); return; }
+    } catch (e) { if (e.message !== FILE_GONE || !await n.prune()) say(e.message); return; }   // a file let go meanwhile: named, the rest kept
     n.sent();
   }
 
@@ -287,7 +300,7 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
     return commentAction(n, async (current) => {
       try {
         if (await runs.open([t], { words: n.area.value, files: n.dropped(), current, scratch, prefer: t.runs_on, atOnce: !scratch }) !== true) return;
-      } catch (e) { say(e.message); return; }
+      } catch (e) { if (e.message !== FILE_GONE || !await n.prune()) say(e.message); return; }
       n.sent();
       if (current()) await tryClose();
     });
