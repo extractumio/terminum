@@ -117,7 +117,7 @@ fn ac196_child_writer() {
 }
 
 #[test]
-fn ac196_bounded_queue_drains_before_flush() {
+fn ac196_bounded_queue_keeps_all_records_before_worker_exit() {
     let dir = Temp::new();
     let path = dir.path();
     let p = policy(256, 100);
@@ -128,10 +128,9 @@ fn ac196_bounded_queue_drains_before_flush() {
             scope.spawn(move || { for n in 0..100 { writeln!(writer.make_writer(), "{w}:{n:04}").unwrap(); } });
         }
     });
-    writer.flush();
+    drop(writer); // disconnect, drain, and join before reading or removing the folder
     let bytes = recent(&path, p, 1000, None).unwrap();
     assert_eq!(bytes.split(|b| *b == b'\n').filter(|b| !b.is_empty()).count(), 400);
-    drop(writer);
 }
 
 #[test]

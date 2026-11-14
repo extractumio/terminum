@@ -11,9 +11,17 @@ use std::time::{Duration, Instant};
 use super::{Log, Policy, EVERY};
 
 #[derive(Clone)]
-pub struct Writer {
-    send: mpsc::SyncSender<Vec<u8>>,
+pub struct Writer(Arc<Inner>);
+struct Inner {
+    send: Option<mpsc::SyncSender<Vec<u8>>>,
     pending: Arc<AtomicUsize>,
+    worker: Option<std::thread::JoinHandle<()>>,
+}
+impl Drop for Inner {
+    fn drop(&mut self) {
+        self.send.take(); // disconnect only after the last record's writer has gone
+        if let Some(worker) = self.worker.take() { let _ = worker.join(); }
+    }
 }
 static WRITER: OnceLock<Writer> = OnceLock::new();
 thread_local! { static IN_WORKER: Cell<bool> = const { Cell::new(false) }; }
@@ -25,7 +33,7 @@ impl Writer {
         let (send, recv) = mpsc::sync_channel::<Vec<u8>>(256);
         let pending = Arc::new(AtomicUsize::new(0));
         let completed = pending.clone();
-        std::thread::Builder::new().name("terminum-logs".into()).spawn(move || {
+        let worker = std::thread::Builder::new().name("terminum-logs".into()).spawn(move || {
             IN_WORKER.set(true);
             let mut checked = Instant::now() - EVERY;
             let mut sweep = home.map(super::Sweeper::new);
@@ -52,27 +60,27 @@ impl Writer {
                 }
             }
         })?;
-        Ok(Self { send, pending })
+        Ok(Self(Arc::new(Inner { send: Some(send), pending, worker: Some(worker) })))
     }
 
     /// No thread::current or channel parking here: atexit may run after Rust destroys TLS.
     pub fn flush(&self) {
         if IN_WORKER.try_with(Cell::get).unwrap_or(false) { return }
         let deadline = Instant::now() + FLUSH_LIMIT;
-        while self.pending.load(Ordering::Acquire) > 0 && Instant::now() < deadline {
+        while self.0.pending.load(Ordering::Acquire) > 0 && Instant::now() < deadline {
             // SAFETY: usleep has no pointer arguments; unlike Rust's channel wait it needs no TLS.
             unsafe { libc::usleep(5000); }
         }
     }
 
     fn record(&self, bytes: Vec<u8>) {
-        self.pending.fetch_add(1, Ordering::Relaxed);
-        if self.send.send(bytes).is_err() { self.pending.fetch_sub(1, Ordering::Release); }
+        self.0.pending.fetch_add(1, Ordering::Relaxed);
+        if self.0.send.as_ref().expect("an open writer").send(bytes).is_err() { self.0.pending.fetch_sub(1, Ordering::Release); }
     }
 
     fn panic_record(&self, bytes: Vec<u8>) {
-        self.pending.fetch_add(1, Ordering::Relaxed);
-        if self.send.try_send(bytes).is_err() { self.pending.fetch_sub(1, Ordering::Release); }
+        self.0.pending.fetch_add(1, Ordering::Relaxed);
+        if self.0.send.as_ref().expect("an open writer").try_send(bytes).is_err() { self.0.pending.fetch_sub(1, Ordering::Release); }
     }
 }
 
