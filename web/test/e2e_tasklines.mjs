@@ -7,6 +7,8 @@ import { drawn, openPage, SIZES } from "./fake.mjs";
 
 const line = (key, words = "T-7 waits for you") => ({ id: "T-7", failed: false, words, key });
 const shown = (page) => page.evaluate(() => [...document.querySelectorAll("#asks .taskline")].map((c) => c.textContent).join("|"));
+/** Where the buttons float the lines are folded into counters (AC-117): the waiting one opens them. */
+const reveal = async (page) => { if (await page.isVisible('#askcount [data-kind="waiting"]') && !(await page.isVisible("#asks"))) await page.click('#askcount [data-kind="waiting"]'); };
 const toast = (page) => page.evaluate(() => (document.getElementById("toast").hidden ? "" : document.getElementById("toast").textContent));
 
 export async function webTaskLines(browser, name) {
@@ -25,11 +27,13 @@ export async function webTaskLines(browser, name) {
     f.say({ t: "taskmarks", marks: {}, counts: {}, waiting: 1, failed: 0, lines: [line("5|T-7 waits for you")] });
     check(`AC-117 ${at} terminumd's line shows`, await until(async () => (await shown(page)).includes("T-7 waits for you")), await shown(page));
 
+    await reveal(page);
     await page.click("#asks .taskline .x");
     check(`AC-117 ${at} a close is sent to terminumd with the line's key`, await until(() => posts.length === 1) && posts[0].path === "/api/tasks/T-7/seen" && posts[0].body.key === "5|T-7 waits for you", JSON.stringify(posts));
     check(`AC-117 ${at} a refused close brings the line back and says why`, await until(async () => (await shown(page)) !== "" && /T-7's line: The tasks' store: locked/.test(await toast(page))), `${await shown(page)} / ${await toast(page)}`);
 
     answer = { status: 200, body: { ok: true } };
+    await reveal(page);
     await page.click("#asks .taskline .x");
     check(`AC-117 ${at} a kept close hides the line`, await until(async () => (await shown(page)) === "") && posts.length === 2, await shown(page));
     f.say({ t: "taskmarks", marks: {}, counts: {}, waiting: 1, failed: 0, lines: [line("5|T-7 waits for you")] });

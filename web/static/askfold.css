@@ -1,0 +1,19 @@
+/* SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial */
+/* Where the buttons float, the lines of #asks folded into two round counters left of ⟨…⟩ (askfold.js,
+   terminum-kanban.md AC-117): FAILED's red and WAIT FOR HUMAN's yellow, as Kanban's counts; a still ring
+   while one holds a line not looked at (never a blink: UI-GUIDELINES). A tap opens its lines as a sheet. */
+#askcount { display: none; position: absolute; z-index: 6; gap: 12px; }
+body.wide #askcount { grid-row: 1 / -1; }
+body.embed #askcount { display: none !important; }
+.askn { width: 44px; height: 44px; display: grid; place-items: center; padding: 0 4px; border-radius: var(--blob-a);
+  font: 700 15px/1 var(--ui); font-variant-numeric: tabular-nums; box-shadow: var(--shadow-near); }
+.askn.failed { background: var(--danger-fill); color: var(--danger-ink); --ring: var(--danger-fill); }
+.askn.waiting { background: var(--waiting); color: var(--waiting-ink); --ring: var(--waiting); }
+.askn.fresh, .askn[aria-expanded="true"] { box-shadow: 0 0 0 2px var(--t-bg), 0 0 0 4px var(--ring); }
+@media (hover: none), (max-width: 860px) {         /* fold.js FLOATING */
+  #askcount:not([hidden]) { display: flex; }
+  body.asksfold:not(.asksopen) #asks { display: none; }   /* folded: no room taken, the terminal's rows stay */
+  #asks[data-sheet] { max-height: calc(var(--app-h, 100dvh) / 2) !important; padding: var(--sp-1) 0; border-radius: var(--r-xl); background: var(--chrome-2); }
+  #asks[data-sheet] .what { white-space: normal; overflow-wrap: anywhere; }   /* whole, wrapped */
+  #asks[data-kind="failed"] .ask:not(:has(.state.failed)), #asks[data-kind="waiting"] .ask:not(:has(.state.waiting)) { display: none; }
+}

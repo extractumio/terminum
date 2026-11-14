@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // What the session page holds of the board: the session its address asks for (terminum-kanban.md
-// AC-134) and the lines of tasks that need a human (AC-117).
+// AC-134) and the lines of tasks that need a human (AC-117), folded into two counters where the buttons float.
 import { addressedSession, sessionHash, taskUrl } from "./tasklink.js";
 import { findItem, serverDown } from "./nav.js";
 import { taskLines } from "./tasklines.js";
+import { asksFold } from "./askfold.js";
 
 /** `box` holds the lines. */
 export function pageTasks({ box, embedded, say, show }) {
@@ -11,6 +12,7 @@ export function pageTasks({ box, embedded, say, show }) {
   // Back and Forward go through the sessions pressed
   if (!embedded) addEventListener("popstate", () => { const id = addressedSession(); if (id) show(id); });
   const lines = taskLines(box, (id) => { location.href = taskUrl(id); }, (text) => say(text, 6000));
+  const counts = asksFold({ box, counters: document.getElementById("askcount") });   // the waiting agents' lines too (waiting.js)
   return {
     /** The session asked for, before any list. */
     asked,
@@ -31,6 +33,8 @@ export function pageTasks({ box, embedded, say, show }) {
       asked = null;
     },
     marks(m) { if (!embedded) lines.came(m); },
+    /** The counters beside ⟨…⟩, after the floating buttons were placed. */
+    placeCounts: counts.place,
     /** Every session has its own address (AC-134): `press`: a step of Back, any other change none. */
     address(id, press = false) {
       const hash = sessionHash(id);

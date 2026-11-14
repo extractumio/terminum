@@ -643,7 +643,7 @@ Scenario: AC-116 failure — not kept
 ```gherkin
 Scenario: AC-117 happy path — banner and count
   When API-12 moves to WAIT FOR HUMAN or FAILED by an agent or Dispatcher
-  Then a line as terminum-agents.md AC-39's reminder says "API-12 waits for you" or "API-12 failed: <reason>" and opens its window, the reason being what was said with its move to FAILED, else who moved it, never what an older move said, on both pages
+  Then a line as terminum-agents.md AC-39's reminder says "API-12 waits for you" or "API-12 failed: <reason>" and opens its window, the reason being the first line with words of what was said with its move to FAILED, else who moved it, never what an older move said, on both pages; with none it says "API-12 failed", never a colon with nothing after it
   And Kanban among the sections counts them as the board's cards: those in WAIT FOR HUMAN on WAIT FOR HUMAN's yellow, those FAILED on FAILED's red, each count said in words on hover ("2 tasks wait for you", "3 tasks failed"), and none at 0
   And a subtask counts once with its main task when both stand in the same column; in another column it counts on its own
 
@@ -668,8 +668,16 @@ Scenario: AC-117 edge — a filter
   Then the counts are of every project, whatever the board's filter
 
 Scenario: AC-117 edge — many lines
-  Given more lines than a third of the window holds
+  Given a computer with a mouse and more lines than a third of the window holds
   Then they scroll in that third, and the terminal keeps the rest of the page
+
+Scenario: AC-117 happy path — two counters on a touch screen
+  Given lines where the floating buttons float (a phone, a tablet, a window narrower than 861 px: terminum.md AC-18)
+  Then no line stands above or over the terminal: the lines and the waiting agents' reminders (terminum-agents.md AC-39) fold into two round counters left of ⟨…⟩ at the terminal's top right (at the top right under the header while Files or View is shown): FAILED's red with how many failed, WAIT FOR HUMAN's yellow with how many wait, each saying it in words ("2 failed", "1 waits for you"); a counter with nothing to count is not shown, so with no line nothing is
+  And a counter with a line not looked at since it came wears a still ring until it is opened, never a blink
+  When the user taps a counter
+  Then its lines open in the middle of the visible screen as a sheet at most half the visible height, scrolling inside, each line's words whole, wrapped; a line opens its task or session and its × closes it, as above, terminumd keeping it
+  And a tap outside, Esc, or its last line going closes the sheet; the terminal's rows never change for a line coming or going
 ```
 
 ### AC-118 — Archive [SHOULD / P1]
@@ -1267,7 +1275,7 @@ Depends on: nothing more.
 - [x] AC-113 — `cargo test tasks::ops` (a task whose session could not follow goes back), `web/test/e2e_liveboard.mjs`
 - [x] AC-115 — `cargo test tasks::tools`, `cargo test cli::mcp`, `web/test/e2e_livenotes.mjs`, `web/test/e2e_livearchived.mjs` (archived moves and results refused; unchanged history)
 - [x] AC-116 — `web/test/e2e_livenotes.mjs` (Convert to task from the list and the bar, Cancel, a refusal, Create, pressed twice, two tabs at once, the link to its line; `node web/test/e2e_live.mjs notes`)
-- [x] AC-117 — `cargo test tasks::marks`, `web/test/e2e_livedispatcher.mjs`, `web/test/e2e_tasklines.mjs`
+- [x] AC-117 — `cargo test tasks::marks`, `web/test/e2e_livedispatcher.mjs`, `web/test/e2e_tasklines.mjs`, `web/test/e2e_askfold.mjs` (the counters)
 - [x] AC-118 — `cargo test tasks::archiving`, `web/test/e2e_liveboardtasks.mjs`
 - [x] AC-119 — `cargo test tasks::store`
 - [x] AC-136 — `cargo test tasks::tell` (fresh settlement with and without background work, a new prompt), `web/test/e2e_liveboardedge.mjs`, `web/test/e2e_livebackground.mjs` (monitor-only Stop, work ending, immediate failure), `web/test/cardstate.test.mjs` (its background work)
