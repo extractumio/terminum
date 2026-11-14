@@ -19,7 +19,21 @@ fn host() -> Host {
     let home = Home::new();
     let bin = home.path(".nvm/versions/node/v22.1.0/bin");
     let log = home.path("claude.log");
-    write_exec(&bin.join("claude"), &format!("#!/bin/sh\necho \"$@\" >> '{}'\n[ \"$2\" = list ] && echo terminum@terminum-local\nexit 0\n", log.display()));
+    write_exec(&bin.join("claude"), &format!(r#"#!/bin/sh
+home='{}'
+echo "$@" >> "$home/claude.log"
+case "$2" in
+  list)
+    [ -f "$home/list-fails" ] && exit 1
+    if [ -f "$home/list-answer" ]; then cat "$home/list-answer"
+    elif [ -f "$home/plugin-on" ]; then
+      printf '[{{"id":"terminum@terminum-local","scope":"user","enabled":true,"installPath":"%s/.terminum/hooks/claude/plugins/terminum"}}]\n' "$home"
+    else echo '[]'; fi ;;
+  install) touch "$home/plugin-on" ;;
+  uninstall) [ -f "$home/uninstall-fails" ] && exit 1; rm -f "$home/plugin-on" ;;
+esac
+exit 0
+"#, home.path("").display()));
     let codex = home.path(".codex");
     std::fs::create_dir_all(&codex).unwrap();
     std::fs::create_dir_all(home.path(".terminum/bin")).unwrap();
@@ -69,12 +83,12 @@ fn install_points_every_command_at_terminum_host_once() {
     assert!(std::fs::read_to_string(h.codex.join("config.toml")).unwrap().contains(&format!("command = \"{prog}\"")));
     assert!(calls(&h).contains("plugin install terminum@terminum-local --scope user"));
 
-    // a second install: nothing changes, claude is not called again
+    // A second install probes registration but makes no plugin mutation.
     let (toml, hooks, n) = (std::fs::read_to_string(h.codex.join("config.toml")).unwrap(), std::fs::read_to_string(h.codex.join("hooks.json")).unwrap(), calls(&h).lines().count());
     assert_eq!(go(&h, "install", false), vec![format!("{M} claude installed"), format!("{M} codex installed")]);
     assert_eq!(std::fs::read_to_string(h.codex.join("config.toml")).unwrap(), toml);
     assert_eq!(std::fs::read_to_string(h.codex.join("hooks.json")).unwrap(), hooks);
-    assert_eq!(calls(&h).lines().count(), n, "claude not called: {}", calls(&h));
+    assert_eq!(calls(&h).lines().count(), n + 1, "registration only: {}", calls(&h));
 
     assert_eq!(go(&h, "remove", false), vec![format!("{M} claude removed"), format!("{M} codex removed")]);
     assert!(!agentsetup::codex_remove(&json(&h.codex.join("hooks.json")), "x").to_string().contains("terminum-host"));
@@ -91,7 +105,7 @@ fn refresh_rewrites_only_when_the_content_differs() {
     let plugin = h.home.path(".terminum/hooks/claude/plugins/terminum");
     std::fs::write(h.home.path(".terminum/hooks/claude.installed"), "otherbuild").unwrap();
     assert_eq!(go(&h, "install", true), vec![format!("{M} claude installed"), format!("{M} codex installed")]);
-    assert_eq!(calls(&h).lines().count(), n, "builds differing is no reason: {}", calls(&h));
+    assert_eq!(calls(&h).lines().count(), n + 1, "builds differing is no reason: {}", calls(&h));
     assert_eq!(std::fs::read_to_string(h.home.path(".terminum/hooks/claude.installed")).unwrap(), "otherbuild");
     // the hook command changed: the plugin updated in place (never uninstalled first)
     let mut v = json(&plugin.join("hooks/hooks.json"));
@@ -120,7 +134,7 @@ fn a_refresh_installs_an_agent_found_without_terminums() {
     let n = calls(&h).lines().count();
     let hooks = std::fs::read_to_string(h.codex.join("hooks.json")).unwrap();
     assert_eq!(go(&h, "install", true), vec![format!("{M} claude installed"), format!("{M} codex installed")]);
-    assert_eq!(calls(&h).lines().count(), n, "nothing to do: {}", calls(&h));
+    assert_eq!(calls(&h).lines().count(), n + 1, "registration only: {}", calls(&h));
     assert_eq!(std::fs::read_to_string(h.codex.join("hooks.json")).unwrap(), hooks);
 }
 
@@ -183,4 +197,95 @@ fn not_found_without_claude_or_codex() {
     hostmode::run(&ctx, &args).unwrap();
     let got: Vec<String> = said(&ctx).into_iter().filter(|l| l.starts_with(M)).collect();
     assert_eq!(got, vec![format!("{M} claude not-found"), format!("{M} codex not-found")]);
+}
+
+/// AC-99: registration commits before a cancelled helper updates its installation marker.
+#[test]
+fn stale_markers_do_not_decide_the_requested_plugin_state() {
+    let h = host();
+    go(&h, "install", false);
+    let marker = h.home.path(".terminum/hooks/claude.installed");
+    std::fs::remove_file(&marker).unwrap();
+    assert_eq!(go(&h, "status", false)[0], format!("{M} claude installed"));
+    assert_eq!(go(&h, "remove", false)[0], format!("{M} claude removed"));
+    assert!(!h.home.path("plugin-on").exists());
+    // Cancelled uninstall: source files and the old marker remain, registration is gone.
+    std::fs::write(&marker, "old").unwrap();
+    assert_eq!(go(&h, "status", false)[0], format!("{M} claude off"));
+    assert_eq!(go(&h, "install", true)[0], format!("{M} claude installed"));
+    assert!(h.home.path("plugin-on").exists());
+    assert_eq!(calls(&h).matches("plugin install").count(), 2);
+}
+
+/// AC-99: failed observation/removal cannot claim off or strand a registered plugin.
+#[test]
+fn reconciliation_failure_keeps_the_helper_link() {
+    let h = host();
+    go(&h, "install", false);
+    std::fs::remove_file(h.home.path(".terminum/hooks/claude.installed")).unwrap();
+    for (file, answer) in [("list-fails", ""), ("list-answer", "bad"), ("list-answer", "{}"),
+                           ("list-answer", "[{}]"), ("uninstall-fails", "")] {
+        std::fs::write(h.home.path(file), answer).unwrap();
+        let before = calls(&h).matches("plugin uninstall").count();
+        assert!(go(&h, "remove", false)[0].starts_with(&format!("{M} claude failed:")));
+        assert!(h.home.path(".terminum/bin/terminum-host").exists());
+        assert!(h.home.path("plugin-on").exists());
+        if file != "uninstall-fails" {
+            assert_eq!(calls(&h).matches("plugin uninstall").count(), before);
+            assert!(go(&h, "install", true)[0].starts_with(&format!("{M} claude failed:")));
+        }
+        std::fs::remove_file(h.home.path(file)).unwrap();
+    }
+}
+
+/// AC-99: exact user-scope identity and the registered copy's command establish ownership.
+#[test]
+fn registration_of_another_plugin_or_terminum_is_untouched() {
+    let h = host();
+    let answer = h.home.path("list-answer");
+    for (id, scope) in [("terminum@terminum-local-other", "user"), ("terminum@terminum-local", "project")] {
+        std::fs::write(&answer, serde_json::json!([{"id": id, "scope": scope, "enabled": true}]).to_string()).unwrap();
+        assert_eq!(go(&h, "remove", false)[0], format!("{M} claude off"));
+        assert!(!calls(&h).contains("plugin uninstall"));
+    }
+    let cache = h.home.path("cached-plugin");
+    std::fs::create_dir_all(&cache).unwrap();
+    std::fs::write(cache.join(".mcp.json"), r#"{"mcpServers":{"terminum":{"command":"/opt/other/terminum"}}}"#).unwrap();
+    std::fs::write(&answer, serde_json::json!([{"id": "terminum@terminum-local", "scope": "user", "enabled": true,
+        "installPath": cache}]).to_string()).unwrap();
+    for action in ["install", "remove", "status"] {
+        assert!(go(&h, action, false)[0].contains("refused: an entry named terminum runs /opt/other/terminum"));
+    }
+    assert!(!calls(&h).contains("plugin uninstall") && !calls(&h).contains("plugin install"));
+}
+
+/// AC-99: a disabled registration still needs uninstall; on must enable it again.
+#[test]
+fn a_disabled_registration_is_reconciled_in_both_directions() {
+    let h = host();
+    go(&h, "install", false);
+    let answer = h.home.path("list-answer");
+    std::fs::write(&answer, serde_json::json!([{"id": "terminum@terminum-local", "scope": "user", "enabled": false,
+        "installPath": h.home.path(".terminum/hooks/claude/plugins/terminum")}]).to_string()).unwrap();
+    assert_eq!(go(&h, "remove", false)[0], format!("{M} claude removed"));
+    assert!(!h.home.path("plugin-on").exists());
+    assert_eq!(go(&h, "install", true)[0], format!("{M} claude installed"));
+    assert!(h.home.path("plugin-on").exists());
+}
+
+/// AC-99: the registered copy may belong to the host's own terminum even without source files.
+#[test]
+fn a_registered_host_own_plugin_is_skipped() {
+    let h = host();
+    let own = h.home.path(".terminum/bin/terminum");
+    write_exec(&own, "#!/bin/sh\n");
+    let cache = h.home.path("cached-plugin");
+    std::fs::create_dir_all(&cache).unwrap();
+    std::fs::write(cache.join(".mcp.json"), serde_json::json!({"mcpServers":{"terminum":{"command":own}}}).to_string()).unwrap();
+    std::fs::write(h.home.path("list-answer"), serde_json::json!([{"id":"terminum@terminum-local", "scope":"user", "enabled":true,
+        "installPath":cache}]).to_string()).unwrap();
+    for action in ["install", "remove", "status"] {
+        assert_eq!(go(&h, action, false)[0], format!("{M} claude skipped-own"));
+    }
+    assert!(!calls(&h).contains("plugin install") && !calls(&h).contains("plugin uninstall"));
 }
