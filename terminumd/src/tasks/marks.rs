@@ -48,7 +48,7 @@ fn asks(tx: &Transaction, one: Option<&str>) -> Result<Vec<Asks>, String> {
         WHERE t.status IN ('WAIT FOR HUMAN', 'FAILED') AND t.archived_at IS NULL AND (?1 IS NULL OR t.id = ?1) ORDER BY t.number DESC", [one], |r| {
         let (id, failed): (String, bool) = (r.get(0)?, r.get(1)?);
         let why = r.get::<_, String>(3)?;
-        let words = match why.lines().next().unwrap_or("") {
+        let words = match reason(&why) {
             _ if !failed => format!("{id} waits for you"),
             "" => format!("{id} failed"),
             first => format!("{id} failed: {first}"),
@@ -57,6 +57,13 @@ fn asks(tx: &Transaction, one: Option<&str>) -> Result<Vec<Asks>, String> {
         let due = r.get::<_, bool>(2)? && r.get::<_, Option<String>>(5)?.as_deref() != Some(key.as_str());
         Ok(Asks { id, failed, words, key, due })
     })
+}
+
+/// A reason's first line that says something: blank and invisible characters round it dropped, a blank line
+/// skipped, so a line never ends in a hanging colon (AC-117).
+fn reason(why: &str) -> &str {
+    let blank = |c: char| c.is_whitespace() || c.is_control() || matches!(c, '\u{200b}'..='\u{200d}' | '\u{2060}' | '\u{feff}');
+    why.lines().map(|l| l.trim_matches(blank)).find(|l| !l.is_empty()).unwrap_or("")
 }
 
 /// The human closed or saw task `id`'s line of `key`, or its line as it stands now (its window opened): whether
@@ -228,6 +235,19 @@ mod tests {
         marks.refresh(&store).unwrap();
         assert_eq!(lines(&marks), (json!(1), json!([])), "a human's move has no line");
         assert!(store.with(|tx| keep_seen(tx, "TASK-404", None)).is_err(), "an unknown task is refused");
+    }
+
+    #[test]
+    fn ac117_a_failed_line_without_a_reason_has_no_hanging_colon() {
+        for (why, says) in [("   ", ""), ("\u{200b}\n", ""), ("\n  \nNo result.  \nmore", ": No result."), ("\tThe agent ended.\r", ": The agent ended.")] {
+            let store = Store::open(crate::testutil::fresh_dir("marks-blank").join("kanban.sqlite"));
+            let marks = Marks::default();
+            let t = store.with(|tx| create(tx, HUMAN, NewTask { title: "a".into(), ..Default::default() }, 1)).unwrap();
+            store.with(|tx| { move_to(tx, DISPATCHER, &t.id, "FAILED", 2)?; ops::log(tx, &t.key, DISPATCHER, "why", why, None, 2).map(drop) }).unwrap();
+            marks.refresh(&store).unwrap();
+            let (_, told) = lines(&marks);
+            assert_eq!(told[0]["words"], json!(format!("{} failed{says}", t.id)), "reason {why:?}");
+        }
     }
 
     #[test]
