@@ -62,6 +62,11 @@ def host():
     remote_socket = own("tm-review-rhost")
     remote = Path(t.root) / "remote"
     remote.mkdir()
+    # This retired-host fixture checks Files, without using the workstation's Claude.
+    claude = remote / ".local/bin/claude"
+    claude.parent.mkdir(parents=True)
+    claude.write_text("#!/bin/sh\nexit 1\n")
+    claude.chmod(0o700)
     note = remote / "note.txt"
     note.write_text("synthetic retired host")
     t.env.update(TM_SSH=str(HERE / "fake_ssh.py"), FAKE_SSH_HOME=str(remote),

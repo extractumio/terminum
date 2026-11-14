@@ -36,9 +36,16 @@ NAME, SSH_PORT, BOB_PORT = container_name(f"rr9-{VARIANT}"), free_port(), free_p
 
 STUB = r"""#!/bin/sh
 echo "$*" >> "$HOME/claude-argv.log"
-if [ "$1 $2" = "plugin list" ] && grep -q '^plugin install terminum@terminum-local' "$HOME/claude-argv.log"; then
-  printf 'Installed plugins:\n\n  > terminum@terminum-local\n    Version: 1\n    Scope: user\n    Status: enabled\n'
-fi
+case "$1 $2" in
+  'plugin install') echo on > "$HOME/plugin-state" ;;
+  'plugin uninstall') echo off > "$HOME/plugin-state" ;;
+  'plugin list')
+    if [ "$(cat "$HOME/plugin-state" 2>/dev/null)" = on ]; then
+      if [ "$3" = --json ]; then
+        printf '[{"id":"terminum@terminum-local","scope":"user","enabled":true,"installPath":"%s/.terminum/hooks/claude/plugins/terminum"}]\n' "$HOME"
+      else echo 'terminum@terminum-local'; fi
+    elif [ "$3" = --json ]; then echo '[]'; fi ;;
+esac
 exit 0
 """
 
@@ -170,9 +177,15 @@ def cancel_operations(t):
 case "$1 $2" in
   'plugin install') value=on ;;
   'plugin uninstall') value=off ;;
+  'plugin list')
+    if [ "$(cat "$HOME/plugin-state" 2>/dev/null)" = on ]; then
+      printf '[{"id":"terminum@terminum-local","scope":"user","enabled":true,"installPath":"%s/.terminum/hooks/claude/plugins/terminum"}]\n' "$HOME"
+    else echo '[]'; fi
+    exit 0 ;;
   *) exit 0 ;;
 esac
 if [ -f "$HOME/gate" ] && [ "$(cat "$HOME/gate")" = "$1 $2" ]; then
+  [ ! -f "$HOME/precommit" ] || echo "$value" > "$HOME/plugin-state"
   mv "$HOME/gate" "$HOME/blocked"
   sh -c 'trap "" TERM; while [ -f "$HOME/blocked" ]; do sleep 0.05; done; echo "$1" > "$HOME/plugin-state"' sh "$value" &
   echo "$$ $!" > "$HOME/started"
@@ -185,9 +198,12 @@ fi
                     'cat > "$HOME/.nvm/versions/node/v22.0.0/bin/claude"'], input=stub, text=True, check=True)
     def ask(action):
         return unix_request(t.sock, "POST", "/hosts/agents-" + action, {"name": "devbox"})
-    for first, second, held, want in (("on", "off", "install", "off"), ("off", "on", "uninstall", "on")):
-        if first == "off":
-            assert ask("on")[0] == 200
+    cases = [(committed, first, second, held, want) for committed in (False, True)
+             for first, second, held, want in (("on", "off", "install", "off"), ("off", "on", "uninstall", "on"))]
+    for committed, first, second, held, want in cases:
+        on_host('touch "$HOME/precommit"' if committed else 'rm -f "$HOME/precommit"')
+        print(f"[{VARIANT}] Plugin mutation before cancellation: {committed}")
+        assert ask("on" if first == "off" else "off")[0] == 200
         on_host(f'rm -f "$HOME/started"; echo "plugin {held}" > "$HOME/gate"')
         answers = []
         worker = threading.Thread(target=lambda: answers.append(ask(first)))
