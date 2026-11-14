@@ -234,8 +234,42 @@ export async function agentPool(page, opts, pressAt) {
   const spare = (await j("/api/task-agents", "POST", { project, name: "Spare", kind: "claude", command: "claude" })).id;   // a pool of two: it asks which
   await until(() => page.isVisible('.agents .agentcard:has-text("Spare")'));
   await page.click("#adhocsession");
-  check("AC-142 with several agents it asks which, the last used first", await until(() => page.$("#confirmbox[open]")) && /Fast fixer/.test(await page.textContent("#confirmacts")), await page.textContent("#confirmacts").catch(() => ""));
-  await pressAt(page, '#confirmacts button:has-text("Fast fixer")');
+  check("AC-142 with several agents it asks which, as tiles", await until(() => page.$("#agentpick[open]")) && /Fast fixer/.test(await page.textContent("#agentpicklist")), await page.textContent("#agentpicklist").catch(() => ""));
+  // each tile in the window, on one line, its kind, slots and command line said; the window in the page's middle
+  const lay = () => page.evaluate(() => {
+    const d = document.getElementById("agentpick").getBoundingClientRect(), tiles = [...document.querySelectorAll("#agentpicklist .agentcard")];
+    const r = tiles.map((t) => t.getBoundingClientRect()), h = document.documentElement.clientHeight;
+    return { n: tiles.length, inside: r.every((b) => b.left >= d.left && b.right <= d.right && b.top >= d.top && b.bottom <= d.bottom),
+      oneLine: r.every((b) => Math.abs(b.top - r[0].top) < 1), dx: Math.round(d.left + d.width / 2 - innerWidth / 2), dy: Math.round(d.top + d.height / 2 - h / 2),
+      rows: new Set(r.map((b) => Math.round(b.top))).size, fits: d.top >= 0 && d.bottom <= h && d.left >= 0 && d.right <= innerWidth, said: tiles.map((t) => t.textContent) };
+  });
+  const laid = await lay();
+  if (shots) await page.screenshot({ path: path.join(shots, "session-agents.png") });
+  check("AC-142 the agents are tiles inside their window, side by side, the window centered", laid.n === 2 && laid.inside && laid.oneLine && Math.abs(laid.dx) <= 1 && Math.abs(laid.dy) <= 1, JSON.stringify(laid));
+  check("AC-142 a tile says its kind, its slots", laid.said.every((t) => /Claude Code/.test(t) && /\d of \d+ at once/.test(t)), JSON.stringify(laid.said));
+  check("AC-142 a tile says its kind, its slots and the command its agent was given", laid.said.some((t) => /fake_agent\.py/.test(t)) && laid.said.every((t) => !/--settings/.test(t)), JSON.stringify(laid.said));
+  // five agents: two even rows in a window still centered; on a phone one column, the window in sight, scrolling
+  await page.keyboard.press("Escape");
+  const extra = [];
+  for (const n of ["Third", "Fourth", "Fifth"]) extra.push((await j("/api/task-agents", "POST", { project, name: n, kind: "codex", command: "codex" })).id);
+  await until(() => page.isVisible('.agents .agentcard:has-text("Fifth")'));
+  await page.click("#adhocsession");
+  await until(() => page.$("#agentpick[open]"));
+  const five = await lay();
+  check("AC-142 five agents: three and two, all inside the window, centered", five.n === 5 && five.rows === 2 && five.inside && five.fits && Math.abs(five.dx) <= 1 && Math.abs(five.dy) <= 1, JSON.stringify(five));
+  if (shots) await page.screenshot({ path: path.join(shots, "session-agents-five.png") });
+  const wideSize = page.viewportSize();
+  await page.setViewportSize({ width: 390, height: 844 });
+  const narrow = await lay();
+  check("AC-142 on a phone the tiles are one column, the window in sight", narrow.rows === 5 && narrow.fits && Math.abs(narrow.dx) <= 1, JSON.stringify(narrow));
+  if (shots) await page.screenshot({ path: path.join(shots, "session-agents-phone.png") });
+  await page.setViewportSize(wideSize);
+  await page.keyboard.press("Escape");
+  for (const id of extra) await j(`/api/task-agents/${id}`, "DELETE");
+  await until(async () => !(await page.isVisible('.agents .agentcard:has-text("Fifth")')));
+  await page.click("#adhocsession");
+  await until(() => page.$("#agentpick[open]"));
+  await pressAt(page, '#agentpicklist .agentcard:has-text("Fast fixer")');
   check("AC-142 it opens the session, of no task", await until(() => /\/sessions\//.test(page.url()), 15000), page.url());
   await j(`/api/task-agents/${spare}`, "DELETE");
   let adhoc;

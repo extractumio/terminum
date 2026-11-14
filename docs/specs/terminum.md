@@ -1030,7 +1030,7 @@ Scenario: AC-173 happy path — a message typed into RUN over a task's window
 Scenario: AC-173 happy path — each kind its own size
   Then each dialog takes its parent's 80% within its kind's floor and ceiling, never more than the window less 16 px a side:
     | Kind | Dialogs | Width | Height |
-    | a question | a confirmation, a name, enabling agents' hooks on a host | 360–480 px | as its words |
+    | a question | a confirmation, a name, enabling agents' hooks on a host, + Session's agents (as wide as their tiles, terminum-dispatcher.md AC-142) | 360–480 px | as its words |
     | fields to set | Convert to task, an agent, a project (720 px; 960 with its agents' list), Auto-Dispatcher, memory limits | 480–640 px | as its fields, scrolling past the window less 32 px |
     | a text to type | RUN, New task, a schedule (640 px high at least), Ask and a bookmark's note (560 px high at most), Paste | 520–960 px | 80%, 480–880 px; the text field takes the rest |
     | a list to pick from | a folder, the archived tasks | 480–720 px | 80%, 360–760 px; the list takes the rest |

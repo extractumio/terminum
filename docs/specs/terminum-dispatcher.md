@@ -926,6 +926,13 @@ Scenario: AC-142 happy path
   Then the pool's agents are offered, the one last used in api first; a press starts it in api's place with nothing typed, and its session opens
   And it stands in the list as a member of api, and as a dot on its agent
 
+Scenario: AC-142 happy path — the agents offered as tiles
+  Given api's pool of five agents with room
+  When the user presses + Session
+  Then each agent is a tile: its color, mark and name, its kind, effort and "0 of 1 at once", the command it was given; the one last used first, marked "last used"
+  And the tiles stand at most 4 a line in rows as even as they go (5: 3 and 2), every tile inside a window as wide as those columns, centered across and down
+  And on a narrow window or a phone the tiles take fewer columns, down to one, the window in sight and scrolling when taller
+
 Scenario: AC-142 edge — what Dispatcher does with it
   Given that session
   Then no prompt is typed, no task moves, no budget runs, nothing nudges it, and only its numbers show; the human closes it
@@ -1863,7 +1870,7 @@ Depends on `terminum-kanban.md`'s Stage 1. All three stages belong to terminum's
 - [x] AC-131 — `cargo test dispatcher::plan` with a clock jump, `cargo test dispatcher::runs` (a phase it does not know), `web/test/e2e_livedispatcher.mjs`
 - [x] AC-140 — `cargo test tasks::agents`, `cargo test tasks::store`, `web/test/e2e_liveboardagents.mjs`, `web/test/e2e_livedispatcher.mjs`, `scripts/e2e_remote_tasks.py`
 - [x] AC-141 — `cargo test dispatcher::pool`, `cargo test dispatcher::plan`, `cargo test tasks::limits`, `web/test/e2e_liveboardagents.mjs`
-- [x] AC-142 — `cargo test dispatcher::runs`, `cargo test dispatcher::plan`, `cargo test tasks::tools`, `web/test/e2e_liveboardagents.mjs`
+- [x] AC-142 — `cargo test dispatcher::runs`, `cargo test dispatcher::plan`, `cargo test tasks::tools`, `web/test/e2e_liveboardagents.mjs` (the tiles: `web/test/e2e_liveboardpool.mjs`)
 - [x] AC-143 — `cargo test dispatcher::usage`, `cargo test tasks::agents`, `web/test/e2e_liveboardagents.mjs`
 - [x] AC-168 — `cargo test subscriptions`, `cargo test usageask`, `cargo test usageread`, `cargo test settings::tests::ac168`, `cargo test cli::statusline`, `cargo test cli::hooktokens`, `scripts/e2e_hooks.py`, `web/test/e2e_liveboardsubs.mjs` (a stripe under 40% green, over 90% red)
 - [ ] AC-156 — `cargo test tasks::agents`, `cargo test dispatcher::press`, `web/test/e2e_liveboardagents.mjs`, `web/test/e2e_livedispatcher.mjs` (the inline words), `SECURITY.md` carries the operator's command

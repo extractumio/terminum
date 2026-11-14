@@ -11,7 +11,7 @@ import { agentView, stripes } from "./kanbanagentview.js";
 import { asTyped } from "./astyped.js";
 import { slotState } from "./cardstate.js";
 import { queueKey, queueList } from "./kanbanqueue.js";
-import { $, agentColor, agentsOf, api, button, fillSelect, guardCancel, onlyProject, projectOptions, showError } from "./kanbanutil.js";
+import { $, agentColor, agentsOf, api, button, fillSelect, guardCancel, onlyProject, projectOptions, showError, slotsUsed } from "./kanbanutil.js";
 
 const KINDS = ["claude", "codex"];                 // their commands are their names: what a kind fills in
 
@@ -70,7 +70,7 @@ export function agentsSection({ getMeta, chosen, reload, refreshQueue, slots: co
     const kept = counted().kept?.[a.id] ?? [];
     for (const k of kept) { const m = el("span", "agkept"); m.title = `kept for ${k}`; m.setAttribute("aria-label", `kept for ${k}`); dots.append(m); }
     dots.append(...mine.map(dot));
-    const used = slots(a).filter((s) => !s.kept && !s.round).length + kept.length;   // a round's session takes no slot (AC-170)
+    const used = slotsUsed(counted(), a);
     if (a.at_once <= MOST_FREE) for (let i = used; i < a.at_once; i++) { const m = el("span", "agfree"); m.title = "a free slot"; dots.append(m); }
     if (a.at_once > 1 || kept.length) dots.append(el("small", "agcount", `${used}/${a.at_once}`));
     const queued = queueOf(a);
