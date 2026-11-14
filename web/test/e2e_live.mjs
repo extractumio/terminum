@@ -59,6 +59,7 @@ import { SORT_ALONE, BOARD_ALONE, TASKS_ALONE, WAITING_ALONE, POOL_ALONE, SMOKE,
   AUTO_ALONE, SCHEDULES_ALONE, NOTES_ALONE, ICONS_ALONE, REQUESTS_ALONE, SIGNIN_ALONE, QUEUE_ALONE, MAIN_ALONE, BACKGROUND_ALONE, ARCHIVED_ALONE } from "./e2e_livemodes.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+const SHORT = SMOKE || LINKS_ALONE;   // a few checks, the wide size only
 const BIN = process.env.TERMINUMD_BIN ?? path.join(ROOT, "terminumd/target/debug/terminumd");
 // this run's: checks in several worktrees at once never meet, and purge() ends only this run's server
 const PORT = await freePort(), SOCKET = own("tm-test-live");
@@ -247,7 +248,7 @@ async function wide(browser, name) {
   await within("AC-03 typed keys reach the pane and echo", () => page.waitForFunction((n) => document.getElementById("screen").innerText.includes(`live-42-${n}`), name, { timeout: 5000 }));
   // its own name per browser: the tmux server is both runs' (the first run's window and its marks stay)
   const byhandName = `byhand-${name}`;
-  if (!SMOKE && !LINKS_ALONE) {
+  if (!SHORT) {
     await livePaste(page, { home: HOME, name });
     // a drop's own paths come from Finder's drag pasteboard (dragged.rs): macOS only, elsewhere terminumd says so
     if (process.platform === "darwin") await liveDrop(page, { home: HOME, work: WORK, drag: DRAG });
@@ -264,7 +265,8 @@ async function wide(browser, name) {
     const frame = await (await page.waitForSelector("#files:not([hidden])", { timeout: 5000 })).contentFrame();
     await frame.waitForFunction(() => document.body.innerText.includes("alpha.txt"), null, { timeout: 8000 });
   });
-  if (SMOKE || LINKS_ALONE) { if (LINKS_ALONE) await liveLinks(page, { work: WORK }); return ctx; }
+  if (LINKS_ALONE) await liveLinks(page, { work: WORK });
+  if (SHORT) return ctx;
   const files = await (await page.$("#files")).contentFrame();
   await files.click("#new-file");
   // typed into the name's field once it is there (under load it came after 3 s, and the name went elsewhere)
@@ -465,7 +467,7 @@ try {
     const browser = await pw[name].launch(NO_SIGNALS);
     try {
       const ctx = await wide(browser, name);
-      if (!SMOKE && !LINKS_ALONE && !SIGNIN_ALONE && !BACKGROUND_ALONE) await phone(browser, name);
+      if (!SHORT && !SIGNIN_ALONE && !BACKGROUND_ALONE) await phone(browser, name);
       await ctx.close();
     } catch (e) {
       ranToItsEnd(e);

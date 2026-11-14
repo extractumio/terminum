@@ -65,13 +65,14 @@ test("a file not there is looked for again later, then less often; a folder is n
 test("a folder is there only where Files can show it, and is told from a file (AC-35)", async () => {
   const folders = { "/Users/alex/p": ["shots/", "a.md"], "/Users/alex/p/shots": ["ipad/"], "/Users/alex": ["other/"] };
   const under = (path, pane) => path === pane.cwd || path.startsWith(`${pane.cwd}/`);
-  const { files } = fake(folders, { shows: under, big: new Set(["/Users/alex/p/shots"]) });
+  const { files, asked } = fake(folders, { shows: under, big: new Set(["/Users/alex/p/shots"]) });
   const names = ["shots/", "shots", "/Users/alex/p/shots/ipad/", "a.md", "~/other/", "shots/none/"];
   for (let i = 0; i < 2; i++) { for (const n of names) files.there(n); await tick(); }
   assert.deepEqual(names.map((n) => files.there(n)), [true, true, true, true, false, false]);
   assert.deepEqual(names.map((n) => files.isFolder(n)), [true, true, true, false, false, false]);
   assert.equal(files.pathOf("shots/"), "/Users/alex/p/shots");
   assert.equal(files.pathOf("~/other/"), null, "outside what Files shows");
+  assert.ok(!asked.some((q) => q.path === "/Users/alex"), "nor listed for it");
 });
 
 test("a folder larger than a page is asked by name", async () => {

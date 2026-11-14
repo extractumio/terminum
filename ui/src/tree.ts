@@ -93,6 +93,9 @@ export class Tree {
     }
   }
 
+  /** The root could not be read: reveals waiting for one end, never shown by a later load. */
+  noRoot() { if (!this.rooting) for (const go of this.rooted.splice(0)) go(); }
+
   private async restore(root: string, expanded: string[], selected: string[], scroll: number) {
     this.epoch++;
     this.edit.cancel();
@@ -296,13 +299,15 @@ export class Tree {
    *  a paged range and an older reveal yield to it. Returns its token for reveal. */
   pick() { this.selectionRun++; return ++this.picks; }
 
-  /** The cursor onto `path`, scrolled into sight; `open`: its folders expand first (Reveal in tree).
+  /** The cursor onto `path`, scrolled into sight; `open`: its folders expand first, and it when a folder (Reveal in tree).
    *  False when it is not under the root or not found; null, the cursor untouched, when the tree was
    *  re-rooted or the user picked a newer selection than `picks` meanwhile (expanding and refreshing
    *  folders do not count). With `open` it first waits for a root being shown or restored: the page
    *  may ask as soon as the panel has loaded. */
   async reveal(path: string, open = false, picks = this.picks): Promise<boolean | null> {
     if (open && (!this.root || this.rooting)) await new Promise<void>((go) => this.rooted.push(go));
+    // no root came (noRoot): whoever failed to read it said so; the root itself has no row: it shows as it is
+    if (open && (!this.root || path === this.root.path)) return null;
     const epoch = this.epoch, root = this.root?.path;
     const alive = () => epoch === this.epoch && picks === this.picks;
     if (open && root && isUnder(path, root) && path !== root) {
@@ -316,6 +321,7 @@ export class Tree {
     const at = parent && idx != null ? indexOf(parent, idx, this.rows) : -1;
     if (at < 0) return false;
     this.cursor = this.anchor = at;
+    if (open && this.descAt(at)?.isDir && !this.expanded.has(path)) void this.expand(path);   // a folder: what is in it shows
     this.scrollIntoView(at);
     this.queue();
     return true;

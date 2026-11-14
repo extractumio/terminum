@@ -161,3 +161,22 @@ test("Reveal in tree asked while a root is being restored waits for it (AC-35: t
   assert.equal(await pending, true);
   assert.equal(t.cursor, 0);
 });
+
+test("a reveal waiting for a root that could not be read ends, and a later root does not show it", async () => {
+  const { t } = fixture();
+  t.root = null;
+  const pending = t.reveal("/r/a", true, t.pick());
+  t.noRoot();
+  assert.equal(await pending, null);
+  assert.equal(t.cursor, -1);
+});
+
+test("Reveal in tree on a folder opens it; on the root it leaves the tree as it is (AC-35)", async () => {
+  const { t, release } = fixture();
+  await release();
+  assert.equal(await t.reveal("/r/a", true, t.pick()), true);
+  await tick();
+  assert.deepEqual([...t.expanded], ["/r/a"]);
+  assert.equal(await t.reveal("/r", true, t.pick()), null);
+  assert.equal(t.cursor, 0);
+});

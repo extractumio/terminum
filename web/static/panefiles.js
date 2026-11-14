@@ -17,9 +17,9 @@ const QUEUED = 200;          // folders waiting, at most: the newest asked first
 const KEPT = 3000;           // answers kept, the oldest go first
 const SAY_EVERY = 250;       // ms between two "files turned up" (the page marks links again)
 
-/** paneInfo(): the shown pane's {cwd, home, host, agent} or {error}, null when the Mac does not answer.
- *  fetchJson(url): the answer's JSON, null when it failed (tests give their own).
- *  shows(path, pane): whether Files can show the folder at `path` (none given: no folder is a link). */
+/** Whether a listing's entry is a folder (a link to one too). */
+export const isFolderEntry = (e) => e.k === "d" || e.k === "L";
+
 /** A listing's page once read: a large folder still being read is asked again, three times at most. */
 export async function settled(ask) {
   let page = await ask();
@@ -30,6 +30,9 @@ export async function settled(ask) {
   return page;
 }
 
+/** paneInfo(): the shown pane's {cwd, home, host, agent} or {error}, null when the Mac does not answer.
+ *  fetchJson(url): the answer's JSON, null when it failed (tests give their own).
+ *  shows(path, pane): whether Files can show the folder at `path` (none given: no folder is a link). */
 export function paneFiles(paneInfo, fetchJson = (url) => fetch(url).then((r) => (r.ok ? r.json() : null), () => null), shows = () => false) {
   let pane = null, paneAt = -Infinity, asking = null;
   let found = new Map();     // host\npath -> {ok: false | "file" | "folder", at, tries, pending}
@@ -84,7 +87,7 @@ export function paneFiles(paneInfo, fetchJson = (url) => fetch(url).then((r) => 
   }
   async function list(job) {
     const mine = gen;
-    const kind = (e) => (e.k === "f" || e.k === "l" ? "file" : e.k === "d" || e.k === "L" ? "folder" : false);
+    const kind = (e) => (e.k === "f" || e.k === "l" ? "file" : isFolderEntry(e) ? "folder" : false);
     const ask = (params) => fetchPage(`/fb/api/ls?${query({ path: job.dir, limit: String(PAGE), ...params }, job.host)}`, mine);
     const page = await settled(() => ask({}));
     if (!page || page.status !== "ready") return [...job.names].map((n) => [n, false]);
@@ -138,6 +141,7 @@ export function paneFiles(paneInfo, fetchJson = (url) => fetch(url).then((r) => 
     const places = placesOf(value);
     if (!places.length) return { error: `Cannot tell where ${value} is: this session's folder is not known.` };
     for (const place of places) {
+      if (value.endsWith("/") && !shows(place.path, pane)) continue;   // a folder Files cannot show: never a link, not asked
       const k = known(place);
       const stale = !k || (!k.pending && performance.now() - k.at > (k.ok ? KEEP_FOUND : AGAIN[Math.min(AGAIN.length, k.tries) - 1]));
       if (stale) enqueue(place);

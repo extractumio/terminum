@@ -120,6 +120,7 @@ export class Views {
     $("filewin").hidden = !shown.file;
     for (const f of $("filewin").querySelectorAll("iframe")) f.hidden = f.id !== "file";
     document.body.dataset.shown = wide ? "term" : this.current;
+    if (!shown.files) this.revealing = null;       // Files closed before it showed the path: not behind the user's back
     if (shown.files && !this.filesShown) this.send({ t: "files" });   // the pane may have changed folder since
     this.filesShown = shown.files;
     if (shown.term) this.onShow();
@@ -267,8 +268,7 @@ export class Views {
 
   tellReveal() {
     if (this.revealing === null || !this.filesSrc || this.filesLoaded !== this.filesSrc) return;
-    // the tree's own folder has no row to show: Files open is all of it
-    if (this.revealing !== this.filesRoot?.cwd) $("files").contentWindow?.postMessage({ type: "fb-reveal", path: this.revealing }, location.origin);
+    $("files").contentWindow?.postMessage({ type: "fb-reveal", path: this.revealing }, location.origin);
     this.revealing = null;
   }
 

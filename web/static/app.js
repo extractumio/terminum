@@ -129,7 +129,7 @@ quietSelection($("term"), touch, { hold: (on) => view.hold(on) });              
 
 // The files the output names, on the pane's host: a path is a link only
 // when its file is there (relative paths from the pane's folder, as a click takes them).
-const shownFiles = paneFiles(() => views.paneInfo(), undefined, (path, pane) => !embedded && views.showsFolder(path, pane));
+const shownFiles = paneFiles(() => views.paneInfo(), undefined, embedded ? undefined : (path, pane) => views.showsFolder(path, pane));
 // Addresses and paths get a dotted underline (linkmarks.js).
 const marks = linkMarks($("term"), [$("hist"), $("screen")], shownFiles);
 const asked = askedMarks({ term: $("term"), boxes: [$("hist"), $("screen")], view, send, sid: () => st.sid });

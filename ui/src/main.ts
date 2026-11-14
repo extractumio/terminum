@@ -147,7 +147,7 @@ async function loadWorkspace(k: string) {
     // (a load the stream's last open started met a program on the port: AC 09)
     if (!(e instanceof ApiError) || !["unproven", "signed_out", "network"].includes(e.code)) failed("workspace", `Panel state not read: ${(e as Error).message}`);
     pinCwd ??= cwd;   // not named yet: the next load names it
-    return;
+    return tree.noRoot();
   }
   if (key === k && run === workspaceRun) await applyWorkspace(pane);
 }
@@ -376,9 +376,8 @@ let pageRoot: { path: string; host: string | null } | null = null; // View: the 
 function revealInTree(p: string) {
   void tree.reveal(p, true, tree.pick()).then((found) => {
     if (found === null) return;
-    if (!found) return toast(tree.root && !isUnder(p, tree.root.path) ? `Not in this tree: ${p} is outside ${tree.root.path}` : `Not found in the tree: ${p}`);
+    if (!found) return toast(tree.root && !isUnder(p, tree.root.path) ? `Not in this tree: ${p} is outside ${tree.root.path}` : `Not shown in the tree: ${p} (hidden, filtered out or gone)`);
     tree.selected = new Set([p]);
-    if (tree.targetDir() === p && !tree.expanded.has(p)) void tree.expand(p);   // a folder: what is in it shows
     tree.queue();
     scheduleSave();
   });
