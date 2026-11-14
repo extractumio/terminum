@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // What the board's parts share: terminumd's routes, small DOM helpers, dialogs and files.
 import * as signin from "./signin.js";
-import { PROJECT_HUES, el, hueColor, iconButton, textKey, when } from "./listparts.js";
+import { PROJECT_HUES, el, hueColor, iconButton, plural, textKey, when } from "./listparts.js";
 import { renderers } from "./renderlib.js";
 import { toast } from "./toast.js";
 import { askConfirm } from "./dialogs.js";
@@ -97,17 +97,35 @@ const statusClass = (status) => `stbox st-${status.toLowerCase().replaceAll(" ",
 /** A task's status in words on its color; an archived task says so, in no status's color. */
 export const statusTag = (t) => (t.archived_at ? el("span", "stbox word", "Archived") : el("span", `${statusClass(t.status)} word`, t.status));
 
-/** A task as a small box: its ID on its status's color, the status in words too (AC-112). */
-export function statusBox(t, open) {
-  const b = el(open ? "button" : "span", statusClass(t.status), t.id);
-  const said = [t.id, t.status, t.title].filter(Boolean).join(" · ");
+/** A box in `status`'s color saying `text`, and `said` to a pointer and a screen reader; `press`: what a press does. */
+function colorBox(status, text, said, press) {
+  const b = el(press ? "button" : "span", statusClass(status), text);
   b.title = said;
   b.setAttribute("aria-label", said);
-  if (open) {
+  if (press) {
     b.type = "button";
-    b.addEventListener("click", (e) => { e.stopPropagation(); open(t.id); });
+    b.addEventListener("click", (e) => { e.stopPropagation(); press(); });
   }
   return b;
+}
+
+/** A task as a small box: its ID on its status's color, the status in words too (AC-112). */
+export const statusBox = (t, open) => colorBox(t.status, t.id, [t.id, t.status, t.title].filter(Boolean).join(" · "), open && (() => open(t.id)));
+
+/** A parent's subtasks that need a human (AC-112, AC-117): a row of a box each for those FAILED and WAIT FOR HUMAN, the
+ *  number of them on that status's color, a press opening the first; null when none. */
+export function needBoxes(kids, open) {
+  const boxes = [["FAILED", "failed"], ["WAIT FOR HUMAN", "waiting"]].flatMap(([status, word]) => {
+    const of = kids.filter((k) => k.status === status);
+    if (!of.length) return [];
+    const b = colorBox(status, `${of.length} ${word}`, `${plural(of.length, "subtask")} ${status}: ${of.map((k) => k.id).join(", ")}`, () => open(of[0].id));
+    b.classList.add("word");
+    return [b];
+  });
+  if (!boxes.length) return null;
+  const row = el("div", "cneeds");
+  row.append(...boxes);
+  return row;
 }
 
 /** `parent` holding `nodes` in this order, moving only what must move: one that stays is never taken out, as a node
