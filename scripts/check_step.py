@@ -167,6 +167,8 @@ def check(command, folder, cancelled):
                 processes = error.processes
                 print(f"ownership inspection failed: {error}; private root retained: {folder}", file=sys.stderr)
                 status = status or 1
+                if cancelled.forward(group):
+                    time.sleep(SETTLE_S)
                 break
             files = files_in(folder)
             if cancelled.number and not cancelled.forwarded:

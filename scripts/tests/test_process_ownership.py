@@ -1,7 +1,10 @@
 # SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 """AC-102: cleanup queries metadata, never environments or path mentions in commands."""
 import os
+import contextlib
+import io
 from pathlib import Path
+import signal
 import subprocess
 import sys
 from types import SimpleNamespace
@@ -88,6 +91,28 @@ class Ownership(unittest.TestCase):
             with self.assertRaisesRegex(check_step.OwnershipError, "query failed") as error:
                 check_step.own_processes("/tmp/private", 7)
             self.assertEqual(error.exception.processes, [(42, "group"), (44, "registered")])
+
+    def test_cancellation_during_failed_inspection_keeps_original_signal_and_grace(self):
+        events = []
+        cancelled = check_step.GuardCancellation()
+        def fail(_folder):
+            cancelled.receive(signal.SIGHUP, None)
+            raise process_cwd.InspectionError("query timed out")
+        with mock.patch.object(check_step, "run", return_value=(mock.Mock(), 0, 7)), \
+                mock.patch.object(check_step, "working_in", side_effect=fail), \
+                mock.patch.object(check_step, "listing", return_value=[(42, "7", "owned")]), \
+                mock.patch.object(check_step.owned_children, "active", return_value={}), \
+                mock.patch.object(check_step.owned_children, "cleanup_identities", return_value={42: "start"}), \
+                mock.patch.object(check_step.os, "killpg", side_effect=lambda group, number: events.append((group, number))), \
+                mock.patch.object(check_step.time, "sleep", side_effect=lambda seconds: events.append(("grace", seconds))), \
+                mock.patch.object(check_step, "end_pids", side_effect=lambda *_: events.append("end")), \
+                mock.patch.object(check_step, "files_in", return_value=["x"]), \
+                mock.patch.object(check_step.shutil, "rmtree") as remove, contextlib.redirect_stderr(io.StringIO()) as err:
+            self.assertNotEqual(check_step.check(["unused"], "private", cancelled), 0)
+            self.assertEqual(events, [(7, signal.SIGHUP), ("grace", check_step.SETTLE_S), "end"])
+            self.assertIn("LEFT x", err.getvalue())
+            self.assertIn("inspection failed", err.getvalue())
+            remove.assert_not_called()
 
     def test_linux_directory_lookup_preserves_boundaries_and_excludes_itself(self):
         folder = Path("/tmp/private").resolve()
