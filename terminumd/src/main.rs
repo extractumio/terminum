@@ -23,6 +23,7 @@ mod dragged;
 mod events;
 mod files;
 mod folders;
+mod fslock;
 mod hosts;
 mod integrate;
 mod hotkeys;
@@ -33,6 +34,7 @@ mod dashboard;
 mod inputs;
 mod interact;
 mod listing;
+mod logs;
 mod lists;
 mod messages;
 mod listing_sort;
@@ -155,20 +157,22 @@ fn exit_with(store: &Store, reason: &str) -> ! {
     let _ = store.flush();                          // a failure is logged there
     agent::cleanup();
     tracing::info!(event = "stop", reason);
+    logs::writer::flush();
     std::process::exit(0);
 }
 
-fn logging() {
+fn logging(writer: logs::writer::Writer) {
+    logs::writer::install(writer.clone());
     tracing_subscriber::fmt()
         .with_env_filter(std::env::var("TM_LOG").unwrap_or_else(|_| "info".into()))
         .with_ansi(false)
-        .with_writer(std::io::stderr)
+        .with_writer(writer)
         .init();
 }
 
 async fn run_agent(socket: std::path::PathBuf) {
     let setup = agent::start(&socket);
-    logging();
+    logging(setup.writer.clone());
     let env = Env::read(0, "terminum");
     let home = config::home();
     let cfg = Config { port: 0, agent: true, service: false, text_max: env.text_max, history: env.history as i64,
@@ -228,8 +232,10 @@ async fn serve() {
     if let Some(socket) = agent::socket_arg() {
         return run_agent(socket).await;
     }
-    logging();
     let home = config::tm_home();
+    let writer = logs::writer::Writer::start(home.join("logs/terminumd.log"), logs::DAEMON, Some(home.clone()))
+        .unwrap_or_else(|e| { eprintln!("terminumd: cannot open diagnostic log: {e}"); std::process::exit(2) });
+    logging(writer);
     let dir = config::app_dir();
     let looks = looks::Looks::load(&home);
     let (port, socket, history) = {

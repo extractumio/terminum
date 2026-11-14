@@ -131,3 +131,11 @@ async fn ac99_a_hosts_agents_are_turned_on_by_themselves_once_unless_the_user_tu
         std::fs::remove_dir_all(root).unwrap();
     }
 }
+
+/// AC-196: files-remove removes the clock metadata as well as all log segments.
+#[test]
+fn ac196_helper_removal_includes_rotation_metadata() {
+    let script = remove_script();
+    assert!(script.contains("$d/logs/.agent.log.since"));
+    assert!(script.contains("$d/logs/agent.log"));
+}

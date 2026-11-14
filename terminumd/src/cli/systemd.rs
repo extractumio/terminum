@@ -25,22 +25,17 @@ fn word(s: &str) -> String {
 }
 
 /// The unit: terminumd of daemon/ kept running, its environment, its log appended to.
-pub fn unit(ctx: &Ctx) -> Result<String, String> {
-    let log = ctx.log().display().to_string();
-    if log.chars().any(char::is_whitespace) {
-        return Err(format!("{log}: systemd cannot append to a path with spaces; set TM_HOME to another folder"));
-    }
-    let log = log.replace('%', "%%");                    // a path, not specifiers (it takes no quotes)
+pub fn unit(ctx: &Ctx) -> String {
     let env: String = launch::service_env(ctx).iter().map(|(k, v)| format!("Environment={}\n", word(&format!("{k}={v}")))).collect();
-    Ok(format!(
+    format!(
         "# {label}: written by `terminum install`; `terminum restart` writes it again\n\
 [Unit]\nDescription=terminum: terminals in the browser\nStartLimitIntervalSec=0\n\n\
 [Service]\nExecStart={program} serve\n{env}Restart=always\nRestartSec=1\nKillMode=process\n\
-StandardOutput=append:{log}\nStandardError=append:{log}\n\n\
+StandardOutput=null\nStandardError=null\n\n\
 [Install]\nWantedBy=default.target\n",
         label = ctx.label,
         program = word(&ctx.program().display().to_string()),
-    ))
+    )
 }
 
 /// A tool of the user's service manager (systemctl --user, loginctl). The live label only with
@@ -80,7 +75,7 @@ fn must(ctx: &Ctx, args: &[&str]) -> Result<(), String> {
 
 /// Writes the unit with one rename and has systemd read it again when it changed.
 fn write_unit(ctx: &Ctx) -> Result<(), String> {
-    let data = unit(ctx)?;
+    let data = unit(ctx);
     let path = unit_path(ctx);
     if std::fs::read(&path).is_ok_and(|old| old == data.as_bytes()) {
         return Ok(());

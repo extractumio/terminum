@@ -476,7 +476,7 @@ pub(super) async fn remove_helper(recipe: &[String]) -> Result<(), String> {
 fn remove_script() -> String {
     format!(
         "d=\"$HOME/{HOME_DIR}\"; rm -f \"$d/bin/terminumd-agent\" \"$d/bin/terminumd-agent-\"* \"$d/bin/.terminumd-agent.\"* \
-         \"$d/bin/{LEGACY}\" \"$d/bin/{LEGACY}-\"* \"$d/logs/agent.log\"*; \
+         \"$d/bin/{LEGACY}\" \"$d/bin/{LEGACY}-\"* \"$d/logs/agent.log\"* \"$d/logs/.agent.log.since\" \"$d/logs/.agent.log.since.\"*; \
          rmdir \"$d/bin\" \"$d/logs\" \"$d/run\" \"$d\" 2>/dev/null; true"
     )
 }

@@ -12,6 +12,7 @@ HERE = Path(__file__).resolve().parents[1]
 STUB = {
     "check_changed.py": "print('0123456789abcdef')",
     "load_gate.py": "import os, sys; open('gate.log', 'a').write('gate\\n'); sys.exit(int(os.environ['GATE_EXIT']))",
+    "check_logs.py": "import subprocess,sys; sys.exit(subprocess.run([sys.executable, 'scripts/check_step.py', *sys.argv[2:]]).returncode)",
     "check_step.py": "import sys; open('steps.log', 'a').write(' '.join(sys.argv[1:3]) + '\\n')",
     "check_docker.py": "import os, sys; sys.exit(0 if os.environ.get('DOCKER_CAN') else 1)",
 }

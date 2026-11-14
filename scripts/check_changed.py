@@ -22,6 +22,7 @@ import time
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from check_docs import AC  # noqa: E402
 import heavy_slots  # noqa: E402
+from check_logs import bounded_log, tail
 from check_cancel import run_guard  # noqa: E402
 from load_gate import for_task, MINUTES  # noqa: E402
 from worktree import releasing  # noqa: E402
@@ -239,7 +240,7 @@ def run(steps, root=REPO, gate=True, nice=False, landing=False):
         optional = command.startswith("-")
         log = logs / f"changed.{name}.log"
         heavy = heavy_slots.slot(root, name, landing, lambda words: print(words, flush=True)) if "cargo " in command else nullcontext()
-        with heavy, log.open("w") as out:
+        with heavy, bounded_log(root, log) as out:
             started = time.monotonic()
             # under make check's guard (AC-102): a step that leaves a process or a file fails here too
             guarded = (NICE.split() if nice else []) + [sys.executable, "-I", str(root / "scripts" / "check_step.py")]
@@ -249,7 +250,7 @@ def run(steps, root=REPO, gate=True, nice=False, landing=False):
             print(f"{'ok  ' if code == 0 else 'note'} {name} ({seconds} s)" + ("" if code == 0 else f": {log}"), flush=True)
         else:
             print(f"FAIL {name} ({seconds} s): {log}", flush=True)
-            print("".join(f"     {line}\n" for line in log.read_text(errors="replace").splitlines()[-15:]), end="", flush=True)
+            print("".join(f"     {line}\n" for line in tail(log)), end="", flush=True)
             failed.append(name)
     note = logs / "skipped"
     if skipped:
