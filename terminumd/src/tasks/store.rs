@@ -4,11 +4,14 @@
 //! empty one is made only when the user asks; one that is busy, not permitted or newer than this
 //! terminum stays as it is, said, and is tried again at the next call.
 
+use std::panic::Location;
 use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use parking_lot::Mutex;
 use rusqlite::{Connection, ErrorCode, Transaction, TransactionBehavior};
+
+use crate::slow;
 
 /// The schema's versions, oldest first: `PRAGMA user_version` says how many have run.
 const MIGRATIONS: [&str; 28] = [include_str!("schema1.sql"), include_str!("schema2.sql"), include_str!("schema3.sql"), include_str!("schema4.sql"), include_str!("schema5.sql"), include_str!("schema6.sql"), include_str!("schema7.sql"), include_str!("schema8.sql"), include_str!("schema9.sql"), include_str!("schema10.sql"), include_str!("schema11.sql"), include_str!("schema12.sql"), include_str!("schema13.sql"), include_str!("schema14.sql"), include_str!("schema15.sql"), include_str!("schema16.sql"), include_str!("schema17.sql"), include_str!("schema18.sql"), include_str!("schema19.sql"), include_str!("schema20.sql"), include_str!("schema22.sql"), include_str!("schema23.sql"), include_str!("schema24.sql"), include_str!("schema21.sql"), include_str!("schema25.sql"), include_str!("schema26.sql"), include_str!("schema27.sql"), include_str!("schema28.sql")];
@@ -32,6 +35,7 @@ enum State {
 pub struct Store {
     path: PathBuf,
     state: Mutex<State>,
+    slow: slow::Throttle,
 }
 
 pub(super) fn message(e: &impl std::fmt::Display) -> String {
@@ -149,22 +153,42 @@ fn state_of(path: &Path) -> State {
 impl Store {
     pub fn open(path: PathBuf) -> Store {
         let state = Mutex::new(state_of(&path));
-        Store { path, state }
+        Store { path, state, slow: Default::default() }
     }
 
     /// An Agent's, which never opens a file.
     pub fn absent() -> Store {
-        Store { path: PathBuf::new(), state: Mutex::new(State::Absent) }
+        Store { path: PathBuf::new(), state: Mutex::new(State::Absent), slow: Default::default() }
     }
 
     /// One transaction: `f` commits on Ok and rolls back on Err. On a store that cannot be used,
     /// its message.
+    #[track_caller]
     pub fn with<T>(&self, f: impl FnOnce(&Transaction) -> Result<T, String>) -> Result<T, String> {
-        let mut state = self.state.lock();
+        self.with_from(Location::caller(), Instant::now(), f)
+    }
+
+    /// `with` for `caller`, who asked at `asked`.
+    pub fn with_from<T>(&self, caller: &'static Location<'static>, asked: Instant, f: impl FnOnce(&Transaction) -> Result<T, String>) -> Result<T, String> {
+        Self::write(&self.path, &mut self.turn(caller, asked).state, f)
+    }
+
+    /// The store's turn for `caller`, who asked at `asked`: a wait for it or a hold of 100 ms or more is said (AC-195).
+    fn turn(&self, caller: &'static Location<'static>, asked: Instant) -> Turn<'_> {
+        let state = self.state.lock();
+        Turn { state, slow: &self.slow, caller, asked, got: Instant::now() }
+    }
+
+    #[track_caller]
+    fn turn_now(&self) -> Turn<'_> {
+        self.turn(Location::caller(), Instant::now())
+    }
+
+    fn write<T>(path: &Path, state: &mut State, f: impl FnOnce(&Transaction) -> Result<T, String>) -> Result<T, String> {
         if let State::Failed(_) = *state {
-            *state = state_of(&self.path);
+            *state = state_of(path);
         }
-        let conn = match &mut *state {
+        let conn = match state {
             State::Open(c) => c,
             State::Failed(why) | State::SetAside(why) => return Err(why.clone()),
             State::Absent => return Err("An agent keeps no tasks.".into()),
@@ -176,9 +200,11 @@ impl Store {
         Ok(out)
     }
 
+
     /// Why it cannot be used, for the board's banner.
+    #[track_caller]
     pub fn problem(&self) -> Option<String> {
-        match &*self.state.lock() {
+        match &*self.turn_now().state {
             State::Open(_) | State::Absent => None,
             State::Failed(why) | State::SetAside(why) => Some(why.clone()),
         }
@@ -187,7 +213,7 @@ impl Store {
     /// SQLite's quick check, once after the start, on a connection of its own: it holds up no
     /// list. A corrupt file goes aside.
     pub fn quick_check(&self) {
-        if !matches!(*self.state.lock(), State::Open(_)) {
+        if !matches!(*self.turn_now().state, State::Open(_)) {
             return;
         }
         let verdict = Connection::open_with_flags(&self.path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
@@ -201,41 +227,63 @@ impl Store {
             }
         };
         if let Some(why) = bad {
-            let mut state = self.state.lock();
-            *state = State::Failed(String::new());     // closes the file before it moves
+            let mut turn = self.turn_now();
+            let state = &mut turn.state;
+            **state = State::Failed(String::new());     // closes the file before it moves
             let aside = set_aside(&self.path);
             tracing::warn!(event = "tasks.broken", why = %why, aside = %aside);
-            *state = State::SetAside(aside_message(&aside));
+            **state = State::SetAside(aside_message(&aside));
         }
     }
 
     /// After a purge: what the write-ahead log still holds of the old text goes too (AC-109).
     pub fn checkpoint(&self) {
-        if let State::Open(conn) = &*self.state.lock()
+        if let State::Open(conn) = &*self.turn_now().state
             && let Err(e) = conn.query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |_| Ok(())) {
                 tracing::warn!(event = "tasks.checkpoint", error = %e);
             }
     }
 
     /// Whether a store was set aside and waits for the user's Start empty.
+    #[track_caller]
     pub fn is_set_aside(&self) -> bool {
-        matches!(*self.state.lock(), State::SetAside(_))
+        matches!(*self.turn_now().state, State::SetAside(_))
     }
 
     /// The user's press after a store went aside (AC-119).
     pub fn start_empty(&self) -> Result<(), String> {
-        let mut state = self.state.lock();
-        if !matches!(*state, State::SetAside(_)) {
+        let mut turn = self.turn_now();
+        let state = &mut turn.state;
+        if !matches!(**state, State::SetAside(_)) {
             return Err("The tasks' store was not set aside.".into());
         }
         crate::config::remove_if_there(&marker(&self.path)).map_err(|e| message(&e))?;
-        *state = state_of(&self.path);
-        match &mut *state {
+        **state = state_of(&self.path);
+        match &mut **state {
             // an older projects.json is no copy of what was set aside: the user asked for empty
             State::Open(c) => c.execute("INSERT OR IGNORE INTO meta (key, value) VALUES ('projects_imported', '1')", []).map(|_| ()).map_err(|e| message(&e)),
             State::Absent => Ok(()),
             State::Failed(why) | State::SetAside(why) => Err(why.clone()),
         }
+    }
+}
+
+/// A caller's turn at the store: when it ends, a wait for it or a hold of 100 ms or more is said, one line a second (AC-195).
+struct Turn<'a> {
+    state: parking_lot::MutexGuard<'a, State>,
+    slow: &'a slow::Throttle,
+    caller: &'static Location<'static>,
+    asked: Instant,
+    got: Instant,
+}
+
+impl Drop for Turn<'_> {
+    fn drop(&mut self) {
+        let (wait, hold) = (self.got - self.asked, self.got.elapsed());
+        if (wait >= slow::STORE_SLOW || hold >= slow::STORE_SLOW)
+            && let Some(more) = self.slow.pass() {
+                tracing::warn!(event = "store.slow", caller = %format_args!("{}:{}", self.caller.file(), self.caller.line()), wait_ms = slow::ms(wait), hold_ms = slow::ms(hold), more);
+            }
     }
 }
 

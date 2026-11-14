@@ -59,6 +59,7 @@ mod screen;
 mod sent;
 mod settings;
 mod sock;
+mod slow;
 mod dispatcher;
 mod tasks;
 mod termtext;
@@ -283,6 +284,7 @@ async fn serve() {
     tokio::spawn(restore::follow(app.clone()));
     tokio::spawn(lastlines::follow(app.clone()));
     tokio::spawn(release::run(app.clone()));
+    tokio::spawn(slow::watch_runtime());   // the workers' lag is said (AC-195)
     tokio::spawn(page::upload::sweep_daily(page::upload::local_dir()));   // pastes older than 7 days (AC-36)
     tokio::spawn(page::bookmarks::purge_daily(app.clone()));   // reminders resolved over 30 days ago (AC-91)
     let stopping = app.clone();

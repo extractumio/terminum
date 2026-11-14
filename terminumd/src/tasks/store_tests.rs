@@ -355,3 +355,26 @@ fn integration_ac187_an_older_store_takes_the_integration_status_and_keeps_every
     let again = Connection::open(&path).unwrap();
     again.execute("UPDATE tasks SET status = 'INTEGRATION' WHERE id = 'k1'", []).unwrap();
 }
+
+#[test]
+fn ac195_a_write_that_waited_for_its_turn_names_its_caller_and_is_kept() {
+    let s = std::sync::Arc::new(Store::open(fresh("store-slow")));
+    let (held, go) = std::sync::mpsc::channel();
+    // another call's transaction, held 150 ms
+    let holder = { let s = s.clone(); std::thread::spawn(move || { let turn = s.state.lock(); held.send(()).unwrap(); std::thread::sleep(Duration::from_millis(150)); drop(turn) }) };
+    go.recv().unwrap();
+    let (lines, guard) = crate::testutil::logs();
+    let made = s.with(|tx| crate::tasks::ops::create(tx, HUMAN, crate::tasks::ops::NewTask { title: "waited".into(), ..Default::default() }, 1));
+    drop(guard);
+    holder.join().unwrap();
+    assert!(made.is_ok(), "a write waits its turn, never refused: {made:?}");
+    let said = lines.text();
+    assert!(said.contains("event=\"store.slow\"") && said.contains("store_tests.rs"), "{said}");
+    let waited: u64 = said.split("wait_ms=").nth(1).and_then(|r| r.split(' ').next()).and_then(|n| n.parse().ok()).unwrap_or(0);
+    assert!(waited >= 100, "its wait is said: {said}");
+    // a quick call says nothing
+    s.slow.reset();
+    let (quiet, _guard) = crate::testutil::logs();
+    number_of_tasks(&s).unwrap();
+    assert_eq!(quiet.text(), "", "nothing waited, nothing said");
+}
