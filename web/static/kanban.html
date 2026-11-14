@@ -422,6 +422,15 @@
   </form>
 </dialog>
 
+<dialog id="agentpick" data-size="ask" class="box dlg" aria-labelledby="agentpicktitle">
+  <form method="dialog">
+    <div class="dhead"><h2 id="agentpicktitle"></h2><button class="icon x" type="button" title="Close (Esc)" aria-label="Close"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
+    <p>Which agent? Nothing is typed in it: it is yours.</p>
+    <div id="agentpicklist" class="agentpick" role="group" aria-label="Agents"></div>
+    <div class="actions"><button value="cancel" type="submit">Cancel</button></div>
+  </form>
+</dialog>
+
 <dialog id="namebox" data-size="ask" class="box dlg" aria-labelledby="nametext">
   <form method="dialog">
     <div class="dhead"><h2 id="nametext"></h2><button class="icon x" type="button" title="Close (Esc)" aria-label="Close"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>

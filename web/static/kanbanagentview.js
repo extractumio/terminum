@@ -3,11 +3,19 @@
 // its kind's windows as terminumd last heard them; in its window the same with when each resets, its tokens, and
 // each live session with its tasks as links. terminumd's numbers; a window not known, reset or old says so.
 import { el } from "./listparts.js";
-import { agentName } from "./nav.js";
-import { button, countOf, statusBox } from "./kanbanutil.js";
+import { agentMark, agentName } from "./nav.js";
+import { agentColor, button, countOf, statusBox } from "./kanbanutil.js";
 
 const HOUR = 3600, WEEK = 7 * 24 * 60;
 const FINISHED = ["DONE", "FAILED"];
+
+/** An agent's card's bar in its color and its head, its mark and name: the board's rectangle and + Session's tile (AC-142). */
+export function agentFace(a, busy = false) {
+  const bar = el("span", `pbar${busy ? " busy" : ""}`), head = el("span", "head");
+  bar.style.setProperty("--dot", agentColor(a));
+  head.append(agentMark({ agent: a.kind }), el("span", "t", a.name));
+  return [bar, head];
+}
 
 /** A window's name by its length: 5h, week, 1d… */
 function label(minutes) {

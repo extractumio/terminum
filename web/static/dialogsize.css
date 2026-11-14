@@ -6,7 +6,7 @@
    (dlgsize.js sets --pw, --ph). Each kind holds that between a floor, below which its fields
    no longer fit, and a ceiling, past which lines grow too long to read or a short text floats
    in empty space; never past the window less 16 px on each side.
-     ask    a question or a name: as tall as its words, 360–480 px wide
+     ask    a question or a name: as tall as its words, 360–480 px wide (+ Session's agents: as wide as their tiles)
      form   fields to set: as tall as its fields, 480–640 px wide (a project's 720, with its agents 960)
      write  a text to type: 80% high, 520–960 px wide, 480–880 px high; the text field takes the rest
             (a schedule's many fields 640 px high at least; Ask's question and a bookmark's note,
@@ -24,6 +24,7 @@ dialog.dlg[data-size="form"] { --w-min: 480px; --w-max: 640px; }
 dialog.dlg[data-size="write"] { --w-min: 520px; --w-max: 960px; --h-min: 480px; --h-max: 880px; }
 dialog.dlg[data-size="list"] { --w-min: 480px; --w-max: 720px; --h-min: 360px; --h-max: 760px; }
 dialog.dlg[data-size="read"] { --w-min: 560px; --w-max: 1040px; --h-min: 420px; --h-max: 100dvh; }
+#agentpick { --tile: 260px; --w-max: calc(var(--across, 1) * (var(--tile) + var(--sp-2)) + 2 * var(--sp-4)); }   /* + Session's agents: as wide as its tiles' columns */
 #projectbox { --w-max: 720px; }                  /* short fields: not stretched across */
 #projectbox:has(#projectagents:not([hidden])) { --w-max: 960px; }   /* its agents' list, a row each */
 #schedbox { --h-min: 640px; }                    /* a schedule's fields: the text keeps room among them */
