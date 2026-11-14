@@ -122,6 +122,7 @@ pub fn prepare(ctx: &Ctx) -> Result<(), String> {
 #[path = "process.rs"]
 mod process;
 pub use process::run_timeout;
+pub(super) use process::run_host_timeout;
 
 fn domain() -> String {
     // SAFETY: getuid has no preconditions
