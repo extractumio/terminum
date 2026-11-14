@@ -112,7 +112,6 @@ export async function liveAuto(page, live) {
   check("AC-170 its switch says it waits for the cap", /tasks of 24 hours are started: it waits/.test(await page.getAttribute("#autoswitch", "title")), await page.getAttribute("#autoswitch", "title"));
   await put({ day_most: 500, off_why: null });
   check("AC-170 the cap raised, it goes on", await until(async () => (await task(capped)).status === "IN PROGRESS", 30000), (await task(capped)).status);
-  await j(`/api/tasks/${capped}/give-up`, "POST");
   await put({ severities: ["P0", "P1", "P2", "P3"], wait_minutes: 0, off_why: null });
 
   // the other way of picking: by priority and saved order, terminumd itself, no agent and no round
@@ -126,7 +125,10 @@ export async function liveAuto(page, live) {
   await page.click("#autook");
   check("AC-170 the way of picking is kept, said on the switch", await until(async () => (await setting()).mode === "order" && /Autos's TODO tasks start by priority and saved order/.test(await page.getAttribute("#autoswitch", "title"))), await page.getAttribute("#autoswitch", "title"));
   check("AC-170 another way is refused", /mode: agent or order/.test((await put({ mode: "dice", off_why: null })).error ?? ""));
+  // Hold the agent's only slot until both ordering candidates exist (TERM-117).
   const [later, sooner] = [await made("Auto later: P1, by order", { severity: "P1", agent: spare }), await made("Auto sooner: P0, by order", { severity: "P0", agent: spare })];
+  check("AC-170 both ordering candidates wait while the slot is held", (await task(later)).status === "TODO" && (await task(sooner)).status === "TODO");
+  await j(`/api/tasks/${capped}/give-up`, "POST");
   check("AC-170 by priority and saved order the P0 starts first on its agent's one slot", await until(async () => (await task(sooner)).status === "IN PROGRESS", 30000) && (await task(later)).status === "TODO", `${(await task(sooner)).status} ${(await task(later)).status}`);
   const byOrder = (await task(sooner)).history.map((h) => h.text ?? "");
   check("AC-170 it says so in Dispatcher's words, and no round was made for it", byOrder.some((t) => /^Auto-Dispatcher started it on Auto spare, by priority and saved order\.$/.test(t)) && !byOrder.some((t) => /round/.test(t)), JSON.stringify(byOrder));
