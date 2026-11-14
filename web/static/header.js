@@ -54,13 +54,13 @@ export function pageHeader({ narrow, copy, renaming, setAgent, send, sid, toChat
     else {
       const { group: g, item: it } = found, { folder, path, where, rest } = headerParts(g, it), parts = [];
       if (folder) {
-        const b = pointerKey(el("button", TABLET.matches ? "copydir icon" : "copydir"));
+        const tablet = TABLET.matches, b = pointerKey(el("button", tablet ? "copydir icon" : "copydir")), dir = span("dir", folder);
         b.type = "button";
         b.title = b.ariaLabel = `Copy ${path}`;
-        b.append(icon("copy", TABLET.matches ? 16 : 13));
+        b.append(icon("copy", tablet ? 16 : 13));
         b.addEventListener("click", (e) => { e.stopPropagation(); copy(path); });   // not the header's own click (the list)
-        if (TABLET.matches) $("current").querySelector(".tline").append(b);   // a key with ✎ and Plan
-        parts.push(TABLET.matches ? [span("dir", folder)] : [span("dir", folder), b]);
+        if (tablet) $("current").querySelector(".tline").append(b);   // a key with ✎ and Plan
+        parts.push(tablet ? [dir] : [dir, b]);
       }
       parts.push([span("where", where)]);
       if (rest.length) {                             // one part: it gives way as a whole, its words keep the list's colors

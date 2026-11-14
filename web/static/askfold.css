@@ -6,10 +6,10 @@
 body.wide #askcount { grid-row: 1 / -1; }
 body.embed #askcount { display: none !important; }
 .askn { width: 44px; height: 44px; display: grid; place-items: center; padding: 0 4px; border-radius: var(--blob-a);
-  font: 700 15px/1 var(--ui); font-variant-numeric: tabular-nums; box-shadow: var(--shadow-near); }
-.askn.failed { background: var(--danger-fill); color: var(--danger-ink); --ring: var(--danger-fill); }
-.askn.waiting { background: var(--waiting); color: var(--waiting-ink); --ring: var(--waiting); }
-.askn.fresh, .askn[aria-expanded="true"] { box-shadow: 0 0 0 2px var(--t-bg), 0 0 0 4px var(--ring); }
+  font: 700 15px/1 var(--ui); font-variant-numeric: tabular-nums; background: var(--fill); box-shadow: var(--shadow-near); }
+.askn.failed { --fill: var(--danger-fill); color: var(--danger-ink); }
+.askn.waiting { --fill: var(--waiting); color: var(--waiting-ink); }
+.askn.fresh, .askn[aria-expanded="true"] { box-shadow: 0 0 0 2px var(--t-bg), 0 0 0 4px var(--fill); }
 @media (hover: none), (max-width: 860px) {         /* fold.js FLOATING */
   #askcount:not([hidden]) { display: flex; }
   body.asksfold:not(.asksopen) #asks { display: none; }   /* folded: no room taken, the terminal's rows stay */

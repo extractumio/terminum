@@ -20,25 +20,24 @@ const measure = (page) => page.evaluate(() => {
 });
 
 export async function webTabHead(browser, name) {
-  for (const [size, device] of [["1180×820 touch", TABLET]]) {
-    for (const hidden of [false, true]) {
-      const at = `(${name} ${size}${hidden ? ", list hidden" : ""})`;
-      runningIn(`${name} ${size}`);
-      const f = await openPage(browser, { device, layout: LAYOUT });
-      const { page } = f;
-      await drawn(page);
-      if (hidden) await page.click("#navclose");
-      await pause(page, 200);
-      const m = await measure(page);
-      const hs = new Set(m.keys.map((k) => k.h)), mids = m.keys.map((k) => k.mid);
-      check(`AC-18 ${at} every header key one height (44 px)`, hs.size === 1 && hs.has(44) && m.keys.length >= (hidden ? 7 : 5), JSON.stringify(m.keys));
-      check(`AC-18 ${at} their middles on one line, the title's too`, Math.max(...mids) - Math.min(...mids) <= 1 && Math.abs(m.titleMid - mids[0]) <= 1, JSON.stringify({ mids, title: m.titleMid }));
-      check(`AC-18 ${at} none touching the header's edge`, m.keys.every((k) => k.top >= 4 && k.top + k.h <= m.bar - 4), JSON.stringify({ bar: m.bar, keys: m.keys }));
-      const pen = m.keys.find((k) => k.k === "rename"), copy = m.keys.find((k) => /copydir/.test(k.k));
-      check(`AC-18 ${at} ✎ and Copy together right of the title`, pen && copy && pen.left >= m.titleRight && copy.left - pen.right <= 12 && copy.left > pen.right, JSON.stringify({ pen, copy, title: m.titleRight }));
-      check(`AC-18 ${at} the folder line whole where it has room`, !m.cut, JSON.stringify(m));
-      check(`no page error ${at}`, f.errors.length === 0, f.errors.join("; "));
-      await f.context.close();
-    }
+  const size = "1180×820 touch";
+  runningIn(`${name} ${size}`);
+  for (const hidden of [false, true]) {
+    const at = `(${name} ${size}${hidden ? ", list hidden" : ""})`;
+    const f = await openPage(browser, { device: TABLET, layout: LAYOUT });
+    const { page } = f;
+    await drawn(page);
+    if (hidden) await page.click("#navclose");
+    await pause(page, 200);
+    const m = await measure(page);
+    const hs = new Set(m.keys.map((k) => k.h)), mids = m.keys.map((k) => k.mid);
+    check(`AC-18 ${at} every header key one height (44 px)`, hs.size === 1 && hs.has(44) && m.keys.length >= (hidden ? 7 : 5), JSON.stringify(m.keys));
+    check(`AC-18 ${at} their middles on one line, the title's too`, Math.max(...mids) - Math.min(...mids) <= 1 && Math.abs(m.titleMid - mids[0]) <= 1, JSON.stringify({ mids, title: m.titleMid }));
+    check(`AC-18 ${at} none touching the header's edge`, m.keys.every((k) => k.top >= 4 && k.top + k.h <= m.bar - 4), JSON.stringify({ bar: m.bar, keys: m.keys }));
+    const pen = m.keys.find((k) => k.k === "rename"), copy = m.keys.find((k) => /copydir/.test(k.k));
+    check(`AC-18 ${at} ✎ and Copy together right of the title`, pen && copy && pen.left >= m.titleRight && copy.left - pen.right <= 12 && copy.left > pen.right, JSON.stringify({ pen, copy, title: m.titleRight }));
+    check(`AC-18 ${at} the folder line whole where it has room`, !m.cut, JSON.stringify(m));
+    check(`no page error ${at}`, f.errors.length === 0, f.errors.join("; "));
+    await f.context.close();
   }
 }

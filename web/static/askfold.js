@@ -19,8 +19,11 @@ export function asksFold({ box, counters }) {
   const looked = new Set();    // kind|words of the lines seen in an opened sheet
   let opened = null;
 
-  const lines = (kind) => [...box.querySelectorAll(".ask")].filter((c) => !c.hidden && c.querySelector(`.state.${kind}`));
-  const keyOf = (kind, c) => `${kind}|${c.querySelector(".what")?.textContent ?? ""}`;
+  // one pass over the lines: each with its kind (its mark) and its key (kind and words)
+  const read = () => [...box.querySelectorAll(".ask")].filter((c) => !c.hidden).map((c) => {
+    const kind = KINDS.find((k) => c.querySelector(`.state.${k}`));
+    return { kind, key: `${kind}|${c.querySelector(".what")?.textContent ?? ""}` };
+  }).filter((l) => l.kind);
 
   function close() {
     if (!opened) return;
@@ -35,9 +38,8 @@ export function asksFold({ box, counters }) {
     opened = kind;
     box.dataset.kind = kind;
     body.classList.add("asksopen");
-    for (const c of lines(kind)) looked.add(keyOf(kind, c));
     placeModal(box, close);
-    sync();
+    sync();                                        // its lines are looked at
   }
 
   /** The counters as the lines stand now; folding only where the buttons float. */
@@ -45,30 +47,26 @@ export function asksFold({ box, counters }) {
     const on = floats();
     body.classList.toggle("asksfold", on);
     if (!on) close();
-    const now = new Set();
-    let any = false;
+    const all = read();
+    for (const l of all) if (l.kind === opened) looked.add(l.key);
+    for (const k of looked) if (!all.some((l) => l.key === k)) looked.delete(k);   // gone: a new one with the same words rings again
     for (const kind of KINDS) {
-      const mine = lines(kind), b = buttons[kind], n = mine.length;
-      for (const c of mine) now.add(keyOf(kind, c));
-      if (opened === kind) for (const c of mine) looked.add(keyOf(kind, c));
-      if (b.textContent !== String(n)) b.textContent = String(n);
+      const mine = all.filter((l) => l.kind === kind), b = buttons[kind], n = mine.length, says = SAYS[kind](n);
+      b.textContent = n;
       b.hidden = !on || !n;
-      b.setAttribute("aria-label", SAYS[kind](n));
-      b.title = SAYS[kind](n);
-      b.classList.toggle("fresh", mine.some((c) => !looked.has(keyOf(kind, c))));
+      b.title = says;
+      b.setAttribute("aria-label", says);
+      b.classList.toggle("fresh", mine.some((l) => !looked.has(l.key)));
       b.setAttribute("aria-expanded", String(opened === kind));
       if (opened === kind && !n) close();
-      any ||= on && n > 0;
     }
-    for (const k of looked) if (!now.has(k)) looked.delete(k);   // gone: a new one with the same words rings again
-    if (counters.hidden === any) counters.hidden = !any;
+    counters.hidden = KINDS.every((k) => buttons[k].hidden);
     place();
   }
 
   /** Left of ⟨…⟩ on its row; at the top right under the header where it is not shown (Files, View). */
   function place() {
-    if (counters.hidden) return;
-    const fold = $("foldfab"), main = counters.offsetParent;
+    const fold = $("foldfab"), main = counters.offsetParent;   // none while hidden
     if (!main) return;
     const shown = !fold.hidden && fold.offsetHeight > 0;
     const top = shown ? fold.offsetTop : $("over").offsetTop + GAP;
@@ -84,7 +82,8 @@ export function asksFold({ box, counters }) {
   box.addEventListener("click", (e) => { if (opened && e.target.closest(".go")) close(); });   // its task's or session's place opens
   new MutationObserver(sync).observe(box, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ["hidden", "class"] });
   matchMedia(FLOATING).addEventListener("change", sync);
-  addEventListener("resize", place);
+  let frame = 0;
+  addEventListener("resize", () => { frame ||= requestAnimationFrame(() => { frame = 0; place(); }); });
   sync();
-  return { sync, place };
+  return { place };
 }

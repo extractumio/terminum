@@ -20,16 +20,20 @@ export function oneKeyboard({ kbd, panel, show, button = null, view = globalThis
     full = Math.max(full, view.height);
     return focused() && full - view.height > KEYBOARD_PX;
   };
+  let painted = "";
   const paint = (soft = up()) => {
     if (soft || !focused()) hard = false;
+    if (painted === `${soft}${hard}`) return;     // a resize each frame while the keyboard slides
+    painted = `${soft}${hard}`;
     mark(hard);
     button?.setAttribute("aria-pressed", String(soft));
   };
   const check = () => { const soft = up(); if (soft && !panel.hidden) show(false); paint(soft); };
   view?.addEventListener("resize", check);
-  kbd.addEventListener?.("focus", () => paint());
-  kbd.addEventListener?.("blur", () => paint());
-  kbd.addEventListener?.("keydown", () => { if (!hard && focused() && !up()) { hard = true; paint(false); } });
+  for (const t of ["focus", "blur"]) kbd.addEventListener(t, () => paint());
+  // not input.js's hardKbd: that one outlives a blur (it brings the keys back after a copy); this one is the
+  // typing now, and goes with the keys
+  kbd.addEventListener("keydown", () => { if (!hard && focused() && !up()) { hard = true; paint(false); } });
   return {
     up,
     toggle() {
