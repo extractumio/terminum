@@ -7,7 +7,7 @@ import { EditorState, Compartment } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { editorExtensions } from "./viewer-editor";
 
-import { api, apiOrToast, ApiError, basename, downloadRaw, esc, hydrateRaw, isUnder, rawUrl, rebase, type FileView, type Stamp, type Tab } from "./api";
+import { api, apiOrToast, ApiError, basename, downloadRaw, esc, hydrateRaw, isFileView, isUnder, rawUrl, rebase, type FileView, type Stamp, type Tab } from "./api";
 import { ask } from "./dialogs";
 import { zoomOutside } from "./embed";
 import { languageForFile } from "./highlight";
@@ -243,7 +243,7 @@ export class Viewer {
   private load(path: string): Promise<void> {
     const d = this.doc(path);
     if (!d.loading) {
-      d.loading = api<FileView>("GET", "/api/file", { query: { path }, host: d.host }).then(
+      d.loading = api<FileView>("GET", "/api/file", { query: { path }, host: d.host, is: isFileView }).then(
         (f) => { d.file = f; d.error = undefined; d.state = undefined; d.saved = undefined; },
         (e) => { d.error = e.message; });
     }

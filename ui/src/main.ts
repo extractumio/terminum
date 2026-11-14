@@ -5,7 +5,7 @@
 
 import "./style.css";
 import {
-  api, apiOrToast, ApiError, basename, CLIENT, copyText, DEFAULT_PREFS, dirname, isPane, isUnder,
+  api, apiOrToast, ApiError, basename, CLIENT, copyText, DEFAULT_PREFS, dirname, isPane, isRevision, isUnder,
   proofRefusal, PROXIED, scope, setScope, SORTS, toast,
   type FsChange, type Pane, type Prefs, type TermState,
 } from "./api";
@@ -84,7 +84,7 @@ function scheduleSave() {
   saveTimer = window.setTimeout(() => void saveNow(), 300);
 }
 
-/** The pane and content of a PUT that failed without an answer (a network error): it may have landed. */
+/** The pane and content of a PUT without a valid answer: it may have landed. */
 let ambiguous: { key: string; content: string } | null = null;
 
 /** A failed save says so once until that kind of save works again: saves follow every scroll and
@@ -113,7 +113,7 @@ async function saveOnce() {
   const previous = ws, run = workspaceRun;
   const current = () => key === k && ws === previous && run === workspaceRun;
   try {
-    const r = await api<{ rev: number }>("PUT", "/api/workspace", { query: { key: k }, body: snap });
+    const r = await api<{ rev: number }>("PUT", "/api/workspace", { query: { key: k }, body: snap, is: isRevision });
     ambiguous = null;
     warned.delete("workspace");
     if (current()) { workspaceRun++; ws = { ...snap, rev: r.rev }; }
@@ -129,7 +129,7 @@ async function saveOnce() {
       return;
     }
     // fail loud; the snapshot stays unsaved (ws unchanged): the next change or reconnect retries
-    if (!(e instanceof ApiError) || e.code === "network") ambiguous = { key: k, content: content(snap) };   // api() wraps a network error
+    if (!(e instanceof ApiError) || e.code === "network" || e.code === "foreign") ambiguous = { key: k, content: content(snap) };
     failed("workspace", `Panel state not saved: ${(e as Error).message}`);
   }
 }

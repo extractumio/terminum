@@ -65,6 +65,15 @@ export interface Page {
   status: "ready" | "loading" | "error"; total: number; writable: boolean;
   gen: number; entries: Row[]; error?: string; located?: number;
 }
+/** Listing replies, including a scan still loading or a folder's error. */
+export const isPage = (p: unknown): p is Page => {
+  const q = p as Partial<Page> | null;
+  return (q?.status === "ready" || q?.status === "loading" || q?.status === "error")
+    && typeof q.total === "number" && typeof q.gen === "number" && typeof q.writable === "boolean" && Array.isArray(q.entries);
+};
+/** A file save acknowledges its new etag; a workspace save acknowledges its revision. */
+export const isEtag = (p: unknown): p is { etag: string } => typeof (p as { etag?: unknown } | null)?.etag === "string";
+export const isRevision = (p: unknown): p is { rev: number } => typeof (p as { rev?: unknown } | null)?.rev === "number";
 /** A changed file and its etag now (null: gone), as sent in fs-change events. */
 export interface Stamp { path: string; etag: string | null }
 export interface FsChange { dirs: string[]; files: Stamp[]; moved: { from: string; to: string }[]; host?: string }
@@ -99,6 +108,14 @@ export interface FileView {
   path: string; size: number; etag: string; binary: boolean; mime: string | null;
   truncated: boolean; utf8: boolean; writable: boolean; text?: string;
 }
+/** Binary files omit text; an empty text file still supplies an empty string. */
+export const isFileView = (p: unknown): p is FileView => {
+  const q = p as Partial<FileView> | null;
+  return isEtag(p) && typeof q?.path === "string" && typeof q.size === "number"
+    && typeof q.binary === "boolean" && typeof q.truncated === "boolean" && typeof q.utf8 === "boolean"
+    && typeof q.writable === "boolean" && (q.mime === null || typeof q.mime === "string")
+    && (q.binary || typeof q.text === "string");
+};
 /** The tree's order (AC-52), folders first in each: terminumd sorts, the tree pages it. */
 export type Sort = "name" | "recent" | "ext";
 export const SORTS: { id: Sort; label: string }[] = [
