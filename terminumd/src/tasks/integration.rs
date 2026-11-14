@@ -13,7 +13,7 @@ use axum::{Json, Router};
 use rusqlite::{OptionalExtension, Transaction};
 use serde_json::{json, Value};
 
-use super::api::{answer, told_projects};
+use super::api::{answer, store};
 use super::ops::{self, sql};
 use crate::app::Shared;
 use crate::http::off;
@@ -67,14 +67,14 @@ impl Settings {
             match &body[k] { Value::Null => Ok(or), v => v.as_i64().ok_or_else(|| words.to_string()) }
         };
         Ok(Settings {
-            on: body["on"].as_bool().unwrap_or(false),
+            on: match &body["on"] { Value::Null => false, v => v.as_bool().ok_or("on: true or false")? },
             target: text("target", &d.target)?.trim().to_string(),
             check: text("check", "")?.trim().to_string(),
             publish: text("publish", "")?.trim().to_string(),
             after: text("after", "")?.trim().to_string(),
             batch_most: number("batch_most", d.batch_most, BATCH)?,
             check_minutes: number("check_minutes", d.check_minutes, CHECK_MINUTES)?,
-            agent: body["agent"].as_str().filter(|a| !a.is_empty()).map(str::to_string),
+            agent: match &body["agent"] { Value::Null => None, Value::String(a) => Some(a.clone()).filter(|a| !a.is_empty()), _ => return Err("agent: an agent's id, or none.".into()) },
             agent_budget_minutes: number("agent_budget_minutes", d.agent_budget_minutes, BUDGET)?,
             red_rounds_most: number("red_rounds_most", d.red_rounds_most, RED_ROUNDS)?,
             prompt: text("prompt", "")?,
@@ -95,7 +95,7 @@ pub fn check_fields(s: &Settings) -> Result<(), String> {
         }
     }
     if target_parts(&s.target).is_none() {
-        return Err(format!("{}: name a remote's branch, as origin/main.", if s.target.is_empty() { "Target" } else { &s.target }));
+        return Err(not_a_target(&s.target));
     }
     let within = |n: i64, low: i64, high: i64, words: &str| if (low..=high).contains(&n) { Ok(()) } else { Err(words.to_string()) };
     within(s.batch_most, 1, 8, BATCH)?;
@@ -106,6 +106,10 @@ pub fn check_fields(s: &Settings) -> Result<(), String> {
         return Err("Prompt: at most 8 KiB.".into());
     }
     Ok(())
+}
+
+fn not_a_target(target: &str) -> String {
+    format!("{}: name a remote's branch, as origin/main.", if target.is_empty() { "Target" } else { target })
 }
 
 /// `origin/main` as (origin, main).
@@ -128,7 +132,7 @@ pub fn check_place(dir: &FsPath, target: &str, git: &str) -> Result<(), String> 
     if !dir.is_dir() || !run(&["rev-parse", "--git-dir"])?.status.success() {
         return Err(format!("{} is not a git checkout.", dir.display()));
     }
-    let (remote, branch) = target_parts(target).ok_or_else(|| format!("{target}: name a remote's branch, as origin/main."))?;
+    let (remote, branch) = target_parts(target).ok_or_else(|| not_a_target(target))?;
     if !run(&["rev-parse", "--verify", "--quiet", &format!("refs/remotes/{remote}/{branch}^{{commit}}")])?.status.success() {
         return Err(format!("{target}: no such branch at {remote}."));
     }
@@ -149,10 +153,7 @@ pub fn keep(tx: &Transaction, project: &str, s: &Settings) -> Result<(), String>
     ops::check_project(tx, project)?;
     check_fields(s)?;
     if let Some(agent) = &s.agent {
-        let ours: Option<i64> = tx.query_row("SELECT 1 FROM agents WHERE id = ?1 AND project = ?2", (agent, project), |r| r.get(0)).optional().map_err(sql)?;
-        if ours.is_none() {
-            return Err("Choose an agent of this project's pool, or none.".into());
-        }
+        super::agents::chosen(tx, agent, project)?;
     }
     let prompt = if s.prompt.trim() == DEFAULT_PROMPT.trim() { "" } else { s.prompt.as_str() };   // the default stays the default
     tx.execute("INSERT INTO project_integration (project, is_on, target, check_line, publish_line, after_line, batch_most, check_minutes, agent, agent_budget_minutes, red_rounds_most, prompt)
@@ -165,10 +166,7 @@ pub fn keep(tx: &Transaction, project: &str, s: &Settings) -> Result<(), String>
 
 /// The project's folder on this Mac, `~` read as the home folder.
 fn local_dir(dir: &str) -> PathBuf {
-    match dir.strip_prefix('~') {
-        Some(rest) => crate::config::home().join(rest.trim_start_matches('/')),
-        None => PathBuf::from(dir),
-    }
+    PathBuf::from(super::folder::folder_in(&crate::config::home().to_string_lossy(), dir))
 }
 
 /// Where the candidate is built, for "What runs".
@@ -195,8 +193,7 @@ pub fn routes() -> Router<Shared> {
 }
 
 async fn shown(State(app): State<Shared>, Path(project): Path<String>) -> Response {
-    let a = app.clone();
-    answer(off(move || a.tasks.with(|tx| {
+    answer(store(&app, move |tx| {
         ops::check_project(tx, &project)?;
         let (_, host, dir) = ops::project_place(tx, &project)?;
         let s = read(tx, &project)?;
@@ -205,25 +202,30 @@ async fn shown(State(app): State<Shared>, Path(project): Path<String>) -> Respon
         v["here"] = json!(host.is_none());
         v["runs"] = json!(runs(&project, &dir, &s));
         Ok(v)
-    })).await)
+    }).await)
 }
 
+/// Where it runs is judged first, its git off the async workers and outside the store's lock; the fields when kept.
 async fn set(State(app): State<Shared>, Path(project): Path<String>, Json(body): Json<Value>) -> Response {
-    let a = app.clone();
-    let done = off(move || {
-        let s = Settings::from_body(&body)?;
-        check_fields(&s)?;
-        let (name, host, dir) = a.tasks.with(|tx| { ops::check_project(tx, &project)?; ops::project_place(tx, &project) })?;
-        if host.is_some() {
-            return Err(ON_THIS_MAC.into());
+    let s = match Settings::from_body(&body) {
+        Ok(s) => s,
+        Err(e) => return answer::<Value>(Err(e)),
+    };
+    let wanted = project.clone();
+    let place = store(&app, move |tx| { ops::check_project(tx, &wanted)?; ops::project_place(tx, &wanted) }).await;
+    let ready = match place {
+        Ok((_, Some(_), _)) => Err(ON_THIS_MAC.to_string()),
+        Ok((name, None, dir)) if s.on => {
+            let target = s.target.clone();
+            off(move || { ops::no_folder(&name, &dir)?; check_place(&local_dir(&dir), &target, "git") }).await
         }
-        if s.on {
-            ops::no_folder(&name, &dir)?;
-            check_place(&local_dir(&dir), &s.target, "git")?;
-        }
-        a.tasks.with(|tx| keep(tx, &project, &s)).map(|()| json!({"ok": true}))
-    }).await;
-    told_projects(&app, done)
+        Ok(_) => Ok(()),
+        Err(e) => Err(e),
+    };
+    answer(match ready {
+        Ok(()) => store(&app, move |tx| keep(tx, &project, &s)).await.map(|()| json!({"ok": true})),
+        Err(e) => Err(e),
+    })
 }
 
 #[cfg(test)]

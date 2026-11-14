@@ -56,9 +56,8 @@ fn ac186_the_default_prompt_stays_the_default() {
 #[test]
 fn ac186_the_agent_is_one_of_its_own_pool() {
     let s = store("integration-agent");
-    for other in ["a2", "gone"] {
-        assert_eq!(s.with(|tx| keep(tx, "p1", &Settings { agent: Some(other.into()), ..Settings::default() })).unwrap_err(),
-                   "Choose an agent of this project's pool, or none.", "{other}");
+    for (other, words) in [("a2", "Web coder is Web's agent, not Billing's: choose one of its own."), ("gone", "That agent is gone.")] {
+        assert_eq!(s.with(|tx| keep(tx, "p1", &Settings { agent: Some(other.into()), ..Settings::default() })).unwrap_err(), words);
     }
     s.with(|tx| keep(tx, "p1", &Settings { agent: Some("a1".into()), ..Settings::default() })).unwrap();
     s.with(|tx| tx.execute("DELETE FROM agents WHERE id = 'a1'", []).map_err(sql)).unwrap();
@@ -94,6 +93,7 @@ fn ac186_a_page_s_body_keeps_what_it_left_out() {
     let s = Settings::from_body(&json!({"on": true, "check": "  make smoke ", "agent": ""})).unwrap();
     assert_eq!(s, Settings { on: true, check: "make smoke".into(), ..Settings::default() });
     assert_eq!(Settings::from_body(&json!({"batch_most": "eight"})).unwrap_err(), "Tasks in a batch: 1 to 8.");
+    assert_eq!(Settings::from_body(&json!({"on": "yes"})).unwrap_err(), "on: true or false", "never off by a wrong type");
 }
 
 #[test]

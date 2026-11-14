@@ -5,7 +5,7 @@
 // words for the settings as saved.
 import { oneAtATime } from "./dialogs.js";
 import { el } from "./listparts.js";
-import { $, agentsOf, api, fillSelect } from "./kanbanutil.js";
+import { $, agentsOf, api, fillSelect, showError } from "./kanbanutil.js";
 
 const FIELDS = { target: "integrationtarget", check: "integrationcheck", publish: "integrationpublish", after: "integrationafter" };
 const NUMBERS = { batch_most: "integrationbatch", check_minutes: "integrationminutes", agent_budget_minutes: "integrationbudget", red_rounds_most: "integrationrounds" };
@@ -14,7 +14,7 @@ export function integrationWindow({ getMeta }) {
   const box = $("integrationbox");
   let project = null, defaultPrompt = "";
 
-  const say = (text) => { $("integrationerror").textContent = text; $("integrationerror").hidden = !text; };
+  const say = (text) => showError($("integrationerror"), text);
   /** Under an empty line, what it means (AC-186). */
   const hints = () => {
     const target = $("integrationtarget").value.trim() || "origin/main";
