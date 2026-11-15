@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 """A worktree's targeted checks (spec AC-104): the tests of what changed, the tests that cite the
 acceptance cases it touches, and the critical functions; a pass is kept per content
-(.checks/changed-<id>.ok), so the same content runs once. Before its first timed step it waits for a
+(.checks/changed-<id>.ok, and in git's common folder for every tree of the repository), so the same content runs once. Before its first timed step it waits for a
 quiet machine (scripts/load_gate.py, AC-146); still busy after 15 minutes, the timed steps are skipped and
 said in red last, here and by make land (.checks/skipped). A step that runs real programs (a timed one,
 the smoke step) and fails runs once more, unchanged; passing then, it counts and is said in red last the same
@@ -28,7 +28,7 @@ import heavy_slots  # noqa: E402
 from check_cancel import run_guard  # noqa: E402
 from check_step import LEFT  # noqa: E402
 from load_gate import for_task, MINUTES  # noqa: E402
-from worktree import releasing  # noqa: E402
+from worktree import common_dir, Refused, releasing  # noqa: E402
 
 REPO = Path(__file__).resolve().parent.parent
 HEAD_LINES = 6  # a source file names its cases at its top
@@ -65,6 +65,34 @@ def tree_id(root=REPO):
         except (FileNotFoundError, IsADirectoryError):   # deleted, not yet staged; a submodule
             digest.update(name + b"\0-\0")
     return digest.hexdigest()[:16]
+
+
+def shared_mark(ident, root=None):
+    """Where a clean pass on content `ident` is kept for every tree of the repository: git's common folder (terminumd's
+    Verify tree finds it, AC-198); none outside a git checkout."""
+    try:
+        return common_dir(root or REPO) / "terminum-checks" / f"changed-{ident}.ok"
+    except Refused:
+        return None
+
+
+def has_passed(ident, root=None):
+    """A pass on this content: the tree's own, or a clean one of any tree of the repository."""
+    root = root or REPO
+    shared = shared_mark(ident, root)
+    return (root / ".checks" / f"changed-{ident}.ok").exists() or bool(shared and shared.exists())
+
+
+def keep_pass(ident, root=None):
+    """The pass kept in the tree, beside its notes; shared only when clean: one that skipped timed steps (AC-146) or
+    passed only on a retry (AC-197) carries its warning, which another tree would never say."""
+    root = root or REPO
+    marks = [root / ".checks" / f"changed-{ident}.ok"]
+    if not note(root, "skipped") and not note(root, "retried"):
+        marks.append(shared_mark(ident, root))
+    for mark in filter(None, marks):
+        mark.parent.mkdir(parents=True, exist_ok=True)
+        mark.write_text(time.strftime("%Y-%m-%d %H:%M\n"))
 
 
 def is_doc(path):
@@ -322,7 +350,7 @@ def main(argv):
         if args.tree_id:
             print(ident)
             return 0
-        return 0 if (REPO / ".checks" / f"changed-{ident}.ok").exists() else 1
+        return 0 if has_passed(ident) else 1
     files, merge_base = changed_files(args.base)
     if args.land:
         failed = run(land_plan(files), gate=False, nice=releasing(REPO), landing=True)
@@ -342,8 +370,7 @@ def main(argv):
             print(f"  {name}: {command}")
         return 0
     ident = tree_id()
-    passed = REPO / ".checks" / f"changed-{ident}.ok"
-    if passed.exists() and not args.force:
+    if has_passed(ident) and not args.force:
         print(f"targeted: passed already on {ident}")
         say_late(REPO)
         if note(REPO, "skipped"):
@@ -353,7 +380,7 @@ def main(argv):
     print(f"targeted: FAIL {' '.join(failed)}" if failed else "targeted: PASS")
     say_late(REPO)
     if not failed and tree_id() == ident:   # changed during the run: no pass recorded
-        passed.write_text(time.strftime("%Y-%m-%d %H:%M\n"))
+        keep_pass(ident)
     return 1 if failed else 0
 
 
