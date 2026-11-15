@@ -177,3 +177,5 @@ consolidate: at a task's end when the hook says it is due; after a release; when
 
 ### 11. English
 code, comments, docs, tests, errors, UI text, commits: English; chat: any language; user content, file names, external identifiers stay verbatim
+
+Read also CLAUDE.local.md
