@@ -997,6 +997,16 @@ Scenario: AC-168 failure — its usage command fails
   Then its process group is ended, the stripes keep the last reading, and the agent's window says in the danger color "its usage command failed 09:00: it ended with exit 1: Error: not logged in"
   And terminumd's log says it once per ask, and it is asked again in 10 minutes, not an hour
 
+Scenario: AC-168 failure — Codex ends without an answer
+  Given its usage command consumes the three request lines
+  When it ends successfully without replying
+  Then the failure says "it ended without an answer"
+
+Scenario: AC-168 failure — Codex closes its input before the request
+  Given its usage command has ended before terminumd writes the request
+  When terminumd writes to its closed input pipe
+  Then the failure says "its input closed" with the operating system's broken-pipe error
+
 Scenario: AC-168 edge — a restart
   Given Claude Code's last reading was at 09:00
   When terminumd restarts at 09:30
@@ -1570,6 +1580,12 @@ Scenario: AC-131 edge — terminumd restarts
   When terminumd restarts or upgrades during API-12's work
   Then the session runs on in tmux; Dispatcher reads from the store each run's clocks and the hook facts of §9, reads each screen before acting, and takes no ending action for one idle period
 
+Scenario: AC-131 edge — a Stop during the restart
+  Given the agent just took API-12 into IN PROGRESS, its persisted run still records a working turn, its Stop reaches no terminumd during the restart, and its recognizable agent screen is idle
+  When terminumd starts again
+  Then Dispatcher recovers the turn's end from the screen and asks for a result through the gate after 5 minutes of no activity (AC-123)
+  And API-12 stays IN PROGRESS until an hour of no activity after the request, then is FAILED with "No result from the agent within an hour of Dispatcher's request."
+
 Scenario: AC-131 edge — tmux restarted
   When the server restarted and restore says which new pane is API-12's
   Then the run follows it, its @terminum-run set again; its agent is gone: API-12 is FAILED and RUN continues the conversation (AC-122)
@@ -1884,7 +1900,7 @@ Depends on `terminum-kanban.md`'s Stage 1. All three stages belong to terminum's
 - [x] AC-128 — `cargo test dispatcher`, `cargo test tasks::agents`, `web/test/e2e_livedispatcher.mjs`, its window's words and global placeholders in `web/test/e2e_liveboardagents.mjs`
 - [x] AC-129 — `cargo test cli::hooktokens` with fixtures of both agents' files, `cargo test dispatcher::usage` (a late read counts nothing), `web/test/e2e_livedispatcher.mjs`
 - [x] AC-130 — `scripts/e2e_remote_tasks.py`
-- [x] AC-131 — `cargo test dispatcher::plan` with a clock jump, `cargo test dispatcher::runs` (a phase it does not know), `web/test/e2e_livedispatcher.mjs`
+- [x] AC-131 — `cargo test dispatcher::plan` with a clock jump, `cargo test dispatcher::runs` (a phase it does not know), `web/test/e2e_livedispatcher.mjs` (Stop during downtime, screen recovery, request before failure)
 - [x] AC-140 — `cargo test tasks::agents`, `cargo test tasks::store`, `web/test/e2e_liveboardagents.mjs`, `web/test/e2e_livedispatcher.mjs`, `scripts/e2e_remote_tasks.py`
 - [x] AC-141 — `cargo test dispatcher::pool`, `cargo test dispatcher::plan`, `cargo test tasks::limits`, `web/test/e2e_liveboardagents.mjs`
 - [x] AC-142 — `cargo test dispatcher::runs`, `cargo test dispatcher::plan`, `cargo test tasks::tools`, `web/test/e2e_liveboardagents.mjs` (the tiles: `web/test/e2e_liveboardpool.mjs`)

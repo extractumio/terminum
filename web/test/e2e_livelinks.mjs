@@ -46,31 +46,41 @@ export async function liveLinks(page, { work }) {
   await liveFolderLink(page, { work, mod });
 }
 
-/** ⌘-click (Ctrl elsewhere) in the middle of `text`; with ready, wait for its link cursor first. */
-async function clickText(page, text, mod, ready = false) {
-  const at = await page.waitForFunction((want) => {
-    const view = document.getElementById("term").getBoundingClientRect();
-    for (const row of document.querySelectorAll("#term .ln")) {
-      const walk = document.createTreeWalker(row, NodeFilter.SHOW_TEXT);
-      for (let t = walk.nextNode(); t; t = walk.nextNode()) {
-        const i = t.data.indexOf(want);
-        if (i < 0) continue;
-        const r = document.createRange();
-        r.setStart(t, i); r.setEnd(t, i + want.length);
-        const b = r.getBoundingClientRect();
-        if (!b.width || b.top < view.top || b.bottom > view.bottom) continue;   // clear left an earlier command in history
-        return { x: b.left + b.width / 2, y: b.top + b.height / 2 };
-      }
+/** In the page: the visible text's center; clear can leave its command in history too. */
+function textPoint(want) {
+  const view = document.getElementById("term").getBoundingClientRect();
+  for (const row of document.querySelectorAll("#term .ln")) {
+    const walk = document.createTreeWalker(row, NodeFilter.SHOW_TEXT);
+    for (let t = walk.nextNode(); t; t = walk.nextNode()) {
+      const i = t.data.indexOf(want);
+      if (i < 0) continue;
+      const r = document.createRange();
+      r.setStart(t, i); r.setEnd(t, i + want.length);
+      const b = r.getBoundingClientRect();
+      if (!b.width || b.top < view.top || b.bottom > view.bottom) continue;   // clear left an earlier command in history
+      return { x: b.left + b.width / 2, y: b.top + b.height / 2 };
     }
-    return null;
-  }, text, { timeout: 5000 }).then((h) => h.jsonValue(), () => null);
-  if (!at) return false;
-  await page.keyboard.down(mod);
-  await page.mouse.move(at.x + 1, at.y); await page.mouse.move(at.x, at.y);
-  const linked = !ready || await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => resolve(document.getElementById("term").classList.contains("onlink")))));
-  if (linked) await page.mouse.click(at.x, at.y);
-  await page.keyboard.up(mod);
-  return linked;
+  }
+  return null;
+}
+
+/** ⌘-click (Ctrl elsewhere) only while the wanted text is still under the pointer. Hovering
+ *  can coincide with a pane redraw: another link's hand cursor must not count for this path. */
+async function clickText(page, text, mod, ready = false) {
+  for (const end = Date.now() + 5000; Date.now() < end;) {
+    const at = await page.waitForFunction(textPoint, text, { timeout: Math.max(1, end - Date.now()) }).then((h) => h.jsonValue(), () => null);
+    if (!at) return false;
+    await page.keyboard.down(mod);
+    try {
+      await page.mouse.move(at.x + 1, at.y); await page.mouse.move(at.x, at.y);
+      const linked = !ready || await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => resolve(document.getElementById("term").classList.contains("onlink")))));
+      const now = await page.evaluate(textPoint, text);
+      if (!now || now.x !== at.x || now.y !== at.y) continue;
+      if (linked) await page.mouse.click(at.x, at.y);
+      return linked;
+    } finally { await page.keyboard.up(mod); }
+  }
+  return false;
 }
 
 async function liveFolderLink(page, { work, mod }) {

@@ -650,6 +650,29 @@ Scenario: AC-104 failure — failing tests on the Mac test runner are never read
   When scripts/ci_mac.sh ends
   Then it exits 1 and make release stops: "failing tests on the Mac test runner stop it: nothing is public"
 
+Scenario: AC-104 happy path — the Mac checks select a supported Node for the whole run
+  Given the Mac runner has Node 26 on PATH or in the installed Homebrew node@26 keg
+  When make test-mac starts its remote checks
+  Then it selects Node 26, prints its version and executable path, and checks node:sqlite with repeated numbered parameters in memory before rustup or any checks
+  And make, npm, npx and the browser checks inherit its bin directory first on PATH; the runner's global Node and shell configuration stay unchanged
+
+Scenario Outline: AC-104 failure — the Mac checks reject an unusable Node before expensive work
+  Given <runtime>
+  When make test-mac starts its remote checks
+  Then it starts no rustup, build or browser check, says the Node prerequisite and how to select a supported runtime, releases its lock and exits 2 (checks could not run)
+
+  Examples:
+    | runtime |
+    | no Node 26 on PATH or in the installed Homebrew node@26 keg |
+    | TM_MAC_NODE_BIN names a missing, relative, colon-containing or unsupported runner-side bin directory |
+    | the selected Node 26 cannot bind repeated numbered SQLite parameters |
+
+Scenario: AC-104 edge — an explicit Mac Node bin directory is authoritative
+  Given TM_MAC_NODE_BIN names an absolute bin directory on the runner containing Node 26, with spaces or apostrophes in its path
+  When make test-mac starts
+  Then it passes that path literally and uses its Node even when another Node is on PATH
+  And an unusable explicit directory fails instead of falling back to another runtime
+
 Scenario Outline: AC-104 edge — the Mac test runner could not run them
   Given <what>
   When make release runs
@@ -774,6 +797,14 @@ Scenario Outline: AC-146 edge — a task's timed checks
     | why                                     |
     | the load average is over the limit      |
     | a release is running (its mark is held) |
+
+Scenario: AC-146 edge — the access check waits for a login answer under load
+  Given scripts/e2e_access.py sends a login request while the load average is 60 on 16 cores
+  When the answer takes more than 10 seconds to arrive
+  Then its request waits up to 37.5 seconds, 10 seconds times the load per core, clamped to 1 through 4
+  And it sends the request only once and checks the same status, body and minimum password-brake duration
+  And an unanswered or trickling request still reaches that deadline and closes its socket
+  And on a quiet machine its request has a 10-second deadline
 
 Scenario: AC-146 edge — make check by hand
   Given the load average stays over 16 for 15 minutes
@@ -968,7 +999,7 @@ All cases are shipped; nothing is staged.
 - [x] AC-17 — `cargo test update::`; `web/test/e2e_tmux.mjs`
 - [x] AC-96 — `scripts/e2e_lastlines.py`; `cargo test lastlines` (a failed write tried again); `web/test/e2e_lastlines.mjs`
 - [x] AC-102 — `scripts/check_step.py` guards each step of `scripts/check_all.sh` and `scripts/check_changed.py`; `scripts/tests/test_check_step.py`; `scripts/tests/test_check_cancel.py` (outer cancellation and guard recovery); `scripts/tests/test_process_ownership.py` (metadata only, directory boundaries and query failures on both platforms); `scripts/tests/test_leftovers.py`; `cargo test cli::tests::the_fake_terminumd_ends_when_its_home_goes`; `scripts/tests/test_testrun.py` (`WithItsFolder`)
-- [x] AC-104 — `scripts/tests/test_land.py`, `scripts/tests/test_land_install.py`, `scripts/tests/test_land_said.py`, `scripts/tests/test_heavy_slots.py`, `scripts/tests/test_check_changed.py`, `scripts/tests/test_package.py`, `scripts/tests/test_release_turn.py`, `scripts/tests/test_release.py`, `scripts/tests/test_ci_mac.py`, `scripts/tests/test_check_docker.py`, `scripts/tests/test_worktree_fresh.py`
-- [x] AC-146 — `scripts/tests/test_load_gate.py`, `scripts/tests/test_release_turn.py`, `scripts/tests/test_check_changed.py`
+- [x] AC-104 — `scripts/tests/test_land.py`, `scripts/tests/test_land_install.py`, `scripts/tests/test_land_said.py`, `scripts/tests/test_heavy_slots.py`, `scripts/tests/test_check_changed.py`, `scripts/tests/test_package.py`, `scripts/tests/test_release_turn.py`, `scripts/tests/test_release.py`, `scripts/tests/test_ci_mac.py`, `scripts/tests/test_ci_mac_node.py`, `scripts/tests/test_check_docker.py`, `scripts/tests/test_worktree_fresh.py`
+- [x] AC-146 — `scripts/tests/test_load_gate.py`, `scripts/tests/test_release_turn.py`, `scripts/tests/test_check_changed.py`, `scripts/tests/test_access.py`, `scripts/e2e_access.py`
 - [x] AC-197 — `scripts/tests/test_check_changed.py` (`test_ac197_*`)
 - [x] AC-103 — `scripts/tests/test_check_docs.py`; `python3 scripts/check_docs.py`
