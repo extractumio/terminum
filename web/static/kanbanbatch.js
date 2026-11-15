@@ -4,13 +4,35 @@
 // Publish again, Close…. terminumd says what it cannot do, here.
 import { askConfirm, askName } from "./dialogs.js";
 import { el } from "./listparts.js";
-import { api, button, showError } from "./kanbanutil.js";
+import { api, button, row, showError } from "./kanbanutil.js";
+import { sessionUrl } from "./tasklink.js";
 
 const WORDS = { "check-again": "Check again", "publish-again": "Publish again", "return-all": "Return all", close: "Close…" };
 
-/** The batch's part of `t`'s window, filled once terminumd answers; none for a task of no batch. */
-export function batchPart(t, refresh) {
-  if (!t.id.startsWith("I_")) return null;
+/** A task of a project whose integration is on: Integrate while it is in work, Take out while it is queued (AC-193);
+ *  terminumd says what it refuses, here. */
+function queueKeys(t, refresh, meta) {
+  const on = meta?.projects?.some((p) => p.id === t.project && p.integration);
+  if (!on || !["IN PROGRESS", "INTEGRATION"].includes(t.status)) return null;
+  const wrap = el("section", "tasksec queuekeys"), error = el("p", "error");
+  error.setAttribute("role", "alert");
+  error.hidden = true;
+  const queued = t.status === "INTEGRATION";
+  const key = button("textkey", queued ? "Take out" : "Integrate", async () => {
+    try {
+      await api(`/api/integration/task/${encodeURIComponent(t.id)}/${queued ? "out" : "queue"}`, { method: "POST", body: {} });
+      showError(error, "");
+      refresh();
+    } catch (e) { showError(error, e.message); }
+  });
+  key.title = queued ? "Take it out of the integration queue: it is IN PROGRESS again" : "Queue the commit its session's folder stands at for integration";
+  wrap.append(row(key), error);
+  return wrap;
+}
+
+/** The batch's part of `t`'s window, filled once terminumd answers; for a task of no batch, its queue's keys. */
+export function batchPart(t, refresh, meta) {
+  if (!t.id.startsWith("I_")) return queueKeys(t, refresh, meta);
   const wrap = el("section", "tasksec batchpart"), line = el("p", "batchstate", "Reading the batch…"), keys = el("div", "actions batchkeys"), error = el("p", "error");
   error.setAttribute("role", "alert");
   error.hidden = true;
@@ -25,6 +47,8 @@ export function batchPart(t, refresh) {
   const why = (b, key, text, yes, body) => () => askName(text, "", yes, 600, (words) => send(b, key, { ...body, why: words }));
   api(`/api/integration/task/${encodeURIComponent(t.id)}`).then((b) => {
     line.textContent = `Batch ${b.number} · ${b.state} · round ${b.round}${b.why ? ` · ${b.why}` : ""} · ${b.tasks.map((x) => `${x.id} ${x.status}`).join(", ")}`;
+    // its step's window, shown as a session is (AC-193)
+    if (b.window) keys.append(button("textkey", "Show its window", () => { location.href = sessionUrl(b.window); }));
     for (const key of b.keys) {
       if (key === "return") {
         for (const x of b.tasks) keys.append(button("textkey", `Return ${x.id}…`, why(b, "return", `Why does ${x.id} go back? Its agent reads it.`, "Return", { task: x.id })));

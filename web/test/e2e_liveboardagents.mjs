@@ -8,7 +8,7 @@ import path from "node:path";
 import { boardKit, pressCard, pressRun } from "./boardkit.mjs";
 import { check, until } from "./check.mjs";
 import { agentPool } from "./e2e_liveboardpool.mjs";
-import { integrationChecks } from "./e2e_liveintegration.mjs";
+import { columnChecks, integrationChecks } from "./e2e_liveintegration.mjs";
 
 const COMMAND = "claude --model opus";
 
@@ -195,11 +195,12 @@ async function projectWindowChecks(page, opts) {
   await page.fill("#limitend", "3");
   await pressAt(page, "#limitsok");
   check("AC-139 limits are kept from the project's window", await until(async () => (await j("/api/tasks/meta")).limits.some((l) => l.project === fresh && l.warn === 2 && l.end === 3)), JSON.stringify((await j("/api/tasks/meta")).limits));
-  await integrationChecks(page, { j, fresh, work, pressAt, shots: opts.shots && `${opts.shots}${opts.shots.endsWith("-") ? "" : "/"}` });
+  const gitty = await integrationChecks(page, { j, fresh, work, pressAt, shots: opts.shots && `${opts.shots}${opts.shots.endsWith("-") ? "" : "/"}` });
   const done = await pressAt(page, "#projectok");
   check("AC-139 Done keeps the project and closes its window", await until(() => page.isHidden("#projectbox"), 15000),
     `${done}; ${JSON.stringify(await page.evaluate(() => ({ says: document.getElementById("projecterror")?.textContent, open: [...document.querySelectorAll("dialog[open]")].map((d) => d.id), busy: document.getElementById("projectbox").dataset.busy ?? null, focus: document.activeElement?.id })))}`);
   if (await page.isVisible("#projectbox")) await page.evaluate(() => document.getElementById("projectbox").close());
+  await columnChecks(page, { j, gitty });   // the board's INTEGRATION column, the window closed (AC-193)
 
   // no folder: no one knows where an agent would start (AC-140)
   const homeless = (await j("/api/tasks", "POST", { title: "nowhere to run", project: fresh })).id;

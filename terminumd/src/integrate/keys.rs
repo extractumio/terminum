@@ -105,7 +105,6 @@ pub fn close(tx: &Transaction, id: i64, why: &str, at: i64) -> Result<String, St
 /// A batch as its integration task's window shows it.
 fn of_task(tx: &Transaction, task: &str) -> Result<Value, String> {
     let b = bs::by_task(tx, &ops::key_of(tx, task)?)?.ok_or_else(|| format!("{task} is no batch's task."))?;
-    let why: Option<String> = tx.query_row("SELECT why FROM integration_batches WHERE id = ?1", [b.id], |r| r.get(0)).map_err(sql)?;
     let tasks: Vec<Value> = b.tasks.iter().map(|k| { let t = ops::get(tx, &bs::slug(tx, k)?)?; Ok(json!({"id": t.id, "status": t.status})) }).collect::<Result<_, String>>()?;
     let keys: Vec<&str> = match b.state.as_str() {
         "red" => vec!["check-again", "return", "return-all"],
@@ -113,7 +112,7 @@ fn of_task(tx: &Transaction, task: &str) -> Result<Value, String> {
         "after failed" => vec!["close"],
         _ => vec![],
     };
-    Ok(json!({"batch": b.id, "number": b.number, "state": b.state, "why": why, "round": b.round, "red_rounds": b.red_rounds, "tasks": tasks, "keys": keys}))
+    Ok(json!({"batch": b.id, "number": b.number, "state": b.state, "why": b.why, "round": b.round, "red_rounds": b.red_rounds, "tasks": tasks, "keys": keys, "pane": b.pane}))
 }
 
 pub fn routes() -> Router<Shared> {
@@ -123,7 +122,12 @@ pub fn routes() -> Router<Shared> {
 }
 
 async fn shown(State(app): State<Shared>, Path(task): Path<String>) -> Response {
-    answer(store(&app, move |tx| of_task(tx, &task)).await)
+    let mut shown = store(&app, move |tx| of_task(tx, &task)).await;
+    // its step's window is a session of terminumd's own tmux: its key, so the window can show it (AC-193)
+    if let Ok(v) = &mut shown && let Some(pane) = v["pane"].as_str().map(str::to_string) {
+        v["window"] = json!(app.tmux.local.key(&pane));
+    }
+    answer(shown)
 }
 
 async fn pressed(State(app): State<Shared>, Path((id, key)): Path<(i64, String)>, body: Option<Json<Value>>) -> Response {

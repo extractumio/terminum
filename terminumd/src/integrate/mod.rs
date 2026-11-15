@@ -4,6 +4,7 @@
 
 pub mod agent;
 pub mod batch;
+pub mod column;
 pub mod engine;
 pub mod git;
 pub mod keys;

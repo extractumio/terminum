@@ -377,7 +377,7 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
     if (from) from.append("From schedule ", button("linklike", `${t.schedule.key}: ${t.schedule.title}`, () => openSchedule(t.schedule.key)));
     const when = el("div", "taskwhen");
     when.append(...[stamps, from].filter(Boolean));
-    wrap.append(...[when, standing(t), batchPart(t, refresh), fields(t), text(t), filesOf(t)].filter(Boolean));   // a batch's keys (terminum-integration.md AC-194)
+    wrap.append(...[when, standing(t), batchPart(t, refresh, getMeta()), fields(t), text(t), filesOf(t)].filter(Boolean));   // a batch's keys (terminum-integration.md AC-194)
     return wrap;
   }
 

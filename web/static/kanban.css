@@ -307,3 +307,14 @@ body.board-page { margin: 0; overflow: hidden; background: var(--surface-0); col
 .agentpick .item:focus-visible { box-shadow: inset 0 0 0 2px var(--accent); outline: none; }
 .agline { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: var(--fs-meta) var(--term-font, monospace); color: var(--muted); }
 .aglast { margin-left: auto; flex: none; font-size: var(--fs-meta); color: var(--muted); }
+
+/* the INTEGRATION column (terminum-integration.md AC-193): a batch's cards tinted as one group under its task's card */
+.colhead .queuekeys { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1); margin-left: auto; }
+.colnote { flex-basis: 100%; font-size: var(--fs-small); font-weight: var(--fw-body); color: var(--muted-text); }
+.card.inbatch { background: color-mix(in srgb, var(--accent) 10%, var(--surface-3)); }
+.card.batchhead .qmark { color: var(--fg); }
+.qmark { font-size: var(--fs-small); color: var(--muted-text); }
+.batchrows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
+.batchrow small { color: var(--muted-text); }
+.batchresult.good { color: var(--fg); }
+.batchresult.bad { color: var(--danger-text); }

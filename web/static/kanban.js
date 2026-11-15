@@ -28,7 +28,8 @@ import { sessionStarter } from "./kanbansession.js";
 import { taskLines } from "./tasklines.js";
 import { liveSession } from "./cardstate.js";
 import { el, iconButton, plural, projectInk, textKey } from "./listparts.js";
-import { showIntegration } from "./kanbanintegration.js";
+import { integrationColumn } from "./kanbanqueuecol.js";
+import { boardColumns } from "./kanbancols.js";
 import { $, COLUMNS, agentChip, api, button, guardQueuedRun, hasFiles, placeChildren, say, sessionLine, showError, signInElsewhere, statusBox, needBoxes, underParents } from "./kanbanutil.js";
 
 const signIn = signInElsewhere();                  // with no sign-in the board goes to /sessions/, whose form signs in
@@ -164,6 +165,9 @@ function card(t, under = "") {
   head.append(el("span", "cid", t.id), el("span", `csev ${t.severity}`, t.severity));
   if (t.parent) head.append(el("span", "cparent", `in ${t.parent}`));
   if (t.schedule) head.append(el("span", "cfrom", t.schedule));   // made by that schedule (terminum-schedules.md AC-163)
+  if (t.queue) head.append(el("span", "qmark", t.queue.mark));     // what the integration queue says of it (terminum-integration.md AC-193)
+  c.classList.toggle("inbatch", t.queue?.batch != null);
+  c.classList.toggle("batchhead", !!t.queue?.head);
   if (t.agent) head.append(agentChip(t.agent));
   c.classList.toggle("onagent", !!t.agent);        // a folded card keeps its Run key only with an agent to run on (AC-159)
   // RUN stays in every column; terminumd decides whether its session can take it (AC-122).
@@ -233,25 +237,9 @@ async function runThem(tasks, agent) {
   } catch (e) { say(e.message); }
 }
 
-function tabFor(name) {
-  const tab = button(null, name, () => showColumn(name));
-  tab.dataset.status = name;
-  tab.setAttribute("role", "tab");
-  tab.hidden = name === "INTEGRATION";
-  return tab;
-}
-
+const queueColumn = integrationColumn({ openTask: (id) => openTask(id), reload: () => loadMeta().then(() => readSoon()) });
 /** The columns stand once; a draw fills them, each keeping its scroll. */
-const columns = new Map(COLUMNS.map((column) => {
-  const col = el("section", "col"), head = el("h2", "colhead"), count = el("span", "count"), list = el("div", "cards");
-  col.dataset.status = column;
-  col.hidden = column === "INTEGRATION";   // until showIntegration says it stands (terminum-integration.md AC-193)
-  const keys = sorting.keys(column);
-  head.append(el("span", "colname", column), keys, count);
-  if (column === "TODO") keys.before(iconButton("icon new", "plus", "New task", "A new task in TODO", () => form.open()));   // AC-106
-  col.append(head, list);
-  return [column, { col, count, list, tab: tabFor(column), drawn: "" }];
-}));
+const columns = boardColumns({ sorting, showColumn: (c) => showColumn(c), newTask: () => form.open(), queueKeys: queueColumn.keys });
 let socket = null;
 /** A press in the session list: as the session page's, over the one socket. */
 function send(m) {
@@ -289,7 +277,6 @@ function draw() {
   folds.keep(cards);
   const focused = document.activeElement?.closest?.(".card")?.dataset.id, filtered = narrowed(), one = filters().project.length === 1;
   const inks = new Map(meta.projects.map((p) => [p.id, [p.name, p.color]]));
-  showIntegration(columns.get("INTEGRATION"), meta, filters().project, counts.INTEGRATION ?? 0);
   for (const [column, part] of columns) {
     // a session's state changes on its card alone (sessionsCame): a column is drawn anew without it, a card with it
     const have = cards.get(column), n = counts[column] ?? 0, seen = have.map((t) => JSON.stringify([{ ...t, session: t.session?.key }, inks.get(t.project)]));
@@ -306,6 +293,7 @@ function draw() {
   }
   const onBoard = new Set([...cards.values()].flat().map((t) => t.id));
   for (const id of drawnCards.keys()) if (!onBoard.has(id)) drawnCards.delete(id);
+  queueColumn.draw(columns.get("INTEGRATION"), meta, filters().project, counts.INTEGRATION ?? 0);   // its order is the queue's (AC-193)
   if (focused) document.querySelector(`.card[data-id="${focused}"]`)?.focus({ preventScroll: true });
   markTab();
 }

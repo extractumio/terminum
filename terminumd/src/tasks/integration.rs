@@ -167,11 +167,6 @@ pub fn read(tx: &Transaction, project: &str) -> Result<Settings, String> {
     })).optional().map_err(sql).map(Option::unwrap_or_default)
 }
 
-/// The projects whose integration is on, for the board's INTEGRATION column (AC-193).
-pub fn on_projects(tx: &Transaction) -> Result<std::collections::HashSet<String>, String> {
-    Ok(ops::rows(tx, "SELECT project FROM project_integration WHERE is_on = 1", [], |r| r.get(0))?.into_iter().collect())
-}
-
 /// Kept as given, its agent one of the project's own pool.
 pub fn keep(tx: &Transaction, project: &str, s: &Settings) -> Result<(), String> {
     ops::check_project(tx, project)?;
