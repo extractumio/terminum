@@ -16,6 +16,7 @@ export const PORT = await freePort();
 export const TMUX_SOCKET = own("tm-test-panel");
 const HERE = path.dirname(new URL(import.meta.url).pathname);
 export const BIN = process.env.TM_BIN ?? path.resolve(HERE, "../../terminumd/target/debug/terminumd");
+fs.accessSync(BIN, fs.constants.X_OK); // fail before making resources when the build is not ready
 export const SB = fs.realpathSync(fs.mkdtempSync(`${shortTmp()}/tm-e2e-`)); // the sandbox: the only writable root
 // short folders: the CLI socket's path must stay under 104 bytes
 const HOME = fs.mkdtempSync(`${shortTmp()}/tmh-`);

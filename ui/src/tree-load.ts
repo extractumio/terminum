@@ -3,7 +3,7 @@
 // the backend still reads a huge one), finding an entry's index, and re-finding the expanded
 // children of a folder that was re-read. Stale answers (a re-root, a forced refresh) are dropped.
 
-import { api, join, type Page } from "./api";
+import { api, isPage, join, type Page } from "./api";
 import { PAGE, type DirNode } from "./tree-rows";
 
 /** What paging reads from, and tells, the tree. */
@@ -25,7 +25,7 @@ export class Pager {
     try {
       let r: Page;
       for (;;) {
-        r = await api<Page>("GET", "/api/ls", { query: this.host.query({ path: n.path, offset: page * PAGE }) });
+        r = await api<Page>("GET", "/api/ls", { query: this.host.query({ path: n.path, offset: page * PAGE }), is: isPage });
         if (r.status !== "loading") break;           // backend still reading a huge folder
         await new Promise((res) => setTimeout(res, 300));
         if (epoch !== this.host.epoch || read !== n.read) return;
@@ -66,7 +66,7 @@ export class Pager {
       if (i >= 0) return p * PAGE + i;
     }
     // a failed lookup (an unreachable host, AC-37) counts as not found: the folder's error row says why
-    const r = await api<Page>("GET", "/api/ls", { query: this.host.query({ path: n.path, offset: 0, limit: 1, locate: name }) }).catch(() => null);
+    const r = await api<Page>("GET", "/api/ls", { query: this.host.query({ path: n.path, offset: 0, limit: 1, locate: name }), is: isPage }).catch(() => null);
     return r?.located ?? null;
   }
 }

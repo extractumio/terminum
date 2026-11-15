@@ -51,14 +51,16 @@ class Fresh(Repo):
     def test_a_tree_hears_when_origin_main_changed_how_it_is_checked_or_landed(self):  # AC-104
         own, _ = worktree.add("own", cwd=self.primary)
         commit(own, "own.txt")
-        for name in ("scripts/land.py", "scripts/test_scripts.py"):
-            with self.subTest(pipeline=name):
-                self.push_from_another_clone(name)
-                self.forget_fetch()
-                said = "".join(worktree_fresh.fresh(cwd=own))
-                self.assertIn("origin/main changed the checks or the landing (", said)
-                self.assertIn(name, said)
-                self.assertIn("read it there and merge it", said)
+        scripts = ("scripts/land.py", "scripts/test_scripts.py", "scripts/check_slots.py",
+                   "scripts/heavy_slots.py", "scripts/live_slots.py")
+        for script in scripts:
+            self.push_from_another_clone(script)
+        self.forget_fetch()
+        said = "".join(worktree_fresh.fresh(cwd=own))
+        self.assertIn("origin/main changed the checks or the landing (", said)
+        for script in scripts:
+            self.assertIn(script, said)
+        self.assertIn("read it there and merge it", said)
 
     def test_git_fetch_runs_at_most_every_five_minutes_and_a_failure_stays_said(self):
         # Cadence must not depend on a real fetch finishing within the hook's five-second budget

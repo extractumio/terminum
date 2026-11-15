@@ -7,6 +7,7 @@ import { DEFERRED_API, load, stubs, tick } from "./bundle.mjs";
 
 const { Pager } = await load("src/tree-load.ts", { plugins: [stubs({
   "./api": `export const join = (d, n) => d + "/" + n;
+    export const isPage = () => true;
     export const basename = (p) => p.split("/").pop();
     export const dirname = (p) => p.slice(0, p.lastIndexOf("/"));
     ${DEFERRED_API}`,
