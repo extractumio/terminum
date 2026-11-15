@@ -28,6 +28,7 @@ pub fn routes() -> Router<Shared> {
         .route("/api/integration/project/{id}/pause", post(pause))
         .route("/api/integration/project/{id}/batches", get(batches))
         .route("/api/integration/task/{id}/queue", post(queue_task))
+        .route("/api/integration/task/{id}/out", post(take_out))
 }
 
 /// A batch's state in words, as its group's head says it (AC-193).
@@ -69,7 +70,7 @@ fn of_project(tx: &Transaction, project: &str) -> Result<Value, String> {
             let (why, created): (Option<String>, i64) = tx.query_row("SELECT why, created_at FROM integration_batches WHERE id = ?1", [id], |r| Ok((r.get(0)?, r.get(1)?))).map_err(sql)?;
             let tasks: Vec<String> = b.tasks.iter().filter_map(|k| bs::slug(tx, k).ok()).collect();
             json!({"id": b.id, "number": b.number, "task": bs::task_of(tx, &b)?, "state": b.state, "words": state_words(tx, &b, why.as_deref())?,
-                   "since": b.step_started.unwrap_or(created), "tasks": tasks, "round": b.round})
+                   "since": b.step_started.unwrap_or(created), "tasks": tasks, "round": b.round, "pane": b.pane})
         }
         None => Value::Null,
     };
@@ -99,7 +100,7 @@ struct Shown {
 
 /// The column's parts for the projects shown (none named: every project with integration on).
 async fn column(State(app): State<Shared>, Query(q): Query<Shown>) -> Response {
-    answer(store(&app, move |tx| {
+    let mut shown = store(&app, move |tx| {
         let on = integration::on_projects(tx)?;
         let wanted: Vec<&str> = q.projects.split(',').filter(|p| !p.is_empty()).collect();
         let mut parts = Vec::new();
@@ -109,7 +110,16 @@ async fn column(State(app): State<Shared>, Query(q): Query<Shown>) -> Response {
             parts.push(of_project(tx, p)?);
         }
         Ok(json!({"projects": parts}))
-    }).await)
+    }).await;
+    // a step's window is a session of terminumd's own tmux: its key, as a session's, for the group's head to show it
+    if let Ok(v) = &mut shown {
+        for part in v["projects"].as_array_mut().into_iter().flatten() {
+            if let Some(pane) = part["batch"]["pane"].as_str().map(str::to_string) {
+                part["batch"]["window"] = json!(app.tmux.local.key(&pane));
+            }
+        }
+    }
+    answer(shown)
 }
 
 /// Pause or Resume (AC-193): a paused queue starts no batch; the one in work goes on.
@@ -184,6 +194,30 @@ async fn queue_task(State(app): State<Shared>, Path(id): Path<String>) -> Respon
         crate::page::projects::tell(&app);
     }
     answer(done.map(|said| json!({"ok": true, "said": said})))
+}
+
+/// A human's Take out (AC-187, AC-193): the task IN PROGRESS again, out of the queue and any batch, which goes on
+/// without it.
+pub(crate) fn out(tx: &Transaction, id: &str, at: i64) -> Result<(), String> {
+    let t = ops::get(tx, id)?;
+    if t.status != crate::tasks::ops::INTEGRATION {
+        return Err(format!("{id} is not queued."));
+    }
+    if bs::by_task(tx, &t.key)?.is_some() {
+        return Err(format!("{id} is a batch's integration task: it ends with its batch."));
+    }
+    ops::place(tx, HUMAN, &t, "IN PROGRESS", at)?;
+    ops::log(tx, &t.key, HUMAN, "queue", &format!("{} took it out of the integration queue.", ops::user_name(tx, HUMAN)?), None, at).map(drop)
+}
+
+async fn take_out(State(app): State<Shared>, Path(id): Path<String>) -> Response {
+    let task = id.clone();
+    let done = store(&app, move |tx| out(tx, &task, ops::now())).await;
+    if done.is_ok() {
+        crate::tasks::api::told(&app, &id);
+        crate::page::projects::tell(&app);
+    }
+    answer(done.map(|()| json!({"ok": true})))
 }
 
 #[cfg(test)]

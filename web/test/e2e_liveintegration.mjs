@@ -97,6 +97,37 @@ export async function integrationChecks(page, { j, fresh, work, pressAt, shots }
     }
   }
   await pressAt(page, "#projecttabgeneral");
+  return gitty;
+}
+
+/** AC-193: the INTEGRATION column where a shown project integrates: its head's keys, Pause and Resume said where
+ *  pressed, Batches…, and a human's Integrate refused in its words in the task's window; the board comes back after. */
+export async function columnChecks(page, { j, gitty }) {
+  const back = page.url(), col = '.col[data-status="INTEGRATION"]';
+  await j(`/api/task-projects/${gitty}/integration`, "PUT", { on: true });   // no Check: nothing runs while it is looked at
+  await page.goto(new URL(`/kanban/?project=${gitty}`, back).href);
+  await page.waitForSelector(`${col}:not([hidden]) .colhead .colkey`, { timeout: 8000 });
+  const key = (words) => `${col} .colhead button.colkey:has-text("${words}")`;
+  check("AC-193 the column stands with Pause and Batches…, and no sort keys: its order is the queue's",
+    await page.isVisible(key("Pause")) && await page.isVisible(key("Batches…")) && await page.isHidden(`${col} .colsort`));
+  await page.click(key("Pause"));
+  const paused = await until(async () => (await j(`/api/integration/column?projects=${gitty}`)).projects[0]?.paused === true && await page.isVisible(key("Resume")));
+  check("AC-193 Pause pauses the queue and becomes Resume; the column says who paused it",
+    paused && /^Paused by /.test(await page.textContent(`${col} .colnote`)));
+  await page.click(key("Resume"));
+  check("AC-193 Resume starts it again", await until(async () => (await j(`/api/integration/column?projects=${gitty}`)).projects[0]?.paused === false && await page.isVisible(key("Pause"))));
+  await page.click(key("Batches…"));
+  await page.waitForSelector("#batcheswin[open]");
+  check("AC-193 Batches… lists the project's batches: none yet", await until(() => page.isVisible("#batchesnone")));
+  await page.click("#batchesclose");
+  const t = (await j("/api/tasks", "POST", { title: "integrate me", project: gitty })).id;
+  await j(`/api/tasks/${t}`, "PATCH", { status: "IN PROGRESS" });
+  await page.goto(new URL(`/kanban/${t}?project=${gitty}`, back).href);
+  await page.waitForSelector("#taskbox[open] .queuekeys button");
+  await page.click("#taskbox[open] .queuekeys button");
+  check("AC-193 Integrate on a task with no session's folder is refused in integrate's words, in its window",
+    await until(async () => (await page.textContent("#taskbox[open] .queuekeys .error")) === "This session has no folder on this Mac: name the commit."));
+  await page.goto(back);
 }
 
 /** AC-186: play the browser's substitutions on the real fields; paste, drop, IME and prose keep their text. */

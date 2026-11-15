@@ -8,9 +8,31 @@ import { api, button, showError } from "./kanbanutil.js";
 
 const WORDS = { "check-again": "Check again", "publish-again": "Publish again", "return-all": "Return all", close: "Close…" };
 
-/** The batch's part of `t`'s window, filled once terminumd answers; none for a task of no batch. */
-export function batchPart(t, refresh) {
-  if (!t.id.startsWith("I_")) return null;
+/** A task of a project whose integration is on: Integrate while it is in work, Take out while it is queued (AC-193);
+ *  terminumd says what it refuses, here. */
+function queueKeys(t, refresh, meta) {
+  const on = meta?.projects?.some((p) => p.id === t.project && p.integration);
+  if (!on || !["IN PROGRESS", "INTEGRATION"].includes(t.status)) return null;
+  const wrap = el("section", "tasksec queuekeys"), error = el("p", "error");
+  error.setAttribute("role", "alert");
+  error.hidden = true;
+  const queued = t.status === "INTEGRATION";
+  const key = button("textkey", queued ? "Take out" : "Integrate", async () => {
+    try {
+      await api(`/api/integration/task/${encodeURIComponent(t.id)}/${queued ? "out" : "queue"}`, { method: "POST", body: {} });
+      showError(error, "");
+      refresh();
+    } catch (e) { showError(error, e.message); }
+  });
+  key.title = queued ? "Take it out of the integration queue: it is IN PROGRESS again" : "Queue its session's folder's HEAD for integration, as integrate would";
+  wrap.append(el("div", "actions", null), error);
+  wrap.firstChild.append(key);
+  return wrap;
+}
+
+/** The batch's part of `t`'s window, filled once terminumd answers; for a task of no batch, its queue's keys. */
+export function batchPart(t, refresh, meta) {
+  if (!t.id.startsWith("I_")) return queueKeys(t, refresh, meta);
   const wrap = el("section", "tasksec batchpart"), line = el("p", "batchstate", "Reading the batch…"), keys = el("div", "actions batchkeys"), error = el("p", "error");
   error.setAttribute("role", "alert");
   error.hidden = true;

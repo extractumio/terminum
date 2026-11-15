@@ -76,3 +76,18 @@ fn ac193_batches_newest_first_with_the_greens_of_the_last_20() {
     assert_eq!((v["green"].as_i64(), v["of"].as_i64(), v["batches"][0]["result"].as_str()), (Some(2), Some(2), Some("green")));
     assert_eq!(w.s.with(|tx| batches_of(tx, "api", Some(2))).unwrap()["batches"].as_array().unwrap().len(), 1, "older than 2: one");
 }
+
+#[test]
+fn ac193_a_humans_take_out_puts_it_back_in_work_and_never_a_batchs_own_task() {
+    let w = world("ic-out", Settings { check: "true".into(), ..Settings::default() });
+    let a = queued(&w, 1, "b.txt", "b\n");
+    w.s.with(|tx| out(tx, &a, 5)).unwrap();
+    assert_eq!(status(&w, &a), "IN PROGRESS");
+    assert_eq!(w.s.with(|tx| out(tx, &a, 6)).unwrap_err(), format!("{a} is not queued."));
+    let b = queued(&w, 2, "c.txt", "c\n");
+    go(&w, &Sh { hang: true, ..Default::default() }, 2);
+    let bt = batch(&w);   // read outside: the store's lock is not taken twice
+    let i = w.s.with(|tx| bs::task_of(tx, &bt)).unwrap().unwrap();
+    assert!(w.s.with(|tx| out(tx, &i, 7)).unwrap_err().contains("ends with its batch"));
+    let _ = b;
+}
