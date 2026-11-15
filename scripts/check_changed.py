@@ -4,9 +4,9 @@
 acceptance cases it touches, and the critical functions; a pass is kept per content
 (.checks/changed-<id>.ok), so the same content runs once. Before its first timed step it waits for a
 quiet machine (scripts/load_gate.py, AC-146); still busy after 15 minutes, the timed steps are skipped and
-said in red last, here and by make land (.checks/skipped). A timed step that fails runs once more,
-unchanged; passing then, it counts and is said in red last the same way (.checks/retried, AC-197); the
-release's full run (`make check`) has no retry. A cargo step holds a heavy-build slot (scripts/heavy_slots.py). --land: a landing's smoke set on its merged result, the
+said in red last, here and by make land (.checks/skipped). A step that runs real programs (a timed one,
+the smoke step) and fails runs once more, unchanged; passing then, it counts and is said in red last the same
+way (.checks/retried, AC-197); the release's full run (`make check`) has no retry. A cargo step holds a heavy-build slot (scripts/heavy_slots.py). --land: a landing's smoke set on its merged result, the
 basics on one platform, no timed check. The full run is the release's gate, not this (`make check`).
 
   check_changed.py [--print] [--force] [--base <ref>]   default origin/main; --print only says the plan
@@ -26,6 +26,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from check_docs import AC  # noqa: E402
 import heavy_slots  # noqa: E402
 from check_cancel import run_guard  # noqa: E402
+from check_step import LEFT  # noqa: E402
 from load_gate import for_task, MINUTES  # noqa: E402
 from worktree import releasing  # noqa: E402
 
@@ -219,33 +220,33 @@ def red(text):
     return f"\033[31m{text}\033[0m" if sys.stdout.isatty() else text
 
 
-def skipped_note(root):
-    """The line a run that skipped timed steps left in root, said last by make land, or None."""
-    try:
-        return (root / ".checks" / "skipped").read_text().strip() or None
-    except FileNotFoundError:
-        return None
+def retried(name):
+    """A step that runs real programs, which fail now and then: one unchanged retry (AC-197)."""
+    return timed(name) or name == "smoke"
 
 
-def retried_note(root):
-    """The lines of steps that passed only on their unchanged retry (AC-197), or None."""
+def note(root, kind):
+    """The note a run left in root's .checks: "skipped" timed steps (AC-146), "retried" ones (AC-197), or None."""
     try:
-        return (root / ".checks" / "retried").read_text().strip() or None
+        return (root / ".checks" / kind).read_text().strip() or None
     except FileNotFoundError:
         return None
 
 
 def late_notes(root):
-    """What is said last, red, here and by make land: skipped timed steps (AC-146), retried ones (AC-197)."""
-    return "\n".join(n for n in (skipped_note(root), retried_note(root)) if n) or None
+    """What is said last, red, here and by make land: the report names skipped checks under Not verified
+    (AC-146) and each retried one with its open task (AC-197)."""
+    return "\n".join(n for n in (note(root, "skipped"), note(root, "retried")) if n) or None
 
 
-def say_skipped(root):
-    """Said last, red: the report names skipped checks under Not verified (AC-146) and each retried one
-    with its open task (AC-197)."""
-    note = late_notes(root)
-    if note:
-        print(red(note), flush=True)
+def say_late(root):
+    said = late_notes(root)
+    if said:
+        print(red(said), flush=True)
+
+
+def tail(log):
+    return "".join(f"     {line}\n" for line in log.read_text(errors="replace").splitlines()[-15:])
 
 
 def attempt(root, name, command, log, nice, landing):
@@ -265,7 +266,7 @@ def run(steps, root=REPO, gate=True, nice=False, landing=False):
     a heavy-build slot, the landing's own when `landing`."""
     logs = root / ".checks"
     logs.mkdir(exist_ok=True)
-    failed, skipped, retried, busy, asked = [], [], [], None, False
+    failed, skipped, again, busy, asked = [], [], [], None, False
     if gate:   # what needs no quiet machine runs before the wait
         steps = sorted(steps, key=lambda step: timed(step[0]))
     for name, command in steps:
@@ -278,22 +279,27 @@ def run(steps, root=REPO, gate=True, nice=False, landing=False):
         optional = command.startswith("-")
         log = logs / f"changed.{name}.log"
         code, seconds = attempt(root, name, command, log, nice, landing)
-        if code and not optional and timed(name):   # one unchanged retry of a timed step (AC-197)
+        # one unchanged retry (AC-197): not when the run is red already, nor for a leftover (AC-102)
+        if code not in (0, LEFT) and not optional and not failed and retried(name):
             first = log.with_name(f"changed.{name}.first.log")
             log.replace(first)
-            print(f"note {name} ({seconds} s) failed: one unchanged retry, the first run's log kept: {first}", flush=True)
+            print(f"note {name} ({seconds} s) failed, run once more unchanged; the first run's last lines:", flush=True)
+            print(tail(first), end="", flush=True)   # said here: make land deletes the tree and its logs
             code, seconds = attempt(root, name, command, log, nice, landing)
             if code == 0:
-                retried.append(f"{name} (first run: {first})")
+                again.append(name)
         if code == 0 or optional:
             print(f"{'ok  ' if code == 0 else 'note'} {name} ({seconds} s)" + ("" if code == 0 else f": {log}"), flush=True)
         else:
             print(f"FAIL {name} ({seconds} s): {log}", flush=True)
-            print("".join(f"     {line}\n" for line in log.read_text(errors="replace").splitlines()[-15:]), end="", flush=True)
+            print(tail(log), end="", flush=True)
             failed.append(name)
-    if retried:   # kept until the next targeted run, so make land says it after its smoke set too
-        with (logs / "retried").open("a") as out:
-            out.write(f"PASSED ONLY ON RETRY, the first run red: {' '.join(retried)}: name each with its open task\n")
+    said = logs / "retried"
+    if again:   # a landing's smoke set adds to its targeted run's, so make land says both
+        with said.open("a" if landing else "w") as out:
+            out.write(f"PASSED ONLY ON RETRY, the first run red: {' '.join(again)}: name each with its open task\n")
+    elif not landing:
+        said.unlink(missing_ok=True)   # a targeted run says only its own retries
     note = logs / "skipped"
     if skipped:
         note.write_text(f"targeted: SKIPPED timed checks, the machine busy {MINUTES}: {' '.join(skipped)}\n")
@@ -339,14 +345,13 @@ def main(argv):
     passed = REPO / ".checks" / f"changed-{ident}.ok"
     if passed.exists() and not args.force:
         print(f"targeted: passed already on {ident}")
-        if late_notes(REPO):
-            say_skipped(REPO)
+        say_late(REPO)
+        if note(REPO, "skipped"):
             print("note: --force runs them")
         return 0
-    (REPO / ".checks" / "retried").unlink(missing_ok=True)   # this run says its own retries
     failed = run(steps)
     print(f"targeted: FAIL {' '.join(failed)}" if failed else "targeted: PASS")
-    say_skipped(REPO)
+    say_late(REPO)
     if not failed and tree_id() == ident:   # changed during the run: no pass recorded
         passed.write_text(time.strftime("%Y-%m-%d %H:%M\n"))
     return 1 if failed else 0

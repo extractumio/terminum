@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-"""What a landing says (spec AC-104, AC-146): GitHub CI's last verdict on main, and what its checks skipped."""
+"""What a landing says (spec AC-104, AC-146, AC-197): GitHub CI's last verdict on main, and what its checks skipped."""
 from pathlib import Path
 import shutil
 import subprocess
@@ -62,6 +62,7 @@ class Said(unittest.TestCase):
             tree = primary / ".worktrees" / "x"
             (tree / ".checks").mkdir(parents=True)
             (tree / ".checks" / "skipped").write_text("targeted: SKIPPED timed checks, the machine busy for 15 minutes: page\n")
+            (tree / ".checks" / "retried").write_text("PASSED ONLY ON RETRY, the first run red: smoke: name each with its open task\n")
             out = []
             with mock.patch.object(land, "primary_of", return_value=primary), mock.patch.object(land, "git"), \
                     mock.patch.object(land, "ci_status", return_value="CI on main: success on 0123456789: u"), \
@@ -69,8 +70,9 @@ class Said(unittest.TestCase):
                     mock.patch.object(land, "after_push", lambda _, files: shutil.rmtree(tree)), mock.patch.object(land.subprocess, "run", return_value=subprocess.CompletedProcess([], 0)), \
                     mock.patch.object(land.os, "chdir"), mock.patch.object(land, "install_pending"), mock.patch("builtins.print", lambda *a, **_: out.append(" ".join(map(str, a)))):
                 self.assertEqual(land.main(["x"]), 0)
-        self.assertEqual(out[-2:], ["landed abcdef012 on origin/main",
-                                    "targeted: SKIPPED timed checks, the machine busy for 15 minutes: page"])
+        self.assertEqual(out[-2:], ["landed abcdef012 on origin/main",   # AC-146, AC-197
+                                    "targeted: SKIPPED timed checks, the machine busy for 15 minutes: page\n"
+                                    "PASSED ONLY ON RETRY, the first run red: smoke: name each with its open task"])
 
 
 if __name__ == "__main__":

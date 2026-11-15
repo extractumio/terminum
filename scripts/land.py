@@ -303,10 +303,10 @@ def main(argv):
     ci = ci_status(tree)
     print(ci)   # said again last when not green: minutes of checks scroll the first out of sight
     green = ci.startswith("CI on main: success")
-    skipped, stopped = [], None
+    late, stopped = [], None
 
     def after(files):   # read now: once merged, a sweep may take the tree
-        skipped.append(late_notes(tree))
+        late.append(late_notes(tree))
         after_push(primary, files)
     try:
         commit = land(tree, after=after)
@@ -321,8 +321,8 @@ def main(argv):
     print(f"landed {commit[:9]} on {BASE}")
     if not green:
         print(ci)
-    if skipped and skipped[0]:
-        print(red(skipped[0]))   # timed checks skipped or passed only on retry: the report says so
+    if late and late[0]:
+        print(red(late[0]))   # timed checks skipped or passed only on retry: the report says so
     os.chdir(primary)
     if not tree.is_dir():
         return 0

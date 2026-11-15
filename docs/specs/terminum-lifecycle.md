@@ -68,7 +68,7 @@ Open questions: none open. Which clients exist (AC-11's drop) is terminum.md OQ-
 | AC-103 | [SHOULD / P1] | The docs keep their shape on every `make test`, and a review of what changed since the last release removes duplicates and superseded requirements before a minor release. |
 | AC-104 | [SHOULD / P1] | A finished worktree lands by itself: its targeted checks green on its own work, then a short smoke set of the basics on one platform, with no timed check, on its merge with what others landed; pushed, the primary checkout brought up to it and the tree deleted; the full test run is the release's gate, and only failing tests block a release. |
 | AC-146 | [SHOULD / P1] | A release's full run starts only on a quiet machine: it queues behind another full run, waits for the load to stay low for 3 minutes, says each minute that it waits, and after 15 minutes ends the release with "the build server is not available"; a task's timed checks wait the same way and then run, saying so. |
-| AC-197 | [SHOULD / P1] | A worktree's timed check that fails runs once more, unchanged: passing then, the tree's targeted checks or smoke set count it and say it in red last, the first run's log kept; red again, it is red; a step that measures no time, and the release's full run, have no retry. |
+| AC-197 | [SHOULD / P1] | A worktree's step that runs real programs (panel, page, critical, smoke, an e2e script) and fails runs once more, unchanged, while the run is otherwise green: passing then, the targeted checks or the smoke set count it, say the first run's last lines and say it in red last; red again, or a leftover, it is red; other steps, and the release's full run, have no retry. |
 
 ## 5. BDD scenarios
 
@@ -788,31 +788,39 @@ Scenario: AC-146 edge — Copy preview's complexity guard excludes scheduling de
   But a quadratic preview that exceeds the CPU budget fails the guard
 ```
 
-### AC-197 — A worktree's flaky timed check runs once more [SHOULD / P1]
+### AC-197 — A worktree's flaky check runs once more [SHOULD / P1]
 
 ```gherkin
 Scenario: AC-197 happy path — red once, green on its unchanged retry
-  Given a worktree's targeted checks, or its landing's smoke set, run a timed step (panel, page, critical, an e2e script)
-  And that step fails
-  When check_changed.py runs it once more with nothing changed
-  And it passes
-  Then the step counts as passed and the pass is recorded
-  And the first run's log stays as .checks/changed.<step>.first.log
-  And "PASSED ONLY ON RETRY, the first run red: <step> (first run: <log>): name each with its open task" is said in red last, by check_changed.py and by make land
+  Given a worktree's targeted checks, or its landing's smoke set, run a step that runs real programs (panel, page, critical, smoke, an e2e script)
+  And no step of the run has failed
+  When that step fails
+  Then check_changed.py says the failed run's last lines and runs the step once more with nothing changed
+  And when it passes, the step counts as passed and the pass is recorded
+  And "PASSED ONLY ON RETRY, the first run red: <step>: name each with its open task" is said in red last, by check_changed.py and by make land after "landed"
+  And the first run's log stays as .checks/changed.<step>.first.log while the tree stays
 
-Scenario: AC-197 failure — red on its retry too
-  Given a timed step fails and fails again on its retry
-  Then the step is red, as any red check, and nothing lands
+Scenario Outline: AC-197 failure — no retry, or red on it
+  Given <what>
+  Then the step is red at once, as any red check, and nothing lands
 
-Scenario: AC-197 edge — what gets no retry
-  Given a step that measures no time fails (the scan, a build, clippy, cargo tests, unit tests)
-  Then it is red at once
-  And make check, the release's full run, never retries: a failing test there blocks the release (AC-104)
+  Examples:
+    | what                                                               |
+    | the step fails again on its retry                                  |
+    | the step passed but left a process or a file (exit 3, AC-102)      |
+    | another step of the run has failed already                         |
+    | the step runs no real program (the scan, a build, clippy, cargo tests, unit tests) |
 
-Scenario: AC-197 edge — the next targeted run says only its own retries
+Scenario: AC-197 edge — the release's full run never retries
+  Given make check runs, by hand, from make release or from make rehearse
+  When a test fails
+  Then the full run is red and the release stops (AC-104)
+
+Scenario: AC-197 edge — what is said is this run's
   Given an earlier targeted run passed a step only on its retry
   When the targeted checks run again
-  Then that earlier note is gone and only this run's retries are said
+  Then only this run's retries are said
+  But a landing's smoke set adds its retries to its targeted run's, and make land says both
 ```
 
 ## 6. Flow and sequence diagrams
