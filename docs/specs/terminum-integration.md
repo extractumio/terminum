@@ -776,7 +776,7 @@ A task's verify tree is `~/.terminum/integration/<project>/verify-<number>`, det
 | Check | `python3 scripts/worktree.py link . && python3 scripts/land.py check` |
 | Publish | empty: terminum's push |
 | After | `make land-after` (the install on the maintainer's machine, by `TM_LAND_INSTALL := 1` in `local.mk`) |
-| Cleanup | `make land-cleanup` (`worktree.py sweep`) |
+| Cleanup | `make land-clean` (`worktree.py sweep`) |
 | Tasks in a batch, at most | 8 |
 | Check ends after, minutes | 90 |
 | Agent | an agent of terminum's pool, chosen in the window; with none a red batch waits for the maintainer |
