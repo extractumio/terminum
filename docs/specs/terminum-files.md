@@ -335,6 +335,11 @@ Scenario: AC-61 edge — a failed watch, bursts and stale listings
   Given installing a filesystem watch failed temporarily
   When the same folder is requested again after the cause clears
   Then the watch is retried and only successfully installed subscriptions count as watched
+  Given native filesystem notifications are delayed or lost after a subscription is installed
+  When another program edits or deletes an open file, or creates or deletes a child of a watched folder
+  Then metadata reconciliation of those explicit paths recovers the change through the same 500 ms batch; dirty contents stay and the real edit or deletion is shown
+  And newly tracked files are checked even if the edit preceded the workspace save; missing paths stay tracked so recreation is detected; a metadata error other than not-found is not a deletion
+  And reconciliation performs no directory enumeration and no blocking filesystem work on an async worker
   When "npm install" writes 40,000 files into an expanded "node_modules"
   Then the tree updates at most twice a second; an older listing page arriving after a fresh one cannot replace it, nor an older re-finding of an expanded folder's children collapse one a newer read found
   And of two re-checks of an open file, or a re-check sent before a save, the older answer arriving last is dropped: the tab keeps the newer content

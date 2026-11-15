@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-//! Live refresh (AC-13): FSEvents on the folders the focused pane shows (root, expanded
-//! folders, folders of open tabs). Changes are batched for 500 ms, so a burst like
-//! `npm install` costs at most two refreshes per second.
+//! Live refresh (AC-61): native notifications plus metadata reconciliation of the watched
+//! folders and open files, since FSEvents can arrive seconds late. Both feed one 500 ms batch.
+
+mod poll;
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -19,23 +20,50 @@ const BATCH: Duration = Duration::from_millis(500);
 
 pub struct Watcher {
     inner: Mutex<(notify::RecommendedWatcher, HashSet<PathBuf>)>,
+    paths: Mutex<Paths>,
+}
+
+#[derive(Clone, Default)]
+pub struct Paths {
+    pub dirs: HashSet<PathBuf>,
+    pub files: HashSet<PathBuf>,
+}
+
+impl Paths {
+    pub fn extend(&mut self, other: Self) {
+        self.dirs.extend(other.dirs);
+        self.files.extend(other.files);
+    }
 }
 
 impl Watcher {
     pub fn start(cache: Arc<Cache>, bus: Bus) -> notify::Result<Arc<Self>> {
-        let (tx, mut rx) = mpsc::unbounded_channel::<PathBuf>();
-        let w = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
+        // A private debug test can reproduce macOS withholding otherwise valid callbacks.
+        let delay = if cfg!(debug_assertions) { std::env::var("TM_TEST_WATCH_DELAY_MS").ok().and_then(|s| s.parse::<u64>().ok()).unwrap_or(0) } else { 0 };
+        let runtime = tokio::runtime::Handle::current();
+        Self::start_with(cache, bus, |tx| notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
             if let Ok(ev) = res {
-                if matches!(ev.kind, EventKind::Access(_)) {
-                    return;
-                }
-                for p in ev.paths {
-                    let _ = tx.send(p);
+                tracing::debug!(event = "watch.raw", kind = ?ev.kind, paths = ?ev.paths, rescan = ev.need_rescan());
+                if !matches!(ev.kind, EventKind::Access(_)) {
+                    if delay == 0 { for p in ev.paths { let _ = tx.send(p); } }
+                    else {
+                        let tx = tx.clone();
+                        runtime.spawn(async move {
+                            tokio::time::sleep(Duration::from_millis(delay)).await;
+                            for p in ev.paths { let _ = tx.send(p); }
+                        });
+                    }
                 }
             }
-        })?;
-        let me = Arc::new(Watcher { inner: Mutex::new((w, HashSet::new())) });
-        let watched = me.clone();
+        }))
+    }
+
+    fn start_with(cache: Arc<Cache>, bus: Bus, listen: impl FnOnce(mpsc::UnboundedSender<PathBuf>) -> notify::Result<notify::RecommendedWatcher>) -> notify::Result<Arc<Self>> {
+        let (tx, mut rx) = mpsc::unbounded_channel::<PathBuf>();
+        let w = listen(tx.clone())?;
+        let me = Arc::new(Watcher { inner: Mutex::new((w, HashSet::new())), paths: Mutex::new(Paths::default()) });
+        tokio::spawn(poll::run(Arc::downgrade(&me), tx));
+        let watched = Arc::downgrade(&me);
         tokio::spawn(async move {
             while let Some(first) = rx.recv().await {
                 let mut batch: HashSet<PathBuf> = HashSet::from([first]);
@@ -43,7 +71,9 @@ impl Watcher {
                 while let Ok(Some(p)) = tokio::time::timeout_at(deadline, rx.recv()).await {
                     batch.insert(p);
                 }
-                let dirs_watched = watched.inner.lock().1.clone();
+                let Some(watched) = watched.upgrade() else { break; };
+                let dirs_watched = watched.paths.lock().dirs.clone();
+                drop(watched);
                 let mut dirs = HashSet::new();
                 let mut files = HashSet::new();
                 for p in batch {
@@ -61,17 +91,24 @@ impl Watcher {
                 }
                 tracing::debug!(event = "fs.change", dirs = dirs.len(), files = files.len());
                 let (dirs, files): (Vec<_>, Vec<_>) = (dirs.into_iter().collect(), files.into_iter().collect());
-                publish_change(&cache, &bus, &dirs, &files, &[]);
+                let (cache, bus) = (cache.clone(), bus.clone());
+                if let Err(e) = tokio::task::spawn_blocking(move || publish_change(&cache, &bus, &dirs, &files, &[])).await {
+                    tracing::warn!(event = "watch.publish_failed", error = %e);
+                }
             }
         });
         Ok(me)
     }
 
     /// Replace the watched set (only the differences are applied).
-    pub fn set(&self, want: HashSet<PathBuf>) {
+    pub fn set(&self, want: Paths) {
         let mut g = self.inner.lock();
         let (w, have) = &mut *g;
-        set_watched(w, have, want);
+        let changed = *have != want.dirs;
+        if changed { tracing::debug!(event = "watch.set", have = ?have, want = ?want.dirs); }
+        set_watched(w, have, want.dirs.clone());
+        if changed { tracing::debug!(event = "watch.ready", dirs = have.len(), files = want.files.len()); }
+        *self.paths.lock() = want;
     }
 
     pub fn len(&self) -> usize {
@@ -94,16 +131,19 @@ fn set_watched(w: &mut impl notify::Watcher, have: &mut HashSet<PathBuf>, want: 
 }
 
 /// Folders to watch for one pane: its root, expanded folders and the folders of open tabs.
-pub fn wanted(root: &str, expanded: &[String], tabs: impl Iterator<Item = String>) -> HashSet<PathBuf> {
+pub fn wanted(root: &str, expanded: &[String], tabs: impl Iterator<Item = String>) -> Paths {
     let mut s: HashSet<PathBuf> = HashSet::new();
     if !root.is_empty() {
         s.insert(PathBuf::from(root));
     }
     s.extend(expanded.iter().map(PathBuf::from));
-    s.extend(tabs.filter_map(|t| Path::new(&t).parent().map(Path::to_path_buf)));
-    s.retain(|p| p.is_dir());
-    s
+    let files: HashSet<PathBuf> = tabs.map(PathBuf::from).collect();
+    s.extend(files.iter().filter_map(|t| t.parent().map(Path::to_path_buf)));
+    Paths { dirs: s, files }
 }
+
+#[cfg(test)]
+mod recovery_tests;
 
 #[cfg(test)]
 mod tests {
