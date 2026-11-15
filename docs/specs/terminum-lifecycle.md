@@ -798,6 +798,14 @@ Scenario Outline: AC-146 edge — a task's timed checks
     | the load average is over the limit      |
     | a release is running (its mark is held) |
 
+Scenario: AC-146 edge — the access check waits for a login answer under load
+  Given scripts/e2e_access.py sends a login request while the load average is 60 on 16 cores
+  When the answer takes more than 10 seconds to arrive
+  Then its request waits up to 37.5 seconds, 10 seconds times the load per core, clamped to 1 through 4
+  And it sends the request only once and checks the same status, body and minimum password-brake duration
+  And an unanswered or trickling request still reaches that deadline and closes its socket
+  And on a quiet machine its request has a 10-second deadline
+
 Scenario: AC-146 edge — make check by hand
   Given the load average stays over 16 for 15 minutes
   When someone runs make check
@@ -992,6 +1000,6 @@ All cases are shipped; nothing is staged.
 - [x] AC-96 — `scripts/e2e_lastlines.py`; `cargo test lastlines` (a failed write tried again); `web/test/e2e_lastlines.mjs`
 - [x] AC-102 — `scripts/check_step.py` guards each step of `scripts/check_all.sh` and `scripts/check_changed.py`; `scripts/tests/test_check_step.py`; `scripts/tests/test_check_cancel.py` (outer cancellation and guard recovery); `scripts/tests/test_process_ownership.py` (metadata only, directory boundaries and query failures on both platforms); `scripts/tests/test_leftovers.py`; `cargo test cli::tests::the_fake_terminumd_ends_when_its_home_goes`; `scripts/tests/test_testrun.py` (`WithItsFolder`)
 - [x] AC-104 — `scripts/tests/test_land.py`, `scripts/tests/test_land_install.py`, `scripts/tests/test_land_said.py`, `scripts/tests/test_heavy_slots.py`, `scripts/tests/test_check_changed.py`, `scripts/tests/test_package.py`, `scripts/tests/test_release_turn.py`, `scripts/tests/test_release.py`, `scripts/tests/test_ci_mac.py`, `scripts/tests/test_ci_mac_node.py`, `scripts/tests/test_check_docker.py`, `scripts/tests/test_worktree_fresh.py`
-- [x] AC-146 — `scripts/tests/test_load_gate.py`, `scripts/tests/test_release_turn.py`, `scripts/tests/test_check_changed.py`
+- [x] AC-146 — `scripts/tests/test_load_gate.py`, `scripts/tests/test_release_turn.py`, `scripts/tests/test_check_changed.py`, `scripts/tests/test_access.py`, `scripts/e2e_access.py`
 - [x] AC-197 — `scripts/tests/test_check_changed.py` (`test_ac197_*`)
 - [x] AC-103 — `scripts/tests/test_check_docs.py`; `python3 scripts/check_docs.py`
