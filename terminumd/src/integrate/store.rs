@@ -36,15 +36,23 @@ pub struct Batch {
     /// its integration agent's own worktree, while it has one
     pub agent_tree: Option<String>,
     pub unchanged_rechecks: i64,
+    /// why it stands as it does: its red round's, its refusal's
+    pub why: Option<String>,
+    pub created_at: i64,
 }
 
-const SELECT: &str = "SELECT id, project, number, task, tasks, base_sha, candidate_sha, state, pane, round, red_rounds, step_started, fixes, agent_tree, unchanged_rechecks FROM integration_batches";
+const SELECT: &str = "SELECT id, project, number, task, tasks, base_sha, candidate_sha, state, pane, round, red_rounds, step_started, fixes, agent_tree, unchanged_rechecks, why, created_at FROM integration_batches";
 
 fn of_row(r: &rusqlite::Row) -> rusqlite::Result<Batch> {
     let list = |i: usize| r.get::<_, String>(i).map(|t| serde_json::from_str(&t).unwrap_or_default());
     Ok(Batch { id: r.get(0)?, project: r.get(1)?, number: r.get(2)?, task: r.get(3)?, tasks: list(4)?,
         base: r.get(5)?, candidate: r.get(6)?, state: r.get(7)?, pane: r.get(8)?, round: r.get(9)?, red_rounds: r.get(10)?, step_started: r.get(11)?,
-        fixes: list(12)?, agent_tree: r.get(13)?, unchanged_rechecks: r.get(14)? })
+        fixes: list(12)?, agent_tree: r.get(13)?, unchanged_rechecks: r.get(14)?, why: r.get(15)?, created_at: r.get(16)? })
+}
+
+/// A project's batches, newest first, `most` of those numbered under `before`.
+pub fn of_project(tx: &Transaction, project: &str, before: i64, most: i64) -> Result<Vec<Batch>, String> {
+    ops::rows(tx, &format!("{SELECT} WHERE project = ?1 AND number < ?2 ORDER BY number DESC LIMIT ?3"), rusqlite::params![project, before, most], of_row)
 }
 
 /// The batch whose integration task is `key`, if one.

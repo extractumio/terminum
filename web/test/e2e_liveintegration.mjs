@@ -106,16 +106,16 @@ export async function columnChecks(page, { j, gitty }) {
   const back = page.url(), col = '.col[data-status="INTEGRATION"]';
   await j(`/api/task-projects/${gitty}/integration`, "PUT", { on: true });   // no Check: nothing runs while it is looked at
   await page.goto(new URL(`/kanban/?project=${gitty}`, back).href);
-  await page.waitForSelector(`${col}:not([hidden]) .colhead .colkey`, { timeout: 8000 });
-  const key = (words) => `${col} .colhead button.colkey:has-text("${words}")`;
+  await page.waitForSelector(`${col}:not([hidden]) .colhead .queuekeys button`, { timeout: 8000 });
+  const key = (words) => `${col} .colhead .queuekeys button:has-text("${words}")`;
   check("AC-193 the column stands with Pause and Batches…, and no sort keys: its order is the queue's",
-    await page.isVisible(key("Pause")) && await page.isVisible(key("Batches…")) && await page.isHidden(`${col} .colsort`));
+    await page.isVisible(key("Pause")) && await page.isVisible(key("Batches…")) && !(await page.$(`${col} .colsort`)));
   await page.click(key("Pause"));
-  const paused = await until(async () => (await j(`/api/integration/column?projects=${gitty}`)).projects[0]?.paused === true && await page.isVisible(key("Resume")));
+  const paused = await until(async () => (await j("/api/tasks/meta")).projects.find((p) => p.id === gitty)?.queue?.paused === true && await page.isVisible(key("Resume")));
   check("AC-193 Pause pauses the queue and becomes Resume; the column says who paused it",
-    paused && /^Paused by /.test(await page.textContent(`${col} .colnote`)));
+    paused && await until(async () => /^Paused by /.test(await page.textContent(`${col} .colnote`))));
   await page.click(key("Resume"));
-  check("AC-193 Resume starts it again", await until(async () => (await j(`/api/integration/column?projects=${gitty}`)).projects[0]?.paused === false && await page.isVisible(key("Pause"))));
+  check("AC-193 Resume starts it again", await until(async () => (await j("/api/tasks/meta")).projects.find((p) => p.id === gitty)?.queue?.paused === false && await page.isVisible(key("Pause"))));
   await page.click(key("Batches…"));
   await page.waitForSelector("#batcheswin[open]");
   check("AC-193 Batches… lists the project's batches: none yet", await until(() => page.isVisible("#batchesnone")));

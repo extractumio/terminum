@@ -113,6 +113,11 @@ fn filter_of(q: &Query) -> (String, Vec<String>) {
     (text, args)
 }
 
+/// INTEGRATION's order is the queue's (terminum-integration.md AC-193): a batch's integration task, then its tasks, by
+/// batch, then the queued in the order they were queued.
+const QUEUE_ORDER: &str = "(SELECT coalesce(min(b.number), 1e18) FROM integration_batches b WHERE b.state NOT IN ('ended', 'given up') AND (b.task = t.id OR EXISTS (SELECT 1 FROM json_each(b.tasks) WHERE value = t.id))),
+    EXISTS (SELECT 1 FROM integration_batches b WHERE b.task = t.id) DESC, (SELECT e.queued_at FROM integration_entries e WHERE e.task = t.id), t.number";
+
 /// The most a list holds.
 pub(crate) const LIST_MOST: i64 = 200;
 
@@ -120,7 +125,7 @@ pub(crate) const LIST_MOST: i64 = 200;
 pub fn list(tx: &Transaction, q: &Query) -> Result<Vec<Task>, String> {
     let (filter, args) = filter_of(q);
     let limit = if q.limit <= 0 { LIST_MOST } else { q.limit.min(LIST_MOST) };
-    let order = if q.archived { "t.archived_at DESC" } else { match q.sort {
+    let order = if q.archived { "t.archived_at DESC" } else if q.statuses == [super::ops::INTEGRATION] { QUEUE_ORDER } else { match q.sort {
         Sort::Ranked => "t.severity, t.rank",
         Sort::Recent => "t.updated_at DESC, t.number DESC",
         Sort::Priority => "t.severity, t.updated_at DESC, t.number DESC",

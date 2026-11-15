@@ -4,7 +4,8 @@
 // Publish again, Close…. terminumd says what it cannot do, here.
 import { askConfirm, askName } from "./dialogs.js";
 import { el } from "./listparts.js";
-import { api, button, showError } from "./kanbanutil.js";
+import { api, button, row, showError } from "./kanbanutil.js";
+import { sessionUrl } from "./tasklink.js";
 
 const WORDS = { "check-again": "Check again", "publish-again": "Publish again", "return-all": "Return all", close: "Close…" };
 
@@ -24,9 +25,8 @@ function queueKeys(t, refresh, meta) {
       refresh();
     } catch (e) { showError(error, e.message); }
   });
-  key.title = queued ? "Take it out of the integration queue: it is IN PROGRESS again" : "Queue its session's folder's HEAD for integration, as integrate would";
-  wrap.append(el("div", "actions", null), error);
-  wrap.firstChild.append(key);
+  key.title = queued ? "Take it out of the integration queue: it is IN PROGRESS again" : "Queue the commit its session's folder stands at for integration";
+  wrap.append(row(key), error);
   return wrap;
 }
 
@@ -47,6 +47,8 @@ export function batchPart(t, refresh, meta) {
   const why = (b, key, text, yes, body) => () => askName(text, "", yes, 600, (words) => send(b, key, { ...body, why: words }));
   api(`/api/integration/task/${encodeURIComponent(t.id)}`).then((b) => {
     line.textContent = `Batch ${b.number} · ${b.state} · round ${b.round}${b.why ? ` · ${b.why}` : ""} · ${b.tasks.map((x) => `${x.id} ${x.status}`).join(", ")}`;
+    // its step's window, shown as a session is (AC-193)
+    if (b.window) keys.append(button("textkey", "Show its window", () => { location.href = sessionUrl(b.window); }));
     for (const key of b.keys) {
       if (key === "return") {
         for (const x of b.tasks) keys.append(button("textkey", `Return ${x.id}…`, why(b, "return", `Why does ${x.id} go back? Its agent reads it.`, "Return", { task: x.id })));

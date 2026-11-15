@@ -308,16 +308,13 @@ body.board-page { margin: 0; overflow: hidden; background: var(--surface-0); col
 .agline { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: var(--fs-meta) var(--term-font, monospace); color: var(--muted); }
 .aglast { margin-left: auto; flex: none; font-size: var(--fs-meta); color: var(--muted); }
 
-/* the INTEGRATION column (terminum-integration.md AC-193): the batch in work framed on top, the queue's marks */
-.colhead .colkey { font-size: var(--fs-small); }
-.colhead .colkey:first-of-type { margin-left: auto; }
-.colnote { margin: var(--sp-1) var(--sp-1) 0; font-size: var(--fs-small); color: var(--muted); }
-.batchgroup { display: flex; flex-direction: column; gap: var(--sp-1); padding: var(--sp-1); border: 1px solid var(--line); border-radius: var(--r-lg); }
-.batchhead { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0; font-size: var(--fs-small); }
-.batchhead .sep { color: var(--muted); white-space: pre; }
-.batchhead .batchwords { color: var(--muted); text-align: start; }
-.qmark { font-size: var(--fs-small); color: var(--muted); white-space: nowrap; }
+/* the INTEGRATION column (terminum-integration.md AC-193): a batch's cards tinted as one group under its task's card */
+.colhead .queuekeys { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1); margin-left: auto; }
+.colnote { flex-basis: 100%; font-size: var(--fs-small); font-weight: var(--fw-body); color: var(--muted-text); }
+.card.inbatch { background: color-mix(in srgb, var(--accent) 10%, var(--surface-3)); }
+.card.batchhead .qmark { color: var(--fg); }
+.qmark { font-size: var(--fs-small); color: var(--muted-text); }
 .batchrows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
-.batchrow small { color: var(--muted); }
-.batchresult.good { color: var(--ok); }
-.batchresult.bad { color: var(--danger); }
+.batchrow small { color: var(--muted-text); }
+.batchresult.good { color: var(--fg); }
+.batchresult.bad { color: var(--danger-text); }
