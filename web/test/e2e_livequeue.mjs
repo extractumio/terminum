@@ -5,6 +5,7 @@
 // comes due (terminum-schedules.md AC-161), so no agent runs: `node web/test/e2e_live.mjs schedules chromium`.
 import { check, until } from "./check.mjs";
 import { boardKit, nap } from "./boardkit.mjs";
+import { liveIntegrationSlots } from "./e2e_liveintegrationslots.mjs";
 
 export async function liveQueue(page, live) {
   const { j, card, open } = boardKit(page, live);
@@ -143,4 +144,5 @@ export async function liveQueue(page, live) {
   await page.click('#agentbox button[value="cancel"]');
   await j(`/api/schedules/${kept.id}`, "DELETE");
   for (const id of [agent, two]) await j(`/api/task-agents/${id}`, "DELETE");
+  await liveIntegrationSlots(page, live);
 }

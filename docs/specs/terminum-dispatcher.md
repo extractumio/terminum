@@ -882,7 +882,7 @@ Scenario: AC-140 edge — a project's folder changes
 Scenario: AC-141 happy path — what holds a slot
   Given Opus reviewer with 2 at once, and project api with Agents at once 3
   When a run starts on it
-  Then that run holds one slot of the agent and one of the project, from Run until its run is closed, left or gone
+  Then that run holds one slot of the agent and one of the project, from Run until its run is closed, left or gone, except while all its unfinished tasks wait in INTEGRATION (AC-169)
   And the pool keeps nothing running: an agent with no run is only a line in the store
 
 Scenario: AC-141 edge — at the agent's limit
@@ -1229,6 +1229,27 @@ Scenario: AC-158 edge — a restart
 ### AC-169 — An agent's queue [MUST / P0]
 
 ```gherkin
+Scenario: AC-169 happy path — integration frees room for its blockers
+  Given Codex with 3 at once, a project with Agents at once 3, and four retained runs whose unfinished tasks all wait in INTEGRATION
+  When another task is run on Codex, including a prerequisite of those tasks' Verify
+  Then the integration waits take no ordinary slot of the agent or project, and the task can start
+  And a press already queued becomes eligible in its existing order
+  And the sessions remain watched, listed by list_runs and protected as their tasks' sessions; the current turns may finish, with no Stop hook needed to release room
+  And slots kept by a schedule or for integration stay kept
+
+Scenario: AC-169 edge — a task comes back to its live session
+  Given an integration wait freed its slot and other runs filled the agent's or project's limit
+  When a conflict or red check returns its task to IN PROGRESS
+  Then its retained live run counts again immediately and receives the return as AC-192 of terminum-integration.md says
+  And it may resume above the limit as AC-141 permits for a live session; subsequent process starts wait until there is room
+  And a return whose agent is gone or session closed must take a slot or wait through normal RUN admission
+
+Scenario: AC-169 edge — a run of several tasks
+  Given one run holds a task in INTEGRATION and other tasks DONE or FAILED
+  Then it frees its ordinary slot, also after terminumd restarts
+  When any task of the run is IN PROGRESS, WAIT FOR HUMAN or TODO
+  Then the run keeps its slot
+
 Scenario: AC-169 happy path — offered at a limit
   Given Opus reviewer with 1 at once, held by API-12
   When the user runs API-13 on it
@@ -1933,7 +1954,7 @@ Depends on `terminum-kanban.md`'s Stage 1. All three stages belong to terminum's
 - [ ] AC-156 — `cargo test tasks::agents`, `cargo test dispatcher::press`, `web/test/e2e_liveboardagents.mjs`, `web/test/e2e_livedispatcher.mjs` (the inline words), `SECURITY.md` carries the operator's command
 - [ ] AC-157 — `cargo test dispatcher::plan`, `cargo test dispatcher::press`, `cargo test dispatcher::hooks` (held initial event, early tools and mixed outcomes), `cargo test dispatcher::start` (stale start watcher), `cargo test tasks::tools`, `cargo test tasks::integration_queue` (early integration), `cargo test cli::mcp`, `web/test/e2e_livedispatcher.mjs`
 - [ ] AC-158 — `cargo test dispatcher::waits`, `web/test/e2e_liveboardagents.mjs`
-- [x] AC-169 — `cargo test dispatcher::waits`, `web/test/e2e_livequeue.mjs` (a wide and a phone size), `web/test/e2e_liveboardagents.mjs`
+- [x] AC-169 — `cargo test dispatcher::pool` (four integration waits free agent and project room, a live return counts again above the limit, mixed tasks and restart), `cargo test dispatcher::waits`, `web/test/e2e_livequeue.mjs` (a wide and a phone size), `web/test/e2e_liveboardagents.mjs`
 - [x] AC-170 — `cargo test dispatcher::auto`, `cargo test tasks::auto`, `cargo test tasks::tools` (a round's pane), `web/test/e2e_liveauto.mjs` on `scripts/fake_agent.py`; no test of its own: two dispatch_task calls at once through the socket, a new place among the cards leaving the wait as it was, a candidate with an earlier conversation started anew; not run on a real model: whether a real agent follows the round's words
 - [x] AC-185 — `cargo test ac185` (dispatcher::press, tasks::tools), `cargo test dispatcher::auto` (a main task as a candidate, its agent's words), `web/test/e2e_livemain.mjs` on `scripts/fake_agent.py` (a human's RUN, a subtask failed, run again); no test of its own: Auto-Dispatcher's start of a main task through the page, the ask and its answers through the page, a manager's run_task; not run on a real model: whether a real agent follows the words
 - [x] AC-183 — `cargo test dispatcher::runs`, `cargo test dashboard::`, `web/test/e2e_liveboardagents.mjs` (a drop, a page's press, the new-task window, + Session), `web/test/e2e_liveschedules.mjs` (a firing), `web/test/e2e_liveauto.mjs` (Auto-Dispatcher's start); no test of its own: a wait's press started later

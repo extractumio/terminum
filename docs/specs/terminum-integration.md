@@ -572,9 +572,11 @@ Scenario: AC-198 happy path — Prepare and Verify before a batch
 
 Scenario: AC-198 edge — a return after an idle hour in integration
   Given API-12 waits in INTEGRATION for more than 60 minutes while Prepare and Verify run
+  Then its retained run frees its ordinary agent and project slots under terminum-dispatcher.md AC-169, so a prerequisite of Verify can start
   When Verify ends red and the queue returns API-12 with its reason and log
   Then API-12 stays IN PROGRESS at the next Dispatcher walk: time in INTEGRATION counts toward no idle clock
   And AC-123's idle hour and requests for a result start afresh at the return, its budget keeping the time already used
+  And its run counts toward the limits again immediately; AC-169 defines live returns above a limit and admission when the agent or session is gone
 
 Scenario: AC-198 happy path — Cleanup
   Given Cleanup "make prune"

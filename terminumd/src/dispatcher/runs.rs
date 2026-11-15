@@ -148,7 +148,7 @@ pub struct Run {
     pub ids: Vec<String>,
     /// those not DONE or FAILED
     pub open: Vec<String>,
-    /// IN PROGRESS while any is, else WAIT FOR HUMAN, else how the last ended
+    /// IN PROGRESS, WAIT FOR HUMAN, TODO or INTEGRATION while any is, in that order; else how the last ended
     pub status: String,
     pub project: String,
     /// the time budgets its tasks have, together: one without adds nothing and lifts no limit
@@ -221,7 +221,7 @@ impl Run {
         self.ad_hoc() && self.holds_slot()
     }
 
-    /// It holds a slot of its agent and of its project (AC-141): from RUN until it is closed, let go or its agent is gone.
+    /// Its agent's session is retained (AC-141): until closed, let go or gone; pool excludes INTEGRATION waits (AC-169).
     pub fn holds_slot(&self) -> bool {
         !self.is_over() && self.state != Phase::Gone
     }
@@ -275,7 +275,7 @@ impl Run {
 const SELECT: &str = "SELECT r.id, COALESCE(r.task, ''),
     (SELECT group_concat(x.slug, ',' ORDER BY x.number) FROM run_tasks m JOIN tasks x ON x.id = m.task WHERE m.run = r.id),
     (SELECT group_concat(x.slug, ',' ORDER BY x.number) FROM run_tasks m JOIN tasks x ON x.id = m.task WHERE m.run = r.id AND x.status NOT IN ('DONE', 'FAILED')),
-    COALESCE((SELECT x.status FROM run_tasks m JOIN tasks x ON x.id = m.task WHERE m.run = r.id ORDER BY CASE x.status WHEN 'IN PROGRESS' THEN 0 WHEN 'WAIT FOR HUMAN' THEN 1 WHEN 'TODO' THEN 2 WHEN 'FAILED' THEN 3 ELSE 4 END LIMIT 1), ''),
+    COALESCE((SELECT x.status FROM run_tasks m JOIN tasks x ON x.id = m.task WHERE m.run = r.id ORDER BY CASE x.status WHEN 'IN PROGRESS' THEN 0 WHEN 'WAIT FOR HUMAN' THEN 1 WHEN 'TODO' THEN 2 WHEN 'INTEGRATION' THEN 3 WHEN 'FAILED' THEN 4 ELSE 5 END LIMIT 1), ''),
     r.project,
     (SELECT sum(x.budget_seconds) FROM run_tasks m JOIN tasks x ON x.id = m.task WHERE m.run = r.id),
     r.agent_id, r.agent_name, r.agent_color, r.kind, r.command, r.host, r.folder, r.pane_key, r.agent_session, r.state, r.prompt,
