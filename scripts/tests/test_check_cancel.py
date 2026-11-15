@@ -52,9 +52,8 @@ class OuterCancellation(unittest.TestCase):
             cooperative_ready = root / "cooperative-ready"
             detached_ready = root / "detached-ready"
             cleanup_started = root / "cleanup-started"
+            cleanup_allowed = root / "cleanup-allowed"
             settling_ready = root / "settling-ready"
-            clock_shift = root / "clock-shift"
-            clock_shift.write_text("0")
             cleaned = root / "cleaned"
             # Both children ignore cancellation; the detached one leaves both the group and cwd.
             ignore = "\nfor number in (signal.SIGTERM,signal.SIGHUP,signal.SIGINT): signal.signal(number,signal.SIG_IGN)\n"
@@ -66,7 +65,8 @@ class OuterCancellation(unittest.TestCase):
                            f"Path({str(cooperative_ready)!r}).touch()\n"
                            "while received is None: time.sleep(0.01)\n"
                            f"Path({str(cleanup_started)!r}).touch()\n"
-                           f"time.sleep(0.8)\nPath({str(cleaned)!r}).write_text(str(received))\n")
+                           + (f"while not Path({str(cleanup_allowed)!r}).exists(): time.sleep(0.01)\n" if settling else "time.sleep(0.8)\n")
+                           + f"Path({str(cleaned)!r}).write_text(str(received))\n")
             script = ("import json,os,signal,subprocess,sys,time\n"
                       f"sys.path.insert(0, {str(SCRIPTS)!r})\nimport owned_children\n"
                       f"{ignore}"
@@ -84,8 +84,21 @@ class OuterCancellation(unittest.TestCase):
             guard_harness = (f"import sys,time,types\nsys.path.insert(0,{str(SCRIPTS)!r})\n"
                              "from pathlib import Path\nimport check_step\n"
                              "check_step.SETTLE_S=2\ncheck_step.KILL_AFTER_S=0.1\n"
-                             f"shift=Path({str(clock_shift)!r})\n"
-                             "check_step.time=types.SimpleNamespace(sleep=time.sleep,monotonic=lambda: time.monotonic()+float(shift.read_text()))\n"
+                             "forward=check_step.GuardCancellation.forward\nlogical=0\n"
+                             "def observed_forward(self,group):\n global logical\n"
+                             " sent=forward(self,group)\n"
+                             " if sent: logical=check_step.SETTLE_S\n return sent\n"
+                             "def sleep(seconds):\n global logical\n"
+                             " if logical:\n  logical+=seconds\n"
+                             "  if logical>=check_step.SETTLE_S+0.8:\n"
+                             f"   Path({str(cleanup_allowed)!r}).touch()\n"
+                             "   deadline=time.monotonic()+10\n"
+                             f"   while not Path({str(cleaned)!r}).exists():\n"
+                             "    if time.monotonic()>=deadline: raise RuntimeError('cooperative cleanup never finished')\n"
+                             "    time.sleep(0.01)\n"
+                             " time.sleep(0.01)\n"
+                             + ("check_step.GuardCancellation.forward=observed_forward\n"
+                                "check_step.time=types.SimpleNamespace(sleep=sleep,monotonic=lambda: logical)\n" if settling else "") +
                              "inspect=check_step.own_processes\n"
                              "def observed(*args):\n processes=inspect(*args)\n"
                              f" Path({str(settling_ready)!r}).touch()\n return processes\n"
@@ -113,10 +126,7 @@ class OuterCancellation(unittest.TestCase):
                 if settling:
                     wait_for(lambda: owned_children.identity(info["foreground"]) is None)
                     wait_for(settling_ready.exists)
-                    # Move near the original deadline after observing the settling phase.
-                    pending = clock_shift.with_suffix(".pending")
-                    pending.write_text("1.95")
-                    pending.replace(clock_shift)
+                    # The fixture clock expires the old deadline when cancellation is forwarded.
                 if recover:
                     os.kill(info["guard"], signal.SIGSTOP)
                 if failed_guard:
