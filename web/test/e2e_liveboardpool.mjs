@@ -124,21 +124,28 @@ export async function agentPool(page, opts, pressAt) {
   const offered = async () => (await j(`/api/tasks/${c}/run`)).agents?.find((x) => x.id === fixer)?.full?.close;
   check("AC-141 once two walks are quiet the idle holder can be closed", await until(offered, 15000), JSON.stringify(await offered()));
   const idlePane = await paneOf(a);
-  // each press only once the agent has drawn its box: a screen read before the redraw sees the box as it was
+  // Read the eligible offer while its box is empty. The preview uses the quiet clock; a walk
+  // after typing can reset it and legitimately offer only the queue. The press re-reads the screen.
   const screen = () => tmux("capture-pane", "-p", "-t", idlePane);
-  tmux("send-keys", "-t", idlePane, "-l", "a draft in its box");
-  check("AC-141 the draft is in its box", await until(() => screen().includes("a draft in its box")), screen());
   await pressRun(page, c);
   await page.waitForSelector("#runbox[open]");
   check("AC-141 the window says what holds it and names the key", /at its limit of 1: [^;]+ (is|are) idle\./.test(await page.textContent("#runnone")) && /Close .*'s session and run/.test(await page.textContent("#rungo")), await page.textContent("#rungo"));
+  tmux("send-keys", "-t", idlePane, "-l", "a draft in its box");
+  check("AC-141 the draft is in its box", await until(() => screen().includes("a draft in its box")), screen());
   await page.fill("#runmessage", "WORKS");
   await page.click("#rungo");
   check("AC-141 a draft in its box stops it: said, nothing closed", await until(async () => /no longer idle/.test(await page.textContent("#runerror"))) && paneAlive(tmux, idlePane), await page.textContent("#runerror"));
+  const preserved = screen();
+  check("AC-141 the refused press preserves the draft", preserved.includes("a draft in its box"), preserved);
+  const refused = await j(`/api/tasks/${c}`);
+  check("AC-141 the refused press starts and queues nothing", refused.status === "TODO" && !refused.session && !refused.waits, JSON.stringify({ status: refused.status, session: refused.session, waits: refused.waits }));
   await page.click('#runbox button[value="cancel"]');
   tmux("send-keys", "-t", idlePane, "C-u");
   check("AC-141 Ctrl+U empties its box", await until(() => !screen().includes("a draft in its box")), screen());
+  check("AC-141 the emptied holder is eligible again", await until(offered, 15000), JSON.stringify(await offered()));
   await pressRun(page, c);
   await page.waitForSelector("#runbox[open]");
+  check("AC-141 the empty-box window offers to close the holder", /Close .*'s session and run/.test(await page.textContent("#rungo")), await page.textContent("#rungo"));
   await page.fill("#runmessage", "WORKS");
   await page.click("#rungo");
   check("AC-141 with its box empty it closes the holder", await until(() => !paneAlive(tmux, idlePane), 15000));

@@ -906,6 +906,14 @@ Scenario: AC-141 happy path — an idle holder
   When the pane did not close, or API-13 cannot start
   Then that is said, and whatever closed stays closed: nothing else is closed for it
 
+Scenario: AC-141 edge — a draft after the close offer
+  Given RUN offers to close an idle holder whose input box is empty
+  When a draft is typed in that box before Close and run is pressed
+  Then the press says the session is no longer idle and keeps its pane and draft
+  And the new task stays TODO, with no run or queue entry
+  When the draft is cleared and the holder is eligible again
+  Then a fresh RUN window offers Close and run, and that press closes the holder and starts the new task
+
 Scenario: AC-141 edge — never closed for a limit
   Given a holder working, waiting for an answer, with text in its input box, or started by + Session
   Then no key offers to close it; the toast names it
@@ -1702,7 +1710,7 @@ New task and Run is two presses; a drop and Run one drag and one press. What to 
 | AC-127 | No subagent is tied to a process or pane yet (AS-126): at 20 minutes every one fails its task as one inside the agent does. | `terminumd/src/dispatcher/walk.rs` |
 | AC-130 | A real host: `scripts/e2e_remote_tasks.py` runs on a stand-in for ssh; a host's `~` folder is not checked before the window opens. | `terminumd/src/dispatcher/procs.rs` |
 
-| AC-141 | A dot does not say a host is out of reach. | `web/static/kanbanagents.js` |
+| AC-141 | A dot does not say a host is out of reach; a quiet draft can still get a close offer (TERM-309), though the press refuses it. | `web/static/kanbanagents.js`, `terminumd/src/dispatcher/api.rs`, `terminumd/src/dispatcher/pool.rs` |
 | AC-168 | One reading per kind: two accounts of one kind (another `CLAUDE_CONFIG_DIR` or `CODEX_HOME` in an agent's command) show whichever read last; the usage command reads the account of this Mac's user. A model's own week (Claude Code's `weekly_scoped`, e.g. Fable's) is not shown: the stripes are the account's. The usage command runs on this Mac only, not on an agent's remote host. | `terminumd/src/dispatcher/subscriptions.rs` |
 | AC-129 | A Codex session is priced as a whole at its last turn's model, and a request over 272K input tokens at the lower price. | `terminumd/src/cli/hooktokens.rs`, `terminumd/src/dispatcher/usage.rs` |
 | AC-183 | A press that was waiting for room when this record began says `run`, the human's, a schedule's too. | `terminumd/src/dispatcher/api.rs` |
@@ -1911,7 +1919,7 @@ Depends on `terminum-kanban.md`'s Stage 1. All three stages belong to terminum's
 - [x] AC-130 — `scripts/e2e_remote_tasks.py`
 - [x] AC-131 — `cargo test dispatcher::plan` with a clock jump, `cargo test dispatcher::runs` (a phase it does not know), `web/test/e2e_livedispatcher.mjs` (Stop during downtime, screen recovery, request before failure)
 - [x] AC-140 — `cargo test tasks::agents`, `cargo test tasks::store`, `web/test/e2e_liveboardagents.mjs`, `web/test/e2e_livedispatcher.mjs`, `scripts/e2e_remote_tasks.py`
-- [x] AC-141 — `cargo test dispatcher::pool`, `cargo test dispatcher::plan`, `cargo test tasks::limits`, `web/test/e2e_liveboardagents.mjs`
+- [x] AC-141 — `cargo test dispatcher::pool`, `cargo test dispatcher::plan`, `cargo test tasks::limits`, `web/test/e2e_liveboardpool.mjs` (an empty-box offer, a draft typed before its press, refusal preserving the pane/draft/unqueued task, then an empty-box close)
 - [x] AC-142 — `cargo test dispatcher::runs`, `cargo test dispatcher::plan`, `cargo test tasks::tools`, `web/test/e2e_liveboardagents.mjs` (the tiles: `web/test/e2e_liveboardpool.mjs`)
 - [x] AC-143 — `cargo test dispatcher::usage`, `cargo test tasks::agents`, `web/test/e2e_liveboardagents.mjs`
 - [x] AC-168 — `cargo test subscriptions`, `cargo test usageask`, `cargo test usageread`, `cargo test settings::tests::ac168`, `cargo test cli::statusline`, `cargo test cli::hooktokens`, `scripts/e2e_hooks.py`, `web/test/e2e_liveboardsubs.mjs` (a stripe under 40% green, over 90% red)
