@@ -42,7 +42,7 @@ export TM_BUILD_DATE := $(shell date +%Y-%m-%d)
 # which terminumd sources: an agent on a remote host works with this terminumd when the ids match
 export TM_AGENT_ID := $(shell python3 scripts/agents.py id)
 
-.PHONY: all build ui terminumd test check test-mac primary-checkout install install-stage installed hooks upgrade rollback uninstall package agents toolchain land leftovers release rehearse signing-key
+.PHONY: all build ui terminumd test check test-mac primary-checkout install install-stage installed hooks upgrade rollback uninstall package agents toolchain land leftovers release rehearse signing-key $(addprefix land-,$(LAND_STAGES))
 
 # this machine's platform (a Mac's own architecture, right under Rosetta too; or Linux's), the
 # package's terminumd for it
@@ -126,8 +126,14 @@ agents: ui
 	python3 scripts/agents.py build
 
 land:
-	@test -n "$(SLUG)" || { echo "usage: make land SLUG=<worktree>"; exit 2; }
-	python3 scripts/land.py "$(SLUG)"
+	@test -n "$(SLUG)" || { echo "usage: make land SLUG=<worktree> [TASK=<ID> RESULT=<file>]"; exit 2; }
+	TASK="$(TASK)" RESULT="$(RESULT)" python3 scripts/land.py "$(SLUG)"
+
+# the seven stages of a landing, each alone (scripts/land_stages.py, terminum-integration.md AC-198)
+LAND_STAGES := prepare verify queue check publish after cleanup
+.PHONY: $(addprefix land-,$(LAND_STAGES))
+$(addprefix land-,$(LAND_STAGES)):
+	TASK="$(TASK)" RESULT="$(RESULT)" python3 scripts/land.py $(@:land-%=%) $(SLUG)
 
 leftovers:
 	python3 scripts/leftovers.py $(if $(END),--end)

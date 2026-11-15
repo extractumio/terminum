@@ -68,6 +68,7 @@ Open questions: none open. Which clients exist (AC-11's drop) is terminum.md OQ-
 | AC-103 | [SHOULD / P1] | The docs keep their shape on every `make test`, and a review of what changed since the last release removes duplicates and superseded requirements before a minor release. |
 | AC-104 | [SHOULD / P1] | A finished worktree lands by itself: its targeted checks green on its own work, then a short smoke set of the basics on one platform, with no timed check, on its merge with what others landed; pushed, the primary checkout brought up to it and the tree deleted; the full test run is the release's gate, and only failing tests block a release. |
 | AC-146 | [SHOULD / P1] | A release's full run starts only on a quiet machine: it queues behind another full run, waits for the load to stay low for 3 minutes, says each minute that it waits, and after 15 minutes ends the release with "the build server is not available"; a task's timed checks wait the same way and then run, saying so. |
+| AC-197 | [SHOULD / P1] | A worktree's step that runs real programs (panel, page, critical, smoke, an e2e script) and fails runs once more, unchanged, while the run is otherwise green: passing then, the targeted checks or the smoke set count it, say the first run's last lines and say it in red last; red again, or a leftover, it is red; other steps, and the release's full run, have no retry. |
 
 ## 5. BDD scenarios
 
@@ -539,6 +540,14 @@ Scenario: AC-104 edge — a Rust source that names no case
   Then it prints "note: terminumd/src/redaction.rs names no case at its top: the e2e scripts of its area are not known"
   And it runs that module's cargo tests; a source naming cases there also runs the scripts/e2e_*.py citing them
 
+Scenario: AC-104 edge — an imported helper is not a standalone check
+  Given scripts/e2e_ws.py is an imported helper with no top-level main entry point
+  When targeted checks select changed files or tests citing AC-102
+  Then they never schedule python3 scripts/e2e_ws.py as a check
+  And a helper's citations alone do not count as test coverage
+  And the real AC-102 runners, including e2e_attach.py, e2e_restore.py and the scripts' unit tests, remain selected
+  And Python e2e runners declare a top-level if __name__ == "__main__" entry point; discovery parses their source without executing it
+
 Scenario: AC-104 edge — uncommitted work
   Given the worktree holds an uncommitted file
   When make land runs
@@ -793,6 +802,48 @@ Scenario: AC-146 edge — make check by hand
   Given the load average stays over 16 for 15 minutes
   When someone runs make check
   Then it ends with exit 75: "check: the machine is busy: load 31.0 over 16 for 15 minutes: nothing ran"
+
+Scenario: AC-146 edge — Copy preview's complexity guard excludes scheduling delays
+  Given a copy of a million newlines followed by text, a million spaces followed by text, or half a million short lines
+  When the page-unit checks run alongside other checks
+  Then each preview has the expected line count and first line, and uses less than one second of user and system CPU time in its isolated test process
+  And time spent waiting to be scheduled does not count toward that budget
+  But a quadratic preview that exceeds the CPU budget fails the guard
+```
+
+### AC-197 — A worktree's flaky check runs once more [SHOULD / P1]
+
+```gherkin
+Scenario: AC-197 happy path — red once, green on its unchanged retry
+  Given a worktree's targeted checks, or its landing's smoke set, run a step that runs real programs (panel, page, critical, smoke, an e2e script)
+  And no step of the run has failed
+  When that step fails
+  Then check_changed.py says the failed run's last lines and runs the step once more with nothing changed
+  And when it passes, the step counts as passed and the pass is recorded
+  And "PASSED ONLY ON RETRY, the first run red: <step>: name each with its open task" is said in red last, by check_changed.py and by make land after "landed"
+  And the first run's log stays as .checks/changed.<step>.first.log while the tree stays
+
+Scenario Outline: AC-197 failure — no retry, or red on it
+  Given <what>
+  Then the step is red at once, as any red check, and nothing lands
+
+  Examples:
+    | what                                                               |
+    | the step fails again on its retry                                  |
+    | the step passed but left a process or a file (exit 3, AC-102)      |
+    | another step of the run has failed already                         |
+    | the step runs no real program (the scan, a build, clippy, cargo tests, unit tests) |
+
+Scenario: AC-197 edge — the release's full run never retries
+  Given make check runs, by hand, from make release or from make rehearse
+  When a test fails
+  Then the full run is red and the release stops (AC-104)
+
+Scenario: AC-197 edge — what is said is this run's
+  Given an earlier targeted run passed a step only on its retry
+  When the targeted checks run again
+  Then only this run's retries are said
+  But a landing's smoke set adds its retries to its targeted run's, and make land says both
 ```
 
 ## 6. Flow and sequence diagrams
@@ -942,4 +993,5 @@ All cases are shipped; nothing is staged.
 - [x] AC-102 — `scripts/check_step.py` guards each step of `scripts/check_all.sh` and `scripts/check_changed.py`; `scripts/tests/test_check_step.py`; `scripts/tests/test_check_cancel.py` (outer cancellation and guard recovery); `scripts/tests/test_process_ownership.py` (metadata only, directory boundaries and query failures on both platforms); `scripts/tests/test_leftovers.py`; `cargo test cli::tests::the_fake_terminumd_ends_when_its_home_goes`; `scripts/tests/test_testrun.py` (`WithItsFolder`)
 - [x] AC-104 — `scripts/tests/test_land.py`, `scripts/tests/test_land_install.py`, `scripts/tests/test_land_said.py`, `scripts/tests/test_heavy_slots.py`, `scripts/tests/test_check_changed.py`, `scripts/tests/test_package.py`, `scripts/tests/test_release_turn.py`, `scripts/tests/test_release.py`, `scripts/tests/test_ci_mac.py`, `scripts/tests/test_ci_mac_node.py`, `scripts/tests/test_check_docker.py`, `scripts/tests/test_worktree_fresh.py`
 - [x] AC-146 — `scripts/tests/test_load_gate.py`, `scripts/tests/test_release_turn.py`, `scripts/tests/test_check_changed.py`
+- [x] AC-197 — `scripts/tests/test_check_changed.py` (`test_ac197_*`)
 - [x] AC-103 — `scripts/tests/test_check_docs.py`; `python3 scripts/check_docs.py`

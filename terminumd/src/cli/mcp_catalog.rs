@@ -59,6 +59,12 @@ pub const CARDS: &[Card] = &[
         example: r#"{"id": "TERM-12"}"# },
     Card { name: "integration_status", area: "tasks", keywords: "integration queue, landing queue, my place in the queue, batch, what is being checked, merge queue status",
         example: r#"{"id": "TERM-12"}"# },
+    Card { name: "integration_return", area: "tasks", keywords: "red batch, return the task that broke the check, blame, culprit, failing commit, analysis",
+        example: r#"{"task": "TERM-12", "analysis": "Failing step: cargo ...\nEvidence: ...\nCommit and lines: ...\nWhat to fix: ..."}"# },
+    Card { name: "integration_recheck", area: "tasks", keywords: "check the batch again, rebuild the candidate, flaky test, retry the check",
+        example: r#"{"why": "a port was held by a stale process: ended it"}"# },
+    Card { name: "integration_add_fix", area: "tasks", keywords: "fix the target, main is red, add my commit to the candidate",
+        example: r#"{"commit": "9c1d0aa"}"# },
     Card { name: "dispatch_task", area: "tasks", keywords: "start a task on an agent, dispatch, Auto-Dispatcher's round, pick the next tasks, fill a free slot",
         example: r#"{"id": "TERM-12", "why": "RICE 8×2×0.8÷1 = 12.8; tasks/ops.rs moves; a small fix many sessions hit"}"# },
 ];

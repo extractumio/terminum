@@ -298,11 +298,11 @@ function draw() {
     part.tab.textContent = `${column} ${n}`;
     if (shown === part.drawn) continue;
     part.drawn = shown;
-    const scroll = part.list.scrollTop, keys = new Map(have.map((t, i) => [t.id, `${seen[i]}${JSON.stringify(t.session ?? null)}${one}`]));
+    const scroll = [part.list.scrollTop, part.col.scrollTop], keys = new Map(have.map((t, i) => [t.id, `${seen[i]}${JSON.stringify(t.session ?? null)}${one}`]));
     placeChildren(part.list, [...underParents(have).map(([t, under]) => keptCard(t, under, `${keys.get(t.id)}${under}`)),
       !have.length && el("p", "colempty", filtered ? "No tasks match" : "No tasks"),
       have.length < n && button("textkey colmore", `Show ${Math.min(PAGE, n - have.length)} more`, () => more(column))].filter(Boolean));
-    part.list.scrollTop = scroll;
+    [part.list.scrollTop, part.col.scrollTop] = scroll;   // a phone's column scrolls whole, its head too (boardphone.css)
   }
   const onBoard = new Set([...cards.values()].flat().map((t) => t.id));
   for (const id of drawnCards.keys()) if (!onBoard.has(id)) drawnCards.delete(id);

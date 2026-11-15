@@ -11,6 +11,7 @@ from unittest import mock
 SPEC = importlib.util.spec_from_file_location("check_changed", Path(__file__).resolve().parents[1] / "check_changed.py")
 check_changed = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(check_changed)
+from testrun import short_tmp
 REPO = Path(__file__).resolve().parents[2]
 
 
@@ -96,6 +97,53 @@ class Plan(unittest.TestCase):
         got = steps(["terminumd/src/x.rs"], ["scripts/e2e_hooks.py"])
         self.assertLess(list(got).index("debug-build"), list(got).index("e2e_hooks"))
 
+    def test_ac102_selects_real_runners_without_the_imported_helper(self):  # AC-102, AC-104
+        got = dict(check_changed.plan(["scripts/e2e_ws.py"], {"102"}, root=REPO))
+        self.assertNotIn("e2e_ws", got)
+        for name in ("e2e_attach", "e2e_restore"):
+            self.assertEqual(got[name], f"python3 scripts/{name}.py")
+        self.assertIn("scripts", got)
+        self.assertIn("critical", got)
+
+    def test_a_changed_or_explicitly_cited_helper_is_not_executed(self):  # AC-104
+        for files, cited in ((["scripts/e2e_ws.py"], []), (["scripts/worktree.py"], ["scripts/e2e_ws.py"])):
+            with self.subTest(files=files, cited=cited):
+                self.assertEqual(list(steps(files, cited)), ["security", "scripts"])
+
+    def test_helper_citations_and_guard_text_are_not_test_coverage(self):  # AC-104
+        with tempfile.TemporaryDirectory(dir=short_tmp()) as tmp:
+            root = Path(tmp)
+            scripts = root / "scripts"
+            scripts.mkdir()
+            case = "7" + "77"  # no real case citation in this test's own source
+            (scripts / "e2e_helper.py").write_text(f'''"""AC-{case}
+if __name__ == "__main__":
+    main()
+"""
+# if __name__ == "__main__": main()
+def main():
+    raise AssertionError("discovery must not execute source")
+''')
+            self.assertEqual(check_changed.citing({case}, root), [])
+            self.assertEqual(check_changed.uncited({case}, root), [case])
+            runner = scripts / "e2e_real.py"
+            runner.write_text(f'# AC-{case}\nif (__name__ == \'__main__\'):\n    raise AssertionError("do not execute")\n')
+            self.assertEqual(check_changed.citing({case}, root), ["scripts/e2e_real.py"])
+            self.assertEqual(check_changed.uncited({case}, root), [])
+            got = dict(check_changed.plan(["scripts/e2e_helper.py"], {case}, root=root))
+            self.assertEqual(got["e2e_real"], "python3 scripts/e2e_real.py")
+            self.assertNotIn("e2e_helper", got)
+
+    def test_a_malformed_e2e_runner_is_not_silently_excluded(self):  # AC-104
+        with tempfile.TemporaryDirectory(dir=short_tmp()) as tmp:
+            root = Path(tmp)
+            (root / "scripts").mkdir()
+            (root / "scripts/e2e_broken.py").write_text('if __name__ == "__main__":\n    main(\n')
+            with self.assertRaises(SyntaxError):
+                check_changed.citing({"104"}, root)
+            with self.assertRaises(SyntaxError):
+                check_changed.plan(["scripts/e2e_broken.py"], set(), root=root)
+
     def test_a_helper_of_a_page_check_runs_with_it(self):
         self.assertIn("webApp", steps(["web/static/x.js"], ["web/test/e2e_appscreen.mjs"])["page"])
 
@@ -164,17 +212,17 @@ class Run(unittest.TestCase):
     def test_a_machine_still_busy_skips_the_timed_steps_and_says_so_last(self):  # AC-146
         self.assertEqual(self.run_steps([("cargo", "true"), ("page", "true"), ("e2e_hooks", "true")], busy="load 31 over 16"), [])
         self.assertEqual([e if e == "gate" else e[-1] for e in self.events], ["true", "gate"])
-        self.assertEqual(check_changed.skipped_note(self.root),
+        self.assertEqual(check_changed.note(self.root, "skipped"),
                          "targeted: SKIPPED timed checks, the machine busy for 15 minutes: page e2e_hooks")
 
     def test_timed_steps_that_ran_clear_an_earlier_skip(self):  # AC-146
         self.run_steps([("page", "true")], busy="load 31 over 16")
         self.run_steps([("cargo", "true")])
-        self.assertIsNotNone(check_changed.skipped_note(self.root))   # nothing timed ran: the skip stands
+        self.assertIsNotNone(check_changed.note(self.root, "skipped"))   # nothing timed ran: the skip stands
         self.run_steps([("e2e_core", "true")], gate=False)   # a landing's smoke set asks no gate
-        self.assertIsNotNone(check_changed.skipped_note(self.root))
+        self.assertIsNotNone(check_changed.note(self.root, "skipped"))
         self.run_steps([("page", "true")])
-        self.assertIsNone(check_changed.skipped_note(self.root))
+        self.assertIsNone(check_changed.note(self.root, "skipped"))
 
     def test_what_needs_no_quiet_machine_runs_before_the_wait(self):  # AC-146
         self.run_steps([("panel", "a"), ("page-unit", "b"), ("e2e_hooks", "c")])
@@ -189,6 +237,55 @@ class Run(unittest.TestCase):
         self.assertEqual(self.events[0][:3], ["nice", "-n", "10"])
         self.assertNotIn("gate", self.events)
 
+    def run_codes(self, steps, codes, **kw):
+        """Runs steps whose runs answer codes in turn: (failed, commands run, what was said)."""
+        ran, answers = [], iter(codes)
+
+        def fake(guard, command, stdout, **_):
+            ran.append(command[-1])
+            stdout.write(f"run {len(ran)}\n")
+            return next(answers)
+        with mock.patch.object(check_changed, "run_guard", fake), mock.patch("sys.stdout") as out:
+            failed = check_changed.run(steps, root=self.root, gate=False, **kw)
+        return failed, ran, "".join(c.args[0] for c in out.write.call_args_list)
+
+    def test_ac197_a_timed_step_red_once_passes_on_its_unchanged_retry_and_says_so_last(self):  # AC-197
+        failed, ran, said = self.run_codes([("critical", "node live")], [1, 0])
+        self.assertEqual((failed, ran), ([], ["node live", "node live"]))
+        self.assertEqual((self.root / ".checks" / "changed.critical.first.log").read_text(), "run 1\n")
+        self.assertIn("     run 1\n", said)   # the red run's lines are said: make land deletes the tree's logs
+        self.assertEqual((self.root / ".checks" / "changed.critical.log").read_text(), "run 2\n")
+        self.assertEqual(check_changed.note(self.root, "retried"),
+                         "PASSED ONLY ON RETRY, the first run red: critical: name each with its open task")
+        self.assertEqual(check_changed.late_notes(self.root), check_changed.note(self.root, "retried"))
+
+    def test_ac197_red_again_on_its_retry_fails_and_says_no_retry_pass(self):  # AC-197
+        failed, ran, _ = self.run_codes([("panel", "node panel")], [1, 1])
+        self.assertEqual((failed, len(ran)), (["panel"], 2))
+        self.assertIsNone(check_changed.note(self.root, "retried"))
+
+    def test_ac197_a_step_that_measures_no_time_gets_no_retry(self):  # AC-197
+        failed, ran, _ = self.run_codes([("cargo", "cargo test"), ("page-unit", "node --test")], [1, 1])
+        self.assertEqual((failed, ran), (["cargo", "page-unit"], ["cargo test", "node --test"]))
+
+    def test_ac197_a_run_red_already_or_a_leftover_gets_no_retry(self):  # AC-197, AC-102
+        failed, ran, _ = self.run_codes([("cargo", "cargo test"), ("critical", "node live")], [1, 1])
+        self.assertEqual((failed, ran), (["cargo", "critical"], ["cargo test", "node live"]))
+        failed, ran, _ = self.run_codes([("e2e_core", "python3 core")], [check_changed.LEFT])
+        self.assertEqual((failed, ran), (["e2e_core"], ["python3 core"]))
+
+    def test_ac197_a_landings_smoke_step_retries_and_adds_to_the_targeted_runs_note(self):  # AC-197
+        self.run_codes([("critical", "a")], [1, 0])
+        failed, ran, _ = self.run_codes([("smoke", "node smoke")], [1, 0], landing=True)
+        self.assertEqual((failed, len(ran)), ([], 2))
+        self.assertEqual(len(check_changed.note(self.root, "retried").splitlines()), 2)
+        self.run_codes([("e2e_core", "b")], [0], landing=True)   # a landing with no retry keeps what was said
+        self.assertIsNotNone(check_changed.note(self.root, "retried"))
+
+    def test_ac197_a_new_targeted_run_says_only_its_own_retries(self):  # AC-197
+        self.run_codes([("critical", "a")], [1, 0])
+        self.run_codes([("critical", "a")], [0])
+        self.assertIsNone(check_changed.note(self.root, "retried"))
 
 class Passed(unittest.TestCase):
     def main_with(self, tmp, run, ids, argv=()):
