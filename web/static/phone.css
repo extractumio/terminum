@@ -1,0 +1,28 @@
+/* SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial */
+/* A phone's windows (terminum.md AC-173, "a phone's windows cover the screen"; phonewin.js): on a screen 600 px
+   wide or narrower a window with fields, a text to type, a list or a document is no centered sheet: it covers
+   what is in sight above the on-screen keyboard, edge to edge, one bar at its top (×, its title, its ways on),
+   what is seldom pressed in a row under its fields. A question, a menu and a floating button's pane stay sheets
+   (sheets.css). After sheets.css and dialogsize.css, whose sheet it sizes by their own properties. */
+@media (max-width: 600px) {
+  :is(dialog.dlg[data-size]:not([data-size="ask"]), .footform[data-sheet]) {
+    --sheet-top: var(--app-top, 0px); --sheet-left: 0; --sheet-shift: none; --sheet-w: 100vw; --sheet-max-h: none; --sheet-h: var(--app-h, 100dvh); --sheet-shadow: none;
+    height: var(--app-h, 100dvh); padding: 0 var(--sp-4) var(--sp-4); border-radius: 0;
+    /* the bar: in sight while the rest scrolls under it; × where the thumb's other hand is, the ways on at the right */
+    & .dhead { position: sticky; top: 0; z-index: 3; gap: var(--sp-2); min-height: 60px; flex: none;
+      margin: 0 calc(-1 * var(--sp-4)); padding: 0 14px; background: var(--fill); box-shadow: var(--m-seam); }
+    & .dhead > .x { order: -1; }
+    & .dhead h2 { flex: 1 100 0; overflow: hidden; overflow-wrap: normal; white-space: nowrap; text-overflow: ellipsis; }
+    /* its ways on: one row, never wrapped; on the smallest phone two long keys give way with an ellipsis, after the title */
+    & .dhead > .barkeys { flex: 0 1 auto; flex-wrap: nowrap; min-width: 0; margin: 0; }
+    & .dhead > .barkeys > button { display: block; flex: 0 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+    /* what is left of its foot: a row under the fields, no Cancel (×'s); none when nothing is left */
+    & > form > .actions, & > .actions { position: static; justify-content: flex-start; margin-bottom: 0; padding: 0; background: none; }
+    & .actions > :is([value="cancel"], [id$="cancel"]) { display: none !important; }   /* a key's own rule weighs an id */
+    & > form > .actions:not(:has(> :not([hidden], [value="cancel"], [id$="cancel"]))), & > .actions:not(:has(> :not([hidden], [value="cancel"], [id$="cancel"]))) { display: none; }
+  }
+  /* a list's form stands inside #app, which the session page itself moves by that offset (app.js fitViewport) */
+  body:not(.board-page) .footform[data-sheet] { --sheet-top: 0px; }
+  /* a text field to type in has no key to the whole window: its window has it already (AC-184) */
+  .xbox:has(> textarea:not([hidden])) > .xkey { display: none !important; }   /* the icon keys' own rule weighs an id */
+}

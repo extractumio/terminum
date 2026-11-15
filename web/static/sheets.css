@@ -4,13 +4,14 @@
    (#menu's top/right, a dialog's width) weigh more than an attribute, hence !important. The middle
    is the visible screen's: --app-h follows the visual viewport (app.js fitViewport), so a sheet sits
    above the on-screen keyboard. Its shade, #sheetscrim (or a dialog's ::backdrop, or a fab pane's
-   #panescrim), takes a press and closes it. */
+   #panescrim), takes a press and closes it. Its place and size are properties with these values when unset: a
+   phone's window sets them to the screen's (phone.css). */
 @media (hover: none), (max-width: 860px) {         /* where a sheet is set (fold.js FLOATING); a <dialog> by CSS alone */
   :is([data-sheet], dialog.dlg, #marksdlg) {
-    position: fixed !important; inset: auto !important; top: calc(var(--app-h, 100dvh) / 2) !important; left: 50% !important;
-    translate: -50% -50% !important; margin: 0 !important; z-index: 40 !important;
-    width: calc(100vw - 32px) !important; max-width: none !important; max-height: calc(var(--app-h, 100dvh) - 32px) !important;
-    overflow: auto; box-sizing: border-box; box-shadow: var(--dialog-shadow) !important; }
+    position: fixed !important; inset: auto !important; top: var(--sheet-top, calc(var(--app-h, 100dvh) / 2)) !important; left: var(--sheet-left, 50%) !important;
+    translate: var(--sheet-shift, -50% -50%) !important; margin: 0 !important; z-index: 40 !important;
+    width: var(--sheet-w, calc(100vw - 32px)) !important; max-width: none !important; max-height: var(--sheet-max-h, calc(var(--app-h, 100dvh) - 32px)) !important;
+    overflow: auto; box-sizing: border-box; box-shadow: var(--sheet-shadow, var(--dialog-shadow)) !important; }
   /* a box over the whole window (expand.css): the window holds it, not the sheet (a translate would) */
   :is([data-sheet], dialog.dlg, #marksdlg):has(.xbox.full) { translate: none !important; }
 }

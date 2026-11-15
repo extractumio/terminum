@@ -605,7 +605,7 @@ Scenario: AC-18 happy path — the panel
   And while a finger scrolls the terminal, from its first move until it lifted and the terminal stopped scrolling, every floating button ("To the bottom" too) is out of sight (the text under them can be read) and takes no tap; back 1 s after
   And while the user scrolls the terminal by wheel, key or scroll bar (wide or phone), the floating buttons' column fades and takes no tap, back 1 s after the scroll stops or at once with the pointer near it or the focus on it; the page's own scroll (output followed) and a scroll while a pane it opened is open (find's field, the sent history, bookmarks, reminders) leave it
   And on a computer the header's settings button is a cog and its menu opens right under it, inside the window, scrolling when taller than the room under the button
-  And every dialog, pane and menu (the settings menu, a row's and a host's menu, the list's forms, the sent history, the reminders, the bookmarks, the input's menu, Ask, a bookmark's note, Paste, a confirmation) opens centered on the visible screen (above the on-screen keyboard), as wide as the screen less 16 px a side, as tall as its content and at most the visible height less 32 px (scrolling inside; one to type in, to pick from or to read: that height, AC-173), modal: the page shaded behind it, a press outside or Esc closes it
+  And every dialog, pane and menu (the settings menu, a row's and a host's menu, the list's forms, the sent history, the reminders, the bookmarks, the input's menu, Ask, a bookmark's note, Paste, a confirmation) opens centered on the visible screen (above the on-screen keyboard), as wide as the screen less 16 px a side, as tall as its content and at most the visible height less 32 px (scrolling inside; one to type in, to pick from or to read: that height, AC-173), modal: the page shaded behind it, a press outside or Esc closes it; on a phone (600 px wide or narrower) a window with fields, a text to type, a list to pick from or a document covers the screen instead (AC-173)
   And a press on ⟨…⟩ or a button of its column first puts the on-screen keyboard and the hot keys panel away
   And a coding agent's input box is a tint of the terminal's colors with no frame
   And Files and View, shown in the terminal's place, fill the whole space under the tabs
@@ -1047,6 +1047,14 @@ Scenario: AC-173 happy path — each kind its own size
 Scenario: AC-173 edge — a phone or a narrow window
   Given a phone, or a window 860 px wide or narrower
   Then every dialog is a sheet as wide as the screen less 16 px a side (AC-18); one to type in, to pick from or to read is as tall as what is in sight above the on-screen keyboard less 16 px a side, its buttons in sight; a question or a form stays as tall as its content
+Scenario: AC-173 edge — a phone's windows cover the screen
+  Given a screen 600 px wide or narrower
+  When a window with fields, a text to type, a list to pick from or a document opens (every kind but a question; the list's forms New session, Add host and Attach tmux sessions too)
+  Then it covers what is in sight above the on-screen keyboard, edge to edge, with one bar at its top that stays there while the rest scrolls: × at the left, the title (cut with an ellipsis), then its ways on (Cancel's place is ×'s; the primary last), each 44 px high
+  And what is seldom pressed (Add files, Discard, Delete, Archive, New task from selection) stays a row at the end of its fields, under them; a window with nothing but ways on has no foot
+  And its text field takes all the room its other fields leave; × closes it as on a computer, a draft kept where one is kept
+  And a question (a confirmation, a name, + Session's agents), a menu, a pane of a floating button and the counters' lines stay centered sheets (AC-18), their buttons at their foot
+  And a tablet, and a computer's window 601 px wide or wider, keep the sheets and dialogs above
 ```
 
 ### AC-184 — A box to read or type in over the whole window [SHOULD / P1]
@@ -1069,6 +1077,7 @@ Scenario: AC-184 edge — a window over it, a phone, a board update
   Given a box shown over the whole window
   When a question opens over it (a conflict on Save), the user's Esc answers the question, the box stays over the window
   And on a phone or a narrow window the box covers what is in sight above the on-screen keyboard, and its key is a finger's size (44 px)
+  And on a screen 600 px wide or narrower a text field to type in has no such key: its window covers the screen already (AC-173); a text shown to read keeps it
   And while a box in a task's window covers the window, a board update redraws nothing under it
   And prose read so stands in a column at most 920 px wide in the middle; a text field and lines take the whole width
 ```
@@ -1552,8 +1561,8 @@ All cases are shipped. What AC-195's lines may call for, each only once the inst
 - [x] AC-167 — `web/test/e2e_sections.mjs` (in `e2e_all.mjs`), `web/test/e2e_livehistory.mjs`, `web/test/e2e_liveboardsession.mjs`, `cargo test page_tests`
 - [x] AC-171 — `cargo test dashboard::`, `web/test/e2e_livehistory.mjs`
 - [x] AC-172 — `cargo test dashboard::`, `web/test/e2e_livehistory.mjs`
-- [x] AC-173 — `web/test/e2e_dlgsize.mjs` (a form's buttons held at its foot on a short window), `web/test/e2e_taskwin.mjs` (a task's window's keys outside what scrolls), `web/test/e2e_dialogcenter.mjs`, `web/test/e2e_marks.mjs`, `web/test/e2e_ask.mjs`
-- [x] AC-184 — `web/test/e2e_expand.mjs`, `web/test/e2e_taskwin.mjs`
+- [x] AC-173 — `web/test/e2e_dlgsize.mjs` (a form's buttons held at its foot on a short window), `web/test/e2e_taskwin.mjs` (a task's window's keys outside what scrolls), `web/test/e2e_dialogcenter.mjs`, `web/test/e2e_marks.mjs`, `web/test/e2e_ask.mjs`, `web/test/e2e_phonewin.mjs` (a phone's windows: 390 and 320 px, and the sheet a 700 px window keeps)
+- [x] AC-184 — `web/test/e2e_expand.mjs`, `web/test/e2e_taskwin.mjs`, `web/test/e2e_phonewin.mjs` (a phone's text field has no key)
 - [x] AC-175 — `cargo test interact::`, `cargo test dashboard::`, `web/test/e2e_livehistory.mjs`
 - [x] AC-176 — `cargo test dashboard::`, `web/test/e2e_livehistory.mjs`
 - [x] AC-195 — `cargo test tasks::store::tests::ac195`, `cargo test tmux::control::tests::ac195`, `cargo test slow::`; the bench by hand: `scripts/bench_busy.py`
