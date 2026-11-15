@@ -53,5 +53,5 @@ dialog.dlg:is([data-size="write"], [data-size="list"], [data-size="read"]) {
 /* a phone or a narrow window: a sheet (sheets.css) as wide as the screen; one that fills its height
    takes all that is in sight above the keyboard (a small screen has no room to spare) */
 @media (hover: none), (max-width: 860px) {
-  dialog.dlg:is([data-size="write"], [data-size="list"], [data-size="read"]) { height: calc(var(--app-h, 100dvh) - 32px) !important; }
+  dialog.dlg:is([data-size="write"], [data-size="list"], [data-size="read"]) { height: var(--sheet-h, calc(var(--app-h, 100dvh) - 32px)) !important; }
 }

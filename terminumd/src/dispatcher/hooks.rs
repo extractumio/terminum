@@ -21,6 +21,33 @@ pub fn good_id(id: &str) -> bool {
     id.len() <= 100 && id.starts_with(|c: char| c.is_ascii_alphanumeric()) && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
 }
 
+/// Taking a first prompt and using a task tool prove the same start (AC-157), exactly once.
+fn accept(tx: &rusqlite::Transaction, r: &mut Run) -> Result<bool, String> {
+    if !r.is_starting() {
+        return Ok(false);
+    }
+    r.state = Phase::Working;
+    r.new_work();
+    r.turn_starts();
+    let agent = ops::pool_user(tx, &r.agent_id, &r.agent_name)?;
+    for id in &r.ids {
+        ops::set_owner(tx, &ops::key_of(tx, id)?, &agent, ops::now())?;
+    }
+    move_all(tx, r, "IN PROGRESS", "The agent took it.")?;
+    Ok(true)
+}
+
+/// Before a task tool changes status, accept its run in that transaction; the first hook's prompt stays
+/// pending so its later acknowledgment can record the conversation without resetting the tool's work.
+pub(crate) fn taking(tx: &rusqlite::Transaction, key: &str) -> Result<Vec<String>, String> {
+    let Some(mut r) = runs::in_pane(tx, key)?.filter(|r| !r.ad_hoc()) else { return Ok(Vec::new()) };
+    if !accept(tx, &mut r)? {
+        return Ok(Vec::new());
+    }
+    runs::save(tx, &r)?;
+    Ok(r.ids)
+}
+
 /// What the event changes in `r`: whether it moved the task, whether it was activity. `typed`: this
 /// prompt is what terminum typed.
 pub(super) fn apply(tx: &rusqlite::Transaction, r: &mut Run, ev: &Value, typed: bool) -> Result<(bool, bool), String> {
@@ -35,18 +62,10 @@ pub(super) fn apply(tx: &rusqlite::Transaction, r: &mut Run, ev: &Value, typed: 
         }
         // the agent's own turn (a background task's end, another session's message): it works, no one asked for new work
         "UserPromptSubmit" if ev["prompt"].as_str().is_some_and(crate::messages::injected) => r.turn_starts(),
-        "UserPromptSubmit" if r.is_starting() => {
-            r.state = Phase::Working;
+        "UserPromptSubmit" if r.is_starting() || r.prompt.as_deref().zip(ev["prompt"].as_str()).is_some_and(|(a, b)| super::same_prompt(a, b)) => {
+            moved = accept(tx, r)?;
             r.prompt = None;
-            r.new_work();
-            r.turn_starts();
             r.agent_session = session.map(str::to_string).or(r.agent_session.take());
-            let agent = ops::pool_user(tx, &r.agent_id, &r.agent_name)?;
-            for id in &r.ids {
-                ops::set_owner(tx, &ops::key_of(tx, id)?, &agent, ops::now())?;
-            }
-            move_all(tx, r, "IN PROGRESS", "The agent took it.")?;
-            moved = true;
         }
         "UserPromptSubmit" if typed => active = false,
         "UserPromptSubmit" => {
@@ -150,7 +169,8 @@ async fn one_event(app: Shared, key: String, ev: Value) {
         if r != was {
             runs::save(tx, &r)?;
         }
-        Ok(Some((r, moved, active)))
+        let changed = moved || r.agent_session != was.agent_session;
+        Ok(Some((r, changed, active)))
     }).await;
     match done {
         Ok(Some((r, moved, active))) => {
@@ -188,6 +208,10 @@ pub async fn hearing(app: Shared) {
         super::acts::note(&told, "Dispatcher could not take an agent's event: see terminumd's log. It goes on with the next.".to_string());
     }).await;
 }
+
+#[cfg(test)]
+#[path = "hooks_order_tests.rs"]
+mod order_tests;
 
 #[cfg(test)]
 mod tests {

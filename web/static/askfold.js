@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // Where the floating buttons float (a phone, a tablet, a narrow window) the lines of #asks (tasks that need a
 // human: tasklines.js, terminum-kanban.md AC-117; agents that wait or failed: waiting.js, terminum-agents.md
-// AC-39) fold into two round counters left of ⟨…⟩: red for the failed, yellow for the waiting, none at 0, so
-// nothing lies over the terminal and its rows never change for a line. A counter with a line not looked at
-// since it came wears a still ring. A tap opens its lines as a sheet (fabpane.js placeModal); a tap outside,
+// AC-39) fold into two round counters left of ⟨…⟩ (on the board in its head's row): red for the failed, yellow for
+// the waiting, none at 0, so nothing lies over the terminal or the board and their rows never move for a line. A
+// counter with a line not looked at since it came wears a ring whose glow pulses slowly (askfold.css). A tap opens its lines as a sheet (fabpane.js placeModal); a tap outside,
 // Esc, a line pressed or its last line going closes it. The lines keep their own ways (×, open, terminumd).
 import { floats, FLOATING } from "./fold.js";
 import { placeModal } from "./fabpane.js";
@@ -64,9 +64,12 @@ export function asksFold({ box, counters }) {
     place();
   }
 
-  /** Left of ⟨…⟩ on its row; at the top right under the header where it is not shown (Files, View). */
+  /** Left of ⟨…⟩ on its row; at the top right under the header where it is not shown (Files, View). The board has no
+   *  ⟨…⟩: its counters stand in its head's row. */
   function place() {
-    const fold = $("foldfab"), main = counters.offsetParent;   // none while hidden
+    const fold = $("foldfab");
+    if (!fold) return;
+    const main = counters.offsetParent;            // none while hidden
     if (!main) return;
     const shown = !fold.hidden && fold.offsetHeight > 0;
     const top = shown ? fold.offsetTop : $("over").offsetTop + GAP;

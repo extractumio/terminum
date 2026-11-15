@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-// A project's integration settings (terminum-integration.md AC-186): on or off, the target, the commands Check,
-// Publish and After, the batch's size, the check's time, and the agent of its own pool that analyses a red batch,
+// A project's integration settings (terminum-integration.md AC-186): on or off, the target, the commands of the
+// seven stages (AC-198: Prepare, Verify, Check, Publish, After, Cleanup; Queue is terminum's), the batch's size, the check's time, and the agent of its own pool that analyses a red batch,
 // with its budget, red rounds and prompt. terminumd checks what is kept and says what is wrong; "What runs" is its
 // words for the settings as saved.
 import { asTyped } from "./astyped.js";
@@ -8,7 +8,8 @@ import { oneAtATime } from "./dialogs.js";
 import { el } from "./listparts.js";
 import { $, agentsOf, api, fillSelect, say as toast, showError } from "./kanbanutil.js";
 
-const FIELDS = { target: "integrationtarget", check: "integrationcheck", publish: "integrationpublish", after: "integrationafter" };
+const LINES = ["prepare", "verify", "check", "publish", "after", "cleanup"];
+const FIELDS = { target: "integrationtarget", ...Object.fromEntries(LINES.map((k) => [k, `integration${k}`])) };
 const NUMBERS = { batch_most: "integrationbatch", check_minutes: "integrationminutes", agent_budget_minutes: "integrationbudget", red_rounds_most: "integrationrounds" };
 
 /** The INTEGRATION column (terminum-integration.md AC-193) stands where a shown project's integration is on, or while a
@@ -22,7 +23,7 @@ export function showIntegration(part, meta, chosen, n) {
 
 export function integrationWindow({ getMeta }) {
   const box = $("integrationpanel");
-  for (const k of ["check", "publish", "after"]) asTyped($(FIELDS[k]));
+  for (const k of LINES) asTyped($(FIELDS[k]));
   let project = null, defaultPrompt = "";
 
   const say = (text) => showError($("integrationerror"), text);
@@ -30,7 +31,7 @@ export function integrationWindow({ getMeta }) {
   const hints = () => {
     const target = $("integrationtarget").value.trim() || "origin/main";
     $("integrationpublishhint").textContent = `terminum pushes the candidate to ${target}, never forced.`;
-    for (const k of ["check", "publish", "after"]) $(`integration${k}hint`).hidden = !!$(FIELDS[k]).value.trim();
+    for (const k of LINES) $(`integration${k}hint`).hidden = !!$(FIELDS[k]).value.trim();
     $("integrationnoagent").hidden = !!$("integrationagent").value;
   };
 

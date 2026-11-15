@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // TERM-37: AC-02, AC-07, AC-09, AC-33, AC-37, AC-88, AC-90 request loss and stale replies in the real page.
 import { check, runningIn, until } from "./check.mjs";
-import { drawn, group, item, line, openPage, pause, pressFab, pressFoot, SIZES, THEME } from "./fake.mjs";
+import { drawn, group, item, line, openPage, pause, pressCancel, pressFab, pressFoot, SIZES, THEME } from "./fake.mjs";
 
 const SID = "tmux:local:terminum:%1", OTHER = "tmux:local:terminum:%2", QUICK = "tmux:local:terminum:%3";
 const layout = [group("main", [item(SID, "one"), item(OTHER, "two"), item(QUICK, "quick")])];
@@ -53,7 +53,7 @@ export async function webRequests(browser, name) {
     await until(() => count("newsession") > 0);
     const oldForm = last("newsession");
     check("AC-07 a double submit creates one request", count("newsession") === 1);
-    await page.click("#newsesscancel");
+    await pressCancel(page, "#newsess");
     await pressFoot(page, "#addhostbtn");
     await page.fill("#addhostssh", "devbox.example");
     await page.locator("#addhost").evaluate((e) => e.requestSubmit());
@@ -68,13 +68,13 @@ export async function webRequests(browser, name) {
     f.say({ t: "created", ref: oldForm.ref, id: QUICK, stay: false });
     await pause(page);
     check("AC-07 a cancelled creation cannot navigate later", last("sub").id === SID);
-    await page.click("#addhostcancel");
+    await pressCancel(page, "#addhost");
     await pressFoot(page, "#newsessbtn");
     await page.fill("#newsessname", "timeout");
     await page.locator("#newsess").evaluate((e) => e.requestSubmit());
     await page.clock.fastForward(15001);
     check("AC-07 a missing reply releases the form with an inline timeout", (await page.textContent("#newsesserr")).includes("did not answer") && !await page.locator('#newsess [type="submit"]').isDisabled());
-    await page.click("#newsesscancel");
+    await pressCancel(page, "#newsess");
     if (size.startsWith("390")) { await page.click("#drawerclose"); await pause(page); }
 
     f.say({ t: "error", msg: "" });

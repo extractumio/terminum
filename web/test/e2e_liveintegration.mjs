@@ -25,6 +25,11 @@ export async function integrationChecks(page, { j, fresh, work, pressAt, shots }
     JSON.stringify(options) === '["None","Its first"]' && await page.inputValue("#integrationagent") === "" && await page.isVisible("#integrationnoagent"), JSON.stringify(options));
   check("AC-186 an empty line says what it means",
     await page.isVisible("#integrationcheckhint") && await page.textContent("#integrationpublishhint") === "terminum pushes the candidate to origin/main, never forced." && await page.isVisible("#integrationafterhint"));
+  check("AC-198 the seven stages stand in order, Queue terminum's own with no field",
+    JSON.stringify(await page.$$eval("#integrationfields > .fieldrow", (rows) => rows.map((r) => r.firstChild.textContent.trim()).filter((t) => /^(Prepare|Verify|Queue|Check|Publish|After|Cleanup)$/.test(t))))
+      === JSON.stringify(["Prepare", "Verify", "Queue", "Check", "Publish", "After", "Cleanup"]) && !(await page.$("#integrationqueue input")));
+  check("AC-198 an empty Prepare, Verify or Cleanup says what it means",
+    await page.isVisible("#integrationpreparehint") && await page.isVisible("#integrationverifyhint") && await page.textContent("#integrationcleanuphint") === "Nothing runs after a batch.");
   check("AC-186 the prompt is the default", (await page.inputValue("#integrationprompt")).startsWith("Task {task}: integration batch {batch} of {project}"));
   await page.evaluate(() => { document.querySelector("#projectbox form").scrollTop = 0; });
   await shot("top");
@@ -49,6 +54,8 @@ export async function integrationChecks(page, { j, fresh, work, pressAt, shots }
 
   await page.uncheck("#integrationon");
   await page.fill("#integrationcheck", "make smoke");
+  await page.fill("#integrationverify", "make test-changed");
+  await page.fill("#integrationcleanup", "make prune");
   check("AC-186 a line typed hides what empty meant", await page.isHidden("#integrationcheckhint"));
   await page.selectOption("#integrationagent", { label: "Its first" });
   check("AC-186 an agent chosen hides the words of none", await page.isHidden("#integrationnoagent"));
@@ -61,12 +68,15 @@ export async function integrationChecks(page, { j, fresh, work, pressAt, shots }
   await until(async () => (await j(url)).batch_most === 4);
   const kept = await j(url);
   const agent = (await j("/api/tasks/meta")).agents.find((a) => a.project === fresh && a.name === "Its first")?.id;
+  check("AC-198 Save keeps the stages' lines", kept.verify === "make test-changed" && kept.cleanup === "make prune" && kept.prepare === "", JSON.stringify(kept));
   check("AC-186 Save keeps them", kept.check === "make smoke" && kept.batch_most === 4 && kept.agent === agent && !kept.on && kept.prompt === "", JSON.stringify(kept));
   await pressAt(page, "#projecttabgeneral");
   await pressAt(page, "#projectintegration");
   await page.waitForSelector("#integrationpanel:not([hidden]) #integrationfields:not([hidden])");
   check("AC-186 chosen again it shows what was kept",
     await page.inputValue("#integrationcheck") === "make smoke" && await page.inputValue("#integrationagent") === agent && /Check runs `make smoke`/.test(await page.textContent("#integrationruns")));
+  check("AC-198 What runs names each stage's folder",
+    /Verify runs `make test-changed` in .*verify-<task>, a tree of its own/.test(await page.textContent("#integrationruns")) && /Cleanup runs `make prune` in/.test(await page.textContent("#integrationruns")));
 
   // on, for a git checkout with its target fetched: kept; a target it lacks: refused in git's terms
   const repo = path.join(work, "integration-repo");
@@ -100,7 +110,7 @@ async function commandTyping(page) {
   }, [value, inputType, isComposing]);
   for (const viewport of [wide, { width: 390, height: 844 }]) {
     await page.setViewportSize(viewport);
-    for (const field of ["check", "publish", "after"]) {
+    for (const field of ["prepare", "verify", "check", "publish", "after", "cleanup"]) {
       const sel = `#integration${field}`, was = await page.inputValue(sel);
       await page.focus(sel);
       await smart(field, "make -", "insertText");

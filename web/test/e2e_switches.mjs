@@ -21,7 +21,9 @@ export async function webSwitches(browser, name) {
     const menu = ["#followagent", "#sidemarks", "#tipson", "#appcur", "#bracket", "#insclip"];
     const page = await looks(f.page, menu);
     const b = await openPage(browser, { device, url: "/kanban.html" });
-    await b.page.evaluate(() => { document.getElementById("autoswitch").setAttribute("aria-checked", "true"); document.getElementById("autoon").checked = true; });
+    // a phone's board holds Auto-Dispatch's switch in the sheet its line opens (terminum-kanban.md AC-105): opened, so it is drawn
+    await b.page.evaluate(() => { const line = document.getElementById("poolline"); if (line.offsetHeight) line.click();
+      document.getElementById("autoswitch").setAttribute("aria-checked", "true"); document.getElementById("autoon").checked = true; });
     const board = await looks(b.page, ["#autoswitch .track", "#autoon", "#schedpaused", "#autoseverities input"]);
     const all = [...Object.values(page), board["#autoswitch .track"], board["#autoon"], board["#schedpaused"]];
     check("every switch is drawn alike: a 26 × 14 px track, no platform look", all.every((l) => l.look === "26px 14px 7px none"), JSON.stringify({ page, board }));
