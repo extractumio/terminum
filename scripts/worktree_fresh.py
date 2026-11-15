@@ -39,7 +39,8 @@ def commits(n):
 # how a tree is checked and landed: a session works by them, so it hears when origin/main changed one
 PIPELINE = {"CLAUDE.md", "Makefile", ".claude/settings.json", "scripts/check_all.sh", "scripts/check_changed.py",
             "scripts/check_step.py", "scripts/land.py", "scripts/load_gate.py", "scripts/release_turn.py",
-            "scripts/worktree.py", "scripts/worktree_fresh.py", "scripts/process_cwd.py", "scripts/check_slots.py",
+            "scripts/worktree.py", "scripts/worktree_fresh.py", "scripts/process_cwd.py", "scripts/test_scripts.py",
+            "scripts/check_slots.py",
             "scripts/heavy_slots.py", "scripts/live_slots.py"}
 
 

@@ -514,6 +514,27 @@ Scenario: AC-104 edge — builds leave room for others
   And a step that finds every slot held says once "slot: cargo waits for one of 2 heavy-build slots: two cargo, three debug-build" and starts when one is free; a slot is freed with its holder, however it ends
   And scripts/worktree.py add gives a new tree copy-on-write clones of the primary checkout's debug and release dependencies' builds, so its first build compiles terminumd alone
 
+Scenario: AC-104 happy path — script modules run in a small process pool
+  Given the scripts' unit-test modules under scripts/tests
+  When the targeted scripts step or make test runs them
+  Then each module runs through unittest discovery in a separate interpreter, at most three at once
+  And every discovered test runs once, with the same counts and verdict as serial discovery
+  And each module's output is retained in its own log, with its elapsed time and the five slowest modules named
+  And waits for a child to become ready check its condition within a deadline, rather than sleeping a fixed interval
+
+Scenario Outline: AC-104 failure — a script module cannot produce a passing result
+  Given a script module <outcome>
+  When the scripts step ends
+  Then the step fails and names that module, retaining its output
+  And other modules still run and contribute their counts
+
+  Examples:
+    | outcome                       |
+    | has a failing test            |
+    | cannot be imported            |
+    | exits without reporting       |
+    | discovers zero tests          |
+
 Scenario: AC-104 happy path — live checks share a bounded pool across trees
   Given two trees hold the two worker live-check slots
   When a third tree reaches the critical step of its targeted checks
@@ -1035,7 +1056,7 @@ All cases are shipped; nothing is staged.
 - [x] AC-17 — `cargo test update::`; `web/test/e2e_tmux.mjs`
 - [x] AC-96 — `scripts/e2e_lastlines.py`; `cargo test lastlines` (a failed write tried again); `web/test/e2e_lastlines.mjs`
 - [x] AC-102 — `scripts/check_step.py` guards each step of `scripts/check_all.sh` and `scripts/check_changed.py`; `scripts/tests/test_check_step.py`; `scripts/tests/test_check_cancel.py` (outer cancellation and guard recovery); `scripts/tests/test_process_ownership.py` (metadata only, directory boundaries and query failures on both platforms); `scripts/tests/test_leftovers.py`; `cargo test cli::tests::the_fake_terminumd_ends_when_its_home_goes`; `scripts/tests/test_testrun.py` (`WithItsFolder`)
-- [x] AC-104 — `scripts/tests/test_land.py`, `scripts/tests/test_land_install.py`, `scripts/tests/test_land_said.py`, `scripts/tests/test_heavy_slots.py`, `scripts/tests/test_live_slots.py`, `scripts/tests/test_check_live_slots.py`, `scripts/tests/test_check_changed.py`, `scripts/tests/test_package.py`, `scripts/tests/test_release_turn.py`, `scripts/tests/test_release.py`, `scripts/tests/test_ci_mac.py`, `scripts/tests/test_ci_mac_node.py`, `scripts/tests/test_check_docker.py`, `scripts/tests/test_worktree_fresh.py`
+- [x] AC-104 — `scripts/tests/test_land.py`, `scripts/tests/test_land_install.py`, `scripts/tests/test_land_said.py`, `scripts/tests/test_heavy_slots.py`, `scripts/tests/test_test_scripts.py`, `scripts/tests/test_live_slots.py`, `scripts/tests/test_check_live_slots.py`, `scripts/tests/test_check_changed.py`, `scripts/tests/test_package.py`, `scripts/tests/test_release_turn.py`, `scripts/tests/test_release.py`, `scripts/tests/test_ci_mac.py`, `scripts/tests/test_ci_mac_node.py`, `scripts/tests/test_check_docker.py`, `scripts/tests/test_worktree_fresh.py`
 - [x] AC-146 — `scripts/tests/test_load_gate.py`, `scripts/tests/test_release_turn.py`, `scripts/tests/test_check_changed.py`, `scripts/tests/test_check_live_slots.py`, `scripts/tests/test_access.py`, `scripts/e2e_access.py`
 - [x] AC-197 — `scripts/tests/test_check_changed.py` (`test_ac197_*`)
 - [x] AC-103 — `scripts/tests/test_check_docs.py`; `python3 scripts/check_docs.py`
