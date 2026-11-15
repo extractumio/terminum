@@ -160,7 +160,7 @@ export async function panelSort(page, { row, H }) {
     if (type === "pointerup") el.dispatchEvent(new MouseEvent("click", at));
   }, type);
   await touch("pointerdown");
-  await page.waitForTimeout(700);
+  await page.waitForSelector(".ctx", { timeout: 5000 });
   await touch("pointerup");
   const held = await page.$$eval(".ctx", (m) => m.length);
   await page.click('.ctx .mi:has-text("Sorting")');
