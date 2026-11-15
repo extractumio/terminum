@@ -36,9 +36,11 @@ def commits(n):
     return f"{n} commit{'' if n == 1 else 's'}"
 
 
-# how a tree is checked and landed: a session works by them, so it hears when origin/main changed one
+# how a tree is checked and landed: a session works by them, so it hears when origin/main changed one; a pass
+# taken before origin/main changed one is not reused on the merge (check_changed.own_pass)
 PIPELINE = {"CLAUDE.md", "Makefile", ".claude/settings.json", "scripts/check_all.sh", "scripts/check_changed.py",
-            "scripts/check_step.py", "scripts/land.py", "scripts/load_gate.py", "scripts/release_turn.py",
+            "scripts/check_step.py", "scripts/check_cancel.py", "scripts/check_docs.py", "scripts/heavy_slots.py",
+            "scripts/land.py", "scripts/land_stages.py", "scripts/load_gate.py", "scripts/release_turn.py",
             "scripts/worktree.py", "scripts/worktree_fresh.py", "scripts/process_cwd.py"}
 
 

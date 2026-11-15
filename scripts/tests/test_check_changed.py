@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 """Which checks a change gets (spec AC-104, AC-146); nothing is run."""
+from contextlib import redirect_stdout
 import importlib.util
+import io
 from pathlib import Path
 import subprocess
 import sys
@@ -12,6 +14,7 @@ SPEC = importlib.util.spec_from_file_location("check_changed", Path(__file__).re
 check_changed = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(check_changed)
 from testrun import short_tmp
+from test_land import git
 REPO = Path(__file__).resolve().parents[2]
 
 
@@ -387,68 +390,89 @@ class SharedPass(unittest.TestCase):
 
 
 class OwnPass(unittest.TestCase):
-    """terminumd's Verify on a queued commit merged with the target (AC-198)."""
+    """A tree that merged the target into the commit it checks: terminumd's Verify after Prepare (AC-198)."""
     def setUp(self):
         tmp = tempfile.TemporaryDirectory(dir=short_tmp())
         self.addCleanup(tmp.cleanup)
         self.main, self.task = Path(tmp.name) / "main", Path(tmp.name) / "task"
         self.main.mkdir()
-        self.git("init", "-q", cwd=self.main)
+        git("init", "-q", cwd=self.main)
         self.write(self.main, ".gitignore", ".checks/\n")   # as the repository's: a run's notes are no content
-        for name in ("a.txt", "b.txt", "scripts/land.py"):
-            self.write(self.main, name, "one\n")
+        self.write(self.main, "a.txt", "1\n2\n3\n4\n5\n")
+        self.write(self.main, "b.txt", "one\n")
+        self.write(self.main, "scripts/land.py", "one\n")
         self.commit(self.main, "one")
-        self.git("worktree", "add", "-q", "--detach", str(self.task), "HEAD", cwd=self.main)
-        self.write(self.task, "a.txt", "the task's\n")
+        git("worktree", "add", "-q", "--detach", str(self.task), "HEAD", cwd=self.main)
+        self.write(self.task, "a.txt", "task\n2\n3\n4\n5\n")
         self.sha = self.commit(self.task, "the task")
-
-    def git(self, *a, cwd):
-        return subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@example.com", *a], cwd=cwd, check=True, capture_output=True, text=True).stdout.strip()
 
     def write(self, root, name, text):
         (root / name).parent.mkdir(parents=True, exist_ok=True)
         (root / name).write_text(text)
 
     def commit(self, root, message):
-        self.git("add", "-A", cwd=root)
-        self.git("commit", "-qm", message, cwd=root)
-        return self.git("rev-parse", "HEAD", cwd=root)
+        git("add", "-A", cwd=root)
+        git("commit", "-qm", message, cwd=root)
+        return git("rev-parse", "HEAD", cwd=root)
 
-    def target_changes(self, name):
-        self.write(self.main, name, "the target's\n")
-        return self.commit(self.main, f"target: {name}")
+    def merged(self, name, text="target\n", passed=True):
+        """The task's commit, its pass kept (or not), merged with a target that changed `name`: the target's commit."""
+        if passed:
+            check_changed.keep_pass(check_changed.tree_id(self.task), self.task)
+        self.write(self.main, name, text)
+        base = self.commit(self.main, f"target: {name}")
+        git("merge", "-q", "--no-edit", base, cwd=self.task)
+        return base
 
     def test_a_clean_commits_id_is_its_tree(self):  # AC-198
-        self.assertEqual(check_changed.tree_id(self.task), self.git("rev-parse", "HEAD^{tree}", cwd=self.task)[:16])
+        self.assertEqual(check_changed.tree_id(self.task), git("rev-parse", "HEAD^{tree}", cwd=self.task)[:16])
 
-    def test_the_tasks_clean_pass_counts_when_the_target_changed_none_of_its_files(self):  # AC-198
-        check_changed.keep_pass(check_changed.tree_id(self.task), self.task)
-        base = self.target_changes("b.txt")
-        said = check_changed.own_pass(self.sha, base, self.main)
-        self.assertEqual(said, f"targeted: own pass on {self.sha[:9]} reused: {base} changed none of its files")
+    def test_an_edit_hidden_by_assume_unchanged_is_content(self):  # AC-104
+        clean = check_changed.tree_id(self.task)
+        git("update-index", "--assume-unchanged", "b.txt", cwd=self.task)
+        self.write(self.task, "b.txt", "edited\n")
+        self.assertNotEqual(check_changed.tree_id(self.task), clean)
 
-    def test_no_pass_or_a_pass_with_a_warning_counts_for_nothing(self):  # AC-146, AC-197, AC-198
-        base = self.target_changes("b.txt")
-        self.assertIsNone(check_changed.own_pass(self.sha, base, self.main), "no pass")
-        (self.task / ".checks").mkdir()
-        (self.task / ".checks" / "retried").write_text("targeted: PASSED ON RETRY page\n")
-        check_changed.keep_pass(check_changed.tree_id(self.task), self.task)
-        self.assertIsNone(check_changed.own_pass(self.sha, base, self.main), "passed on a retry: its tree's own")
+    def test_the_commits_pass_counts_when_the_target_changed_none_of_its_files(self):  # AC-198
+        base = self.merged("b.txt")
+        self.assertEqual(check_changed.own_pass(base, self.task), f"targeted: own pass on {self.sha[:9]} reused: {base} changed none of its files")
+
+    def test_no_pass_or_a_pass_with_a_warning_elsewhere_counts_for_nothing(self):  # AC-146, AC-197, AC-198
+        self.assertIsNone(check_changed.own_pass(self.merged("b.txt", passed=False), self.task), "no pass")
+        other = self.task.parent / "other"
+        git("worktree", "add", "-q", "--detach", str(other), self.sha, cwd=self.main)
+        (other / ".checks").mkdir()
+        (other / ".checks" / "retried").write_text("targeted: PASSED ON RETRY page\n")
+        check_changed.keep_pass(check_changed.tree_id(other), other)
+        self.assertIsNone(check_changed.own_pass("HEAD^2", self.task), "passed only on a retry: that tree's own")
 
     def test_the_target_changing_one_of_its_files_or_a_check_runs_them_again(self):  # AC-198
-        check_changed.keep_pass(check_changed.tree_id(self.task), self.task)
-        self.assertIsNone(check_changed.own_pass(self.sha, self.target_changes("a.txt"), self.main), "the same file")
-        self.git("reset", "-q", "--hard", "HEAD~1", cwd=self.main)
-        self.assertIsNone(check_changed.own_pass(self.sha, self.target_changes("scripts/land.py"), self.main), "a check")
+        self.assertIsNone(check_changed.own_pass(self.merged("a.txt", "1\n2\n3\n4\ntarget\n"), self.task), "the same file")
+        git("reset", "-q", "--hard", self.sha, cwd=self.task)
+        self.assertIsNone(check_changed.own_pass(self.merged("scripts/land.py"), self.task), "a check")
 
-    def test_main_says_the_reuse_and_runs_nothing(self):  # AC-198
-        check_changed.keep_pass(check_changed.tree_id(self.task), self.task)
-        base = self.target_changes("b.txt")
-        with mock.patch.object(check_changed, "REPO", self.main), mock.patch.object(check_changed, "run", side_effect=AssertionError("ran")), \
-                mock.patch("sys.stdout") as out:
-            self.assertEqual(check_changed.main(["--own", self.sha, "--base", base]), 0)
-        self.assertIn("reused", "".join(c.args[0] for c in out.write.call_args_list))
+    def test_an_edit_after_the_merge_or_no_merge_reuses_nothing(self):  # AC-198
+        base = self.merged("b.txt")
+        self.write(self.task, "b.txt", "uncommitted\n")
+        self.assertIsNone(check_changed.own_pass(base, self.task), "uncommitted: not the merge alone")
+        git("checkout", "-q", "--", "b.txt", cwd=self.task)
+        git("reset", "-q", "--hard", self.sha, cwd=self.task)
+        self.assertIsNone(check_changed.own_pass(base, self.task), "no merge of the target")
 
+    def test_the_checks_say_the_reuse_and_run_nothing(self):  # AC-198
+        base = self.merged("b.txt")
+        def main(argv, run):
+            with mock.patch.object(check_changed, "REPO", self.task), mock.patch.object(check_changed, "run", run), \
+                    mock.patch.object(check_changed, "tree_id", return_value="merged0content00"), \
+                    mock.patch.object(check_changed, "changed_files", return_value=(["docs/x.md"], base)), \
+                    mock.patch.object(check_changed, "touched_cases", return_value=set()), redirect_stdout(io.StringIO()) as said:
+                return check_changed.main(["--base", base, *argv]), said.getvalue()
+        code, said = main([], mock.Mock(side_effect=AssertionError("ran")))
+        self.assertEqual(code, 0)
+        self.assertIn(f"targeted: own pass on {self.sha[:9]} reused", said)
+        ran = mock.Mock(return_value=[])
+        self.assertEqual(main(["--force"], ran)[0], 0)
+        ran.assert_called_once()
 
 if __name__ == "__main__":
     unittest.main()
