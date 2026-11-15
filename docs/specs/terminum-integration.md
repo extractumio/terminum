@@ -365,7 +365,7 @@ Scenario: AC-191 edge — After restarts terminumd
 Scenario: AC-192 happy path — an overlap while both work
   Given API-12 and API-13 IN PROGRESS in worktrees of Billing's checkout, each with commits not in origin/main
   When a walk finds that their HEADs do not merge cleanly with each other
-  Then each agent is told once for that pair of commits: "[terminum] API-12: its commits and API-13's (session web-2, IN PROGRESS) change the same lines: src/retry.rs 40–58. They cannot be in one batch. Agree with that session who goes first; the other merges origin/main after the first lands, then queues."
+  Then each agent is told once for that pair of commits: "[terminum] API-12: its commits and API-13's (IN PROGRESS) change the same files: src/retry.rs. They cannot be in one batch. Agree with its session who goes first; the other merges origin/main after the first lands, then queues."
   And each card in IN PROGRESS says "overlaps API-13" (AC-193)
   When API-13 is already queued or in a batch
   Then API-12 is told instead "… API-13 is queued for integration (2nd). Go on; merge origin/main once API-13 lands, before you queue."
@@ -373,7 +373,8 @@ Scenario: AC-192 happy path — an overlap while both work
 Scenario: AC-192 happy path — the target moved in its files
   Given API-12 IN PROGRESS, having changed src/retry.rs
   When a batch is published that changed src/retry.rs
-  Then API-12's agent is told "[terminum] API-12: origin/main moved to 3e9b5c2 (batch 7: API-13, API-15) in files you changed: src/retry.rs. Merge origin/main now, before you queue." and, when its commits no longer merge with it, "It conflicts in: src/retry.rs 40–58."
+  Then API-12's agent is told "[terminum] API-12: origin/main moved to 3e9b5c2 in files you changed: src/retry.rs. Merge origin/main now, before you queue." and, when its commits no longer merge with it, "It conflicts in: src/retry.rs."
+  And a notice reaches a hook as its first line, and an analysis under it by get_task, so no line of it stands as terminum's own; the other session is named by its task, never by a title its pane may set
 
 Scenario: AC-192 happy path — in the queue
   Then each of these is said once, in the words of §9: queued (place, the batch expected, conflicts foreseen); held back (the task it waits for, the files; "nothing to do until API-12's batch ends"); in a batch (its number, its tasks); returned for a conflict (the target's commit, the files and lines; "merge 77aa210, resolve, commit, integrate again"); returned for a red check (the integration task's analysis, the log, the batch's tasks); returned as carried (AC-189); taken out (by whom); landed (the commit, the batch)
@@ -635,7 +636,7 @@ sequenceDiagram
 |---|---|---|
 | AC-187 | Queueing with a title where a session has no task (the tool's and `--title`), `make land` queueing its tree, a human's Integrate key and drop: not built; the tools and `terminum integration queue <ID> --result-file <path>|wait|status` are. | `terminumd/src/tasks/integration_queue.rs`, `terminumd/src/cli/integration.rs` |
 | AC-190 | A check's process group is ended by the runner, read from `ps`; nothing proves it ends a group that left its pane's tree. | `terminumd/src/integrate/runner.rs` |
-| AC-192 | An overlap and the target's move name files, not lines; trees of a project with no task are not compared; a card does not yet say "overlaps API-13" (AC-193). | `terminumd/src/integrate/notices.rs` |
+| AC-192 | Trees of a project with no task are not compared; a card does not yet say "overlaps API-13" (AC-193). | `terminumd/src/integrate/notices.rs` |
 | AC-193 | The column stands as a plain list where integration is on; the batch's group, its marks, Pause, Batches…: not built. The keys of AC-194 stand in the integration task's window. | `web/static/kanbanbatch.js` |
 | AC-194 | A red check and a check that did not start get the agent; a Publish or push refused and After's failure wait for a human. Red again, the same session goes on with RUN's words, not the round's own ("Decide as before", its log). The prompt lists each task with its commit, not its files. A fix goes in as its last commit's change alone, picked onto the target. | `terminumd/src/integrate/engine.rs`, `terminumd/src/integrate/agent.rs` |
 | AC-198 | Verify runs the whole targeted pass in each task's tree, its pass kept in that tree only, so a pass the agent ran in its own tree is not reused; one task's Verify runs at a time. | `terminumd/src/integrate/stages.rs`, `scripts/land_stages.py` |

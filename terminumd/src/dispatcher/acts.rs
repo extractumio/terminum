@@ -141,7 +141,7 @@ async fn went(app: &Shared, run: &Run, mark: fn(&mut Run)) {
 }
 
 /// Words for the agent: on its next tool call while it works, through the gate while it idles.
-pub(crate) async fn tell(app: &Shared, run: &Run, server: &Arc<Server>, pane: &str, text: String, what: &str) {
+pub(super) async fn tell(app: &Shared, run: &Run, server: &Arc<Server>, pane: &str, text: String, what: &str) {
     let key = server.key(pane);
     let sent = if app.hooks.working(&key) || run.open_tools > 0 { Err(None) } else { gate::deliver(app, run, server, pane, &text, false).await.map_err(Some) };
     let words = match sent {

@@ -29,8 +29,8 @@ pub async fn run(app: Shared) {
     }
     let Link::Local { tmux, socket, conf } = &app.tmux.local.link else { return };
     let runner = std::sync::Arc::new(runner::Tmux { tmux: tmux.clone(), socket: socket.clone(), conf: conf.clone() });
-    // notices from here on reach sessions; older ones stand as comments (AC-192)
-    let mut last = crate::tasks::api::store(&app, notices::last).await.unwrap_or(0);
+    // notices from the first look on reach sessions; older ones stand as comments (AC-192)
+    let mut last: Option<i64> = None;
     let mut beat = 0u32;
     loop {
         let (store, r) = (app.tasks.clone(), runner.clone());
@@ -66,23 +66,28 @@ async fn start_agents(app: &Shared) {
 }
 
 /// The queue's new notices handed to their tasks' sessions (AC-192): a task returned to a run of Dispatcher's gets the
-/// gate's fixed words while its agent idles; every notice also waits for its session's next hook. A session that
-/// never takes one leaves it standing as its comment.
-async fn deliver(app: &Shared, last: &mut i64) {
-    let after = *last;
-    let Ok(new) = crate::tasks::api::store(app, move |tx| notices::since(tx, after)).await else { return };
+/// gate's fixed words while its agent idles; every other notice waits for its session's next hook. A session that
+/// never takes one leaves it standing as its comment. Until where to start is read, nothing goes: no old notice is
+/// ever typed again.
+async fn deliver(app: &Shared, last: &mut Option<i64>) {
+    let Some(after) = *last else {
+        *last = crate::tasks::api::store(app, notices::last).await.ok();
+        return;
+    };
+    let Ok((new, read)) = crate::tasks::api::store(app, move |tx| notices::since(tx, after)).await else { return };
+    *last = Some(read);
     for n in new {
-        *last = n.rowid;
-        if let Some(words) = notices::gate_words(&n) && crate::dispatcher::tell_task_run(app, &n.id, words, "Its return from integration").await {
+        if let Some(words) = notices::gate_words(&n) && crate::dispatcher::tell_task_run(app, &n.task, words).await {
             continue;
         }
-        if let Some(key) = &n.session {
-            app.task_lines.push(key, &n.id, notices::hook_line(&n));
+        if let Some(key) = &n.session && app.task_lines.push(key, &n.id, notices::hook_line(&n)) {
+            tracing::info!(event = "integration.notice", task = %n.id, "the oldest line waiting for its session went: at most 20 wait");
         }
     }
 }
 
-/// The trees of tasks in work, newest first, from their sessions' folders on this Mac, compared off the async workers.
+/// The trees of tasks in work, newest first: the folder its agent works in, as its hooks said, else its session's, on
+/// this Mac; compared off the async workers.
 async fn walk(app: &Shared) {
     let Ok(tasks) = crate::tasks::api::store(app, |tx| crate::tasks::ops::rows(tx, "SELECT t.id, t.slug, t.project, t.session_key FROM tasks t
         JOIN project_integration i ON i.project = t.project WHERE i.is_on = 1 AND t.status = 'IN PROGRESS' AND t.session_key IS NOT NULL AND t.archived_at IS NULL
@@ -90,15 +95,12 @@ async fn walk(app: &Shared) {
     let trees: Vec<notices::Tree> = {
         let layout = app.layout.read();
         tasks.into_iter().filter_map(|(task, id, project, key)| {
-            let row = crate::page::marks::find_item(&layout, &key)?;
-            let (host, dir) = crate::page::marks::project_of(row);
-            let session = row["title"].as_str().unwrap_or_default().to_string();
-            (host.is_none()).then_some(())?;
-            Some(notices::Tree { task, id, project, dir: dir?.into(), session })
+            let dir = notices::tree_dir(crate::page::marks::find_item(&layout, &key)?)?;
+            Some(notices::Tree { task, id, project, dir })
         }).collect()
     };
     let store = app.tasks.clone();
-    match tokio::task::spawn_blocking(move || notices::walk(&store, &trees, crate::tasks::ops::now())).await {
+    match tokio::task::spawn_blocking(move || notices::walk(&store, &crate::config::tm_home(), &trees, crate::tasks::ops::now())).await {
         Ok(Err(e)) => tracing::warn!(event = "integration.walk", error = %e),
         Err(e) => tracing::error!(event = "integration.panic", error = %e),
         Ok(Ok(())) => {}

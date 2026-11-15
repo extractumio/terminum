@@ -47,11 +47,11 @@ pub(crate) use api::press_integration;
 /// The integration queue's words for the agent of the live run of Dispatcher's that holds task `id`
 /// (terminum-integration.md AC-192): through the gate while it idles, else with its next hook. False when no such run
 /// holds it: the caller hands the words to the task's session's next hook alone.
-pub(crate) async fn tell_task_run(app: &crate::app::Shared, id: &str, text: String, what: &str) -> bool {
-    let wanted = id.to_string();
-    let Ok(Some(run)) = store(app, move |tx| Ok(runs::live(tx)?.into_iter().find(|r| r.holds_slot() && r.ids.contains(&wanted)))).await else { return false };
+pub(crate) async fn tell_task_run(app: &crate::app::Shared, task: &str, text: String) -> bool {
+    let key = task.to_string();
+    let Ok(Some(run)) = store(app, move |tx| Ok(runs::last_of(tx, &key)?.filter(runs::Run::holds_slot))).await else { return false };
     let Some((server, pane)) = run.place(app) else { return false };
-    acts::tell(app, &run, &server, &pane, text, what).await;
+    acts::tell(app, &run, &server, &pane, text, "Its return from integration").await;
     true
 }
 pub use start::resume_words;

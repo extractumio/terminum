@@ -2,27 +2,30 @@
 //! What agents are told (`terminum-integration.md` AC-192): the queue's notices handed to each task's session, and a
 //! walk over the trees still in work that tells two tasks whose commits overlap, and a task whose files the target
 //! changed. Every notice is a comment by Dispatcher marked `notice` in its data; what it was said for is kept with it,
-//! so it is said once. Only commits are compared: uncommitted work is not seen.
+//! so it is said once. Only commits are compared: uncommitted work is not seen. git runs outside the store's turn.
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
+use parking_lot::Mutex;
 use rusqlite::Transaction;
 use serde_json::json;
 
 use super::batch::merge;
+use super::engine::place;
 use super::git::{self, short};
 use crate::tasks::integration;
+use crate::tasks::integration_queue::{ordinal, queue_of};
 use crate::tasks::ops::{self, sql};
 use crate::tasks::store::{Store, DISPATCHER};
 
 /// The most trees of a project the walk compares: the newest.
-pub const TREES_MOST: usize = 30;
+const TREES_MOST: usize = 30;
 
 /// A notice waiting to reach its task's session.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Notice {
-    pub rowid: i64,
+    pub task: String,
     pub id: String,
     pub session: Option<String>,
     pub text: String,
@@ -35,16 +38,21 @@ pub fn last(tx: &Transaction) -> Result<i64, String> {
     tx.query_row("SELECT coalesce(max(rowid), 0) FROM events", [], |r| r.get(0)).map_err(sql)
 }
 
-/// The notices written after row `after`, oldest first.
-pub fn since(tx: &Transaction, after: i64) -> Result<Vec<Notice>, String> {
-    ops::rows(tx, "SELECT e.rowid, t.slug, t.session_key, coalesce(e.text, ''), json_extract(e.data, '$.left') FROM events e JOIN tasks t ON t.id = e.task
+/// The notices written after row `after`, oldest first, and the newest row read, where the next look starts.
+pub fn since(tx: &Transaction, after: i64) -> Result<(Vec<Notice>, i64), String> {
+    let notices = ops::rows(tx, "SELECT e.task, t.slug, t.session_key, coalesce(e.text, ''), json_extract(e.data, '$.left') FROM events e JOIN tasks t ON t.id = e.task
                    WHERE e.rowid > ?1 AND e.author = ?2 AND e.kind = 'comment' AND json_extract(e.data, '$.notice') IS NOT NULL ORDER BY e.rowid",
-        (after, DISPATCHER), |r| Ok(Notice { rowid: r.get(0)?, id: r.get(1)?, session: r.get(2)?, text: r.get(3)?, left: r.get(4)? }))
+        (after, DISPATCHER), |r| Ok(Notice { task: r.get(0)?, id: r.get(1)?, session: r.get(2)?, text: r.get(3)?, left: r.get(4)? }))?;
+    Ok((notices, last(tx)?.max(after)))
 }
 
-/// The line a notice is in a session's next hook: its words, terminum's.
+/// The line a notice is in a session's next hook: its first line, terminum's words; what follows (an agent's
+/// analysis) is read by get_task, so no line of it stands as terminum's own.
 pub fn hook_line(n: &Notice) -> String {
-    format!("[terminum] {}", n.text)
+    let mut lines = n.text.lines();
+    let first = lines.next().unwrap_or_default();
+    let more = if lines.next().is_some() { format!(" (the rest: execute_tool(\"get_task\", {{\"id\": \"{}\"}}))", n.id) } else { String::new() };
+    format!("[terminum] {first}{more}")
 }
 
 /// What the gate may type for a notice into an idle agent of Dispatcher's (`terminum-dispatcher.md` §9): fixed words
@@ -65,39 +73,61 @@ pub struct Tree {
     pub id: String,
     pub project: String,
     pub dir: PathBuf,
-    /// the session's name, to name it to the other task
-    pub session: String,
 }
 
-/// One task's commits as compared: its HEAD, and the files it changed since the target.
+/// The folder a session's task works in, from its layout row: the one its agent's hooks said (a worktree it went
+/// into), else the pane's own; none on another host.
+pub fn tree_dir(row: &serde_json::Value) -> Option<PathBuf> {
+    if row["host"].as_str().is_some_and(|h| !h.is_empty()) {
+        return None;
+    }
+    row["agentDir"].as_str().or(row["dir"].as_str()).filter(|d| !d.is_empty()).map(PathBuf::from)
+}
+
+/// One task's commits as compared: its HEAD and the files it changed since the target; working, or queued at a place.
 struct Head {
-    tree: Tree,
+    task: String,
+    id: String,
     head: String,
     files: HashSet<String>,
     queued: Option<String>,
 }
 
+/// Pairs and moves judged already, by their commits and the target's: judged again only when one of them changes.
+static JUDGED: Mutex<Option<HashSet<String>>> = Mutex::new(None);
+
+/// Whether `key` is judged for the first time now.
+fn first_time(key: String) -> bool {
+    let mut judged = JUDGED.lock();
+    let set = judged.get_or_insert_with(HashSet::new);
+    if set.len() > 10_000 {
+        set.clear();
+    }
+    set.insert(key)
+}
+
 /// The walk over projects with integration on: each pair of tasks whose commits do not merge is told once for that
 /// pair of commits, and each task whose files the target changed since it branched, once for that target.
-pub fn walk(store: &Store, trees: &[Tree], now: i64) -> Result<(), String> {
-    let projects: Vec<(String, String)> = store.with(|tx| ops::rows(tx, "SELECT i.project, p.dir FROM project_integration i JOIN projects p ON p.id = i.project
-        WHERE i.is_on = 1 AND p.host IS NULL", [], |r| Ok((r.get(0)?, r.get(1)?))))?;
-    for (project, dir) in projects {
-        let s = store.with(|tx| integration::read(tx, &project))?;
-        let repo = integration::local_dir(&dir);
-        let Ok(target) = git::run(&repo, &["rev-parse", "--verify", "--quiet", &s.target]) else { continue };
-        let mut heads: Vec<Head> = trees.iter().filter(|t| t.project == project).take(TREES_MOST).filter_map(|t| head_of(t, &repo, &s.target)).collect();
-        heads.extend(queued(store, &project, &repo, &s.target)?);
-        for (i, a) in heads.iter().enumerate() {
-            if a.queued.is_none() {
-                store.with(|tx| moved(tx, a, &repo, &s.target, &target, now))?;
-            }
-            for b in &heads[i + 1..] {
-                if a.files.is_disjoint(&b.files) {
-                    continue;   // no file in common: they merge
+pub fn walk(store: &Store, home: &Path, trees: &[Tree], now: i64) -> Result<(), String> {
+    let projects: HashSet<&str> = trees.iter().map(|t| t.project.as_str()).collect();
+    for project in projects {
+        let p = place(store, home, project)?;
+        let Some((remote, branch)) = integration::target_parts(&p.s.target) else { continue };
+        let Ok(target) = git::run(&p.repo, &["rev-parse", &format!("refs/remotes/{remote}/{branch}")]) else { continue };
+        let common = git::run(&p.repo, &["rev-parse", "--path-format=absolute", "--git-common-dir"]).unwrap_or_default();
+        let mut heads: Vec<Head> = trees.iter().filter(|t| t.project == project).take(TREES_MOST).filter_map(|t| head_of(t, &p.repo, &common, &target)).collect();
+        let entries = store.with(|tx| queue_of(tx, project))?;
+        heads.extend(entries.into_iter().enumerate().filter_map(|(i, e)| {
+            Some(Head { files: changed(&p.repo, &target, &e.commit)?, task: e.task, id: e.id, head: e.commit, queued: Some(ordinal(i + 1)) })
+        }));
+        for (i, a) in heads.iter().enumerate().filter(|(_, h)| h.queued.is_none()) {
+            moved(store, a, &p.repo, &p.s.target, &target, now)?;
+            for b in heads.iter().skip(i + 1).chain(heads.iter().take(i).filter(|h| h.queued.is_some())) {
+                if a.files.is_disjoint(&b.files) || !first_time(format!("{}-{}@{}", a.head, b.head, target)) {
+                    continue;   // no file in common merges; a pair judged for these commits is not judged again
                 }
-                if let Ok(Err(files)) = merge(&repo, &a.head, &b.head) {
-                    store.with(|tx| overlap(tx, a, b, &files, &s.target, now).and_then(|()| overlap(tx, b, a, &files, &s.target, now)))?;
+                if let Ok(Err(files)) = merge(&p.repo, &a.head, &b.head) {
+                    store.with(|tx| overlap(tx, a, b, &files, &p.s.target, now).and_then(|()| overlap(tx, b, a, &files, &p.s.target, now)))?;
                 }
             }
         }
@@ -106,24 +136,15 @@ pub fn walk(store: &Store, trees: &[Tree], now: i64) -> Result<(), String> {
 }
 
 /// A tree's HEAD and the files it changed since the target; none when it is no checkout of the project's repository
-/// or has nothing of its own.
-fn head_of(t: &Tree, repo: &Path, target: &str) -> Option<Head> {
-    let head = git::run(&t.dir, &["rev-parse", "--verify", "--quiet", "HEAD"]).ok()?;
-    let same_repo = git::run(&t.dir, &["rev-parse", "--path-format=absolute", "--git-common-dir"]).ok()? == git::run(repo, &["rev-parse", "--path-format=absolute", "--git-common-dir"]).ok()?;
-    if !same_repo || git::ok(repo, &["merge-base", "--is-ancestor", &head, target]).ok()? {
+/// (`common`, its common folder) or has nothing of its own.
+fn head_of(t: &Tree, repo: &Path, common: &str, target: &str) -> Option<Head> {
+    let said = git::run(&t.dir, &["rev-parse", "--path-format=absolute", "--git-common-dir", "HEAD"]).ok()?;
+    let (its_common, head) = said.split_once('\n')?;
+    if its_common != common {
         return None;
     }
-    Some(Head { files: changed(repo, target, &head)?, tree: t.clone(), head, queued: None })
-}
-
-/// The tasks queued in the project, as heads, each with its place.
-fn queued(store: &Store, project: &str, repo: &Path, target: &str) -> Result<Vec<Head>, String> {
-    let entries: Vec<(String, String, String)> = store.with(|tx| ops::rows(tx, "SELECT e.task, t.slug, e.commit_sha FROM integration_entries e JOIN tasks t ON t.id = e.task
-        WHERE e.project = ?1 ORDER BY e.queued_at, t.number", [project], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))))?;
-    Ok(entries.into_iter().enumerate().filter_map(|(i, (task, id, commit))| {
-        let tree = Tree { task, id, project: project.to_string(), dir: repo.to_path_buf(), session: String::new() };
-        Some(Head { files: changed(repo, target, &commit)?, tree, head: commit, queued: Some(crate::tasks::integration_queue::ordinal(i + 1)) })
-    }).collect())
+    let files = changed(repo, target, head)?;
+    (!files.is_empty()).then(|| Head { task: t.task.clone(), id: t.id.clone(), head: head.to_string(), files, queued: None })
 }
 
 /// The files `head` changed since it left `target`.
@@ -131,48 +152,42 @@ fn changed(repo: &Path, target: &str, head: &str) -> Option<HashSet<String>> {
     Some(git::run(repo, &["diff", "--name-only", &format!("{target}...{head}")]).ok()?.lines().map(str::to_string).collect())
 }
 
-/// `a`'s agent told, once for that pair of commits, that `b`'s commits do not merge with its own.
+/// `a`'s agent told, once for that pair of commits, that `b`'s commits do not merge with its own; a queued task learns
+/// of it when its batch is built (AC-189).
 fn overlap(tx: &Transaction, a: &Head, b: &Head, files: &[String], target: &str, now: i64) -> Result<(), String> {
-    if a.queued.is_some() {
-        return Ok(());   // a queued task learns of a conflict when its batch is built (AC-189)
-    }
     let pair = format!("{}-{}", short(&a.head), short(&b.head));
-    if ops::noticed(tx, &a.tree.task, "overlap", &pair)? {
+    if a.queued.is_some() || ops::noticed(tx, DISPATCHER, &a.task, "overlap", &pair)? {
         return Ok(());
     }
     let files = files.join(", ");
     let words = match &b.queued {
         Some(place) => format!("{}: its commits and {}'s change the same files: {files}. {} is queued for integration ({place}). Go on; merge {target} once {} lands, before you queue.",
-                               a.tree.id, b.tree.id, b.tree.id, b.tree.id),
-        None => format!("{}: its commits and {}'s (session {}, IN PROGRESS) change the same files: {files}. They cannot be in one batch. Agree with that session who goes first; the other merges {target} after the first lands, then queues.",
-                        a.tree.id, b.tree.id, if b.tree.session.is_empty() { "?" } else { &b.tree.session }),
+                               a.id, b.id, b.id, b.id),
+        None => format!("{}: its commits and {}'s (IN PROGRESS) change the same files: {files}. They cannot be in one batch. Agree with its session who goes first; the other merges {target} after the first lands, then queues.",
+                        a.id, b.id),
     };
-    ops::notice(tx, DISPATCHER, &a.tree.id, &words, json!({"overlap": pair}), now).map(drop)
+    ops::notice(tx, DISPATCHER, &a.id, &words, json!({"overlap": pair}), now).map(drop)
 }
 
-/// `a`'s agent told, once for that target, that the target moved in files it changed since it branched.
-fn moved(tx: &Transaction, a: &Head, repo: &Path, target: &str, at_target: &str, now: i64) -> Result<(), String> {
-    let Ok(base) = git::run(repo, &["merge-base", &a.head, at_target]) else { return Ok(()) };
-    if base == at_target {
-        return Ok(());   // it holds the target
-    }
-    let theirs: HashSet<String> = git::run(repo, &["diff", "--name-only", &base, at_target]).unwrap_or_default().lines().map(str::to_string).collect();
-    let mut both: Vec<&String> = a.files.intersection(&theirs).collect();
-    if both.is_empty() {
+/// `a`'s agent told, once for that target, that the target moved in files it changed since it branched; git runs
+/// before the store's turn, which only checks and writes.
+fn moved(store: &Store, a: &Head, repo: &Path, target: &str, at_target: &str, now: i64) -> Result<(), String> {
+    let mark = format!("{}@{}", short(&a.head), short(at_target));
+    if !first_time(format!("moved {mark}")) {
         return Ok(());
+    }
+    let theirs = changed(repo, &a.head, at_target).unwrap_or_default();
+    let mut both: Vec<&str> = a.files.intersection(&theirs).map(String::as_str).collect();
+    if both.is_empty() {
+        return Ok(());   // it holds the target, or the target moved elsewhere
     }
     both.sort();
-    let mark = format!("{}@{}", short(&a.head), short(at_target));
-    if ops::noticed(tx, &a.tree.task, "moved", &mark)? {
-        return Ok(());
-    }
-    let files = both.iter().map(|f| f.as_str()).collect::<Vec<_>>().join(", ");
     let conflicts = match merge(repo, &a.head, at_target) {
         Ok(Err(files)) => format!(" It conflicts in: {}.", files.join(", ")),
         _ => String::new(),
     };
-    let words = format!("{}: {target} moved to {} in files you changed: {files}. Merge {target} now, before you queue.{conflicts}", a.tree.id, short(at_target));
-    ops::notice(tx, DISPATCHER, &a.tree.id, &words, json!({"moved": mark}), now).map(drop)
+    let words = format!("{}: {target} moved to {} in files you changed: {}. Merge {target} now, before you queue.{conflicts}", a.id, short(at_target), both.join(", "));
+    store.with(|tx| if ops::noticed(tx, DISPATCHER, &a.task, "moved", &mark)? { Ok(()) } else { ops::notice(tx, DISPATCHER, &a.id, &words, json!({"moved": mark}), now).map(drop) })
 }
 
 #[cfg(test)]
