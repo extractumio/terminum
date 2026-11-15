@@ -28,7 +28,12 @@ export async function liveLinks(page, { work }) {
   const evil = await page.evaluate(() => [...document.querySelectorAll("#term .ln span")].filter((s) => s.textContent === "evil").map((s) => s.classList.contains("olink") || !!s.title));
   const mod = process.platform === "darwin" ? "Meta" : "Control";
   // where the link rests: the view may still move after the output (the prompt drawn, the view kept at its bottom)
-  const at = link && await textPoint(page, link.text);
+  const at = link && await page.waitForFunction(() => {
+    const e = [...document.querySelectorAll("#term .ln .olink")].find((s) => s.textContent.includes("MR !318")), b = e?.getBoundingClientRect();
+    const now = b && `${b.left},${b.top}`;
+    if (!now || now !== window.linkWas) { window.linkWas = now; window.linkSince = performance.now(); return null; }
+    return performance.now() - window.linkSince > 300 ? { x: b.left + b.width / 2, y: b.top + b.height / 2 } : null;
+  }, null, { timeout: 5000, polling: 50 }).then((h) => h.jsonValue(), () => null);
   if (at) { await page.keyboard.down(mod); await page.mouse.click(at.x, at.y); await page.keyboard.up(mod); }
   const opened = await page.evaluate(() => window.opened);
   check("AC-35 a program's OSC 8 link through tmux: its text underlined with its address on hover, ⌘-click opens that address; a javascript: one is plain text",
@@ -41,41 +46,41 @@ export async function liveLinks(page, { work }) {
   await liveFolderLink(page, { work, mod });
 }
 
-/** A visible text's center once its position settles: output, the prompt and a resized pane
- *  can still scroll it after it first appears. A ready cursor at an old point is not a ready click. */
-async function textPoint(page, text) {
-  await page.evaluate(() => { window.linkWas = null; });
-  return page.waitForFunction((want) => {
-    const view = document.getElementById("term").getBoundingClientRect();
-    for (const row of document.querySelectorAll("#term .ln")) {
-      const walk = document.createTreeWalker(row, NodeFilter.SHOW_TEXT);
-      for (let t = walk.nextNode(); t; t = walk.nextNode()) {
-        const i = t.data.indexOf(want);
-        if (i < 0) continue;
-        const r = document.createRange();
-        r.setStart(t, i); r.setEnd(t, i + want.length);
-        const b = r.getBoundingClientRect();
-        if (!b.width || b.top < view.top || b.bottom > view.bottom) continue;   // clear left an earlier command in history
-        const now = `${b.left},${b.top},${b.width},${b.height}`;
-        if (now !== window.linkWas) { window.linkWas = now; window.linkSince = performance.now(); return null; }
-        return performance.now() - window.linkSince > 300 ? { x: b.left + b.width / 2, y: b.top + b.height / 2 } : null;
-      }
+/** In the page: the visible text's center; clear can leave its command in history too. */
+function textPoint(want) {
+  const view = document.getElementById("term").getBoundingClientRect();
+  for (const row of document.querySelectorAll("#term .ln")) {
+    const walk = document.createTreeWalker(row, NodeFilter.SHOW_TEXT);
+    for (let t = walk.nextNode(); t; t = walk.nextNode()) {
+      const i = t.data.indexOf(want);
+      if (i < 0) continue;
+      const r = document.createRange();
+      r.setStart(t, i); r.setEnd(t, i + want.length);
+      const b = r.getBoundingClientRect();
+      if (!b.width || b.top < view.top || b.bottom > view.bottom) continue;   // clear left an earlier command in history
+      return { x: b.left + b.width / 2, y: b.top + b.height / 2 };
     }
-    window.linkWas = null;
-    return null;
-  }, text, { timeout: 5000, polling: 50 }).then((h) => h.jsonValue(), () => null);
+  }
+  return null;
 }
 
-/** ⌘-click (Ctrl elsewhere) in the middle of `text`; with ready, wait for its link cursor first. */
+/** ⌘-click (Ctrl elsewhere) only while the wanted text is still under the pointer. Hovering
+ *  can coincide with a pane redraw: another link's hand cursor must not count for this path. */
 async function clickText(page, text, mod, ready = false) {
-  const at = await textPoint(page, text);
-  if (!at) return false;
-  await page.keyboard.down(mod);
-  await page.mouse.move(at.x + 1, at.y); await page.mouse.move(at.x, at.y);
-  const linked = !ready || await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => resolve(document.getElementById("term").classList.contains("onlink")))));
-  if (linked) await page.mouse.click(at.x, at.y);
-  await page.keyboard.up(mod);
-  return linked;
+  for (const end = Date.now() + 5000; Date.now() < end;) {
+    const at = await page.waitForFunction(textPoint, text, { timeout: Math.max(1, end - Date.now()) }).then((h) => h.jsonValue(), () => null);
+    if (!at) return false;
+    await page.keyboard.down(mod);
+    try {
+      await page.mouse.move(at.x + 1, at.y); await page.mouse.move(at.x, at.y);
+      const linked = !ready || await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => resolve(document.getElementById("term").classList.contains("onlink")))));
+      const now = await page.evaluate(textPoint, text);
+      if (!now || now.x !== at.x || now.y !== at.y) continue;
+      if (linked) await page.mouse.click(at.x, at.y);
+      return linked;
+    } finally { await page.keyboard.up(mod); }
+  }
+  return false;
 }
 
 async function liveFolderLink(page, { work, mod }) {
