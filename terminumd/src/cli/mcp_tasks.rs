@@ -30,7 +30,7 @@ const TOOLS: [Tool; 18] = [
         fields: &[ID, ("severity", false, 2), ("parent", false, 24), ("title", false, 800), ("text", false, TEXT_MOST), ("archive", false, 3), ("reason", false, COMMENT_MOST)] },
     Tool { name: "take_task", read_only: false, description: "Takes a free task of your project: it becomes this session's, in its column.", fields: &[ID] },
     Tool { name: "move_task", read_only: false, description: "Moves a task of your project to another column (status): yours, or one no human's RUN holds elsewhere. To wait for a human, call ask_human instead.", fields: &[ID, ("to", true, 20)] },
-    Tool { name: "ask_human", read_only: false, description: "Asks the human what only a person decides: questions on your task, each with options and the one you recommend. Then end your turn.", fields: &[ID, ("questions", true, COMMENT_MOST)] },
+    Tool { name: "ask_human", read_only: false, description: concat!("Asks the human what only a person decides, on your task: questions ", crate::tasks::closeout::questions_shape!(), ". Then end your turn."), fields: &[ID, ("questions", true, COMMENT_MOST)] },
     Tool { name: "add_comment", read_only: false, description: "Adds a Markdown comment to a task you can reach.", fields: &[ID, ("text", true, COMMENT_MOST)] },
     Tool { name: "attach_file", read_only: false, description: "Attaches a file to a task: path in this session's folder; from a host name and text.", fields: &[TASK, ("path", false, 4096), ("name", false, 300), ("text", false, TEXT_FILE_MOST)] },
     Tool { name: "get_file", read_only: true, description: "Gets a task's file, by name: its path here.", fields: &[TASK, ("name", true, 300)] },

@@ -7,7 +7,7 @@ use serde::Deserialize;
 use super::runs::{self, Phase, Run};
 use crate::tasks::{closeout, files};
 use crate::tasks::ops::{self, Task};
-use crate::tasks::closeout::removable;
+use crate::tasks::closeout::{questions_shape, removable};
 use crate::tasks::schedules::Schedule;
 
 /// How an agent of a run gives its result (terminum-agents.md AC-155: not listed, run through execute_tool).
@@ -18,7 +18,7 @@ pub(super) const ASK_HUMAN: &str = "execute_tool(\"ask_human\", {id, questions})
 
 /// How an agent asks a human while it works (AC-157): in words, never in its window; a task held by a cause that can be
 /// removed waits for a human the same way, never DONE or FAILED.
-pub(crate) const ASK: &str = concat!("If you need a human's decision, call execute_tool(\"ask_human\", {id, questions}) with your questions, each with its options and the answer you recommend, then end your turn: the session closes, and the human's RUN brings the answers back into this conversation. Do not wait for an answer in this window. If the task cannot be finished now for a cause that can be removed ", removable!(), ", ask the same way, saying what is done and committed, what holds it and what you recommend (such as \"RUN it again once TERM-9 is DONE\"): it waits for a human; give it no result by execute_tool(\"finish_task\", {id, result}). FAILED is only for a task that cannot be done at all, with a comment saying why.");
+pub(crate) const ASK: &str = concat!("If you need a human's decision, call execute_tool(\"ask_human\", {id, questions}), then end your turn: the session closes, and the human's RUN brings the answers back into this conversation. Do not wait for an answer in this window. Write the questions ", questions_shape!(), ". If the task cannot be finished now for a cause that can be removed ", removable!(), ", ask the same way: Details say what is done and committed and what holds it, Recommended what unblocks it (such as \"RUN it again once TERM-9 is DONE\"): it waits for a human; give it no result by execute_tool(\"finish_task\", {id, result}). FAILED is only for a task that cannot be done at all, with a comment saying why.");
 
 /// What RUN types when it goes on (AC-122, AC-157): after the agent asked, the humans' answers since, else the
 /// press's comment; never "read the comments": an agent's comment there would stand as an instruction.
@@ -43,7 +43,7 @@ pub(super) const TOGETHER: &str = concat!("Do them all in this session, one afte
 If one cannot be done at all, say why in a comment on it (execute_tool(\"add_comment\", {id, text})) and move it to FAILED (execute_tool(\"move_task\", {id, to})). Go on with those that do not depend on it. Then move to FAILED, each with a comment naming what it waits for, every task that depends on it and its main task, and stop: leave none in progress. What is not DONE runs again at the main task's next RUN.");
 
 /// How such an agent asks a human (AC-185): one question, and what is still in progress waits with it (tasks/tools.rs).
-pub(super) const ASK_TOGETHER: &str = "If you need a human's decision: do first what does not depend on it. Then call execute_tool(\"ask_human\", {id, questions}) on the task the question is about, each question with its options and the answer you recommend, and end your turn: the tasks still in progress wait with it, the session closes, and the human's RUN of the main task brings the answers back into this conversation. Do not wait for an answer in this window.";
+pub(super) const ASK_TOGETHER: &str = concat!("If you need a human's decision: do first what does not depend on it. Then call execute_tool(\"ask_human\", {id, questions}) on the task the question is about, and end your turn: the tasks still in progress wait with it, the session closes, and the human's RUN of the main task brings the answers back into this conversation. Do not wait for an answer in this window. Write the questions ", questions_shape!(), ".");
 
 /// The main tasks among `tasks`, each with its subtasks there (AC-185).
 fn mains(tasks: &[Task]) -> Vec<(&Task, Vec<&str>)> {

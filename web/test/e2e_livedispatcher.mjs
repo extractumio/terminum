@@ -149,7 +149,7 @@ export async function liveDispatcher(page, opts) {
   await run(asking);
   check("AC-157 its questions wait for the human", await hasStatus(asking, "WAIT FOR HUMAN", 15000), await history(asking));
   const asked = await j(`/api/tasks/${asking}`);
-  check("AC-157 kept as questions on the task", asked.history.some((e) => e.questions && /Recommended: v2/.test(e.text)), JSON.stringify(asked.history.at(-1)));
+  check("AC-157 kept as questions on the task", asked.history.some((e) => e.questions && /^Why you are needed: .*\nRecommended:\n1\. v2/.test(e.text)), JSON.stringify(asked.history.at(-1)));
   check("AC-157 its session closes once its turn is over", await until(async () => (await j(`/api/tasks/${asking}`)).session?.closed || /waits for the human's answers/.test(await history(asking)), 20000), await history(asking));
   const conversation = (await j(`/api/tasks/${asking}`)).agent?.conversation;
   check("AC-157 the task keeps its agent and conversation", /^fake-\d+$/.test(conversation ?? ""), JSON.stringify((await j(`/api/tasks/${asking}`)).agent));

@@ -19,6 +19,16 @@ macro_rules! removable {
 }
 pub(crate) use removable;
 
+/// How a question for the human is written (terminum-dispatcher.md AC-157): QUESTIONS' parts in order, each said
+/// with what it holds, for a reader new to the task. A macro for the prompts' `concat!` and the tools' answers.
+macro_rules! questions_shape {
+    () => { "in plain short words for a person who has not followed this task, in three parts in this order: \"Why you are needed:\" one sentence on why this task waits for a person; \"Recommended:\" each question numbered, the answer you recommend as its default and why in a few words, then its other options; \"Details:\" one paragraph on the whole issue: what the task is for, what was done, what holds it, what each option leads to" };
+}
+pub(crate) use questions_shape;
+
+/// The parts of a question for the human (AC-157), in the order questions_shape! says them.
+pub const QUESTIONS: [(&str, &str); 3] = [("Why you are needed", ""), ("Recommended", ""), ("Details", "")];
+
 /// The result's sections, in order, each with what it holds; the finishing tool's description names them
 /// too (cli/mcp_tasks.rs).
 pub const SECTIONS: [(&str, &str); 9] = [
@@ -126,6 +136,17 @@ pub fn untracked_words(names: &[&str]) -> String {
 /// turn goes on to write it again.
 pub fn missing_words(id: &str, status: &str, names: &[&str]) -> String {
     format!("Not a result: it lacks {}. Your text is kept as a comment and {id} stays {status}. Write each section as a line \"Name:\" or a heading, its name as given (\"None\" when empty), then call it again.", names.join(", "))
+}
+
+/// A question in QUESTIONS' shape, for tests of what happens once an agent asks.
+#[cfg(test)]
+pub const ASKED: &str = "Why you are needed: only you know which API the clients may use.\nRecommended:\n1. v2: v1 goes away in May. Other options: v1.\nDetails: the task moves the clients to one API; v1 and v2 both work today.";
+
+/// Why an agent's `questions` are refused (AC-157): the parts of QUESTIONS they lack, said with the shape; the task stays
+/// where it was and nothing is kept, so the agent asks again in that shape.
+pub fn unshaped(id: &str, questions: &str) -> Option<String> {
+    let lacks = missing(questions, &QUESTIONS);
+    (!lacks.is_empty()).then(|| format!("Not asked: the questions lack {}. {id} stays where it was. Write them {}, each part a line \"Name:\" or a heading, then call it again.", lacks.join(", "), questions_shape!()))
 }
 
 /// Whether a close-out's Outcome says its work is not done, by its first words in English as the form asks: such a

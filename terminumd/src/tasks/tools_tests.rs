@@ -334,11 +334,28 @@ fn ac145_an_agent_s_text_follows_its_project_s_template() {
 }
 
 #[test]
+fn ac157_questions_not_in_the_shape_are_refused_and_nothing_is_kept() {
+    let ((s, dir), w) = (fresh("tools-ask-shape"), who(Some("api")));
+    let id = task(&s, "api", Some(KEY));
+    // the old way: a question with its options, no why and no details
+    let refused = call(&s, &dir, &w, "ask_human", json!({"id": id, "questions": "1. v1 or v2? Options: v1, v2. Recommended: v2."})).unwrap_err();
+    assert!(refused.starts_with(&format!("Not asked: the questions lack Why you are needed, Recommended, Details. {id} stays where it was. Write them in plain short words")), "{refused}");
+    assert!(refused.contains("\"Why you are needed:\" one sentence") && refused.contains("\"Details:\" one paragraph"), "the refusal says the shape: {refused}");
+    let (status, history) = s.with(|tx| Ok((ops::get(tx, &id)?.status, ops::history(tx, &id)?))).unwrap();
+    assert_eq!(status, "TODO", "the task stays where it was");
+    assert!(!history.as_array().unwrap().iter().any(|e| e["kind"] == "comment"), "nothing kept: {history}");
+    // Markdown headings and bold labels count, in any case
+    let marked = "## Why you are needed\nOnly you know.\n\n**recommended:**\n1. v2, because v1 ends.\n\n**Details:** the whole issue.";
+    assert!(call(&s, &dir, &w, "ask_human", json!({"id": id, "questions": marked})).is_ok());
+    assert_eq!(s.with(|tx| ops::get(tx, &id)).unwrap().status, "WAIT FOR HUMAN");
+}
+
+#[test]
 fn ac157_an_agent_asks_on_its_own_task_and_a_dispatcher_session_is_told_to_end_its_turn() {
     let ((s, dir), w) = (fresh("tools-ask"), who(Some("api")));
     let id = task(&s, "api", Some(KEY));
     let other = task(&s, "api", Some(OTHER));
-    let asked = "1. Which API? Options: v1, v2. Recommended: v2, v1 is going away.";
+    let asked = closeout::ASKED;
     assert_eq!(call(&s, &dir, &w, "ask_human", json!({"id": id, "questions": asked})).unwrap(), format!("{id} waits for the human, with your questions. Wait for the answer in this session."));
     let (status, history) = s.with(|tx| Ok((ops::get(tx, &id)?.status, ops::history(tx, &id)?))).unwrap();
     assert_eq!(status, "WAIT FOR HUMAN");
@@ -486,7 +503,7 @@ fn ac185_a_main_task_is_finished_after_the_subtasks_of_its_run() {
     // one question, and what is in progress waits with it: the session can close
     let status = |id: &str| s.with(|tx| ops::get(tx, id)).unwrap().status;
     s.with(|tx| { ops::link(tx, HUMAN, &kid, Some(KEY), 2)?; ops::move_to(tx, HUMAN, &main, "IN PROGRESS", 2)?; ops::move_to(tx, HUMAN, &kid, "IN PROGRESS", 2) }).unwrap();
-    let asked = call(&s, &dir, &w, "ask_human", json!({"id": kid, "questions": "v1 or v2?"})).unwrap();
+    let asked = call(&s, &dir, &w, "ask_human", json!({"id": kid, "questions": closeout::ASKED})).unwrap();
     assert!(asked.ends_with("this session's tasks in progress wait with it, Dispatcher closes the session, and the human's RUN brings the answers."), "{asked}");
     assert_eq!((status(&main), status(&kid), status(&later)), ("WAIT FOR HUMAN".to_string(), "WAIT FOR HUMAN".to_string(), "TODO".to_string()));
     let refused = call(&s, &dir, &w, "finish_task", json!({"id": main, "result": "all"})).unwrap_err();
