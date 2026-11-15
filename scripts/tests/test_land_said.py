@@ -68,7 +68,7 @@ class Said(unittest.TestCase):
                     mock.patch.object(land, "ci_status", return_value="CI on main: success on 0123456789: u"), \
                     mock.patch.object(land, "land", lambda tree, after: after(["x.rs"]) or "abcdef0123456789"), \
                     mock.patch.object(land, "after_push", lambda _, files: shutil.rmtree(tree)), mock.patch.object(land.subprocess, "run", return_value=subprocess.CompletedProcess([], 0)), \
-                    mock.patch.object(land.os, "chdir"), mock.patch.object(land, "install_pending"), mock.patch("builtins.print", lambda *a, **_: out.append(" ".join(map(str, a)))):
+                    mock.patch.object(land.os, "chdir"), mock.patch.object(land, "install_pending"), mock.patch("land_stages.integration_on", return_value=None), mock.patch("builtins.print", lambda *a, **_: out.append(" ".join(map(str, a)))):
                 self.assertEqual(land.main(["x"]), 0)
         self.assertEqual(out[-2:], ["landed abcdef012 on origin/main",   # AC-146, AC-197
                                     "targeted: SKIPPED timed checks, the machine busy for 15 minutes: page\n"

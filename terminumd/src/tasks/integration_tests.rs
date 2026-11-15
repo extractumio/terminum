@@ -118,10 +118,13 @@ fn ac186_where_it_runs_a_checkout_its_target_and_git() {
 #[test]
 fn ac186_what_runs_says_each_line_and_where() {
     let empty = runs("p1", "/srv/billing", &Settings::default());
-    assert!(empty[0].contains("integration/p1/tree: origin/main and a merge of each task's commit"), "{}", empty[0]);
-    assert_eq!(&empty[1..4], ["No check: a candidate that merges is published.", "terminum pushes the candidate to origin/main, never forced.", "Nothing runs after."]);
-    assert!(empty[4].contains("-lc`, with your PATH and logins, and TM_INTEGRATION_BATCH") && empty[4].ends_with("nothing of terminum's token."), "{}", empty[4]);
-    let set = runs("p1", "/srv/billing", &Settings { check: "make smoke".into(), publish: "scripts/publish.sh".into(), after: "make install".into(), ..Settings::default() });
-    assert!(set[1].starts_with("Check runs `make smoke` in ") && set[2].starts_with("Publish runs `scripts/publish.sh` in "), "{set:?}");
-    assert_eq!(set[3], "After runs `make install` in /srv/billing, once a batch.");
+    assert_eq!(&empty[0..3], ["Prepare: skipped.", "Verify: skipped.", "Queue: terminum's queue, in the order tasks were queued."], "the stages in order (AC-198)");
+    assert!(empty[3].contains("integration/p1/tree: origin/main and a merge of each task's commit"), "{}", empty[3]);
+    assert_eq!(&empty[4..8], ["No check: a candidate that merges is published.", "terminum pushes the candidate to origin/main, never forced.", "Nothing runs after.", "Nothing cleans up after a batch."]);
+    assert!(empty[8].contains("-lc`, with your PATH and logins, and TM_INTEGRATION_BATCH") && empty[8].ends_with("nothing of terminum's token."), "{}", empty[8]);
+    let set = runs("p1", "/srv/billing", &Settings { verify: "make test-changed".into(), check: "make smoke".into(), publish: "scripts/publish.sh".into(), after: "make install".into(),
+        cleanup: "make prune".into(), ..Settings::default() });
+    assert!(set[1].starts_with("Verify runs `make test-changed` in ") && set[1].ends_with("verify-<task>, a tree of its own at the task's commit."), "{set:?}");
+    assert!(set[4].starts_with("Check runs `make smoke` in ") && set[5].starts_with("Publish runs `scripts/publish.sh` in "), "{set:?}");
+    assert_eq!(&set[6..8], ["After runs `make install` in /srv/billing, once a batch.", "Cleanup runs `make prune` in /srv/billing, after After."]);
 }
