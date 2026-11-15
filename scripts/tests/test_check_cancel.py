@@ -110,7 +110,7 @@ class OuterCancellation(unittest.TestCase):
                        f"root=Path({tmp!r})\ncheck_changed.REPO=root\n"
                        "check_changed.changed_files=lambda _: (['scripts/probe.py'],'HEAD')\n"
                        "check_changed.touched_cases=lambda *_: set()\ncheck_changed.caseless=lambda _: []\n"
-                       "check_changed.git=lambda *_: ''\ncheck_changed.tree_id=lambda: 'cancel-probe'\n"
+                       "check_changed.git=lambda *_, **__: ''\ncheck_changed.tree_id=lambda: 'cancel-probe'\n"
                        f"check_changed.run_guard=lambda ignored,command,**kw: check_cancel.run_guard({guard!r},command,**kw)\n"
                        f"check_changed.plan=lambda *_: [('probe',{command!r}),('later',{('touch '+shlex.quote(str(later)))!r})]\n"
                        "run=check_changed.run\ncheck_changed.run=lambda steps: run(steps,root=root,gate=False)\n"
