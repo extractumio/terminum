@@ -778,6 +778,13 @@ Scenario: AC-146 edge — make check by hand
   Given the load average stays over 16 for 15 minutes
   When someone runs make check
   Then it ends with exit 75: "check: the machine is busy: load 31.0 over 16 for 15 minutes: nothing ran"
+
+Scenario: AC-146 edge — Copy preview's complexity guard excludes scheduling delays
+  Given a copy of a million newlines followed by text, a million spaces followed by text, or half a million short lines
+  When the page-unit checks run alongside other checks
+  Then each preview has the expected line count and first line, and uses less than one second of user and system CPU time in its isolated test process
+  And time spent waiting to be scheduled does not count toward that budget
+  But a quadratic preview that exceeds the CPU budget fails the guard
 ```
 
 ## 6. Flow and sequence diagrams
