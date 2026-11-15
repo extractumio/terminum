@@ -31,9 +31,13 @@ const ON_THIS_MAC: &str = "Integration runs for projects on this Mac.";
 pub struct Settings {
     pub on: bool,
     pub target: String,
+    /// the seven stages' commands (AC-198); Queue has none: terminum's queue
+    pub prepare: String,
+    pub verify: String,
     pub check: String,
     pub publish: String,
     pub after: String,
+    pub cleanup: String,
     pub batch_most: i64,
     pub check_minutes: i64,
     pub agent: Option<String>,
@@ -48,7 +52,8 @@ pub struct Settings {
 
 impl Default for Settings {
     fn default() -> Self {
-        Settings { on: false, target: "origin/main".into(), check: String::new(), publish: String::new(), after: String::new(),
+        Settings { on: false, target: "origin/main".into(), prepare: String::new(), verify: String::new(), check: String::new(), publish: String::new(),
+            after: String::new(), cleanup: String::new(),
             batch_most: 8, check_minutes: 90, agent: None, agent_budget_minutes: 60, red_rounds_most: 3, prompt: String::new(), size: 4 }
     }
 }
@@ -60,7 +65,8 @@ impl Settings {
     }
 
     fn shown(&self) -> Value {
-        json!({"on": self.on, "target": self.target, "check": self.check, "publish": self.publish, "after": self.after,
+        json!({"on": self.on, "target": self.target, "prepare": self.prepare, "verify": self.verify, "check": self.check,
+            "publish": self.publish, "after": self.after, "cleanup": self.cleanup,
             "batch_most": self.batch_most, "check_minutes": self.check_minutes, "agent": self.agent,
             "agent_budget_minutes": self.agent_budget_minutes, "red_rounds_most": self.red_rounds_most, "prompt": self.prompt})
     }
@@ -77,9 +83,12 @@ impl Settings {
         Ok(Settings {
             on: match &body["on"] { Value::Null => false, v => v.as_bool().ok_or("on: true or false")? },
             target: text("target", &d.target)?.trim().to_string(),
+            prepare: text("prepare", "")?.trim().to_string(),
+            verify: text("verify", "")?.trim().to_string(),
             check: text("check", "")?.trim().to_string(),
             publish: text("publish", "")?.trim().to_string(),
             after: text("after", "")?.trim().to_string(),
+            cleanup: text("cleanup", "")?.trim().to_string(),
             batch_most: number("batch_most", d.batch_most, BATCH)?,
             check_minutes: number("check_minutes", d.check_minutes, CHECK_MINUTES)?,
             agent: match &body["agent"] { Value::Null => None, Value::String(a) => Some(a.clone()).filter(|a| !a.is_empty()), _ => return Err("agent: an agent's id, or none.".into()) },
@@ -98,7 +107,7 @@ const RED_ROUNDS: &str = "Red rounds: 1 to 10.";
 
 /// The fields' own rules, whatever the project: AC-186's refusals in its words.
 pub fn check_fields(s: &Settings) -> Result<(), String> {
-    for (name, line) in [("Check", &s.check), ("Publish", &s.publish), ("After", &s.after)] {
+    for (name, line) in [("Prepare", &s.prepare), ("Verify", &s.verify), ("Check", &s.check), ("Publish", &s.publish), ("After", &s.after), ("Cleanup", &s.cleanup)] {
         if line.chars().count() > MOST_LINE || line.chars().any(char::is_control) {
             return Err(format!("{name}: one line, at most 2,000 characters."));
         }
@@ -150,10 +159,11 @@ pub fn check_place(dir: &FsPath, target: &str, git: &str) -> Result<(), String> 
 
 /// A project's settings; the defaults, off, when it has none.
 pub fn read(tx: &Transaction, project: &str) -> Result<Settings, String> {
-    tx.query_row("SELECT is_on, target, check_line, publish_line, after_line, batch_most, check_minutes, agent, agent_budget_minutes, red_rounds_most, prompt, size
-                  FROM project_integration WHERE project = ?1", [project], |r| Ok(Settings {
+    tx.query_row("SELECT is_on, target, check_line, publish_line, after_line, batch_most, check_minutes, agent, agent_budget_minutes, red_rounds_most, prompt, size,
+                         prepare_line, verify_line, cleanup_line FROM project_integration WHERE project = ?1", [project], |r| Ok(Settings {
         on: r.get::<_, i64>(0)? != 0, target: r.get(1)?, check: r.get(2)?, publish: r.get(3)?, after: r.get(4)?, batch_most: r.get(5)?,
         check_minutes: r.get(6)?, agent: r.get(7)?, agent_budget_minutes: r.get(8)?, red_rounds_most: r.get(9)?, prompt: r.get(10)?, size: r.get(11)?,
+        prepare: r.get(12)?, verify: r.get(13)?, cleanup: r.get(14)?,
     })).optional().map_err(sql).map(Option::unwrap_or_default)
 }
 
@@ -170,11 +180,13 @@ pub fn keep(tx: &Transaction, project: &str, s: &Settings) -> Result<(), String>
         super::agents::chosen(tx, agent, project)?;
     }
     let prompt = if s.prompt.trim() == DEFAULT_PROMPT.trim() { "" } else { s.prompt.as_str() };   // the default stays the default
-    tx.execute("INSERT INTO project_integration (project, is_on, target, check_line, publish_line, after_line, batch_most, check_minutes, agent, agent_budget_minutes, red_rounds_most, prompt)
-                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
+    tx.execute("INSERT INTO project_integration (project, is_on, target, check_line, publish_line, after_line, batch_most, check_minutes, agent, agent_budget_minutes, red_rounds_most, prompt,
+                  prepare_line, verify_line, cleanup_line)
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
                 ON CONFLICT (project) DO UPDATE SET is_on = ?2, target = ?3, check_line = ?4, publish_line = ?5, after_line = ?6, batch_most = ?7,
-                  check_minutes = ?8, agent = ?9, agent_budget_minutes = ?10, red_rounds_most = ?11, prompt = ?12",
-               rusqlite::params![project, s.on as i64, s.target, s.check, s.publish, s.after, s.batch_most, s.check_minutes, s.agent, s.agent_budget_minutes, s.red_rounds_most, prompt])
+                  check_minutes = ?8, agent = ?9, agent_budget_minutes = ?10, red_rounds_most = ?11, prompt = ?12, prepare_line = ?13, verify_line = ?14, cleanup_line = ?15",
+               rusqlite::params![project, s.on as i64, s.target, s.check, s.publish, s.after, s.batch_most, s.check_minutes, s.agent, s.agent_budget_minutes, s.red_rounds_most, prompt,
+                                 s.prepare, s.verify, s.cleanup])
         .map(drop).map_err(sql)
 }
 
@@ -193,16 +205,37 @@ pub fn tree_in(home: &FsPath, project: &str) -> PathBuf {
     home.join("integration").join(project).join("tree")
 }
 
+/// A queued task's own tree, where Prepare and Verify run at its commit (AC-198), beside the candidate's.
+pub fn verify_tree_in(home: &FsPath, project: &str, number: i64) -> PathBuf {
+    tree_in(home, project).with_file_name(format!("verify-{number}"))
+}
+
+/// Where a queued task's Prepare and Verify keep their log, beside its tree.
+pub fn verify_log_in(home: &FsPath, project: &str, number: i64) -> PathBuf {
+    tree_in(home, project).with_file_name(format!("verify-{number}.log"))
+}
+
+/// Where a batch's round keeps the log of its `step` (check, publish, after), beside its tree.
+pub fn log_in(home: &FsPath, project: &str, batch: i64, round: i64, step: &str) -> PathBuf {
+    tree_in(home, project).with_file_name(format!("batch-{batch}.{round}.{step}.log"))
+}
+
 /// "What runs", in terminumd's words: each line with the folder it runs in, and what it gets.
 fn runs(project: &str, dir: &str, s: &Settings) -> Vec<String> {
     let home = crate::config::home().to_string_lossy().to_string();
     let tree = crate::tmux::titles::tilde(&tree_of(project).to_string_lossy(), &home);
     let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".into());
+    let own = crate::tmux::titles::tilde(&tree_of(project).with_file_name("verify-<task>").to_string_lossy(), &home);
+    let task_tree = |name: &str, line: &str| if line.is_empty() { format!("{name}: skipped.") } else { format!("{name} runs `{line}` in {own}, a tree of its own at the task's commit.") };
     vec![
+        task_tree("Prepare", &s.prepare),
+        task_tree("Verify", &s.verify),
+        "Queue: terminum's queue, in the order tasks were queued.".to_string(),
         format!("The candidate is built in {tree}: {} and a merge of each task's commit.", s.target),
         if s.check.is_empty() { "No check: a candidate that merges is published.".into() } else { format!("Check runs `{}` in {tree}.", s.check) },
         if s.publish.is_empty() { format!("terminum pushes the candidate to {}, never forced.", s.target) } else { format!("Publish runs `{}` in {tree}.", s.publish) },
         if s.after.is_empty() { "Nothing runs after.".into() } else { format!("After runs `{}` in {dir}, once a batch.", s.after) },
+        if s.cleanup.is_empty() { "Nothing cleans up after a batch.".into() } else { format!("Cleanup runs `{}` in {dir}, after After.", s.cleanup) },
         format!("Each runs by your login shell, `{shell} -lc`, with your PATH and logins, and {}; nothing of terminum's token.", VARIABLES.join(", ")),
     ]
 }

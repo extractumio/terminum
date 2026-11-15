@@ -56,7 +56,8 @@ export async function webLook(browser, name) {
       const out = {
         heads: boxes.filter((b) => !(b.querySelector(".dhead h2") && b.querySelector(".dhead .x"))).map((b) => b.id),
         fields: [...new Set([...document.querySelectorAll(":is(dialog.dlg, .footform) .field:not(.lead)")].map(st))],
-        order: [...document.querySelectorAll(":is(dialog.dlg, .footform) .actions")].filter((a) => a.lastElementChild?.classList.contains("primary") === false).map((a) => a.parentElement.closest("[id]").id),
+        // a phone's window holds its ways on in its head's bar (phonewin.js): the primary is the last there
+        order: [...document.querySelectorAll(":is(dialog.dlg, .footform) .actions:not(.barkeys)")].filter((a) => (a.closest("dialog, .footform").querySelector(".barkeys") ?? a).lastElementChild?.classList.contains("primary") === false).map((a) => a.parentElement.closest("[id]").id),
         ask: [getComputedStyle(document.querySelector("#askbox .primary")).backgroundColor, getComputedStyle(document.getElementById("askfab")).backgroundColor],
       };
       boxes.forEach((b, i) => { b.hidden = shown[i]; });
@@ -114,7 +115,7 @@ export async function webLook(browser, name) {
       const list = await small(page, "#nav button:not(.item)", 40);
       await pressFoot(page, "#addhostbtn");
       const form = await small(page, "#addhost button", 40);
-      await page.click("#addhostcancel");
+      await page.click("#addhost .dhead .x");   // a phone's window: × is its Cancel (terminum.md AC-173)
       await page.click("#drawerclose");
       await pause(page, 300);
       const bar = await small(page, "#bar button:not(.seg button)", 40);

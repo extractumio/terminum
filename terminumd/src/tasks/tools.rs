@@ -16,7 +16,7 @@ use super::query::{self, Query};
 use super::store::{Store, DEFAULT_PROJECT};
 use crate::plans::rules;
 
-pub const NAMES: [&str; 15] = ["list_tasks", "get_task", "create_task", "update_task", "take_task", "move_task", "ask_human", "add_comment", "attach_file", "get_file", "finish_task", "integrate", "withdraw_integration", "integration_status", "dispatch_task"];
+pub const NAMES: [&str; 18] = ["list_tasks", "get_task", "create_task", "update_task", "take_task", "move_task", "ask_human", "add_comment", "attach_file", "get_file", "finish_task", "integrate", "withdraw_integration", "integration_status", "integration_return", "integration_recheck", "integration_add_fix", "dispatch_task"];
 /// All Auto-Dispatcher's round may call (terminum-dispatcher.md AC-170): it reads, starts by dispatch_task and finishes
 /// its own; a tool added later is not its until named here.
 const A_ROUNDS: [&str; 4] = ["list_tasks", "get_task", "get_file", "finish_task"];
@@ -58,7 +58,7 @@ pub struct Who {
     pub dir: Option<String>,
 }
 
-pub(super) fn arg<'a>(args: &'a Value, key: &str) -> Result<&'a str, String> {
+pub(crate) fn arg<'a>(args: &'a Value, key: &str) -> Result<&'a str, String> {
     args[key].as_str().filter(|s| !s.is_empty()).ok_or_else(|| format!("{key} is required"))
 }
 
@@ -143,7 +143,7 @@ fn asked(tx: &Transaction, who: &Who, waits: bool) -> Result<&'static str, Strin
 }
 
 /// Who writes: the run's agent of the pool, else the agent and the session's title.
-pub(super) fn author(tx: &Transaction, who: &Who) -> Result<String, String> {
+pub(crate) fn author(tx: &Transaction, who: &Who) -> Result<String, String> {
     match crate::dispatcher::runs::in_pane(tx, &who.key)? {
         Some(r) => ops::pool_user(tx, &r.agent_id, &r.agent_name),
         None => ops::agent_user(tx, &who.agent, &who.title),
@@ -192,13 +192,19 @@ pub fn run(store: &Store, state_dir: &Path, who: &Who, tool: &str, args: &Value)
         "integrate" => return super::integration_queue::integrate(store, who, args),
         "withdraw_integration" => return super::integration_queue::withdraw(store, who, args),
         "integration_status" => return super::integration_queue::status(store, who, args).map(|text| (text, Vec::new())),
+        // only the run of a red batch's integration task decides for it (terminum-integration.md AC-194)
+        "integration_return" => return store.with(|tx| crate::integrate::agent::give_back(tx, who, args, ops::now())).map(|t| (t, Vec::new())),
+        "integration_recheck" => return store.with(|tx| crate::integrate::agent::recheck(tx, who, args, ops::now())).map(|t| (t, Vec::new())),
+        "integration_add_fix" => return crate::integrate::agent::add_fix(store, who, args, ops::now()).map(|t| (t, Vec::new())),
         _ => {}
     }
     let at = ops::now();
     store.with(|tx| {
+        // A task tool can overtake its queued first-prompt hook: its status must follow taking the run (AC-157).
+        let started = if matches!(tool, "move_task" | "ask_human" | "finish_task") { crate::dispatcher::taking(tx, &who.key)? } else { Vec::new() };
         // only what writes makes the agent's user: reading leaves no row; a run's is its agent of the pool
         let me = || author(tx, who);
-        match tool {
+        let (text, mut changed) = match tool {
             "create_task" => {
                 let project = who.project.clone().unwrap_or_else(|| DEFAULT_PROJECT.to_string());
                 let mut faults = Vec::new();
@@ -294,6 +300,9 @@ pub fn run(store: &Store, state_dir: &Path, who: &Who, tool: &str, args: &Value)
             "finish_task" => {
                 let id = arg(args, "id")?;
                 let t = movable(tx, who, id)?;
+                if let Some(why) = crate::integrate::agent::finish_refused(tx, &t.key)? {
+                    return Err(why);
+                }
                 after_its_subtasks(tx, &t)?;
                 let me = me()?;
                 let result = rules::clean(arg(args, "result")?);
@@ -302,26 +311,26 @@ pub fn run(store: &Store, state_dir: &Path, who: &Who, tool: &str, args: &Value)
                 let form = closeout::form_of(tx, &t.key)?;
                 let lacks = closeout::missing(&result, form);
                 if !lacks.is_empty() {
-                    return Ok((closeout::missing_words(id, &t.status, &lacks), vec![id.to_string()]));
-                }
+                    Ok((closeout::missing_words(id, &t.status, &lacks), vec![id.to_string()]))
                 // work its own Outcome says is not done is no DONE: it waits for a human or fails (AC-123, AC-157)
-                if form == closeout::SECTIONS.as_slice() && closeout::not_done(&result) {
-                    return Ok((closeout::not_done_words(id, &t.status), vec![id.to_string()]));
+                } else if form == closeout::SECTIONS.as_slice() && closeout::not_done(&result) {
+                    Ok((closeout::not_done_words(id, &t.status), vec![id.to_string()]))
+                } else {
+                    ops::move_to(tx, &me, id, "DONE", at)?;
+                    crate::dispatcher::runs::finished(tx, &t.key)?;
+                    // what it leaves is on the board by terminum's word, and what it names and is not there is said (AC-166)
+                    let mut said = vec![format!("{id} is DONE, with your result.")];
+                    said.extend(closeout::made_line(tx, &t)?);
+                    let unknown = closeout::unknown_ids(tx, &result)?;
+                    if !unknown.is_empty() {
+                        said.push(closeout::unknown_words(&unknown));
+                    }
+                    let untracked = closeout::untracked(tx, &result)?;
+                    if !untracked.is_empty() {
+                        said.push(closeout::untracked_words(&untracked));
+                    }
+                    Ok((said.join(" "), vec![id.to_string()]))
                 }
-                ops::move_to(tx, &me, id, "DONE", at)?;
-                crate::dispatcher::runs::finished(tx, &t.key)?;
-                // what it leaves is on the board by terminum's word, and what it names and is not there is said (AC-166)
-                let mut said = vec![format!("{id} is DONE, with your result.")];
-                said.extend(closeout::made_line(tx, &t)?);
-                let unknown = closeout::unknown_ids(tx, &result)?;
-                if !unknown.is_empty() {
-                    said.push(closeout::unknown_words(&unknown));
-                }
-                let untracked = closeout::untracked(tx, &result)?;
-                if !untracked.is_empty() {
-                    said.push(closeout::untracked_words(&untracked));
-                }
-                Ok((said.join(" "), vec![id.to_string()]))
             }
             "get_file" => {
                 if who.dir.is_none() {
@@ -330,7 +339,13 @@ pub fn run(store: &Store, state_dir: &Path, who: &Who, tool: &str, args: &Value)
                 Ok((format!("{DATA}\n{}", task_file(tx, state_dir, who, args)?.1.display()), Vec::new()))
             }
             other => Err(format!("unknown tool {other}")),
+        }?;
+        for id in started {
+            if !changed.contains(&id) {
+                changed.push(id);
+            }
         }
+        Ok((text, changed))
     })
 }
 
@@ -424,4 +439,4 @@ fn file_of(who: &Who, args: &Value) -> Result<(String, Box<dyn std::io::Read>), 
 
 #[cfg(test)]
 #[path = "tools_tests.rs"]
-pub(super) mod tests;
+pub(crate) mod tests;

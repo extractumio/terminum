@@ -119,6 +119,7 @@ export function agentsSection({ getMeta, chosen, reload, refreshQueue, slots: co
     if (dialog.open && editing) queue.show(editing, queueOf(editing));   // its window follows what other pages did
     if (pressed || dragging() || now === drawn) return;
     drawn = now;
+    box.dataset.n = agents.length;                 // a phone's line says it (kanbanphone.js)
     list.replaceChildren(...agents.map(target));
     if (!agents.length) list.append(el("p", "colempty", chosen().length === 1 ? `${projectName(chosen()[0]) ?? "This project"} has no agents yet: add one to run its tasks.` : "No agents yet: add one to run tasks."));
     hint.hidden = !tasks;

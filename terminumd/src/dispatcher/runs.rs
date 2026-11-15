@@ -76,9 +76,11 @@ pub enum How {
     Schedule,
     /// Auto-Dispatcher's round, or the task a round chose
     Auto,
+    /// a red batch's integration task, on its project's integration agent (terminum-integration.md AC-194)
+    Integration,
 }
 
-const HOWS: [(How, &str); 6] = [(How::Run, "run"), (How::Drop, "drop"), (How::New, "new"), (How::Session, "session"), (How::Schedule, "schedule"), (How::Auto, "auto")];
+const HOWS: [(How, &str); 7] = [(How::Run, "run"), (How::Drop, "drop"), (How::New, "new"), (How::Session, "session"), (How::Schedule, "schedule"), (How::Auto, "auto"), (How::Integration, "integration")];
 
 impl How {
     pub fn word(self) -> &'static str {
@@ -87,7 +89,7 @@ impl How {
 
     /// Dispatcher's own start, no user's.
     pub fn automatic(self) -> bool {
-        matches!(self, How::Schedule | How::Auto)
+        matches!(self, How::Schedule | How::Auto | How::Integration)
     }
 
     /// The way a page's press may name, else the Run key's: only terminumd says another.
@@ -161,6 +163,7 @@ pub struct Run {
     pub pane_key: Option<String>,
     pub agent_session: Option<String>,
     pub state: Phase,
+    /// The first prompt awaiting its hook's acknowledgment, also while a task tool has accepted the work.
     pub prompt: Option<String>,
     pub turn_ended: bool,
     pub open_tools: i64,

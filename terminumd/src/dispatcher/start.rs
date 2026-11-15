@@ -150,6 +150,9 @@ async fn did_not_start(app: &Shared, r: &Run, at: Option<(&Server, &str)>, why: 
     }
     let id = r.id.clone();
     let done = store(app, move |tx| {
+        if !runs::by_id(tx, &id)?.is_starting() {
+            return Ok(());                            // its first hook or task tool accepted it while the screen was read
+        }
         // its task never went in: no conversation of it to go on with, whatever session its agent opened (AC-122)
         let now = runs::change(tx, &id, |r| { r.state = Phase::Gone; r.prompt = None; r.agent_session = None; })?;
         super::fail(tx, &now, &words)
@@ -180,6 +183,9 @@ pub fn watch(app: &Shared, id: &str) {
 async fn now_asking(app: &Shared, r: &Run) {
     let id = r.id.clone();
     let moved = store(app, move |tx| {
+        if !runs::by_id(tx, &id)?.is_starting() {
+            return Ok(());                            // a stale gate read cannot undo accepted work (AC-157)
+        }
         let now = runs::change(tx, &id, |r| r.state = Phase::Asking)?;
         move_task(tx, &now, "WAIT FOR HUMAN", "Answer in its window")
     }).await;
@@ -303,6 +309,32 @@ pub async fn respawn(app: &Shared, server: &Arc<Server>, pane: &str, old: &str, 
 mod tests {
     use super::*;
     use crate::testutil::Tmux;
+
+    #[tokio::test]
+    async fn ac157_a_stale_start_watch_cannot_overwrite_accepted_work() {
+        use crate::tasks::{ops::NewTask, store::HUMAN, tools::{self, Who}};
+        let (root, app) = crate::testutil::app_with_tasks("start-stale");
+        let key = app.tmux.local.key("%1");
+        let (task, stale) = app.tasks.with(|tx| {
+            let t = ops::create(tx, HUMAN, NewTask { title: "early question".into(), session: Some(key.clone()), ..Default::default() }, 1)?;
+            let like = Run { agent_id: "a".into(), agent_name: "Fixer".into(), project: "default".into(), prompt: Some("First prompt".into()), agent_session: Some("c0ffee".into()), ..Default::default() };
+            let id = runs::add(tx, &like, &[t.key], Default::default(), 2)?;
+            let r = runs::change(tx, &id, |r| { r.state = Phase::Typed; r.pane_key = Some(key.clone()); })?;
+            Ok((t.id, r))
+        }).unwrap();
+        let who = Who { key, agent: "claude".into(), title: "Fixer".into(), project: Some("default".into()), dir: None };
+        tools::run(&app.tasks, &root, &who, "ask_human", &serde_json::json!({"id": task, "questions": "Which API? Recommended: v2."})).unwrap();
+        let accepted = app.tasks.with(|tx| runs::by_id(tx, &stale.id)).unwrap();
+        now_asking(&app, &stale).await;
+        did_not_start(&app, &stale, None, "the earlier timeout expired").await;
+        app.tasks.with(|tx| {
+            assert_eq!(runs::by_id(tx, &stale.id)?, accepted);
+            assert_eq!(ops::get(tx, &task)?.status, "WAIT FOR HUMAN");
+            Ok(())
+        }).unwrap();
+        drop(app);
+        std::fs::remove_dir_all(root).unwrap();
+    }
 
     fn until(mut ok: impl FnMut() -> bool) -> bool {
         let end = Instant::now() + Duration::from_secs(10);

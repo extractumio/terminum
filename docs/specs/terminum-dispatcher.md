@@ -746,7 +746,7 @@ Scenario: AC-130 failure — hooks missing there
 Scenario: AC-138 happy path — over the board
   Given a pool of Opus reviewer (Claude Code, high), Fast fixer (Claude Code) and Codex (Codex, low)
   Then three rectangles stand over the columns, each in its color, with its name, kind, effort, its subscription's two stripes (AC-168) and one dot per live session
-  And each is a column wide, on the columns' own tracks: four to a row, the fifth track holding + Agent; a fifth agent starts the next row; a phone keeps one row that scrolls
+  And each is a column wide, on the columns' own tracks: four to a row, the fifth track holding + Agent; a fifth agent starts the next row; a window under 860 px keeps one row that scrolls; on a phone (600 px or narrower) they stand one a row in the sheet its line opens (terminum-kanban.md AC-105)
 
 Scenario: AC-138 happy path — its dots
   Given Opus reviewer with API-12's session working and API-14's waiting at its input box
@@ -1098,6 +1098,17 @@ Scenario: AC-157 happy path — the agent asks
   Then Dispatcher checks @terminum-run and closes the session as AC-125 does, keeping no screen: "Session closed: it waits for the human's answers. RUN resumes this conversation."
   And its slot is free (AC-141), and the task's window names its agent and "conversation c0ffee"
 
+Scenario: AC-157 edge — the first prompt's hook is delayed
+  Given Dispatcher sent the run's first prompt, but its hook still waits to be applied
+  When its agent calls ask_human before that hook is applied
+  Then taking the run precedes the question, in the tool's transaction, for every task of the run
+  And the delayed hook keeps WAIT FOR HUMAN, the questions and the run's asked flag, recording its conversation without starting the work again
+  And a task already finished or failed by that agent stays finished or failed; one queued for integration stays INTEGRATION
+  And a finished task's result stays recorded, and other tasks still open wait with the question (AC-185)
+  And a start watcher's earlier screen or timeout reading cannot change a run already accepted by its hook or tool
+  When the human runs the conversation again with answers
+  Then the new work starts its clocks anew and goes IN PROGRESS; its own early question or result survives its delayed first hook too
+
 Scenario: AC-157 happy path — the human answers
   When the user writes "v2, and keep v1 a month" under Comment, or in several comments, and presses RUN
   Then a new window runs the resume of §9 on that agent in the run's first folder, and the prompt is "API-12: the human answered your questions in the comments below. Go on with the task, taking them into account." with each human comment since the questions
@@ -1264,7 +1275,7 @@ Scenario: AC-169 edge — a press for several tasks
 ```gherkin
 Scenario: AC-170 happy path — the switch and its settings
   Given the board, whatever projects it shows
-  Then its bar holds "Auto-Dispatch", a switch with its state, and a cog; a phone's bar too, without the words; the project's window holds no key of it
+  Then its bar holds "Auto-Dispatch", a switch with its state, and a cog; a window under 860 px too, without the words; on a phone (600 px or narrower) the three stand first in the sheet its line opens, the line saying the state (terminum-kanban.md AC-105); the project's window holds no key of it
   When project api is shown alone, an agent that picks chosen for it, and the user presses the switch
   Then it is on for api, "ON", on every page; a press again turns it off, "OFF", its agents and filters kept
   When no agent picks for api yet, or it turned itself off, and the user presses the switch
@@ -1702,6 +1713,8 @@ CREATE TABLE runs (id TEXT PRIMARY KEY, task TEXT NOT NULL REFERENCES tasks, age
 
 `asked` (AC-157): its agent asked a human itself (`ask_human`), set in that call's transaction, cleared by its own move off it and by new work.
 
+Taking a first prompt is one transition, shared by its hook and a status-changing task tool. The tool accepts every task of its run before its mutation in the same transaction. `prompt` stays until the matching first hook acknowledges it, including in `working`; that acknowledgment records the conversation and tells the pages, without resetting clocks, tools or task outcomes.
+
 **Waits** (AC-158, AC-169): a press at a slot's limit that agreed to the queue (`"queue": true`), one a task, its place in the line kept when it is pressed anew:
 
 ```sql
@@ -1878,7 +1891,7 @@ Depends on `terminum-kanban.md`'s Stage 1. All three stages belong to terminum's
 - [x] AC-143 — `cargo test dispatcher::usage`, `cargo test tasks::agents`, `web/test/e2e_liveboardagents.mjs`
 - [x] AC-168 — `cargo test subscriptions`, `cargo test usageask`, `cargo test usageread`, `cargo test settings::tests::ac168`, `cargo test cli::statusline`, `cargo test cli::hooktokens`, `scripts/e2e_hooks.py`, `web/test/e2e_liveboardsubs.mjs` (a stripe under 40% green, over 90% red)
 - [ ] AC-156 — `cargo test tasks::agents`, `cargo test dispatcher::press`, `web/test/e2e_liveboardagents.mjs`, `web/test/e2e_livedispatcher.mjs` (the inline words), `SECURITY.md` carries the operator's command
-- [ ] AC-157 — `cargo test dispatcher::plan`, `cargo test dispatcher::press`, `cargo test tasks::tools`, `cargo test cli::mcp`, `web/test/e2e_livedispatcher.mjs`
+- [ ] AC-157 — `cargo test dispatcher::plan`, `cargo test dispatcher::press`, `cargo test dispatcher::hooks` (held initial event, early tools and mixed outcomes), `cargo test dispatcher::start` (stale start watcher), `cargo test tasks::tools`, `cargo test tasks::integration_queue` (early integration), `cargo test cli::mcp`, `web/test/e2e_livedispatcher.mjs`
 - [ ] AC-158 — `cargo test dispatcher::waits`, `web/test/e2e_liveboardagents.mjs`
 - [x] AC-169 — `cargo test dispatcher::waits`, `web/test/e2e_livequeue.mjs` (a wide and a phone size), `web/test/e2e_liveboardagents.mjs`
 - [x] AC-170 — `cargo test dispatcher::auto`, `cargo test tasks::auto`, `cargo test tasks::tools` (a round's pane), `web/test/e2e_liveauto.mjs` on `scripts/fake_agent.py`; no test of its own: two dispatch_task calls at once through the socket, a new place among the cards leaving the wait as it was, a candidate with an earlier conversation started anew; not run on a real model: whether a real agent follows the round's words

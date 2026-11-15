@@ -6,7 +6,7 @@
 // boxes: e2e_taskwin.mjs; the schedules' page: e2e_liveschedules.mjs.
 
 import { check, coversWindow, runningIn } from "./check.mjs";
-import { drawn, openPage, SIZES } from "./fake.mjs";
+import { drawn, openPage, PHONE, SIZES } from "./fake.mjs";
 
 // the text boxes with no key (AC-184): the terminal's own input, a project's folder (a path), a session's last lines
 // (a window that is itself a document)
@@ -51,13 +51,19 @@ export async function webExpand(browser, name) {
     await b.page.keyboard.press("Escape");
     const back = await state(b.page, "schedbox", "schedprompt");
     check(`AC-184 Esc gives it back to its dialog, which stays open (${size})`, !back.full && back.open && back.pressed === "false", JSON.stringify(back));
-    await pressKey(b.page, "newbox", "newtext", "");
-    const typing = await coversWindow(b.page, FULL);
-    await b.page.keyboard.type("typed over the whole window");
-    await b.page.click("#newtext ~ .xkey");
-    const after = await state(b.page, "newbox", "newtext");
-    check(`AC-184 the new task's text: typed over the whole window, its key gives it back with the words and the focus (${size})`,
-      typing.covers && !after.full && after.open && after.value === "typed over the whole window" && after.focus === "newtext", JSON.stringify({ typing, after }));
+    if (device === PHONE) {                          // a phone's window covers the screen already: its text field has no key
+      const none = await b.page.evaluate(() => { for (const d of document.querySelectorAll("dialog[open]")) d.close(); document.getElementById("newbox").showModal();
+        return document.querySelector("#newtext ~ .xkey").getBoundingClientRect().width; });
+      check(`AC-184 on a phone the new task's text field has no key to the whole window (${size})`, none === 0, String(none));
+    } else {
+      await pressKey(b.page, "newbox", "newtext", "");
+      const typing = await coversWindow(b.page, FULL);
+      await b.page.keyboard.type("typed over the whole window");
+      await b.page.click("#newtext ~ .xkey");
+      const after = await state(b.page, "newbox", "newtext");
+      check(`AC-184 the new task's text: typed over the whole window, its key gives it back with the words and the focus (${size})`,
+        typing.covers && !after.full && after.open && after.value === "typed over the whole window" && after.focus === "newtext", JSON.stringify({ typing, after }));
+    }
     await pressKey(b.page, "runbox", "runprompt", LONG);
     const run = await coversWindow(b.page, FULL);
     check(`AC-184 RUN's What will be sent covers the window, past its own 30% (${size})`, run.covers, JSON.stringify(run));

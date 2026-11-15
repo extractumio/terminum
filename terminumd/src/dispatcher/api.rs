@@ -102,6 +102,10 @@ impl Press {
     /// saw, as an agent may have changed a task meanwhile (AC-121).
     fn first_words(&self, tx: &rusqlite::Transaction, tasks: &[Task]) -> Result<Facts, String> {
         let mut goes = facts(tx, tasks)?;
+        // a batch's integration task speaks the project's Prompt with the batch's facts (terminum-integration.md AC-194)
+        if self.how == How::Integration {
+            goes.integration = crate::integrate::agent::prompt_of(tx, &tasks[0].key)?;
+        }
         goes.auto = self.auto;
         goes.manager = self.manager.is_some();
         if self.prompt_rev.as_ref().is_some_and(|rev| *rev != goes.rev()) {
@@ -219,6 +223,12 @@ pub(super) async fn press_auto(app: &Shared, id: &str, agent: &str) -> Result<Va
     pressed(app, id, Press { agent: Some(agent.to_string()), auto: true, fresh: true, how: How::Auto, ..Default::default() }).await
 }
 
+/// A red batch's integration task pressed on its project's integration agent (terminum-integration.md AC-194):
+/// Dispatcher's own start; with no room it waits in the agent's queue.
+pub(crate) async fn press_integration(app: &Shared, id: &str, agent: &str) -> Result<Value, String> {
+    pressed(app, id, Press { agent: Some(agent.to_string()), queue: true, how: How::Integration, ..Default::default() }).await
+}
+
 /// The press on RUN: a comment is kept whatever follows (AC-122).
 async fn press(State(app): State<Shared>, Path(id): Path<String>, Json(mut body): Json<Press>) -> Response {
     body.manager = None;
@@ -331,6 +341,13 @@ async fn first_run(app: &Shared, tasks: &[Task], body: Press, kept: Press, comme
     let t = &tasks[0];
     let (all, said, attached, closing) = (tasks.to_vec(), comment, body.files.clone(), body.close.is_some());
     let (a, host, dir, server) = place(app, &t.project, body.agent.clone()).await?;
+    // a batch's integration task runs in a worktree of its own at the candidate, never the project's folder (AC-194)
+    let dir = if body.how == How::Integration {
+        let key = t.key.clone();
+        store(app, move |tx| crate::integrate::agent::tree_of_task(tx, &key)).await?.unwrap_or(dir)
+    } else {
+        dir
+    };
     if let Some(holder) = &body.close {
         close_idle(app, holder, &tasks.iter().map(|t| t.id.as_str()).collect::<Vec<_>>().join(", ")).await?;
     }

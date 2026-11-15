@@ -55,7 +55,7 @@ const measure = (page) => page.evaluate(async (meta) => {
     over: body.scrollWidth - body.clientWidth,
     // its keys at the window's foot, outside what scrolls (terminum.md AC-173)
     acts: (() => { body.scrollTop = 0; const a = document.getElementById("taskacts"), r = a.getBoundingClientRect(), d = document.getElementById("taskbox").getBoundingClientRect();
-      return { keys: [...a.children].map((b) => b.textContent).join(), inBody: body.contains(a), shown: r.top >= body.getBoundingClientRect().bottom - 1 && r.bottom <= d.bottom + 1, scrolls: body.scrollHeight > body.clientHeight }; })(),
+      return { keys: [...a.children].map((b) => b.textContent).join(), bar: [...document.querySelectorAll("#taskbox .barkeys > button")].map((b) => b.textContent).join(), inBody: body.contains(a), shown: r.top >= body.getBoundingClientRect().bottom - 1 && r.bottom <= d.bottom + 1, scrolls: body.scrollHeight > body.clientHeight }; })(),
   };
 }, META);
 
@@ -106,8 +106,9 @@ export async function webTaskWin(browser, name) {
       m.said.tag === "PRE" && m.said.screen === SCREEN && m.said.words === "Session did not start: no Enter" && m.said.wide, JSON.stringify(m.said));
     check("AC-149 a line of history that only holds ``` lines stays as it was written", m.plain.screens === 1 && m.plain.words === TASK.history[1].text, JSON.stringify(m.plain));
     check("AC-149 nothing reaches past the window's edge", m.over <= 0, String(m.over));
-    check("AC-173 its keys stand at the window's foot, in sight while the task scrolls above them",
-      m.acts.keys === "Archive,Save,Run" && !m.acts.inBody && m.acts.shown, JSON.stringify(m.acts));
+    // a phone's window (e2e_phonewin.mjs): Save and Run in its bar, Archive in the row under the task
+    check("AC-173 its keys stand at the window's foot (a phone: its ways on in its bar), in sight while the task scrolls above them",
+      (phone ? m.acts.keys === "Archive" && m.acts.bar === "Save,Run" : m.acts.keys === "Archive,Save,Run" && !m.acts.bar) && !m.acts.inBody && m.acts.shown, JSON.stringify(m.acts));
     // the text being edited: its head holds the word alone, so Text stays 12 px under the fields and 4 px over its field
     await f.page.click('#taskbody .tasktext button[aria-label="Edit"]');
     const edit = await f.page.evaluate(() => { const top = (s) => document.querySelector(`#taskbody ${s}`).getBoundingClientRect();
