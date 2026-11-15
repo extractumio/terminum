@@ -23,6 +23,7 @@ import { panelMedia } from "./e2e_panel_media.mjs";
 import { panelDrop } from "./e2e_panel_drop.mjs";
 import { panelDocs } from "./e2e_panel_docs.mjs";
 import { panelSaves } from "./e2e_panel_saves.mjs";
+import { panelForeign } from "./e2e_panel_foreign.mjs";
 import { NO_SIGNALS } from "./process-stop.mjs";
 import { watchDiagnostics } from "./e2e_watch.mjs";
 
@@ -399,27 +400,7 @@ try {
   }
   check("AC 09 … with the unsaved edit", (await page.textContent(".cm-content")).includes("# kept through a squatter"));
 
-  // AC 09 a pane's state read on the last proof as terminumd went, answered by another program on the
-  // port ({} here; a body cut off, as WebKit hands one after a restart: TERM-56), is not taken: the
-  // panel proves the port again and reads it once more
-  const notRead = "Panel state not read: the answer on terminumd's port is not terminumd's";
-  const foreign = async (body, foreignReads) => {
-    const fp = await context.newPage();
-    fp.on("pageerror", (e) => errors.push(`foreign: ${thrown(e)}`));
-    let reads = 0;
-    await fp.route("**/fb/api/workspace?*", (r) => (r.request().method() === "GET" && reads++ < foreignReads ? r.fulfill({ status: 200, contentType: "application/json", body }) : r.fallback()));
-    await fp.goto(panelUrl());
-    return { fp, reads: () => reads };
-  };
-  for (const body of ["{}", '{"rev":1,"ro']) {
-    const { fp, reads } = await foreign(body, 1);
-    await within(`AC 09 a pane's state answered ${body} is read again, from terminumd`, (ms) => fp.waitForSelector(row("src"), { timeout: ms }));
-    check("AC 09 … read again, nothing said", reads() >= 2 && (await fp.textContent("#toast")) !== notRead, String(reads()));
-    await fp.close();
-  }
-  const { fp } = await foreign("{}", Infinity);
-  await within("AC 09 … answered so twice, it is said", (ms) => fp.waitForFunction((t) => document.getElementById("toast").textContent === t, notRead, { timeout: ms }));
-  await fp.close();
+  await panelForeign(context, errors);   // AC-52, AC-53, AC-56, AC-71
 
   // AC-53 only regular files are read; AC-56 a large text file saves, a body over the limit is 413
   const t0 = Date.now();

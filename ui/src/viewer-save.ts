@@ -4,7 +4,7 @@
 // Each re-check and save takes a new `gen`: an answer whose `gen` is no longer the document's
 // is older than another request's and is dropped.
 
-import { api, ApiError, basename, toast, type FileView } from "./api";
+import { api, ApiError, basename, isEtag, isFileView, toast, type FileView } from "./api";
 import { ask } from "./dialogs";
 import type { Doc } from "./viewer-parts";
 
@@ -31,7 +31,7 @@ async function doSave(path: string, d: Doc, force: boolean, h: SaveHost): Promis
   const text = d.state.sliceDoc();
   try {
     const r = await api<{ etag: string }>("PUT", "/api/file", {
-      query: { path }, body: { text }, host: d.host, headers: { "If-Match": `"${force ? "*" : d.file.etag}"` },
+      query: { path }, body: { text }, host: d.host, headers: { "If-Match": `"${force ? "*" : d.file.etag}"` }, is: isEtag,
     });
     if (d.file.path !== path) {
       await h.revalidate(d.file.path, d);
@@ -74,7 +74,7 @@ export async function revalidateDoc(
   const gen = ++d.gen;
   const stale = () => d.gen !== gen || d.file?.path !== path;
   try {
-    const f = await api<FileView | undefined>("GET", "/api/file", { query: { path }, host: d.host, headers: { "If-None-Match": `"${d.file.etag}"` } });
+    const f = await api<FileView | undefined>("GET", "/api/file", { query: { path }, host: d.host, headers: { "If-None-Match": `"${d.file.etag}"` }, is: isFileView });
     if (stale()) return;
     if (!f && !d.deleted) return; // 304: unchanged
     redraw(path, () => {

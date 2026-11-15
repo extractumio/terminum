@@ -10,6 +10,7 @@ const { saveDoc, revalidateDoc } = await load("src/viewer-save.ts", { plugins: [
   "./api": `export class ApiError extends Error { constructor(m, status, code) { super(m); this.status = status; this.code = code; } }
     globalThis.__ApiError = ApiError;
     export const basename = (p) => p.split("/").pop();
+    export const isEtag = () => true, isFileView = () => true;
     export const toast = (m) => globalThis.__toasts.push(m);
     ${DEFERRED_API}`,
   "./dialogs": `export const ask = async () => globalThis.__answer;`,

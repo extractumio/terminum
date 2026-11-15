@@ -134,6 +134,10 @@ Scenario: AC-52 failure — permission denied
   When the user expands "/private/var/root"
   Then the folder shows one row "⚠ Permission denied (os error 13)" and the rest stays usable
 
+Scenario: AC-52 failure — another program answers a listing
+  When a folder listing or entry lookup gets a 200 answer with no listing shape (such as {})
+  Then the panel forgets its proof of terminumd, proves it again and sends the read once more; a second such answer fails instead of showing an empty folder
+
 Scenario: AC-52 edge — invalidation and unreadable names
   Given a scan runs with two callers waiting and the folder changes before it publishes
   Then one scanner rereads and both callers get the fresh listing; empty and failed listings count toward the cache budget
@@ -168,6 +172,10 @@ Scenario: AC-53 error — gone or not a regular file
   When the user clicks a file deleted meanwhile
   Then the tab shows "⚠ No such file or directory (os error 2)" and no other tab changes
   And /api/file and /api/raw answer 400 "Not a regular file" at once for a FIFO or a device ("/dev/zero"), without reading
+
+Scenario: AC-53 failure — another program answers a file read
+  When a file read or recheck gets a 200 answer with no file shape (such as {})
+  Then the panel forgets its proof of terminumd, proves it again and sends the read once more; a second such answer fails instead of replacing the content with an empty file
 ```
 
 ### AC-54 — Markdown rendered and source [MUST / P0]
@@ -232,6 +240,10 @@ Scenario: AC-56 edge — closing, competing saves, renames, size
   And a 9 MB file saves; a body over 6 × the text limit answers 413 as JSON; a 255-byte basename saves with no temp file left; a conflict dialog of one host's file is discarded only for that document when the pane switches hosts
   And a change by another program while the copy is written is seen just before it replaces the file ("app.py changed on disk"); Overwrite of a file deleted on disk never writes over one another program made there meanwhile ("app.py was made on disk meanwhile"); the copies a stopped terminumd left in a folder (`.fb-*.tmp`, `.tm-upload-*.part`, an hour old) go at its first save or upload
   And a save that recreates a file deleted on disk (Overwrite) takes its "Deleted on disk" banner away
+
+Scenario: AC-56 failure — another program answers a save
+  When a file save gets a 200 answer with no string etag (such as {})
+  Then it is not repeated; the panel says "Not saved: server restarting — save again", keeps the edit unsaved and the previous etag, and closing the tab still asks about its unsaved changes
 ```
 
 ### AC-57 — Create [SHOULD / P1]
@@ -598,6 +610,11 @@ Scenario: AC-71 failure — a save of the panel's state fails
   Then every panel's banner says "Panel state not saved to disk <message>", also one that connects meanwhile; terminumd tries again by itself after 1 s, doubling to every 60 s, and the banner goes once a write works
   When a write is not a pane's state (a root that is not a full path, a tab's view not auto, rendered or source, the active tab not one of its tabs; preferences not an object)
   Then it is refused with 400 and why, and nothing changes
+
+Scenario: AC-71 failure — another program answers a workspace save
+  When a workspace save gets a 200 answer with no numeric revision (such as {})
+  Then it is not repeated; the panel says "Panel state not saved: the answer on terminumd's port is not terminumd's" and keeps the previous revision and the sent snapshot as ambiguous
+  And the next change or reconnect sends the state again; if the ambiguous write landed, its stale revision answer keeps the newer local change; other pages' newer workspace events still load
 
 Scenario: AC-71 edge — expiry
   Given a pane's state was last used 15 days ago and the pane is not in any tmux server
