@@ -106,6 +106,47 @@ fn ready(tx: &Transaction, who: &Who, id: &str, result: &str) -> Result<(Task, S
     Ok((t, s, dir))
 }
 
+/// Task `t`'s `commit` in its project's queue with `result`, by `me`: its entry kept or replaced in its place, the task
+/// in INTEGRATION, its history saying so.
+fn enter(tx: &Transaction, t: &Task, s: &Settings, commit: &str, result: &str, me: &str, at: i64) -> Result<(), String> {
+    // with a Prepare or Verify, a commit waits for them before any batch takes it (AC-198)
+    let stage = (!s.prepare.is_empty() || !s.verify.is_empty()).then_some("verifying");
+    tx.execute("INSERT INTO integration_entries (task, project, commit_sha, result, author, queued_at, stage) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+                ON CONFLICT (task) DO UPDATE SET commit_sha = ?3, result = ?4, author = ?5, stage = ?7", rusqlite::params![t.key, t.project, commit, result, me, at, stage]).map_err(sql)?;
+    let short = short(commit);
+    if t.status == INTEGRATION {
+        ops::log(tx, &t.key, me, "queue", &format!("Queued {short} for integration into {} in its place.", s.target), None, at).map(drop)
+    } else {
+        ops::place(tx, me, t, INTEGRATION, at)?;
+        ops::log(tx, &t.key, me, "queue", &format!("Queued {short} for integration into {}.", s.target), None, at).map(drop)
+    }
+}
+
+/// A human's Integrate on a card (AC-193): its session's folder's HEAD queued as integrate would, with no result
+/// of its agent's; refused in integrate's words. `folder`: where its session works, on this Mac.
+pub fn integrate_by_human(store: &Store, id: &str, folder: Option<&str>) -> Result<String, String> {
+    let (t, s, dir) = store.with(|tx| {
+        let t = ops::get(tx, id)?;
+        let s = integration::read(tx, &t.project)?;
+        let (name, host, dir) = ops::project_place(tx, &t.project)?;
+        if !s.on || host.is_some() {
+            return Err(format!("Integration is off for {name}."));
+        }
+        if t.status != "IN PROGRESS" && t.status != INTEGRATION {
+            return Err(format!("{id} is {}: a task in work is integrated.", t.status));
+        }
+        Ok((t, s, dir))
+    })?;
+    let commit = commit_to_queue(&integration::local_dir(&dir), &s, None, folder)?;
+    let at = ops::now();
+    store.with(|tx| {
+        let human = ops::user_name(tx, super::store::HUMAN)?;
+        let result = format!("Queued by {human}: no result from its agent.");
+        enter(tx, &t, &s, &commit, &result, super::store::HUMAN, at)?;
+        queued_words(tx, &ops::get(tx, id)?, &s)
+    })
+}
+
 /// Queues `args.id`'s commit with its result (AC-187): answered its place and the batch it is expected in.
 pub fn integrate(store: &Store, who: &Who, args: &Value) -> Result<(String, Vec<String>), String> {
     let id = arg(args, "id")?;
@@ -115,6 +156,7 @@ pub fn integrate(store: &Store, who: &Who, args: &Value) -> Result<(String, Vec<
     let commit = commit_to_queue(&repo, &s, args["commit"].as_str().filter(|c| !c.is_empty()), who.dir.as_deref())?;
     let at = ops::now();
     store.with(|tx| {
+        let mut changed = crate::dispatcher::taking(tx, &who.key)?;
         // what changed while git ran: the same checks again, in the transaction that queues
         let (t, s, _) = ready(tx, who, id, &result)?;
         let returned: Option<String> = tx.query_row("SELECT why FROM integration_returns WHERE task = ?1 AND commit_sha = ?2", (&t.key, &commit), |r| r.get(0)).optional().map_err(sql)?;
@@ -122,16 +164,11 @@ pub fn integrate(store: &Store, who: &Who, args: &Value) -> Result<(String, Vec<
             return Err(format!("{} was returned for a red check: commit a fix first, or ask a human to queue it.", short(&commit)));
         }
         let me = author(tx, who)?;
-        tx.execute("INSERT INTO integration_entries (task, project, commit_sha, result, author, queued_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)
-                    ON CONFLICT (task) DO UPDATE SET commit_sha = ?3, result = ?4, author = ?5", (&t.key, &t.project, &commit, &result, &me, at)).map_err(sql)?;
-        let short = short(&commit);
-        if t.status == INTEGRATION {
-            ops::log(tx, &t.key, &me, "queue", &format!("Queued {short} for integration into {} in its place.", s.target), None, at)?;
-        } else {
-            ops::place(tx, &me, &t, INTEGRATION, at)?;
-            ops::log(tx, &t.key, &me, "queue", &format!("Queued {short} for integration into {}.", s.target), None, at)?;
+        enter(tx, &t, &s, &commit, &result, &me, at)?;
+        if !changed.iter().any(|moved| moved == id) {
+            changed.push(id.to_string());
         }
-        Ok((queued_words(tx, &t, &s)?, vec![id.to_string()]))
+        Ok((queued_words(tx, &t, &s)?, changed))
     })
 }
 
@@ -170,16 +207,30 @@ pub fn withdraw(store: &Store, who: &Who, args: &Value) -> Result<(String, Vec<S
 /// The project's settings and queue, or one task's place in it.
 pub fn status(store: &Store, who: &Who, args: &Value) -> Result<String, String> {
     store.with(|tx| {
-        let project = match args["id"].as_str().filter(|i| !i.is_empty()) {
-            Some(id) => visible(tx, who, id)?.project,
+        let task = args["id"].as_str().filter(|i| !i.is_empty()).map(|id| visible(tx, who, id)).transpose()?;
+        let project = match &task {
+            Some(t) => t.project.clone(),
             None => who.project.clone().unwrap_or_else(|| super::store::DEFAULT_PROJECT.to_string()),
         };
         let s = integration::read(tx, &project)?;
         let queue: Vec<Value> = queue_of(tx, &project)?.iter().enumerate()
             .map(|(i, e)| json!({"task": e.id, "place": ordinal(i + 1), "commit": short(&e.commit), "batch": e.batch})).collect();
-        let v = json!({"on": s.on, "target": s.target, "check": s.check, "publish": s.publish, "after": s.after, "batch_size": s.size(), "batch_most": s.batch_most, "queue": queue});
+        let mut v = json!({"on": s.on, "target": s.target, "prepare": s.prepare, "verify": s.verify, "check": s.check, "publish": s.publish, "after": s.after,
+                           "cleanup": s.cleanup, "batch_size": s.size(), "batch_most": s.batch_most, "queue": queue});
+        if let Some(t) = task {
+            v["task"] = of_task(tx, &t)?;
+        }
         Ok(v.to_string())
     })
+}
+
+/// A task as `terminum integration wait` follows it (AC-187): its status, Dispatcher's newest words on it, and,
+/// out of INTEGRATION, how it left (the mark its words carry): landed, red, conflict, or out (taken out, given up,
+/// integration turned off).
+fn of_task(tx: &Transaction, t: &Task) -> Result<Value, String> {
+    let said: Vec<Value> = ops::newest_by(tx, &t.key, super::store::DISPATCHER, 20)?.into_iter().map(|(id, text)| json!({"id": id, "text": text})).collect();
+    let left = if t.status == INTEGRATION { None } else { Some(ops::how_left(tx, &t.key)?.unwrap_or_else(|| "out".into())) };
+    Ok(json!({"id": t.id, "status": t.status, "left": left, "said": said}))
 }
 
 #[cfg(test)]

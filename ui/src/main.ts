@@ -147,7 +147,7 @@ async function loadWorkspace(k: string) {
     // (a load the stream's last open started met a program on the port: AC 09)
     if (!(e instanceof ApiError) || !["unproven", "signed_out", "network"].includes(e.code)) failed("workspace", `Panel state not read: ${(e as Error).message}`);
     pinCwd ??= cwd;   // not named yet: the next load names it
-    return;
+    return tree.noRoot();
   }
   if (key === k && run === workspaceRun) await applyWorkspace(pane);
 }
@@ -371,12 +371,12 @@ const viewer = new Viewer($("tabs"), $("tools"), $("vbody"), {
 });
 let pathBar: PathBar | null = null; // viewer window only
 let pageRoot: { path: string; host: string | null } | null = null; // View: the folder the page's Files shows (the page says)
-/** Reveal in tree: its folders expand, it is selected; a file outside the tree's folder (the pane's) says so.
+/** Reveal in tree: its folders expand, it is selected, a folder opens; a file outside the tree's folder (the pane's) says so.
  *  A newer selection or root meanwhile wins, silently. */
 function revealInTree(p: string) {
   void tree.reveal(p, true, tree.pick()).then((found) => {
     if (found === null) return;
-    if (!found) return toast(tree.root && !isUnder(p, tree.root.path) ? `Not in this tree: ${p} is outside ${tree.root.path}` : `Not found in the tree: ${p}`);
+    if (!found) return toast(tree.root && !isUnder(p, tree.root.path) ? `Not in this tree: ${p} is outside ${tree.root.path}` : `Not shown in the tree: ${p} (hidden, filtered out or gone)`);
     tree.selected = new Set([p]);
     tree.queue();
     scheduleSave();

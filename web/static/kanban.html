@@ -20,11 +20,14 @@
 <link rel="stylesheet" href="listdrag.css">
 <link rel="stylesheet" href="kanban.css">
 <link rel="stylesheet" href="controls.css">
+<link rel="stylesheet" href="askfold.css">
+<link rel="stylesheet" href="boardphone.css">
 <link rel="stylesheet" href="markdown.css">
 <link rel="stylesheet" href="taskwin.css">
 <link rel="stylesheet" href="dialogsize.css">
 <link rel="stylesheet" href="expand.css">
 <link rel="stylesheet" href="sheets.css">
+<link rel="stylesheet" href="phone.css">
 <link rel="stylesheet" href="motion.css">
 <link rel="stylesheet" href="grain.css">
 <style id="customcss"></style>
@@ -125,13 +128,17 @@
       <button id="clearfilters" class="textkey" type="button" hidden>Clear filters</button>
     </div>
   </div>
+  <!-- The lines of #asks folded into two counters where the buttons float (terminum-kanban.md AC-117, askfold.js); a phone's Find key (AC-105). -->
+  <div id="askcount" hidden><button class="askn failed" data-kind="failed" type="button" aria-expanded="false" aria-controls="asks" hidden></button><button class="askn waiting" data-kind="waiting" type="button" aria-expanded="false" aria-controls="asks" hidden></button></div>
+  <button id="findkey" class="icon" type="button" aria-expanded="false" aria-controls="filters" title="Find and filters" aria-label="Find and filters"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:18px"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></svg></button>
   <div id="boardacts"><span id="autokeys" role="group" aria-label="Auto-Dispatch"><button id="autoswitch" class="textkey" type="button" role="switch" aria-checked="false"><span class="word">Auto-Dispatch</span><span id="autostate">OFF</span><span class="track" aria-hidden="true"></span></button><button id="autocog" class="icon" type="button" title="Auto-Dispatch: its settings" aria-label="Auto-Dispatch: its settings" aria-haspopup="dialog"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915"/><circle cx="12" cy="12" r="3"/></svg></button></span><button id="newtask" class="textkey" type="button" title="A new task, in TODO" aria-label="New task"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:14px"><path d="M5 12h14"/><path d="M12 5v14"/></svg><span>Task</span></button></div>
 </header>
 <div id="boardbanner" class="banner" role="status" hidden></div>
 <div id="asks" aria-live="polite" hidden></div>
-<div id="agentbar" aria-label="Agents"></div>
-<section id="schedbar" aria-label="Scheduled tasks"></section>
+<div id="pool"><div id="agentbar" aria-label="Agents"></div>
+<section id="schedbar" aria-label="Scheduled tasks"></section></div>
 <div id="colswitch" class="seg" role="tablist" aria-label="Columns"></div>
+<button id="poolline" class="textkey" type="button" aria-haspopup="dialog" aria-controls="pool" title="Auto-Dispatch, the agents and the schedules"></button>
 <main id="board" aria-label="Tasks"></main>
   </section>
 </div>
@@ -145,6 +152,14 @@
   <p id="lastlinesmeta" class="docmeta"></p>
   <p id="lastlinesnone" class="docmeta" hidden>Nothing kept yet: a session's last lines are kept within 5 s of its output.</p>
   <pre id="lastlinestext" hidden></pre>
+</dialog>
+<dialog id="batcheswin" data-size="read" class="box dlg docdlg" aria-labelledby="batchestitle">
+  <div class="dhead"><h2 id="batchestitle">Batches</h2>
+    <button id="batchesclose" class="icon x" type="button" title="Close (Esc)" aria-label="Close"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
+  <p id="batchesmeta" class="docmeta"></p>
+  <ul id="batcheslist" class="batchrows"></ul>
+  <p id="batchesnone" class="docmeta" hidden>No batch yet.</p>
+  <button id="batchesmore" class="textkey" type="button" hidden>Older batches</button>
 </dialog>
 <dialog id="agentsbox" data-size="ask" class="box dlg" aria-labelledby="agentstitle">
   <form method="dialog">
@@ -304,9 +319,13 @@
       <div id="integrationfields" class="integrationgroup">
         <label class="fieldrow checkrow">On: this project's tasks integrate by the queue <input id="integrationon" type="checkbox" role="switch"></label>
         <label class="fieldrow">Target <input id="integrationtarget" class="field" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"></label>
+        <label class="fieldrow">Prepare <input id="integrationprepare" class="field" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"><span id="integrationpreparehint" class="colempty">Skipped: a queued task goes straight into a batch.</span></label>
+        <label class="fieldrow">Verify <input id="integrationverify" class="field" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"><span id="integrationverifyhint" class="colempty">Skipped: a queued task goes straight into a batch.</span></label>
+        <p class="fieldrow" id="integrationqueue">Queue <span class="colempty">terminum's queue: in the order tasks were queued, batched as they merge.</span></p>
         <label class="fieldrow">Check <input id="integrationcheck" class="field" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"><span id="integrationcheckhint" class="colempty">No check: a candidate that merges is published.</span></label>
         <label class="fieldrow">Publish <input id="integrationpublish" class="field" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"><span id="integrationpublishhint" class="colempty"></span></label>
         <label class="fieldrow">After <input id="integrationafter" class="field" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"><span id="integrationafterhint" class="colempty">Nothing runs after.</span></label>
+        <label class="fieldrow">Cleanup <input id="integrationcleanup" class="field" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"><span id="integrationcleanuphint" class="colempty">Nothing runs after a batch.</span></label>
         <div class="fieldgrid">
           <label class="fieldrow">Tasks in a batch, at most <input id="integrationbatch" class="field" type="number" min="1" max="8" step="1" inputmode="numeric"></label>
           <label class="fieldrow">Check ends after, minutes <input id="integrationminutes" class="field" type="number" min="1" max="1440" step="1" inputmode="numeric"></label>
@@ -429,6 +448,8 @@
 <script type="module" src="grain.js"></script>
 <script type="module" src="interact.js"></script>
 <script type="module" src="dlgsize.js"></script>
+<script type="module" src="phonewin.js"></script>
 <script type="module" src="kanban.js"></script>
+<script type="module" src="kanbanphone.js"></script>
 </body>
 </html>

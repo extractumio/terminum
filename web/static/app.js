@@ -129,7 +129,7 @@ quietSelection($("term"), touch, { hold: (on) => view.hold(on) });              
 
 // The files the output names, on the pane's host: a path is a link only
 // when its file is there (relative paths from the pane's folder, as a click takes them).
-const shownFiles = paneFiles(() => views.paneInfo());
+const shownFiles = paneFiles(() => views.paneInfo(), undefined, embedded ? undefined : (path, pane) => views.showsFolder(path, pane));
 // Addresses and paths get a dotted underline (linkmarks.js).
 const marks = linkMarks($("term"), [$("hist"), $("screen")], shownFiles);
 const asked = askedMarks({ term: $("term"), boxes: [$("hist"), $("screen")], view, send, sid: () => st.sid });
@@ -146,10 +146,10 @@ function undoRedo(redo, said = false) {
   send({ t: "in", data: how.bytes }); sizing.typed(); st.undone = !redo;
   if (said) toast(redo ? "Redo" : "Undo", 1500);
 }
-// Addresses open in a new tab here, paths in File (on the pane's host).
-// (a quick shell's page has no View: its pane's page opens it)
+// Addresses open in a new tab here, files in File (on the pane's host), folders in Files.
+// (a quick shell's page has no View: its pane's page opens it; nor Files: no folder is a link there)
 const openFile = (p, host) => (embedded ? parent.postMessage({ type: "tm-open", path: p, host }, location.origin) : views.open(p, host));
-const openAt = bindLinks($("term"), { paneInfo: () => views.paneInfo(), openFile, toast, state: shownFiles.state, pathOf: shownFiles.pathOf });
+const openAt = bindLinks($("term"), { paneInfo: () => views.paneInfo(), openFile, openFolder: (p) => views.reveal(p), toast, state: shownFiles.state, pathOf: shownFiles.pathOf, isFolder: shownFiles.isFolder });
 // Where a tap moves the cursor (a shell or a coding agent), on the cursor's row it does so, also
 // over a path typed there; elsewhere a tap there opens a link.
 function tapLink(x, y) {

@@ -33,8 +33,9 @@ pub fn move_to(tx: &Transaction, author: &str, id: &str, status: &str, at: i64) 
         return Err(format!("{} goes to INTEGRATION only by integrate: it queues its commit.", task.id));
     }
     // a batch's integration task ends with its batch (terminum-integration.md AC-194): its keys decide, not a move
-    let live: Option<i64> = tx.query_row("SELECT number FROM integration_batches WHERE task = ?1 AND state NOT IN ('ended', 'given up')", [&task.key], |r| r.get(0)).optional().map_err(sql)?;
-    if let Some(n) = live {
+    // Dispatcher's own moves of it: its run starting and waiting for a human
+    let runs_it = author == super::store::DISPATCHER && ["IN PROGRESS", "WAIT FOR HUMAN"].contains(&status);
+    if let Some(n) = crate::integrate::store::live_by_task(tx, &task.key)? && !runs_it {
         return Err(format!("{} is batch {n}'s integration task: it ends with its batch.", task.id));
     }
     // a schedule's task is a run from its first moment: it waits for a human, is done or failed, and runs again
@@ -54,6 +55,14 @@ pub fn move_to(tx: &Transaction, author: &str, id: &str, status: &str, at: i64) 
 pub(crate) fn place(tx: &Transaction, author: &str, task: &Task, status: &str, at: i64) -> Result<(), String> {
     if task.status == INTEGRATION {
         super::integration_queue::leave(tx, &task.key)?;
+        // A return is activity (AC-123, AC-198), even if no walk saw the wait; keep the budget already used.
+        if status == "IN PROGRESS" && let Some(mut run) = crate::dispatcher::runs::holding(tx, &task.key)? {
+            run.idle_for = 0;
+            run.nudged = 0;
+            run.nudge_turn = false;
+            run.last_walk = at;
+            crate::dispatcher::runs::save(tx, &run)?;
+        }
     }
     let rank = top_rank(tx, status, &task.severity)?;
     tx.execute("UPDATE tasks SET status = ?1, rank = ?2, updated_at = ?3 WHERE id = ?4", (status, rank, at, &task.key)).map_err(sql)?;

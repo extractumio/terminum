@@ -9,7 +9,9 @@ round (terminum-dispatcher.md AC-170) starts its first candidates, one for each 
 is worked on; any other stops at once. `--stubborn`: SIGTERM is ignored. `--start trust`: a question before its box; `--start
 quits`: ends after receiving its first paste, without echoing or taking it; `--start
 none`: never a box; `--start fast`: exits at once with 7; `--start slow`: its first paste shows 3 s late, as a busy
-machine's does, and a prompt pasted twice is not worked on."""
+machine's does, and a prompt pasted twice is not worked on. `--title`: an idle OSC title after Stop to
+identify the stand-in after terminumd restarts; `--stop-after <file>`: hold Stop until the file exists and write
+<file>.sent after attempting the hook, so the test can place it during downtime."""
 import json
 import os
 import re
@@ -35,7 +37,18 @@ def main():
     typed, pasting, pastes, late = "", False, 0, start == "slow"
 
     def hook(event, **more):
+        # AC-131: hold Stop until the live test has stopped terminumd, then acknowledge the attempt.
+        barrier = opt("--stop-after", "") if event == "Stop" else ""
+        if barrier:
+            while not os.path.exists(barrier):
+                time.sleep(0.05)
         subprocess.run([cli, "hook", kind], input=json.dumps({"session_id": session, "cwd": os.getcwd(), "hook_event_name": event, **more}), text=True, capture_output=True, timeout=8)
+        if event == "Stop" and (title := opt("--title", "")):
+            sys.stdout.write(f"\x1b]0;{title}\x07")
+            sys.stdout.flush()
+        if barrier:
+            with open(barrier + ".sent", "w", encoding="utf8"):
+                pass
 
     def draw(body):
         sys.stdout.write("\x1b[2J\x1b[H" + "\r\n".join(body) + "\r\n")

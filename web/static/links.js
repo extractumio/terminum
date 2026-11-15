@@ -49,13 +49,14 @@ export function tokenAt(text, offset) {
   return tok;
 }
 
-// A path is anchored (/, ~/, ./, ../) or ends in a known name or extension; a slash alone is
-// not enough ("and/or", 10/07/2026), nor a number or a version.
+// A path is anchored (/, ~/, ./, ../), ends in a slash or in a known name or extension; a slash
+// inside alone is not enough ("and/or", 10/07/2026), nor a number or a version.
 function looksLikePath(w) {
   if (!w || w.length > 1024 || w.includes("://")) return false;
-  const name = w.split("/").pop();
+  const folder = w.endsWith("/");                    // "docs/specs/": a folder's name, as "ls -F" prints one
+  const name = w.replace(/\/+$/, "").split("/").pop();
   if (!name || /^[\d.:,-]+$/.test(name)) return false;
-  if (/^(\/|~\/|\.\.?\/)/.test(w)) return true;
+  if (folder || /^(\/|~\/|\.\.?\/)/.test(w)) return true;
   if (NAMED.has(name)) return true;
   const dot = name.lastIndexOf(".");
   return dot > 0 && EXTENSIONS.has(name.slice(dot + 1).toLowerCase());

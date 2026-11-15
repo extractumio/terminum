@@ -31,6 +31,7 @@ pub fn routes() -> Router<Shared> {
         .merge(super::limits::routes())
         .merge(super::integration::routes())
         .merge(crate::integrate::keys::routes())
+        .merge(crate::integrate::column::routes())
         .merge(super::auto::routes())
         .merge(super::folder::routes())
         .merge(super::schedulesapi::routes())
@@ -162,11 +163,12 @@ async fn board(State(app): State<Shared>, Params(q): Params<HashMap<String, Stri
         // only a finished task says what it spent (AC-129)
         let finished: Vec<&str> = tasks.iter().filter(|t| crate::dispatcher::plan::finished(&t.status)).map(|t| t.key.as_str()).collect();
         let spent = crate::dispatcher::usage::of_tasks(tx, &finished)?;
+        let queue = crate::integrate::column::marks(tx, &tasks, ops::now())?;   // what a card says of the integration queue (AC-193)
         let counts = if with_counts { Some((query::counts(tx, &filter)?, crate::dispatcher::pool::board(tx)?)) } else { None };
-        Ok((tasks, counts, run_marks, on_agents, spent, boxes, (waits, from)))
+        Ok((tasks, counts, run_marks, on_agents, spent, boxes, (waits, from, queue)))
     }).await;
     match done {
-        Ok((tasks, counts, run_marks, on_agents, spent, mut boxes, (waits, from))) => {
+        Ok((tasks, counts, run_marks, on_agents, spent, mut boxes, (waits, from, queue))) => {
             let layout = app.layout.read();
             let linked = tasks.iter().any(|t| t.session.is_some());
             let rows: HashMap<&str, &Value> = crate::page::marks::layout_rows(&layout).filter(|_| linked).filter_map(|it| Some((it["id"].as_str()?, it))).collect();
@@ -189,6 +191,9 @@ async fn board(State(app): State<Shared>, Params(q): Params<HashMap<String, Stri
                 }
                 if let Some(s) = from.get(&t.key) {
                     v["schedule"] = json!(s);             // made by that schedule (terminum-schedules.md AC-163)
+                }
+                if let Some(q) = queue.get(&t.key) {
+                    v["queue"] = q.clone();
                 }
                 v
             }).collect();
@@ -222,12 +227,14 @@ async fn meta(State(app): State<Shared>) -> Response {
             super::limits::agent_limits(tx)?,
             super::projectapi::settings(tx)?,
         ))).unwrap_or_default();
-        let integrating = a.tasks.with(super::integration::on_projects).unwrap_or_default();
+        let integrating = a.tasks.with(crate::integrate::column::notes).unwrap_or_default();
         for p in &mut projects {
             if let (Some(v), Some(p)) = (p["id"].as_str().and_then(|id| own.get(id)).and_then(Value::as_object).cloned(), p.as_object_mut()) {
                 p.extend(v);
             }
-            p["integration"] = json!(p["id"].as_str().is_some_and(|id| integrating.contains(id)));
+            let queue = p["id"].as_str().and_then(|id| integrating.get(id)).cloned();
+            p["integration"] = json!(queue.is_some());
+            p["queue"] = queue.unwrap_or(Value::Null);   // its column's head: paused, or why it waits (AC-193)
         }
         (projects, users, agents, limits, last_agents, at_once, a.tasks.problem(), a.tasks.is_set_aside())
     }).await.unwrap_or_default();

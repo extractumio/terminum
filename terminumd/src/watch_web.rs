@@ -4,8 +4,7 @@
 //! so neither part needs escaping. Their folders are watched as well as the focused pane's,
 //! for as long as a web panel used them recently.
 
-use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
+use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 use parking_lot::Mutex;
@@ -63,8 +62,8 @@ pub struct RemoteWatch {
 }
 
 /// The folders to watch here and per host, for panes given with their host (None: this Mac).
-pub fn plan(panes: Vec<(Option<String>, Pane)>) -> (HashSet<PathBuf>, HashMap<String, RemoteWatch>) {
-    let mut local = HashSet::new();
+pub fn plan(panes: Vec<(Option<String>, Pane)>) -> (watcher::Paths, HashMap<String, RemoteWatch>) {
+    let mut local = watcher::Paths::default();
     let mut remote: HashMap<String, RemoteWatch> = HashMap::new();
     for (host, p) in panes {
         let files = p.tabs.into_iter().map(|t| t.path);
@@ -102,7 +101,7 @@ mod tests {
 
     #[test]
     fn web_panes_are_watched_beside_the_focused_one() {
-        // local folders are watched only if they exist
+        // Roots, expanded folders and open-file parents are tracked separately from files.
         let base = crate::testutil::temp_root().join(format!("fbd-watch-web-{}", std::process::id()));
         for d in ["a/src", "b", "c"] {
             std::fs::create_dir_all(base.join(d)).unwrap();
@@ -114,8 +113,9 @@ mod tests {
             (Some("devbox.example".into()), pane("/home/alex", &["/home/alex/p"], &["/home/alex/r.txt"])),
         ]);
         for p in ["a", "a/src", "b", "c"] {
-            assert!(local.contains(&base.join(p)), "{p}");
+            assert!(local.dirs.contains(&base.join(p)), "{p}");
         }
+        assert_eq!(local.files, std::collections::HashSet::from([base.join("c/x.md")]));
         std::fs::remove_dir_all(&base).unwrap();
         assert_eq!(remote["devbox.example"], RemoteWatch { root: "/home/alex".into(),
             expanded: vec!["/home/alex/p".into()], files: vec!["/home/alex/r.txt".into()] });

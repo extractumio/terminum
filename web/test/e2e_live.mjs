@@ -19,7 +19,7 @@ import { freePort, own, shortTmp } from "./testrun.mjs";
 import { endOnSignal, NO_SIGNALS, stopChild } from "../../ui/test/process-stop.mjs";
 import { liveDrop, livePaste } from "./e2e_livepaste.mjs";
 import { liveQuick } from "./e2e_livequick.mjs";
-import { liveSplit } from "./e2e_livesplit.mjs";
+import { liveSplit, observeWidths } from "./e2e_livesplit.mjs";
 import { liveView } from "./e2e_liveview.mjs";
 import { liveRequests } from "./e2e_liverequests.mjs";
 import { liveBoardSignin } from "./e2e_livesignin.mjs";
@@ -55,10 +55,11 @@ import { liveFolded, liveSchedules } from "./e2e_liveschedules.mjs";
 import { liveQueue } from "./e2e_livequeue.mjs";
 import { liveAuto } from "./e2e_liveauto.mjs";
 import { liveIconKeys } from "./e2e_liveiconkeys.mjs";
-import { SORT_ALONE, BOARD_ALONE, TASKS_ALONE, WAITING_ALONE, POOL_ALONE, SMOKE, HISTORY_ALONE,
-  AUTO_ALONE, SCHEDULES_ALONE, NOTES_ALONE, ICONS_ALONE, REQUESTS_ALONE, SIGNIN_ALONE, QUEUE_ALONE, MAIN_ALONE, BACKGROUND_ALONE, ARCHIVED_ALONE } from "./e2e_livemodes.mjs";
+import { SORT_ALONE, BOARD_ALONE, TASKS_ALONE, WAITING_ALONE, POOL_ALONE, SMOKE, LINKS_ALONE, HISTORY_ALONE,
+  AUTO_ALONE, SCHEDULES_ALONE, NOTES_ALONE, ICONS_ALONE, REQUESTS_ALONE, SIGNIN_ALONE, QUEUE_ALONE, MAIN_ALONE, BACKGROUND_ALONE, ARCHIVED_ALONE, FOLDS_ALONE } from "./e2e_livemodes.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+const SHORT = SMOKE || LINKS_ALONE || FOLDS_ALONE;   // a few checks, the wide size only
 const BIN = process.env.TERMINUMD_BIN ?? path.join(ROOT, "terminumd/target/debug/terminumd");
 // this run's: checks in several worktrees at once never meet, and purge() ends only this run's server
 const PORT = await freePort(), SOCKET = own("tm-test-live");
@@ -154,7 +155,7 @@ async function wide(browser, name) {
   runningIn(`${name} 1400×900`);
   // reduced motion: a window stands where a press lands (e2e_motion.mjs checks the motion)
   const errors = [];
-  let ctx, page;
+  let ctx, page, widths;
   /** A page in a context of its own, signed in with the last one's storage, the last one closed: with one
    *  page through the whole run, Linux WebKit's web process reached 1.6 GB under CI's 2 GiB and was killed */
   const renew = async () => {
@@ -162,6 +163,7 @@ async function wide(browser, name) {
     await ctx?.close();
     ctx = await browser.newContext({ viewport: { width: 1400, height: 900 }, reducedMotion: "reduce", storageState });
     page = await ctx.newPage();
+    widths = observeWidths(page);
     page.on("pageerror", (e) => recordLivePageError(errors, name, e));
     if (!storageState) return signIn(page);
     await page.goto(`${BASE}/`);
@@ -174,6 +176,7 @@ async function wide(browser, name) {
     for (const suite of suites) { await renew(); await suite(page, live); }
   };
   await renew();
+  if (FOLDS_ALONE) { await liveFolds(page, live); return ctx; }
   if (BACKGROUND_ALONE) {
     await boards([liveBackground]);
     return ctx;
@@ -247,7 +250,7 @@ async function wide(browser, name) {
   await within("AC-03 typed keys reach the pane and echo", () => page.waitForFunction((n) => document.getElementById("screen").innerText.includes(`live-42-${n}`), name, { timeout: 5000 }));
   // its own name per browser: the tmux server is both runs' (the first run's window and its marks stay)
   const byhandName = `byhand-${name}`;
-  if (!SMOKE) {
+  if (!SHORT) {
     await livePaste(page, { home: HOME, name });
     // a drop's own paths come from Finder's drag pasteboard (dragged.rs): macOS only, elsewhere terminumd says so
     if (process.platform === "darwin") await liveDrop(page, { home: HOME, work: WORK, drag: DRAG });
@@ -256,7 +259,7 @@ async function wide(browser, name) {
     const size = tmux("display", "-p", "-t", await shownPane(page, { tmux, work: WORK }), "#{window_width}x#{window_height} #{window-size}");
     check("AC-13 the pane is sized for this view (window-size manual)", /^\d+x\d+ manual/.test(size) && Number(size.split("x")[0]) > 80, size);
     await liveQuick(page, { tmux, work: WORK });
-    await liveSplit(page, { tmux, work: WORK, socket: SOCKET });
+    await liveSplit(page, { tmux, work: WORK, socket: SOCKET, widths });
     tmux("new-window", "-d", "-n", byhandName);
     await within("AC-01 a window made by hand shows in the list", () => page.waitForFunction((n) => document.getElementById("sessions").innerText.includes(n), byhandName, { timeout: 3000 }));
   }
@@ -264,7 +267,8 @@ async function wide(browser, name) {
     const frame = await (await page.waitForSelector("#files:not([hidden])", { timeout: 5000 })).contentFrame();
     await frame.waitForFunction(() => document.body.innerText.includes("alpha.txt"), null, { timeout: 8000 });
   });
-  if (SMOKE) return ctx;
+  if (LINKS_ALONE) await liveLinks(page, { work: WORK });
+  if (SHORT) return ctx;
   const files = await (await page.$("#files")).contentFrame();
   await files.click("#new-file");
   // typed into the name's field once it is there (under load it came after 3 s, and the name went elsewhere)
@@ -465,7 +469,7 @@ try {
     const browser = await pw[name].launch(NO_SIGNALS);
     try {
       const ctx = await wide(browser, name);
-      if (!SMOKE && !SIGNIN_ALONE && !BACKGROUND_ALONE) await phone(browser, name);
+      if (!SHORT && !SIGNIN_ALONE && !BACKGROUND_ALONE) await phone(browser, name);
       await ctx.close();
     } catch (e) {
       ranToItsEnd(e);

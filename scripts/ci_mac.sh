@@ -36,6 +36,8 @@ rsync -a --delete \
     --exclude .toolchain --exclude local.mk --exclude CLAUDE.local.md --exclude MEMORY.md --exclude project-memory \
     --exclude '.env*' --exclude workspaces.json --exclude .claude --exclude .codex \
     "$stage/" "$host:ci/terminum/" || exit 2
+# An optional bin directory on the runner, passed as one literal shell argument (including spaces).
+node_arg=$(python3 -c 'import shlex, sys; print(shlex.quote(sys.argv[1]))' "${TM_MAC_NODE_BIN:-}")
 running=1
 # a login shell for Homebrew's PATH; no tmux there would skip every check of a real tmux
 rc=0
@@ -44,6 +46,7 @@ ssh -o BatchMode=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=4 "$host" 
     trap "rmdir ~/ci/terminum.lock 2>/dev/null || true" EXIT
     cd ~/ci/terminum
     export PATH="$HOME/.cargo/bin:/opt/homebrew/bin:$PATH" NO_COLOR=1
+    source scripts/ci_mac_node.sh "$1" || exit 4
     command -v tmux >/dev/null || { echo "ci_mac: no tmux on the runner: its tmux checks would be skipped (brew install tmux)" >&2; exit 4; }
     # the Rust of the Linux CI, for this run only: the default toolchain of the runner stays as it is
     export RUSTUP_TOOLCHAIN=1.98.1
@@ -57,7 +60,7 @@ ssh -o BatchMode=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=4 "$host" 
     node web/test/e2e_all.mjs
     # the real Claude Code needs a login and a region this run cannot promise: the full run on the Mac has it
     TM_TEST_NO_CLAUDE=1 node web/test/e2e_live.mjs
-'"'" || rc=$?
+'"'"" ci_mac $node_arg" || rc=$?
 # the run ended (ssh says how): its lock goes, whatever its own trap did; a link that dropped
 # leaves it (the run may go on there)
 if [ "$rc" = 255 ]; then

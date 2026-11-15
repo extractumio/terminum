@@ -25,6 +25,7 @@ import { panelDocs } from "./e2e_panel_docs.mjs";
 import { panelSaves } from "./e2e_panel_saves.mjs";
 import { panelForeign } from "./e2e_panel_foreign.mjs";
 import { NO_SIGNALS } from "./process-stop.mjs";
+import { watchDiagnostics } from "./e2e_watch.mjs";
 
 // playwright-core is a devDependency; PLAYWRIGHT_CORE may point at another copy
 const { chromium } = await import(process.env.PLAYWRIGHT_CORE ?? "playwright-core");
@@ -32,6 +33,7 @@ const { chromium } = await import(process.env.PLAYWRIGHT_CORE ?? "playwright-cor
 const browser = await chromium.launch(NO_SIGNALS);   // signals end the run through the harness's cleanup
 const context = await browser.newContext({ viewport: { width: 520, height: 900 } });
 const page = await context.newPage();
+const watchWithin = watchDiagnostics(page);
 const SECRET = await signIn(page).catch(async (e) => { await cleanup(); throw e; });
 const H = (extra = {}) => ({ "X-TM-Session": SECRET, ...extra });
 const errors = [];
@@ -106,17 +108,17 @@ try {
   await page.click(row("app.py"));
   await page.waitForFunction(() => document.querySelector(".cm-content")?.textContent.includes("print(1)"));
   fs.appendFileSync(`${SB}/app.py`, "print(2)\n");
-  await within("AC-61 clean tab reloads after external edit", (ms) => page.waitForFunction(() => document.querySelector(".cm-content")?.textContent.includes("print(2)"), null, { timeout: ms }));
+  await watchWithin("AC-61 clean tab reloads after external edit", (ms) => page.waitForFunction(() => document.querySelector(".cm-content")?.textContent.includes("print(2)"), null, { timeout: ms }));
   fs.writeFileSync(`${SB}/new.rs`, "");
-  await within("AC-61 new file appears in tree", (ms) => page.waitForSelector(row("new.rs"), { timeout: ms }));
+  await watchWithin("AC-61 new file appears in tree", (ms) => page.waitForSelector(row("new.rs"), { timeout: ms }));
   fs.rmSync(`${SB}/new.rs`);
-  await within("AC-61 deleted file disappears", (ms) => page.waitForSelector(row("new.rs"), { state: "detached", timeout: ms }));
+  await watchWithin("AC-61 deleted file disappears", (ms) => page.waitForSelector(row("new.rs"), { state: "detached", timeout: ms }));
 
   // AC-56 conflict: dirty tab + external change → banner → save → dialog → overwrite
   await page.click(".cm-content"); await page.keyboard.press("ControlOrMeta+End"); await page.keyboard.type("# mine");
   await page.waitForSelector(".tab.dirty");
   fs.appendFileSync(`${SB}/app.py`, "print(3)\n");
-  await within("AC-61 dirty tab shows 'Changed on disk'", (ms) => page.waitForSelector('.banner:has-text("Changed on disk")', { timeout: ms }));
+  await watchWithin("AC-61 dirty tab shows 'Changed on disk'", (ms) => page.waitForSelector('.banner:has-text("Changed on disk")', { timeout: ms }));
   await page.click(".cm-content"); await page.keyboard.press("ControlOrMeta+s");
   await within("AC-56 conflict dialog", (ms) => page.waitForSelector(".modal", { timeout: ms }));
   check("AC-56 dialog title", (await page.textContent(".modal .mtitle")) === "app.py changed on disk", await page.textContent(".modal .mtitle"));
@@ -162,7 +164,7 @@ try {
   // AC-56 a save that recreates a file deleted on disk takes its "Deleted on disk" banner away
   const kept = fs.readFileSync(`${SB}/app.py`, "utf8");
   fs.rmSync(`${SB}/app.py`);
-  await within("AC-61 an open file deleted on disk shows 'Deleted on disk'", (ms) => page.waitForSelector('.banner:has-text("Deleted on disk")', { timeout: ms }));
+  await watchWithin("AC-61 an open file deleted on disk shows 'Deleted on disk'", (ms) => page.waitForSelector('.banner:has-text("Deleted on disk")', { timeout: ms }));
   await page.click(".cm-content"); await page.keyboard.press("ControlOrMeta+s");
   await within("AC-56 saving a deleted file asks", (ms) => page.waitForSelector(".modal button[data-id=overwrite]", { timeout: ms }));
   await page.click(".modal button[data-id=overwrite]");

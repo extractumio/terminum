@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // AC-09, AC-33, AC-37: sign-in and dialogs keep their attempt after timeout, cancel and reopen.
 import { check, runningIn, until } from "./check.mjs";
-import { drawn, openPage, pause, pressFab, SIZES } from "./fake.mjs";
+import { drawn, openPage, pause, pressCancel, pressFab, SIZES } from "./fake.mjs";
 
 export async function webRequestOwners(browser, name) {
   for (const [size, device] of SIZES) {
@@ -62,14 +62,14 @@ export async function webRequestOwners(browser, name) {
     await p.page.locator('#markbox [value="save"]').click();
     await until(() => !!last("mark"));
     const oldMark = last("mark");
-    await p.page.locator('#markbox [value="cancel"]').click();
+    await pressCancel(p.page, "#markbox");
     await select();
     await pressFab(p.page, "#markadd");
     await p.page.fill("#marknote", "new bookmark");
     p.say({ t: "marked", ref: oldMark.ref, id: "old" });
     await pause(p.page);
     check("AC-33 a bookmark save cannot close or alter a reopened dialog", await p.page.locator("#markbox").evaluate((e) => e.open) && await p.page.inputValue("#marknote") === "new bookmark");
-    await p.page.locator('#markbox [value="cancel"]').click();
+    await pressCancel(p.page, "#markbox");
     check("AC-33/37 dialog ownership raises no browser exceptions", p.errors.length === 0, p.errors.join(" | "));
     const copies = await p.page.evaluate(async () => {
       const { Input } = await import("./input.js");

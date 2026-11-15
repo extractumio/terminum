@@ -63,15 +63,16 @@ Open questions: none.
 
 | ID | Priority | Case |
 |---|---|---|
-| AC-186 | [MUST / P0] | A project's window holds an Integration tab: a switch, the target branch, the commands Check, Publish and After, the most tasks in a batch, the check's time limit, and the agent that analyses a red batch with its time budget, its prompt and the most red rounds; Check is a command run on this machine (which may itself drive a CI and wait for it) or empty for no check; the window shows what will run and where; off by default, and off nothing is merged or pushed. |
+| AC-186 | [MUST / P0] | A project's window holds an Integration tab: a switch, the target branch, a command for each stage of AC-198, the most tasks in a batch, the check's time limit, and the agent that analyses a red batch with its time budget, its prompt and the most red rounds; Check is a command run on this machine (which may itself drive a CI and wait for it) or empty for no check; the window shows what will run and where; off by default, and off nothing is merged or pushed. |
 | AC-187 | [MUST / P0] | An agent queues its task's commit with its result by `integrate`: the task stands in INTEGRATION, its budget and idle clocks stopped, its session kept; queued again it replaces its commit; taken out it is IN PROGRESS again. |
 | AC-188 | [MUST / P0] | terminumd alone builds a batch: from the fresh target, the queued commits in queue order that merge cleanly together, each its own merge commit named by its task's ID, at most the batch's size, which starts at 4, doubles after a green batch up to the project's most (8) and halves after a red one; each batch is an integration task, I_<ID>, made by Dispatcher, and one batch is in work on the machine at a time. |
 | AC-189 | [MUST / P0] | A commit that conflicts with the target returns to its agent at once with the target's commit and the files; one that conflicts only with a task of the batch stays queued, told once which task it waits for, and is judged again when that one's batch ends. |
 | AC-190 | [MUST / P0] | The project's Check runs on each candidate in a window the human can read; green is published; red, over its time or not started, the batch's integration task gets its agent (AC-194); nothing is published but a candidate whose own check was green; a check outlives terminumd's restart. |
-| AC-191 | [MUST / P0] | A green candidate is published only if the target has not moved: by terminum's own push, never forced, or by the project's Publish; then its tasks are DONE with their results, the project's folder is brought up to it where it can be, and After runs once for the batch; a failure there undoes nothing and goes to the batch's integration task (AC-194). |
+| AC-191 | [MUST / P0] | A green candidate is published only if the target has not moved: by terminum's own push, never forced, or by the project's Publish; then its tasks are DONE with their results, the project's folder is brought up to it where it can be, and After runs once for the batch; a failure there undoes nothing and waits for a human on the batch's integration task (AC-194). |
 | AC-192 | [MUST / P0] | Agents are told early and in detail, in fixed words with tasks, sessions, files and what to do: an overlap with another task's commits while both still work, the target moving in files they changed, their place and expected batch, being held back, a return for a conflict or a red check, and landing; each notice is a comment on its task and reaches a working agent by its next hook, a waiting one by the command it waits on, and an idle one of Dispatcher's by the gate. |
 | AC-193 | [MUST / P0] | The board shows INTEGRATION as a column where a shown project has integration on: the batch under check on top as one group with its state and time, the queue under it in order, each card saying its place or what it waits for; keys pause the queue, take a task out, queue a task, return a batch's task, check a batch again and list past batches with their results. |
-| AC-194 | [MUST / P0] | A batch's integration task holds its tasks, commits, check and every round; green, Dispatcher ends it DONE with no agent; red, it runs on the project's integration agent in a kept slot, which reads the log and decides by tools alone: return the tasks that caused it, each with an analysis, and check again without them; check again unchanged, once, for a flaky test or a mended environment; add a fix of its own; or ask a human. With no agent set, a spent budget, a dead agent or 3 red rounds it waits for a human, whose keys do the same. |
+| AC-198 | [MUST / P0] | A landing is seven stages, each a command of the project's settings in a row of its Integration tab and each idempotent: Prepare and Verify, run by terminumd for each queued task, one task at a time on the machine, in a tree of its own at the task's commit before it joins a batch; Queue, terminum's own; Check and Publish on the candidate; After in the project's folder; Cleanup after a published batch; without terminumd the same stages are commands run in order, `make land` running them all. |
+| AC-194 | [MUST / P0] | A batch's integration task holds its tasks, commits, check and every round; green, Dispatcher ends it DONE with no agent; red, it runs on the project's integration agent in a kept slot, which reads the log and decides by tools alone: return the tasks that caused it, each with an analysis, and check again without them; check again unchanged, once, for a flaky test or a mended environment; add a fix of its own; or ask a human. With no agent set, a spent budget, a dead agent or 3 red rounds, and after a failed Publish or After, it waits for a human, whose keys do the same. |
 
 ## 5. BDD scenarios
 
@@ -319,7 +320,7 @@ Scenario: AC-191 happy path — the project's Publish
   When it is there
   Then the batch is published as above
   When it is not, or the line ends with another status
-  Then nothing is DONE: the batch stands "not published" with the line's last rows, its integration task gets its agent with them (AC-194), and the batch's key Publish again runs the line once more
+  Then nothing is DONE: the batch stands "not published" with the line's last rows, its integration task waits for a human with them (AC-194), and the batch's key Publish again runs the line once more
 
 Scenario: AC-191 edge — the target moved
   Given origin/main moved to 8d00e1f while batch 7 was checked: a human pushed
@@ -328,7 +329,7 @@ Scenario: AC-191 edge — the target moved
 
 Scenario: AC-191 failure — the push is refused
   When the push fails and origin/main has not moved
-  Then the batch stands "not published: <git's message>", with Publish again, and its integration task gets its agent with git's words (AC-194)
+  Then the batch stands "not published: <git's message>", with Publish again, and its integration task waits for a human with git's words (AC-194)
 
 Scenario: AC-191 happy path — the project's folder
   Given Billing's folder on branch main, clean, behind origin/main
@@ -341,7 +342,7 @@ Scenario: AC-191 happy path — After
   Given After "make install"
   Then once the batch is published and the folder moved, the line runs in the project's folder, in a window as the check's, once for the batch
   When it ends with another status, or runs over the check's time
-  Then the batch stays published and its tasks DONE; its row and a toast say "After failed for batch 7: <its last rows>", and its integration task gets its agent with them (AC-194): the next batch waits for that task's end
+  Then the batch stays published and its tasks DONE; its row and a toast say "After failed for batch 7: <its last rows>", and its integration task waits for a human with them (AC-194): the next batch waits for that task's end
   And with the folder left where it was, After does not run: "After did not run: Billing's folder is not on batch 7."
 
 Scenario: AC-191 edge — terminumd stops while publishing
@@ -364,7 +365,7 @@ Scenario: AC-191 edge — After restarts terminumd
 Scenario: AC-192 happy path — an overlap while both work
   Given API-12 and API-13 IN PROGRESS in worktrees of Billing's checkout, each with commits not in origin/main
   When a walk finds that their HEADs do not merge cleanly with each other
-  Then each agent is told once for that pair of commits: "[terminum] API-12: its commits and API-13's (session web-2, IN PROGRESS) change the same lines: src/retry.rs 40–58. They cannot be in one batch. Agree with that session who goes first; the other merges origin/main after the first lands, then queues."
+  Then each agent is told once for that pair of commits: "[terminum] API-12: its commits and API-13's (IN PROGRESS) change the same files: src/retry.rs. They cannot be in one batch. Agree with its session who goes first; the other merges origin/main after the first lands, then queues."
   And each card in IN PROGRESS says "overlaps API-13" (AC-193)
   When API-13 is already queued or in a batch
   Then API-12 is told instead "… API-13 is queued for integration (2nd). Go on; merge origin/main once API-13 lands, before you queue."
@@ -372,7 +373,8 @@ Scenario: AC-192 happy path — an overlap while both work
 Scenario: AC-192 happy path — the target moved in its files
   Given API-12 IN PROGRESS, having changed src/retry.rs
   When a batch is published that changed src/retry.rs
-  Then API-12's agent is told "[terminum] API-12: origin/main moved to 3e9b5c2 (batch 7: API-13, API-15) in files you changed: src/retry.rs. Merge origin/main now, before you queue." and, when its commits no longer merge with it, "It conflicts in: src/retry.rs 40–58."
+  Then API-12's agent is told "[terminum] API-12: origin/main moved to 3e9b5c2 in files you changed: src/retry.rs. Merge origin/main now, before you queue." and, when its commits no longer merge with it, "It conflicts in: src/retry.rs."
+  And a notice reaches a hook as its first line, and an analysis under it by get_task, so no line of it stands as terminum's own; the other session is named by its task, never by a title its pane may set
 
 Scenario: AC-192 happy path — in the queue
   Then each of these is said once, in the words of §9: queued (place, the batch expected, conflicts foreseen); held back (the task it waits for, the files; "nothing to do until API-12's batch ends"); in a batch (its number, its tasks); returned for a conflict (the target's commit, the files and lines; "merge 77aa210, resolve, commit, integrate again"); returned for a red check (the integration task's analysis, the log, the batch's tasks); returned as carried (AC-189); taken out (by whom); landed (the commit, the batch)
@@ -488,10 +490,11 @@ Scenario: AC-194 happy path — everything returned
   Then no round follows: I_API-31 is DONE, "Batch 8: nothing published, all 3 tasks returned.", and the next batch is built
 
 Scenario: AC-194 happy path — failures that are not a check's
-  When the check did not start (AC-190), Publish failed or a push was refused (AC-191), or After failed (AC-191)
-  Then I_API-31 gets its agent the same way, its prompt's first lines saying which step failed with its last rows
-  And for After, the batch is already published and its tasks DONE: the agent mends what it can outside the candidate, then finish_task ends I_API-31 with what it did, or ask_human
-  And for Publish, when it is mended, integration_recheck publishes again without a new check while the target has not moved
+  When the check did not start (AC-190)
+  Then I_API-31 gets its agent the same way, its prompt's first lines saying the check did not start, with its last rows
+  When Publish failed or a push was refused (AC-191), or After failed (AC-191)
+  Then no agent starts: I_API-31 is WAIT FOR HUMAN with the step's words, "Batch 8 is not published: <why>" or "After failed for batch 8 with status 2: the batch stays published and its tasks DONE. Its log: …"
+  And the human decides by the batch's keys (Publish again, AC-191): a push and what After does on the human's machine are mended by a human, never by an agent
 
 Scenario: AC-194 failure — no agent, a spent budget, a dead agent
   Given no Agent is set
@@ -541,6 +544,62 @@ Scenario: AC-194 edge — terminumd restarts
   Then the run goes on as any run does, and a decision it made before the stop holds: a round asked for is built once
 ```
 
+### AC-198 — The seven stages [MUST / P0]
+
+```gherkin
+Scenario: AC-198 happy path — a row a stage
+  When the user opens Billing's Integration tab
+  Then it shows, in order, Prepare, Verify, Queue, Check, Publish, After and Cleanup, each with the folder it runs in: Prepare and Verify "a tree of its own at the task's commit", Queue "terminum's queue" with no field, Check and Publish "the candidate's tree", After and Cleanup Billing's folder
+  And under an empty Prepare or Verify stands "Skipped: a queued task goes straight into a batch.", under an empty Cleanup "Nothing runs after a batch."
+
+Scenario: AC-198 happy path — Prepare and Verify before a batch
+  Given Prepare "make sync", Verify "make test-changed"
+  When API-12 is queued with 4f2a91c (AC-187)
+  Then terminumd makes ~/.terminum/integration/billing/verify-12 at 4f2a91c, never the agent's own tree, and runs Prepare then Verify there in a window of its own, the task's card saying "Verifying 4f2a91c"
+  And one task's Prepare and Verify run at a time on the machine, in queue order, as heavy as a batch's check: API-13, queued after, starts its own when API-12's end
+  When both end with 0
+  Then API-12 joins the queue's next batch as AC-188 says, its tree removed
+  When Prepare ends with 2
+  Then API-12 is IN PROGRESS, "API-12 returned: conflict: its Prepare or Verify ended with status 2. Its log: …" (a conflict, AC-187's wait exits 2)
+  When Verify ends with another status, or either runs over "Check ends after"
+  Then API-12 is IN PROGRESS, "API-12 returned: red check: its Prepare or Verify ended with status 1. Its log: …" (AC-187's wait exits 1), its commit not queued again, and no batch ever held it
+  And Verify decides no publishing: only Check on the candidate does (AC-190)
+  When the content Prepare left is one a tree of the repository passed clean, its agent's own after merging origin/main
+  Then Verify says "targeted: passed already on 3f9a21c40b7d5e11" and runs nothing again; a pass that skipped timed checks (AC-146) or passed only on a retry (AC-197) stays its tree's own and is never reused
+
+Scenario: AC-198 edge — a return after an idle hour in integration
+  Given API-12 waits in INTEGRATION for more than 60 minutes while Prepare and Verify run
+  When Verify ends red and the queue returns API-12 with its reason and log
+  Then API-12 stays IN PROGRESS at the next Dispatcher walk: time in INTEGRATION counts toward no idle clock
+  And AC-123's idle hour and requests for a result start afresh at the return, its budget keeping the time already used
+
+Scenario: AC-198 happy path — Cleanup
+  Given Cleanup "make prune"
+  When batch 7 is published and its After ended
+  Then Cleanup runs once in Billing's folder, its status and log on I_API-31; a failure is said there and undoes nothing
+
+Scenario: AC-198 happy path — without terminumd
+  Given integration off for terminum, or terminumd not running
+  When the maintainer runs `make land SLUG=retry`
+  Then the stages run in order in the tree: `land.py prepare retry`, `verify retry`, `queue retry` (with integration off: nothing to queue), and in the landing turn `check retry` and `publish retry`, then `after` and `cleanup`
+  And each also runs alone, `make land-<stage> SLUG=retry`, and run again does nothing when its work is done: Prepare when the target is in HEAD, Verify when the pass is kept for this content, Check when a green is kept for that commit, Publish when the target holds the commit, After when `make installed` says this build runs, Cleanup when the sweep finds nothing
+
+Scenario: AC-198 happy path — with integration on, make land queues
+  Given terminum's integration on
+  When an agent runs `make land SLUG=retry TASK=TERM-12 RESULT=result.md`
+  Then the tree's HEAD is queued for TERM-12 with that result by `terminum integration queue --wait`, nothing is pushed from the tree, and `make land` ends with the wait's status (AC-187)
+  When TASK or RESULT is missing
+  Then it says "queue: integration is on: give TASK=<ID> and RESULT=<file with the result finish_task would take>, or queue from the session with integrate {id, result}" and nothing is queued
+
+Scenario: AC-198 failure — Publish pushes only what was checked
+  When `make land-publish SLUG=retry` runs on a commit with no green Check kept for it on the target as it is now
+  Then nothing is pushed: "6c1e2a9 has no green check: check first", or, the target moved since, "6c1e2a9 is not on origin/main as it is now (5d0f8b1): prepare and check again"
+
+Scenario: AC-198 edge — a task taken out while it is verified
+  When API-12 is taken out (AC-187) while its Verify runs
+  Then its window is ended and its tree removed at terminumd's next step, and nothing of it joins a batch
+```
+
 ## 6. Flow and sequence diagrams
 
 ```mermaid
@@ -585,11 +644,11 @@ sequenceDiagram
 
 | AC | Gap | Evidence |
 |---|---|---|
-| AC-187 | `terminum integration queue|wait|status`, queueing with a title where a session has no task, a human's Integrate key and drop: not built; the tools are. | `terminumd/src/tasks/integration_queue.rs` |
+| AC-187 | Queueing with a title where a session has no task (the tool's and `--title`) and a human's drop: not built; the tools, `terminum integration queue <ID> --result-file <path>|wait|status`, `make land` queueing its tree and the Integrate key of the task's window are. | `terminumd/src/tasks/integration_queue.rs`, `terminumd/src/cli/integration.rs` |
 | AC-190 | A check's process group is ended by the runner, read from `ps`; nothing proves it ends a group that left its pane's tree. | `terminumd/src/integrate/runner.rs` |
-| AC-192 | Notices are comments: queued (the tool's answer), in a batch, held, returned, landed; overlaps while working, the hooks' context, the waiting command and the gate: not built. | `terminumd/src/integrate/store.rs` |
-| AC-193 | The column stands as a plain list where integration is on; the batch's group, its marks, Pause, Batches…: not built. The keys of AC-194 stand in the integration task's window. | `web/static/kanbanbatch.js` |
-| AC-194 | No agent analyses a red batch: it waits for a human, whose keys decide; the agent's tools, kept slot, prompt and red rounds' limit: not built. | `terminumd/src/integrate/engine.rs` |
+| AC-192 | Trees of a project with no task are not compared; a card does not yet say "overlaps API-13" (AC-193). | `terminumd/src/integrate/notices.rs` |
+| AC-193 | Integrate and Take out are keys of the task's window, not a card's menu, and a card is not dropped on INTEGRATION; Return…, Check again, Return all and Publish again stand in the integration task's window, not on the group's cards; a card does not say "overlaps API-13". | `web/static/kanbanqueuecol.js`, `web/static/kanbanbatch.js` |
+| AC-194 | Red again, the same session goes on with RUN's words, not the round's own ("Decide as before", its log). The prompt lists each task with its commit, not its files. A fix goes in as its last commit's change alone, picked onto the target. | `terminumd/src/integrate/engine.rs`, `terminumd/src/integrate/agent.rs` |
 
 ## 8. Recommendation and ownership
 
@@ -604,7 +663,7 @@ sequenceDiagram
 
 ## 9. Technical details and specifications
 
-**Settings.** In the store, per project: `on`, `remote`, `branch`, `check`, `publish`, `after`, `batch_most` (1–8, default 8), `check_minutes` (1–1440, default 90), `agent` (of the project's pool, or none), `agent_budget_minutes` (5–1440, default 60), `red_rounds_most` (1–10, default 3), `prompt` (at most 8 KiB, empty: the default), `size` (the batch's size at this time), `paused`, `paused_why`. Written only by a signed-in page (`PUT /api/task-projects/<id>/integration`), with the checks of a project's other settings; read by pages and by `integration_status`.
+**Settings.** In the store, per project: `on`, `remote`, `branch`, `prepare`, `verify`, `check`, `publish`, `after`, `cleanup`, `batch_most` (1–8, default 8), `check_minutes` (1–1440, default 90), `agent` (of the project's pool, or none), `agent_budget_minutes` (5–1440, default 60), `red_rounds_most` (1–10, default 3), `prompt` (at most 8 KiB, empty: the default), `size` (the batch's size at this time), `paused`, `paused_why`. Written only by a signed-in page (`PUT /api/task-projects/<id>/integration`), with the checks of a project's other settings; read by pages and by `integration_status`.
 
 **Commands.** Each is one line, run as `<the user's login shell> -lc <line>` in a window terminumd opens in its own tmux server and marks (`@terminum-integration` = batch and step), `remain-on-exit` on; its status is the dead pane's (AS-189), its output is also written to `~/.terminum/integration/<project>/batch-<n>.<step>.log`. The line is the human's, given to tmux as one quoted argument (CLAUDE.md §2). Variables:
 
@@ -656,7 +715,7 @@ CREATE TABLE integration_rounds (batch INTEGER NOT NULL REFERENCES integration_b
   candidate_sha TEXT, started INTEGER, ended INTEGER, result TEXT NOT NULL, why TEXT, PRIMARY KEY (batch, round));
 ```
 
-A task's status `INTEGRATION` is the one fact that it is queued; its entry holds with what. `state`: `building`, `checking`, `red` (its task decides), `green`, `publishing`, `published`, `after`, `not published`, `given up`. `told` holds the notices given, so each is said once.
+A task's status `INTEGRATION` is the one fact that it is queued; its entry holds with what. `state`: `building`, `checking`, `red` (its task decides), `green`, `publishing`, `published`, `after`, `not published`, `given up`. `told` holds the notices given, so each is said once. The notice of a task leaving the queue carries `{"left": "landed" | "red" | "conflict" | "out"}` in its event's data: what `terminum integration wait` exits by; a task moved out with no such notice since it was last queued is out.
 
 **Notices.** Fixed words with names filled in; a file's lines are those git's conflict names in the merge's written tree.
 
@@ -702,15 +761,32 @@ GET  /api/integration-batches?project=<id>&before=<n> → {"batches": […100], 
 
 Every page hears `{"t": "integration"}` when a batch or the queue changes.
 
+**The seven stages (AC-198).** Each stage's done-check is what it reads, so run again it is a no-op:
+
+| Stage | Setting | Runs in, by whom | Done when |
+|---|---|---|---|
+| 1 Prepare | `prepare` | the task's verify tree, by terminumd, at queueing | the target is in HEAD |
+| 2 Verify | `verify` | the same tree, after Prepare | the pass is kept for this content, by any tree of the repository (git's common folder) |
+| 3 Queue | none: terminum's queue | terminumd | the task is queued, or landed |
+| 4 Check | `check` | the candidate's tree, per batch | a green is kept for that commit (a commit fixes its content; Publish asks that it holds the target) |
+| 5 Publish | `publish` (empty: terminum's push) | the candidate's tree | the target holds the commit |
+| 6 After | `after` | the project's folder, once a batch | this build is installed |
+| 7 Cleanup | `cleanup` | the project's folder, after After | nothing is left to take |
+
+A task's verify tree is `~/.terminum/integration/<project>/verify-<number>`, detached at the queued commit, made as the candidate's is and removed when its Verify ends or the task leaves the queue; Prepare's merge, if any, stays there, so the queued commit is the agent's own. Prepare and Verify get `TM_INTEGRATION_TASK` (its ID), `TM_INTEGRATION_SHA` (the queued commit), `TM_INTEGRATION_TARGET`, `TM_INTEGRATION_TREE` (the verify tree) and `TM_INTEGRATION_PROJECT_DIR`; Cleanup gets Check's. Prepare's status 2 is a conflict, any other failure of Prepare or Verify a red check, whatever tool runs the line (make turns each failure into 2, so the window says which stage failed). By hand, `land-publish` and `land-after` are refused while the project's integration is on: terminumd publishes and runs After.
+
 **This repository's own settings.** terminum checks on this machine (the first way):
 
 | Field | Value |
 |---|---|
 | On | on |
 | Target | `origin/main` |
-| Check | `python3 scripts/check_changed.py --land` |
+| Prepare | `python3 scripts/land.py prepare` |
+| Verify | `python3 scripts/worktree.py link . && python3 scripts/land.py verify` |
+| Check | `python3 scripts/worktree.py link . && python3 scripts/land.py check` |
 | Publish | empty: terminum's push |
-| After | `make build install installed` |
+| After | `make land-after` (the install on the maintainer's machine, by `TM_LAND_INSTALL := 1` in `local.mk`) |
+| Cleanup | `make land-clean` (`worktree.py sweep`) |
 | Tasks in a batch, at most | 8 |
 | Check ends after, minutes | 90 |
 | Agent | an agent of terminum's pool, chosen in the window; with none a red batch waits for the maintainer |
@@ -718,11 +794,11 @@ Every page hears `{"t": "integration"}` when a batch or the queue changes.
 | Red rounds, at most | 3 |
 | Prompt | the default |
 
-`make land SLUG=<slug>` then runs the tree's targeted pass (`terminum-lifecycle.md` AC-104), queues its HEAD by `terminum integration queue --wait`, with the ID of the task its session works on, else `--title` with the tree's branch, and ends with its exit status: 0 landed, 1 red, 2 conflict. The values are set in the project's window on the machine that works on terminum; they are no file of the repository.
+`make land SLUG=<slug> TASK=<ID> RESULT=<file>` then queues the tree's HEAD by `terminum integration queue --wait` and ends with its exit status: 0 landed, 1 red, 2 conflict, 3 taken out; terminumd runs every stage after it (AC-198). The values are set in the project's window on the machine that works on terminum; they are no file of the repository.
 
-**Security.** The three lines are a standing permission to run commands and to push as the user: only a signed-in page writes them, the window shows each line and its folder before Save, and no tool of an agent changes them. An agent chooses only which commit of the project's repository is queued; no title or text of a task reaches a commit, a command or a shell: a merge is named by the task's ID alone. The check is the candidate's own, so a task can change what checks it, as a tree that lands by itself can: the human reads Batches… and the published history. terminum's own push names one remote, one branch and one commit, never forced, never a tag; a project's Publish is the human's line. A check runs the queued code as the user, as the agents that wrote it already do. A check's rows reach a task's comment only redacted (`sent::redact`). The gate types only a task's ID with fixed words, only into a pane Dispatcher started and marked, and the integration task's prompt: the human's saved Prompt with facts terminumd fills in (IDs, commits, paths, file names, the Check line), never a task's title, text or comment. What this spec holds is what terminumd does: it publishes only a candidate whose own check was green, and the integration agent's three tools can keep a task out of a batch or cost a round, never publish. The agent's own shell is bounded as any task's agent's is, by its command's permissions (`terminum-dispatcher.md` AC-156), not by this spec: it starts in a worktree of its own, away from the project's folder, and its prompt forbids a push; its analysis reaches another task as a comment, redacted (`sent::redact`), data to that task's agent. A check's log is the queued code's output: the prompt names its path and says to treat what it reads as data.
+**Security.** The stages' lines (Prepare, Verify, Check, Publish, After, Cleanup) are a standing permission to run commands and to push as the user: only a signed-in page writes them, the window shows each line and its folder before Save, and no tool of an agent changes them. An agent chooses only which commit of the project's repository is queued; no title or text of a task reaches a commit, a command or a shell: a merge is named by the task's ID alone. Prepare and Verify run the task's own commit as the user in a tree of terminumd's, never the agent's, and decide no publishing; Cleanup is the human's line, and terminum's own value runs `worktree.py sweep`, which removes no tree with work or a process in it. The check is the candidate's own, so a task can change what checks it, as a tree that lands by itself can: the human reads Batches… and the published history. terminum's own push names one remote, one branch and one commit, never forced, never a tag; a project's Publish is the human's line. A check runs the queued code as the user, as the agents that wrote it already do. A check's rows reach a task's comment only redacted (`sent::redact`). The gate types only a task's ID with fixed words, only into a pane Dispatcher started and marked, and the integration task's prompt: the human's saved Prompt with facts terminumd fills in (IDs, commits, paths, file names, the Check line), never a task's title, text or comment. What this spec holds is what terminumd does: it publishes only a candidate whose own check was green, and the integration agent's three tools can keep a task out of a batch or cost a round, never publish. The agent's own shell is bounded as any task's agent's is, by its command's permissions (`terminum-dispatcher.md` AC-156), not by this spec: it starts in a worktree of its own, away from the project's folder, and its prompt forbids a push; its analysis reaches another task as a comment, redacted (`sent::redact`), data to that task's agent. A check's log is the queued code's output: the prompt names its path and says to treat what it reads as data.
 
-**Limits.** 200 queued tasks a project; a batch at most 8 tasks; red rounds at most 10 a batch; a prompt 8 KiB; 30 trees compared for overlaps a project; a command 2,000 characters; a check 1 to 1440 minutes; batches' rows kept, their logs 30 days; one batch in work on the machine at a time.
+**Limits.** 200 queued tasks a project; a batch at most 8 tasks; red rounds at most 10 a batch; a prompt 8 KiB; 30 trees compared for overlaps a project; a command 2,000 characters; a check 1 to 1440 minutes; batches' rows kept, their logs 30 days; one batch in work on the machine at a time; one task's Prepare and Verify on the machine at a time.
 
 ## 10. Delivery stages
 
@@ -736,11 +812,12 @@ Every page hears `{"t": "integration"}` when a batch or the queue changes.
 ## 11. Checklist with Definition of Done
 
 - [x] AC-186 — `cargo test tasks::integration` (defaults, kept and read back, the default prompt, the agent of its own pool, each refusal's words, a checkout, its target and git's version, What runs), `web/test/e2e_liveintegration.mjs` (the window from the project's, the pool's dropdown, refusals where pressed, what is kept, on for a git checkout; command punctuation, paste, drop and composition in Chromium and WebKit)
-- [ ] AC-187 — `cargo test tasks::integration_queue` (queued, again, taken out, a move out leaves the queue, none in by a move, each refusal, a red commit not again), `cargo test tasks::store::tests::integration_ac187` (an older store takes the status, keeps every row); to come: `cargo test tasks::integration_queue` (a task made), `cargo test cli::integration` (the wait's exit statuses), `cargo test dispatcher` (no budget, no idle clock, no closing in INTEGRATION)
+- [ ] AC-187 — `cargo test tasks::integration_queue` (queued, again, taken out, a move out leaves the queue, none in by a move, each refusal, a red commit not again), `cargo test tasks::store::tests::integration_ac187` (an older store takes the status, keeps every row), `cargo test integration_queue::tests::ac187_status_of_a_task` (how a task left), `cargo test cli::integration` (the command's usage, the wait's exit statuses); to come: `cargo test tasks::integration_queue` (a task made), `cargo test dispatcher` (no budget, no idle clock, no closing in INTEGRATION)
 - [ ] AC-188 — `cargo test integrate::batch`, `cargo test integrate::engine` on private repositories (`crate::testutil::temp_root()`): the queue's order, the size's doubling and halving, two projects' turns, everything conflicting gives one task a round
 - [ ] AC-189 — `cargo test integrate::batch` and `integrate::engine::tests::ac189_…` (with the target, with a batch-mate, judged again after that batch, a foreseen one)
 - [ ] AC-190 — `cargo test integrate::engine` (green, red, over its time), `cargo test integrate::runner`; to come: `cargo test integration::check` with stand-in lines (green, red, over its time, not started, nothing published but a green candidate), `scripts/e2e_integration.py` (a check outlives a restart of a private terminumd, private tmux)
 - [ ] AC-191 — `cargo test integrate::engine` against a private bare remote (pushed never forced, the target moved, a refused push and Publish again, a publish terminumd did not see end, the folder fast-forwarded); to come (pushed never forced, the target moved, a refused push, the project's Publish that does not land, the folder left where it is, After's failure undoes nothing)
-- [ ] AC-192 — `cargo test integration::notices` (each notice's words, said once, what is compared), `scripts/e2e_integration.py` (a hook's context, the gate only in Dispatcher's pane), `web/test/e2e_liveintegration.mjs` (the comment on the card)
-- [ ] AC-193 — `web/test/e2e_liveintegration.mjs` (Chromium and WebKit, wide and phone: the column only where on, the batch's group, places and waits, each key and its refusal, Batches…)
-- [ ] AC-194 — `cargo test integration::task` (made with its batch, DONE on green with no agent, each tool and each refusal, the unchanged round once, 3 red rounds, no agent, everything returned, the kept slot), `cargo test dispatcher` (its budget counts the analysis alone), `scripts/e2e_integration.py` with `scripts/fake_agent.py` (a red round, a return with its analysis, round 2 green and published), `TM_TEST_REAL_INTEGRATION=1` (a Sonnet agent names the task whose change broke a stand-in check, three short runs)
+- [ ] AC-192 — `cargo test integrate::notices` (two trees whose commits do not merge told once each, a tree beside a queued task told its place, the target moving in a task's files told once with its conflict, which notices are new, the gate's fixed words for a return alone), `cargo test integrate::agent` and `tasks::integration_queue` (the queue's own notices); to come: `scripts/e2e_integration.py` (a hook's context, the gate only in Dispatcher's pane), `web/test/e2e_liveintegration.mjs` (the comment on the card)
+- [ ] AC-193 — `cargo test integrate::column` (the batch heading the queue in its order, each state in words, a returned task said until queued again, a human's Integrate and Take out and their refusals, Batches newest first with the greens of the last 20), `web/test/e2e_liveintegration.mjs` (the column's keys, Pause and Resume with who paused, Batches…, Integrate refused in its words); to come: the batch's group and places on the page with a batch in work, at a phone's size
+- [ ] AC-194 — `cargo test integrate::agent` (wanted in its own worktree at the candidate, its prompt without a task's words, each tool and its refusals, several returned for one round, the unchanged round once, red rounds spent, no agent, everything returned, a fix picked onto the target that outlives a red round and is published, a fix that needs the batch, each agent's own kept slot), `cargo test integrate::engine` (made with its batch, DONE on green with no agent, the human's keys), `cargo test dispatcher` (its budget counts the analysis alone), `scripts/e2e_integration.py` with `scripts/fake_agent.py` (a red round, a return with its analysis, round 2 green and published), `TM_TEST_REAL_INTEGRATION=1` (a Sonnet agent names the task whose change broke a stand-in check, three short runs)
+- [ ] AC-198 — `python3 scripts/tests/test_land_stages.py` (each stage's done-check run again, Prepare's conflict exit 2, Publish refusing an unchecked commit or a moved target, Queue on and off, Cleanup as the sweep), `cargo test integrate::stages` (Prepare and Verify in a tree of its own before a batch, a red Verify through make, Prepare's conflict, a lost window run again, a task taken out while verified, Cleanup after After), `cargo test dispatcher::walk` (a red Verify after two hours returns with fresh idle/request clocks, used budget kept), `web/test/e2e_liveintegration.mjs` (the seven rows, saved, What runs)

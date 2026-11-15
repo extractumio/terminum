@@ -392,8 +392,8 @@ Scenario: AC-122 happy path — a human's new work
   When the agent then ends with finish_task, or the session ends cleanly
   Then API-12 is DONE again (AC-123)
 
-Scenario: AC-122 edge — CLOSE
-  When the user presses CLOSE instead
+Scenario: AC-122 edge — SAVE
+  When the user presses SAVE instead
   Then the comment is kept, nothing moves and the session hears nothing (terminum-kanban.md AC-108)
 
 Scenario: AC-122 edge — archived
@@ -460,6 +460,15 @@ Scenario: AC-123 happy path — an hour of nothing
   Then API-12 is FAILED with the comment "No activity for 60 minutes and no result from the agent.", and terminum-kanban.md AC-117 reminds
   And a main task with its subtasks open is the same case: it is never DONE without a result
   And a task in WAIT FOR HUMAN is never moved on by a clock: it waits for the human
+
+Scenario: AC-123 edge — integration stops the idle clock
+  Given API-12 is in INTEGRATION for more than 60 minutes, its agent idle while the queue works
+  Then its idle clock is stopped and no request for a result goes to it
+  When the queue returns API-12 to IN PROGRESS, even with no Dispatcher walk during its wait
+  Then its idle hour and allowance of requests for a result start afresh at the return, including after a terminumd restart
+  And its budget keeps the time already used and runs on from the return
+  When its ended turn stays quiet for 5 minutes
+  Then Dispatcher requests its result as above, with a whole hour before FAILED
 
 Scenario: AC-123 edge — a running tool is activity
   Given a tool started with no end yet (`gh run watch`, a remote build) or a counted subagent
@@ -746,7 +755,7 @@ Scenario: AC-130 failure — hooks missing there
 Scenario: AC-138 happy path — over the board
   Given a pool of Opus reviewer (Claude Code, high), Fast fixer (Claude Code) and Codex (Codex, low)
   Then three rectangles stand over the columns, each in its color, with its name, kind, effort, its subscription's two stripes (AC-168) and one dot per live session
-  And each is a column wide, on the columns' own tracks: four to a row, the fifth track holding + Agent; a fifth agent starts the next row; a phone keeps one row that scrolls
+  And each is a column wide, on the columns' own tracks: four to a row, the fifth track holding + Agent; a fifth agent starts the next row; a window under 860 px keeps one row that scrolls; on a phone (600 px or narrower) they stand one a row in the sheet its line opens (terminum-kanban.md AC-105)
 
 Scenario: AC-138 happy path — its dots
   Given Opus reviewer with API-12's session working and API-14's waiting at its input box
@@ -897,6 +906,14 @@ Scenario: AC-141 happy path — an idle holder
   When the pane did not close, or API-13 cannot start
   Then that is said, and whatever closed stays closed: nothing else is closed for it
 
+Scenario: AC-141 edge — a draft after the close offer
+  Given RUN offers to close an idle holder whose input box is empty
+  When a draft is typed in that box before Close and run is pressed
+  Then the press says the session is no longer idle and keeps its pane and draft
+  And the new task stays TODO, with no run or queue entry
+  When the draft is cleared and the holder is eligible again
+  Then a fresh RUN window offers Close and run, and that press closes the holder and starts the new task
+
 Scenario: AC-141 edge — never closed for a limit
   Given a holder working, waiting for an answer, with text in its input box, or started by + Session
   Then no key offers to close it; the toast names it
@@ -996,6 +1013,16 @@ Scenario: AC-168 failure — its usage command fails
   When the usage command is not found, ends with an error, answers no limits (an API key) or takes over 60 s
   Then its process group is ended, the stripes keep the last reading, and the agent's window says in the danger color "its usage command failed 09:00: it ended with exit 1: Error: not logged in"
   And terminumd's log says it once per ask, and it is asked again in 10 minutes, not an hour
+
+Scenario: AC-168 failure — Codex ends without an answer
+  Given its usage command consumes the three request lines
+  When it ends successfully without replying
+  Then the failure says "it ended without an answer"
+
+Scenario: AC-168 failure — Codex closes its input before the request
+  Given its usage command has ended before terminumd writes the request
+  When terminumd writes to its closed input pipe
+  Then the failure says "its input closed" with the operating system's broken-pipe error
 
 Scenario: AC-168 edge — a restart
   Given Claude Code's last reading was at 09:00
@@ -1097,6 +1124,17 @@ Scenario: AC-157 happy path — the agent asks
   When its turn is over, no tool open, no subagent, no activity for 60 s (two walks), the box read empty just before
   Then Dispatcher checks @terminum-run and closes the session as AC-125 does, keeping no screen: "Session closed: it waits for the human's answers. RUN resumes this conversation."
   And its slot is free (AC-141), and the task's window names its agent and "conversation c0ffee"
+
+Scenario: AC-157 edge — the first prompt's hook is delayed
+  Given Dispatcher sent the run's first prompt, but its hook still waits to be applied
+  When its agent calls ask_human before that hook is applied
+  Then taking the run precedes the question, in the tool's transaction, for every task of the run
+  And the delayed hook keeps WAIT FOR HUMAN, the questions and the run's asked flag, recording its conversation without starting the work again
+  And a task already finished or failed by that agent stays finished or failed; one queued for integration stays INTEGRATION
+  And a finished task's result stays recorded, and other tasks still open wait with the question (AC-185)
+  And a start watcher's earlier screen or timeout reading cannot change a run already accepted by its hook or tool
+  When the human runs the conversation again with answers
+  Then the new work starts its clocks anew and goes IN PROGRESS; its own early question or result survives its delayed first hook too
 
 Scenario: AC-157 happy path — the human answers
   When the user writes "v2, and keep v1 a month" under Comment, or in several comments, and presses RUN
@@ -1264,11 +1302,11 @@ Scenario: AC-169 edge — a press for several tasks
 ```gherkin
 Scenario: AC-170 happy path — the switch and its settings
   Given the board, whatever projects it shows
-  Then its bar holds "Auto-Dispatch", a switch with its state, and a cog; a phone's bar too, without the words; the project's window holds no key of it
+  Then its bar holds "Auto-Dispatch", a switch with its state, and a cog; a window under 860 px too, without the words; on a phone (600 px or narrower) the three stand first in the sheet its line opens, the line saying the state (terminum-kanban.md AC-105); the project's window holds no key of it
   When project api is shown alone, an agent that picks chosen for it, and the user presses the switch
   Then it is on for api, "ON", on every page; a press again turns it off, "OFF", its agents and filters kept
   When no agent picks for api yet, or it turned itself off, and the user presses the switch
-  Then its window opens with On ticked, saying why it turned itself off: nothing is on until Save
+  Then its window opens with On switched on, saying why it turned itself off: nothing is on until Save
   When the user presses the cog
   Then the window holds, for the project: On; the agent that picks; the default agent; the severities it takes, a tick each; the minutes a task stands in TODO before it is taken, 0 to 1440; the tasks it starts in 24 hours at most, 1 to 1000, with how many it started in the last 24
   And it says in fixed words what it takes, in what order, when it waits and when it stops; tasks start with no one pressing Run, an agent's text too
@@ -1284,7 +1322,7 @@ Scenario: AC-170 happy path — several projects shown
   When the user presses it
   Then it is off for api: one press turns off, for every project shown
   When none is on and the user presses it
-  Then the window opens with a Project choice and On ticked: turning on is one project's Save, never one press for several
+  Then the window opens with a Project choice and On switched on: turning on is one project's Save, never one press for several
 
 Scenario: AC-170 happy path — priority and saved order, no agent
   Given api's window, "How tasks are picked" set from "An agent scores them by RICE" to "By priority and saved order, no agent", saved
@@ -1297,6 +1335,7 @@ Scenario: AC-170 happy path — priority and saved order, no agent
   Then nothing starts, its slot of the day is given back, and a later walk tries again
   When a press fails (the project has no folder, the agent's command does not start)
   Then it turns itself off: "it could not start API-12: <why>", never a failing press at every walk
+  And the tasks that walk took and had not pressed yet give their slots of the day back
   When it is set to priority and saved order while a round is open
   Then that round's dispatch_task is refused: "Auto-Dispatch was set to priority and saved order for this project meanwhile: start no more, and finish API-20.", and nothing starts by order until it ended
 
@@ -1393,6 +1432,8 @@ Scenario: AC-170 edge — a restart
   And Auto-Dispatch stays on, and that walk may make a new round, offered what the dropped one was given
   Given a round whose press failed by its own agent or command, no session opened either
   Then it is FAILED, "It did not start: <why>", and the breaker reads that
+  Given a task the board's order took, terminumd having stopped before its press made a run
+  Then the next walk gives its slot of the day back and it is a candidate again; one whose run was made keeps its start, whatever its agent did, and is not started twice
 ```
 
 ### AC-185 — A main task runs with its subtasks [MUST / P0]
@@ -1415,6 +1456,7 @@ Scenario: AC-185 happy path — one cannot be done
   Then API-13 is DONE, API-14 and API-12 are FAILED with the agent's comments, and the session closes as AC-125 says
   When the human removes the cause and presses Run on API-12
   Then the run's conversation goes on for API-12 and its subtasks not DONE, API-14 among them, its work and context kept: in its window while it stands, else in a new one (AC-122); API-13 stays DONE
+  But a subtask a run of its own took since starts a new session instead: the newer work is not lost in an older conversation
   And its words end "Its open tasks: API-14, API-12 (a main task last).", each reopened IN PROGRESS, and the press's message is kept on each
   And a press that names a task its last run did not hold, or another agent, or Run from scratch, starts a new session instead
   And one left in progress at the turn's end is asked for and failed as AC-123 says
@@ -1555,6 +1597,12 @@ Scenario: AC-131 edge — terminumd restarts
   When terminumd restarts or upgrades during API-12's work
   Then the session runs on in tmux; Dispatcher reads from the store each run's clocks and the hook facts of §9, reads each screen before acting, and takes no ending action for one idle period
 
+Scenario: AC-131 edge — a Stop during the restart
+  Given the agent just took API-12 into IN PROGRESS, its persisted run still records a working turn, its Stop reaches no terminumd during the restart, and its recognizable agent screen is idle
+  When terminumd starts again
+  Then Dispatcher recovers the turn's end from the screen and asks for a result through the gate after 5 minutes of no activity (AC-123)
+  And API-12 stays IN PROGRESS until an hour of no activity after the request, then is FAILED with "No result from the agent within an hour of Dispatcher's request."
+
 Scenario: AC-131 edge — tmux restarted
   When the server restarted and restore says which new pane is API-12's
   Then the run follows it, its @terminum-run set again; its agent is gone: API-12 is FAILED and RUN continues the conversation (AC-122)
@@ -1662,7 +1710,7 @@ New task and Run is two presses; a drop and Run one drag and one press. What to 
 | AC-127 | No subagent is tied to a process or pane yet (AS-126): at 20 minutes every one fails its task as one inside the agent does. | `terminumd/src/dispatcher/walk.rs` |
 | AC-130 | A real host: `scripts/e2e_remote_tasks.py` runs on a stand-in for ssh; a host's `~` folder is not checked before the window opens. | `terminumd/src/dispatcher/procs.rs` |
 
-| AC-141 | A dot does not say a host is out of reach. | `web/static/kanbanagents.js` |
+| AC-141 | A dot does not say a host is out of reach; a quiet draft can still get a close offer (TERM-309), though the press refuses it. | `web/static/kanbanagents.js`, `terminumd/src/dispatcher/api.rs`, `terminumd/src/dispatcher/pool.rs` |
 | AC-168 | One reading per kind: two accounts of one kind (another `CLAUDE_CONFIG_DIR` or `CODEX_HOME` in an agent's command) show whichever read last; the usage command reads the account of this Mac's user. A model's own week (Claude Code's `weekly_scoped`, e.g. Fable's) is not shown: the stripes are the account's. The usage command runs on this Mac only, not on an agent's remote host. | `terminumd/src/dispatcher/subscriptions.rs` |
 | AC-129 | A Codex session is priced as a whole at its last turn's model, and a request over 272K input tokens at the lower price. | `terminumd/src/cli/hooktokens.rs`, `terminumd/src/dispatcher/usage.rs` |
 | AC-183 | A press that was waiting for room when this record began says `run`, the human's, a schedule's too. | `terminumd/src/dispatcher/api.rs` |
@@ -1697,6 +1745,8 @@ CREATE TABLE runs (id TEXT PRIMARY KEY, task TEXT NOT NULL REFERENCES tasks, age
 ```
 
 `asked` (AC-157): its agent asked a human itself (`ask_human`), set in that call's transaction, cleared by its own move off it and by new work.
+
+Taking a first prompt is one transition, shared by its hook and a status-changing task tool. The tool accepts every task of its run before its mutation in the same transaction. `prompt` stays until the matching first hook acknowledges it, including in `working`; that acknowledgment records the conversation and tells the pages, without resetting clocks, tools or task outcomes.
 
 **Waits** (AC-158, AC-169): a press at a slot's limit that agreed to the queue (`"queue": true`), one a task, its place in the line kept when it is pressed anew:
 
@@ -1859,7 +1909,7 @@ Depends on `terminum-kanban.md`'s Stage 1. All three stages belong to terminum's
 - [x] AC-138 — `cargo test dispatcher::runs`, `cargo test dispatcher::press`, `cargo test tasks::agents`, `web/test/e2e_liveboardagents.mjs`, `web/test/cardstate.test.mjs` (a dot at work)
 - [x] AC-137 — `cargo test tasks::agents`, `cargo test tasks::store` (`ac137_one_pool_s_agents_each_go_to_a_project`), `cargo test tasks::auto` (`ac137_a_task_names_an_agent_of_its_own_project_alone`), `cargo test roles`, `cargo test cli::mcp`, `cargo test auth::checks`, `web/test/e2e_liveboardagents.mjs`, `web/test/astyped.test.mjs`, `SECURITY.md` carries a project agent's command
 - [x] AC-122 — `cargo test dispatcher::hooks`, `cargo test dispatcher::acts` (RUN cancels a waiting close already decided), `web/test/e2e_taskrun.mjs` (all columns, held sessions, queue and refusals; one press in the task's window, Run from scratch), `web/test/e2e_livewaiting.mjs` (answer before closing, `e2e_live.mjs waiting`), `web/test/e2e_livedispatcher.mjs` (answer after closing), `web/test/e2e_livearchived.mjs` (a human's prompt restores archived DONE and IN PROGRESS cards), its real run as AC-121's
-- [x] AC-123 — `cargo test dispatcher::plan`, `cargo test dispatcher::hooks` (a request's turn and its Stop), `cargo test dispatcher::walk` (every footer kind), `cargo test dispatcher::start`, `cargo test tasks::tools`, `web/test/e2e_livedispatcher.mjs` with the test clock, `web/test/e2e_livebackground.mjs` (a monitor-only run past the idle hour; `node web/test/e2e_live.mjs background`), `scripts/e2e_remote_tasks.py`
+- [x] AC-123 — `cargo test dispatcher::plan` (idle time stopped in INTEGRATION), `cargo test dispatcher::hooks` (a request's turn and its Stop), `cargo test dispatcher::walk` (every footer kind; a red Verify after two hours, its return and fresh request and hour after a store reload), `cargo test dispatcher::start`, `cargo test tasks::tools`, `web/test/e2e_livedispatcher.mjs` with the test clock, `web/test/e2e_livebackground.mjs` (a monitor-only run past the idle hour; `node web/test/e2e_live.mjs background`), `scripts/e2e_remote_tasks.py`
 - [x] AC-124 — `cargo test dispatcher::plan`, `web/test/e2e_livedispatcher.mjs`
 - [x] AC-125 — `cargo test dispatcher::plan`, `cargo test dispatcher::acts` (a close decided before a human's input), `web/test/e2e_livedispatcher.mjs`
 - [x] AC-126 — `cargo test dispatcher::plan`, `cargo test tasks::tell` (words not heard go again), `cargo test dispatcher::acts` (an end decided before a human's input), `web/test/e2e_livedispatcher.mjs`, `SECURITY.md` carries Dispatcher's signals
@@ -1867,14 +1917,14 @@ Depends on `terminum-kanban.md`'s Stage 1. All three stages belong to terminum's
 - [x] AC-128 — `cargo test dispatcher`, `cargo test tasks::agents`, `web/test/e2e_livedispatcher.mjs`, its window's words and global placeholders in `web/test/e2e_liveboardagents.mjs`
 - [x] AC-129 — `cargo test cli::hooktokens` with fixtures of both agents' files, `cargo test dispatcher::usage` (a late read counts nothing), `web/test/e2e_livedispatcher.mjs`
 - [x] AC-130 — `scripts/e2e_remote_tasks.py`
-- [x] AC-131 — `cargo test dispatcher::plan` with a clock jump, `cargo test dispatcher::runs` (a phase it does not know), `web/test/e2e_livedispatcher.mjs`
+- [x] AC-131 — `cargo test dispatcher::plan` with a clock jump, `cargo test dispatcher::runs` (a phase it does not know), `web/test/e2e_livedispatcher.mjs` (Stop during downtime, screen recovery, request before failure)
 - [x] AC-140 — `cargo test tasks::agents`, `cargo test tasks::store`, `web/test/e2e_liveboardagents.mjs`, `web/test/e2e_livedispatcher.mjs`, `scripts/e2e_remote_tasks.py`
-- [x] AC-141 — `cargo test dispatcher::pool`, `cargo test dispatcher::plan`, `cargo test tasks::limits`, `web/test/e2e_liveboardagents.mjs`
+- [x] AC-141 — `cargo test dispatcher::pool`, `cargo test dispatcher::plan`, `cargo test tasks::limits`, `web/test/e2e_liveboardpool.mjs` (an empty-box offer, a draft typed before its press, refusal preserving the pane/draft/unqueued task, then an empty-box close)
 - [x] AC-142 — `cargo test dispatcher::runs`, `cargo test dispatcher::plan`, `cargo test tasks::tools`, `web/test/e2e_liveboardagents.mjs` (the tiles: `web/test/e2e_liveboardpool.mjs`)
 - [x] AC-143 — `cargo test dispatcher::usage`, `cargo test tasks::agents`, `web/test/e2e_liveboardagents.mjs`
 - [x] AC-168 — `cargo test subscriptions`, `cargo test usageask`, `cargo test usageread`, `cargo test settings::tests::ac168`, `cargo test cli::statusline`, `cargo test cli::hooktokens`, `scripts/e2e_hooks.py`, `web/test/e2e_liveboardsubs.mjs` (a stripe under 40% green, over 90% red)
 - [ ] AC-156 — `cargo test tasks::agents`, `cargo test dispatcher::press`, `web/test/e2e_liveboardagents.mjs`, `web/test/e2e_livedispatcher.mjs` (the inline words), `SECURITY.md` carries the operator's command
-- [ ] AC-157 — `cargo test dispatcher::plan`, `cargo test dispatcher::press`, `cargo test tasks::tools`, `cargo test cli::mcp`, `web/test/e2e_livedispatcher.mjs`
+- [ ] AC-157 — `cargo test dispatcher::plan`, `cargo test dispatcher::press`, `cargo test dispatcher::hooks` (held initial event, early tools and mixed outcomes), `cargo test dispatcher::start` (stale start watcher), `cargo test tasks::tools`, `cargo test tasks::integration_queue` (early integration), `cargo test cli::mcp`, `web/test/e2e_livedispatcher.mjs`
 - [ ] AC-158 — `cargo test dispatcher::waits`, `web/test/e2e_liveboardagents.mjs`
 - [x] AC-169 — `cargo test dispatcher::waits`, `web/test/e2e_livequeue.mjs` (a wide and a phone size), `web/test/e2e_liveboardagents.mjs`
 - [x] AC-170 — `cargo test dispatcher::auto`, `cargo test tasks::auto`, `cargo test tasks::tools` (a round's pane), `web/test/e2e_liveauto.mjs` on `scripts/fake_agent.py`; no test of its own: two dispatch_task calls at once through the socket, a new place among the cards leaving the wait as it was, a candidate with an earlier conversation started anew; not run on a real model: whether a real agent follows the round's words

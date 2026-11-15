@@ -43,3 +43,69 @@ fn ac123_every_footer_kind_holds_the_idle_clock_like_the_card() {
         assert!(plan::step(&mut r, &quiet).iter().any(|a| matches!(a, Act::Move { to: "FAILED", .. })), "work ended: the idle clock runs");
     }
 }
+
+/// AC-123, AC-198: the same return and ten-second walk that failed a task after a long Verify;
+/// stale clocks model a run queued before the fix was installed, with every request already used.
+#[test]
+fn ac198_ac123_a_red_verify_after_an_hour_restarts_the_idle_clock() {
+    red_verify_return(3);    // no walk saw the integration wait
+    red_verify_return(7290); // an older server kept walking and accumulated idle time
+}
+
+fn red_verify_return(last_walk: i64) {
+    use crate::integrate::engine::tests::{queued_with, world, Sh};
+    use crate::integrate::stages::verify_step;
+    use crate::tasks::integration::Settings;
+
+    let w = world("walk-return", Settings { verify: "exit 1".into(), check_minutes: 180, ..Settings::default() });
+    let task = queued_with(&w, 1, "b.txt", "b\n", true);
+    let key = "tmux:local:t:%7";
+    let id = w.s.with(|tx| {
+        tx.execute("UPDATE tasks SET budget_seconds = 7200 WHERE slug = ?1", [&task]).map_err(ops::sql)?;
+        let id = runs::add(tx, &Run { agent_id: "a".into(), kind: "claude".into(), ..Default::default() }, &[ops::key_of(tx, &task)?], Default::default(), 3)?;
+        runs::change(tx, &id, |r| {
+            r.state = runs::Phase::Working;
+            r.pane_key = Some(key.into());
+            r.turn_ended = true;
+            r.idle_for = plan::NOTHING + 100;
+            r.nudged = plan::NUDGES;
+            r.nudge_turn = true;
+            r.last_walk = last_walk;
+            r.budget_used = 600;
+            r.warned = true;
+        })?;
+        Ok(id)
+    }).unwrap();
+    let runner = Sh { hang: true, ..Default::default() };
+    let home = w.root.join("home");
+    verify_step(&w.s, &runner, &home, 100).unwrap();
+    runner.ran.lock().unwrap().values_mut().for_each(|(code, _)| *code = Some(1));
+    // The transition must reset persisted clocks whether the last walk was recent or before the two-hour wait.
+    verify_step(&w.s, &runner, &home, 7300).unwrap();
+    let store = Store::open(w.root.join("kanban.sqlite")); // a restart reads the reset, too
+    let mut r = store.with(|tx| runs::by_id(tx, &id)).unwrap();
+    assert_eq!((r.status.as_str(), r.idle_for, r.nudged, r.nudge_turn, r.last_walk), ("IN PROGRESS", 0, 0, false, 7300));
+    assert_eq!((r.budget_used, r.warned), (600, true), "return preserves the budget already spent and its warning");
+    let said = store.with(|tx| ops::history(tx, &task)).unwrap().to_string();
+    assert!(said.contains("returned: red check: its Prepare or Verify ended with status 1"), "{said}");
+    let walk = |now| store.with(|tx| {
+        walk_store(tx, &Hooks::default(), vec![Read { id: id.clone(), facts: Facts { pane: true, marked: true, alive: true, ..Default::default() }, ended: true, key: key.into() }], now, Instant::now())
+    }).unwrap();
+    assert!(walk(7310).0.is_empty(), "ten seconds after return: no immediate failure or request");
+    assert_eq!(store.with(|tx| runs::by_id(tx, &id)).unwrap().budget_used, 610, "only the ten seconds after return count");
+    for now in (7340..7600).step_by(30) {
+        assert!(walk(now).0.is_empty());
+    }
+    let later = walk(7600).0;
+    assert_eq!(later.len(), 1);
+    assert_eq!(later[0].act, Act::Nudge, "five fresh minutes of quiet get a new request");
+    store.with(|tx| runs::change(tx, &id, |r| { r.nudged = 1; r.idle_for = 0; })).unwrap(); // request delivered
+    for now in (7630..11200).step_by(30) {
+        assert!(walk(now).0.is_empty(), "the request gets its whole hour");
+    }
+    walk(11200);
+    r = store.with(|tx| runs::by_id(tx, &id)).unwrap();
+    assert_eq!(r.status, "FAILED");
+    let said = store.with(|tx| ops::history(tx, &task)).unwrap().to_string();
+    assert!(said.contains("No result from the agent within an hour of Dispatcher's request."), "{said}");
+}

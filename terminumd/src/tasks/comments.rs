@@ -26,6 +26,39 @@ pub fn questions(tx: &Transaction, author: &str, id: &str, text: &str, at: i64) 
     comment_with(tx, author, id, text, Some(&json!({"questions": true})), at)
 }
 
+/// Dispatcher's words on a task leaving the integration queue, marked with how it left (`terminum-integration.md`
+/// AC-187): `landed`, `red`, `conflict` or `out`, read by `terminum integration wait`.
+pub fn left_queue(tx: &Transaction, author: &str, id: &str, text: &str, how: &str, at: i64) -> Result<String, String> {
+    notice(tx, author, id, text, json!({"left": how}), at)
+}
+
+/// A notice of the integration queue to a task's agent (`terminum-integration.md` AC-192): a comment the queue's
+/// loop also hands its session, `data`'s fields kept with it (what it was said for, so it is said once).
+pub fn notice(tx: &Transaction, author: &str, id: &str, text: &str, mut data: Value, at: i64) -> Result<String, String> {
+    data["notice"] = json!(true);
+    comment_with(tx, author, id, text, Some(&data), at)
+}
+
+/// Whether task `key` has a notice by `author` whose field `field` is `value`: said already.
+pub fn noticed(tx: &Transaction, author: &str, key: &str, field: &'static str, value: &str) -> Result<bool, String> {
+    tx.query_row(&format!("SELECT EXISTS (SELECT 1 FROM events WHERE task = ?1 AND kind = 'comment' AND author = ?2
+                           AND json_extract(data, '$.notice') IS NOT NULL AND json_extract(data, '$.{field}') = ?3)"), (key, author, value), |r| r.get(0)).map_err(sql)
+}
+
+/// How task `key` last left the integration queue, since it was last queued: none while it stands there, or when
+/// it left by a move no mark goes with (a human's drag, withdraw_integration).
+pub fn how_left(tx: &Transaction, key: &str) -> Result<Option<String>, String> {
+    tx.query_row("SELECT json_extract(data, '$.left') FROM events WHERE task = ?1 AND json_extract(data, '$.left') IS NOT NULL
+                  AND rowid > coalesce((SELECT max(rowid) FROM events WHERE task = ?1 AND kind = 'queue'), 0) ORDER BY rowid DESC LIMIT 1", [key], |r| r.get(0))
+        .optional().map_err(sql)
+}
+
+/// Dispatcher's newest comments on task `key`, at most `most`, oldest first: (event, text).
+pub fn newest_by(tx: &Transaction, key: &str, author: &str, most: i64) -> Result<Vec<(String, String)>, String> {
+    rows(tx, "SELECT id, text FROM (SELECT id, coalesce(text, '') AS text, at, rowid FROM events WHERE task = ?1 AND kind = 'comment' AND author = ?2 ORDER BY at DESC, rowid DESC LIMIT ?3) ORDER BY at, rowid",
+         (key, author, most), |r| Ok((r.get(0)?, r.get(1)?)))
+}
+
 fn comment_with(tx: &Transaction, author: &str, id: &str, text: &str, data: Option<&Value>, at: i64) -> Result<String, String> {
     check_comment(text)?;
     let key = key_of(tx, id)?;

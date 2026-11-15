@@ -40,6 +40,20 @@ use crate::tasks::ops;
 use crate::tasks::store::DISPATCHER;
 
 pub use hooks::{good_id, heard, hearing};
+pub(crate) use hooks::taking;
+/// A red batch's integration task pressed on its agent (terminum-integration.md AC-194).
+pub(crate) use api::press_integration;
+
+/// The integration queue's words for the agent of the live run of Dispatcher's that holds task `id`
+/// (terminum-integration.md AC-192): through the gate while it idles, else with its next hook. False when no such run
+/// holds it: the caller hands the words to the task's session's next hook alone.
+pub(crate) async fn tell_task_run(app: &crate::app::Shared, task: &str, text: String) -> bool {
+    let key = task.to_string();
+    let Ok(Some(run)) = store(app, move |tx| Ok(runs::last_of(tx, &key)?.filter(runs::Run::holds_slot))).await else { return false };
+    let Some((server, pane)) = run.place(app) else { return false };
+    acts::tell(app, &run, &server, &pane, text, "Its return from integration").await;
+    true
+}
 pub use start::resume_words;
 pub use gate::read as read_screen;
 pub use walk::run as walking;
@@ -255,10 +269,12 @@ impl Dispatcher {
 
 /// Where in `t` (what Dispatcher typed lately) `prompt` of pane `key` is.
 fn typed_at(t: &mut Vec<(String, String, Instant)>, key: &str, prompt: &str) -> Option<usize> {
-    let first = |s: &str| s.chars().filter(|c| !c.is_whitespace()).take(20_000).collect::<String>();
-    let wanted = first(prompt);
     t.retain(|(_, _, at)| at.elapsed() < TYPED_FOR);
-    t.iter().position(|(k, text, _)| k == key && first(text) == wanted)
+    t.iter().position(|(k, text, _)| k == key && same_prompt(text, prompt))
+}
+
+fn same_prompt(a: &str, b: &str) -> bool {
+    a.chars().filter(|c| !c.is_whitespace()).take(20_000).eq(b.chars().filter(|c| !c.is_whitespace()).take(20_000))
 }
 
 /// A test's own time (§9 Times): only with a test's own app folder.

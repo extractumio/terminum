@@ -13,7 +13,7 @@ use serde_json::{json, Value};
 use super::store::{self as bs, Batch};
 use crate::app::Shared;
 use crate::tasks::api::{answer, store};
-use crate::tasks::ops::{self, sql, INTEGRATION};
+use crate::tasks::ops::{self, sql};
 use crate::tasks::store::{DISPATCHER, HUMAN};
 
 /// The states a human decides in.
@@ -22,12 +22,6 @@ const DECIDE: [&str; 3] = ["red", "not published", "after failed"];
 fn deciding(tx: &Transaction, id: i64) -> Result<Batch, String> {
     let b = bs::by_id(tx, id)?;
     if DECIDE.contains(&b.state.as_str()) { Ok(b) } else { Err(format!("Batch {} is {}: nothing to decide now.", b.number, b.state)) }
-}
-
-/// Its integration task back in INTEGRATION while terminumd works on its batch again.
-fn back_to_work(tx: &Transaction, b: &Batch, at: i64) -> Result<(), String> {
-    let t = ops::get(tx, &bs::slug(tx, b.task.as_deref().unwrap_or_default())?)?;
-    ops::place(tx, DISPATCHER, &t, INTEGRATION, at)
 }
 
 fn close_task(tx: &Transaction, b: &Batch, words: &str, at: i64) -> Result<(), String> {
@@ -45,7 +39,7 @@ pub fn return_all(tx: &Transaction, id: i64, at: i64) -> Result<String, String> 
     }
     let who = ops::user_name(tx, HUMAN)?;
     for k in &b.tasks {
-        bs::give_back(tx, k, &format!("{} returned: batch {} was given up by {who}. Integrate again when you are told to, or ask.", bs::slug(tx, k)?, b.number), at)?;
+        bs::give_back(tx, k, &format!("{} returned: batch {} was given up by {who}. Integrate again when you are told to, or ask.", bs::slug(tx, k)?, b.number), bs::Left::Out, at)?;
     }
     bs::set_state(tx, b.id, "given up", Some(&format!("given up by {who}")), at)?;
     close_task(tx, &b, &format!("Batch {}: nothing published, its {} tasks returned by {who}.", b.number, b.tasks.len()), at)?;
@@ -63,14 +57,16 @@ pub fn return_one(tx: &Transaction, id: i64, task: &str, why: &str, at: i64) -> 
         return Err("Say why, for its agent.".into());
     }
     let who = ops::user_name(tx, HUMAN)?;
-    bs::give_back(tx, &t.key, &format!("{} returned by {who} from batch {}: {}", t.id, b.number, why.trim()), at)?;
-    let rest: Vec<&String> = b.tasks.iter().filter(|k| **k != t.key).collect();
-    if rest.is_empty() {
-        bs::set_state(tx, b.id, "given up", Some("its last task returned"), at)?;
-        close_task(tx, &b, &format!("Batch {}: nothing published, its tasks returned.", b.number), at)?;
-    } else {
-        tx.execute("UPDATE integration_batches SET tasks = ?2, state = 'rebuild', pane = NULL WHERE id = ?1", (b.id, serde_json::to_string(&rest).unwrap_or_default())).map_err(sql)?;
-        back_to_work(tx, &b, at)?;
+    // leaving the queue takes it out of the batch, and gives the batch up with its last task (store::left)
+    // from a red batch, the human returns it for its check, as its agent would; from one not published, it is taken out
+    let how = if b.state == bs::RED { bs::Left::Red } else { bs::Left::Out };
+    bs::give_back(tx, &t.key, &format!("{} returned by {who} from batch {}: {}", t.id, b.number, why.trim()), how, at)?;
+    let b = bs::by_id(tx, b.id)?;
+    if b.state == bs::RED {
+        bs::check_again(tx, &b, None, at)?;
+    } else if b.state == "not published" {
+        tx.execute("UPDATE integration_batches SET state = 'rebuild', pane = NULL WHERE id = ?1", [b.id]).map_err(sql)?;
+        bs::back_to_work(tx, &b, at)?;
     }
     Ok(format!("{} went back to its agent.", t.id))
 }
@@ -81,11 +77,7 @@ pub fn check_again(tx: &Transaction, id: i64, at: i64) -> Result<String, String>
     if b.state != "red" {
         return Err(format!("Batch {} is {}: Check again is for a red batch.", b.number, b.state));
     }
-    tx.execute("UPDATE integration_batches SET state = 'checking', pane = NULL, round = round + 1 WHERE id = ?1", [b.id]).map_err(sql)?;
-    tx.execute("INSERT INTO integration_rounds (batch, round, tasks, base_sha, candidate_sha, result) VALUES (?1, ?2, ?3, ?4, ?5, 'built')",
-               rusqlite::params![b.id, b.round + 1, serde_json::to_string(&b.tasks).unwrap_or_default(), b.base, b.candidate]).map_err(sql)?;
-    back_to_work(tx, &b, at)?;
-    Ok(format!("Batch {} is checked again: round {}.", b.number, b.round + 1))
+    bs::check_again(tx, &b, None, at)
 }
 
 /// A batch not published tried again: the push or the project's Publish once more (no new check: it was green).
@@ -95,7 +87,7 @@ pub fn publish_again(tx: &Transaction, id: i64, at: i64) -> Result<String, Strin
         return Err(format!("Batch {} is {}: Publish again is for one not published.", b.number, b.state));
     }
     bs::set_state(tx, b.id, "green", None, at)?;
-    back_to_work(tx, &b, at)?;
+    bs::back_to_work(tx, &b, at)?;
     Ok(format!("Batch {} is published again.", b.number))
 }
 
@@ -112,10 +104,7 @@ pub fn close(tx: &Transaction, id: i64, why: &str, at: i64) -> Result<String, St
 
 /// A batch as its integration task's window shows it.
 fn of_task(tx: &Transaction, task: &str) -> Result<Value, String> {
-    let key = ops::key_of(tx, task)?;
-    let id: i64 = tx.query_row("SELECT id FROM integration_batches WHERE task = ?1", [&key], |r| r.get(0)).map_err(|_| format!("{task} is no batch's task."))?;
-    let b = bs::by_id(tx, id)?;
-    let why: Option<String> = tx.query_row("SELECT why FROM integration_batches WHERE id = ?1", [id], |r| r.get(0)).map_err(sql)?;
+    let b = bs::by_task(tx, &ops::key_of(tx, task)?)?.ok_or_else(|| format!("{task} is no batch's task."))?;
     let tasks: Vec<Value> = b.tasks.iter().map(|k| { let t = ops::get(tx, &bs::slug(tx, k)?)?; Ok(json!({"id": t.id, "status": t.status})) }).collect::<Result<_, String>>()?;
     let keys: Vec<&str> = match b.state.as_str() {
         "red" => vec!["check-again", "return", "return-all"],
@@ -123,7 +112,7 @@ fn of_task(tx: &Transaction, task: &str) -> Result<Value, String> {
         "after failed" => vec!["close"],
         _ => vec![],
     };
-    Ok(json!({"batch": b.id, "number": b.number, "state": b.state, "why": why, "round": b.round, "red_rounds": b.red_rounds, "tasks": tasks, "keys": keys}))
+    Ok(json!({"batch": b.id, "number": b.number, "state": b.state, "why": b.why, "round": b.round, "red_rounds": b.red_rounds, "tasks": tasks, "keys": keys, "pane": b.pane}))
 }
 
 pub fn routes() -> Router<Shared> {
@@ -133,7 +122,12 @@ pub fn routes() -> Router<Shared> {
 }
 
 async fn shown(State(app): State<Shared>, Path(task): Path<String>) -> Response {
-    answer(store(&app, move |tx| of_task(tx, &task)).await)
+    let mut shown = store(&app, move |tx| of_task(tx, &task)).await;
+    // its step's window is a session of terminumd's own tmux: its key, so the window can show it (AC-193)
+    if let Ok(v) = &mut shown && let Some(pane) = v["pane"].as_str().map(str::to_string) {
+        v["window"] = json!(app.tmux.local.key(&pane));
+    }
+    answer(shown)
 }
 
 async fn pressed(State(app): State<Shared>, Path((id, key)): Path<(i64, String)>, body: Option<Json<Value>>) -> Response {

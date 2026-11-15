@@ -4,7 +4,7 @@
 // the CSS Custom Highlight API: the lines' DOM stays as it is (iOS's selection, copying and the
 // cursor's maths depend on it). Only the paragraphs within a screen of the visible ones are
 // looked at, after a redraw and when scrolling settles; a browser without the API shows none.
-// A path is underlined only when its file is there (panefiles.js), as only then it opens.
+// A path is underlined only when its file or folder is there (panefiles.js), as only then it opens.
 import { tokens } from "./links.js";
 import { bindFolds } from "./pathfold.js";
 import { continues, joinedText } from "./rowtext.js";

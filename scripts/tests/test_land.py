@@ -313,6 +313,11 @@ class Landing(Repos, unittest.TestCase):
         self.commit(one, "one.txt", "x\n")
         self.commit(two, "two.txt", "x\n")
         inside, go, running = threading.Event(), threading.Event(), []
+        second_checked = threading.Event()
+        def checked(tree):
+            result = self.green(tree)
+            second_checked.set()
+            return result
         def slow(tree):
             running.append(tree.name)
             inside.set()
@@ -326,8 +331,8 @@ class Landing(Repos, unittest.TestCase):
         with ThreadPoolExecutor(max_workers=2) as runner:
             first = runner.submit(land.land, one, check=self.green, smoke=slow, say=lambda _: None)
             self.assertTrue(inside.wait(10))
-            second = runner.submit(land.land, two, check=self.green, smoke=quick, say=lambda _: None)
-            time.sleep(0.5)
+            second = runner.submit(land.land, two, check=checked, smoke=quick, say=lambda _: None)
+            self.assertTrue(second_checked.wait(10), "the second landing checked its own content")
             self.assertEqual((self.checks, self.smokes), (["one", "two"], []), "two checks its own content, then waits for the turn")
             go.set()
             first.result(timeout=10)

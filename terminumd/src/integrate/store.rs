@@ -11,7 +11,7 @@ use crate::tasks::ops::{self, sql, NewTask, INTEGRATION};
 use crate::tasks::store::DISPATCHER;
 
 /// The states of a batch the machine works on: one at a time over all projects (AC-188).
-pub const BUSY: [&str; 5] = ["checking", "green", "publishing", "after", "rebuild"];
+pub const BUSY: [&str; 6] = ["checking", "green", "publishing", "after", "cleanup", "rebuild"];
 /// A batch that waits for its agent or a human: it holds only its own project's queue.
 pub const RED: &str = "red";
 
@@ -31,14 +31,38 @@ pub struct Batch {
     pub round: i64,
     pub red_rounds: i64,
     pub step_started: Option<i64>,
+    /// its integration agent's fixes: commits on the target, built in before its tasks (AC-194)
+    pub fixes: Vec<String>,
+    /// its integration agent's own worktree, while it has one
+    pub agent_tree: Option<String>,
+    pub unchanged_rechecks: i64,
+    /// why it stands as it does: its red round's, its refusal's
+    pub why: Option<String>,
+    pub created_at: i64,
 }
 
-const SELECT: &str = "SELECT id, project, number, task, tasks, base_sha, candidate_sha, state, pane, round, red_rounds, step_started FROM integration_batches";
+const SELECT: &str = "SELECT id, project, number, task, tasks, base_sha, candidate_sha, state, pane, round, red_rounds, step_started, fixes, agent_tree, unchanged_rechecks, why, created_at FROM integration_batches";
 
 fn of_row(r: &rusqlite::Row) -> rusqlite::Result<Batch> {
-    let tasks: String = r.get(4)?;
-    Ok(Batch { id: r.get(0)?, project: r.get(1)?, number: r.get(2)?, task: r.get(3)?, tasks: serde_json::from_str(&tasks).unwrap_or_default(),
-        base: r.get(5)?, candidate: r.get(6)?, state: r.get(7)?, pane: r.get(8)?, round: r.get(9)?, red_rounds: r.get(10)?, step_started: r.get(11)? })
+    let list = |i: usize| r.get::<_, String>(i).map(|t| serde_json::from_str(&t).unwrap_or_default());
+    Ok(Batch { id: r.get(0)?, project: r.get(1)?, number: r.get(2)?, task: r.get(3)?, tasks: list(4)?,
+        base: r.get(5)?, candidate: r.get(6)?, state: r.get(7)?, pane: r.get(8)?, round: r.get(9)?, red_rounds: r.get(10)?, step_started: r.get(11)?,
+        fixes: list(12)?, agent_tree: r.get(13)?, unchanged_rechecks: r.get(14)?, why: r.get(15)?, created_at: r.get(16)? })
+}
+
+/// A project's batches, newest first, `most` of those numbered under `before`.
+pub fn of_project(tx: &Transaction, project: &str, before: i64, most: i64) -> Result<Vec<Batch>, String> {
+    ops::rows(tx, &format!("{SELECT} WHERE project = ?1 AND number < ?2 ORDER BY number DESC LIMIT ?3"), rusqlite::params![project, before, most], of_row)
+}
+
+/// The batch whose integration task is `key`, if one.
+pub fn by_task(tx: &Transaction, key: &str) -> Result<Option<Batch>, String> {
+    tx.query_row(&format!("{SELECT} WHERE task = ?1"), [key], of_row).optional().map_err(sql)
+}
+
+/// The number of the batch whose integration task is `key`, while that batch is not over: the task ends with it.
+pub fn live_by_task(tx: &Transaction, key: &str) -> Result<Option<i64>, String> {
+    tx.query_row("SELECT number FROM integration_batches WHERE task = ?1 AND state NOT IN ('ended', 'given up')", [key], |r| r.get(0)).optional().map_err(sql)
 }
 
 /// The batch the machine works on, if any.
@@ -55,7 +79,7 @@ pub fn by_id(tx: &Transaction, id: i64) -> Result<Batch, String> {
 /// batch, no red batch of its own; the one whose oldest entry waited longest first.
 pub fn next_project(tx: &Transaction) -> Result<Option<String>, String> {
     tx.query_row("SELECT e.project FROM integration_entries e JOIN project_integration i ON i.project = e.project JOIN projects p ON p.id = e.project
-                  WHERE e.batch IS NULL AND i.is_on = 1 AND i.paused = 0 AND p.host IS NULL
+                  WHERE e.batch IS NULL AND e.stage IS NULL AND i.is_on = 1 AND i.paused = 0 AND p.host IS NULL
                     AND NOT EXISTS (SELECT 1 FROM integration_batches b WHERE b.project = e.project AND b.state IN ('red', 'not published', 'after failed'))
                   GROUP BY e.project ORDER BY min(e.queued_at) LIMIT 1", [], |r| r.get(0)).optional().map_err(sql)
 }
@@ -63,7 +87,7 @@ pub fn next_project(tx: &Transaction) -> Result<Option<String>, String> {
 /// A project's queued commits not in a batch, in the queue's order.
 pub fn waiting(tx: &Transaction, project: &str) -> Result<Vec<Queued>, String> {
     ops::rows(tx, "SELECT e.task, t.slug, e.commit_sha FROM integration_entries e JOIN tasks t ON t.id = e.task
-                   WHERE e.project = ?1 AND e.batch IS NULL AND t.archived_at IS NULL ORDER BY e.queued_at, t.number", [project],
+                   WHERE e.project = ?1 AND e.batch IS NULL AND e.stage IS NULL AND t.archived_at IS NULL ORDER BY e.queued_at, t.number", [project],
         |r| Ok(Queued { task: r.get(0)?, id: r.get(1)?, commit: r.get(2)? }))
 }
 
@@ -79,20 +103,42 @@ pub fn tell(tx: &Transaction, key: &str, kind: &str, words: &str, at: i64) -> Re
         return Ok(());
     }
     tx.execute("UPDATE integration_entries SET told = told || ?2 || char(10) WHERE task = ?1", (key, kind)).map_err(sql)?;
-    ops::comment(tx, DISPATCHER, &slug(tx, key)?, words, at).map(drop)
+    ops::notice(tx, DISPATCHER, &slug(tx, key)?, words, serde_json::json!({"told": kind}), at).map(drop)
 }
 
 pub fn slug(tx: &Transaction, key: &str) -> Result<String, String> {
     tx.query_row("SELECT slug FROM tasks WHERE id = ?1", [key], |r| r.get(0)).map_err(sql)
 }
 
-/// Back to its agent: IN PROGRESS, out of the queue, told why (§9 "returned").
-pub fn give_back(tx: &Transaction, key: &str, words: &str, at: i64) -> Result<(), String> {
+/// `key`'s commit returned for a red check: the same commit is not queued again (AC-187).
+pub fn not_again(tx: &Transaction, key: &str, commit: &str, at: i64) -> Result<(), String> {
+    tx.execute("INSERT OR IGNORE INTO integration_returns (task, commit_sha, why, at) VALUES (?1, ?2, 'red', ?3)", rusqlite::params![key, commit, at]).map(drop).map_err(sql)
+}
+
+/// How a task went back from the queue, as `terminum integration wait` exits for it (AC-187).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Left {
+    /// returned for a red check
+    Red,
+    /// it does not merge
+    Conflict,
+    /// its batch given up, or integration turned off
+    Out,
+}
+
+impl Left {
+    fn word(self) -> &'static str {
+        match self { Left::Red => "red", Left::Conflict => "conflict", Left::Out => "out" }
+    }
+}
+
+/// Back to its agent: IN PROGRESS, out of the queue, told why (§9 "returned"), marked how.
+pub fn give_back(tx: &Transaction, key: &str, words: &str, how: Left, at: i64) -> Result<(), String> {
     let t = ops::get(tx, &slug(tx, key)?)?;
     if t.status == INTEGRATION {
         ops::place(tx, DISPATCHER, &t, "IN PROGRESS", at)?;
     }
-    ops::comment(tx, DISPATCHER, &t.id, words, at).map(drop)
+    ops::left_queue(tx, DISPATCHER, &t.id, words, how.word(), at).map(drop)
 }
 
 use super::git::short;
@@ -110,7 +156,7 @@ pub fn conflict_words(q: &Queued, c: &Conflict, s: &Settings, base: &str) -> Str
 /// told what they wait for. None when nothing was chosen.
 pub fn open(tx: &Transaction, project: &str, s: &Settings, base: &str, c: &Choice, at: i64) -> Result<Option<Batch>, String> {
     for (q, why) in &c.returned {
-        give_back(tx, &q.task, &conflict_words(q, why, s, base), at)?;
+        give_back(tx, &q.task, &conflict_words(q, why, s, base), Left::Conflict, at)?;
     }
     let number: i64 = tx.query_row("SELECT coalesce(max(number), 0) + 1 FROM integration_batches WHERE project = ?1", [project], |r| r.get(0)).map_err(sql)?;
     for (q, waits) in &c.held {
@@ -161,7 +207,7 @@ pub fn round_ends(tx: &Transaction, b: &Batch, result: &str, why: Option<&str>, 
 }
 
 /// The batch's integration task's ID, while it has one.
-fn task_of(tx: &Transaction, b: &Batch) -> Result<Option<String>, String> {
+pub fn task_of(tx: &Transaction, b: &Batch) -> Result<Option<String>, String> {
     b.task.as_deref().map(|k| slug(tx, k)).transpose()
 }
 
@@ -193,7 +239,7 @@ pub fn close_task(tx: &Transaction, b: &Batch, words: &str, at: i64) -> Result<(
 pub fn give_up(tx: &Transaction, b: &Batch, why: &str, at: i64) -> Result<(), String> {
     for k in &b.tasks {
         if let Ok(id) = slug(tx, k) && tx.query_row("SELECT 1 FROM integration_entries WHERE task = ?1", [k], |_| Ok(())).optional().map_err(sql)?.is_some() {
-            give_back(tx, k, &format!("{id} returned: batch {} was given up: {why}. Integrate again when you are told to, or ask.", b.number), at)?;
+            give_back(tx, k, &format!("{id} returned: batch {} was given up: {why}. Integrate again when you are told to, or ask.", b.number), Left::Out, at)?;
         }
     }
     set_pane(tx, b.id, None, at)?;
@@ -218,13 +264,46 @@ pub fn unbatch(tx: &Transaction, key: &str) -> Result<(), String> {
     tx.execute("UPDATE integration_entries SET batch = NULL WHERE task = ?1", [key]).map(drop).map_err(sql)
 }
 
-/// A new round of `chosen` on `target`, in `state`.
-pub fn new_round(tx: &Transaction, b: &Batch, chosen: &[Queued], target: &str, candidate: Option<&str>, state: &str) -> Result<(), String> {
+/// A new round of `chosen` tasks and `fixes` on `target`, in `state`.
+pub fn new_round(tx: &Transaction, b: &Batch, chosen: &[Queued], fixes: &[String], target: &str, candidate: Option<&str>, state: &str) -> Result<(), String> {
     let keys = serde_json::to_string(&chosen.iter().map(|q| &q.task).collect::<Vec<_>>()).unwrap_or_default();
-    tx.execute("UPDATE integration_batches SET tasks = ?2, base_sha = ?3, candidate_sha = ?4, round = round + 1, state = ?5, pane = NULL WHERE id = ?1",
-               rusqlite::params![b.id, keys, target, candidate, state]).map_err(sql)?;
-    tx.execute("INSERT INTO integration_rounds (batch, round, tasks, base_sha, candidate_sha, result) VALUES (?1, ?2, ?3, ?4, ?5, 'built')",
-               rusqlite::params![b.id, b.round + 1, keys, target, candidate]).map(drop).map_err(sql)
+    let fixes = serde_json::to_string(fixes).unwrap_or_default();
+    tx.execute("UPDATE integration_batches SET tasks = ?2, fixes = ?6, base_sha = ?3, candidate_sha = ?4, round = round + 1, state = ?5, pane = NULL, unchanged_rechecks = 0 WHERE id = ?1",
+               rusqlite::params![b.id, keys, target, candidate, state, fixes]).map_err(sql)?;
+    tx.execute("INSERT INTO integration_rounds (batch, round, tasks, fixes, base_sha, candidate_sha, result) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'built')",
+               rusqlite::params![b.id, b.round + 1, keys, fixes, target, candidate]).map(drop).map_err(sql)
+}
+
+/// A red batch decided again, by its agent or a human (AC-194): built anew at the engine's next step when its tasks
+/// or fixes are not its round's; else the same candidate checked again, a new round, `why` written on it.
+pub fn check_again(tx: &Transaction, b: &Batch, why: Option<&str>, at: i64) -> Result<String, String> {
+    if changed_since_round(tx, b)? {
+        tx.execute("UPDATE integration_batches SET state = 'rebuild', pane = NULL WHERE id = ?1", [b.id]).map_err(sql)?;
+        back_to_work(tx, b, at)?;
+        return Ok(format!("Batch {} is built anew from what is in it now and checked: round {}.", b.number, b.round + 1));
+    }
+    tx.execute("UPDATE integration_batches SET unchanged_rechecks = unchanged_rechecks + 1, state = 'checking', pane = NULL, round = round + 1 WHERE id = ?1", [b.id]).map_err(sql)?;
+    tx.execute("INSERT INTO integration_rounds (batch, round, tasks, fixes, base_sha, candidate_sha, result, why) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'built', ?7)",
+               rusqlite::params![b.id, b.round + 1, serde_json::to_string(&b.tasks).unwrap_or_default(), serde_json::to_string(&b.fixes).unwrap_or_default(),
+                                 b.base, b.candidate, why.map(|w| format!("checked again unchanged: {w}"))]).map_err(sql)?;
+    back_to_work(tx, b, at)?;
+    Ok(format!("Batch {} is checked again: round {}.", b.number, b.round + 1))
+}
+
+/// Whether the batch's tasks or fixes are not those its round was built from: a task went back or a fix came.
+pub fn changed_since_round(tx: &Transaction, b: &Batch) -> Result<bool, String> {
+    let built: Option<(String, String)> = tx.query_row("SELECT tasks, fixes FROM integration_rounds WHERE batch = ?1 AND round = ?2", (b.id, b.round), |r| Ok((r.get(0)?, r.get(1)?)))
+        .optional().map_err(sql)?;
+    let list = |t: &str| serde_json::from_str::<Vec<String>>(t).unwrap_or_default();
+    Ok(built.is_none_or(|(tasks, fixes)| b.tasks != list(&tasks) || b.fixes != list(&fixes)))
+}
+
+/// Its integration task back in INTEGRATION while terminumd works on its batch again: no agent is wanted for it.
+pub fn back_to_work(tx: &Transaction, b: &Batch, at: i64) -> Result<(), String> {
+    tx.execute("UPDATE integration_batches SET agent_wanted = 0 WHERE id = ?1", [b.id]).map_err(sql)?;
+    let Some(id) = task_of(tx, b)? else { return Ok(()) };
+    let t = ops::get(tx, &id)?;
+    if t.status == INTEGRATION { Ok(()) } else { ops::place(tx, DISPATCHER, &t, INTEGRATION, at) }
 }
 
 /// The batch's size: doubled after a green batch up to the project's most, halved after its first red round.
@@ -243,14 +322,15 @@ pub fn red_round(tx: &Transaction, b: &Batch) -> Result<(), String> {
 
 /// Each task of a published batch DONE with its kept result, said where it landed; a task gone meanwhile skipped.
 pub fn done_all(tx: &Transaction, b: &Batch, target: &str, candidate: &str, at: i64) -> Result<Vec<String>, String> {
-    let ids: Vec<String> = b.tasks.iter().filter_map(|k| slug(tx, k).ok()).collect();
-    for (k, id) in b.tasks.iter().filter_map(|k| slug(tx, k).ok().map(|id| (k, id))) {
+    let pairs: Vec<(&String, String)> = b.tasks.iter().filter_map(|k| slug(tx, k).ok().map(|id| (k, id))).collect();
+    let ids: Vec<String> = pairs.iter().map(|(_, id)| id.clone()).collect();
+    for (k, id) in pairs.iter().map(|(k, id)| (*k, id.clone())) {
         let kept: Option<(String, String)> = tx.query_row("SELECT result, author FROM integration_entries WHERE task = ?1", [k], |r| Ok((r.get(0)?, r.get(1)?))).optional().map_err(sql)?;
         let Some((result, author)) = kept else { continue };
         ops::comment(tx, &author, &id, &result, at)?;
         let mates: Vec<&str> = ids.iter().map(String::as_str).filter(|i| *i != id).collect();
         let with = if mates.is_empty() { String::new() } else { format!(", with {}", and_list(&mates)) };
-        ops::comment(tx, DISPATCHER, &id, &format!("Integrated into {target} at {} in batch {}{with}.", short(candidate), b.number), at)?;
+        ops::left_queue(tx, DISPATCHER, &id, &format!("Integrated into {target} at {} in batch {}{with}.", short(candidate), b.number), "landed", at)?;
         let t = ops::get(tx, &id)?;
         ops::place(tx, DISPATCHER, &t, "DONE", at)?;
     }
@@ -258,7 +338,8 @@ pub fn done_all(tx: &Transaction, b: &Batch, target: &str, candidate: &str, at: 
 }
 
 /// Task `key` left the queue while in batch `batch`: the batch goes on without it, built anew (AC-187); with none
-/// left, given up. A batch already published or given up keeps its tasks as they are.
+/// left, given up. A red batch only loses it: its agent or a human decides what follows, so several may go back
+/// for one more round (AC-194). A batch already published or given up keeps its tasks as they are.
 pub fn left(tx: &Transaction, key: &str, batch: i64, at: i64) -> Result<(), String> {
     let b = by_id(tx, batch)?;
     if !BUSY.contains(&b.state.as_str()) && !["red", "not published"].contains(&b.state.as_str()) {
@@ -269,10 +350,7 @@ pub fn left(tx: &Transaction, key: &str, batch: i64, at: i64) -> Result<(), Stri
         set_state(tx, b.id, "given up", Some("its last task left"), at)?;
         return close_task(tx, &b, &format!("Batch {}: nothing published, its last task left the queue.", b.number), at);
     }
-    tx.execute("UPDATE integration_batches SET tasks = ?2, state = 'rebuild' WHERE id = ?1", (b.id, serde_json::to_string(&rest).unwrap_or_default())).map_err(sql)?;
-    if let Some(id) = task_of(tx, &b)? && ops::get(tx, &id)?.status != INTEGRATION {
-        let t = ops::get(tx, &id)?;
-        ops::place(tx, DISPATCHER, &t, INTEGRATION, at)?;
-    }
-    Ok(())
+    let state = if b.state == RED { RED } else { "rebuild" };
+    tx.execute("UPDATE integration_batches SET tasks = ?2, state = ?3 WHERE id = ?1", rusqlite::params![b.id, serde_json::to_string(&rest).unwrap_or_default(), state]).map_err(sql)?;
+    if state == RED { Ok(()) } else { back_to_work(tx, &b, at) }
 }

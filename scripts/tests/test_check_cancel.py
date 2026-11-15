@@ -50,16 +50,23 @@ class OuterCancellation(unittest.TestCase):
             ready = root / "ready.json"
             later = root / "later"
             cooperative_ready = root / "cooperative-ready"
+            detached_ready = root / "detached-ready"
+            cleanup_started = root / "cleanup-started"
+            cleanup_allowed = root / "cleanup-allowed"
+            settling_ready = root / "settling-ready"
             cleaned = root / "cleaned"
             # Both children ignore cancellation; the detached one leaves both the group and cwd.
             ignore = "\nfor number in (signal.SIGTERM,signal.SIGHUP,signal.SIGINT): signal.signal(number,signal.SIG_IGN)\n"
-            detached = "import signal,time" + ignore + "time.sleep(180)"
+            detached = ("import signal,time\nfrom pathlib import Path\n" + ignore
+                        + f"Path({str(detached_ready)!r}).touch()\ntime.sleep(180)")
             cooperative = ("import signal,time\nfrom pathlib import Path\nreceived=None\n"
                            "def receive(number,frame):\n global received\n received=received or number\n"
                            "for number in (signal.SIGTERM,signal.SIGHUP,signal.SIGINT): signal.signal(number,receive)\n"
                            f"Path({str(cooperative_ready)!r}).touch()\n"
                            "while received is None: time.sleep(0.01)\n"
-                           f"time.sleep(5)\nPath({str(cleaned)!r}).write_text(str(received))\n")
+                           f"Path({str(cleanup_started)!r}).touch()\n"
+                           + (f"while not Path({str(cleanup_allowed)!r}).exists(): time.sleep(0.01)\n" if settling else "time.sleep(0.8)\n")
+                           + f"Path({str(cleaned)!r}).write_text(str(received))\n")
             script = ("import json,os,signal,subprocess,sys,time\n"
                       f"sys.path.insert(0, {str(SCRIPTS)!r})\nimport owned_children\n"
                       f"{ignore}"
@@ -73,12 +80,38 @@ class OuterCancellation(unittest.TestCase):
                       f"os.replace({str(ready)+'.pending'!r},{str(ready)!r})\n"
                       + ("sys.exit(0)\n" if settling else "while True: time.sleep(1)\n"))
             command = "exec " + shlex.join([sys.executable, "-I", "-c", script])
+            # Keep the real guard and cancellation flow; only fixture clocks are shortened.
+            guard_harness = (f"import sys,time,types\nsys.path.insert(0,{str(SCRIPTS)!r})\n"
+                             "from pathlib import Path\nimport check_step\n"
+                             "check_step.SETTLE_S=2\ncheck_step.KILL_AFTER_S=0.1\n"
+                             "forward=check_step.GuardCancellation.forward\nlogical=0\n"
+                             "def observed_forward(self,group):\n global logical\n"
+                             " sent=forward(self,group)\n"
+                             " if sent: logical=check_step.SETTLE_S\n return sent\n"
+                             "def sleep(seconds):\n global logical\n"
+                             " if logical:\n  logical+=seconds\n"
+                             "  if logical>=check_step.SETTLE_S+0.8:\n"
+                             f"   Path({str(cleanup_allowed)!r}).touch()\n"
+                             "   deadline=time.monotonic()+10\n"
+                             f"   while not Path({str(cleaned)!r}).exists():\n"
+                             "    if time.monotonic()>=deadline: raise RuntimeError('cooperative cleanup never finished')\n"
+                             "    time.sleep(0.01)\n"
+                             " time.sleep(0.01)\n"
+                             + ("check_step.GuardCancellation.forward=observed_forward\n"
+                                "check_step.time=types.SimpleNamespace(sleep=sleep,monotonic=lambda: logical)\n" if settling else "") +
+                             "inspect=check_step.own_processes\n"
+                             "def observed(*args):\n processes=inspect(*args)\n"
+                             f" Path({str(settling_ready)!r}).touch()\n return processes\n"
+                             "check_step.own_processes=observed\n"
+                             "sys.exit(check_step.main(sys.argv[3:],folder=sys.argv[2]))\n")
+            guard = [sys.executable, "-I", "-c", guard_harness]
             harness = (f"import sys\nsys.path.insert(0,{str(SCRIPTS)!r})\n"
                        "from pathlib import Path\nimport check_changed,check_cancel\n"
                        f"root=Path({tmp!r})\ncheck_changed.REPO=root\n"
                        "check_changed.changed_files=lambda _: (['scripts/probe.py'],'HEAD')\n"
                        "check_changed.touched_cases=lambda *_: set()\ncheck_changed.caseless=lambda _: []\n"
                        "check_changed.git=lambda *_: ''\ncheck_changed.tree_id=lambda: 'cancel-probe'\n"
+                       f"check_changed.run_guard=lambda ignored,command,**kw: check_cancel.run_guard({guard!r},command,**kw)\n"
                        f"check_changed.plan=lambda *_: [('probe',{command!r}),('later',{('touch '+shlex.quote(str(later)))!r})]\n"
                        "run=check_changed.run\ncheck_changed.run=lambda steps: run(steps,root=root,gate=False)\n"
                        + ("check_cancel.CANCEL_WAIT_S=0.2\n" if recover else "") +
@@ -89,19 +122,20 @@ class OuterCancellation(unittest.TestCase):
                                      stderr=subprocess.STDOUT, text=True, start_new_session=True)
             try:
                 info = wait_for(lambda: json.loads(ready.read_text()) if ready.exists() and ready.stat().st_size else None)
-                # Wait until the detached child installed its signal handler too.
-                time.sleep(0.2)
+                wait_for(detached_ready.exists)
                 if settling:
                     wait_for(lambda: owned_children.identity(info["foreground"]) is None)
-                    time.sleep(14)  # cancellation late in the original settling interval needs a fresh grace period
+                    wait_for(settling_ready.exists)
+                    # The fixture clock expires the old deadline when cancellation is forwarded.
                 if recover:
                     os.kill(info["guard"], signal.SIGSTOP)
                 if failed_guard:
                     os.kill(info["guard"], signal.SIGKILL)
                 else:
                     outer.send_signal(number)
-                    time.sleep(0.25)
-                    outer.send_signal(signal.SIGINT)
+                    wait_for(cleanup_started.exists)
+                    if outer.poll() is None:
+                        outer.send_signal(signal.SIGINT)
                 output, _ = outer.communicate(timeout=100)
                 self.assertEqual(outer.returncode, 128 + (signal.SIGKILL if failed_guard else number), output)
                 self.assertIsNone(unrelated.poll(), "an unrelated process was touched")
@@ -111,7 +145,7 @@ class OuterCancellation(unittest.TestCase):
                 self.assertFalse(later.exists(), "a cancelled run started its next check")
                 self.assertEqual(list((root / ".checks").glob("changed-*.ok")), [])
                 if not recover and not failed_guard:
-                    self.assertTrue(cleaned.exists(), "a shell descendant lost its five-second cleanup grace")
+                    self.assertTrue(cleaned.exists(), "a shell descendant lost its cleanup grace")
                     self.assertEqual(cleaned.read_text(), str(number), "the first signal must reach the whole group")
             finally:
                 stop_recorded(outer, orderly=True)
