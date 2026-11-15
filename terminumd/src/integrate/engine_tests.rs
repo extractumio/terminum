@@ -13,8 +13,8 @@ use crate::tasks::store::HUMAN;
 /// Runs a line at once with `sh`, or, `hang`, never ends it.
 #[derive(Default)]
 pub(crate) struct Sh {
-    ran: Mutex<HashMap<String, (Option<i32>, String)>>,
-    lines: Mutex<Vec<String>>,
+    pub(crate) ran: Mutex<HashMap<String, (Option<i32>, String)>>,
+    pub(crate) lines: Mutex<Vec<String>>,
     pub(crate) hang: bool,
 }
 
@@ -78,6 +78,11 @@ pub(crate) fn world(name: &str, settings: Settings) -> World {
 
 /// A task queued with a commit on origin/main that writes `file`.
 pub(crate) fn queued(w: &World, n: u32, file: &str, text: &str) -> String {
+    queued_with(w, n, file, text, false)
+}
+
+/// The same, `verifying`: waiting for its Prepare and Verify (AC-198), as integrate queues it when they are set.
+pub(crate) fn queued_with(w: &World, n: u32, file: &str, text: &str, verifying: bool) -> String {
     let id = w.s.with(|tx| ops::create(tx, HUMAN, NewTask { title: format!("t{n}"), text: "b".into(), project: Some("api".into()), ..Default::default() }, 1).map(|t| t.id)).unwrap();
     sh(&w.api, &["checkout", "-q", "--detach", "origin/main"]);
     std::fs::write(w.api.join(file), text).unwrap();
@@ -88,8 +93,8 @@ pub(crate) fn queued(w: &World, n: u32, file: &str, text: &str) -> String {
     w.s.with(|tx| {
         let t = ops::get(tx, &id)?;
         ops::place(tx, HUMAN, &t, INTEGRATION, 2)?;
-        tx.execute("INSERT INTO integration_entries (task, project, commit_sha, result, author, queued_at) VALUES (?1, 'api', ?2, ?3, 'human', ?4)",
-                   rusqlite::params![t.key, commit, format!("Outcome: Done. t{n}"), n]).map_err(sql).map(drop)
+        tx.execute("INSERT INTO integration_entries (task, project, commit_sha, result, author, queued_at, stage) VALUES (?1, 'api', ?2, ?3, 'human', ?4, ?5)",
+                   rusqlite::params![t.key, commit, format!("Outcome: Done. t{n}"), n, verifying.then_some("verifying")]).map_err(sql).map(drop)
     }).unwrap();
     id
 }
