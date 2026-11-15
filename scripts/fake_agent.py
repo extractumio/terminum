@@ -153,7 +153,7 @@ def main():
                 hook("SessionEnd", reason="other")
                 sys.exit(0)
             elif "QUESTIONS" in prompt:
-                tool("ask_human", {"id": tasks[0], "questions": "1. v1 or v2? Options: v1, v2. Recommended: v2."})
+                tool("ask_human", {"id": tasks[0], "questions": "Why you are needed: only you know which API the clients may use.\nRecommended:\n1. v2: v1 goes away in May. Other options: v1.\nDetails: the task moves the clients to one API; v1 and v2 both work today."})
                 hook("Stop", last_assistant_message="I asked.")
             elif "ASKS" in prompt:
                 hook("Notification", notification_type="permission_prompt", message="Approve Bash")
