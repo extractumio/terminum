@@ -31,6 +31,7 @@ endif
 -include local.mk
 export TM_CODESIGN_IDENTITY
 export TM_MAC_RUNNER
+export TM_MAC_NODE_BIN
 export TM_LAND_INSTALL
 
 # one id per set of sources, compiled into terminumd (option_env!("TM_BUILD")) and the UI
