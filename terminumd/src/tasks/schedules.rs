@@ -187,7 +187,17 @@ pub fn kept_by_agent(tx: &Transaction) -> Result<std::collections::BTreeMap<Stri
     for (agent, key) in rows(tx, "SELECT agent_id, 'SCH-' || number FROM schedules WHERE paused = 0 AND deleted_at IS NULL ORDER BY number", [], |r| Ok((r.get::<_, String>(0)?, r.get(1)?)))? {
         by.entry(agent).or_default().push(key);
     }
+    // a project's integration agent keeps one slot for a red batch, however many projects name it (terminum-integration.md AC-194)
+    for agent in rows(tx, "SELECT DISTINCT agent FROM project_integration WHERE is_on = 1 AND agent IS NOT NULL", [], |r| r.get::<_, String>(0))? {
+        let slot = integration_slot(&agent);
+        by.entry(agent).or_default().push(slot);
+    }
     Ok(by)
+}
+
+/// What agent `agent`'s slot kept for integration is named among schedules' (theirs are their IDs).
+pub fn integration_slot(agent: &str) -> String {
+    format!("integration:{agent}")
 }
 
 /// A slot to keep on its agent, unless it is paused (AC-161).
