@@ -68,6 +68,7 @@ Open questions: none open. Which clients exist (AC-11's drop) is terminum.md OQ-
 | AC-103 | [SHOULD / P1] | The docs keep their shape on every `make test`, and a review of what changed since the last release removes duplicates and superseded requirements before a minor release. |
 | AC-104 | [SHOULD / P1] | A finished worktree lands by itself: its targeted checks green on its own work, then a short smoke set of the basics on one platform, with no timed check, on its merge with what others landed; pushed, the primary checkout brought up to it and the tree deleted; the full test run is the release's gate, and only failing tests block a release. |
 | AC-146 | [SHOULD / P1] | A release's full run starts only on a quiet machine: it queues behind another full run, waits for the load to stay low for 3 minutes, says each minute that it waits, and after 15 minutes ends the release with "the build server is not available"; a task's timed checks wait the same way and then run, saying so. |
+| AC-197 | [SHOULD / P1] | A worktree's timed check that fails runs once more, unchanged: passing then, the tree's targeted checks or smoke set count it and say it in red last, the first run's log kept; red again, it is red; a step that measures no time, and the release's full run, have no retry. |
 
 ## 5. BDD scenarios
 
@@ -787,6 +788,33 @@ Scenario: AC-146 edge — Copy preview's complexity guard excludes scheduling de
   But a quadratic preview that exceeds the CPU budget fails the guard
 ```
 
+### AC-197 — A worktree's flaky timed check runs once more [SHOULD / P1]
+
+```gherkin
+Scenario: AC-197 happy path — red once, green on its unchanged retry
+  Given a worktree's targeted checks, or its landing's smoke set, run a timed step (panel, page, critical, an e2e script)
+  And that step fails
+  When check_changed.py runs it once more with nothing changed
+  And it passes
+  Then the step counts as passed and the pass is recorded
+  And the first run's log stays as .checks/changed.<step>.first.log
+  And "PASSED ONLY ON RETRY, the first run red: <step> (first run: <log>): name each with its open task" is said in red last, by check_changed.py and by make land
+
+Scenario: AC-197 failure — red on its retry too
+  Given a timed step fails and fails again on its retry
+  Then the step is red, as any red check, and nothing lands
+
+Scenario: AC-197 edge — what gets no retry
+  Given a step that measures no time fails (the scan, a build, clippy, cargo tests, unit tests)
+  Then it is red at once
+  And make check, the release's full run, never retries: a failing test there blocks the release (AC-104)
+
+Scenario: AC-197 edge — the next targeted run says only its own retries
+  Given an earlier targeted run passed a step only on its retry
+  When the targeted checks run again
+  Then that earlier note is gone and only this run's retries are said
+```
+
 ## 6. Flow and sequence diagrams
 
 ### Install, run and restart (AC-08, AC-14, AC-16)
@@ -934,4 +962,5 @@ All cases are shipped; nothing is staged.
 - [x] AC-102 — `scripts/check_step.py` guards each step of `scripts/check_all.sh` and `scripts/check_changed.py`; `scripts/tests/test_check_step.py`; `scripts/tests/test_check_cancel.py` (outer cancellation and guard recovery); `scripts/tests/test_process_ownership.py` (metadata only, directory boundaries and query failures on both platforms); `scripts/tests/test_leftovers.py`; `cargo test cli::tests::the_fake_terminumd_ends_when_its_home_goes`; `scripts/tests/test_testrun.py` (`WithItsFolder`)
 - [x] AC-104 — `scripts/tests/test_land.py`, `scripts/tests/test_land_install.py`, `scripts/tests/test_land_said.py`, `scripts/tests/test_heavy_slots.py`, `scripts/tests/test_check_changed.py`, `scripts/tests/test_package.py`, `scripts/tests/test_release_turn.py`, `scripts/tests/test_release.py`, `scripts/tests/test_ci_mac.py`, `scripts/tests/test_check_docker.py`, `scripts/tests/test_worktree_fresh.py`
 - [x] AC-146 — `scripts/tests/test_load_gate.py`, `scripts/tests/test_release_turn.py`, `scripts/tests/test_check_changed.py`
+- [x] AC-197 — `scripts/tests/test_check_changed.py` (`test_ac197_*`)
 - [x] AC-103 — `scripts/tests/test_check_docs.py`; `python3 scripts/check_docs.py`

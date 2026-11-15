@@ -237,6 +237,42 @@ class Run(unittest.TestCase):
         self.assertEqual(self.events[0][:3], ["nice", "-n", "10"])
         self.assertNotIn("gate", self.events)
 
+    def run_codes(self, steps, codes):
+        """Runs steps whose runs answer codes in turn; the commands run, in order."""
+        ran, answers = [], iter(codes)
+
+        def fake(guard, command, stdout, **_):
+            ran.append(command[-1])
+            stdout.write(f"run {len(ran)}\n")
+            return next(answers)
+        with mock.patch.object(check_changed, "run_guard", fake), mock.patch("sys.stdout"):
+            return check_changed.run(steps, root=self.root, gate=False), ran
+
+    def test_ac197_a_timed_step_red_once_passes_on_its_unchanged_retry_and_says_so_last(self):  # AC-197
+        failed, ran = self.run_codes([("critical", "node live")], [1, 0])
+        self.assertEqual((failed, ran), ([], ["node live", "node live"]))
+        first = self.root / ".checks" / "changed.critical.first.log"
+        self.assertEqual(first.read_text(), "run 1\n")   # the red run's log is kept for its task
+        self.assertEqual((self.root / ".checks" / "changed.critical.log").read_text(), "run 2\n")
+        self.assertEqual(check_changed.retried_note(self.root),
+                         f"PASSED ONLY ON RETRY, the first run red: critical (first run: {first}): name each with its open task")
+        self.assertEqual(check_changed.late_notes(self.root), check_changed.retried_note(self.root))
+
+    def test_ac197_red_again_on_its_retry_fails_and_says_no_retry_pass(self):  # AC-197
+        failed, ran = self.run_codes([("panel", "node panel")], [1, 1])
+        self.assertEqual((failed, len(ran)), (["panel"], 2))
+        self.assertIsNone(check_changed.retried_note(self.root))
+
+    def test_ac197_a_step_that_measures_no_time_gets_no_retry(self):  # AC-197
+        failed, ran = self.run_codes([("cargo", "cargo test"), ("page-unit", "node --test")], [1, 1])
+        self.assertEqual((failed, ran), (["cargo", "page-unit"], ["cargo test", "node --test"]))
+        self.assertIsNone(check_changed.retried_note(self.root))
+
+    def test_ac197_a_landings_smoke_retry_adds_to_the_targeted_ones(self):  # AC-197
+        self.run_codes([("critical", "a")], [1, 0])
+        self.run_codes([("e2e_core", "b")], [1, 0])   # make land's smoke set, after the targeted pass
+        self.assertEqual(len(check_changed.retried_note(self.root).splitlines()), 2)
+
 
 class Passed(unittest.TestCase):
     def main_with(self, tmp, run, ids, argv=()):
@@ -269,6 +305,13 @@ class Passed(unittest.TestCase):
             code, said = self.main_with(tmp, run, same)
             self.assertEqual(code, 0)
             self.assertRegex(said, r"targeted: SKIPPED timed checks, the machine busy for 15 minutes: page(\x1b\[0m)?\nnote: --force runs them")
+
+    def test_ac197_a_new_targeted_run_says_only_its_own_retries(self):  # AC-197
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / ".checks").mkdir()
+            (Path(tmp) / ".checks" / "retried").write_text("PASSED ONLY ON RETRY, the first run red: panel\n")
+            self.main_with(tmp, lambda steps, **_: [], ["aaaa", "aaaa"])
+            self.assertIsNone(check_changed.retried_note(Path(tmp)))
 
     def test_a_red_run_records_no_pass(self):  # AC-104
         with tempfile.TemporaryDirectory() as tmp:

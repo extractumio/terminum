@@ -23,7 +23,7 @@ import subprocess
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from check_changed import is_doc, red, skipped_note, tree_id  # noqa: E402
+from check_changed import is_doc, late_notes, red, tree_id  # noqa: E402
 import heavy_slots  # noqa: E402
 from worktree import common_dir, primary_of, Refused, releasing, Turn as TreeTurn  # noqa: E402
 
@@ -306,7 +306,7 @@ def main(argv):
     skipped, stopped = [], None
 
     def after(files):   # read now: once merged, a sweep may take the tree
-        skipped.append(skipped_note(tree))
+        skipped.append(late_notes(tree))
         after_push(primary, files)
     try:
         commit = land(tree, after=after)
@@ -322,7 +322,7 @@ def main(argv):
     if not green:
         print(ci)
     if skipped and skipped[0]:
-        print(red(skipped[0]))   # its timed checks never ran: the report says so
+        print(red(skipped[0]))   # timed checks skipped or passed only on retry: the report says so
     os.chdir(primary)
     if not tree.is_dir():
         return 0
