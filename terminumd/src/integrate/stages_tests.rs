@@ -5,6 +5,53 @@ use super::*;
 use crate::integrate::engine::tests::{batch, go, on_origin, queued_with, status, world, Sh};
 use crate::tasks::integration::Settings;
 
+const RETRY: &str = "mkdir -p .checks; printf '%s\\n' 'PASSED ONLY ON RETRY, the first run red: critical: name each with its open task' 'critical first run: expected width 80, got 79' > .checks/retried";
+
+#[test]
+fn ac197_verify_keeps_retry_diagnostics_before_removing_its_tree() {
+    for exit in [0, 1] {
+        let w = world(&format!("is-retry-{exit}"), Settings { verify: format!("{RETRY}; exit {exit}"), ..Settings::default() });
+        let a = queued_with(&w, 1, "b.txt", "b\n", true);
+        go(&w, &Sh::default(), 2);
+        let said = w.s.with(|tx| ops::history(tx, &a)).unwrap().to_string();
+        assert!(said.contains("PASSED ONLY ON RETRY") && said.contains("expected width 80, got 79"), "{said}");
+        let notices = w.s.with(|tx| super::super::notices::since(tx, 0)).unwrap().0;
+        assert!(notices.iter().any(|n| n.id == a && n.text.contains("PASSED ONLY ON RETRY")), "the agent's next hook hears it");
+        assert!(!w.root.join("home/integration/api/verify-1").exists(), "diagnostics survive cleanup");
+        if exit == 1 {
+            assert_eq!(status(&w, &a), "IN PROGRESS", "a retry pass never hides another red step");
+        }
+    }
+}
+
+#[test]
+fn ac197_check_keeps_retry_diagnostics_on_the_batch_and_clears_old_notes() {
+    let w = world("is-check-retry", Settings { check: RETRY.into(), ..Settings::default() });
+    std::fs::write(w.api.join(".git/info/exclude"), ".checks/\n").unwrap();
+    let a = queued_with(&w, 1, "b.txt", "b\n", false);
+    go(&w, &Sh::default(), 4);
+    assert_eq!(status(&w, &a), "DONE");
+    let b = batch(&w);
+    let id = w.s.with(|tx| bs::slug(tx, b.task.as_deref().unwrap())).unwrap();
+    let said = w.s.with(|tx| ops::history(tx, &id)).unwrap().to_string();
+    assert!(said.contains("PASSED ONLY ON RETRY") && said.contains("expected width 80, got 79"), "{said}");
+
+    w.s.with(|tx| {
+        let mut s = crate::tasks::integration::read(tx, "api")?;
+        s.check = "true".into();
+        crate::tasks::integration::keep(tx, "api", &s)
+    }).unwrap();
+    let c = queued_with(&w, 2, "c.txt", "c\n", false);
+    go(&w, &Sh::default(), 4);
+    assert_eq!(status(&w, &c), "DONE");
+    let next = batch(&w);
+    let next_id = w.s.with(|tx| bs::slug(tx, next.task.as_deref().unwrap())).unwrap();
+    let said = w.s.with(|tx| ops::history(tx, &next_id)).unwrap().to_string();
+    assert!(!said.contains("PASSED ONLY ON RETRY"), "old diagnostics do not become this batch's: {said}");
+    let kept = w.s.with(|tx| ops::history(tx, &id)).unwrap().to_string();
+    assert!(kept.contains("expected width 80, got 79"), "earlier batch history survives tree reuse");
+}
+
 #[test]
 fn ac198_a_queued_task_is_prepared_and_verified_in_its_own_tree_before_its_batch() {
     let w = world("is-pass", Settings { prepare: "echo prepared > prepared.txt".into(), verify: "test -f prepared.txt".into(), ..Settings::default() });
