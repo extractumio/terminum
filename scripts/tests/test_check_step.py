@@ -20,10 +20,19 @@ GUARD = str(Path(__file__).resolve().parents[1] / "check_step.py")
 GUARD_WAIT_S = 60   # 15 s settling, bounded native directory queries, and process termination
 
 
+def guard_command():
+    # These fixtures check outcomes; cancellation grace is exercised by test_check_cancel.
+    harness = (f"import sys; sys.path.insert(0, {str(Path(GUARD).parent)!r}); "
+               "import check_step; check_step.SETTLE_S=0.2; args=sys.argv[1:]; "
+               "owned=args[:1]==['--owned-root']; "
+               "sys.exit(check_step.main(args[2:] if owned else args, folder=args[1] if owned else None))")
+    return [sys.executable, "-I", "-c", harness]
+
+
 def guarded(script, **kwargs):
     """Runs `script` under the guard; (exit status, its stderr, the folder it was given)."""
     with tempfile.NamedTemporaryFile("r", suffix=".where") as where:
-        done = subprocess.run([sys.executable, "-I", GUARD, "sh", "-c", f'echo "$TMPDIR" > {where.name}; {script}'],
+        done = subprocess.run([*guard_command(), "sh", "-c", f'echo "$TMPDIR" > {where.name}; {script}'],
                               capture_output=True, text=True, timeout=GUARD_WAIT_S, **kwargs)
         return done.returncode, done.stderr, where.read().strip()
 
@@ -106,7 +115,7 @@ class SignalForwarding(unittest.TestCase):
 class Guard(unittest.TestCase):
     def test_failed_directory_inspection_reports_files_ends_known_children_and_keeps_root(self):  # AC-102
         harness = (f"import sys\nsys.path.insert(0, {str(Path(GUARD).parent)!r})\n"
-                   "import check_step\nfrom process_cwd import InspectionError\n"
+                   "import check_step\ncheck_step.SETTLE_S=0.2\nfrom process_cwd import InspectionError\n"
                    "def failed_inspection(_):\n raise InspectionError('lsof timed out')\n"
                    "check_step.working_in=failed_inspection\n"
                    "sys.exit(check_step.main(sys.argv[1:]))")
@@ -203,7 +212,7 @@ class Guard(unittest.TestCase):
 
     def test_a_signal_still_removes_the_folder(self):
         with tempfile.NamedTemporaryFile("r", suffix=".where") as where:
-            with subprocess.Popen([sys.executable, "-I", GUARD, "sh", "-c", f'touch "$TMPDIR/x"; echo "$TMPDIR" > {where.name}; exec sleep 30'],
+            with subprocess.Popen([*guard_command(), "sh", "-c", f'touch "$TMPDIR/x"; echo "$TMPDIR" > {where.name}; exec sleep 30'],
                                   stderr=subprocess.PIPE, text=True) as run:
                 for _ in range(1200):    # a signal before the step starts tests nothing
                     folder = where.read().strip()
@@ -244,7 +253,9 @@ class Stubborn(unittest.TestCase):
         spec.loader.exec_module(check_changed)
         root = Path(GUARD).parents[1]
         try:
-            with contextlib.redirect_stdout(io.StringIO()) as said:   # its FAIL line is this test's outcome
+            real_guard = check_changed.run_guard
+            with contextlib.redirect_stdout(io.StringIO()) as said, \
+                    patch.object(check_changed, "run_guard", side_effect=lambda guard, command, **kw: real_guard(guard_command(), command, **kw)):
                 self.assertEqual(check_changed.run([("guard-probe", 'touch "$TMPDIR/left"')], root=root), ["guard-probe"])
             self.assertIn("FAIL guard-probe", said.getvalue())
             self.assertIn("LEFT left", (root / ".checks" / "changed.guard-probe.log").read_text())
