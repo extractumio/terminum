@@ -2,14 +2,14 @@
 // Closing a task cancels pending opens, but a later deliberate open stands; Save keeps the comment being written
 // once, whatever is drawn anew under its press, and leaves the window open (AC-108, AC-133).
 import { check, runningIn, until } from "./check.mjs";
-import { drawn, openPage, SIZES } from "./fake.mjs";
+import { drawn, openPage, SIZES, windowKey } from "./fake.mjs";
 
 const META = { projects: [{ id: "default", name: "Default" }], users: [{ id: "alex", name: "Alex" }], sessions: [], agents: [] };
 const TASK = { id: "API-12", uid: "abfed14f", title: "Close a task window", status: "TODO", project: "default",
   severity: "P2", owner: "alex", owner_name: "Alex", text: "A task to close.", text_rev: 1,
   files: [], children: [], history: [], created_at: 1, updated_at: 1 };
 const opened = (page) => page.$eval("#taskbox", (b) => b.open);
-const footer = (page) => page.locator("#taskacts").getByRole("button", { name: "Save", exact: true });
+const footer = (page) => windowKey(page, "#taskbox", "Save");
 const draft = (page) => page.inputValue(".newcomment textarea");
 
 export async function webTaskClose(browser, name) {
@@ -165,12 +165,15 @@ export async function webTaskClose(browser, name) {
       await page.mouse.move(2, 2);
       await page.mouse.up();
       check("AC-133 releasing outside Save cancels the click and applies the pending footer",
-        await until(async () => await page.locator('#taskacts button:text-is("Give up")').count() === 1, 1000)
-        && await page.locator('#taskacts button:text-is("Run")').count() === 1 && await opened(page) && posts.length === from && await draft(page) === "Not sent");
-      const keys = await page.$$eval("#taskacts button", (all) => all.map((b) => ({ word: b.textContent, left: Math.round(b.getBoundingClientRect().left), top: Math.round(b.getBoundingClientRect().top), color: getComputedStyle(b).color })));
+        await until(async () => await page.locator('#taskbox .actions button:text-is("Give up")').count() === 1, 1000)
+        && await page.locator('#taskbox .actions button:text-is("Run")').count() === 1 && await opened(page) && posts.length === from && await draft(page) === "Not sent");
+      const keys = await page.$$eval("#taskacts button, #taskbox .barkeys button", (all) => all.map((b) => ({ word: b.textContent, left: Math.round(b.getBoundingClientRect().left), top: Math.round(b.getBoundingClientRect().top), color: getComputedStyle(b).color })));
       const giveUp = keys.find((k) => k.word === "Give up"), save = keys.find((k) => k.word === "Save");
-      check("AC-173 a task's keys: Give up at the left in the danger color, Save and Run at the right, on one line",
-        keys.map((k) => k.word).join() === "Give up,Save,Run" && save.left - giveUp.left > 100 && giveUp.color !== save.color && new Set(keys.map((k) => k.top)).size === 1, JSON.stringify(keys));
+      // a phone's window (terminum.md AC-173, e2e_phonewin.mjs): Save and Run in its bar, Give up in the row under the task
+      const bar = await page.$$eval("#taskbox .barkeys button", (all) => all.map((b) => b.textContent).join());
+      check("AC-173 a task's keys: Give up at the left in the danger color, Save and Run at the right, on one line; a phone: Save and Run in its bar",
+        giveUp.color !== save.color && (bar ? bar === "Save,Run" && keys.map((k) => k.word).sort().join() === "Give up,Run,Save"
+          : keys.map((k) => k.word).join() === "Give up,Save,Run" && save.left - giveUp.left > 100 && new Set(keys.map((k) => k.top)).size === 1), JSON.stringify({ keys, bar }));
       await footer(page).focus();
       await page.keyboard.down("Space");
       task.run_holds = null;

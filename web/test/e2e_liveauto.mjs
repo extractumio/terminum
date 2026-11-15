@@ -197,7 +197,7 @@ export async function liveAuto(page, live) {
   const fitsPhone = await page.evaluate(() => { const d = document.querySelector("#autobox"), r = d.getBoundingClientRect(); return { wide: d.scrollWidth <= d.clientWidth + 1, left: r.left, right: r.right, bottom: r.bottom, w: innerWidth, h: innerHeight }; });
   check("AC-170 at a phone's size its window fits", fitsPhone.wide && fitsPhone.left >= 0 && fitsPhone.right <= fitsPhone.w && fitsPhone.bottom <= fitsPhone.h + 1, JSON.stringify(fitsPhone));
   await shot("auto-phone");
-  await page.click('#autobox button[value="cancel"]');
+  await page.click("#autobox .dhead .x");   // a phone's window: × is its Cancel (terminum.md AC-173)
   await page.setViewportSize(size);
 
   // the sessions it started are given up, so no slot stays held for the suites after

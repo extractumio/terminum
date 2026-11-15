@@ -3,7 +3,7 @@
 // wide or narrower a window with fields, a text, a list or a document covers what is in sight, its ways on in
 // the bar at its top, beside its title. The keys themselves move there as it opens (never copies: the page's
 // code holds them), and back when the screen is wide again; what is seldom pressed stays in its row under the
-// fields. The bar stands at the top of what is in sight: --app-top follows the visible part of the page, which
+// fields; × presses the row's Cancel. The bar stands at the top of what is in sight: --app-top follows the visible part of the page, which
 // iOS moves when it brings a focused field over the keyboard.
 
 /** Where a window covers the screen: the page's one query of it (phone.css's own is the same). */
@@ -41,10 +41,23 @@ function arrange(win, refill = false) {
     head.append(bar);
     refilled.observe(row, { childList: true });
   }
-  const keys = waysOn(row), focused = document.activeElement;
+  const keys = waysOn(row);
   if (refill) bar.replaceChildren(...keys); else bar.append(...keys);
-  if (keys.includes(focused)) focused.focus();     // a key moved keeps the keys
+  // a key taken out of the page and put back lost the focus without a word: it has it again, unless the focus went on
+  if (keys.includes(focused) && (document.activeElement === document.body || document.activeElement === win)) focused.focus();
 }
+let focused = null;                                // what last took the focus
+document.addEventListener("focusin", (e) => { focused = e.target; });
+
+// × is Cancel on a phone, where the row's own Cancel is not shown: the same key pressed, so a window that Cancel
+// closes while it is busy (a bookmark being saved) closes by × too. Before the page's own × (dialogs.js).
+document.addEventListener("click", (e) => {
+  const x = phone.matches ? e.target.closest?.(".dhead .x") : null, win = x?.closest(WINDOWS);
+  const cancel = win?.querySelector(`:scope > form > .actions > :is(${CANCEL}), :scope > .actions > :is(${CANCEL})`);
+  if (!cancel) return;
+  e.stopImmediatePropagation();
+  cancel.click();
+}, true);
 
 const all = () => { for (const win of document.querySelectorAll(WINDOWS)) arrange(win); };
 new MutationObserver((records) => {

@@ -128,6 +128,15 @@ export async function pressFab(page, sel, how = "click") {
   await page[how](sel);
 }
 
+/** Leaves window `box` (a dialog or a list's form) without keeping: its Cancel; on a phone, where the window covers
+ *  the screen and has none, the × of its bar (phonewin.js, terminum.md AC-173). */
+export async function pressCancel(page, box) {
+  const cancel = page.locator(`${box} :is([value="cancel"], [id$="cancel"])`).first();
+  await (await cancel.isVisible() ? cancel : page.locator(`${box} .dhead .x`)).click();
+}
+/** A key of window `box`, by its words: at its foot, or on a phone in its bar. */
+export const windowKey = (page, box, words) => page.locator(`${box} .actions`).getByRole("button", { name: words, exact: true });
+
 /** Presses a button of the list's foot; on a computer once the pointer unfolded it (foot.css, AC-07). */
 export async function pressFoot(page, sel) {
   if (await page.isVisible("#foottoggle") && (await page.getAttribute("#foottoggle", "aria-expanded")) === "false") {
