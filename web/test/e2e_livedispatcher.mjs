@@ -336,7 +336,7 @@ export async function liveDispatcher(page, opts) {
     try { return db.prepare("SELECT r.turn_ended, r.nudged, r.idle_for FROM runs r JOIN run_tasks rt ON rt.run = r.id JOIN tasks t ON t.id = rt.task WHERE t.slug = ? ORDER BY r.rowid DESC LIMIT 1").get(restart); }
     finally { db.close(); }
   };
-  const stopAfter = path.join(work, "restart-stop");
+  const stopAfter = path.join(fs.mkdtempSync(path.join(work, "restart-")), "stop");
   // A real Claude title lets the screen recover a Stop missed during downtime; python3 alone is no agent.
   await run(restart, { agent: await agent("Restart", `--title '✳ Restart' --stop-after '${stopAfter}'`) });
   await hasStatus(restart, "IN PROGRESS", 15000);
