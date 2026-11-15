@@ -323,7 +323,7 @@ mod tests {
             Ok((t.id, r))
         }).unwrap();
         let who = Who { key, agent: "claude".into(), title: "Fixer".into(), project: Some("default".into()), dir: None };
-        tools::run(&app.tasks, &root, &who, "ask_human", &serde_json::json!({"id": task, "questions": "Which API? Recommended: v2."})).unwrap();
+        tools::run(&app.tasks, &root, &who, "ask_human", &serde_json::json!({"id": task, "questions": crate::tasks::closeout::ASKED})).unwrap();
         let accepted = app.tasks.with(|tx| runs::by_id(tx, &stale.id)).unwrap();
         now_asking(&app, &stale).await;
         did_not_start(&app, &stale, None, "the earlier timeout expired").await;

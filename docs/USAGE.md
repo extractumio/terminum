@@ -216,7 +216,7 @@ page says how; how the sign-in is kept is in [SECURITY.md](../SECURITY.md). `tmu
   `get_file` and `finish_task`: on every task of their project, whatever session made or holds it, but one a human's RUN holds in another session, until that session is closed;
   an agent Dispatcher starts runs its command as you wrote it, so write the permissions it needs there (`claude --dangerously-skip-permissions`);
   Dispatcher adds only the agent's inline (not full-screen) TUI, Codex in its own process rather than in a Codex app's shared server, and the effort (Run's window shows the whole line; a Claude Code command that names its own `--settings` gets none added, so set `"tui": "default"` there yourself); when it
-  needs you it asks with `ask_human`: its questions, with its recommended answers, stand on the task
+  needs you it asks with `ask_human`: one sentence on why you are needed, its recommended answers with why, then one paragraph on the whole issue, stand on the task
   in WAIT FOR HUMAN and its session closes; answer in comments and press Run, and the same
   conversation goes on (dropped on another agent of its kind, there). Run on a busy agent offers
   its queue: Add to queue, and the task starts by itself when a slot frees; the agent's card shows a pale dot for
