@@ -539,6 +539,14 @@ Scenario: AC-104 edge — a Rust source that names no case
   Then it prints "note: terminumd/src/redaction.rs names no case at its top: the e2e scripts of its area are not known"
   And it runs that module's cargo tests; a source naming cases there also runs the scripts/e2e_*.py citing them
 
+Scenario: AC-104 edge — an imported helper is not a standalone check
+  Given scripts/e2e_ws.py is an imported helper with no top-level main entry point
+  When targeted checks select changed files or tests citing AC-102
+  Then they never schedule python3 scripts/e2e_ws.py as a check
+  And a helper's citations alone do not count as test coverage
+  And the real AC-102 runners, including e2e_attach.py, e2e_restore.py and the scripts' unit tests, remain selected
+  And Python e2e runners declare a top-level if __name__ == "__main__" entry point; discovery parses their source without executing it
+
 Scenario: AC-104 edge — uncommitted work
   Given the worktree holds an uncommitted file
   When make land runs
