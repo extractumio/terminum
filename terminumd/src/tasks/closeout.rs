@@ -22,12 +22,12 @@ pub(crate) use removable;
 /// How a question for the human is written (terminum-dispatcher.md AC-157): QUESTIONS' parts in order, each said
 /// with what it holds, for a reader new to the task. A macro for the prompts' `concat!` and the tools' answers.
 macro_rules! questions_shape {
-    () => { "in plain short words for a person who has not followed this task, in three parts in this order: \"Why you are needed:\" one sentence on why this task waits for a person; \"Recommended:\" each question numbered, the answer you recommend as its default and why in a few words, then its other options; \"Details:\" one paragraph on the whole issue: what the task is for, what was done, what holds it, what each option leads to" };
+    () => { "in plain short words for a person who has not followed this task, in three parts in this order: \"Why you are needed:\" one sentence on why this task waits for a person; \"Recommended:\" each question numbered, the answer you recommend as its default and why in a few words, then its other options; \"Details:\" one paragraph on the whole issue: what the task is for, what was done, what holds it, what each option leads to; the three labels as written here, in English" };
 }
 pub(crate) use questions_shape;
 
 /// The parts of a question for the human (AC-157), in the order questions_shape! says them.
-pub const QUESTIONS: [(&str, &str); 3] = [("Why you are needed", ""), ("Recommended", ""), ("Details", "")];
+pub const QUESTIONS: [&str; 3] = ["Why you are needed", "Recommended", "Details"];
 
 /// The result's sections, in order, each with what it holds; the finishing tool's description names them
 /// too (cli/mcp_tasks.rs).
@@ -82,8 +82,13 @@ fn after_name<'a>(h: &'a str, name: &str) -> Option<&'a str> {
 /// The sections of `form` that `result` lacks, in order (AC-123, AC-166): a section is a line starting, past Markdown's
 /// marks and spaces, with its name in any case, then the line's end, `:`, `*` or `_`.
 pub fn missing<'a>(result: &str, form: &[(&'a str, &str)]) -> Vec<&'a str> {
-    let heads: Vec<&str> = result.lines().map(head).collect();
-    form.iter().map(|(name, _)| *name).filter(|name| !heads.iter().any(|h| after_name(h, name).is_some())).collect()
+    lacking(result, form.iter().map(|(name, _)| *name))
+}
+
+/// Which of `names` no heading of `text` starts with, as `missing` reads them.
+fn lacking<'a>(text: &str, names: impl Iterator<Item = &'a str>) -> Vec<&'a str> {
+    let heads: Vec<&str> = text.lines().map(head).collect();
+    names.filter(|name| !heads.iter().any(|h| after_name(h, name).is_some())).collect()
 }
 
 /// What `result` says under section `name` of the close-out, every time it is there: the rest of its heading's line and
@@ -145,7 +150,7 @@ pub const ASKED: &str = "Why you are needed: only you know which API the clients
 /// Why an agent's `questions` are refused (AC-157): the parts of QUESTIONS they lack, said with the shape; the task stays
 /// where it was and nothing is kept, so the agent asks again in that shape.
 pub fn unshaped(id: &str, questions: &str) -> Option<String> {
-    let lacks = missing(questions, &QUESTIONS);
+    let lacks = lacking(questions, QUESTIONS.into_iter());
     (!lacks.is_empty()).then(|| format!("Not asked: the questions lack {}. {id} stays where it was. Write them {}, each part a line \"Name:\" or a heading, then call it again.", lacks.join(", "), questions_shape!()))
 }
 

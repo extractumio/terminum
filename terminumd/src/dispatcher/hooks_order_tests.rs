@@ -152,12 +152,12 @@ async fn ac157_normal_start_and_resumed_work_accept_the_initial_prompt_once() {
 #[tokio::test]
 async fn ac157_a_humans_new_prompt_cannot_consume_the_pending_first_acknowledgment() {
     let f = Fixture::new(&["WAIT FOR HUMAN"]);
-    f.tool("ask_human", json!({"id": f.ids[0], "questions": ASKED}));
+    f.tool("ask_human", json!({"id": f.ids[0], "questions": format!("{ASKED} First.")}));
     // The new prompt overtakes the first hook in transport, rather than only in its queue.
     f.queue("UserPromptSubmit", "Use v2");
     f.drain().await;
     assert_eq!(f.statuses(), ["IN PROGRESS"]);
-    f.tool("ask_human", json!({"id": f.ids[0], "questions": ASKED}));
+    f.tool("ask_human", json!({"id": f.ids[0], "questions": format!("{ASKED} Second.")}));
     f.queue("UserPromptSubmit", "The human\n ran these tasks");
     f.drain().await;
     assert_eq!(f.statuses(), ["WAIT FOR HUMAN"]);

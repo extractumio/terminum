@@ -44,7 +44,7 @@ pub const CARDS: &[Card] = &[
     Card { name: "move_task", area: "tasks", keywords: "move a task to a column, change its status, in progress, wait for a human, escalate, blocked, give up, failed, postpone, put back to todo",
         example: r#"{"id": "TERM-12", "to": "WAIT FOR HUMAN"}"# },
     Card { name: "ask_human", area: "tasks", keywords: "ask the human, ask the user, a question, need a decision, clarify, which option, wait for an answer, human in the loop, blocked on a choice",
-        example: r#"{"id": "TERM-12", "questions": "Why you are needed: removing API v1 breaks clients, and only you know whether they may break.\n\nRecommended:\n1. Keep v1 one more month: the two clients still calling it move by then. Other options: drop it now.\n\nDetails: TERM-12 removes the old v1 API so only v2 stays. v2 is done and committed on a branch. The logs show two clients still calling v1; dropping it now breaks them today, keeping it a month gives them time to move, then v1 goes."}"# },
+        example: r#"{"id": "TERM-12", "questions": "Why you are needed: dropping API v1 breaks two clients, and only you know if they may break.\nRecommended:\n1. Keep v1 a month: they move by then. Other options: drop it now.\nDetails: TERM-12 removes API v1; v2 is done on a branch. Two clients still call v1; dropping it breaks them today."}"# },
     Card { name: "add_comment", area: "comments", keywords: "comment on a task, leave a note, reply, remark, say something on a ticket",
         example: r#"{"id": "TERM-12", "text": "The cause is in tasks/ops.rs; a fix needs the owner's choice."}"# },
     Card { name: "attach_file", area: "files", keywords: "attach a file, upload, add a screenshot, a log, a document, an artifact to a task",
