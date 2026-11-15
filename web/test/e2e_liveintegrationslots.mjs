@@ -9,8 +9,10 @@ const FAKE = fileURLToPath(new URL("../../scripts/fake_agent.py", import.meta.ur
 
 export async function liveIntegrationSlots(page, live) {
   const { j, cli, open } = boardKit(page, live);
-  const project = (await j("/api/task-projects", "POST", { name: "Integration slots", dir: live.work })).id;
-  const agent = (await j("/api/task-agents", "POST", { project, name: "Codex slots", kind: "codex", command: `python3 -I ${FAKE} ${cli} --kind codex`, at_once: 4 })).id;
+  const size = page.viewportSize().width < 860 ? "phone" : "wide";
+  const project = (await j("/api/task-projects", "POST", { name: `Integration slots ${size}`, dir: live.work })).id;
+  const given = { project, name: "Codex slots", kind: "codex", command: `python3 -I ${FAKE} ${cli} --kind codex` };
+  const agent = (await j("/api/task-agents", "POST", { ...given, at_once: 4 })).id;
   const tasks = [], panes = new Set();
   const task = async (title) => {
     const id = (await j("/api/tasks", "POST", { project, title: `${title} WORKS` })).id;
@@ -33,7 +35,8 @@ export async function liveIntegrationSlots(page, live) {
       await j(`/api/tasks/${id}/run`, "POST", { agent });
       if (!await started(id)) throw new Error(`${id} did not take its initial prompt`);
     }
-    await j(`/api/task-agents/${agent}`, "PATCH", { at_once: 3 });
+    const limited = await j(`/api/task-agents/${agent}`, "PATCH", { ...given, at_once: 3 });
+    if (!limited.ok) throw new Error(`agent limit was not kept: ${JSON.stringify(limited)}`);
     await j(`/api/task-projects/${project}/agents-at-once`, "PUT", { limit: 3 });
     const blocker = await task("Verify prerequisite");
     const waiting = await j(`/api/tasks/${blocker}/run`, "POST", { agent, queue: true });
