@@ -77,6 +77,29 @@ fn ac187_queued_with_its_result_it_stands_in_integration() {
 }
 
 #[test]
+fn ac157_early_integration_accepts_the_run_before_queueing() {
+    use crate::dispatcher::runs::{self, Phase, Run};
+    let r = repo("iq-early");
+    let sibling = r.s.with(|tx| {
+        ops::move_to(tx, HUMAN, &r.id, "TODO", 3)?;
+        let sibling = ops::create(tx, HUMAN, NewTask { title: "sibling".into(), project: Some("api".into()), session: Some(KEY.into()), ..Default::default() }, 3)?;
+        let like = Run { agent_id: "a".into(), agent_name: "Fixer".into(), project: "api".into(), prompt: Some("First prompt".into()), ..Default::default() };
+        let run = runs::add(tx, &like, &[ops::key_of(tx, &r.id)?, sibling.key], Default::default(), 3)?;
+        runs::change(tx, &run, |r| { r.state = Phase::Typed; r.pane_key = Some(KEY.into()); })?;
+        Ok(sibling.id)
+    }).unwrap();
+    let (_, changed) = integrate(&r.s, &r.who, &json!({"id": r.id, "result": result()})).unwrap();
+    assert!(changed.contains(&sibling), "all initialized cards are broadcast");
+    assert_eq!(status(&r), INTEGRATION);
+    let run = r.s.with(|tx| {
+        assert_eq!(ops::get(tx, &sibling)?.status, "IN PROGRESS");
+        runs::in_pane(tx, KEY).map(Option::unwrap)
+    }).unwrap();
+    assert_eq!(run.state, Phase::Working);
+    assert_eq!(run.prompt.as_deref(), Some("First prompt"), "its first hook still awaits acknowledgment");
+}
+
+#[test]
 fn ac187_queued_again_it_keeps_its_place_with_the_new_commit() {
     let r = repo("iq-again");
     call(&r, "integrate", json!({"id": r.id, "result": result()})).unwrap();

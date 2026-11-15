@@ -161,6 +161,7 @@ pub struct Run {
     pub pane_key: Option<String>,
     pub agent_session: Option<String>,
     pub state: Phase,
+    /// The first prompt awaiting its hook's acknowledgment, also while a task tool has accepted the work.
     pub prompt: Option<String>,
     pub turn_ended: bool,
     pub open_tools: i64,
