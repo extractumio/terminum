@@ -55,6 +55,14 @@ pub fn move_to(tx: &Transaction, author: &str, id: &str, status: &str, at: i64) 
 pub(crate) fn place(tx: &Transaction, author: &str, task: &Task, status: &str, at: i64) -> Result<(), String> {
     if task.status == INTEGRATION {
         super::integration_queue::leave(tx, &task.key)?;
+        // A return is activity (AC-123, AC-198), even if no walk saw the wait; keep the budget already used.
+        if status == "IN PROGRESS" && let Some(mut run) = crate::dispatcher::runs::holding(tx, &task.key)? {
+            run.idle_for = 0;
+            run.nudged = 0;
+            run.nudge_turn = false;
+            run.last_walk = at;
+            crate::dispatcher::runs::save(tx, &run)?;
+        }
     }
     let rank = top_rank(tx, status, &task.severity)?;
     tx.execute("UPDATE tasks SET status = ?1, rank = ?2, updated_at = ?3 WHERE id = ?4", (status, rank, at, &task.key)).map_err(sql)?;
