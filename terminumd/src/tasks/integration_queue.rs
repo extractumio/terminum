@@ -122,8 +122,10 @@ pub fn integrate(store: &Store, who: &Who, args: &Value) -> Result<(String, Vec<
             return Err(format!("{} was returned for a red check: commit a fix first, or ask a human to queue it.", short(&commit)));
         }
         let me = author(tx, who)?;
-        tx.execute("INSERT INTO integration_entries (task, project, commit_sha, result, author, queued_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)
-                    ON CONFLICT (task) DO UPDATE SET commit_sha = ?3, result = ?4, author = ?5", (&t.key, &t.project, &commit, &result, &me, at)).map_err(sql)?;
+        // with a Prepare or Verify, a commit waits for them before any batch takes it (AC-198)
+        let stage = (!s.prepare.is_empty() || !s.verify.is_empty()).then_some("verifying");
+        tx.execute("INSERT INTO integration_entries (task, project, commit_sha, result, author, queued_at, stage) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+                    ON CONFLICT (task) DO UPDATE SET commit_sha = ?3, result = ?4, author = ?5, stage = ?7", rusqlite::params![t.key, t.project, commit, result, me, at, stage]).map_err(sql)?;
         let short = short(&commit);
         if t.status == INTEGRATION {
             ops::log(tx, &t.key, &me, "queue", &format!("Queued {short} for integration into {} in its place.", s.target), None, at)?;
@@ -178,7 +180,8 @@ pub fn status(store: &Store, who: &Who, args: &Value) -> Result<String, String> 
         let s = integration::read(tx, &project)?;
         let queue: Vec<Value> = queue_of(tx, &project)?.iter().enumerate()
             .map(|(i, e)| json!({"task": e.id, "place": ordinal(i + 1), "commit": short(&e.commit), "batch": e.batch})).collect();
-        let mut v = json!({"on": s.on, "target": s.target, "check": s.check, "publish": s.publish, "after": s.after, "batch_size": s.size(), "batch_most": s.batch_most, "queue": queue});
+        let mut v = json!({"on": s.on, "target": s.target, "prepare": s.prepare, "verify": s.verify, "check": s.check, "publish": s.publish, "after": s.after,
+                           "cleanup": s.cleanup, "batch_size": s.size(), "batch_most": s.batch_most, "queue": queue});
         if let Some(t) = task {
             v["task"] = of_task(tx, &t)?;
         }

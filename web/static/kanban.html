@@ -304,9 +304,13 @@
       <div id="integrationfields" class="integrationgroup">
         <label class="fieldrow checkrow">On: this project's tasks integrate by the queue <input id="integrationon" type="checkbox" role="switch"></label>
         <label class="fieldrow">Target <input id="integrationtarget" class="field" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"></label>
+        <label class="fieldrow">Prepare <input id="integrationprepare" class="field" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"><span id="integrationpreparehint" class="colempty">Skipped: a queued task goes straight into a batch.</span></label>
+        <label class="fieldrow">Verify <input id="integrationverify" class="field" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"><span id="integrationverifyhint" class="colempty">Skipped: a queued task goes straight into a batch.</span></label>
+        <p class="fieldrow" id="integrationqueue">Queue <span class="colempty">terminum's queue: in the order tasks were queued, batched as they merge.</span></p>
         <label class="fieldrow">Check <input id="integrationcheck" class="field" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"><span id="integrationcheckhint" class="colempty">No check: a candidate that merges is published.</span></label>
         <label class="fieldrow">Publish <input id="integrationpublish" class="field" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"><span id="integrationpublishhint" class="colempty"></span></label>
         <label class="fieldrow">After <input id="integrationafter" class="field" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"><span id="integrationafterhint" class="colempty">Nothing runs after.</span></label>
+        <label class="fieldrow">Cleanup <input id="integrationcleanup" class="field" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"><span id="integrationcleanuphint" class="colempty">Nothing runs after a batch.</span></label>
         <div class="fieldgrid">
           <label class="fieldrow">Tasks in a batch, at most <input id="integrationbatch" class="field" type="number" min="1" max="8" step="1" inputmode="numeric"></label>
           <label class="fieldrow">Check ends after, minutes <input id="integrationminutes" class="field" type="number" min="1" max="1440" step="1" inputmode="numeric"></label>
