@@ -80,6 +80,15 @@ in the maintainer's `local.mk`): no GitHub runner on a Mac, whose user can do mo
 CI job should. `make test-mac`, with no real Claude Code (a login and a region it cannot promise), runs from `make release`, and by hand after a change to macOS-only
 code (launchd, signing, folders, Finder). `scripts/ci_mac.sh` exits 0 passed, 1 tests failed, 2 they could not run, 3 busy (through make, any failure is make's own 2).
 
+The Mac run requires Node 26. Before rustup, builds or browser checks it selects a supported
+Node on the runner's PATH, then tries the installed keg from `brew --prefix node@26`,
+and checks `node:sqlite` numbered bindings in memory. To select
+another installed runtime, set `TM_MAC_NODE_BIN` to its absolute **runner-side** bin directory
+in `local.mk` or the invocation's environment. An explicit directory is authoritative; an
+unusable Node fails immediately with its version, path and remedy. The selected bin directory
+heads PATH for the whole run, including make, npm and npx. Nothing installs or replaces Node
+or changes the runner's global configuration.
+
 The Linux job runs `make test`, clippy with warnings as errors, `e2e_install.sh`, the Files
 panel's checks and the page's live checks (`e2e_live.mjs`, Chromium and WebKit) against a
 private terminumd and tmux, and `security_check.sh`. The page's own checks (`e2e_all.mjs`)
