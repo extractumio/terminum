@@ -19,7 +19,7 @@ import { freePort, own, shortTmp } from "./testrun.mjs";
 import { endOnSignal, NO_SIGNALS, stopChild } from "../../ui/test/process-stop.mjs";
 import { liveDrop, livePaste } from "./e2e_livepaste.mjs";
 import { liveQuick } from "./e2e_livequick.mjs";
-import { liveSplit } from "./e2e_livesplit.mjs";
+import { liveSplit, observeWidths } from "./e2e_livesplit.mjs";
 import { liveView } from "./e2e_liveview.mjs";
 import { liveRequests } from "./e2e_liverequests.mjs";
 import { liveBoardSignin } from "./e2e_livesignin.mjs";
@@ -155,7 +155,7 @@ async function wide(browser, name) {
   runningIn(`${name} 1400×900`);
   // reduced motion: a window stands where a press lands (e2e_motion.mjs checks the motion)
   const errors = [];
-  let ctx, page;
+  let ctx, page, widths;
   /** A page in a context of its own, signed in with the last one's storage, the last one closed: with one
    *  page through the whole run, Linux WebKit's web process reached 1.6 GB under CI's 2 GiB and was killed */
   const renew = async () => {
@@ -163,6 +163,7 @@ async function wide(browser, name) {
     await ctx?.close();
     ctx = await browser.newContext({ viewport: { width: 1400, height: 900 }, reducedMotion: "reduce", storageState });
     page = await ctx.newPage();
+    widths = observeWidths(page);
     page.on("pageerror", (e) => recordLivePageError(errors, name, e));
     if (!storageState) return signIn(page);
     await page.goto(`${BASE}/`);
@@ -257,7 +258,7 @@ async function wide(browser, name) {
     const size = tmux("display", "-p", "-t", await shownPane(page, { tmux, work: WORK }), "#{window_width}x#{window_height} #{window-size}");
     check("AC-13 the pane is sized for this view (window-size manual)", /^\d+x\d+ manual/.test(size) && Number(size.split("x")[0]) > 80, size);
     await liveQuick(page, { tmux, work: WORK });
-    await liveSplit(page, { tmux, work: WORK, socket: SOCKET });
+    await liveSplit(page, { tmux, work: WORK, socket: SOCKET, widths });
     tmux("new-window", "-d", "-n", byhandName);
     await within("AC-01 a window made by hand shows in the list", () => page.waitForFunction((n) => document.getElementById("sessions").innerText.includes(n), byhandName, { timeout: 3000 }));
   }
