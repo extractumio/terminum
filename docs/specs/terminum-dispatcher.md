@@ -1268,7 +1268,7 @@ Scenario: AC-170 happy path — the switch and its settings
   When project api is shown alone, an agent that picks chosen for it, and the user presses the switch
   Then it is on for api, "ON", on every page; a press again turns it off, "OFF", its agents and filters kept
   When no agent picks for api yet, or it turned itself off, and the user presses the switch
-  Then its window opens with On ticked, saying why it turned itself off: nothing is on until Save
+  Then its window opens with On switched on, saying why it turned itself off: nothing is on until Save
   When the user presses the cog
   Then the window holds, for the project: On; the agent that picks; the default agent; the severities it takes, a tick each; the minutes a task stands in TODO before it is taken, 0 to 1440; the tasks it starts in 24 hours at most, 1 to 1000, with how many it started in the last 24
   And it says in fixed words what it takes, in what order, when it waits and when it stops; tasks start with no one pressing Run, an agent's text too
@@ -1284,7 +1284,7 @@ Scenario: AC-170 happy path — several projects shown
   When the user presses it
   Then it is off for api: one press turns off, for every project shown
   When none is on and the user presses it
-  Then the window opens with a Project choice and On ticked: turning on is one project's Save, never one press for several
+  Then the window opens with a Project choice and On switched on: turning on is one project's Save, never one press for several
 
 Scenario: AC-170 happy path — priority and saved order, no agent
   Given api's window, "How tasks are picked" set from "An agent scores them by RICE" to "By priority and saved order, no agent", saved
@@ -1297,6 +1297,7 @@ Scenario: AC-170 happy path — priority and saved order, no agent
   Then nothing starts, its slot of the day is given back, and a later walk tries again
   When a press fails (the project has no folder, the agent's command does not start)
   Then it turns itself off: "it could not start API-12: <why>", never a failing press at every walk
+  And the tasks that walk took and had not pressed yet give their slots of the day back
   When it is set to priority and saved order while a round is open
   Then that round's dispatch_task is refused: "Auto-Dispatch was set to priority and saved order for this project meanwhile: start no more, and finish API-20.", and nothing starts by order until it ended
 
@@ -1393,6 +1394,8 @@ Scenario: AC-170 edge — a restart
   And Auto-Dispatch stays on, and that walk may make a new round, offered what the dropped one was given
   Given a round whose press failed by its own agent or command, no session opened either
   Then it is FAILED, "It did not start: <why>", and the breaker reads that
+  Given a task the board's order took, terminumd having stopped before its press made a run
+  Then the next walk gives its slot of the day back and it is a candidate again; one whose run was made keeps its start, whatever its agent did, and is not started twice
 ```
 
 ### AC-185 — A main task runs with its subtasks [MUST / P0]
@@ -1415,6 +1418,7 @@ Scenario: AC-185 happy path — one cannot be done
   Then API-13 is DONE, API-14 and API-12 are FAILED with the agent's comments, and the session closes as AC-125 says
   When the human removes the cause and presses Run on API-12
   Then the run's conversation goes on for API-12 and its subtasks not DONE, API-14 among them, its work and context kept: in its window while it stands, else in a new one (AC-122); API-13 stays DONE
+  But a subtask a run of its own took since starts a new session instead: the newer work is not lost in an older conversation
   And its words end "Its open tasks: API-14, API-12 (a main task last).", each reopened IN PROGRESS, and the press's message is kept on each
   And a press that names a task its last run did not hold, or another agent, or Run from scratch, starts a new session instead
   And one left in progress at the turn's end is asked for and failed as AC-123 says
