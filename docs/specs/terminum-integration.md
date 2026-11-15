@@ -639,7 +639,7 @@ sequenceDiagram
 | AC-192 | Trees of a project with no task are not compared; a card does not yet say "overlaps API-13" (AC-193). | `terminumd/src/integrate/notices.rs` |
 | AC-193 | The column stands as a plain list where integration is on; the batch's group, its marks, Pause, Batches…: not built. The keys of AC-194 stand in the integration task's window. | `web/static/kanbanbatch.js` |
 | AC-194 | A red check and a check that did not start get the agent; a Publish or push refused and After's failure wait for a human. Red again, the same session goes on with RUN's words, not the round's own ("Decide as before", its log). The prompt lists each task with its commit, not its files. A fix goes in as its last commit's change alone, picked onto the target. | `terminumd/src/integrate/engine.rs`, `terminumd/src/integrate/agent.rs` |
-| AC-198 | Verify runs the whole targeted pass in each task's tree, its pass kept in that tree only, so a pass the agent ran in its own tree is not reused; one task's Verify runs at a time. | `terminumd/src/integrate/stages.rs`, `scripts/land_stages.py` |
+| AC-198 | One task's Verify runs at a time; a pass the agent kept is reused only when Prepare left the same content (no merge needed). | `terminumd/src/integrate/stages.rs`, `scripts/check_changed.py` |
 
 ## 8. Recommendation and ownership
 
@@ -757,7 +757,7 @@ Every page hears `{"t": "integration"}` when a batch or the queue changes.
 | Stage | Setting | Runs in, by whom | Done when |
 |---|---|---|---|
 | 1 Prepare | `prepare` | the task's verify tree, by terminumd, at queueing | the target is in HEAD |
-| 2 Verify | `verify` | the same tree, after Prepare | the pass is kept for this content |
+| 2 Verify | `verify` | the same tree, after Prepare | the pass is kept for this content, by any tree of the repository (git's common folder) |
 | 3 Queue | none: terminum's queue | terminumd | the task is queued, or landed |
 | 4 Check | `check` | the candidate's tree, per batch | a green is kept for that commit (a commit fixes its content; Publish asks that it holds the target) |
 | 5 Publish | `publish` (empty: terminum's push) | the candidate's tree | the target holds the commit |
