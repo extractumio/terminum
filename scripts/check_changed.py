@@ -213,7 +213,7 @@ def plan(files, cases, root=REPO, tests_of_cases=None):
     if rust or modules:
         steps.append(("cargo", cargo_test(modules | set(CRITICAL_CARGO))))
     if any(f.startswith("scripts/") or f == "Makefile" or f.startswith(".claude/") for f in tests):
-        steps.append(("scripts", "python3 -m unittest discover -s scripts/tests"))
+        steps.append(("scripts", "python3 scripts/test_scripts.py"))
     if ui:
         steps.append(("ui-unit", "cd ui && npx tsc -p . && npm test"))
         steps.append(("panel", "cd ui && node test/e2e_panel.mjs"))
