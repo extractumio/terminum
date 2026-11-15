@@ -68,7 +68,7 @@ test: ui
 	-python3 scripts/check_docs.py
 	cd terminumd && cargo test --locked
 	# the release tooling (developer scripts); the command's own tests are in cargo test
-	python3 -m unittest discover -s scripts/tests
+	python3 scripts/test_scripts.py
 	cd ui && npx tsc -p . && npm test
 	node --test web/test/*.test.mjs
 
