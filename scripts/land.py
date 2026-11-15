@@ -11,7 +11,9 @@ that landed since the last: by the landing that ends and finds the turn free. Du
 primary checkout stays where it is (scripts/release_turn.py), and the smoke set yields to it (nice).
 
   land.py <slug>    from the primary checkout (`make land SLUG=<slug>`), the work committed;
-                    TM_LAND_INSTALL=1 (the maintainer's local.mk) also installs a change with code
+                    TM_LAND_INSTALL=1 (the maintainer's local.mk) also installs a change with code. With the
+                    project's integration on in terminum, the tree is queued instead (TASK, RESULT)
+  land.py <stage> [<slug>]   one of the seven stages alone (scripts/land_stages.py, AC-198)
 Exit: 0 landed; 1 checks failed or refused (the tree stays); 2 a merge conflict, left in the tree
 to resolve and commit before running this again. No force, ever."""
 import json
@@ -290,15 +292,31 @@ def install_steps(primary, run, say):
 
 
 def main(argv):
-    if len(argv) != 1 or not re.fullmatch(r"[A-Za-z0-9][\w.-]*", argv[0]):
-        sys.exit("usage: land.py <slug>")
+    import land_stages   # its stages build on this file's
+    slug_ok = lambda a: re.fullmatch(r"[A-Za-z0-9][\w.-]*", a)
+    staged = bool(argv) and argv[0] in land_stages.STAGES
+    if not argv or len(argv) > (2 if staged else 1) or not all(slug_ok(a) for a in argv):
+        sys.exit("usage: land.py <slug> | land.py <stage> [<slug>], a stage one of " + ", ".join(land_stages.STAGES))
     try:
         primary = primary_of(Path.cwd())
     except Refused as refused:
         sys.exit(str(refused))
+    if staged:
+        try:
+            return land_stages.run_stage(argv[0], argv[1] if len(argv) > 1 else None, primary)
+        except Stop as stop:
+            print(f"land: {stop}", file=sys.stderr)
+            return stop.code
     tree = primary / ".worktrees" / argv[0]
     if not tree.is_dir():
         sys.exit(f"no worktree {tree}")
+    # the project's integration on: terminum runs the stages; this tree is queued, never pushed from here
+    if land_stages.integration_on(tree):
+        try:
+            return land_stages.queue(tree, os.environ.get("TASK"), os.environ.get("RESULT"), on=lambda _: True)
+        except Stop as stop:
+            print(f"land: {stop}", file=sys.stderr)
+            return stop.code
     git("fetch", "--quiet", "origin", cwd=tree, check=False)   # main's head as GitHub has it, for ci_status
     ci = ci_status(tree)
     print(ci)   # said again last when not green: minutes of checks scroll the first out of sight
