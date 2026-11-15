@@ -655,7 +655,7 @@ Scenario Outline: AC-104 failure — the Mac checks reject an unusable Node befo
   Examples:
     | runtime |
     | no Node 26 on PATH or in the installed Homebrew node@26 keg |
-    | TM_MAC_NODE_BIN names a missing, relative or unsupported runner-side bin directory |
+    | TM_MAC_NODE_BIN names a missing, relative, colon-containing or unsupported runner-side bin directory |
     | the selected Node 26 cannot bind repeated numbered SQLite parameters |
 
 Scenario: AC-104 edge — an explicit Mac Node bin directory is authoritative

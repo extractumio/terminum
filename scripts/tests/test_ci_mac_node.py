@@ -84,7 +84,9 @@ class CiMacNodeTest(unittest.TestCase):
         self.command(self.bin, "node", NODE)
         old = self.root / "old"
         self.command(old, "node", NODE.replace("v26.7.0", "v24.3.0"))
-        for folder in ("relative/bin", self.root / "absent", old):
+        colon = self.root / "Node:26"
+        self.command(colon, "node", NODE)
+        for folder in ("relative/bin", self.root / "absent", old, colon):
             with self.subTest(folder=folder):
                 result = self.select(folder, NODE_VERSION="")
                 self.assertEqual(result.returncode, 4, result.stderr)

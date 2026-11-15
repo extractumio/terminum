@@ -6,6 +6,7 @@ ci_mac_node() {
     local remedy="set TM_MAC_NODE_BIN to an absolute Node 26 bin directory on the runner; its global Node is unchanged"
     if [ -n "$bin" ]; then
         case "$bin" in
+            *:*) echo "ci_mac: Node 26 required: TM_MAC_NODE_BIN cannot contain PATH's colon separator; $remedy" >&2; return 4 ;;
             /*) node="$bin/node" ;;
             *) echo "ci_mac: Node 26 required: TM_MAC_NODE_BIN must be absolute; $remedy" >&2; return 4 ;;
         esac

@@ -84,7 +84,7 @@ The Mac run requires Node 26. Before rustup, builds or browser checks it selects
 Node on the runner's PATH, then tries the installed keg from `brew --prefix node@26`,
 and checks `node:sqlite` numbered bindings in memory. To select
 another installed runtime, set `TM_MAC_NODE_BIN` to its absolute **runner-side** bin directory
-in `local.mk` or the invocation's environment. An explicit directory is authoritative; an
+in `local.mk` or the invocation's environment (no colon: PATH uses it as a separator). An explicit directory is authoritative; an
 unusable Node fails immediately with its version, path and remedy. The selected bin directory
 heads PATH for the whole run, including make, npm and npx. Nothing installs or replaces Node
 or changes the runner's global configuration.
