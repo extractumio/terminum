@@ -23,6 +23,9 @@ flowchart LR
       FS["files: listings, watcher, saves under Roots, Trash"]
       SOCK["CLI socket: state/terminumd.sock"]
       ST["state: settings.json, workspaces, layout, projects, unread"]
+      KB["tasks' store: state/kanban.sqlite: the board, schedules, messages, integration queue"]
+      DSP["Dispatcher: starts, watches and ends a task's session"]
+      INT["integration queue: batches, Check, Publish"]
       SSHC["ssh links to hosts"]
     end
     subgraph LT["tmux -L terminum, started by terminumd"]
@@ -43,6 +46,7 @@ flowchart LR
   end
 
   GH["GitHub Releases: signed packages, the daily version check"]
+  GR["a project's git remote"]
 
   SM -->|"http://127.0.0.1:48080"| LD
   CM -->|"http://127.0.0.1:48080"| LD
@@ -59,6 +63,12 @@ flowchart LR
   FS -.-> TCC
   WEB --> FS
   WEB --> ST
+  WEB --> KB
+  AG1 -->|"hooks and terminum mcp"| SOCK
+  DSP -->|"opens panes, types a task's words"| CC
+  DSP --> KB
+  INT --> KB
+  INT -->|"pushes a green batch, never forced"| GR
   SSHC -->|"ssh"| SSHD
   SSHD --> RT
   SSHD --> RA
@@ -74,6 +84,12 @@ flowchart LR
 - **terminumd** is the only client of every tmux server: its control clients (`tmux -C`) read
   screens and layouts as notifications and send keys and commands. It serves the Page and the
   Files panel, reads and writes files under its Roots and keeps the state in `~/.terminum/state`.
+- **Tasks**: the board, schedules and the message history live in one SQLite store
+  (`terminum-kanban.md`); coding agents reach it through their hooks and `terminum mcp` over the
+  CLI socket. Dispatcher starts and ends a task's session in terminum's tmux
+  (`terminum-dispatcher.md`); where a human turned integration on for a project, the integration
+  queue checks its finished tasks' commits in batches and pushes a green one to that project's
+  remote (`terminum-integration.md`).
 - **Folder access on a Mac**: macOS judges every program in terminum's terminals by the program
   that started the tmux server, `daemon/terminumd`, so one Allow covers them all (AC-08).
 - **A Linux server** is reached over ssh: its tmux in control mode for the terminals, and a
