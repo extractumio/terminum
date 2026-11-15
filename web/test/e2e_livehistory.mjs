@@ -10,6 +10,15 @@ import { check, until } from "./check.mjs";
 
 const rows = (page) => page.$$eval("#results .msg", (r) => r.map((x) => x.querySelector(".mtext").textContent));
 
+/** AC-152's selected day and navigation readiness, before Enter and after a timeout. */
+const dayState = async (page) => ({ url: page.url(), ...await page.evaluate(() => {
+  const plot = document.getElementById("active"), go = document.querySelector("#cactive .readout a");
+  return { ready: document.readyState, focus: document.activeElement?.id || document.activeElement?.tagName,
+    chosen: plot?.dataset.chosen, marked: [...(plot?.querySelectorAll(".hit") ?? [])].findIndex((m) => m.classList.contains("on")),
+    readout: document.querySelector("#cactive .readout span")?.textContent, href: go?.getAttribute("href"), hidden: go?.hidden,
+    summary: document.getElementById("hsum")?.textContent, error: document.getElementById("derr")?.textContent };
+}).catch((e) => ({ unreadable: e.message })) });
+
 export async function liveHistory(page, opts) {
   const { base, app, work, shots } = opts;
   const { newPane, keyOf, hook, endPanes } = boardKit(page, opts);
@@ -162,8 +171,17 @@ export async function liveHistory(page, opts) {
   check("AC-152 the charts drawn anew keep the day chosen by the keys", /^Today so far · \d/.test(await page.textContent("#cactive .readout span")), await page.textContent("#cactive .readout span"));
   await page.setViewportSize(size);
   await nap(400);
-  await page.keyboard.press("Enter");
-  await page.waitForURL(/\/history\/\?/);
+  const beforeOpen = await dayState(page);
+  try {
+    await page.keyboard.press("Enter");
+    await page.waitForURL(/\/history\/\?/);
+  } catch (e) {
+    console.error(`AC-152 day-to-history navigation: ${JSON.stringify({ before: beforeOpen, after: await dayState(page) })}`);
+    throw e;
+  }
+  const opened = new URL(page.url());
+  check("AC-152 the history address keeps the chosen day and human sender", opened.searchParams.get("from") === day
+    && opened.searchParams.get("to") === day && opened.searchParams.get("sender") === "human", page.url());
   check("AC-152 a day leads to the history of that day, the human's", await until(async () => (await page.textContent("#hsum")).startsWith(`${human.toLocaleString("en-US")} message`), 6000), await page.textContent("#hsum"));
   await page.goto(`${base}/dashboard/?period=2w`);
   check("AC-152 the period is in the address: two weeks", await until(async () => (await page.$$("#active rect.hit")).length === 14, 6000));

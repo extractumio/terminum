@@ -153,6 +153,11 @@ export async function liveSchedules(page, live) {
   await page.selectOption("#schedkind", "minutes");
   await page.selectOption("#schedevery", "1");
   check("AC-160 runs a minute apart are taken", await until(async () => await page.textContent("#schedfields") === "*/1 * * * *" && /^Every minute\. Next: /.test(await page.textContent("#schednext"))), await page.textContent("#schednext"));
+  // Cancel must be the only possible cause of a run here. The every-minute cadence is restored
+  // after its dialogs; save a date at least a month away so a minute boundary cannot fire it.
+  const quietCron = `0 0 1 ${(new Date().getMonth() + 2) % 12 + 1} *`;
+  await page.selectOption("#schedkind", "cron");
+  await page.fill("#schedcron", quietCron);
   await page.fill("#schedbudget", "");
   await page.click("#schedok");
   check("AC-160 no budget is refused, the window stays", await until(async () => await page.textContent("#schederror") === "A scheduled run needs a time budget: no human watches it.") && await page.isVisible("#schedbox[open]"));
@@ -169,12 +174,13 @@ export async function liveSchedules(page, live) {
   const sched = "#schedgrid .schedcard";
   check("AC-163 open, its card: key, title, cadence, next run, agent", await until(async () => {
     const t = await page.textContent(sched).catch(() => "");
-    return /SCH-\d+/.test(t) && t.includes("Nightly deps check") && t.includes("Every minute") && /next /.test(t) && t.includes("Night owl");
+    return /SCH-\d+/.test(t) && t.includes("Nightly deps check") && t.includes(`Cron ${quietCron}`) && /next /.test(t) && t.includes("Night owl");
   }), await page.textContent(sched).catch(() => ""));
   check("AC-163 its card has no colored stripe along its side: the agent's dot and name say whose it is", await page.$eval(sched, (c) => !/inset/.test(getComputedStyle(c).boxShadow) && getComputedStyle(c.querySelector(".cagent"), "::before").width === "7px"),
     await page.$eval(sched, (c) => getComputedStyle(c).boxShadow));
   // AC-182: Run now, a play key at the right of the card's head, asks first, and a press on it is not the card's
   const run = `${sched} .schedrun`;
+  const saved = (await j("/api/schedules")).schedules.find((s) => s.project === project);
   const fits = await page.$eval(run, (b) => {
     const [r, c, sev] = [b.getBoundingClientRect(), b.closest(".schedcard").getBoundingClientRect(), b.parentElement.querySelector(".csev").getBoundingClientRect()];
     return { icon: !!b.querySelector("svg") && b.textContent.trim() === "" && /^Run SCH-\d+ now$/.test(b.getAttribute("aria-label")), right: c.right - r.right, gap: r.left - sev.right, h: r.height };
@@ -188,10 +194,13 @@ export async function liveSchedules(page, live) {
     if (!(await page.isVisible("#confirmbox[open]"))) { await page.click(run); await until(() => page.isVisible("#confirmbox[open]")); }
     await close();
     const shut = await until(async () => !(await page.isVisible("#confirmbox[open]")));
+    await page.evaluate(() => new Promise(requestAnimationFrame));   // read the first frame after the dialog closed
     r = await ring(page, run);
     check(`AC-182 ${how} leaves no focus ring on the play key`, shut && !r.lit, JSON.stringify(r));
   }
-  check("AC-182 Cancel runs nothing", !(await j("/api/schedules")).schedules[0].last);
+  const afterCancel = (await j("/api/schedules")).schedules.find((s) => s.id === saved.id);
+  check("AC-182 Cancel runs nothing", !afterCancel.last, JSON.stringify({ schedule: saved.key, last: afterCancel.last }));
+  intoStore(live.app, `UPDATE schedules SET cron = '*/1 * * * *' WHERE id = '${saved.id}'`);
   await page.focus(toggle);
   await tabKey(page);
   r = await ring(page, "#newschedule");
