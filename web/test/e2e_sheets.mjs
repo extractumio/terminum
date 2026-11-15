@@ -58,13 +58,14 @@ export async function webSheets(browser, name) {
   await pressFoot(page, "#newsessbtn");
   await pause(page, 200);
   g = await geo(page, "#newsess");
-  check("AC-18 phone: a list form (New session) is a centered sheet over its shade", centered(g), JSON.stringify(g));
+  // a phone's window (terminum.md AC-173; e2e_phonewin.mjs has the rest, and the sheet a wider window keeps)
+  check("AC-173 phone: a list form (New session) covers the screen, no row of the list in reach under it", g.shown && g.l === 0 && g.r === 0 && g.t === 0 && g.b === 0 && g.on, JSON.stringify(g));
   n = f.sent.length;
   const before = await page.evaluate(() => document.querySelector("#sessions .item.sel, #sessions .item[aria-current]")?.dataset.id ?? null);
-  await page.mouse.click(4, 700);
+  await page.click("#newsess .dhead .x");
   await pause(page, 150);
   const after = await page.evaluate(() => document.querySelector("#sessions .item.sel, #sessions .item[aria-current]")?.dataset.id ?? null);
-  check("AC-18 phone: a press on the shade closes the form; no row under it is picked, nothing is sent", await shut(page, "#newsess") && f.sent.length === n && before === after,
+  check("AC-173 phone: its × closes the form; no row under it is picked, nothing is sent", await shut(page, "#newsess") && f.sent.length === n && before === after,
     JSON.stringify({ sent: f.sent.slice(n), before, after }));
   if (await navOpen()) await page.click("#scrim", { position: { x: 380, y: 400 } }).catch(() => page.keyboard.press("Escape"));
   await pause(page, 300);

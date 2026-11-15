@@ -3,7 +3,7 @@
 // to type in takes 80% of its parent's width and height, its parent the dialog under it (RUN over
 // a task's window), else the terminal for what is made from it, else the window, each kind held
 // between its floor and ceiling; a question stays as tall as its words; a list's buttons stay at its
-// foot when it is empty; on a phone a sheet as tall as the screen.
+// foot when it is empty; on a narrow window (601–860 px) a sheet as tall as the screen.
 
 import { check, runningIn } from "./check.mjs";
 import { drawn, openPage, PHONE, WIDE } from "./fake.mjs";
@@ -59,12 +59,13 @@ export async function webDialogSize(browser, name) {
     check(`AC-173 a form taller than the window scrolls, its buttons held at its foot (${size})`, form.scrolls && Math.abs(form.gap) <= 1, JSON.stringify(form));
     await b.close();
   }
-  runningIn(`${name} 390×844`);
-  const p = await openPage(browser, { device: PHONE });
+  // a narrow window and a tablet's portrait, 601–860 px: sheets; a phone's own windows: e2e_phonewin.mjs
+  runningIn(`${name} 700×844`);
+  const p = await openPage(browser, { device: { ...PHONE, viewport: { width: 700, height: 844 } } });
   await drawn(p.page);
   const sheet = await open(p.page, ["runbox"]);
   const yes = await open(p.page, ["confirmbox"]);
-  check("AC-173 on a phone a dialog to type in is a sheet as wide as the screen less 16 px a side and as tall as what is in sight less 16 px a side, its buttons in sight; a question as tall as its words",
+  check("AC-173 on a narrow window a dialog to type in is a sheet as wide as the screen less 16 px a side and as tall as what is in sight less 16 px a side, its buttons in sight; a question as tall as its words",
     sheet.runbox.w === sheet.win.w - 32 && near(sheet.runbox.h, sheet.win.h - 32) && sheet.go.bottom <= sheet.runbox.bottom && yes.confirmbox.h < 300, JSON.stringify({ sheet, yes }));
   check("no page errors", !p.errors.length, p.errors.join(" | "));
   await p.close();

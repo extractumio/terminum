@@ -1,0 +1,30 @@
+/* SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial */
+/* A phone's windows (terminum.md AC-173, "a phone's windows cover the screen"; phonewin.js): on a screen 600 px
+   wide or narrower a window with fields, a text to type, a list or a document is no centered sheet: it covers
+   what is in sight above the on-screen keyboard, edge to edge, one bar at its top (×, its title, its ways on),
+   what is seldom pressed in a row under its fields. A question, a menu and a floating button's pane stay sheets
+   (sheets.css). After sheets.css, whose rules it takes over: hence !important. */
+@media (max-width: 600px) {
+  /* `#no-such` matches nothing: it gives the list an id's weight, as sheets.css's own list has by #marksdlg */
+  :is(dialog.dlg[data-size]:not([data-size="ask"]), .footform[data-sheet], #no-such) {
+    inset: auto !important; top: var(--app-top, 0px) !important; left: 0 !important; translate: none !important;
+    width: 100vw !important; height: var(--app-h, 100dvh) !important; max-height: none !important;
+    padding: 0 var(--sp-4) var(--sp-4); border-radius: 0; box-shadow: none !important; }
+  /* the bar: in sight while the rest scrolls under it; × where the thumb's other hand is, the ways on at the right */
+  :is(dialog.dlg[data-size]:not([data-size="ask"]), .footform[data-sheet]) .dhead {
+    position: sticky; top: 0; z-index: 3; gap: var(--sp-2); min-height: 60px; flex: none;
+    margin: 0 calc(-1 * var(--sp-4)); padding: 0 14px; background: var(--fill); box-shadow: var(--m-seam); }
+  :is(dialog.dlg[data-size]:not([data-size="ask"]), .footform[data-sheet]) .dhead > .x { order: -1; }
+  :is(dialog.dlg[data-size]:not([data-size="ask"]), .footform[data-sheet]) .dhead h2 { overflow: hidden; overflow-wrap: normal; white-space: nowrap; text-overflow: ellipsis; }
+  /* its ways on: one row, never wrapped; on the smallest phone two long keys give way with an ellipsis, after the title */
+  :is(dialog.dlg, .footform) .dhead > .barkeys { flex: 0 1 auto; flex-wrap: nowrap; min-width: 0; margin: 0; }
+  :is(dialog.dlg, .footform) .dhead > .barkeys > button { display: block; flex: 0 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  :is(dialog.dlg, .footform) .dhead h2 { flex: 1 100 0; }
+  /* what is left of its foot: a row under the fields, no Cancel (×'s); none when nothing is left */
+  :is(dialog.dlg[data-size]:not([data-size="ask"]) > form, .footform[data-sheet]) > .actions {
+    position: static; justify-content: flex-start; margin-bottom: 0; padding: 0; background: none; }
+  :is(dialog.dlg[data-size]:not([data-size="ask"]), .footform[data-sheet]) .actions > :is([value="cancel"], [id$="cancel"]) { display: none !important; }   /* a key's own rule weighs an id */
+  :is(dialog.dlg[data-size]:not([data-size="ask"]) > form, .footform[data-sheet]) > .actions:not(:has(> :not([hidden], [value="cancel"], [id$="cancel"]))) { display: none; }
+  /* a text field to type in has no key to the whole window: its window has it already (AC-184) */
+  .xbox:has(> textarea:not([hidden])) > .xkey { display: none !important; }   /* the icon keys' own rule weighs an id */
+}
