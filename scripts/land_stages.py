@@ -6,7 +6,8 @@ runs them by a project's settings; without it `land.py <slug>` runs them in orde
 holds Prepare, Check and Publish in the landing turn.
 
   land.py prepare [<slug>]   the target merged into the tree; a conflict stays there to resolve (exit 2)
-  land.py verify  [<slug>]   the targeted checks on the tree's content (kept per content)
+  land.py verify  [<slug>]   the targeted checks on the tree's content (kept per content); in terminumd's Verify,
+                             the queued commit's own clean pass when origin/main changed none of its files
   land.py queue   <slug>     with integration on: queued by terminum (TASK, RESULT); off: nothing to queue
   land.py check   [<slug>]   the smoke set on HEAD, its green kept for that commit
   land.py publish <slug>     pushed, never forced, only a commit checked green that holds the target as it is now
@@ -34,9 +35,11 @@ def terminum():
     return shutil.which("terminum") or str(Path.home() / ".terminum" / "bin" / "terminum")
 
 
-def verify(tree, check=land.checks_of, say=print):
-    """Stage 2: the targeted checks on the tree's content; check_changed.py itself skips a pass kept for it."""
-    if not check(tree):
+def verify(tree, check=land.checks_of, say=print, env=os.environ):
+    """Stage 2: the targeted checks on the tree's content; check_changed.py itself skips a pass kept for it, and in
+    terminumd's Verify the queued commit's own clean pass when the target changed none of its files (AC-198)."""
+    sha = env.get("TM_INTEGRATION_SHA")
+    if not check(tree, *(("--own", sha) if sha else ())):
         raise Stop(1, f"verify: targeted checks failed in {tree}")
     say("verify: passed")
 

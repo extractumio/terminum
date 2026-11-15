@@ -386,5 +386,69 @@ class SharedPass(unittest.TestCase):
                 self.assertFalse(check_changed.has_passed(ident, other), f"{kind}: its warning is said where it was kept, never passed on")
 
 
+class OwnPass(unittest.TestCase):
+    """terminumd's Verify on a queued commit merged with the target (AC-198)."""
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory(dir=short_tmp())
+        self.addCleanup(tmp.cleanup)
+        self.main, self.task = Path(tmp.name) / "main", Path(tmp.name) / "task"
+        self.main.mkdir()
+        self.git("init", "-q", cwd=self.main)
+        self.write(self.main, ".gitignore", ".checks/\n")   # as the repository's: a run's notes are no content
+        for name in ("a.txt", "b.txt", "scripts/land.py"):
+            self.write(self.main, name, "one\n")
+        self.commit(self.main, "one")
+        self.git("worktree", "add", "-q", "--detach", str(self.task), "HEAD", cwd=self.main)
+        self.write(self.task, "a.txt", "the task's\n")
+        self.sha = self.commit(self.task, "the task")
+
+    def git(self, *a, cwd):
+        return subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@example.com", *a], cwd=cwd, check=True, capture_output=True, text=True).stdout.strip()
+
+    def write(self, root, name, text):
+        (root / name).parent.mkdir(parents=True, exist_ok=True)
+        (root / name).write_text(text)
+
+    def commit(self, root, message):
+        self.git("add", "-A", cwd=root)
+        self.git("commit", "-qm", message, cwd=root)
+        return self.git("rev-parse", "HEAD", cwd=root)
+
+    def target_changes(self, name):
+        self.write(self.main, name, "the target's\n")
+        return self.commit(self.main, f"target: {name}")
+
+    def test_a_clean_commits_id_is_its_tree(self):  # AC-198
+        self.assertEqual(check_changed.tree_id(self.task), self.git("rev-parse", "HEAD^{tree}", cwd=self.task)[:16])
+
+    def test_the_tasks_clean_pass_counts_when_the_target_changed_none_of_its_files(self):  # AC-198
+        check_changed.keep_pass(check_changed.tree_id(self.task), self.task)
+        base = self.target_changes("b.txt")
+        said = check_changed.own_pass(self.sha, base, self.main)
+        self.assertEqual(said, f"targeted: own pass on {self.sha[:9]} reused: {base} changed none of its files")
+
+    def test_no_pass_or_a_pass_with_a_warning_counts_for_nothing(self):  # AC-146, AC-197, AC-198
+        base = self.target_changes("b.txt")
+        self.assertIsNone(check_changed.own_pass(self.sha, base, self.main), "no pass")
+        (self.task / ".checks").mkdir()
+        (self.task / ".checks" / "retried").write_text("targeted: PASSED ON RETRY page\n")
+        check_changed.keep_pass(check_changed.tree_id(self.task), self.task)
+        self.assertIsNone(check_changed.own_pass(self.sha, base, self.main), "passed on a retry: its tree's own")
+
+    def test_the_target_changing_one_of_its_files_or_a_check_runs_them_again(self):  # AC-198
+        check_changed.keep_pass(check_changed.tree_id(self.task), self.task)
+        self.assertIsNone(check_changed.own_pass(self.sha, self.target_changes("a.txt"), self.main), "the same file")
+        self.git("reset", "-q", "--hard", "HEAD~1", cwd=self.main)
+        self.assertIsNone(check_changed.own_pass(self.sha, self.target_changes("scripts/land.py"), self.main), "a check")
+
+    def test_main_says_the_reuse_and_runs_nothing(self):  # AC-198
+        check_changed.keep_pass(check_changed.tree_id(self.task), self.task)
+        base = self.target_changes("b.txt")
+        with mock.patch.object(check_changed, "REPO", self.main), mock.patch.object(check_changed, "run", side_effect=AssertionError("ran")), \
+                mock.patch("sys.stdout") as out:
+            self.assertEqual(check_changed.main(["--own", self.sha, "--base", base]), 0)
+        self.assertIn("reused", "".join(c.args[0] for c in out.write.call_args_list))
+
+
 if __name__ == "__main__":
     unittest.main()

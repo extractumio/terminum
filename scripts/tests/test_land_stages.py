@@ -46,10 +46,15 @@ class Stages(test_land.Repos, unittest.TestCase):
 
     def test_verify_runs_the_targeted_checks_and_fails_red(self):  # AC-198
         tree, ran = self.ready(), []
-        stages.verify(tree, check=lambda t: ran.append(t) or True, **QUIET)
-        self.assertEqual(ran, [tree])
+        stages.verify(tree, check=lambda *a: ran.append(a) or True, env={}, **QUIET)
+        self.assertEqual(ran, [(tree,)])
         with self.assertRaises(stages.Stop):
-            stages.verify(tree, check=lambda t: False, **QUIET)
+            stages.verify(tree, check=lambda *a: False, env={}, **QUIET)
+
+    def test_terminumds_verify_offers_the_queued_commits_own_pass(self):  # AC-198
+        tree, ran = self.ready(), []
+        stages.verify(tree, check=lambda *a: ran.append(a) or True, env={"TM_INTEGRATION_SHA": "4f2a91c"}, **QUIET)
+        self.assertEqual(ran, [(tree, "--own", "4f2a91c")], "check_changed.py judges whether that pass counts")
 
     def test_check_keeps_its_green_for_that_commit(self):  # AC-198
         tree, smokes = self.ready(), []

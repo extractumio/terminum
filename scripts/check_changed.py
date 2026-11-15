@@ -9,17 +9,20 @@ the smoke step) and fails runs once more, unchanged; passing then, it counts and
 way (.checks/retried, AC-197); the release's full run (`make check`) has no retry. A cargo step holds a heavy-build slot (scripts/heavy_slots.py). --land: a landing's smoke set on its merged result, the
 basics on one platform, no timed check. The full run is the release's gate, not this (`make check`).
 
-  check_changed.py [--print] [--force] [--base <ref>]   default origin/main; --print only says the plan
+  check_changed.py [--print] [--force] [--base <ref>] [--own <sha>]   default origin/main; --print only says the plan;
+                                                        --own: commit <sha>'s own clean pass counts when <ref>
+                                                        changed none of its files and no check (Verify, AC-198)
   check_changed.py --land | --passed | --tree-id        the smoke set; 0 if this content passed; its id
 Each step's output goes to .checks/changed.<step>.log, one line here, as scripts/check_all.sh does."""
 import argparse
 import ast
 from contextlib import nullcontext
-import hashlib
+import os
 from pathlib import Path
 import re
 import subprocess
 import sys
+import tempfile
 import time
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -56,15 +59,15 @@ def changed_files(base, cwd=REPO):
 
 
 def tree_id(root=REPO):
-    """The content of every tracked and new file, not the commit: committing a checked tree keeps its pass."""
-    files = subprocess.run(["git", "ls-files", "-co", "--exclude-standard", "-z"], cwd=root, capture_output=True, check=True).stdout
-    digest = hashlib.sha256()
-    for name in sorted(filter(None, files.split(b"\0"))):
-        try:
-            digest.update(name + b"\0" + (root / name.decode()).read_bytes() + b"\0")
-        except (FileNotFoundError, IsADirectoryError):   # deleted, not yet staged; a submodule
-            digest.update(name + b"\0-\0")
-    return digest.hexdigest()[:16]
+    """The content of every tracked and new file, not the commit: git's tree of it, written from an index of its own
+    so the tree's stays as it is. Committing a checked tree keeps its pass, and a clean commit's id is its tree's
+    (own_pass)."""
+    with tempfile.TemporaryDirectory() as tmp:
+        scratch = {**os.environ, "GIT_INDEX_FILE": str(Path(tmp) / "index")}
+        # from HEAD, not the tree's index: every file is read, even one marked assume-unchanged; none before a first commit
+        subprocess.run(["git", "read-tree", "HEAD"], cwd=root, env=scratch, capture_output=True)
+        subprocess.run(["git", "add", "-A"], cwd=root, env=scratch, capture_output=True, check=True)
+        return subprocess.run(["git", "write-tree"], cwd=root, env=scratch, capture_output=True, text=True, check=True).stdout.strip()[:16]
 
 
 def shared_mark(ident, root=None):
@@ -74,6 +77,26 @@ def shared_mark(ident, root=None):
         return common_dir(root or REPO) / "terminum-checks" / f"changed-{ident}.ok"
     except Refused:
         return None
+
+
+# the checks themselves: once the target changes them, no earlier pass speaks for what they check now
+CHECKS = ("Makefile", "scripts/check_changed.py", "scripts/check_step.py", "scripts/check_cancel.py", "scripts/check_docs.py",
+          "scripts/land.py", "scripts/land_stages.py", "scripts/load_gate.py", "scripts/heavy_slots.py")
+
+
+def own_pass(sha, base, root=None):
+    """What Verify says when it reuses commit `sha`'s own clean pass on its merge with `base`, or None: reused only
+    when a clean one is kept for that commit's content (its tree, the id of any tree that held it) and `base`, since
+    their merge base, changed none of its files and no check."""
+    root = root or REPO
+    shared = shared_mark(git("rev-parse", f"{sha}^{{tree}}", cwd=root).strip()[:16], root)
+    if not (shared and shared.exists()):
+        return None
+    names = lambda between: set(git("diff", "--name-only", "--no-renames", between, cwd=root).splitlines())  # noqa: E731
+    theirs = names(f"{sha}...{base}")
+    if theirs & (names(f"{base}...{sha}") | set(CHECKS)):
+        return None
+    return f"targeted: own pass on {sha[:9]} reused: {base} changed none of its files"
 
 
 def has_passed(ident, root=None):
@@ -344,6 +367,7 @@ def main(argv):
     parser.add_argument("--passed", action="store_true")
     parser.add_argument("--tree-id", action="store_true")
     parser.add_argument("--base", default="origin/main")
+    parser.add_argument("--own", metavar="SHA")
     args = parser.parse_args(argv)
     if args.tree_id or args.passed:
         ident = tree_id()
@@ -351,6 +375,10 @@ def main(argv):
             print(ident)
             return 0
         return 0 if has_passed(ident) else 1
+    reused = args.own and not args.force and own_pass(args.own, args.base)
+    if reused:
+        print(reused)
+        return 0
     files, merge_base = changed_files(args.base)
     if args.land:
         failed = run(land_plan(files), gate=False, nice=releasing(REPO), landing=True)
