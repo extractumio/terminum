@@ -46,5 +46,5 @@ Read-only work (a question, a review) and the `make release` command itself (the
 ## Before a pull request
 
 `make check` passes (CLAUDE.md §8; the browsers once, and again whenever `ui/package-lock.json`
-moves Playwright: `cd ui && npx playwright-core install chromium webkit`), and a change of behavior updates its spec first (CLAUDE.md §7; which spec:
-[docs/README.md](docs/README.md)).
+moves Playwright: `cd ui && npx playwright-core install chromium webkit`), and a change of
+behavior updates its spec first (CLAUDE.md §7; which spec: [docs/README.md](docs/README.md)).

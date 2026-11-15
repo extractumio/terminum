@@ -68,7 +68,7 @@ flowchart LR
   DSP -->|"opens panes, types a task's words"| CC
   DSP --> KB
   INT --> KB
-  INT -->|"pushes a green batch, never forced"| GR
+  INT -->|"publishes a green batch: its push, never forced, or the project's Publish"| GR
   SSHC -->|"ssh"| SSHD
   SSHD --> RT
   SSHD --> RA
@@ -86,10 +86,10 @@ flowchart LR
   Files panel, reads and writes files under its Roots and keeps the state in `~/.terminum/state`.
 - **Tasks**: the board, schedules and the message history live in one SQLite store
   (`terminum-kanban.md`); coding agents reach it through their hooks and `terminum mcp` over the
-  CLI socket. Dispatcher starts and ends a task's session in terminum's tmux
-  (`terminum-dispatcher.md`); where a human turned integration on for a project, the integration
-  queue checks its finished tasks' commits in batches and pushes a green one to that project's
-  remote (`terminum-integration.md`).
+  CLI socket. Dispatcher starts and ends a task's session in its project's tmux server, this
+  Mac's or a host's (`terminum-dispatcher.md`); where a human turned integration on for a project, the integration
+  queue checks its finished tasks' commits in batches and publishes a green one: its own push to
+  that project's remote, or the project's Publish command (`terminum-integration.md`).
 - **Folder access on a Mac**: macOS judges every program in terminum's terminals by the program
   that started the tmux server, `daemon/terminumd`, so one Allow covers them all (AC-08).
 - **A Linux server** is reached over ssh: its tmux in control mode for the terminals, and a
