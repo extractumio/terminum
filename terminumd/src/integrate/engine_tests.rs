@@ -12,10 +12,10 @@ use crate::tasks::store::HUMAN;
 
 /// Runs a line at once with `sh`, or, `hang`, never ends it.
 #[derive(Default)]
-struct Sh {
+pub(crate) struct Sh {
     ran: Mutex<HashMap<String, (Option<i32>, String)>>,
     lines: Mutex<Vec<String>>,
-    hang: bool,
+    pub(crate) hang: bool,
 }
 
 impl Runner for Sh {
@@ -41,20 +41,20 @@ impl Runner for Sh {
     fn close(&self, _: &str) {}
 }
 
-fn sh(dir: &Path, args: &[&str]) -> String {
+pub(crate) fn sh(dir: &Path, args: &[&str]) -> String {
     let o = Command::new("git").arg("-C").arg(dir).args(["-c", "user.name=t", "-c", "user.email=t@example.com"]).args(args).output().unwrap();
     assert!(o.status.success(), "git {args:?}: {}", String::from_utf8_lossy(&o.stderr));
     String::from_utf8_lossy(&o.stdout).trim().to_string()
 }
 
-struct World {
-    root: PathBuf,
-    origin: PathBuf,
-    api: PathBuf,
-    s: Store,
+pub(crate) struct World {
+    pub(crate) root: PathBuf,
+    pub(crate) origin: PathBuf,
+    pub(crate) api: PathBuf,
+    pub(crate) s: Store,
 }
 
-fn world(name: &str, settings: Settings) -> World {
+pub(crate) fn world(name: &str, settings: Settings) -> World {
     let root = crate::testutil::fresh_dir(name);
     let (origin, api) = (root.join("origin.git"), root.join("api"));
     sh(&root, &["init", "-q", "--bare", "-b", "main", origin.to_str().unwrap()]);
@@ -77,7 +77,7 @@ fn world(name: &str, settings: Settings) -> World {
 }
 
 /// A task queued with a commit on origin/main that writes `file`.
-fn queued(w: &World, n: u32, file: &str, text: &str) -> String {
+pub(crate) fn queued(w: &World, n: u32, file: &str, text: &str) -> String {
     let id = w.s.with(|tx| ops::create(tx, HUMAN, NewTask { title: format!("t{n}"), text: "b".into(), project: Some("api".into()), ..Default::default() }, 1).map(|t| t.id)).unwrap();
     sh(&w.api, &["checkout", "-q", "--detach", "origin/main"]);
     std::fs::write(w.api.join(file), text).unwrap();
@@ -94,21 +94,21 @@ fn queued(w: &World, n: u32, file: &str, text: &str) -> String {
     id
 }
 
-fn go(w: &World, r: &Sh, steps: usize) {
+pub(crate) fn go(w: &World, r: &Sh, steps: usize) {
     for i in 0..steps {
         step(&w.s, r, &w.root.join("home"), 100 + i as i64).unwrap();
     }
 }
 
-fn status(w: &World, id: &str) -> String {
+pub(crate) fn status(w: &World, id: &str) -> String {
     w.s.with(|tx| Ok(ops::get(tx, id)?.status)).unwrap()
 }
 
-fn batch(w: &World) -> Batch {
+pub(crate) fn batch(w: &World) -> Batch {
     w.s.with(|tx| tx.query_row("SELECT id FROM integration_batches ORDER BY id DESC LIMIT 1", [], |r| r.get::<_, i64>(0)).map_err(sql).and_then(|id| bs::by_id(tx, id))).unwrap()
 }
 
-fn on_origin(w: &World) -> String {
+pub(crate) fn on_origin(w: &World) -> String {
     sh(&w.origin, &["ls-tree", "--name-only", "main"])
 }
 

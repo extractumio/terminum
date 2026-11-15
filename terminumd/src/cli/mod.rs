@@ -19,6 +19,7 @@ mod direct;
 mod folders;
 mod importer;
 mod install;
+mod integration;
 mod launch;
 mod mcp;
 mod mcp_catalog;
@@ -75,14 +76,17 @@ usage: terminum [command]
                           a token in TERMINUM_TOKEN
   tokens [add <name> --role manager|worker --project <project> [--days N] | remove <name>]
                           tokens for programs outside terminum (made outside its panes)
+  integration queue <ID> --result-file <path> [--commit <sha>] [--wait] | wait <ID> | status [<ID>]
+                          a task's commit in its project's integration queue; wait exits
+                          0 landed, 1 red, 2 conflict, 3 taken out
   statusline [command…]   Claude Code's status line: its subscription's use for the board's
                           agents, then your own status line command, if any, as it was
   import                  workspaces, bookmarks and hosts of iterm-enhancer
   logs [-n N] [-f]        terminumd's log
   install                 install the package this terminumd came in";
 
-const COMMANDS: [&str; 22] = [
-    "tool", "tools", "tokens", "status", "folders", "open", "password", "signout", "hosts", "tmux", "hooks", "mcp", "upgrade", "rollback", "restart", "uninstall", "import", "logs", "install", "help", "-h", "--help",
+const COMMANDS: [&str; 23] = [
+    "tool", "tools", "tokens", "integration", "status", "folders", "open", "password", "signout", "hosts", "tmux", "hooks", "mcp", "upgrade", "rollback", "restart", "uninstall", "import", "logs", "install", "help", "-h", "--help",
 ];
 
 /// Is this run the command rather than the server?
@@ -117,6 +121,7 @@ pub enum Cmd {
     Tools(Vec<String>),
     /// `tokens [add … | remove <name>]`
     Tokens(Vec<String>),
+    Integration(Vec<String>),
     Upgrade(Option<String>),
     Rollback,
     Restart,
@@ -154,6 +159,7 @@ pub fn parse(args: &[String]) -> Result<Cmd, String> {
         },
         "tools" => Ok(Cmd::Tools(rest.to_vec())),
         "tokens" => Ok(Cmd::Tokens(rest.to_vec())),
+        "integration" => Ok(Cmd::Integration(rest.to_vec())),
         "help" | "-h" | "--help" => Ok(Cmd::Help),
         "--version" => Ok(Cmd::Version),
         "open" => match rest {
@@ -237,6 +243,7 @@ pub fn run(ctx: &Ctx, cmd: Cmd) -> Result<i32, String> {
         Cmd::Tool(name, args) => return tool::tool(ctx, &name, args.as_deref()),
         Cmd::Tools(rest) => return tool::tools(ctx, &rest),
         Cmd::Tokens(rest) => return tool::tokens(ctx, &rest),
+        Cmd::Integration(rest) => return integration::run(ctx, &rest),
         Cmd::Version => ctx.say(crate::config::build_id()),
         Cmd::Status => { commands::status(ctx); hooks_tip(ctx); }
         Cmd::Folders => folders::command(ctx)?,
