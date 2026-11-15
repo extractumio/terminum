@@ -11,6 +11,7 @@ basics on one platform, no timed check. The full run is the release's gate, not 
   check_changed.py --land | --passed | --tree-id        the smoke set; 0 if this content passed; its id
 Each step's output goes to .checks/changed.<step>.log, one line here, as scripts/check_all.sh does."""
 import argparse
+import ast
 from contextlib import nullcontext
 import hashlib
 from pathlib import Path
@@ -114,11 +115,21 @@ def is_rust_test(path):
     return "_tests" in Path(path).name or "/tests/" in path
 
 
+def runnable_e2e(path):
+    """Python e2e entry points have a top-level main guard; inspect source without importing it."""
+    if not path.is_file():
+        return False
+    guard = ast.dump(ast.parse('__name__ == "__main__"', mode="eval").body)
+    tree = ast.parse(path.read_text(), filename=str(path))
+    return any(isinstance(node, ast.If) and ast.dump(node.test) == guard for node in tree.body)
+
+
 def test_files(root):
-    """Files that hold tests: a Rust file only if it is a test module."""
+    """Files that hold tests: Rust test modules and Python e2e entry points, without their helpers."""
     found = []
     for pattern in ("web/test/*.mjs", "ui/test/*.mjs", "scripts/e2e_*.py", "scripts/tests/*.py", "terminumd/src/**/*.rs"):
-        found += [p for p in root.glob(pattern) if p.is_file() and (p.suffix != ".rs" or is_rust_test(str(p)))]
+        found += [p for p in root.glob(pattern) if p.is_file() and (p.suffix != ".rs" or is_rust_test(str(p)))
+                  and (pattern != "scripts/e2e_*.py" or runnable_e2e(p))]
     return found
 
 
@@ -160,7 +171,8 @@ def plan(files, cases, root=REPO, tests_of_cases=None):
     named_pages = sorted({pages[f] for f in web if f in pages})
     # every e2e_live*.mjs is a part of e2e_live.mjs, so it runs with the critical step
     shows = bool(rust) or any(f.startswith(("web/static/", "ui/src/")) for f in code) or any(f.startswith("web/test/e2e_live") for f in tests)
-    e2e = [f for f in sorted(tests) if re.fullmatch(r"scripts/e2e_\w+\.py", f) and not DOCKER.search(f)]
+    e2e = [f for f in sorted(tests) if re.fullmatch(r"scripts/e2e_\w+\.py", f) and not DOCKER.search(f)
+           and runnable_e2e(root / f)]
     if rust or modules or ui or web or e2e or shows:  # the Panel's files: the browsers load them, terminumd embeds them
         steps.append(("ui", "make ui"))
     if e2e or shows:

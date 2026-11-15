@@ -11,6 +11,7 @@ from unittest import mock
 SPEC = importlib.util.spec_from_file_location("check_changed", Path(__file__).resolve().parents[1] / "check_changed.py")
 check_changed = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(check_changed)
+from testrun import short_tmp
 REPO = Path(__file__).resolve().parents[2]
 
 
@@ -95,6 +96,53 @@ class Plan(unittest.TestCase):
     def test_an_e2e_script_has_the_debug_build_it_runs(self):
         got = steps(["terminumd/src/x.rs"], ["scripts/e2e_hooks.py"])
         self.assertLess(list(got).index("debug-build"), list(got).index("e2e_hooks"))
+
+    def test_ac102_selects_real_runners_without_the_imported_helper(self):  # AC-102, AC-104
+        got = dict(check_changed.plan(["scripts/e2e_ws.py"], {"102"}, root=REPO))
+        self.assertNotIn("e2e_ws", got)
+        for name in ("e2e_attach", "e2e_restore"):
+            self.assertEqual(got[name], f"python3 scripts/{name}.py")
+        self.assertIn("scripts", got)
+        self.assertIn("critical", got)
+
+    def test_a_changed_or_explicitly_cited_helper_is_not_executed(self):  # AC-104
+        for files, cited in ((["scripts/e2e_ws.py"], []), (["scripts/worktree.py"], ["scripts/e2e_ws.py"])):
+            with self.subTest(files=files, cited=cited):
+                self.assertEqual(list(steps(files, cited)), ["security", "scripts"])
+
+    def test_helper_citations_and_guard_text_are_not_test_coverage(self):  # AC-104
+        with tempfile.TemporaryDirectory(dir=short_tmp()) as tmp:
+            root = Path(tmp)
+            scripts = root / "scripts"
+            scripts.mkdir()
+            case = "7" + "77"  # no real case citation in this test's own source
+            (scripts / "e2e_helper.py").write_text(f'''"""AC-{case}
+if __name__ == "__main__":
+    main()
+"""
+# if __name__ == "__main__": main()
+def main():
+    raise AssertionError("discovery must not execute source")
+''')
+            self.assertEqual(check_changed.citing({case}, root), [])
+            self.assertEqual(check_changed.uncited({case}, root), [case])
+            runner = scripts / "e2e_real.py"
+            runner.write_text(f'# AC-{case}\nif (__name__ == \'__main__\'):\n    raise AssertionError("do not execute")\n')
+            self.assertEqual(check_changed.citing({case}, root), ["scripts/e2e_real.py"])
+            self.assertEqual(check_changed.uncited({case}, root), [])
+            got = dict(check_changed.plan(["scripts/e2e_helper.py"], {case}, root=root))
+            self.assertEqual(got["e2e_real"], "python3 scripts/e2e_real.py")
+            self.assertNotIn("e2e_helper", got)
+
+    def test_a_malformed_e2e_runner_is_not_silently_excluded(self):  # AC-104
+        with tempfile.TemporaryDirectory(dir=short_tmp()) as tmp:
+            root = Path(tmp)
+            (root / "scripts").mkdir()
+            (root / "scripts/e2e_broken.py").write_text('if __name__ == "__main__":\n    main(\n')
+            with self.assertRaises(SyntaxError):
+                check_changed.citing({"104"}, root)
+            with self.assertRaises(SyntaxError):
+                check_changed.plan(["scripts/e2e_broken.py"], set(), root=root)
 
     def test_a_helper_of_a_page_check_runs_with_it(self):
         self.assertIn("webApp", steps(["web/static/x.js"], ["web/test/e2e_appscreen.mjs"])["page"])
