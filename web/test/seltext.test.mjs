@@ -42,10 +42,17 @@ test("Copy's preview: the line count and the first line with text, its blanks on
   assert.equal(copyPreview("   \n\t\n"), "2 lines: ");
 });
 
-test("Copy's preview of a hostile 1 MB copy takes no time (no backtracking)", () => {
-  for (const text of ["\n".repeat(1e6) + "x", " ".repeat(1e6) + "x", "a\n".repeat(5e5)]) {
-    const t0 = performance.now();
-    copyPreview(text);
-    assert.ok(performance.now() - t0 < 1000, `${(performance.now() - t0).toFixed(0)} ms`);   // quadratic would be minutes; a loaded machine is not
+test("AC-146 Copy's preview of a hostile 1 MB copy stays within its CPU budget (no backtracking)", () => {
+  for (const [text, expected] of [
+    ["\n".repeat(1e6) + "x", "1000001 lines: x"],
+    [" ".repeat(1e6) + "x", "1 line: x"],
+    ["a\n".repeat(5e5), "500000 lines: a"],
+  ]) {
+    // node --test isolates files in processes: other tests' CPU and scheduling waits are excluded.
+    const started = process.cpuUsage();
+    const preview = copyPreview(text);
+    const { user, system } = process.cpuUsage(started);
+    assert.equal(preview, expected);
+    assert.ok(user + system < 1e6, `${((user + system) / 1000).toFixed(0)} ms CPU for ${expected}`);
   }
 });
