@@ -108,7 +108,7 @@ async function start(env = {}) {
   // the child is noted at once: a signal while it starts still ends it
   server = spawn(BIN, [], {
     env: {
-      ...process.env, TM_HOME: HOME, TM_APP_DIR: APP, TM_PORT: String(PORT), TM_TMUX_SOCKET: TMUX_SOCKET,
+      ...process.env, HOME, TM_HOME: HOME, TM_APP_DIR: APP, TM_PORT: String(PORT), TM_TMUX_SOCKET: TMUX_SOCKET,
       TM_WRITABLE_ROOTS: SB, TM_LOG: process.env.TM_TEST_WATCH_TRACE ? "warn,terminumd::watcher=debug" : "warn", TM_BUILD_ID: UI_BUILD, ...env,
     },
     stdio: ["ignore", "ignore", "inherit"],
