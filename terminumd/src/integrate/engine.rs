@@ -16,15 +16,15 @@ use crate::tasks::ops;
 use crate::tasks::store::Store;
 
 /// A project's facts for a step: its settings, name and repository.
-struct Place {
-    s: Settings,
+pub(super) struct Place {
+    pub(super) s: Settings,
     name: String,
-    repo: PathBuf,
+    pub(super) repo: PathBuf,
     /// terminum's own folder (`TM_HOME`): the candidate's tree and logs are under it
-    home: PathBuf,
+    pub(super) home: PathBuf,
 }
 
-fn place(store: &Store, home: &Path, project: &str) -> Result<Place, String> {
+pub(super) fn place(store: &Store, home: &Path, project: &str) -> Result<Place, String> {
     store.with(|tx| {
         let s = integration::read(tx, project)?;
         let (name, _, dir) = ops::project_place(tx, project)?;
@@ -42,6 +42,7 @@ fn target_now(p: &Place) -> Result<String, String> {
 /// One step.
 pub fn step(store: &Store, runner: &dyn Runner, home: &Path, now: i64) -> Result<(), String> {
     tidy(store, home)?;
+    super::stages::verify_step(store, runner, home, now)?;
     match store.with(bs::busy)? {
         Some(b) => advance(store, runner, home, b, now),
         None => start_next(store, home, now),
@@ -71,7 +72,7 @@ fn tree_at(p: &Place, project: &str, candidate: &str) -> Result<PathBuf, String>
 }
 
 /// A detached worktree of the project's repository at `commit`, made or moved there, clean.
-fn worktree(p: &Place, tree: PathBuf, commit: &str) -> Result<PathBuf, String> {
+pub(super) fn worktree(p: &Place, tree: PathBuf, commit: &str) -> Result<PathBuf, String> {
     let made = if tree.join(".git").exists() {
         git::run(&tree, &["checkout", "--quiet", "--detach", "--force", commit]).and_then(|_| git::run(&tree, &["clean", "-fdq"]))
     } else {
@@ -96,7 +97,7 @@ fn vars(store: &Store, p: &Place, b: &Batch, tree: &Path) -> Vec<(&'static str, 
 }
 
 /// A line that ended: its output kept in the batch's log, its window closed; its status.
-fn ended(runner: &dyn Runner, pane: &str, log: &Path, status: i32) -> i32 {
+pub(super) fn ended(runner: &dyn Runner, pane: &str, log: &Path, status: i32) -> i32 {
     let _ = std::fs::write(log, runner.output(pane));
     runner.close(pane);
     status
@@ -105,7 +106,7 @@ fn ended(runner: &dyn Runner, pane: &str, log: &Path, status: i32) -> i32 {
 fn advance(store: &Store, runner: &dyn Runner, home: &Path, b: Batch, now: i64) -> Result<(), String> {
     let p = place(store, home, &b.project)?;
     // turned off: nothing more is merged or pushed (AC-186); a published batch's After runs on
-    if !p.s.on && b.state != "after" {
+    if !p.s.on && !matches!(b.state.as_str(), "after" | "cleanup") {
         if let Some(pane) = &b.pane {
             runner.stop(pane);
             runner.close(pane);
@@ -113,7 +114,7 @@ fn advance(store: &Store, runner: &dyn Runner, home: &Path, b: Batch, now: i64) 
         return store.with(|tx| bs::give_up(tx, &b, &format!("integration was turned off for {}", p.name), now));
     }
     match b.state.as_str() {
-        "checking" | "publishing" | "after" => follow(store, runner, &p, b, now),
+        "checking" | "publishing" | "after" | "cleanup" => follow(store, runner, &p, b, now),
         "green" => publish(store, &p, b, now),
         // a task left the batch: the rest built anew on the target as it is, a running line ended first
         "rebuild" => {
@@ -135,6 +136,7 @@ fn follow(store: &Store, runner: &dyn Runner, p: &Place, b: Batch, now: i64) -> 
     let (step, line, folder) = match b.state.as_str() {
         "checking" => ("check", p.s.check.clone(), None),
         "publishing" => ("publish", p.s.publish.clone(), None),
+        "cleanup" => ("cleanup", p.s.cleanup.clone(), Some(p.repo.clone())),
         _ => ("after", p.s.after.clone(), Some(p.repo.clone())),
     };
     let candidate = b.candidate.clone().unwrap_or_default();
@@ -173,7 +175,15 @@ fn follow(store: &Store, runner: &dyn Runner, p: &Place, b: Batch, now: i64) -> 
             Err(why) => not_published(store, &b, &why, now),
         },
         ("publish", code) => not_published(store, &b, &format!("Publish ended with status {code}. Its log: {}", log.display()), now),
-        (_, 0) => store.with(|tx| { bs::set_pane(tx, b.id, None, now)?; bs::set_state(tx, b.id, "ended", None, now) }),
+        // Cleanup ends the batch whatever its status: it undoes nothing (AC-198)
+        ("cleanup", code) => store.with(|tx| {
+            bs::set_pane(tx, b.id, None, now)?;
+            if code != 0 {
+                bs::tell_task(tx, &b, &format!("Batch {}'s Cleanup ended with status {code}; nothing is undone. Its log: {}", b.number, log.display()), now)?;
+            }
+            bs::set_state(tx, b.id, "ended", None, now)
+        }),
+        (_, 0) => store.with(|tx| { bs::set_pane(tx, b.id, None, now)?; bs::set_state(tx, b.id, after_after(&p.s), None, now) }),
         (_, code) => store.with(|tx| {
             bs::set_pane(tx, b.id, None, now)?;
             bs::set_state(tx, b.id, "after failed", Some(&format!("status {code}")), now)?;
@@ -310,9 +320,14 @@ fn landed(store: &Store, p: &Place, b: Batch, target: &str, now: i64) -> Result<
             Err(w) => format!(" {}'s folder stays where it is: {w}", p.name),
         };
         bs::close_task(tx, &b, &format!("Batch {} published at {}: {}.{folder}", b.number, short(&candidate), ids.join(", ")), now)?;
-        let next = if p.s.after.is_empty() || moved.is_err() { "ended" } else { "after" };
+        let next = if p.s.after.is_empty() || moved.is_err() { after_after(&p.s) } else { "after" };
         bs::set_state(tx, b.id, next, None, now)
     })
+}
+
+/// What follows a published batch's After: its Cleanup, when the project has one (AC-198).
+fn after_after(s: &Settings) -> &'static str {
+    if s.cleanup.is_empty() { "ended" } else { "cleanup" }
 }
 
 /// The project's folder fast-forwarded to the target when it stands clean on its branch (AC-191).

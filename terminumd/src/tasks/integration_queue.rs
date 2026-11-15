@@ -122,8 +122,10 @@ pub fn integrate(store: &Store, who: &Who, args: &Value) -> Result<(String, Vec<
             return Err(format!("{} was returned for a red check: commit a fix first, or ask a human to queue it.", short(&commit)));
         }
         let me = author(tx, who)?;
-        tx.execute("INSERT INTO integration_entries (task, project, commit_sha, result, author, queued_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)
-                    ON CONFLICT (task) DO UPDATE SET commit_sha = ?3, result = ?4, author = ?5", (&t.key, &t.project, &commit, &result, &me, at)).map_err(sql)?;
+        // with a Prepare or Verify, a commit waits for them before any batch takes it (AC-198)
+        let stage = (!s.prepare.is_empty() || !s.verify.is_empty()).then_some("verifying");
+        tx.execute("INSERT INTO integration_entries (task, project, commit_sha, result, author, queued_at, stage) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+                    ON CONFLICT (task) DO UPDATE SET commit_sha = ?3, result = ?4, author = ?5, stage = ?7", rusqlite::params![t.key, t.project, commit, result, me, at, stage]).map_err(sql)?;
         let short = short(&commit);
         if t.status == INTEGRATION {
             ops::log(tx, &t.key, &me, "queue", &format!("Queued {short} for integration into {} in its place.", s.target), None, at)?;

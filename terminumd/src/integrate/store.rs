@@ -11,7 +11,7 @@ use crate::tasks::ops::{self, sql, NewTask, INTEGRATION};
 use crate::tasks::store::DISPATCHER;
 
 /// The states of a batch the machine works on: one at a time over all projects (AC-188).
-pub const BUSY: [&str; 5] = ["checking", "green", "publishing", "after", "rebuild"];
+pub const BUSY: [&str; 6] = ["checking", "green", "publishing", "after", "cleanup", "rebuild"];
 /// A batch that waits for its agent or a human: it holds only its own project's queue.
 pub const RED: &str = "red";
 
@@ -71,7 +71,7 @@ pub fn by_id(tx: &Transaction, id: i64) -> Result<Batch, String> {
 /// batch, no red batch of its own; the one whose oldest entry waited longest first.
 pub fn next_project(tx: &Transaction) -> Result<Option<String>, String> {
     tx.query_row("SELECT e.project FROM integration_entries e JOIN project_integration i ON i.project = e.project JOIN projects p ON p.id = e.project
-                  WHERE e.batch IS NULL AND i.is_on = 1 AND i.paused = 0 AND p.host IS NULL
+                  WHERE e.batch IS NULL AND e.stage IS NULL AND i.is_on = 1 AND i.paused = 0 AND p.host IS NULL
                     AND NOT EXISTS (SELECT 1 FROM integration_batches b WHERE b.project = e.project AND b.state IN ('red', 'not published', 'after failed'))
                   GROUP BY e.project ORDER BY min(e.queued_at) LIMIT 1", [], |r| r.get(0)).optional().map_err(sql)
 }
@@ -79,7 +79,7 @@ pub fn next_project(tx: &Transaction) -> Result<Option<String>, String> {
 /// A project's queued commits not in a batch, in the queue's order.
 pub fn waiting(tx: &Transaction, project: &str) -> Result<Vec<Queued>, String> {
     ops::rows(tx, "SELECT e.task, t.slug, e.commit_sha FROM integration_entries e JOIN tasks t ON t.id = e.task
-                   WHERE e.project = ?1 AND e.batch IS NULL AND t.archived_at IS NULL ORDER BY e.queued_at, t.number", [project],
+                   WHERE e.project = ?1 AND e.batch IS NULL AND e.stage IS NULL AND t.archived_at IS NULL ORDER BY e.queued_at, t.number", [project],
         |r| Ok(Queued { task: r.get(0)?, id: r.get(1)?, commit: r.get(2)? }))
 }
 
