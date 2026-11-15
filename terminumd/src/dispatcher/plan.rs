@@ -181,8 +181,8 @@ pub fn step(run: &mut Run, f: &Facts) -> Vec<Act> {
             }
         }
     }
-    // no activity (AC-123); an answer waited for has no idle clock
-    if f.active || !alive {
+    // no activity (AC-123); the queue's work is no idle time, and an answer waited for has no idle clock
+    if f.active || !alive || run.status == crate::tasks::ops::INTEGRATION {
         run.idle_for = 0;
     } else if f.waiting.is_none() {
         run.idle_for += f.dt;

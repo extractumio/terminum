@@ -565,6 +565,12 @@ Scenario: AC-198 happy path — Prepare and Verify before a batch
   When the content Prepare left is one a tree of the repository passed clean, its agent's own after merging origin/main
   Then Verify says "targeted: passed already on 3f9a21c40b7d5e11" and runs nothing again; a pass that skipped timed checks (AC-146) or passed only on a retry (AC-197) stays its tree's own and is never reused
 
+Scenario: AC-198 edge — a return after an idle hour in integration
+  Given API-12 waits in INTEGRATION for more than 60 minutes while Prepare and Verify run
+  When Verify ends red and the queue returns API-12 with its reason and log
+  Then API-12 stays IN PROGRESS at the next Dispatcher walk: time in INTEGRATION counts toward no idle clock
+  And AC-123's idle hour and requests for a result start afresh at the return, its budget keeping the time already used
+
 Scenario: AC-198 happy path — Cleanup
   Given Cleanup "make prune"
   When batch 7 is published and its After ended
@@ -813,4 +819,4 @@ A task's verify tree is `~/.terminum/integration/<project>/verify-<number>`, det
 - [ ] AC-192 — `cargo test integrate::notices` (two trees whose commits do not merge told once each, a tree beside a queued task told its place, the target moving in a task's files told once with its conflict, which notices are new, the gate's fixed words for a return alone), `cargo test integrate::agent` and `tasks::integration_queue` (the queue's own notices); to come: `scripts/e2e_integration.py` (a hook's context, the gate only in Dispatcher's pane), `web/test/e2e_liveintegration.mjs` (the comment on the card)
 - [ ] AC-193 — `web/test/e2e_liveintegration.mjs` (Chromium and WebKit, wide and phone: the column only where on, the batch's group, places and waits, each key and its refusal, Batches…)
 - [ ] AC-194 — `cargo test integrate::agent` (wanted in its own worktree at the candidate, its prompt without a task's words, each tool and its refusals, several returned for one round, the unchanged round once, red rounds spent, no agent, everything returned, a fix picked onto the target that outlives a red round and is published, a fix that needs the batch, each agent's own kept slot), `cargo test integrate::engine` (made with its batch, DONE on green with no agent, the human's keys), `cargo test dispatcher` (its budget counts the analysis alone), `scripts/e2e_integration.py` with `scripts/fake_agent.py` (a red round, a return with its analysis, round 2 green and published), `TM_TEST_REAL_INTEGRATION=1` (a Sonnet agent names the task whose change broke a stand-in check, three short runs)
-- [ ] AC-198 — `python3 scripts/tests/test_land_stages.py` (each stage's done-check run again, Prepare's conflict exit 2, Publish refusing an unchecked commit or a moved target, Queue on and off, Cleanup as the sweep), `cargo test integrate::stages` (Prepare and Verify in a tree of its own before a batch, a red Verify through make, Prepare's conflict, a lost window run again, a task taken out while verified, Cleanup after After), `web/test/e2e_liveintegration.mjs` (the seven rows, saved, What runs)
+- [ ] AC-198 — `python3 scripts/tests/test_land_stages.py` (each stage's done-check run again, Prepare's conflict exit 2, Publish refusing an unchecked commit or a moved target, Queue on and off, Cleanup as the sweep), `cargo test integrate::stages` (Prepare and Verify in a tree of its own before a batch, a red Verify through make, Prepare's conflict, a lost window run again, a task taken out while verified, Cleanup after After), `cargo test dispatcher::walk` (a red Verify after two hours returns with fresh idle/request clocks, used budget kept), `web/test/e2e_liveintegration.mjs` (the seven rows, saved, What runs)
