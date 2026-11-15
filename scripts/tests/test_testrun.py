@@ -120,7 +120,9 @@ class WithItsFolder(unittest.TestCase):
             self.addCleanup(lambda: os.rmdir(sibling))
             child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)", folder], cwd=sibling)
             self.addCleanup(lambda: (child.kill(), child.wait()))
-            time.sleep(0.3)
+            end = time.monotonic() + 5
+            while child.pid not in testrun.naming(sibling) and time.monotonic() < end:
+                time.sleep(0.02)
             self.assertNotIn(child.pid, testrun.naming(folder), "mentioning the folder in argv proves no ownership")
             self.assertIn(child.pid, testrun.naming(sibling))
 
