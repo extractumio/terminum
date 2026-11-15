@@ -237,7 +237,7 @@ async function runThem(tasks, agent) {
   } catch (e) { say(e.message); }
 }
 
-const queueColumn = integrationColumn({ openTask: (id) => openTask(id), reload: () => loadMeta().then(() => again()) });
+const queueColumn = integrationColumn({ openTask: (id) => openTask(id), reload: () => loadMeta().then(() => readSoon()) });
 /** The columns stand once; a draw fills them, each keeping its scroll. */
 const columns = boardColumns({ sorting, showColumn: (c) => showColumn(c), newTask: () => form.open(), queueKeys: queueColumn.keys });
 let socket = null;
