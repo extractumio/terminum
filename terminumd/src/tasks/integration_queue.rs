@@ -115,6 +115,7 @@ pub fn integrate(store: &Store, who: &Who, args: &Value) -> Result<(String, Vec<
     let commit = commit_to_queue(&repo, &s, args["commit"].as_str().filter(|c| !c.is_empty()), who.dir.as_deref())?;
     let at = ops::now();
     store.with(|tx| {
+        let mut changed = crate::dispatcher::taking(tx, &who.key)?;
         // what changed while git ran: the same checks again, in the transaction that queues
         let (t, s, _) = ready(tx, who, id, &result)?;
         let returned: Option<String> = tx.query_row("SELECT why FROM integration_returns WHERE task = ?1 AND commit_sha = ?2", (&t.key, &commit), |r| r.get(0)).optional().map_err(sql)?;
@@ -133,7 +134,10 @@ pub fn integrate(store: &Store, who: &Who, args: &Value) -> Result<(String, Vec<
             ops::place(tx, &me, &t, INTEGRATION, at)?;
             ops::log(tx, &t.key, &me, "queue", &format!("Queued {short} for integration into {}.", s.target), None, at)?;
         }
-        Ok((queued_words(tx, &t, &s)?, vec![id.to_string()]))
+        if !changed.iter().any(|moved| moved == id) {
+            changed.push(id.to_string());
+        }
+        Ok((queued_words(tx, &t, &s)?, changed))
     })
 }
 

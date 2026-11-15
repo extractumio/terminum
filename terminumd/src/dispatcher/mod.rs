@@ -40,6 +40,7 @@ use crate::tasks::ops;
 use crate::tasks::store::DISPATCHER;
 
 pub use hooks::{good_id, heard, hearing};
+pub(crate) use hooks::taking;
 /// A red batch's integration task pressed on its agent (terminum-integration.md AC-194).
 pub(crate) use api::press_integration;
 pub use start::resume_words;
@@ -257,10 +258,12 @@ impl Dispatcher {
 
 /// Where in `t` (what Dispatcher typed lately) `prompt` of pane `key` is.
 fn typed_at(t: &mut Vec<(String, String, Instant)>, key: &str, prompt: &str) -> Option<usize> {
-    let first = |s: &str| s.chars().filter(|c| !c.is_whitespace()).take(20_000).collect::<String>();
-    let wanted = first(prompt);
     t.retain(|(_, _, at)| at.elapsed() < TYPED_FOR);
-    t.iter().position(|(k, text, _)| k == key && first(text) == wanted)
+    t.iter().position(|(k, text, _)| k == key && same_prompt(text, prompt))
+}
+
+fn same_prompt(a: &str, b: &str) -> bool {
+    a.chars().filter(|c| !c.is_whitespace()).take(20_000).eq(b.chars().filter(|c| !c.is_whitespace()).take(20_000))
 }
 
 /// A test's own time (§9 Times): only with a test's own app folder.
