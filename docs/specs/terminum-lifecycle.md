@@ -535,6 +535,33 @@ Scenario Outline: AC-104 failure — a script module cannot produce a passing re
     | exits without reporting       |
     | discovers zero tests          |
 
+Scenario: AC-104 happy path — live checks share a bounded pool across trees
+  Given two trees hold the two worker live-check slots
+  When a third tree reaches the critical step of its targeted checks
+  Then it says once "slot: critical waits for a live-check slot (2 slots): one panel, two critical" and waits until a slot is free
+  And each panel, page, critical, smoke or e2e_* step holds one slot through its command, cleanup and any unchanged retry (AC-197)
+  And other steps take no live-check slot, and cargo's heavy-build pool stays independent
+  And TM_LIVE_SLOTS sets the worker count, default 2; zero or a negative value means 1, an invalid value uses the default
+
+Scenario: AC-104 edge — a landing has its own live-check slot
+  Given every worker live-check slot is held
+  When the landing in the turn runs its smoke set
+  Then its e2e_core, e2e_attach and smoke steps use the reserved landing live-check slot without waiting for a worker
+  And that slot is shared by landings, independent of the worker count, allowing one live step beyond the worker limit
+  And make check keeps its existing full-run gate and takes no live-check slot
+
+Scenario Outline: AC-104 failure — a live-check holder ends
+  Given a step holds a live-check slot
+  When <end>
+  Then the slot is free for another tree, and no process it started inherits the slot
+
+  Examples:
+    | end                                       |
+    | the step succeeds or fails                 |
+    | its quiet-machine gate skips timed checks  |
+    | its runner raises an error or is cancelled |
+    | its holder process dies                    |
+
 Scenario: AC-104 edge — deterministic benchmark verdicts under concurrent checks
   Given concurrent script suites delay the startup of the listing benchmark's private stand-ins
   When the harness checks the benchmark command with supplied timing and RSS samples
@@ -542,10 +569,17 @@ Scenario: AC-104 edge — deterministic benchmark verdicts under concurrent chec
   And samples just below each budget pass; a sample at any budget fails, and the slowest of ten samples counts toward p95
   And an explicitly stalled stand-in still hits the cleanup test's short deadline and leaves no running process in the harness's own group
 
-Scenario: AC-104 edge — a session hears of a changed pipeline
-  Given origin/main changed scripts/land.py since a tree's base
+Scenario Outline: AC-104 edge — a session hears of a changed pipeline
+  Given origin/main changed <script> since a tree's base
   When the session's prompt hook runs in that tree
-  Then it says "origin/main changed the checks or the landing (scripts/land.py): read it there and merge it (CLAUDE.md §9)"
+  Then it says "origin/main changed the checks or the landing (<script>): read it there and merge it (CLAUDE.md §9)"
+
+  Examples:
+    | script                 |
+    | scripts/land.py         |
+    | scripts/check_slots.py  |
+    | scripts/heavy_slots.py  |
+    | scripts/live_slots.py   |
 
 Scenario: AC-104 edge — the landing says GitHub CI's last verdict on main
   Given GitHub CI's last run on main to end, not cancelled, failed on origin/main's head 8f3c2a1d0
@@ -807,12 +841,13 @@ Scenario: AC-146 edge — a tree that passed already
 Scenario Outline: AC-146 edge — a task's timed checks
   Given <why>
   When a task's targeted checks reach their first timed step: the page's checks, the Panel's, an e2e script or the real page
-  Then they wait the same way, printing each look
+  Then they acquire that step's live-check slot (AC-104) before looking at the load, so time spent waiting for a slot cannot leave a stale quiet reading
+  And they wait the same way, printing each look
   And after 15 minutes the timed steps are skipped, each printing "SKIP page: load 31.0 over 16 for 15 minutes", and never fail for the wait
   And the other steps run, and the last line, red, is "targeted: SKIPPED timed checks, the machine busy for 15 minutes: page e2e_hooks"
   And make land says that line again after "landed", and the task's report names those checks under Not verified
   And the tree's next run whose timed steps run takes the line away
-  And a landing's smoke set, which holds no timed check, never waits
+  And a landing's smoke set, which holds no timed check, never waits for the quiet-machine gate
 
   Examples:
     | why                                     |
@@ -964,6 +999,7 @@ Last lines `state/lastlines/local@terminum/6db00afe9596fc57_3.json` (AC-96; `…
 | `TM_RELEASE_URL` | the GitHub releases page | `file:///tmp/rel` | where `upgrade` and `install.sh` download |
 | `TM_BOOT_ID` | the machine's boot | `b2` | plays another boot (tests) |
 | `TM_GATE_LOAD` | the cores' count | `12` | the load average at most which a full run starts and a task's timed checks run (AC-146); a day's load on a 16-core Mac with 4-5 sessions: 9-13 while working, 100-260 under builds and Spotlight's indexing |
+| `TM_LIVE_SLOTS` | `2` | `1` | worker live-check slots shared by the repository's trees; a landing has one additional reserved slot (AC-104) |
 | `TM_NO_OPEN`, `TM_WEB_PASSWORD`, `NO_COLOR` | unset | `1`, `…`, `1` | no browser after install; the password for `terminum password` without a prompt; no colors |
 | `TM_CODESIGN_IDENTITY` | unset (ad hoc) | a Developer ID | what `scripts/package.py` signs with (AC-08) |
 
@@ -1020,7 +1056,7 @@ All cases are shipped; nothing is staged.
 - [x] AC-17 — `cargo test update::`; `web/test/e2e_tmux.mjs`
 - [x] AC-96 — `scripts/e2e_lastlines.py`; `cargo test lastlines` (a failed write tried again); `web/test/e2e_lastlines.mjs`
 - [x] AC-102 — `scripts/check_step.py` guards each step of `scripts/check_all.sh` and `scripts/check_changed.py`; `scripts/tests/test_check_step.py`; `scripts/tests/test_check_cancel.py` (outer cancellation and guard recovery); `scripts/tests/test_process_ownership.py` (metadata only, directory boundaries and query failures on both platforms); `scripts/tests/test_leftovers.py`; `cargo test cli::tests::the_fake_terminumd_ends_when_its_home_goes`; `scripts/tests/test_testrun.py` (`WithItsFolder`)
-- [x] AC-104 — `scripts/tests/test_land.py`, `scripts/tests/test_land_install.py`, `scripts/tests/test_land_said.py`, `scripts/tests/test_heavy_slots.py`, `scripts/tests/test_test_scripts.py`, `scripts/tests/test_check_changed.py`, `scripts/tests/test_package.py`, `scripts/tests/test_release_turn.py`, `scripts/tests/test_release.py`, `scripts/tests/test_ci_mac.py`, `scripts/tests/test_ci_mac_node.py`, `scripts/tests/test_check_docker.py`, `scripts/tests/test_worktree_fresh.py`
-- [x] AC-146 — `scripts/tests/test_load_gate.py`, `scripts/tests/test_release_turn.py`, `scripts/tests/test_check_changed.py`, `scripts/tests/test_access.py`, `scripts/e2e_access.py`
+- [x] AC-104 — `scripts/tests/test_land.py`, `scripts/tests/test_land_install.py`, `scripts/tests/test_land_said.py`, `scripts/tests/test_heavy_slots.py`, `scripts/tests/test_test_scripts.py`, `scripts/tests/test_live_slots.py`, `scripts/tests/test_check_live_slots.py`, `scripts/tests/test_check_changed.py`, `scripts/tests/test_package.py`, `scripts/tests/test_release_turn.py`, `scripts/tests/test_release.py`, `scripts/tests/test_ci_mac.py`, `scripts/tests/test_ci_mac_node.py`, `scripts/tests/test_check_docker.py`, `scripts/tests/test_worktree_fresh.py`
+- [x] AC-146 — `scripts/tests/test_load_gate.py`, `scripts/tests/test_release_turn.py`, `scripts/tests/test_check_changed.py`, `scripts/tests/test_check_live_slots.py`, `scripts/tests/test_access.py`, `scripts/e2e_access.py`
 - [x] AC-197 — `scripts/tests/test_check_changed.py` (`test_ac197_*`)
 - [x] AC-103 — `scripts/tests/test_check_docs.py`; `python3 scripts/check_docs.py`

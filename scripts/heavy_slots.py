@@ -5,16 +5,13 @@ a landing's install, runs holding one of a few slots; the landing in the landing
 it never waits behind trees at work. A slot is a file in git's common folder that the kernel frees with its
 holder; TM_HEAVY_SLOTS sets how many (default: the cores' count / 8, at least 1: each cargo run takes every
 core)."""
-from contextlib import contextmanager
 import os
 from pathlib import Path
 import sys
 import time
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from worktree import Turn  # noqa: E402
-
-LOOK_S = 2
+from check_slots import slot as pool_slot  # noqa: E402
 
 
 def count():
@@ -24,19 +21,7 @@ def count():
         return max(1, (os.cpu_count() or 2) // 8)
 
 
-@contextmanager
 def slot(root, step, landing=False, say=print, sleep=time.sleep):
     """Holds a slot while `step` runs: the landing's own when `landing`, else the first of the others free."""
-    names = ["terminum-heavy.land.slot"] if landing else [f"terminum-heavy.{n}.slot" for n in range(count())]
-    turns, told = [Turn(root, name) for name in names], False
-    while True:
-        for turn in turns:
-            with turn:
-                if turn.take():
-                    turn.hold_as(f"{Path(root).name} {step}")
-                    yield
-                    return
-        if not told:
-            say(f"slot: {step} waits for one of {len(turns)} heavy-build slots: {', '.join(t.holder() for t in turns)}")
-            told = True
-        sleep(LOOK_S)
+    amount = 1 if landing else count()
+    return pool_slot(root, step, "heavy", amount, f"one of {amount} heavy-build slots", landing, say, sleep)

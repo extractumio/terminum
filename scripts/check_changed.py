@@ -8,7 +8,8 @@ its files and none of the checks (AC-198). Before its first timed step it waits 
 quiet machine (scripts/load_gate.py, AC-146); still busy after 15 minutes, the timed steps are skipped and
 said in red last, here and by make land (.checks/skipped). A step that runs real programs (a timed one,
 the smoke step) and fails runs once more, unchanged; passing then, it counts and is said in red last the same
-way (.checks/retried, AC-197); the release's full run (`make check`) has no retry. A cargo step holds a heavy-build slot (scripts/heavy_slots.py). --land: a landing's smoke set on its merged result, the
+way (.checks/retried, AC-197); the release's full run (`make check`) has no retry. A cargo step holds a heavy-build slot (scripts/heavy_slots.py); a real-program step holds a live-check slot
+(scripts/live_slots.py), including its retry and its first quiet-machine gate. --land: a landing's smoke set on its merged result, the
 basics on one platform, no timed check. The full run is the release's gate, not this (`make check`).
 
   check_changed.py [--print] [--force] [--base <ref>]   default origin/main; --print only says the plan
@@ -29,6 +30,7 @@ import time
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from check_docs import AC  # noqa: E402
 import heavy_slots  # noqa: E402
+import live_slots  # noqa: E402
 from check_cancel import run_guard  # noqa: E402
 from check_step import LEFT  # noqa: E402
 from load_gate import for_task, MINUTES  # noqa: E402
@@ -331,37 +333,42 @@ def attempt(root, name, command, log, nice, landing):
 def run(steps, root=REPO, gate=True, nice=False, landing=False):
     """Returns the steps failed. gate: a quiet machine is waited for before the first timed step, and the timed
     steps are skipped when it stays busy (AC-146); nice: every step yields (a release runs); a cargo step holds
-    a heavy-build slot, the landing's own when `landing`."""
+    a heavy-build slot, and each real-program step a live-check slot through its retry; the landing has its own
+    slot in each pool when `landing`."""
     logs = root / ".checks"
     logs.mkdir(exist_ok=True)
     failed, skipped, again, busy, asked = [], [], [], None, False
     if gate:   # what needs no quiet machine runs before the wait
         steps = sorted(steps, key=lambda step: timed(step[0]))
     for name, command in steps:
-        if gate and timed(name):
-            busy, asked, gate = for_task(root), True, False
-        if busy and timed(name):
-            print(red(f"SKIP {name}: {busy} {MINUTES}"), flush=True)
-            skipped.append(name)
-            continue
-        optional = command.startswith("-")
-        log = logs / f"changed.{name}.log"
-        code, seconds = attempt(root, name, command, log, nice, landing)
-        # one unchanged retry (AC-197): not when the run is red already, nor for a leftover (AC-102)
-        if code not in (0, LEFT) and not optional and not failed and retried(name):
-            first = log.with_name(f"changed.{name}.first.log")
-            log.replace(first)
-            print(f"note {name} ({seconds} s) failed, run once more unchanged; the first run's last lines:", flush=True)
-            print(tail(first), end="", flush=True)   # said here: make land deletes the tree and its logs
+        live = nullcontext()
+        if retried(name) and not (busy and timed(name)):
+            live = live_slots.slot(root, name, landing, lambda words: print(words, flush=True))
+        with live:
+            if gate and timed(name):
+                busy, asked, gate = for_task(root), True, False
+            if busy and timed(name):
+                print(red(f"SKIP {name}: {busy} {MINUTES}"), flush=True)
+                skipped.append(name)
+                continue
+            optional = command.startswith("-")
+            log = logs / f"changed.{name}.log"
             code, seconds = attempt(root, name, command, log, nice, landing)
-            if code == 0:
-                again.append(name)
-        if code == 0 or optional:
-            print(f"{'ok  ' if code == 0 else 'note'} {name} ({seconds} s)" + ("" if code == 0 else f": {log}"), flush=True)
-        else:
-            print(f"FAIL {name} ({seconds} s): {log}", flush=True)
-            print(tail(log), end="", flush=True)
-            failed.append(name)
+            # one unchanged retry (AC-197): not when the run is red already, nor for a leftover (AC-102)
+            if code not in (0, LEFT) and not optional and not failed and retried(name):
+                first = log.with_name(f"changed.{name}.first.log")
+                log.replace(first)
+                print(f"note {name} ({seconds} s) failed, run once more unchanged; the first run's last lines:", flush=True)
+                print(tail(first), end="", flush=True)   # said here: make land deletes the tree and its logs
+                code, seconds = attempt(root, name, command, log, nice, landing)
+                if code == 0:
+                    again.append(name)
+            if code == 0 or optional:
+                print(f"{'ok  ' if code == 0 else 'note'} {name} ({seconds} s)" + ("" if code == 0 else f": {log}"), flush=True)
+            else:
+                print(f"FAIL {name} ({seconds} s): {log}", flush=True)
+                print(tail(log), end="", flush=True)
+                failed.append(name)
     said = logs / "retried"
     if again:   # a landing's smoke set adds to its targeted run's, so make land says both
         with said.open("a" if landing else "w") as out:
