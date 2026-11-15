@@ -392,9 +392,9 @@ Scenario: AC-122 happy path — a human's new work
   When the agent then ends with finish_task, or the session ends cleanly
   Then API-12 is DONE again (AC-123)
 
-Scenario: AC-122 edge — CLOSE
-  When the user presses CLOSE instead
-  Then the comment is kept, nothing moves and the session hears nothing (terminum-kanban.md AC-108)
+Scenario: AC-122 edge — SAVE
+  When the user presses SAVE instead
+  Then the comment is kept, the window stays open, nothing moves and the session hears nothing (terminum-kanban.md AC-108)
 
 Scenario: AC-122 edge — archived
   Given an archived task whose live session Dispatcher started, DONE or already IN PROGRESS
