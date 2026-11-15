@@ -46,14 +46,31 @@ export async function panelForeign(context, errors) {
     const { page, url } = await fresh();
     try {
       await page.goto(url); await page.waitForSelector(row("src")); // warm the real listing, past status: loading
-      let reads = 0, proofs = 0;
+      await page.waitForLoadState("networkidle"); // settle the initial workspace load before forcing a reread
+      const before = await page.waitForSelector(row("src"));
+      let reads = 0, proofs = 0, loading = 0, ready = false;
       page.on("request", (r) => { if (r.url().includes("/api/hello?")) proofs++; });
-      await page.route("**/fb/api/ls?*", (r) => ++reads <= (repeated ? Infinity : 1) ? r.fulfill(FOREIGN) : r.fallback());
+      await page.route("**/fb/api/ls?*", async (r) => {
+        if (++reads <= (repeated ? Infinity : 1)) return r.fulfill(FOREIGN);
+        if (reads === 2) { // a valid loading reply polls again; it is not another proof retry
+          loading++;
+          return r.fulfill({ ...FOREIGN, body: JSON.stringify({ status: "loading", total: 0, gen: 0, writable: true, entries: [] }) });
+        }
+        const response = await r.fetch();
+        const body = await response.json();
+        if (body.status === "loading") loading++;
+        await r.fulfill({ response });
+        if (body.status === "ready") ready = true;
+      });
       await page.click("#refresh");
       await waitFor(() => reads >= 2);
       if (repeated) await page.waitForSelector(`#tree :text("${WHY}")`);
-      else await page.waitForSelector(row("src"));
-      check(`AC-52 a foreign listing ${repeated ? "twice fails loud" : "is proved and read again"}`, reads === 2 && proofs >= 1, JSON.stringify({ reads, proofs }));
+      else {
+        await waitFor(() => ready);
+        await page.waitForFunction((el) => !el.isConnected, before);
+        await page.waitForSelector(row("src"));
+      }
+      check(`AC-52 a foreign listing ${repeated ? "twice fails loud" : "is proved and read again"}`, reads === 2 + loading && proofs >= 1, JSON.stringify({ reads, loading, proofs }));
     } catch (e) { check("AC-52 foreign listing", false, e.message.split("\n")[0]); }
     finally { await page.close(); }
   }
