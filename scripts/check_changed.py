@@ -28,7 +28,7 @@ import heavy_slots  # noqa: E402
 from check_cancel import run_guard  # noqa: E402
 from check_step import LEFT  # noqa: E402
 from load_gate import for_task, MINUTES  # noqa: E402
-from worktree import releasing  # noqa: E402
+from worktree import common_dir, Refused, releasing  # noqa: E402
 
 REPO = Path(__file__).resolve().parent.parent
 HEAD_LINES = 6  # a source file names its cases at its top
@@ -67,17 +67,32 @@ def tree_id(root=REPO):
     return digest.hexdigest()[:16]
 
 
-def pass_marks(ident, root=None):
-    """Where a pass on content `ident` is kept: the tree's own .checks, and git's common folder, where every tree of
-    the repository finds it (terminumd's Verify tree too, AC-198), the content being the same."""
-    root = root or REPO
-    common = subprocess.run(["git", "rev-parse", "--path-format=absolute", "--git-common-dir"], cwd=root, capture_output=True, text=True).stdout.strip()
-    shared = [Path(common) / "terminum-checks" / f"changed-{ident}.ok"] if common else []
-    return [root / ".checks" / f"changed-{ident}.ok", *shared]
+def shared_mark(ident, root=None):
+    """Where a clean pass on content `ident` is kept for every tree of the repository: git's common folder (terminumd's
+    Verify tree finds it, AC-198); none outside a git checkout."""
+    try:
+        return common_dir(root or REPO) / "terminum-checks" / f"changed-{ident}.ok"
+    except Refused:
+        return None
 
 
 def has_passed(ident, root=None):
-    return any(mark.exists() for mark in pass_marks(ident, root))
+    """A pass on this content: the tree's own, or a clean one of any tree of the repository."""
+    root = root or REPO
+    shared = shared_mark(ident, root)
+    return (root / ".checks" / f"changed-{ident}.ok").exists() or bool(shared and shared.exists())
+
+
+def keep_pass(ident, root=None):
+    """The pass kept in the tree, beside its notes; shared only when clean: one that skipped timed steps (AC-146) or
+    passed only on a retry (AC-197) carries its warning, which another tree would never say."""
+    root = root or REPO
+    marks = [root / ".checks" / f"changed-{ident}.ok"]
+    if not note(root, "skipped") and not note(root, "retried"):
+        marks.append(shared_mark(ident, root))
+    for mark in filter(None, marks):
+        mark.parent.mkdir(parents=True, exist_ok=True)
+        mark.write_text(time.strftime("%Y-%m-%d %H:%M\n"))
 
 
 def is_doc(path):
@@ -365,9 +380,7 @@ def main(argv):
     print(f"targeted: FAIL {' '.join(failed)}" if failed else "targeted: PASS")
     say_late(REPO)
     if not failed and tree_id() == ident:   # changed during the run: no pass recorded
-        for mark in pass_marks(ident):
-            mark.parent.mkdir(parents=True, exist_ok=True)
-            mark.write_text(time.strftime("%Y-%m-%d %H:%M\n"))
+        keep_pass(ident)
     return 1 if failed else 0
 
 

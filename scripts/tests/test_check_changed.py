@@ -351,25 +351,39 @@ class Passed(unittest.TestCase):
 
 
 class SharedPass(unittest.TestCase):
-    def test_a_pass_on_one_trees_content_is_found_by_another_tree_with_the_same_content(self):  # AC-198
-        with tempfile.TemporaryDirectory() as tmp:
-            main, other = Path(tmp) / "main", Path(tmp) / "other"
-            run = lambda *a, cwd: subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@example.com", *a], cwd=cwd, check=True, capture_output=True)
-            main.mkdir()
-            run("init", "-q", cwd=main)
-            (main / "a.txt").write_text("one\n")
-            run("add", "a.txt", cwd=main)
-            run("commit", "-qm", "one", cwd=main)
-            run("worktree", "add", "-q", "--detach", str(other), "HEAD", cwd=main)
+    def repo(self, tmp):
+        """A checkout and a second worktree of it, the same content in both."""
+        main, other = Path(tmp) / "main", Path(tmp) / "other"
+        run = lambda *a, cwd: subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@example.com", *a], cwd=cwd, check=True, capture_output=True)  # noqa: E731
+        main.mkdir()
+        run("init", "-q", cwd=main)
+        (main / "a.txt").write_text("one\n")
+        run("add", "a.txt", cwd=main)
+        run("commit", "-qm", "one", cwd=main)
+        run("worktree", "add", "-q", "--detach", str(other), "HEAD", cwd=main)
+        return main, other
+
+    def test_a_clean_pass_on_one_trees_content_is_found_by_another_tree_with_the_same_content(self):  # AC-198
+        with tempfile.TemporaryDirectory(dir=short_tmp()) as tmp:
+            main, other = self.repo(tmp)
             ident = check_changed.tree_id(main)
             self.assertEqual(check_changed.tree_id(other), ident, "the same content, the same id")
             self.assertFalse(check_changed.has_passed(ident, other))
-            for mark in check_changed.pass_marks(ident, main):
-                mark.parent.mkdir(parents=True, exist_ok=True)
-                mark.write_text("passed\n")
+            check_changed.keep_pass(ident, main)
             self.assertTrue(check_changed.has_passed(ident, other), "kept in git's common folder, found from the other tree")
             (other / "a.txt").write_text("two\n")
             self.assertFalse(check_changed.has_passed(check_changed.tree_id(other), other), "other content: run again")
+
+    def test_a_pass_with_a_warning_stays_its_trees_own(self):  # AC-146, AC-197, AC-198
+        for kind in ("skipped", "retried"):
+            with tempfile.TemporaryDirectory(dir=short_tmp()) as tmp:
+                main, other = self.repo(tmp)
+                ident = check_changed.tree_id(main)
+                (main / ".checks").mkdir()
+                (main / ".checks" / kind).write_text("targeted: SKIPPED timed checks\n")
+                check_changed.keep_pass(ident, main)
+                self.assertTrue(check_changed.has_passed(ident, main), kind)
+                self.assertFalse(check_changed.has_passed(ident, other), f"{kind}: its warning is said where it was kept, never passed on")
 
 
 if __name__ == "__main__":

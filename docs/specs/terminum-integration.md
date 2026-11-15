@@ -562,6 +562,8 @@ Scenario: AC-198 happy path — Prepare and Verify before a batch
   When Verify ends with another status, or either runs over "Check ends after"
   Then API-12 is IN PROGRESS, "API-12 returned: red check: its Prepare or Verify ended with status 1. Its log: …" (AC-187's wait exits 1), its commit not queued again, and no batch ever held it
   And Verify decides no publishing: only Check on the candidate does (AC-190)
+  When the content Prepare left is one a tree of the repository passed clean, its agent's own after merging origin/main
+  Then Verify says "targeted: passed already on 3f9a21c40b7d5e11" and runs nothing again; a pass that skipped timed checks (AC-146) or passed only on a retry (AC-197) stays its tree's own and is never reused
 
 Scenario: AC-198 happy path — Cleanup
   Given Cleanup "make prune"
