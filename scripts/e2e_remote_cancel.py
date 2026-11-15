@@ -19,6 +19,7 @@ from owned_children import identities
 from testrun import free_port, own
 
 STUB = r'''#!/usr/bin/env python3
+import json
 import os
 from pathlib import Path
 import signal
@@ -36,9 +37,21 @@ if sys.argv[1] == "--mutate":
     state.write_text(sys.argv[2])
     sys.exit(0)
 args = " ".join(sys.argv[1:])
+if args == "plugin list --json":
+    if (home / "list-fails").exists():
+        sys.exit("list refused")
+    entries = []
+    if state.exists() and state.read_text() == "on":
+        entries = [{"id": "terminum@terminum-local", "scope": "user", "enabled": True,
+                    "installPath": str(home / ".terminum/hooks/claude/plugins/terminum")}]
+    print(json.dumps(entries))
 if args.startswith("plugin install") or args.startswith("plugin uninstall"):
+    if args.startswith("plugin uninstall") and (home / "uninstall-fails").exists():
+        sys.exit("uninstall refused")
     value = "on" if args.startswith("plugin install") else "off"
     if gate.exists() and args.startswith(gate.read_text()):
+        if (home / "precommit").exists():
+            state.write_text(value)
         gate.rename(blocked)  # the later operation is never held
         child = subprocess.Popen([sys.executable, __file__, "--mutate", value])
         (home / "started").write_text(f"{os.getpid()} {child.pid}")
@@ -106,6 +119,7 @@ def direct_signal(t, home, sig, ignored=False, terminal=False):
     started, blocked = home / "started", home / "blocked"
     started.unlink(missing_ok=True)
     (home / ".terminum/hooks/claude.installed").unlink(missing_ok=True)
+    (home / "plugin-state").write_text("off")
     (home / "gate").write_text("plugin install")
     command = [BIN, "hooks", "install", "--host-mode", "--marker", "TMH-0123456789abcdef",
                "--claude", str(home / ".local/bin/claude")]
@@ -149,6 +163,31 @@ def direct_signal(t, home, sig, ignored=False, terminal=False):
             os.close(master)
 
 
+def failed_reconciliation(t, home):
+    """AC-99: Files off must not make failed removal delete the registered hooks' helper."""
+    assert ask(t, "on")[0] == 200
+    status, body = unix_request(t.sock, "POST", "/hosts/files-remove", {"name": "devbox"})
+    assert status == 200, body
+    marker = home / ".terminum/hooks/claude.installed"
+    for failure in ("list-fails", "uninstall-fails"):
+        marker.unlink(missing_ok=True)  # install committed but its helper was cancelled
+        flag = home / failure
+        flag.touch()
+        try:
+            status, body = ask(t, "off")
+            check(f"AC-99 {failure}: the newer off reports Claude's failure",
+                  status == 200 and "claude: failed:" in body.get("message", ""), body)
+            check(f"AC-99 {failure}: the plugin remains active and its helper stays executable",
+                  (home / "plugin-state").read_text() == "on"
+                  and os.access(home / ".terminum/bin/terminum-host", os.X_OK))
+        finally:
+            flag.unlink(missing_ok=True)
+    status, body = ask(t, "off")
+    check("AC-99 off after the failure reconciles the plugin and removes the unused helper",
+          status == 200 and (home / "plugin-state").read_text() == "off"
+          and not (home / ".terminum/bin/terminum-host").exists(), body)
+
+
 def main():
     t = Terminumd(free_port(), own("tm-cancel"))
     t.env["HOME"] = t.root
@@ -169,12 +208,18 @@ def main():
             return unix_request(t.sock, "GET", "/hosts")[1]["hosts"][0].get("agents")
         wait_for(ready, lambda v: v == "up", seconds=120)
         assert ask(t, "off")[0] == 200
-        takeover(t, home, "on", "off", "plugin install")
-        assert ask(t, "on")[0] == 200
-        takeover(t, home, "off", "on", "plugin uninstall")
+        for committed in (False, True):
+            if committed:
+                (home / "precommit").touch()
+            print("Plugin mutation before cancellation:", committed)
+            takeover(t, home, "on", "off", "plugin install")
+            assert ask(t, "on")[0] == 200
+            takeover(t, home, "off", "on", "plugin uninstall")
+            assert ask(t, "off")[0] == 200
         for sig in (signal.SIGTERM, signal.SIGHUP, signal.SIGINT):
             direct_signal(t, home, sig)
         direct_signal(t, home, signal.SIGHUP, ignored=True)
+        failed_reconciliation(t, home)
         direct_signal(t, home, signal.SIGINT, terminal=True)
     finally:
         t.cleanup()

@@ -2,9 +2,11 @@
 // More checks for e2e_panel.mjs: the page's View (`/fb/?view=`), the panel inside a page that
 // receives its files as messages (AC-70), a host's files offer (AC 83), the tree's Sorting (AC-52).
 
+import assert from "node:assert/strict";
 import fs from "node:fs";
-import { base, check, SB, within } from "./e2e_harness.mjs";
-import { thrown } from "../../web/test/check.mjs";
+import { fileURLToPath } from "node:url";
+import { base, check, cleanup, results, SB, signIn, within } from "./e2e_harness.mjs";
+import { playwright, recordLivePageError, thrown } from "../../web/test/check.mjs";
 import { NO_SIGNALS } from "./process-stop.mjs";
 
 /** AC-70 the View alone: renders the file, no tree, no secret in its URL, a path bar. */
@@ -58,28 +60,64 @@ export async function diagrams(context, base, SB, errors) {
   // failed to load until the page reloads, so no retry can help there.
   const secret = await context.pages()[0].evaluate(() => localStorage.getItem("tm.session"));
   const refuseOnce = async (gp) => {
+    gp.on("pageerror", (e) => recordLivePageError(errors, "diagram recovery", e));
     // the sign-in the run holds (signIn would set the password again and end it for the others)
     await gp.goto(`${base}/custom.css`);
     await gp.evaluate((s) => localStorage.setItem("tm.session", s), secret);
-    let refused = 0;
-    await gp.route("**/chunks/mermaid.core-*.js", (route) => refused++ ? route.fallback() : route.abort("connectionreset"));
+    const chunk = /\/chunks\/mermaid\.core-[^/]+\.js$/;
+    const loads = { requested: 0, finished: 0 };
+    gp.on("requestfinished", (r) => { if (chunk.test(r.url())) loads.finished++; });
+    await gp.route(chunk, (route) => loads.requested++ ? route.fallback() : route.abort("connectionreset"));
     await gp.goto(`${base}/fb/?view=${encodeURIComponent(SB + "/docs/diagram.md")}`);
     await within("AC-54 Mermaid's code that did not load says so at the fence", (ms) => gp.waitForSelector(".md-diagram-error", { timeout: ms }));
     const said = await gp.textContent(".md-diagram-error");
     check("AC-54 … and that a reload helps", said === "Mermaid's code did not load: reload the page", said);
+    await within("AC-54 all three fences show the module-load error before another render", (ms) => gp.waitForFunction(() =>
+      [...document.querySelectorAll(".md-diagram-error")].filter((e) => e.textContent === "Mermaid's code did not load: reload the page").length === 3,
+    null, { timeout: ms }));
+    check("AC-54 the failed render fetched the module once and drew no diagrams",
+      loads.requested === 1 && loads.finished === 0 && await gp.locator(".md-diagram img.diagram").count() === 0, JSON.stringify(loads));
+    return loads;
   };
   const cp = await context.newPage();
   try { await refuseOnce(cp); } finally { await cp.close(); }
-  const { webkit } = await import(process.env.PLAYWRIGHT_CORE ?? "playwright-core");
+  const { webkit } = await playwright();
   const wk = await webkit.launch(NO_SIGNALS);
   try {
     const gp = await wk.newPage();
-    await refuseOnce(gp);
-    const now = new Date();
-    fs.utimesSync(`${SB}/docs/diagram.md`, now, now);   // changed on disk: the clean document is drawn again
+    const loads = await refuseOnce(gp);
+    // AC-54 is the next render, independent of AC-61's filesystem notification delivery.
+    // These buttons redraw in the same document, preserving WebKit's failed module state.
+    await gp.click('#tools [data-act="source"]');
+    await gp.waitForSelector(".cm-content");
+    await gp.click('#tools [data-act="rendered"]');
     await within("AC-54 … and the next render loads it and draws the diagrams (WebKit)", (ms) =>
-      gp.waitForFunction(() => document.querySelectorAll(".md-diagram img.diagram").length === 2, null, { timeout: ms }), 10000);
+      gp.waitForFunction(() => {
+        const images = [...document.querySelectorAll(".md-diagram img.diagram")];
+        return images.length === 2 && images.every((i) => i.complete && i.naturalWidth > 0);
+      }, null, { timeout: ms }), 10000);
+    check("AC-54 the next render fetched Mermaid again successfully", loads.requested === 2 && loads.finished === 1, JSON.stringify(loads));
+    check("AC-54 the recovered render keeps the malformed fence's source and Mermaid message",
+      await gp.locator(".md-diagram-error + pre").count() === 1 && (await gp.textContent(".md-diagram-error")).startsWith("Mermaid: "));
   } finally { await wk.close(); }
+}
+
+// The same Mermaid checks alone, including Chromium's failed load and WebKit's recovery.
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  let browser;
+  try {
+    const { chromium } = await playwright();
+    browser = await chromium.launch(NO_SIGNALS);
+    const context = await browser.newContext();
+    await signIn(await context.newPage());
+    const errors = [];
+    await diagrams(context, base, SB, errors);
+    check("AC-54 no diagram page errors", errors.length === 0, errors.join(" | "));
+  } finally {
+    if (browser) await browser.close();
+    await cleanup();
+  }
+  assert.ok(results.length && results.every(Boolean), "all Mermaid checks passed");
 }
 
 /** AC-70 in a page around it (same origin), a file opens in the page's View: the panel posts
@@ -160,7 +198,7 @@ export async function panelSort(page, { row, H }) {
     if (type === "pointerup") el.dispatchEvent(new MouseEvent("click", at));
   }, type);
   await touch("pointerdown");
-  await page.waitForTimeout(700);
+  await page.waitForSelector(".ctx", { timeout: 5000 });
   await touch("pointerup");
   const held = await page.$$eval(".ctx", (m) => m.length);
   await page.click('.ctx .mi:has-text("Sorting")');

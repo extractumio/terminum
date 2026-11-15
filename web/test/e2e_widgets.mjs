@@ -10,7 +10,7 @@ import { replyTo } from "./fake.mjs";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { check, cleanup, playwright, results } from "./check.mjs";
+import { check, cleanup, playwright, results, slack } from "./check.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const STATIC = path.resolve(HERE, "../static");
@@ -37,9 +37,10 @@ const FILES = { "/tmp/shots": ["shot.png", "b.png", "notes.txt"] };     // what 
  *  history's first line sent on opening (older ones are there to load); hook(msg, say): every
  *  message the page sends, to answer more. */
 export async function open(browser, { renderers = true, agent = false, history = HISTORY, screen = SCREEN, cwd = "/tmp/shots", files = FILES, image = PNG, folds = [],
-  device = { viewport: { width: 1200, height: 800 } }, first = 0, hook = null, layout = LAYOUT, query = "", cols = null } = {}) {
+  device = { viewport: { width: 1200, height: 800 } }, first = 0, hook = null, layout = LAYOUT, query = "", cols = null, clock = false } = {}) {
   const opts = { renderers };
   const page = await browser.newPage({ reducedMotion: "reduce", ...device });   // windows at their place (e2e_motion checks the motion)
+  if (clock) await page.clock.install();
   const errors = [], sent = [];
   page.on("pageerror", (e) => errors.push(String(e)));
   await page.addInitScript(() => {
@@ -66,7 +67,7 @@ export async function open(browser, { renderers = true, agent = false, history =
     return route.fulfill({ contentType: TYPES[f.split(".").pop()] ?? "application/octet-stream", body,
       headers: p === "/" ? { "Content-Security-Policy": CSP } : {} });
   });
-  let say = null;
+  let say = null, receipt = 0;
   await page.routeWebSocket(`${ORIGIN.replace("http", "ws")}/ws`, (ws) => {
     say = (m) => ws.send(JSON.stringify(m));
     ws.onMessage((m) => {
@@ -89,9 +90,22 @@ export async function open(browser, { renderers = true, agent = false, history =
     say({ t: "settings", page: {}, css: 1 });                    // as terminumd greets a page (looks.rs hello): custom.css is fetched then
     say({ t: "layout", groups: agent ? [{ ...layout[0], items: [{ ...layout[0].items[0], agent: "claude", shell: false }] }] : layout });
   });
+  if (clock) {
+    await page.addInitScript(() => {
+      const Socket = WebSocket;
+      window.widgetReceipt = 0;
+      window.WebSocket = class extends Socket {
+        constructor(...args) {
+          super(...args);
+          this.addEventListener("message", (e) => { const m = JSON.parse(e.data); if (m.widgetReceipt) window.widgetReceipt = m.widgetReceipt; });
+        }
+      };
+    });
+  }
   await page.goto(`${ORIGIN}/${query}`);
-  await page.waitForFunction((n) => document.querySelectorAll("#screen .ln").length === n, screen.length + 1, { timeout: 10000 });
-  return { page, errors, sent, say: (m) => say(m), setRenderers: (on) => { opts.renderers = on; } };
+  await page.waitForFunction((n) => document.querySelectorAll("#screen .ln").length === n, screen.length + 1, { timeout: slack(10000) });
+  if (clock) await page.clock.pauseAt(await page.evaluate(() => Date.now() + 60000));
+  return { page, errors, sent, say: (m) => { if (!clock) return say(m); const id = ++receipt; say({ ...m, widgetReceipt: id }); return id; }, setRenderers: (on) => { opts.renderers = on; } };
 }
 
 // What the widgets are: per host row, its kind, mode, rendered body and error.

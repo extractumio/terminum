@@ -8,7 +8,7 @@ const PAGE = 200;
 const day = (at) => new Date(at * 1000).toLocaleDateString(undefined, { dateStyle: "medium" });
 
 export function archivedWindow({ openTask }) {
-  const box = $("archivedbox"), list = $("archivedlist"), find = $("archivedfind"), more = $("archivedmore");
+  const box = $("archivedpanel"), list = $("archivedlist"), find = $("archivedfind"), more = $("archivedmore");
   let project = null, have = 0, asked = 0;
 
   function row(t) {
@@ -39,16 +39,14 @@ export function archivedWindow({ openTask }) {
 
   function open(p) {
     project = p;
-    $("archivedhead").textContent = `Archived in ${p.name}`;
     find.value = "";
     list.replaceChildren();
-    box.showModal();
     read();
   }
 
   find.addEventListener("input", () => { clearTimeout(find.wait); find.wait = setTimeout(read, 200); });
   more.addEventListener("click", () => read(have));
   // a task's window may have brought one back
-  $("taskbox").addEventListener("close", () => { if (box.open) read(); });
+  $("taskbox").addEventListener("close", () => { if (!box.hidden && project) read(); });
   return { open };
 }

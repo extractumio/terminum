@@ -31,6 +31,7 @@ endif
 -include local.mk
 export TM_CODESIGN_IDENTITY
 export TM_MAC_RUNNER
+export TM_MAC_NODE_BIN
 export TM_LAND_INSTALL
 
 # one id per set of sources, compiled into terminumd (option_env!("TM_BUILD")) and the UI
@@ -41,7 +42,7 @@ export TM_BUILD_DATE := $(shell date +%Y-%m-%d)
 # which terminumd sources: an agent on a remote host works with this terminumd when the ids match
 export TM_AGENT_ID := $(shell python3 scripts/agents.py id)
 
-.PHONY: all build ui terminumd test check test-mac primary-checkout install install-stage installed hooks upgrade rollback uninstall package agents toolchain land leftovers release rehearse signing-key
+.PHONY: all build ui terminumd test check test-mac primary-checkout install install-stage installed hooks upgrade rollback uninstall package agents toolchain land leftovers release rehearse signing-key $(addprefix land-,$(LAND_STAGES))
 
 # this machine's platform (a Mac's own architecture, right under Rosetta too; or Linux's), the
 # package's terminumd for it
@@ -67,7 +68,7 @@ test: ui
 	-python3 scripts/check_docs.py
 	cd terminumd && cargo test --locked
 	# the release tooling (developer scripts); the command's own tests are in cargo test
-	python3 -m unittest discover -s scripts/tests
+	python3 scripts/test_scripts.py
 	cd ui && npx tsc -p . && npm test
 	node --test web/test/*.test.mjs
 
@@ -125,8 +126,17 @@ agents: ui
 	python3 scripts/agents.py build
 
 land:
-	@test -n "$(SLUG)" || { echo "usage: make land SLUG=<worktree>"; exit 2; }
-	python3 scripts/land.py "$(SLUG)"
+	@test -n "$(SLUG)" || { echo "usage: make land SLUG=<worktree> [TASK=<ID> RESULT=<file>]"; exit 2; }
+	TASK="$(TASK)" RESULT="$(RESULT)" python3 scripts/land.py "$(SLUG)"
+
+# the seven stages of a landing, each alone (scripts/land_stages.py, terminum-integration.md AC-198)
+LAND_STAGES := prepare verify queue check publish after cleanup
+.PHONY: $(addprefix land-,$(LAND_STAGES)) land-clean
+$(addprefix land-,$(LAND_STAGES)):
+	TASK="$(TASK)" RESULT="$(RESULT)" python3 scripts/land.py $(@:land-%=%) $(SLUG)
+
+# Cleanup's short name, as terminum's Integration tab calls it
+land-clean: land-cleanup
 
 leftovers:
 	python3 scripts/leftovers.py $(if $(END),--end)

@@ -1,13 +1,15 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-// A project's integration settings (terminum-integration.md AC-186): on or off, the target, the commands Check,
-// Publish and After, the batch's size, the check's time, and the agent of its own pool that analyses a red batch,
+// A project's integration settings (terminum-integration.md AC-186): on or off, the target, the commands of the
+// seven stages (AC-198: Prepare, Verify, Check, Publish, After, Cleanup; Queue is terminum's), the batch's size, the check's time, and the agent of its own pool that analyses a red batch,
 // with its budget, red rounds and prompt. terminumd checks what is kept and says what is wrong; "What runs" is its
 // words for the settings as saved.
+import { asTyped } from "./astyped.js";
 import { oneAtATime } from "./dialogs.js";
 import { el } from "./listparts.js";
-import { $, agentsOf, api, fillSelect, showError } from "./kanbanutil.js";
+import { $, agentsOf, api, fillSelect, say as toast, showError } from "./kanbanutil.js";
 
-const FIELDS = { target: "integrationtarget", check: "integrationcheck", publish: "integrationpublish", after: "integrationafter" };
+const LINES = ["prepare", "verify", "check", "publish", "after", "cleanup"];
+const FIELDS = { target: "integrationtarget", ...Object.fromEntries(LINES.map((k) => [k, `integration${k}`])) };
 const NUMBERS = { batch_most: "integrationbatch", check_minutes: "integrationminutes", agent_budget_minutes: "integrationbudget", red_rounds_most: "integrationrounds" };
 
 /** The INTEGRATION column (terminum-integration.md AC-193) stands where a shown project's integration is on, or while a
@@ -20,7 +22,8 @@ export function showIntegration(part, meta, chosen, n) {
 }
 
 export function integrationWindow({ getMeta }) {
-  const box = $("integrationbox");
+  const box = $("integrationpanel");
+  for (const k of LINES) asTyped($(FIELDS[k]));
   let project = null, defaultPrompt = "";
 
   const say = (text) => showError($("integrationerror"), text);
@@ -28,28 +31,24 @@ export function integrationWindow({ getMeta }) {
   const hints = () => {
     const target = $("integrationtarget").value.trim() || "origin/main";
     $("integrationpublishhint").textContent = `terminum pushes the candidate to ${target}, never forced.`;
-    for (const k of ["check", "publish", "after"]) $(`integration${k}hint`).hidden = !!$(FIELDS[k]).value.trim();
+    for (const k of LINES) $(`integration${k}hint`).hidden = !!$(FIELDS[k]).value.trim();
     $("integrationnoagent").hidden = !!$("integrationagent").value;
   };
 
   async function open(id) {
     project = id;
     say("");
+    $("integrationfields").hidden = true;   // until terminumd's values stand in them: nothing typed into a stale one
+    $("integrationok").hidden = true;
     const meta = getMeta();
-    $("integrationhead").textContent = `Integration of ${meta.projects.find((p) => p.id === id)?.name ?? id}`;
     let s;
     try {
       s = await api(`/api/task-projects/${id}/integration`);
     } catch (e) {
-      $("integrationfields").hidden = true;
-      $("integrationok").hidden = true;
-      say(e.message);
-      return box.showModal();
+      return say(e.message);
     }
     defaultPrompt = s.default_prompt;
     $("integrationelsewhere").hidden = s.here;
-    $("integrationfields").hidden = !s.here;   // a project on another server has no switch
-    $("integrationok").hidden = !s.here;
     $("integrationon").checked = s.on;
     for (const [k, field] of Object.entries(FIELDS)) $(field).value = s[k];
     for (const [k, field] of Object.entries(NUMBERS)) $(field).value = s[k];
@@ -57,17 +56,20 @@ export function integrationWindow({ getMeta }) {
     $("integrationprompt").value = s.prompt || defaultPrompt;
     $("integrationruns").replaceChildren(...s.runs.map((line) => el("li", null, line)));
     hints();
-    box.showModal();
+    $("integrationfields").hidden = !s.here;   // a project on another server has no switch
+    $("integrationok").hidden = !s.here;
   }
 
-  /** Kept, the window closes; refused, it says terminumd's words and keeps what was typed. One at a time. */
+  /** Kept, a toast says so and the tab shows what was kept; refused, it says terminumd's words and keeps what was typed. One at a time. */
   const save = oneAtATime(box, async () => {
     const body = { on: $("integrationon").checked, agent: $("integrationagent").value || null, prompt: $("integrationprompt").value };
     for (const [k, field] of Object.entries(FIELDS)) body[k] = $(field).value;
     for (const [k, field] of Object.entries(NUMBERS)) body[k] = $(field).value === "" ? null : Number($(field).value);
     try {
       await api(`/api/task-projects/${project}/integration`, { method: "PUT", body });
-      box.close();
+      say("");
+      toast("Integration kept");
+      await open(project);   // What runs, as kept
     } catch (e) { say(e.message); }
   });
 

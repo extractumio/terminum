@@ -21,13 +21,13 @@ pub const TOOL_USAGE: &str = "usage: terminum tool <name> ['<json arguments>' | 
 pub const TOKENS_USAGE: &str = "usage: terminum tokens [add <name> --role manager|worker --project <project> [--days N] | remove <name>]";
 
 /// Who calls: the pane of the environment, else outside one a token's holder.
-enum Caller {
+pub(super) enum Caller {
     Token(String),
     Pane(Env),
 }
 
 /// In a pane the pane's session calls, whatever token its environment holds: a token is for outside.
-fn caller(ctx: &Ctx) -> Result<Caller, String> {
+pub(super) fn caller(ctx: &Ctx) -> Result<Caller, String> {
     let env = Env { tmux: ctx.var("TMUX").map(str::to_string), pane: ctx.var("TMUX_PANE").map(str::to_string), ..Default::default() };
     if mcp::pane_of(&env).is_some() {
         return Ok(Caller::Pane(env));
@@ -54,6 +54,14 @@ fn call(ctx: &Ctx, who: &Caller, tool: &str, args: &Value) -> Result<(String, bo
     }
 }
 
+/// One call as `who`, its arguments checked first: the answer, or the refusal as the error.
+pub(super) fn ask(ctx: &Ctx, who: &Caller, tool: &str, args: &Value) -> Result<String, String> {
+    match call(ctx, who, tool, &mcp::checked(tool, args)?)? {
+        (text, false) => Ok(text),
+        (why, true) => Err(why),
+    }
+}
+
 /// A pane's call to the first sink that knows it.
 fn forward(body: &Value) -> Result<(u16, Option<Value>), Down> {
     super::sinks::first_knowing(&super::sinks::all(), |p| super::sockhttp::call(p, "POST", "/agent", Some(body), BUDGET))
@@ -63,10 +71,7 @@ fn forward(body: &Value) -> Result<(u16, Option<Value>), Down> {
 fn manager(ctx: &Ctx, who: &Caller) -> Result<bool, String> {
     match who {
         Caller::Pane(env) => Ok(mcp::manager(env, &|body| forward(body))),
-        Caller::Token(_) => match call(ctx, who, "probe", &json!({}))? {
-            (why, true) => Err(why),
-            (role, false) => Ok(role == crate::roles::name(true)),
-        },
+        Caller::Token(_) => Ok(ask(ctx, who, "probe", &json!({}))? == crate::roles::name(true)),
     }
 }
 
@@ -87,12 +92,7 @@ pub fn tool(ctx: &Ctx, name: &str, given: Option<&str>) -> Result<i32, String> {
     if super::mcp_catalog::card(name).is_none() {
         return Err(format!("No tool is named {name:?}: terminum tools lists them."));
     }
-    let args = mcp::checked(name, &args)?;
-    let (text, refused) = call(ctx, &who, name, &args)?;
-    if refused {
-        return Err(text);
-    }
-    ctx.say(text);
+    ctx.say(ask(ctx, &who, name, &args)?);
     Ok(0)
 }
 

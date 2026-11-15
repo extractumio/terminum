@@ -88,5 +88,6 @@ impl Sweeper {
 }
 
 fn is_step(path: &Path) -> bool {
-    path.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.starts_with("batch-") && n.ends_with(".log"))
+    path.file_name().and_then(|n| n.to_str()).is_some_and(|n|
+        (n.starts_with("batch-") || n.starts_with("verify-")) && n.ends_with(".log"))
 }

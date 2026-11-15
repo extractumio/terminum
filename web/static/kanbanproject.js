@@ -6,7 +6,7 @@
 import { oneAtATime } from "./dialogs.js";
 import { folderPicker } from "./kanbanfolder.js";
 import { integrationWindow } from "./kanbanintegration.js";
-import { $, DEFAULT, api, fillSelect, hostOptions } from "./kanbanutil.js";
+import { $, DEFAULT, api, fillSelect, hostOptions, say as toast } from "./kanbanutil.js";
 
 /** `agents`: the agents' section; `archived`: its Archived list (AC-118); `deleteProject(id)`: asks, as the session list's menu does; `chosen(id)`: a project just made is shown. */
 export function projectWindow({ getMeta, reload, agents, archived, deleteProject, chosen }) {
@@ -19,9 +19,9 @@ export function projectWindow({ getMeta, reload, agents, archived, deleteProject
   /** A number field: empty is none. */
   const numberOrNull = (id) => ($(id).value === "" ? null : Number($(id).value));
 
-  /** Its memory limits (terminum-dispatcher.md AC-128): empty goes by the global ones; 0 turns one off. */
+  /** Its memory limits (terminum-dispatcher.md AC-128), a tab: empty goes by the global ones; 0 turns one off. */
   function openLimits(project) {
-    const limits = $("limitsbox"), { projects, limits: all = [], global_limits: global } = getMeta();
+    const { projects, limits: all = [], global_limits: global } = getMeta();
     const now = all.find((l) => l.project === project);
     $("limitsfor").textContent = `For ${projects.find((p) => p.id === project)?.name ?? project}; empty goes by the global one, 0 turns one off.`;
     $("limitwarn").placeholder = `${global.warn} (global)`;
@@ -32,14 +32,32 @@ export function projectWindow({ getMeta, reload, agents, archived, deleteProject
     const kept = async (body) => {
       try {
         await api(`/api/task-projects/${project}/limits`, { method: "PUT", body });
-        limits.close();
+        toast("Memory limits kept");
         await reload();
       } catch (e) { $("limitserror").textContent = e.message; $("limitserror").hidden = false; }
     };
     $("limitsok").onclick = () => kept({ warn: numberOrNull("limitwarn"), end: numberOrNull("limitend") });
     $("limitsglobal").onclick = () => kept({ warn: null, end: null });
-    limits.showModal();
   }
+
+  /** The window's tabs (General, Agents, Integration, Memory limits, Archived): one shown, each filled as it is
+   *  chosen; a new project has General alone. Done and Delete are General's. */
+  const tabs = [...$("projecttabs").querySelectorAll("[role=tab]")], panels = [...box.querySelectorAll(".projpanel")];
+  function show(tab) {
+    for (const t of tabs) t.setAttribute("aria-selected", String(t.dataset.tab === tab));
+    for (const p of panels) p.hidden = p.dataset.tab !== tab;
+    const general = tab === "general";
+    // each tab's own keys stand in the window's foot, always in view
+    $("projectok").hidden = !general;
+    $("integrationok").hidden = tab !== "integration";
+    $("limitsok").hidden = $("limitsglobal").hidden = tab !== "limits";
+    $("projectdelete").hidden = !general || !shown || shown.id === DEFAULT;
+    if (tab === "limits") openLimits(shown.id);
+    if (tab === "integration") integration.open(shown.id);
+    if (tab === "archived") archived.open(shown);
+    if (tab === "agents") drawAgents();
+  }
+  for (const t of tabs) t.addEventListener("click", () => show(t.dataset.tab));
   /** The folder's field as tall as its path: a long one reads whole, on a phone too (AC-139). */
   const fit = () => { const f = $("projectdir"); f.style.height = "auto"; f.style.height = `${f.scrollHeight}px`; };
   $("projectdir").addEventListener("input", fit);
@@ -65,9 +83,8 @@ export function projectWindow({ getMeta, reload, agents, archived, deleteProject
     $("projectok").textContent = p ? "Done" : "Create";
     $("projectfields").hidden = !real;
     $("projectnodir").hidden = !p || !real || !!p.dir;      // terminum-dispatcher.md AC-140
-    $("projectagents").hidden = !p;
-    $("projectdelete").hidden = !p || !real;
-    if (p) drawAgents();
+    $("projecttabs").hidden = !p;
+    show("general");
     say("");
     box.showModal();
     fit();
@@ -117,9 +134,6 @@ export function projectWindow({ getMeta, reload, agents, archived, deleteProject
   $("projectpick").addEventListener("click", () => picker.open($("projecthost").value, $("projectdir").value, (path) => { $("projectdir").value = path; fit(); }));
   $("projectaddagent").addEventListener("click", () => agents.add(shown.id));
   $("projecttemplatereset").addEventListener("click", () => { $("projecttemplate").value = templateOf(null); });
-  $("projectlimits").addEventListener("click", () => openLimits(shown.id));
-  $("projectintegration").addEventListener("click", () => integration.open(shown.id));
-  $("projectarchived").addEventListener("click", () => archived.open(shown));
   $("projectdelete").addEventListener("click", () => { box.close(); deleteProject(shown.id); });
   /** What terminumd now says of the pool. */
   const refresh = () => { if (box.open && shown) drawAgents(); };

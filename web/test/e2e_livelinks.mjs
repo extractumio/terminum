@@ -2,7 +2,8 @@
 // AC-35 against a real private terminumd and tmux (e2e_live.mjs): a link a program printed with a
 // text of its own (OSC 8, as Claude Code prints "⧉ Attack and Compromise Detection — MR !318")
 // reaches the page with its address, is underlined and opens that address with ⌘ (Ctrl elsewhere);
-// a javascript: one stays plain text.
+// a javascript: one stays plain text. A folder's printed path opens it in Files, closed or open,
+// only where Files can show it.
 import fs from "node:fs";
 import path from "node:path";
 import { check } from "./check.mjs";
@@ -42,4 +43,85 @@ export async function liveLinks(page, { work }) {
   check("AC-35 an OSC 8 link wider than the pane is a link on its first row; the text after it is not",
     halves.length === 2 && LONG.startsWith(halves[1]) && halves[1].length > 20 && !halves.some((t) => t.includes("after")), JSON.stringify(halves));
   fs.rmSync(file, { force: true });
+  await liveFolderLink(page, { work, mod });
+}
+
+/** In the page: the visible text's center; clear can leave its command in history too. */
+function textPoint(want) {
+  const view = document.getElementById("term").getBoundingClientRect();
+  for (const row of document.querySelectorAll("#term .ln")) {
+    const walk = document.createTreeWalker(row, NodeFilter.SHOW_TEXT);
+    for (let t = walk.nextNode(); t; t = walk.nextNode()) {
+      const i = t.data.indexOf(want);
+      if (i < 0) continue;
+      const r = document.createRange();
+      r.setStart(t, i); r.setEnd(t, i + want.length);
+      const b = r.getBoundingClientRect();
+      if (!b.width || b.top < view.top || b.bottom > view.bottom) continue;   // clear left an earlier command in history
+      return { x: b.left + b.width / 2, y: b.top + b.height / 2 };
+    }
+  }
+  return null;
+}
+
+/** ⌘-click (Ctrl elsewhere) only while the wanted text is still under the pointer. Hovering
+ *  can coincide with a pane redraw: another link's hand cursor must not count for this path. */
+async function clickText(page, text, mod, ready = false) {
+  for (const end = Date.now() + 5000; Date.now() < end;) {
+    const at = await page.waitForFunction(textPoint, text, { timeout: Math.max(1, end - Date.now()) }).then((h) => h.jsonValue(), () => null);
+    if (!at) return false;
+    await page.keyboard.down(mod);
+    try {
+      await page.mouse.move(at.x + 1, at.y); await page.mouse.move(at.x, at.y);
+      const linked = !ready || await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => resolve(document.getElementById("term").classList.contains("onlink")))));
+      const now = await page.evaluate(textPoint, text);
+      if (!now || now.x !== at.x || now.y !== at.y) continue;
+      if (linked) await page.mouse.click(at.x, at.y);
+      return linked;
+    } finally { await page.keyboard.up(mod); }
+  }
+  return false;
+}
+
+async function liveFolderLink(page, { work, mod }) {
+  const outside = fs.mkdtempSync(path.join(path.dirname(work), "tmlo-"));
+  fs.mkdirSync(path.join(work, "shots/ipad"), { recursive: true });
+  fs.writeFileSync(path.join(work, "shots/ipad/coach.png"), "");
+  try {
+    await page.click("#term");
+    await page.keyboard.type(`clear; echo in shots/ipad/ not ${outside}/`);
+    await page.keyboard.press("Enter");
+    const hidden = () => page.evaluate(() => document.getElementById("files").hidden);
+    const wasOpen = !(await hidden());
+    // The Files button works on every runner; the page's IDE shortcut is Meta+B even on Linux.
+    const toggleFiles = () => page.click('button[data-view="files"]');
+    if (wasOpen) await toggleFiles();              // Files closed: the frame keeps its pane, hidden
+    // A path is a link once its folder was listed. Wait for its cursor, then click once:
+    // repeated clicks can leave several asynchronous opens pending (paneInfo()).
+    const tree = await (await page.$("#files")).contentFrame();
+    const shownIn = () => tree.waitForFunction(() => {
+      const names = [...document.querySelectorAll("#tree .row")].map((e) => e.querySelector(".name")?.textContent ?? e.textContent);
+      const sel = document.querySelector("#tree .row.sel");
+      return sel && /ipad/.test(sel.textContent) && names.some((n) => /coach\.png/.test(n)) ? names : null;
+    }, null, { timeout: 1500 }).then((h) => h.jsonValue(), () => null);
+    let shown = null;
+    for (let i = 0; i < 15 && !shown; i++) {
+      if (i) await page.waitForTimeout(400);       // the listing that makes it a link is on its way
+      if (!(await clickText(page, "shots/ipad/", mod, true))) continue;
+      shown = await page.waitForSelector("#files:not([hidden])", { timeout: 8000 }).then(shownIn, () => null);
+      break;
+    }
+    // Check the outside folder separately, after the wanted click finished and listings settled.
+    // Its asynchronous opening must not be mistaken for an outside click opening Files.
+    if (!(await hidden())) await toggleFiles();
+    const other = await clickText(page, `${path.basename(outside)}/`, mod);
+    const closed = await page.waitForSelector("#files:not([hidden])", { timeout: 1500 }).then(() => false, () => true);
+    check("AC-35 a folder's printed path opens Files with the folder selected and open; a folder Files cannot show is no link",
+      closed && other && !!shown, JSON.stringify({ closed, other, shown }));
+    const isOpen = !(await hidden());
+    if (isOpen !== wasOpen) await toggleFiles();
+  } finally {
+    fs.rmSync(outside, { recursive: true, force: true });
+    fs.rmSync(path.join(work, "shots"), { recursive: true, force: true });
+  }
 }

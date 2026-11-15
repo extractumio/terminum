@@ -14,7 +14,11 @@ SCRIPT = Path(__file__).resolve().parents[1] / "ci_mac.sh"
 SSH = """#!/bin/bash
 for a; do last=$a; done
 echo "ssh ${last//$'\n'/ }" >> "$LOG"
-case $last in *"bash -lc"*) exit "${RUN_RC:-0}" ;; *"mkdir ci/terminum.lock"*) [ -z "${LOCK_RC:-}" ] || exit "$LOCK_RC" ;; esac
+case $last in *"bash -lc"*)
+    if [ -n "${RUN_BODY:-}" ]; then HOME="$RUNNER" /bin/bash -c "$last"; exit $?; fi
+    exit "${RUN_RC:-0}" ;;
+    *"mkdir ci/terminum.lock"*) [ -z "${LOCK_RC:-}" ] || exit "$LOCK_RC" ;;
+esac
 cd "$RUNNER" && bash -c "$last"
 """
 RSYNC = """#!/bin/bash
@@ -107,6 +111,30 @@ class CiMacTest(unittest.TestCase):
         self.assertNotEqual(r.returncode, 0)
         self.assertNotIn("rsync", log)
         self.assertFalse((self.root / "runner/ci/terminum.lock").exists())
+
+    def test_remote_preflight_precedes_expensive_setup_and_passes_the_path_literally(self):  # AC-104
+        repo = SCRIPT.parent.parent
+        target = self.root / "runner/ci/terminum/scripts"
+        target.mkdir(parents=True)
+        for name in ("ci_mac_node.sh", "ci_mac_sqlite.mjs"):
+            (target / name).write_bytes((repo / "scripts" / name).read_bytes())
+        chosen = self.root / "Node 26's bin; literal"
+        chosen.mkdir()
+        (chosen / "node").write_text('#!/bin/bash\nif [ "$1" = --version ]; then echo "$TEST_NODE_VERSION"; exit 0; fi\necho probe >> "$LOG"\nexit "${PROBE_RC:-0}"\n')
+        (chosen / "node").chmod(0o755)
+        cargo = self.root / "runner/.cargo/bin"
+        cargo.mkdir(parents=True)
+        for name in ("tmux", "rustup"):
+            (cargo / name).write_text('#!/bin/bash\necho "setup:$0" >> "$LOG"\nexit 1\n')
+            (cargo / name).chmod(0o755)
+        for version, probe, reached in (("v24.3.0", "0", False), ("v26.7.0", "1", False), ("v26.7.0", "0", True)):
+            with self.subTest(version=version, probe=probe):
+                result, log = self.run_script(self.root, RUN_BODY="1", TM_MAC_NODE_BIN=str(chosen), TEST_NODE_VERSION=version, PROBE_RC=probe)
+                self.assertEqual(result.returncode, 2, result.stderr)
+                self.assertEqual(any(x.startswith("setup:") for x in log), reached, log)
+                self.assertFalse((self.root / "runner/ci/terminum.lock").exists())
+                if not reached:
+                    self.assertIn("Node 26", result.stderr)
 
 
 if __name__ == "__main__":

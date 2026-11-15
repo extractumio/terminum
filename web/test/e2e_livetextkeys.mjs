@@ -50,10 +50,7 @@ export async function liveTextKeys(page, live, phone = false) {
     await page.click("#fproject summary");
     await page.click(`#fproject button[aria-label="Edit ${name}"]`);
     await page.waitForSelector("#projectbox[open]");
-    for (const [key, sel, box] of [["AC-118 Archived…", "#projectarchived", "#archivedbox"], ["AC-128 Memory limits…", "#projectlimits", "#limitsbox"]]) {
-      r = await pressed(page, sel, async () => { await page.keyboard.press("Escape"); await shut(page, box); });
-      check(`${key}, pressed, its window closed by Esc: no ring round it`, !r.lit && !r.focused, JSON.stringify(r));
-    }
+    // its Archived and Memory limits are tabs of it (terminum-kanban.md AC-139): no window opens over it
     await page.keyboard.press("Escape");
     await shut(page, "#projectbox");
     // Tab still reaches a text key and rings it

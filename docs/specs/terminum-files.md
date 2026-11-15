@@ -335,6 +335,11 @@ Scenario: AC-61 edge — a failed watch, bursts and stale listings
   Given installing a filesystem watch failed temporarily
   When the same folder is requested again after the cause clears
   Then the watch is retried and only successfully installed subscriptions count as watched
+  Given native filesystem notifications are delayed or lost after a subscription is installed
+  When another program edits or deletes an open file, or creates or deletes a child of a watched folder
+  Then metadata reconciliation of those explicit paths recovers the change through the same 500 ms batch; dirty contents stay and the real edit or deletion is shown
+  And newly tracked files are checked even if the edit preceded the workspace save; missing paths stay tracked so recreation is detected; a metadata error other than not-found is not a deletion
+  And reconciliation performs no directory enumeration and no blocking filesystem work on an async worker
   When "npm install" writes 40,000 files into an expanded "node_modules"
   Then the tree updates at most twice a second; an older listing page arriving after a fresh one cannot replace it, nor an older re-finding of an expanded folder's children collapse one a newer read found
   And of two re-checks of an open file, or a re-check sent before a save, the older answer arriving last is dropped: the tab keeps the newer content
@@ -438,7 +443,7 @@ Scenario: AC-66 edge — remembered, across unloaded pages
 ```gherkin
 Scenario: AC-67 happy path — Markdown, HTML, anchors, web
   When the user clicks a link to "docs/guide.md" in a rendered file
-  Then "docs/guide.md" opens in a new tab Rendered; a link to "docs/report.html#sec2" opens report.html rendered in a sandboxed frame scrolled to "#sec2" with its relative images; "<a href='../README.md#sandbox'>" inside report.html opens README.md at "#sandbox"; "Reveal in tree" expands the file's folders and selects it; it is offered only for a file under the folder Files shows (the pane's, which the page tells View)
+  Then "docs/guide.md" opens in a new tab Rendered; a link to "docs/report.html#sec2" opens report.html rendered in a sandboxed frame scrolled to "#sec2" with its relative images; "<a href='../README.md#sandbox'>" inside report.html opens README.md at "#sandbox"; "Reveal in tree" expands the file's folders and selects it (a file the tree does not show says "Not shown in the tree: <path> (hidden, filtered out or gone)", one outside its folder "Not in this tree: <path> is outside <folder>"); it is offered only for a file under the folder Files shows (the pane's, which the page tells View)
   When the user clicks a link to "https://github.com/tmux/tmux"
   Then the reader's default browser opens it (new tab, noopener) and the panel stays
 
@@ -669,6 +674,7 @@ A crash never leaves a half-written file.
 | AC-51 | The badge shows only `tmux` or `remote`: never "GONE" or the program's name. Nothing sends `stale` or `note`, so "cwd unavailable — showing last known" never shows. A gone folder shows its error row in the tree instead. | `ui/src/main.ts:151`, `ui/src/main.ts:162`, `terminumd/src/panel_api.rs:34` |
 | AC-51 | `web/test/e2e_files.mjs`, named as the measure of "p95 < 1 s over 20 cds", does not exist; only a single wait with a budget checks it. | `ui/test/e2e_panel.mjs:54` |
 | AC-52 | j and k do not move the selection; ↓ and ↑ do. | `ui/src/tree-input.ts:102` |
+| AC-61 | Standalone View files have no watch subscription of their own: refresh depends on a Panel watching their parent, and workspace-based metadata reconciliation does not include their tabs. | `ui/src/main.ts:startViewer`, `ui/src/main.ts:stream.open`, `terminumd/src/app.rs:refresh_watch` |
 | AC-62 | ⌥W, ⌃Tab and `/` work but no test presses them. | `ui/src/main.ts:397`, `ui/src/main.ts:417`, `ui/src/main.ts:418` |
 | AC-63 | "10 of 500,000" is not shown: a filtered folder shows its rows and no count. The 500 ms budget is not measured: `scripts/bench_ls.sh` sends no filter. | `ui/src/tree-rows.ts:60`, `scripts/bench_ls.sh:19` |
 | AC-65 | ⌘⇧. is not bound: only the eye button toggles. A selected item that becomes hidden leaves the selection; the selection does not move to its parent. | `ui/src/main.ts:383`, `ui/src/tree.ts:119` |
@@ -702,7 +708,7 @@ All `/fb/api/*` need the sign-in header (`terminum.md` AC-09), a remote host's i
 | `POST /api/os/{reveal,open}` | Finder, default app | AC-60 |
 | `POST /api/terminal/{insert,cd}` | `{key, paths}` / `{key, path}` | AC-60 |
 | `GET/PUT /api/workspace?key&cwd` | per-pane state with `rev`, `X-TM-Client`; a GET's `cwd` re-roots it when the folder moved | AC-55, AC-71 |
-| `PUT /api/watch` | `{root, expanded}`: the folders this panel watches | AC-61 |
+| `PUT /api/watch` | `{root, expanded, files}`: the folders and open files the Mac asks its host's Agent to watch | AC-61 |
 | `GET/PUT /api/prefs` | `{hidden, split, sort}` | AC-52, AC-65, AC-70 |
 | `GET /api/state?host` | the build, `unsaved` (the last failed write of workspaces.json, or null) and a host's files offer | AC-71, `terminum-remote.md` AC-83 |
 | `GET /api/ws` | the panel's socket: `{"event","data"}` frames `state`, `fs-change {host, dirs, files, moved}`, `workspace {key, rev, by}`, `rescan {host}`, `host {host}` (a host's files offer changed: read `/api/state` again) and `unsaved {error}` (workspaces.json not written, or written again: null) | AC-61, AC-71 |

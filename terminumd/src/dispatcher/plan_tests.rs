@@ -63,6 +63,20 @@ fn ac123_activity_starts_the_idle_clock_anew() {
 }
 
 #[test]
+fn ac123_integration_stops_the_idle_clock_and_requests() {
+    let mut r = run("INTEGRATION");
+    r.turn_ended = true;
+    r.idle_for = NOTHING - 1;
+    r.budget = Some(7200);
+    r.budget_used = 600;
+    for _ in 0..240 {
+        assert!(step(&mut r, &up(30)).is_empty(), "integration sends no request or failure");
+        assert_eq!(r.idle_for, 0, "the queue's time is no idle time");
+    }
+    assert_eq!(r.budget_used, 600, "the budget is paused too");
+}
+
+#[test]
 fn ac123_an_hour_of_nothing_is_failed_never_done() {
     let mut r = run("IN PROGRESS");
     assert_eq!(moved(&step(&mut r, &up(3599))), None);

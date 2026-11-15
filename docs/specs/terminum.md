@@ -605,7 +605,7 @@ Scenario: AC-18 happy path — the panel
   And while a finger scrolls the terminal, from its first move until it lifted and the terminal stopped scrolling, every floating button ("To the bottom" too) is out of sight (the text under them can be read) and takes no tap; back 1 s after
   And while the user scrolls the terminal by wheel, key or scroll bar (wide or phone), the floating buttons' column fades and takes no tap, back 1 s after the scroll stops or at once with the pointer near it or the focus on it; the page's own scroll (output followed) and a scroll while a pane it opened is open (find's field, the sent history, bookmarks, reminders) leave it
   And on a computer the header's settings button is a cog and its menu opens right under it, inside the window, scrolling when taller than the room under the button
-  And every dialog, pane and menu (the settings menu, a row's and a host's menu, the list's forms, the sent history, the reminders, the bookmarks, the input's menu, Ask, a bookmark's note, Paste, a confirmation) opens centered on the visible screen (above the on-screen keyboard), as wide as the screen less 16 px a side, as tall as its content and at most the visible height less 32 px (scrolling inside; one to type in, to pick from or to read: that height, AC-173), modal: the page shaded behind it, a press outside or Esc closes it
+  And every dialog, pane and menu (the settings menu, a row's and a host's menu, the list's forms, the sent history, the reminders, the bookmarks, the input's menu, Ask, a bookmark's note, Paste, a confirmation) opens centered on the visible screen (above the on-screen keyboard), as wide as the screen less 16 px a side, as tall as its content and at most the visible height less 32 px (scrolling inside; one to type in, to pick from or to read: that height, AC-173), modal: the page shaded behind it, a press outside or Esc closes it; on a phone (600 px wide or narrower) a window with fields, a text to type, a list to pick from or a document covers the screen instead (AC-173)
   And a press on ⟨…⟩ or a button of its column first puts the on-screen keyboard and the hot keys panel away
   And a coding agent's input box is a tint of the terminal's colors with no frame
   And Files and View, shown in the terminal's place, fill the whole space under the tabs
@@ -929,7 +929,7 @@ Scenario: AC-152 happy path — the charts of You
   Then "Active time" draws a column of active time stacked by project (its six with the most, their session list colors, a project no longer there a hue by its rank, the rest as Other), weekends shaded, the last column faint, a dashed line at the usual (the median of the columns with any); "Context switching" beside it a column of switches an active hour (none for a column under 30 active minutes), a dashed line at the usual (their median), a column over 1.5 times it amber, its line saying how many columns are over; "Engagement" as its scenario says; "Working day", when a column is a day, a column a day from the first to the last event, the active stretches solid on it, from light blue in the morning to dark blue at night, 22:00 to 06:00 shaded, midnight on top; "When you work", but for a Day, the active minutes of each hour of an average week (Monday first; two hours a cell on a phone); "Projects" ranked bars of active time with share; "Sessions at once" columns of the sessions written to, the most in one hour as a narrower bar inside each, a legend for both, a dashed line at the usual; "On the board" columns of the human's board actions stacked by kind
   And the charts of You color a kind by its meaning, never in a project's color, but for "Active time" and "Projects": the board's kinds their own hues, the engaged minutes blues; a column's top is rounded, and while one is chosen the others dim
   And hover, a tap or the keys (← → Home End) say a column's values in a line over its chart; Enter or a click on a column of "Active time" opens the Message history of its days, the human's (`?from=&to=&sender=human`); a project's chip narrows the Dashboard to it, a project's row opens its messages of the period
-  And a column chosen by the keys stays chosen while its chart holds the focus and is drawn anew (the window's width changed, a scrollbar came or went): its line still says it, and Enter still opens it
+  And a column chosen by the keys stays chosen while its chart holds the focus and is drawn anew (the window's width changed, a scrollbar came or went): its line still says it, and Enter still opens it; drawn with another number of columns, none stays chosen
 
 Scenario: AC-152 happy path — active time
   Then active time is the human's sends, input rows' first and last keys and board actions in time order, a pause over 15 minutes ending a stretch, each stretch from its first event to its last and 2 minutes more (reading the answer), split at hours and midnights
@@ -1036,9 +1036,9 @@ Scenario: AC-173 happy path — each kind its own size
   Then each dialog takes its parent's 80% within its kind's floor and ceiling, never more than the window less 16 px a side:
     | Kind | Dialogs | Width | Height |
     | a question | a confirmation, a name, enabling agents' hooks on a host, + Session's agents (as wide as their tiles, terminum-dispatcher.md AC-142) | 360–480 px | as its words |
-    | fields to set | Convert to task, an agent, a project (720 px; 960 with its agents' list), Auto-Dispatcher, memory limits | 480–640 px | as its fields, scrolling past the window less 32 px |
-    | a text to type | RUN, New task, a schedule (640 px high at least), Ask and a bookmark's note (560 px high at most), Paste | 520–960 px | 80%, 480–880 px; the text field takes the rest |
-    | a list to pick from | a folder, the archived tasks | 480–720 px | 80%, 360–760 px; the list takes the rest |
+    | fields to set | Convert to task, an agent, Auto-Dispatcher | 480–640 px | as its fields, scrolling past the window less 32 px |
+    | a text to type | RUN, New task, a schedule (640 px high at least), Ask and a bookmark's note (560 px high at most), Paste, a project's window and its tabs (720 px wide at most; 960 on its Agents tab, terminum-kanban.md AC-139) | 520–960 px | 80%, 480–880 px; the text field takes the rest |
+    | a list to pick from | a folder | 480–720 px | 80%, 360–760 px; the list takes the rest |
     | a document | a task, the bookmarks (960 px wide at most), a session's last lines (1280) | 560–920 px for a task | 80%, 420 px at least |
   And a dialog that takes 80% of the height keeps its buttons at its foot, also when what is above them is short or empty
   And every dialog's buttons stay at its foot, in sight while what is above them scrolls: a task's window's Archive, Save and Run under its scrolling task, a form's Save on a window shorter than its fields
@@ -1047,6 +1047,14 @@ Scenario: AC-173 happy path — each kind its own size
 Scenario: AC-173 edge — a phone or a narrow window
   Given a phone, or a window 860 px wide or narrower
   Then every dialog is a sheet as wide as the screen less 16 px a side (AC-18); one to type in, to pick from or to read is as tall as what is in sight above the on-screen keyboard less 16 px a side, its buttons in sight; a question or a form stays as tall as its content
+Scenario: AC-173 edge — a phone's windows cover the screen
+  Given a screen 600 px wide or narrower
+  When a window with fields, a text to type, a list to pick from or a document opens (every kind but a question; the list's forms New session, Add host and Attach tmux sessions too)
+  Then it covers what is in sight above the on-screen keyboard, edge to edge, with one bar at its top that stays there while the rest scrolls: × at the left, the title (cut with an ellipsis), then its ways on (Cancel's place is ×'s; the primary last), each 44 px high
+  And what is seldom pressed (Add files, Discard, Delete, Archive, New task from selection) stays a row at the end of its fields, under them; a window with nothing but ways on has no foot
+  And its text field takes all the room its other fields leave; × closes it as on a computer, a draft kept where one is kept
+  And a question (a confirmation, a name, + Session's agents), a menu, a pane of a floating button and the counters' lines stay centered sheets (AC-18), their buttons at their foot
+  And a tablet, and a computer's window 601 px wide or wider, keep the sheets and dialogs above
 ```
 
 ### AC-184 — A box to read or type in over the whole window [SHOULD / P1]
@@ -1069,6 +1077,7 @@ Scenario: AC-184 edge — a window over it, a phone, a board update
   Given a box shown over the whole window
   When a question opens over it (a conflict on Save), the user's Esc answers the question, the box stays over the window
   And on a phone or a narrow window the box covers what is in sight above the on-screen keyboard, and its key is a finger's size (44 px)
+  And on a screen 600 px wide or narrower a text field to type in has no such key: its window covers the screen already (AC-173); a text shown to read keeps it
   And while a box in a task's window covers the window, a board update redraws nothing under it
   And prose read so stands in a column at most 920 px wide in the middle; a text field and lines take the whole width
 ```
@@ -1288,6 +1297,7 @@ stateDiagram-v2
 | AC-176 | A Run that goes on in a live session starts no run and is no start: it counts as the human's message alone. | `terminumd/src/dashboard/work.rs` (`read`) |
 | AC-171 | A session's start is its launch row of the input log, kept 180 days: a year's System counts the sessions of the days kept. `runs` has no start or end of its own. | `terminumd/src/dashboard/system.rs` (`read`) |
 | AC-172 | A session the user starts themselves reports no tokens: Costs holds Dispatcher's sessions only. A subscription's fee and its windows' use over time are not kept, so Costs shows list-price dollars and the agents' token limits, not what a subscription cost. | `terminumd/src/dashboard/costs.rs`, `terminumd/src/dispatcher/usage.rs` |
+| AC-18 | A hardware keyboard is known only by a key that comes while the terminal has the keys and the view did not shrink; a key an on-screen keyboard does not send (an arrow, Esc, Tab, a ⌘, ⌃ or ⌥ chord) marks none by itself. | `web/static/onekbd.js:36` |
 
 ## 8. Recommendation and ownership
 
@@ -1551,8 +1561,8 @@ All cases are shipped. What AC-195's lines may call for, each only once the inst
 - [x] AC-167 — `web/test/e2e_sections.mjs` (in `e2e_all.mjs`), `web/test/e2e_livehistory.mjs`, `web/test/e2e_liveboardsession.mjs`, `cargo test page_tests`
 - [x] AC-171 — `cargo test dashboard::`, `web/test/e2e_livehistory.mjs`
 - [x] AC-172 — `cargo test dashboard::`, `web/test/e2e_livehistory.mjs`
-- [x] AC-173 — `web/test/e2e_dlgsize.mjs` (a form's buttons held at its foot on a short window), `web/test/e2e_taskwin.mjs` (a task's window's keys outside what scrolls), `web/test/e2e_dialogcenter.mjs`, `web/test/e2e_marks.mjs`, `web/test/e2e_ask.mjs`
-- [x] AC-184 — `web/test/e2e_expand.mjs`, `web/test/e2e_taskwin.mjs`
+- [x] AC-173 — `web/test/e2e_dlgsize.mjs` (a form's buttons held at its foot on a short window), `web/test/e2e_taskwin.mjs` (a task's window's keys outside what scrolls), `web/test/e2e_dialogcenter.mjs`, `web/test/e2e_marks.mjs`, `web/test/e2e_ask.mjs`, `web/test/e2e_phonewin.mjs` (a phone's windows: 390 and 320 px, and the sheet a 700 px window keeps)
+- [x] AC-184 — `web/test/e2e_expand.mjs`, `web/test/e2e_taskwin.mjs`, `web/test/e2e_phonewin.mjs` (a phone's text field has no key)
 - [x] AC-175 — `cargo test interact::`, `cargo test dashboard::`, `web/test/e2e_livehistory.mjs`
 - [x] AC-176 — `cargo test dashboard::`, `web/test/e2e_livehistory.mjs`
 - [x] AC-195 — `cargo test tasks::store::tests::ac195`, `cargo test tmux::control::tests::ac195`, `cargo test slow::`; the bench by hand: `scripts/bench_busy.py`

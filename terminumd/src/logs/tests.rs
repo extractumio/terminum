@@ -229,6 +229,27 @@ fn ac196_legacy_cleanup_has_a_fixed_delete_budget() {
 }
 
 #[test]
+fn ac196_verify_and_batch_snapshots_share_expiry_and_count() {
+    let dir = Temp::new();
+    let project = dir.0.join("integration/test-project");
+    fs::create_dir_all(&project).unwrap();
+    for i in 0..INTEGRATION.keep + 2 {
+        let name = if i % 2 == 0 { format!("verify-{i}.log") } else { format!("batch-{i}.1.check.log") };
+        snapshot(&project.join(name), "recent\n").unwrap();
+    }
+    let old = project.join("verify-expired.log");
+    snapshot(&old, "expired\n").unwrap();
+    File::options().write(true).open(&old).unwrap()
+        .set_modified(SystemTime::now() - INTEGRATION.age - Duration::from_secs(1)).unwrap();
+    let unrelated = project.join("retained.txt");
+    fs::write(&unrelated, "not a log\n").unwrap();
+    Sweeper::new(dir.0.clone()).tick().unwrap();
+    assert!(!old.exists());
+    assert!(unrelated.exists());
+    assert_eq!(fs::read_dir(project).unwrap().count(), INTEGRATION.keep + 1);
+}
+
+#[test]
 fn ac196_exit_flush_works_after_rust_thread_locals_are_destroyed() {
     let dir = Temp::new();
     let output = Command::new(std::env::current_exe().unwrap())

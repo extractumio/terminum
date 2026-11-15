@@ -5,7 +5,7 @@
 // defaults, messages and hot keys, and custom.css (AC-18, AC-19), and the page's words.
 
 import { check, runningIn } from "./check.mjs";
-import { drawn, foldFoot, group, item, LAYOUT, openPage, pause, SIZES, pressFoot } from "./fake.mjs";
+import { drawn, foldFoot, group, item, LAYOUT, openPage, pause, SIZES, pressCancel, pressFoot } from "./fake.mjs";
 
 /** Clicks a button of a group's header: the pointer over the header first, where its buttons show. */
 const headClick = async (page, grp, btn) => { await page.hover(`${grp} h2 .label`); await page.click(`${grp} h2 ${btn}`); };
@@ -271,7 +271,7 @@ export async function webTmux(browser, name) {
     f.say({ t: "tmuxsessions", ref: last("tmuxsessions").ref, server: "box:default", names: ["api", "db"] });
     await pause(page);
     const boxTicks = await page.evaluate(() => [...document.querySelectorAll("#addtmuxticks input")].map((b) => `${b.value}:${b.checked}`));
-    await page.click("#addtmuxcancel");
+    await pressCancel(page, "#addtmux");
     check("AC-89 after Add host, once the host is attached with other sessions, Attach tmux sessions opens on it with them unticked",
       !early && offered2.open && offered2.on === "box:default" && offered2.asked?.server === "box:default" && boxTicks.join() === "api:false,db:false",
       JSON.stringify({ early, offered2, boxTicks }));
@@ -279,13 +279,13 @@ export async function webTmux(browser, name) {
     await headClick(page, '#sessions .grp[data-wid="box/terminum"]', '.import');
     await pause(page);
     const byIcon = { open: await page.isVisible("#addtmux"), on: await page.inputValue("#addtmuxon") };
-    await page.click("#addtmuxcancel");
+    await pressCancel(page, "#addtmux");
     await headClick(page, '#sessions .grp[data-wid="box/terminum"]', '.hostbtn');
     const boxMenu = await page.evaluate(() => [...document.querySelectorAll("#hostmenu button")].map((b) => b.textContent));
     await page.click('#hostmenu button[data-action="import"]');
     await pause(page);
     const byMenu = await page.inputValue("#addtmuxon");
-    await page.click("#addtmuxcancel");
+    await pressCancel(page, "#addtmux");
     f.say({ t: "layout", groups: [...LAYOUT, boxg("attached", 0)] });
     await pause(page);
     const none = await page.isHidden('#sessions .grp[data-wid="box/terminum"] h2 .import');

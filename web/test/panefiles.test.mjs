@@ -11,16 +11,16 @@ performance.now = () => now;                       // the module's clock
 const tick = (ms = 300) => new Promise((r) => setTimeout(r, ms));   // answers, then the 250 ms "turned up"
 
 /** A pane in `cwd` and a fake fbd listing `folders` ({dir: [names]}); `big`: folders past a page. */
-function fake(folders, { cwd = "/Users/alex/p", big = new Set(), info = null } = {}) {
+function fake(folders, { cwd = "/Users/alex/p", big = new Set(), info = null, shows } = {}) {
   const asked = [], pane = { cwd, home: "/Users/alex", host: null };
   const files = paneFiles(async () => info ?? { ...pane }, async (url) => {
     const q = new URL(url, "http://x").searchParams;
     asked.push(Object.fromEntries(q));
     const names = folders[q.get("path")] ?? [];
     const f = q.get("filter");
-    const entries = names.filter((n) => !f || n.includes(f)).slice(0, big.has(q.get("path")) && !f ? 2 : 500).map((n) => ({ n, k: n.endsWith("/") ? "d" : "f" }));
+    const entries = names.filter((n) => !f || n.includes(f)).slice(0, big.has(q.get("path")) && !f ? 2 : 500).map((n) => (n.endsWith("/") ? { n: n.slice(0, -1), k: "d" } : { n, k: "f" }));
     return { status: "ready", total: f ? entries.length : names.length, entries };
-  });
+  }, shows);
   return { files, asked, pane };
 }
 
@@ -60,6 +60,19 @@ test("a file not there is looked for again later, then less often; a folder is n
   assert.equal(asked.length, n, "not again within 10 s");
   now += 6000; files.there("new.md"); await tick();
   assert.equal(files.there("new.md"), true);
+});
+
+test("a folder is there only where Files can show it, and is told from a file (AC-35)", async () => {
+  const folders = { "/Users/alex/p": ["shots/", "a.md"], "/Users/alex/p/shots": ["ipad/"], "/Users/alex": ["other/"] };
+  const under = (path, pane) => path === pane.cwd || path.startsWith(`${pane.cwd}/`);
+  const { files, asked } = fake(folders, { shows: under, big: new Set(["/Users/alex/p/shots"]) });
+  const names = ["shots/", "shots", "/Users/alex/p/shots/ipad/", "a.md", "~/other/", "shots/none/"];
+  for (let i = 0; i < 2; i++) { for (const n of names) files.there(n); await tick(); }
+  assert.deepEqual(names.map((n) => files.there(n)), [true, true, true, true, false, false]);
+  assert.deepEqual(names.map((n) => files.isFolder(n)), [true, true, true, false, false, false]);
+  assert.equal(files.pathOf("shots/"), "/Users/alex/p/shots");
+  assert.equal(files.pathOf("~/other/"), null, "outside what Files shows");
+  assert.ok(!asked.some((q) => q.path === "/Users/alex"), "nor listed for it");
 });
 
 test("a folder larger than a page is asked by name", async () => {

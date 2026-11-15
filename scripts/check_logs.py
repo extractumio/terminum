@@ -73,6 +73,22 @@ def tail(path, lines=15):
     return kept
 
 
+def preserve_attempt(path, destination):
+    """Move a closed sink's bounded history and clock, clearing stale destination members."""
+    for suffix in (".2", ".1", ""):
+        source, target = Path(str(path) + suffix), Path(str(destination) + suffix)
+        if source.exists():
+            source.replace(target)
+        else:
+            target.unlink(missing_ok=True)
+    source = path.with_name("." + path.name + ".since")
+    target = destination.with_name("." + destination.name + ".since")
+    if source.exists():
+        source.replace(target)
+    else:
+        target.unlink(missing_ok=True)
+
+
 def main(argv):
     if len(argv) == 2 and argv[0] == "--tail":
         for line in tail(Path(argv[1])):

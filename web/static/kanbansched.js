@@ -76,6 +76,7 @@ export function scheduledSection({ getMeta, chosen, openTask }) {
   function draw() {
     const shown = chosen(), mine = schedules.filter((s) => !shown.length || shown.includes(s.project));
     toggle.textContent = `Scheduled ${mine.length}`;
+    box.dataset.n = mine.length;                   // a phone's line says it (kanbanphone.js)
     toggle.setAttribute("aria-expanded", String(opened));
     grid.hidden = !opened;
     const now = JSON.stringify([mine, getMeta().agents.map((a) => [a.id, a.name, a.color])]);

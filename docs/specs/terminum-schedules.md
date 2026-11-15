@@ -100,7 +100,7 @@ Scenario: AC-160 happy path — changed at any time
   Then S_TERM-41 goes on as it began, and the next firing's task has the new text
 
 Scenario: AC-160 happy path — paused and deleted
-  When the user ticks Paused and presses Save
+  When the user turns Paused on and presses Save
   Then nothing fires, its kept slot is free (AC-161), and its card says "paused"
   When the user presses Delete and confirms "Delete SCH-1? Its tasks stay."
   Then it is gone from the board, its tasks and its firings in the Scheduled page stay under its name
@@ -268,9 +268,16 @@ Scenario: AC-163 happy path — its cards
 Scenario: AC-163 happy path — a schedule's tasks
   Then S_TERM-41's card says "SCH-1" by its ID, and its window says "From schedule SCH-1: Nightly deps check", a press opening SCH-1's window
 
+Scenario: AC-163 edge — another firing after a finished task
+  Given SCH-1's last task S_TERM-41 is DONE and its session is closed
+  When SCH-1 fires and makes S_TERM-42
+  Then S_TERM-42's card says "SCH-1" and SCH-1's card names S_TERM-42 as its last task
+  And S_TERM-41's card still says "SCH-1"
+
 Scenario: AC-163 edge — a phone
   Given a width under 860 px
   Then the section's cards stand one a row, the whole width
+  And on a phone (600 px or narrower) the section stands in the sheet the board's line opens, the line saying how many schedules there are (terminum-kanban.md AC-105)
 
 Scenario: AC-163 edge — none
   Given no schedule in the projects shown
@@ -314,6 +321,12 @@ Scenario: AC-182 happy path
   And a toast says "SCH-1 runs now: S_TERM-42"
   When the project's manager calls run_schedule {schedule: "SCH-1"} (terminum-agents.md AC-180)
   Then the same happens, and it is answered the task's ID and status
+
+Scenario: AC-182 edge — Cancel and Escape
+  Given a schedule whose next firing is after the question is closed
+  When the human presses Run now with the pointer and dismisses its question with Cancel or Escape
+  Then the press makes no firing or task
+  And the play key shows no focus ring after the question closes
 
 Scenario: AC-182 edge — paused, once
   Given a paused schedule, or one that ran once
@@ -409,6 +422,6 @@ Single stage.
 - [x] AC-160 — `cargo test tasks::cron`, `cargo test tasks::schedules`, `cargo test page::projects` (project deletion refuses existing schedules, keeps deleted schedules' history, rolls back on refusal), `web/test/e2e_liveschedules.mjs` (a choice in the page's own list clears the words it answered; project deletion before and after schedule deletion)
 - [x] AC-161 — `cargo test dispatcher::fire` (its task takes the kept slot), `cargo test tasks::schedules`, `cargo test tasks::agents`, `web/test/e2e_liveschedules.mjs`
 - [x] AC-162 — `cargo test dispatcher::fire` (made IN PROGRESS as S_<ID>, refused in TODO, missed, a start that fails, an older task's idle session in the kept slot closed), `web/test/e2e_liveschedules.mjs` (a firing on a fake agent)
-- [x] AC-163 — `web/test/e2e_liveschedules.mjs` (Chromium and WebKit, wide and phone; an isolated pool and no waiting lines, whole cards over empty columns and over 40 tasks that overflow their column)
+- [x] AC-163 — `web/test/e2e_liveschedules.mjs` (Chromium and WebKit, wide and phone; an isolated pool and no waiting lines, whole cards over empty columns and over 40 tasks that overflow their column; both card links on the first and following firing, with the preceding task kept)
 - [x] AC-164 — `cargo test dispatcher::fire` (agent results and failure reasons survive session bookkeeping), `web/test/e2e_liveschedules.mjs` (a real later firing closes the finished session before Out is read)
 - [x] AC-182 — `cargo test roles` (`ac182_…`), `scripts/e2e_roles.py`; the card's play key: `web/test/e2e_liveschedules.mjs`

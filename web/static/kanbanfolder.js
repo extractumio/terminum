@@ -5,10 +5,9 @@
 import { icon } from "./icons.js";
 import { el } from "./listparts.js";
 import { $, api, button } from "./kanbanutil.js";
-import { settled } from "./panefiles.js";
+import { isFolderEntry as isFolder, settled } from "./panefiles.js";
 
 const PAGE = 500;                      // a listing's page (CLAUDE.md §1): past it, the rest is typed
-const isFolder = (e) => e.k === "d" || e.k === "L";
 
 export function folderPicker() {
   const box = $("folderbox");

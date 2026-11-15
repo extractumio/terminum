@@ -39,6 +39,21 @@ class Logs(unittest.TestCase):
         self.assertEqual(self.path.read_bytes(), b"")
         self.assertEqual(check_logs.tail(self.path), ["error: the check refused"])
 
+    def test_retry_preserves_all_segments_and_starts_an_independent_log(self):  # AC-196, AC-197
+        data = b"first attempt output\n" * 600_000 + b"first attempt failed\n"
+        with check_logs.bounded_log(self.root, self.path) as out:
+            out.write(data)
+        first = self.path.with_name("changed.test.first.log")
+        Path(str(first) + ".2").write_bytes(b"stale attempt\n")
+        check_logs.preserve_attempt(self.path, first)
+        parts = [Path(str(first) + suffix) for suffix in (".2", ".1", "")]
+        self.assertEqual(b"".join(p.read_bytes() for p in parts if p.exists()), data)
+        self.assertFalse(self.path.with_name("." + self.path.name + ".since").exists())
+        with check_logs.bounded_log(self.root, self.path) as out:
+            out.write(b"retry passed\n")
+        self.assertEqual(check_logs.tail(self.path), ["retry passed"])
+        self.assertEqual(check_logs.tail(first, 1), ["first attempt failed"])
+
     def test_sink_failure_is_not_a_green_check(self):
         self.path.mkdir(parents=True)
         with self.assertRaisesRegex(RuntimeError, "sink failed"):

@@ -76,7 +76,11 @@ pub(crate) async fn set_with(ops: &impl Ops, host: &str, on: bool) -> Result<Vec
     ops.changed();
     let got = ops.remove().await.map_err(|e| format!("Turned off here; could not take terminum's hooks out of {host}: {e}"))?;
     let mut shown = lines(host, &got);
-    if !keep_helper {
+    // A helper can report per-agent failures successfully over ssh; those do not prove
+    // that registered hooks stopped calling it (including a cancelled install's hooks).
+    let removed = crate::cli::agentsetup::AGENTS.iter().all(|a| got.iter().any(|(name, result)|
+        name == a && crate::cli::hostmode::removed(result)));
+    if !keep_helper && removed {
         match ops.remove_helper().await {
             Ok(()) => shown.push(format!("helper removed from {host}")),
             Err(e) => return Err(format!("Turned off here; {}; could not remove the helper from {host}: {e}", shown.join("; "))),

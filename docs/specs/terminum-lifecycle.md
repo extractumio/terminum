@@ -69,6 +69,7 @@ Open questions: none open. Which clients exist (AC-11's drop) is terminum.md OQ-
 | AC-104 | [SHOULD / P1] | A finished worktree lands by itself: its targeted checks green on its own work, then a short smoke set of the basics on one platform, with no timed check, on its merge with what others landed; pushed, the primary checkout brought up to it and the tree deleted; the full test run is the release's gate, and only failing tests block a release. |
 | AC-146 | [SHOULD / P1] | A release's full run starts only on a quiet machine: it queues behind another full run, waits for the load to stay low for 3 minutes, says each minute that it waits, and after 15 minutes ends the release with "the build server is not available"; a task's timed checks wait the same way and then run, saying so. |
 | AC-196 | [SHOULD / P1] | Every diagnostic log has a bounded size and period under one rotation mechanism; active writers follow rotations without losing records. |
+| AC-197 | [SHOULD / P1] | A worktree's step that runs real programs (panel, page, critical, smoke, an e2e script) and fails runs once more, unchanged, while the run is otherwise green: passing then, the targeted checks or the smoke set count it, say the first run's last lines and say it in red last; red again, or a leftover, it is red; other steps, and the release's full run, have no retry. |
 
 ## 5. BDD scenarios
 
@@ -364,7 +365,7 @@ Scenario Outline: AC-102 edge — cancel the outer targeted runner
   And the guard notifies its private process group once so shell descendants can finish orderly cleanup; cancellation first received during settling starts a fresh 15 s grace period, and repeated signals neither notify again nor extend it
   And both children and the private folder are gone, an unrelated process is untouched, no later step starts, and no passing result is recorded
   And a guard that fails or exceeds the 60 s cancellation wait is recovered using its private group, folder and registered children, with PID start identities checked before each signal and the guard kept unreaped until its children are ended
-  And failed metadata queries fail cleanup visibly and retain the private folder for diagnosis
+  And failed metadata queries fail cleanup visibly and retain the private folder for diagnosis; a cancellation still gets its single notice and grace, and the owned processes are read again when the grace ends
 
   Examples:
     | signal  | status |
@@ -514,6 +515,27 @@ Scenario: AC-104 edge — builds leave room for others
   And a step that finds every slot held says once "slot: cargo waits for one of 2 heavy-build slots: two cargo, three debug-build" and starts when one is free; a slot is freed with its holder, however it ends
   And scripts/worktree.py add gives a new tree copy-on-write clones of the primary checkout's debug and release dependencies' builds, so its first build compiles terminumd alone
 
+Scenario: AC-104 happy path — script modules run in a small process pool
+  Given the scripts' unit-test modules under scripts/tests
+  When the targeted scripts step or make test runs them
+  Then each module runs through unittest discovery in a separate interpreter, at most three at once
+  And every discovered test runs once, with the same counts and verdict as serial discovery
+  And each module's output is retained in its own log, with its elapsed time and the five slowest modules named
+  And waits for a child to become ready check its condition within a deadline, rather than sleeping a fixed interval
+
+Scenario Outline: AC-104 failure — a script module cannot produce a passing result
+  Given a script module <outcome>
+  When the scripts step ends
+  Then the step fails and names that module, retaining its output
+  And other modules still run and contribute their counts
+
+  Examples:
+    | outcome                       |
+    | has a failing test            |
+    | cannot be imported            |
+    | exits without reporting       |
+    | discovers zero tests          |
+
 Scenario: AC-104 edge — deterministic benchmark verdicts under concurrent checks
   Given concurrent script suites delay the startup of the listing benchmark's private stand-ins
   When the harness checks the benchmark command with supplied timing and RSS samples
@@ -539,6 +561,14 @@ Scenario: AC-104 edge — a Rust source that names no case
   When python3 scripts/check_changed.py runs
   Then it prints "note: terminumd/src/redaction.rs names no case at its top: the e2e scripts of its area are not known"
   And it runs that module's cargo tests; a source naming cases there also runs the scripts/e2e_*.py citing them
+
+Scenario: AC-104 edge — an imported helper is not a standalone check
+  Given scripts/e2e_ws.py is an imported helper with no top-level main entry point
+  When targeted checks select changed files or tests citing AC-102
+  Then they never schedule python3 scripts/e2e_ws.py as a check
+  And a helper's citations alone do not count as test coverage
+  And the real AC-102 runners, including e2e_attach.py, e2e_restore.py and the scripts' unit tests, remain selected
+  And Python e2e runners declare a top-level if __name__ == "__main__" entry point; discovery parses their source without executing it
 
 Scenario: AC-104 edge — uncommitted work
   Given the worktree holds an uncommitted file
@@ -641,6 +671,29 @@ Scenario: AC-104 failure — failing tests on the Mac test runner are never read
   Given make test fails on the Mac test runner, which makes the remote run exit 2
   When scripts/ci_mac.sh ends
   Then it exits 1 and make release stops: "failing tests on the Mac test runner stop it: nothing is public"
+
+Scenario: AC-104 happy path — the Mac checks select a supported Node for the whole run
+  Given the Mac runner has Node 26 on PATH or in the installed Homebrew node@26 keg
+  When make test-mac starts its remote checks
+  Then it selects Node 26, prints its version and executable path, and checks node:sqlite with repeated numbered parameters in memory before rustup or any checks
+  And make, npm, npx and the browser checks inherit its bin directory first on PATH; the runner's global Node and shell configuration stay unchanged
+
+Scenario Outline: AC-104 failure — the Mac checks reject an unusable Node before expensive work
+  Given <runtime>
+  When make test-mac starts its remote checks
+  Then it starts no rustup, build or browser check, says the Node prerequisite and how to select a supported runtime, releases its lock and exits 2 (checks could not run)
+
+  Examples:
+    | runtime |
+    | no Node 26 on PATH or in the installed Homebrew node@26 keg |
+    | TM_MAC_NODE_BIN names a missing, relative, colon-containing or unsupported runner-side bin directory |
+    | the selected Node 26 cannot bind repeated numbered SQLite parameters |
+
+Scenario: AC-104 edge — an explicit Mac Node bin directory is authoritative
+  Given TM_MAC_NODE_BIN names an absolute bin directory on the runner containing Node 26, with spaces or apostrophes in its path
+  When make test-mac starts
+  Then it passes that path literally and uses its Node even when another Node is on PATH
+  And an unusable explicit directory fails instead of falling back to another runtime
 
 Scenario Outline: AC-104 edge — the Mac test runner could not run them
   Given <what>
@@ -767,10 +820,60 @@ Scenario Outline: AC-146 edge — a task's timed checks
     | the load average is over the limit      |
     | a release is running (its mark is held) |
 
+Scenario: AC-146 edge — the access check waits for a login answer under load
+  Given scripts/e2e_access.py sends a login request while the load average is 60 on 16 cores
+  When the answer takes more than 10 seconds to arrive
+  Then its request waits up to 37.5 seconds, 10 seconds times the load per core, clamped to 1 through 4
+  And it sends the request only once and checks the same status, body and minimum password-brake duration
+  And an unanswered or trickling request still reaches that deadline and closes its socket
+  And on a quiet machine its request has a 10-second deadline
+
 Scenario: AC-146 edge — make check by hand
   Given the load average stays over 16 for 15 minutes
   When someone runs make check
   Then it ends with exit 75: "check: the machine is busy: load 31.0 over 16 for 15 minutes: nothing ran"
+
+Scenario: AC-146 edge — Copy preview's complexity guard excludes scheduling delays
+  Given a copy of a million newlines followed by text, a million spaces followed by text, or half a million short lines
+  When the page-unit checks run alongside other checks
+  Then each preview has the expected line count and first line, and uses less than one second of user and system CPU time in its isolated test process
+  And time spent waiting to be scheduled does not count toward that budget
+  But a quadratic preview that exceeds the CPU budget fails the guard
+```
+
+### AC-197 — A worktree's flaky check runs once more [SHOULD / P1]
+
+```gherkin
+Scenario: AC-197 happy path — red once, green on its unchanged retry
+  Given a worktree's targeted checks, or its landing's smoke set, run a step that runs real programs (panel, page, critical, smoke, an e2e script)
+  And no step of the run has failed
+  When that step fails
+  Then check_changed.py says the failed run's last lines and runs the step once more with nothing changed
+  And when it passes, the step counts as passed and the pass is recorded
+  And "PASSED ONLY ON RETRY, the first run red: <step>: name each with its open task" is said in red last, by check_changed.py and by make land after "landed"
+  And the first run's log stays as .checks/changed.<step>.first.log while the tree stays
+
+Scenario Outline: AC-197 failure — no retry, or red on it
+  Given <what>
+  Then the step is red at once, as any red check, and nothing lands
+
+  Examples:
+    | what                                                               |
+    | the step fails again on its retry                                  |
+    | the step passed but left a process or a file (exit 3, AC-102)      |
+    | another step of the run has failed already                         |
+    | the step runs no real program (the scan, a build, clippy, cargo tests, unit tests) |
+
+Scenario: AC-197 edge — the release's full run never retries
+  Given make check runs, by hand, from make release or from make rehearse
+  When a test fails
+  Then the full run is red and the release stops (AC-104)
+
+Scenario: AC-197 edge — what is said is this run's
+  Given an earlier targeted run passed a step only on its retry
+  When the targeted checks run again
+  Then only this run's retries are said
+  But a landing's smoke set adds its retries to its targeted run's, and make land says both
 ```
 
 ### AC-196 — Bounded diagnostic logs [SHOULD / P1]
@@ -956,12 +1059,12 @@ All sizes are bytes (MiB = 1,048,576 bytes). `logs.rs` owns rotation and complet
 |---|---|---|---|
 | Daemon `logs/terminumd.log`, adopted `terminusd.log` | 10 MiB per segment; 7 older segments | Rotate at 24 h or size | Shared rotation; archives expire after 7 days; `terminum logs` spans retained files. |
 | Host `logs/agent.log` | 1 MiB per segment; 3 older segments | Rotate at 24 h or size, while running | Same writer and rotation; archives expire after 3 days; agents share the directory lock. |
-| `integration/<project>/batch-<n>.<round>.<step>.log` | Newest 2 MiB per file; newest 100 files per project | 30 days | Shared incremental completed-file sweep each minute, including idle or disabled projects; at most 500 entries and 16 deletes per minute across projects (a legacy backlog converges over later passes); snapshots are saved only after their step ends. |
+| `integration/<project>/batch-<n>.<round>.<step>.log` and `verify-<n>.log` | Newest 2 MiB per file; newest 100 files per project together | 30 days | Shared incremental completed-file sweep each minute, including idle or disabled projects; at most 500 entries and 16 deletes per minute across projects (a legacy backlog converges over later passes); snapshots are saved only after their step ends. |
 | `logs/trace-*.jsonl` (AC-38) | 20 MiB per file; newest 10 files | Each recording ends after 15 min | Bounded recording exception: one diagnostic run must stay one file; the stop and newest-ten rule stays; every restart creates a fresh file, with fractional seconds in its name so the byte counter cannot reset on an existing file. |
 | `sessions/<id>/ends.jsonl` (AC-90) | Trim at 2,500 entries to newest 2,000; over 4 MiB to newest 2 MiB | 180 days, trimmed at writes and filtered on reads | Record-index exception: bounded answer-location data is compacted as records, preserving its single-file readers. |
 | SQLite `inputs` and `messages` (AC-147) | 500,000 rows each | 180 days | Store exception: transactional `trim_rows`, hourly on the input writer; no file rotation of SQLite. |
 | SQLite `user_interaction` (AC-175) | 1,000,000 rows | 180 days | Same transactional hourly trim. |
-| Worktree `.checks/*.log` (AC-104) | 10 MiB per segment; 2 older segments per check | Rotate at 24 h or size; archives expire after 7 days while checks run | The same Rust rotation core, compiled into a small local sink by the already-required Rust compiler; no Cargo bootstrap or remote dependency. Removed with the worktree. |
+| Worktree `.checks/*.log` and script-module `.checks/tm-scripts-*/<module>.log` (AC-104) | 10 MiB per segment; 2 older segments per check or module | Rotate at 24 h or size; archives expire after 7 days while checks run | The same Rust rotation core, compiled into a small local sink by the already-required Rust compiler; no Cargo bootstrap or remote dependency. A retry preserves the first attempt's retained segments and starts a new active path. Removed with the worktree. |
 
 ## 10. Delivery stages
 
@@ -976,7 +1079,8 @@ All cases are shipped; nothing is staged.
 - [x] AC-17 — `cargo test update::`; `web/test/e2e_tmux.mjs`
 - [x] AC-96 — `scripts/e2e_lastlines.py`; `cargo test lastlines` (a failed write tried again); `web/test/e2e_lastlines.mjs`
 - [x] AC-102 — `scripts/check_step.py` guards each step of `scripts/check_all.sh` and `scripts/check_changed.py`; `scripts/tests/test_check_step.py`; `scripts/tests/test_check_cancel.py` (outer cancellation and guard recovery); `scripts/tests/test_process_ownership.py` (metadata only, directory boundaries and query failures on both platforms); `scripts/tests/test_leftovers.py`; `cargo test cli::tests::the_fake_terminumd_ends_when_its_home_goes`; `scripts/tests/test_testrun.py` (`WithItsFolder`)
-- [x] AC-104 — `scripts/tests/test_land.py`, `scripts/tests/test_land_install.py`, `scripts/tests/test_land_said.py`, `scripts/tests/test_heavy_slots.py`, `scripts/tests/test_check_changed.py`, `scripts/tests/test_package.py`, `scripts/tests/test_release_turn.py`, `scripts/tests/test_release.py`, `scripts/tests/test_ci_mac.py`, `scripts/tests/test_check_docker.py`, `scripts/tests/test_worktree_fresh.py`
-- [x] AC-146 — `scripts/tests/test_load_gate.py`, `scripts/tests/test_release_turn.py`, `scripts/tests/test_check_changed.py`
+- [x] AC-104 — `scripts/tests/test_land.py`, `scripts/tests/test_land_install.py`, `scripts/tests/test_land_said.py`, `scripts/tests/test_heavy_slots.py`, `scripts/tests/test_test_scripts.py`, `scripts/tests/test_check_changed.py`, `scripts/tests/test_package.py`, `scripts/tests/test_release_turn.py`, `scripts/tests/test_release.py`, `scripts/tests/test_ci_mac.py`, `scripts/tests/test_ci_mac_node.py`, `scripts/tests/test_check_docker.py`, `scripts/tests/test_worktree_fresh.py`
+- [x] AC-146 — `scripts/tests/test_load_gate.py`, `scripts/tests/test_release_turn.py`, `scripts/tests/test_check_changed.py`, `scripts/tests/test_access.py`, `scripts/e2e_access.py`
+- [x] AC-197 — `scripts/tests/test_check_changed.py` (`test_ac197_*`)
 - [x] AC-103 — `scripts/tests/test_check_docs.py`; `python3 scripts/check_docs.py`
 - [x] AC-196 — `cargo test logs::`, `cargo test cli::tests`, `cargo test sent::`, `scripts/tests/test_check_logs.py`, `scripts/e2e_logs.py`

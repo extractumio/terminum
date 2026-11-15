@@ -48,7 +48,7 @@ fn out(o: &std::process::Output) -> String {
 
 /// `git merge-tree` of two commits: Ok(tree) when clean, Err(Some(files)) on a conflict, Err(None) when git
 /// could not merge at all.
-fn merge(repo: &Path, ours: &str, theirs: &str) -> Result<Result<String, Vec<String>>, String> {
+pub(super) fn merge(repo: &Path, ours: &str, theirs: &str) -> Result<Result<String, Vec<String>>, String> {
     let o = git(repo, &["merge-tree", "--write-tree", "--name-only", "--no-messages", ours, theirs])?;
     let text = out(&o);
     let mut lines = text.lines();

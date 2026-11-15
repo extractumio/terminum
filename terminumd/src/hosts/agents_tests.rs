@@ -107,6 +107,20 @@ fn off_turns_the_link_off_even_when_the_host_cannot_be_reached_and_says_so() {
     assert_eq!(*f.steps.lock(), ["save", "changed", "remove"], "the helper is not touched on a host not reached");
 }
 
+/// AC-99: result lines are not proof that every registered plugin was removed.
+#[test]
+fn off_keeps_the_helper_when_a_plugin_could_still_call_it() {
+    for result in ["failed: invalid JSON", "failed: uninstall", "refused: another command", "skipped-own", "not-found"] {
+        let f = fake(Value::Null, json!("enabled"), Ok(vec![]), Ok(got(&[("claude", result), ("codex", "removed")])));
+        assert_eq!(run(set_with(&f, "devbox", false)).unwrap()[0], format!("claude: {}", super::super::agentsinstall::shown("devbox", result)));
+        assert_eq!(*f.steps.lock(), ["save", "changed", "remove"], "{result}");
+        assert_eq!(f.hosts.lock()["devbox"]["agents"], "off");
+    }
+    let f = fake(Value::Null, json!("enabled"), Ok(vec![]), Ok(got(&[("codex", "removed")])));
+    run(set_with(&f, "devbox", false)).unwrap();
+    assert_eq!(*f.steps.lock(), ["save", "changed", "remove"], "a missing result is unknown");
+}
+
 #[test]
 fn on_saves_nothing_when_the_record_changed_while_it_ran() {
     let mut f = fake(Value::Null, Value::Null, Ok(got(&[("claude", "installed")])), Ok(vec![]));

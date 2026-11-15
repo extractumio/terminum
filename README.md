@@ -24,6 +24,8 @@ reach it over your own network.
 
 - **Plan and ETA:** the agent keeps its plan via MCP; the list shows its percent done.
 - **Kanban:** tasks with severities, owners, comments and files; agents and you move them.
+- **Dispatcher:** Run gives a task to an agent of its project's pool and closes its session when
+  done; schedules run tasks by the clock; finished tasks' commits can integrate in checked batches.
 - **Cross-session alerts:** an agent waiting for you shows up in every session.
 - **Status at a glance:** working, waiting, done, subagents.
 

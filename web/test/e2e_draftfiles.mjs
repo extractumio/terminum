@@ -2,7 +2,7 @@
 // A draft's file that terminumd let go (kept unsaved over 7 days) leaves the draft with its link, and the window
 // names it; a file it cannot tell about stays (AC-106, AC-108).
 import { check, runningIn, until } from "./check.mjs";
-import { drawn, openPage, SIZES } from "./fake.mjs";
+import { drawn, openPage, SIZES, windowKey } from "./fake.mjs";
 
 const META = { projects: [{ id: "default", name: "Default" }], users: [{ id: "human", name: "Alex" }], sessions: [], agents: [] };
 const TASK = { id: "API-12", uid: "abfed14f", title: "A task with a draft", status: "TODO", project: "default",
@@ -54,7 +54,7 @@ export async function webDraftFiles(browser, name) {
       const close = () => page.evaluate(() => window.taskwin.tryClose());
       const draft = () => page.inputValue(".newcomment textarea");
       const toast = async () => (await page.textContent("#toast").catch(() => "")) ?? "";
-      const save = () => page.locator("#taskacts").getByRole("button", { name: "Save", exact: true }).click();
+      const save = () => windowKey(page, "#taskbox", "Save").click();
 
       await seed(`See:\n${link("log.txt", LOG)}\n${link("shot.png", SHOT, true)}\n`, [LOG, SHOT]);
       await open();

@@ -102,8 +102,8 @@ export async function liveBoardTasks(page, opts) {
   await page.click('#fproject button[aria-label="Edit Family"]');
   await page.waitForSelector("#projectbox[open]");
   await page.click("#projectarchived");
-  await page.waitForSelector("#archivedbox[open]");
-  check("AC-118 the project's window opens its Archived", (await page.textContent("#archivedhead")) === "Archived in Family");
+  await page.waitForSelector("#archivedpanel:not([hidden])");
+  check("AC-118 the project's window shows its Archived in a tab", (await page.textContent("#projecthead")) === "Family" && await page.getAttribute("#projectarchived", "aria-selected") === "true");
   const rows = () => page.$$eval("#archivedlist li .linklike", (l) => l.map((b) => b.textContent));
   check("AC-118 newest first", await until(async () => (await rows()).length === 2 && (await rows())[0].startsWith(young), 4000), JSON.stringify(await rows()));
   await page.fill("#archivedfind", "long ago");
@@ -113,7 +113,6 @@ export async function liveBoardTasks(page, opts) {
   check("AC-118 and it stands where it stood", await until(async () => { const t = await j(`/api/tasks/${old}`); return !t.archived_at && t.status === "DONE"; }));
   await page.fill("#archivedfind", "nothing like this");
   check("AC-118 an empty list says so", await until(() => page.isVisible("#archivednone"), 4000));
-  await page.click('#archivedbox button[value="cancel"]');
   await page.click('#projectbox button[value="cancel"]');
   await liveTaskClose(page, opts);
 }
