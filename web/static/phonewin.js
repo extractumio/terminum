@@ -22,10 +22,11 @@ function waysOn(row) {
 /** A row filled anew by its window (a task's keys, by what the task allows) gives the bar its ways on again. */
 const refilled = new MutationObserver((records) => {
   const rows = new Set(records.filter((r) => r.addedNodes.length).map((r) => r.target));
-  for (const row of rows) arrange(row.closest(WINDOWS));
+  for (const row of rows) arrange(row.closest(WINDOWS), true);
 });
 
-function arrange(win) {
+/** `refill`: its row was filled anew, with the whole set of its keys: the bar holds what that set says, nothing older. */
+function arrange(win, refill = false) {
   const head = win?.querySelector(":scope > form > .dhead, :scope > .dhead");
   const row = win?.querySelector(":scope > form > .actions, :scope > .actions");
   if (!head || !row) return;
@@ -40,8 +41,9 @@ function arrange(win) {
     head.append(bar);
     refilled.observe(row, { childList: true });
   }
-  const keys = waysOn(row);
-  if (keys.length) bar.replaceChildren(...keys);
+  const keys = waysOn(row), focused = document.activeElement;
+  if (refill) bar.replaceChildren(...keys); else bar.append(...keys);
+  if (keys.includes(focused)) focused.focus();     // a key moved keeps the keys
 }
 
 const all = () => { for (const win of document.querySelectorAll(WINDOWS)) arrange(win); };

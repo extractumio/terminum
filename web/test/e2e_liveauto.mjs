@@ -185,11 +185,13 @@ export async function liveAuto(page, live) {
   check("AC-170 the window shows the chosen project's setting", await page.inputValue("#autoagent") === picker && await page.inputValue("#autodefault") === runner);
   await page.click('#autobox button[value="cancel"]');
 
-  // a phone's size: the switch and the cog stay in the bar, the window fits
+  // a phone's size: the switch and the cog stand in the sheet the board's line opens (terminum-kanban.md AC-105), the window fits
   const size = page.viewportSize();
   await page.setViewportSize({ width: 390, height: 844 });
+  await page.click("#poolline");
+  await page.waitForSelector("#pool[data-sheet]");
   const phone = await page.evaluate(() => { const r = (id) => document.querySelector(id).getBoundingClientRect(), [k, c] = [r("#autoswitch"), r("#autocog")]; return { in: k.left >= 0 && c.right <= innerWidth && k.width > 0 && c.width > 0, tall: Math.min(k.height, c.height), wide: document.documentElement.scrollWidth <= innerWidth }; });
-  check("AC-170 at a phone's size its switch and cog are in the bar, a finger's height, no sideways scroll", phone.in && phone.tall >= 40 && phone.wide, JSON.stringify(phone));
+  check("AC-170 at a phone's size its switch and cog are in the line's sheet, a finger's height, no sideways scroll", phone.in && phone.tall >= 40 && phone.wide, JSON.stringify(phone));
   await page.click("#autocog");
   await page.waitForSelector("#autobox[open]");
   const fitsPhone = await page.evaluate(() => { const d = document.querySelector("#autobox"), r = d.getBoundingClientRect(); return { wide: d.scrollWidth <= d.clientWidth + 1, left: r.left, right: r.right, bottom: r.bottom, w: innerWidth, h: innerHeight }; });

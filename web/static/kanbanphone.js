@@ -51,7 +51,7 @@ line.addEventListener("click", () => {
   if (open) return close();
   open = true;
   line.setAttribute("aria-expanded", "true");
-  placeModal(pool, close);
+  placeModal(pool, close, false);                  // no focus on its first key: that is Auto-Dispatch's switch
 });
 
 /** Auto-Dispatch's keys: in the head on a computer, first in the sheet on a phone. */

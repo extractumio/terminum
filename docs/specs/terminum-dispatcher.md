@@ -746,7 +746,7 @@ Scenario: AC-130 failure — hooks missing there
 Scenario: AC-138 happy path — over the board
   Given a pool of Opus reviewer (Claude Code, high), Fast fixer (Claude Code) and Codex (Codex, low)
   Then three rectangles stand over the columns, each in its color, with its name, kind, effort, its subscription's two stripes (AC-168) and one dot per live session
-  And each is a column wide, on the columns' own tracks: four to a row, the fifth track holding + Agent; a fifth agent starts the next row; a phone keeps one row that scrolls
+  And each is a column wide, on the columns' own tracks: four to a row, the fifth track holding + Agent; a fifth agent starts the next row; a window under 860 px keeps one row that scrolls; on a phone (600 px or narrower) they stand one a row in the sheet its line opens (terminum-kanban.md AC-105)
 
 Scenario: AC-138 happy path — its dots
   Given Opus reviewer with API-12's session working and API-14's waiting at its input box
@@ -1264,7 +1264,7 @@ Scenario: AC-169 edge — a press for several tasks
 ```gherkin
 Scenario: AC-170 happy path — the switch and its settings
   Given the board, whatever projects it shows
-  Then its bar holds "Auto-Dispatch", a switch with its state, and a cog; a phone's bar too, without the words; the project's window holds no key of it
+  Then its bar holds "Auto-Dispatch", a switch with its state, and a cog; a window under 860 px too, without the words; on a phone (600 px or narrower) the three stand first in the sheet its line opens, the line saying the state (terminum-kanban.md AC-105); the project's window holds no key of it
   When project api is shown alone, an agent that picks chosen for it, and the user presses the switch
   Then it is on for api, "ON", on every page; a press again turns it off, "OFF", its agents and filters kept
   When no agent picks for api yet, or it turned itself off, and the user presses the switch

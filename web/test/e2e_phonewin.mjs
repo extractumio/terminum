@@ -108,6 +108,12 @@ export async function webPhoneWin(browser, name) {
     m = await page.evaluate(() => window.measure("newsess"));
     check("AC-173 phone: a list's form (New session) covers the screen, Create in its bar", covers(m) && barred(m) && m.bar.map((k) => k.words).join() === "Create" && !m.foot.length, JSON.stringify(m));
     await shots(page, `${name}-${width}-newsession`);
+    // the keyboard up, the visible part moved down the page (iOS): the session page moves #app by it, its forms with it, once
+    const moved = await page.evaluate(() => { document.getElementById("app").style.transform = "translateY(100px)"; document.documentElement.style.setProperty("--app-top", "100px");
+      const top = Math.round(document.getElementById("newsess").getBoundingClientRect().top);
+      document.getElementById("app").style.transform = ""; document.documentElement.style.setProperty("--app-top", "0px");
+      return top; });
+    check("AC-173 phone: a list's form follows the visible part of the page once, not twice", moved === 100, String(moved));
     await page.click("#newsess .dhead .x");
     check("no page errors", !f.errors.length, f.errors.join(" | "));
     await f.close();
@@ -118,6 +124,9 @@ export async function webPhoneWin(browser, name) {
     m = await b.page.evaluate(async () => { document.getElementById("newbox").showModal(); await new Promise((r) => setTimeout(r, 60)); return window.measure("newbox"); });
     check("AC-173 phone: New task: Create and Run in the bar, Add files and Discard a row under its fields", covers(m) && barred(m) && m.bar.map((k) => k.words).join() === "Create,Run" && m.foot.join() === "Add files…,Discard" && m.footTop > m.text.b, JSON.stringify(m));
     await shots(b.page, `${name}-${width}-newtask`);
+    m = await b.page.evaluate(async () => { document.getElementById("newbox").close(); document.getElementById("scheddrop").hidden = false; document.getElementById("schedbox").showModal();
+      await new Promise((r) => setTimeout(r, 60)); return window.measure("schedbox"); });
+    check("AC-173 phone: a schedule's Delete, seldom pressed, stands under its fields; Save alone in the bar", covers(m) && barred(m) && m.bar.map((k) => k.words).join() === "Save" && m.foot.join() === "Delete", JSON.stringify(m));
     await b.close();
   }
 

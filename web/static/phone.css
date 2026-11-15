@@ -10,6 +10,8 @@
     inset: auto !important; top: var(--app-top, 0px) !important; left: 0 !important; translate: none !important;
     width: 100vw !important; height: var(--app-h, 100dvh) !important; max-height: none !important;
     padding: 0 var(--sp-4) var(--sp-4); border-radius: 0; box-shadow: none !important; }
+  /* a list's form stands inside #app, which the session page itself moves by that offset (app.js fitViewport) */
+  :is(body:not(.board-page) .footform[data-sheet], #no-such) { top: 0 !important; }
   /* the bar: in sight while the rest scrolls under it; × where the thumb's other hand is, the ways on at the right */
   :is(dialog.dlg[data-size]:not([data-size="ask"]), .footform[data-sheet]) .dhead {
     position: sticky; top: 0; z-index: 3; gap: var(--sp-2); min-height: 60px; flex: none;

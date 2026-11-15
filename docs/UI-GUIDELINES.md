@@ -226,7 +226,7 @@ raw colors" besides shadows (§2.2); colors themselves stay the theme's (§2.1, 
 | The shown session changes | Its row's fill settles from the accent, its bar grows in (`.fresh`, once). |
 | A session works | Its bar pulses, in the list and the header (its color glows and fades, 1.4 s); no hourglass. A state, not motion: nothing moves, so it stays with Reduce Motion. |
 | A counter holds a line not looked at | `#askcount`'s counter (askfold.css): its ring's glow pulses slowly, 2 s each way, until its lines are opened, then rests. The page's one blink: it says a task or an agent waits for the human. Still with Reduce Motion. |
-| Never | Anything in `#term`, the key bar, what is typed; width, height, position or layout; banners and error text (they show at once); a new loop. |
+| Never | Anything in `#term`, the key bar, what is typed; width, height, position or layout; banners and error text (they show at once); a new loop but the counter's. |
 
 `prefers-reduced-motion: reduce` sets every duration to 0 and turns off scale, translate, pulse and
 settle; colors still change. The browser checks run with reduced motion (fake.mjs);

@@ -271,6 +271,7 @@ Scenario: AC-163 happy path — a schedule's tasks
 Scenario: AC-163 edge — a phone
   Given a width under 860 px
   Then the section's cards stand one a row, the whole width
+  And on a phone (600 px or narrower) the section stands in the sheet the board's line opens, the line saying how many schedules there are (terminum-kanban.md AC-105)
 
 Scenario: AC-163 edge — none
   Given no schedule in the projects shown

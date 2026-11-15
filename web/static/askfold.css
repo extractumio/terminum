@@ -11,8 +11,13 @@ body.embed #askcount { display: none !important; }
 .askn.failed { --fill: var(--danger-fill); color: var(--danger-ink); }
 .askn.waiting { --fill: var(--waiting); color: var(--waiting-ink); }
 .askn.fresh, .askn[aria-expanded="true"] { box-shadow: 0 0 0 2px var(--t-bg), 0 0 0 4px var(--fill); }
-@media (prefers-reduced-motion: no-preference) { .askn.fresh:not([aria-expanded="true"]) { animation: askpulse 2s var(--ease-out) infinite alternate; } }
-@keyframes askpulse { to { box-shadow: 0 0 0 2px var(--t-bg), 0 0 0 4px var(--fill), 0 0 14px 6px color-mix(in srgb, var(--fill) 70%, transparent); } }
+/* the pulse: a glow round the ring whose opacity alone changes (no repaint of the key) */
+.askn { position: relative; }
+@media (prefers-reduced-motion: no-preference) {
+  .askn.fresh:not([aria-expanded="true"])::after { content: ""; position: absolute; inset: -4px; border-radius: inherit; pointer-events: none; opacity: 0;
+    box-shadow: 0 0 14px 6px color-mix(in srgb, var(--fill) 70%, transparent); animation: askpulse 2s var(--ease-out) infinite alternate; }
+}
+@keyframes askpulse { to { opacity: 1; } }
 @media (hover: none), (max-width: 860px) {         /* fold.js FLOATING */
   #askcount:not([hidden]) { display: flex; }
   body.asksfold:not(.asksopen) #asks { display: none; }   /* folded: no room taken, the terminal's rows stay */

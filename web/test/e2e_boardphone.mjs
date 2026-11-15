@@ -98,6 +98,19 @@ export async function webBoardPhone(browser, name) {
       await pause(page, 200);
       check("AC-105 phone: Esc closes it", !(await look(page, HEAD)).agents && await page.getAttribute("#poolline", "aria-expanded") === "false");
 
+      // New task's × closes it and keeps what was typed (kanbanform.js's draft)
+      await page.click("#newtask");
+      await page.waitForSelector("#newbox[open]");
+      await page.fill("#newtitle", "kept as a draft");
+      await page.click("#newbox .dhead .x");
+      const closed = await until(() => page.evaluate(() => !document.getElementById("newbox").open));
+      await page.click("#newtask");
+      await page.waitForSelector("#newbox[open]");
+      check("AC-173 phone: × closes New task and keeps its draft", closed && await page.inputValue("#newtitle") === "kept as a draft", await page.inputValue("#newtitle"));
+      await page.fill("#newtitle", "");
+      await page.click("#newbox .dhead .x");
+      await until(() => page.evaluate(() => !document.getElementById("newbox").open));
+
       // a column's own keys go with its cards
       const before = (await look(page, HEAD)).colhead;
       await page.$eval('.col[data-status="TODO"]', (c) => { c.scrollTop = 150; });
@@ -116,7 +129,7 @@ export async function webBoardPhone(browser, name) {
     await m.go();
     m.f.say(LINES);
     await m.page.waitForSelector(".askn.waiting.fresh");
-    const anim = (sel) => m.page.$eval(sel, (b) => { const cs = getComputedStyle(b); return `${cs.animationName} ${cs.animationIterationCount}`; });
+    const anim = (sel) => m.page.$eval(sel, (b) => { const cs = getComputedStyle(b, "::after"); return `${cs.animationName} ${cs.animationIterationCount}`; });   // the glow round its ring
     check("AC-117 a counter with a line not looked at pulses, on and on", await anim(".askn.waiting") === "askpulse infinite", await anim(".askn.waiting"));
     await m.page.click(".askn.waiting");
     await pause(m.page, 300);
@@ -130,7 +143,7 @@ export async function webBoardPhone(browser, name) {
     await still.go();
     still.f.say(LINES);
     await still.page.waitForSelector(".askn.waiting.fresh");
-    check("AC-117 with reduced motion the ring is still", await still.page.$eval(".askn.waiting", (b) => getComputedStyle(b).animationName === "none" && getComputedStyle(b).boxShadow !== "none"));
+    check("AC-117 with reduced motion the ring is still", await still.page.$eval(".askn.waiting", (b) => getComputedStyle(b, "::after").animationName === "none" && getComputedStyle(b).boxShadow !== "none"));
   } finally { await still.f.close(); }
 
   // 601 px and wider: the two rows, the agents over the columns, Auto-Dispatch in the head; a mouse's wide window keeps its lines
@@ -147,10 +160,14 @@ export async function webBoardPhone(browser, name) {
     await t.page.setViewportSize({ width: 390, height: 700 });
     await pause(t.page, 200);
     const narrow = await look(t.page, HEAD);
+    await t.page.click("#poolline");                 // its sheet open while the window grows
+    await t.page.waitForSelector("#pool[data-sheet]");
     await t.page.setViewportSize({ width: 700, height: 700 });
-    await pause(t.page, 200);
+    await pause(t.page, 500);
     const back = await look(t.page, ["#navbtn"]);
-    check("AC-105 a window made narrow, then wide again: Auto-Dispatch's keys go to the sheet and come back to the head", narrow.auto === "pool" && back.auto === "boardacts" && !!back.agents, JSON.stringify({ narrow: narrow.auto, back: back.auto }));
+    const left = await t.page.evaluate(() => ({ sheet: "sheet" in document.getElementById("pool").dataset, shade: document.elementFromPoint(350, 600)?.id }));
+    check("AC-105 a window made narrow, then wide again with the sheet open: Auto-Dispatch's keys go to the sheet and come back to the head, no sheet and no shade left",
+      narrow.auto === "pool" && back.auto === "boardacts" && !!back.agents && !left.sheet && left.shade !== "sheetscrim", JSON.stringify({ narrow: narrow.auto, back: back.auto, left }));
   } finally { await t.f.close(); }
   runningIn(`${name} 1400×900`);
   const w = await board(browser, { viewport: { width: 1400, height: 900 } });
