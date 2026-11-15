@@ -261,24 +261,46 @@ export async function liveSchedules(page, live) {
   for (const id of many) await j(`/api/tasks/${id}/archive`, "POST", { on: true });
 
   // AC-162: due, fired on the fake agent, its task DONE with its result
-  const s = (await j("/api/schedules")).schedules.find((x) => x.title === "Nightly deps check");
-  intoStore(live.app, `UPDATE schedules SET last_due = last_due - 3600 WHERE id = '${s.id}'`);
-  let task;
-  check("AC-162 due, it makes a task and runs it on its agent", await until(async () => (task = (await j("/api/schedules")).schedules.find((x) => x.id === s.id)?.last?.task), 15000), JSON.stringify(s));
-  check("AC-183 a firing's run keeps Dispatcher and the schedule", await until(() => startOf(live.app, task) === "dispatcher schedule", 15000), startOf(live.app, task));
-  intoStore(live.app, `UPDATE schedules SET cron = '0 0 1 1 *' WHERE id = '${s.id}'`);   // no second firing a minute on, under the checks below
-  check("AC-162 its task says a schedule made it, and was never in TODO", /^S_[A-Z][A-Z0-9]*-\d+$/.test(task) && !(await j(`/api/tasks/${task}`)).history.some((e) => /TODO/.test(e.text ?? "")), task);
-  check("AC-162 the agent gives its result: DONE", await until(async () => (await j(`/api/tasks/${task}`)).status === "DONE", 20000), JSON.stringify((await j(`/api/tasks/${task}`)).history?.map((e) => e.text)));
-  const t = await j(`/api/tasks/${task}`);
-  check("AC-162 its history says the schedule and its due time", t.history.some((e) => /^Dispatcher made it from schedule SCH-\d+, due \w{3} \d+ \w{3} \d\d:\d\d\.$/.test(e.text ?? "")), JSON.stringify(t.history.map((e) => e.text)));
-  check("AC-163 its window names the schedule", t.schedule?.key === s.key);
-  await page.goto(`${live.base}/kanban/${task}`);
-  check("AC-163 the window's line opens the schedule", await until(() => page.isVisible(".taskfrom")));
-  await page.click(".taskfrom .linklike");
-  check("AC-163 …in its own window", await until(() => page.isVisible("#schedbox[open]")) && (await page.textContent("#schedhead")).startsWith(s.key));
-  await page.keyboard.press("Escape");
-  await open(`?project=${project}`);
-  check("AC-163 its card says the schedule; the schedule's card its last task", await until(async () => (await page.textContent(`${card(task)} .cfrom`).catch(() => "")) === s.key && (await page.textContent(`${sched} .stbox`).catch(() => "")) === task));
+  let s, task;
+  for (let firing = 0; firing < 2; firing++) {
+    // AC-163: exercise the next firing with a finished predecessor, without relying on a minute boundary.
+    s = (await j("/api/schedules")).schedules.find((x) => x.title === "Nightly deps check");
+    if (s.last) {
+      intoStore(live.app, `UPDATE schedules SET cron = '0 0 1 1 *' WHERE id = '${s.id}'`);
+      check("AC-163 the previous firing is DONE and its session closed before the next is due", await until(async () => {
+        const t = await j(`/api/tasks/${s.last.task}`);
+        return t.status === "DONE" && t.session?.closed;
+      }, 45000), s.last.task);
+    }
+    intoStore(live.app, `UPDATE schedules SET cron = '*/1 * * * *', last_due = last_due - 3600 WHERE id = '${s.id}'`);
+    // A real minute may already have fired while the layout fixture ran: only a new task proves this firing.
+    check("AC-162 due, it makes a task and runs it on its agent", await until(async () => {
+      task = (await j("/api/schedules")).schedules.find((x) => x.id === s.id)?.last?.task;
+      return task && task !== s.last?.task;
+    }, 15000), JSON.stringify({ previous: s.last?.task ?? null, task }));
+    check("AC-183 a firing's run keeps Dispatcher and the schedule", await until(() => startOf(live.app, task) === "dispatcher schedule", 15000), startOf(live.app, task));
+    intoStore(live.app, `UPDATE schedules SET cron = '0 0 1 1 *' WHERE id = '${s.id}'`);   // no second firing a minute on, under the checks below
+    check("AC-162 its task says a schedule made it, and was never in TODO", /^S_[A-Z][A-Z0-9]*-\d+$/.test(task) && !(await j(`/api/tasks/${task}`)).history.some((e) => /TODO/.test(e.text ?? "")), task);
+    check("AC-162 the agent gives its result: DONE", await until(async () => (await j(`/api/tasks/${task}`)).status === "DONE", 20000), JSON.stringify((await j(`/api/tasks/${task}`)).history?.map((e) => e.text)));
+    const t = await j(`/api/tasks/${task}`);
+    check("AC-162 its history says the schedule and its due time", t.history.some((e) => /^Dispatcher made it from schedule SCH-\d+, due \w{3} \d+ \w{3} \d\d:\d\d\.$/.test(e.text ?? "")), JSON.stringify(t.history.map((e) => e.text)));
+    check("AC-163 its window names the schedule", t.schedule?.key === s.key);
+    await page.goto(`${live.base}/kanban/${task}`);
+    check("AC-163 the window's line opens the schedule", await until(() => page.isVisible(".taskfrom")));
+    await page.click(".taskfrom .linklike");
+    check("AC-163 …in its own window", await until(() => page.isVisible("#schedbox[open]")) && (await page.textContent("#schedhead")).startsWith(s.key));
+    await page.keyboard.press("Escape");
+    await open(`?project=${project}`);
+    let links;
+    check("AC-163 its card says the schedule; the schedule's card its last task", await until(async () => {
+      links = await page.evaluate(([task, sched]) => ({
+        cfrom: document.querySelector(`${task} .cfrom`)?.textContent ?? null,
+        stbox: document.querySelector(`${sched} .stbox`)?.textContent ?? null,
+      }), [card(task), sched]);
+      return links.cfrom === s.key && links.stbox === task;
+    }), JSON.stringify({ previous: s.last?.task ?? null, expected: { cfrom: s.key, stbox: task }, actual: links }));
+    if (s.last) check("AC-163 the previous task's card keeps its schedule", await page.textContent(`${card(s.last.task)} .cfrom`) === s.key, s.last.task);
+  }
 
   // AC-164: a later firing closes this finished session before its result is read.
   let next;
