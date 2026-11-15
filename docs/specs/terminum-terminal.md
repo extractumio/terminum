@@ -777,7 +777,7 @@ All cases are shipped; nothing is staged.
 ## 11. Checklist with Definition of Done
 
 - [x] AC-31 — `web/test/outparse.test.mjs`, `web/test/difftable.test.mjs`, `web/test/tableforms.test.mjs`, `web/test/e2e_widgets.mjs`, `web/test/e2e_widgettables.mjs`, `web/test/e2e_widgetsteady.mjs`, `web/test/e2e_widgetpng.mjs`, `web/test/e2e_tableforms.mjs`, `web/test/e2e_livewidgetsteady.mjs`, `web/test/e2e_livewidgetpng.mjs`
-- [x] AC-32 — `cargo test page::folds`, `web/test/e2e_widgetfolds.mjs`, `web/test/e2e_screenfolds.mjs`, `web/test/e2e_livefolds.mjs`, `scripts/e2e_core.py`
+- [x] AC-32 — `cargo test page::folds`, `web/test/e2e_widgetfolds.mjs`, `web/test/e2e_screenfolds.mjs`, `web/test/e2e_livefolds.mjs` (`node web/test/e2e_live.mjs folds`: complete fixture output, then a fresh screen capture after the history fold), `scripts/e2e_core.py`
 - [x] AC-33 — `cargo test page::bookmarks`, `web/test/marktext.test.mjs`, `web/test/e2e_marks.mjs`, `web/test/e2e_marknav.mjs`, `web/test/e2e_requests.mjs`, `web/test/e2e_requestowners.mjs`, `web/test/e2e_marksdata.mjs`, `web/test/e2e_marksscope.mjs`, `web/test/e2e_phonerow.mjs`, `web/test/e2e_panewin.mjs`
 - [x] AC-34 — `cargo test page::search`, `web/test/review-regressions.test.mjs`, `web/test/e2e_marks.mjs`, `web/test/e2e_review_regressions.mjs`
 - [x] AC-35 — `web/test/links.test.mjs`, `web/test/panefiles.test.mjs`, `web/test/e2e_term.mjs`, `web/test/e2e_pathfold.mjs`, `web/test/e2e_livelinks.mjs`, `web/test/e2e_app.mjs`, `ui/test/tree-reveal.test.mjs`

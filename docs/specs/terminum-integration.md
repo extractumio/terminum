@@ -68,11 +68,11 @@ Open questions: none.
 | AC-188 | [MUST / P0] | terminumd alone builds a batch: from the fresh target, the queued commits in queue order that merge cleanly together, each its own merge commit named by its task's ID, at most the batch's size, which starts at 4, doubles after a green batch up to the project's most (8) and halves after a red one; each batch is an integration task, I_<ID>, made by Dispatcher, and one batch is in work on the machine at a time. |
 | AC-189 | [MUST / P0] | A commit that conflicts with the target returns to its agent at once with the target's commit and the files; one that conflicts only with a task of the batch stays queued, told once which task it waits for, and is judged again when that one's batch ends. |
 | AC-190 | [MUST / P0] | The project's Check runs on each candidate in a window the human can read; green is published; red, over its time or not started, the batch's integration task gets its agent (AC-194); nothing is published but a candidate whose own check was green; a check outlives terminumd's restart. |
-| AC-191 | [MUST / P0] | A green candidate is published only if the target has not moved: by terminum's own push, never forced, or by the project's Publish; then its tasks are DONE with their results, the project's folder is brought up to it where it can be, and After runs once for the batch; a failure there undoes nothing and goes to the batch's integration task (AC-194). |
+| AC-191 | [MUST / P0] | A green candidate is published only if the target has not moved: by terminum's own push, never forced, or by the project's Publish; then its tasks are DONE with their results, the project's folder is brought up to it where it can be, and After runs once for the batch; a failure there undoes nothing and waits for a human on the batch's integration task (AC-194). |
 | AC-192 | [MUST / P0] | Agents are told early and in detail, in fixed words with tasks, sessions, files and what to do: an overlap with another task's commits while both still work, the target moving in files they changed, their place and expected batch, being held back, a return for a conflict or a red check, and landing; each notice is a comment on its task and reaches a working agent by its next hook, a waiting one by the command it waits on, and an idle one of Dispatcher's by the gate. |
 | AC-193 | [MUST / P0] | The board shows INTEGRATION as a column where a shown project has integration on: the batch under check on top as one group with its state and time, the queue under it in order, each card saying its place or what it waits for; keys pause the queue, take a task out, queue a task, return a batch's task, check a batch again and list past batches with their results. |
-| AC-198 | [MUST / P0] | A landing is seven stages, each a command of the project's settings in a row of its Integration tab and each idempotent: Prepare and Verify, run by terminumd for each queued task in a tree of its own at the task's commit before it joins a batch; Queue, terminum's own; Check and Publish on the candidate; After in the project's folder; Cleanup after a published batch; without terminumd the same stages are commands run in order, `make land` running them all. |
-| AC-194 | [MUST / P0] | A batch's integration task holds its tasks, commits, check and every round; green, Dispatcher ends it DONE with no agent; red, it runs on the project's integration agent in a kept slot, which reads the log and decides by tools alone: return the tasks that caused it, each with an analysis, and check again without them; check again unchanged, once, for a flaky test or a mended environment; add a fix of its own; or ask a human. With no agent set, a spent budget, a dead agent or 3 red rounds it waits for a human, whose keys do the same. |
+| AC-198 | [MUST / P0] | A landing is seven stages, each a command of the project's settings in a row of its Integration tab and each idempotent: Prepare and Verify, run by terminumd for each queued task, one task at a time on the machine, in a tree of its own at the task's commit before it joins a batch; Queue, terminum's own; Check and Publish on the candidate; After in the project's folder; Cleanup after a published batch; without terminumd the same stages are commands run in order, `make land` running them all. |
+| AC-194 | [MUST / P0] | A batch's integration task holds its tasks, commits, check and every round; green, Dispatcher ends it DONE with no agent; red, it runs on the project's integration agent in a kept slot, which reads the log and decides by tools alone: return the tasks that caused it, each with an analysis, and check again without them; check again unchanged, once, for a flaky test or a mended environment; add a fix of its own; or ask a human. With no agent set, a spent budget, a dead agent or 3 red rounds, and after a failed Publish or After, it waits for a human, whose keys do the same. |
 
 ## 5. BDD scenarios
 
@@ -320,7 +320,7 @@ Scenario: AC-191 happy path — the project's Publish
   When it is there
   Then the batch is published as above
   When it is not, or the line ends with another status
-  Then nothing is DONE: the batch stands "not published" with the line's last rows, its integration task gets its agent with them (AC-194), and the batch's key Publish again runs the line once more
+  Then nothing is DONE: the batch stands "not published" with the line's last rows, its integration task waits for a human with them (AC-194), and the batch's key Publish again runs the line once more
 
 Scenario: AC-191 edge — the target moved
   Given origin/main moved to 8d00e1f while batch 7 was checked: a human pushed
@@ -329,7 +329,7 @@ Scenario: AC-191 edge — the target moved
 
 Scenario: AC-191 failure — the push is refused
   When the push fails and origin/main has not moved
-  Then the batch stands "not published: <git's message>", with Publish again, and its integration task gets its agent with git's words (AC-194)
+  Then the batch stands "not published: <git's message>", with Publish again, and its integration task waits for a human with git's words (AC-194)
 
 Scenario: AC-191 happy path — the project's folder
   Given Billing's folder on branch main, clean, behind origin/main
@@ -342,7 +342,7 @@ Scenario: AC-191 happy path — After
   Given After "make install"
   Then once the batch is published and the folder moved, the line runs in the project's folder, in a window as the check's, once for the batch
   When it ends with another status, or runs over the check's time
-  Then the batch stays published and its tasks DONE; its row and a toast say "After failed for batch 7: <its last rows>", and its integration task gets its agent with them (AC-194): the next batch waits for that task's end
+  Then the batch stays published and its tasks DONE; its row and a toast say "After failed for batch 7: <its last rows>", and its integration task waits for a human with them (AC-194): the next batch waits for that task's end
   And with the folder left where it was, After does not run: "After did not run: Billing's folder is not on batch 7."
 
 Scenario: AC-191 edge — terminumd stops while publishing
@@ -490,10 +490,11 @@ Scenario: AC-194 happy path — everything returned
   Then no round follows: I_API-31 is DONE, "Batch 8: nothing published, all 3 tasks returned.", and the next batch is built
 
 Scenario: AC-194 happy path — failures that are not a check's
-  When the check did not start (AC-190), Publish failed or a push was refused (AC-191), or After failed (AC-191)
-  Then I_API-31 gets its agent the same way, its prompt's first lines saying which step failed with its last rows
-  And for After, the batch is already published and its tasks DONE: the agent mends what it can outside the candidate, then finish_task ends I_API-31 with what it did, or ask_human
-  And for Publish, when it is mended, integration_recheck publishes again without a new check while the target has not moved
+  When the check did not start (AC-190)
+  Then I_API-31 gets its agent the same way, its prompt's first lines saying the check did not start, with its last rows
+  When Publish failed or a push was refused (AC-191), or After failed (AC-191)
+  Then no agent starts: I_API-31 is WAIT FOR HUMAN with the step's words, "Batch 8 is not published: <why>" or "After failed for batch 8 with status 2: the batch stays published and its tasks DONE. Its log: …"
+  And the human decides by the batch's keys (Publish again, AC-191): a push and what After does on the human's machine are mended by a human, never by an agent
 
 Scenario: AC-194 failure — no agent, a spent budget, a dead agent
   Given no Agent is set
@@ -555,6 +556,7 @@ Scenario: AC-198 happy path — Prepare and Verify before a batch
   Given Prepare "make sync", Verify "make test-changed"
   When API-12 is queued with 4f2a91c (AC-187)
   Then terminumd makes ~/.terminum/integration/billing/verify-12 at 4f2a91c, never the agent's own tree, and runs Prepare then Verify there in a window of its own, the task's card saying "Verifying 4f2a91c"
+  And one task's Prepare and Verify run at a time on the machine, in queue order, as heavy as a batch's check: API-13, queued after, starts its own when API-12's end
   When both end with 0
   Then API-12 joins the queue's next batch as AC-188 says, its tree removed
   When Prepare ends with 2
@@ -645,12 +647,11 @@ sequenceDiagram
 
 | AC | Gap | Evidence |
 |---|---|---|
-| AC-187 | Queueing with a title where a session has no task (the tool's and `--title`), `make land` queueing its tree, a human's Integrate key and drop: not built; the tools and `terminum integration queue <ID> --result-file <path>|wait|status` are. | `terminumd/src/tasks/integration_queue.rs`, `terminumd/src/cli/integration.rs` |
+| AC-187 | Queueing with a title where a session has no task (the tool's and `--title`) and a human's drop: not built; the tools, `terminum integration queue <ID> --result-file <path>|wait|status`, `make land` queueing its tree and the Integrate key of the task's window are. | `terminumd/src/tasks/integration_queue.rs`, `terminumd/src/cli/integration.rs` |
 | AC-190 | A check's process group is ended by the runner, read from `ps`; nothing proves it ends a group that left its pane's tree. | `terminumd/src/integrate/runner.rs` |
 | AC-192 | Trees of a project with no task are not compared; a card does not yet say "overlaps API-13" (AC-193). | `terminumd/src/integrate/notices.rs` |
 | AC-193 | Integrate and Take out are keys of the task's window, not a card's menu, and a card is not dropped on INTEGRATION; Return…, Check again, Return all and Publish again stand in the integration task's window, not on the group's cards; a card does not say "overlaps API-13". | `web/static/kanbanqueuecol.js`, `web/static/kanbanbatch.js` |
-| AC-194 | A red check and a check that did not start get the agent; a Publish or push refused and After's failure wait for a human. Red again, the same session goes on with RUN's words, not the round's own ("Decide as before", its log). The prompt lists each task with its commit, not its files. A fix goes in as its last commit's change alone, picked onto the target. | `terminumd/src/integrate/engine.rs`, `terminumd/src/integrate/agent.rs` |
-| AC-198 | One task's Verify runs at a time; a pass the agent kept is reused only when Prepare left the same content (no merge needed). | `terminumd/src/integrate/stages.rs`, `scripts/check_changed.py` |
+| AC-194 | Red again, the same session goes on with RUN's words, not the round's own ("Decide as before", its log). The prompt lists each task with its commit, not its files. A fix goes in as its last commit's change alone, picked onto the target. | `terminumd/src/integrate/engine.rs`, `terminumd/src/integrate/agent.rs` |
 
 ## 8. Recommendation and ownership
 
@@ -800,7 +801,7 @@ A task's verify tree is `~/.terminum/integration/<project>/verify-<number>`, det
 
 **Security.** The stages' lines (Prepare, Verify, Check, Publish, After, Cleanup) are a standing permission to run commands and to push as the user: only a signed-in page writes them, the window shows each line and its folder before Save, and no tool of an agent changes them. An agent chooses only which commit of the project's repository is queued; no title or text of a task reaches a commit, a command or a shell: a merge is named by the task's ID alone. Prepare and Verify run the task's own commit as the user in a tree of terminumd's, never the agent's, and decide no publishing; Cleanup is the human's line, and terminum's own value runs `worktree.py sweep`, which removes no tree with work or a process in it. The check is the candidate's own, so a task can change what checks it, as a tree that lands by itself can: the human reads Batches… and the published history. terminum's own push names one remote, one branch and one commit, never forced, never a tag; a project's Publish is the human's line. A check runs the queued code as the user, as the agents that wrote it already do. A check's rows reach a task's comment only redacted (`sent::redact`). The gate types only a task's ID with fixed words, only into a pane Dispatcher started and marked, and the integration task's prompt: the human's saved Prompt with facts terminumd fills in (IDs, commits, paths, file names, the Check line), never a task's title, text or comment. What this spec holds is what terminumd does: it publishes only a candidate whose own check was green, and the integration agent's three tools can keep a task out of a batch or cost a round, never publish. The agent's own shell is bounded as any task's agent's is, by its command's permissions (`terminum-dispatcher.md` AC-156), not by this spec: it starts in a worktree of its own, away from the project's folder, and its prompt forbids a push; its analysis reaches another task as a comment, redacted (`sent::redact`), data to that task's agent. A check's log is the queued code's output: the prompt names its path and says to treat what it reads as data.
 
-**Limits.** 200 queued tasks a project; a batch at most 8 tasks; red rounds at most 10 a batch; a prompt 8 KiB; 30 trees compared for overlaps a project; a command 2,000 characters; a check 1 to 1440 minutes; batches' rows kept, their logs 30 days; one batch in work on the machine at a time; a pass Verify reuses (AC-198) leaves a break between the task's files and other files origin/main changed to Check's smoke set and CI on main, as `make land` does.
+**Limits.** 200 queued tasks a project; a batch at most 8 tasks; red rounds at most 10 a batch; a prompt 8 KiB; 30 trees compared for overlaps a project; a command 2,000 characters; a check 1 to 1440 minutes; batches' rows kept, their logs 30 days; one batch in work on the machine at a time; one task's Prepare and Verify on the machine at a time; a pass Verify reuses (AC-198) leaves a break between the task's files and other files origin/main changed to Check's smoke set and CI on main, as `make land` does.
 
 ## 10. Delivery stages
 

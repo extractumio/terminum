@@ -4,7 +4,7 @@
 // reads the screen after it), not only once that scrolled off too.
 import fs from "node:fs";
 import path from "node:path";
-import { check, shownPane } from "./check.mjs";
+import { check, shownPane, until } from "./check.mjs";
 
 export async function liveFolds(page, { tmux, work }) {
   const pane = await shownPane(page, { tmux, work });
@@ -24,10 +24,13 @@ export async function liveFolds(page, { tmux, work }) {
   await page.click("#term");
   await page.keyboard.type(`clear; cat ${file}`);
   await page.keyboard.press("Enter");
-  let screen = "";                                         // the screen alone: the next call there, all of the first above it
-  for (let i = 0; i < 50 && !screen.includes("more 0"); i++) { screen = tmux("capture-pane", "-p", "-t", pane); await page.waitForTimeout(100); }
+  // more 0 is only the start: tmux can capture it before the rest scrolls the first tool off.
+  const printed = await until(() => tmux("capture-pane", "-p", "-t", pane).split("\n")
+    .some((line) => line.trim() === `more ${rows - 8}`), 5000);
+  check("AC-32 the tool fixture printed its final output row", printed);
   const label = await page.waitForFunction(more, before, { timeout: 5000 })
     .then(() => "⋯ 10 more lines of output", () => null);
+  const screen = tmux("capture-pane", "-p", "-t", pane);   // current after the fold wait, never an earlier partial screen
   const next = screen.includes("⏺ Bash(sed -n 1,9p b.rs)") && !screen.includes("11: line");
   check("AC-32 a tool's output that scrolled off folds while the next tool's ⏺ is still on the screen", label !== null && next, JSON.stringify({ label, next, rows, top: screen.split("\n").slice(0, 4) }));
   fs.rmSync(file, { force: true });
