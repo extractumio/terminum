@@ -23,14 +23,28 @@ PORT, SOCKET = free_port(), own("tm-test-access")
 
 def raw(port, method, path, headers=None, body=b""):
     """(status, JSON body) of a request sent exactly as given (urllib would set Host itself)."""
-    s = socket.create_connection(("127.0.0.1", port), timeout=10)
+    # AC-146: the same capped load slack as web/test/check.mjs; PBKDF2 slows under load.
+    timeout = 10 * min(4, max(1, os.getloadavg()[0] / (os.cpu_count() or 1)))
+    deadline = time.monotonic() + timeout
+
+    def remaining():
+        left = deadline - time.monotonic()
+        if left <= 0:
+            raise TimeoutError(f"{method} {path}: no complete response within {timeout:g}s")
+        return left
+
     head = [f"{method} {path} HTTP/1.1", "Connection: close", f"Content-Length: {len(body)}"]
     head += [f"{k}: {v}" for k, v in (headers or {}).items()]
-    s.sendall(("\r\n".join(head) + "\r\n\r\n").encode() + body)
     data = b""
-    while chunk := s.recv(65536):
-        data += chunk
-    s.close()
+    with socket.create_connection(("127.0.0.1", port), timeout=timeout) as s:
+        s.settimeout(remaining())
+        s.sendall(("\r\n".join(head) + "\r\n\r\n").encode() + body)
+        while True:
+            s.settimeout(remaining())
+            chunk = s.recv(65536)
+            if not chunk:
+                break
+            data += chunk
     head, _, rest = data.partition(b"\r\n\r\n")
     status = int(head.split(b" ")[1])
     try:

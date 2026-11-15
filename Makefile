@@ -31,6 +31,7 @@ endif
 -include local.mk
 export TM_CODESIGN_IDENTITY
 export TM_MAC_RUNNER
+export TM_MAC_NODE_BIN
 export TM_LAND_INSTALL
 
 # one id per set of sources, compiled into terminumd (option_env!("TM_BUILD")) and the UI
@@ -130,9 +131,12 @@ land:
 
 # the seven stages of a landing, each alone (scripts/land_stages.py, terminum-integration.md AC-198)
 LAND_STAGES := prepare verify queue check publish after cleanup
-.PHONY: $(addprefix land-,$(LAND_STAGES))
+.PHONY: $(addprefix land-,$(LAND_STAGES)) land-clean
 $(addprefix land-,$(LAND_STAGES)):
 	TASK="$(TASK)" RESULT="$(RESULT)" python3 scripts/land.py $(@:land-%=%) $(SLUG)
+
+# Cleanup's short name, as terminum's Integration tab calls it
+land-clean: land-cleanup
 
 leftovers:
 	python3 scripts/leftovers.py $(if $(END),--end)
