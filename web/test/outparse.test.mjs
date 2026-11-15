@@ -97,9 +97,10 @@ test("settled: where scanning again finds the same regions; an open fence or fil
 
 test("10000 lines of a list take little time (no rescan per line)", () => {
   const text = Array.from({ length: 10000 }, (_, i) => `- item ${i}`).join("\n");
-  const t0 = performance.now();
+  const t0 = process.cpuUsage();
   assert.deepEqual(found(text), []);
-  assert.ok(performance.now() - t0 < 500, `${performance.now() - t0} ms`);
+  const used = process.cpuUsage(t0), ms = (used.user + used.system) / 1000;
+  assert.ok(ms < 500, `${ms} ms CPU (500 ms budget)`);
 });
 
 test("settled never stays far behind: a log with a list item on every line, a file whose prompt never came back", () => {

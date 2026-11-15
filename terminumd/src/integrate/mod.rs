@@ -8,6 +8,7 @@ pub mod engine;
 pub mod git;
 pub mod keys;
 pub mod runner;
+pub mod stages;
 pub mod store;
 
 use std::time::Duration;

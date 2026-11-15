@@ -128,6 +128,22 @@ export async function pressFab(page, sel, how = "click") {
   await page[how](sel);
 }
 
+/** A screenshot `name`.png into TM_TEST_SHOTS, when a run asks for them (docs/UI-GUIDELINES.md §6). */
+export async function shot(page, name) {
+  const dir = process.env.TM_TEST_SHOTS;
+  if (!dir) return;
+  fs.mkdirSync(dir, { recursive: true });
+  await page.screenshot({ path: path.join(dir, `${name}.png`) });
+}
+/** Leaves window `box` (a dialog or a list's form) without keeping: its Cancel; on a phone, where the window covers
+ *  the screen and has none, the × of its bar (phonewin.js, terminum.md AC-173). */
+export async function pressCancel(page, box) {
+  const cancel = page.locator(`${box} :is([value="cancel"], [id$="cancel"])`).first();
+  await (await cancel.isVisible() ? cancel : page.locator(`${box} .dhead .x`)).click();
+}
+/** A key of window `box`, by its words: at its foot, or on a phone in its bar. */
+export const windowKey = (page, box, words) => page.locator(`${box} .actions`).getByRole("button", { name: words, exact: true });
+
 /** Presses a button of the list's foot; on a computer once the pointer unfolded it (foot.css, AC-07). */
 export async function pressFoot(page, sel) {
   if (await page.isVisible("#foottoggle") && (await page.getAttribute("#foottoggle", "aria-expanded")) === "false") {

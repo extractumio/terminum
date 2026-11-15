@@ -1,0 +1,45 @@
+/* SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial */
+/* The board where room is short (terminum-kanban.md AC-105 "a phone's one-row head", AC-117; kanbanphone.js);
+   after controls.css and askfold.css. The counters of tasks that need the human stand in the head's row
+   wherever they show; the rest is a phone's (600 px or narrower): one row of keys, Find and the filters under
+   it when asked, Auto-Dispatch, the agents and the schedules behind one line, the cards the rest. */
+.board-page #askcount { position: static; flex: none; gap: var(--sp-2); }
+@media (min-width: 601px) { #findkey, #poolline { display: none !important; } }   /* a phone's alone (the keys' own rules weigh an id) */
+#pool { display: contents; }
+
+@media (max-width: 600px) {
+  /* one row: the list's key, the project (it gives way first), the counters, Find, + Task as an icon key */
+  .board-page #bar { flex-wrap: wrap; align-items: center; }
+  #filters { display: contents; }
+  #bar #fproject { order: 1; flex: 1 1 0; min-width: var(--h-touch); }
+  #fproject summary { box-sizing: border-box; width: 100%; min-width: 0; max-width: none; }
+  .board-page #askcount { order: 2; }
+  #findkey { order: 3; display: inline-grid; flex: none; }
+  #findkey.lit { color: var(--accent); background: color-mix(in srgb, var(--accent) 22%, var(--chrome-2)); box-shadow: var(--m-well); }
+  #boardacts { order: 4; margin-left: 0; }
+  #newtask { width: var(--h-touch); padding: 0; justify-content: center; }
+  #newtask span { display: none; }
+  /* the smallest phone: every key whole on the one row, the project's a dot and an arrow */
+  @media (max-width: 360px) { .board-page #bar { column-gap: var(--sp-1); } .board-page #askcount { gap: var(--sp-1); } #fproject summary { padding-inline: var(--sp-2); } }
+  /* Find and the filters: rows under the head while the Find key is pressed */
+  #filters .search, #bar #filtersbtn, #picks { display: none; }
+  #bar.finding #filters .search { display: flex; order: 5; flex: 1 1 100%; max-width: none; }
+  #bar.finding #picks { display: flex; order: 6; flex: 1 1 100%; flex-wrap: wrap; }
+  /* Auto-Dispatch, the agents and the schedules: one line under the columns' switch, a sheet when pressed */
+  #pool:not([data-sheet]) { display: none; }
+  #pool[data-sheet] { display: flex; flex-direction: column; gap: var(--sp-3); padding: var(--sp-4); border-radius: var(--r-xl); background: var(--chrome); }
+  #pool :is(#agentbar, #schedbar) { padding: 0; overflow: visible; }
+  #pool #autokeys { display: flex; align-items: center; gap: var(--sp-2); }
+  #pool #autoswitch .word { display: inline; }
+  #pool .tracks, #pool .tracks > :is(.trackitems, .trackside) { flex-direction: column; align-items: stretch; max-height: none; overflow: visible; }
+  #pool .agentlist .item { width: auto; }
+  #poolline { display: flex; flex: none; justify-content: flex-start; gap: var(--sp-3); margin: var(--sp-2) var(--gutter) 0; overflow: hidden;
+    font-size: var(--fs-label); font-weight: var(--fw-body); color: var(--muted-text); white-space: nowrap; }
+  #poolline::after { flex: none; margin-left: auto; }   /* the schedules' arrow (kanban.css), at the line's end */
+  .poolpart { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .poolpart:first-child { flex: none; }            /* Auto-Dispatch starts agents: its state is never cut */
+  .poolpart b { font-weight: var(--fw-ctl); color: var(--t-fg); font-variant-numeric: tabular-nums; }
+  /* a column scrolls whole: its own keys go with its cards */
+  .board-page .col { overflow-y: auto; }
+  .board-page .cards { flex: none; overflow: visible; }
+}

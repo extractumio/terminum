@@ -4,7 +4,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { check, runningIn, until } from "./check.mjs";
-import { drawn, openPage, ORIGIN, PHONE, SIZES, THEME } from "./fake.mjs";
+import { drawn, openPage, ORIGIN, PHONE, SIZES, THEME, pressCancel, windowKey } from "./fake.mjs";
 import { pressCard } from "./boardkit.mjs";
 
 const META = { projects: [{ id: "api", name: "API", color: 0 }], users: [], sessions: [{ key: "k1", title: "API conversation" }], hosts: [], agents: [{ id: "a1", project: "api", name: "Claude", kind: "claude", color: 0, line: "claude" }] };
@@ -75,7 +75,7 @@ export async function webTaskRun(browser, name) {
       await open("API-8");
       await dropFile();
       if (!await until(() => releaseUpload !== null)) throw new Error("the comment upload did not start");
-      const footerSave = page.locator("#taskacts").getByRole("button", { name: "Save", exact: true });
+      const footerSave = windowKey(page, "#taskbox", "Save");
       check("AC-122 uploading keeps RUN visible and both footer actions disabled", await run().isVisible() && await run().isDisabled() && await footerSave.isDisabled());
       releaseUpload();
       await page.waitForFunction(() => document.querySelector(".newcomment textarea").value.includes("queued-upload"));
@@ -154,14 +154,14 @@ export async function webTaskRun(browser, name) {
         const shown = await until(() => page.isVisible("#runbox[open]"));
         check(`AC-121 RUN's window opens before a first run of ${why}: nothing is sent unread`, shown && sent.length === n && await page.inputValue("#runmessage") === "Mind the cache"
           && (!what.by_agent || (await page.isVisible("#runmarked") && await page.$eval("#runwhat", (d) => d.open))), JSON.stringify(sent.slice(n)));
-        if (shown) await page.click('#runbox button[value="cancel"]');
+        if (shown) await pressCancel(page, "#runbox");
         await close();
       }
       const room = { words: "Claude runs API-1.", close: null, queue: "Add it to Claude's queue?" };
       n = sent.length;
       await first({ agents: [{ ...META.agents[0], full: room }] });
       check("AC-169 an agent at its limit: RUN's window offers its queue, nothing waits unasked", await until(() => page.isVisible("#runbox[open]")) && await page.textContent("#rungo") === "Add to queue" && sent.length === n);
-      await page.click('#runbox button[value="cancel"]');
+      await pressCancel(page, "#runbox");
       await close();
       n = sent.length;
       await first({}, room);
@@ -174,7 +174,7 @@ export async function webTaskRun(browser, name) {
       await first({});
       check("AC-121 a first run refused is said in RUN's window, with what would be sent", await until(() => page.isVisible("#runbox[open]")) && /text changed/.test(await page.textContent("#runerror")) && sent.length === n + 1);
       refusedPress = null;
-      await page.click('#runbox button[value="cancel"]');
+      await pressCancel(page, "#runbox");
       await close();
       offer = {};
       // Run from scratch: apart from Run, on the Status line; RUN's window is where its agent is chosen
