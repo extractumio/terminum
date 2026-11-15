@@ -6,6 +6,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { DatabaseSync } from "node:sqlite";
 import { boardKit, nap, pressRun } from "./boardkit.mjs";
 import { check, until } from "./check.mjs";
 
@@ -330,13 +331,25 @@ export async function liveDispatcher(page, opts) {
 
   // AC-131 terminumd restarts: the session goes on, the walk reads its run from the store
   const restart = await task("over a restart STOPS");
-  await run(restart);
+  const restartState = () => {
+    const db = new DatabaseSync(path.join(opts.app, "kanban.sqlite"), { readOnly: true });
+    try { return db.prepare("SELECT r.turn_ended, r.nudged, r.idle_for FROM runs r JOIN run_tasks rt ON rt.run = r.id JOIN tasks t ON t.id = rt.task WHERE t.slug = ? ORDER BY r.rowid DESC LIMIT 1").get(restart); }
+    finally { db.close(); }
+  };
+  const stopAfter = path.join(work, "restart-stop");
+  // A real Claude title lets the screen recover a Stop missed during downtime; python3 alone is no agent.
+  await run(restart, { agent: await agent("Restart", `--title '✳ Restart' --stop-after '${stopAfter}'`) });
   await hasStatus(restart, "IN PROGRESS", 15000);
   await stop();
+  fs.writeFileSync(stopAfter, "");
+  check("AC-131 the agent's Stop is attempted while terminumd is down", await until(() => fs.existsSync(`${stopAfter}.sent`)));
+  const saved = restartState();
+  check("AC-131 no Stop or result request was saved before the restart", saved?.turn_ended === 0 && saved?.nudged === 0, JSON.stringify(saved));
   await start();
   await page.goto(`${base}/kanban/?project=${project}`);
   await page.waitForSelector('.col[data-status="TODO"]');
-  check("AC-131 after a restart it goes on where it was: asked once, then FAILED an hour later (AC-123)", await hasStatus(restart, "FAILED", 30000) && await said(restart, "No result from the agent within an hour of Dispatcher's request."), await history(restart));
+  check("AC-131 the idle screen recovers its missed Stop and a request goes before failure", await until(() => restartState()?.nudged > 0) && await status(restart) === "IN PROGRESS", JSON.stringify(restartState()));
+  check("AC-131 after a restart it goes on where it was: asked once, then FAILED an hour later (AC-123)", await hasStatus(restart, "FAILED", 30000) && await said(restart, "No result from the agent within an hour of Dispatcher's request."), `${await history(restart)}; ${JSON.stringify(restartState())}`);
   tmux("kill-pane", "-t", otherPane);
   // AC-117 on the session page too, every project's
   await page.goto(`${base}/sessions/`);
