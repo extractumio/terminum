@@ -363,7 +363,7 @@ Scenario Outline: AC-102 edge — cancel the outer targeted runner
   And the guard notifies its private process group once so shell descendants can finish orderly cleanup; cancellation first received during settling starts a fresh 15 s grace period, and repeated signals neither notify again nor extend it
   And both children and the private folder are gone, an unrelated process is untouched, no later step starts, and no passing result is recorded
   And a guard that fails or exceeds the 60 s cancellation wait is recovered using its private group, folder and registered children, with PID start identities checked before each signal and the guard kept unreaped until its children are ended
-  And failed metadata queries fail cleanup visibly and retain the private folder for diagnosis
+  And failed metadata queries fail cleanup visibly and retain the private folder for diagnosis; a cancellation still gets its single notice and grace, and the owned processes are read again when the grace ends
 
   Examples:
     | signal  | status |

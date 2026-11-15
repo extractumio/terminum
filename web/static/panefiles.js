@@ -2,9 +2,10 @@
 // The files a pane's output names (AC-35, AC-52, AC-56): where a printed path is (a relative one from
 // the folder its coding agent works in, as its hooks said, then from the pane's; "~" from its home;
 // on its host) and whether a file is there.
-// Only a file that is there gets an underline or a click. A file is looked up by
-// listing its folder through the proxy (nothing is read): one page answers every name of a
-// folder of up to 500 entries; a larger one is asked by name.
+// Only a file or a folder that is there gets an underline or a click, a folder only where Files
+// can show it (`shows`). Either is looked up by listing the folder it is in through the proxy
+// (nothing is read): one page answers every name of a folder of up to 500 entries; a larger one
+// is asked by name.
 import { absolutePath } from "./links.js";
 
 const PANE_FOR = 5000;       // ms the pane's folder is taken as known (a "cd" moves it)
@@ -16,8 +17,9 @@ const QUEUED = 200;          // folders waiting, at most: the newest asked first
 const KEPT = 3000;           // answers kept, the oldest go first
 const SAY_EVERY = 250;       // ms between two "files turned up" (the page marks links again)
 
-/** paneInfo(): the shown pane's {cwd, home, host, agent} or {error}, null when the Mac does not answer.
- *  fetchJson(url): the answer's JSON, null when it failed (tests give their own). */
+/** Whether a listing's entry is a folder (a link to one too). */
+export const isFolderEntry = (e) => e.k === "d" || e.k === "L";
+
 /** A listing's page once read: a large folder still being read is asked again, three times at most. */
 export async function settled(ask) {
   let page = await ask();
@@ -28,9 +30,12 @@ export async function settled(ask) {
   return page;
 }
 
-export function paneFiles(paneInfo, fetchJson = (url) => fetch(url).then((r) => (r.ok ? r.json() : null), () => null)) {
+/** paneInfo(): the shown pane's {cwd, home, host, agent} or {error}, null when the Mac does not answer.
+ *  fetchJson(url): the answer's JSON, null when it failed (tests give their own).
+ *  shows(path, pane): whether Files can show the folder at `path` (none given: no folder is a link). */
+export function paneFiles(paneInfo, fetchJson = (url) => fetch(url).then((r) => (r.ok ? r.json() : null), () => null), shows = () => false) {
   let pane = null, paneAt = -Infinity, asking = null;
-  let found = new Map();     // host\npath -> {ok, at, tries, pending}
+  let found = new Map();     // host\npath -> {ok: false | "file" | "folder", at, tries, pending}
   const queue = [];          // folders to list, {host, dir, names: Set}
   const listeners = new Set();
   let busy = 0, gen = 0, saying = 0, soon = 0;
@@ -71,8 +76,8 @@ export function paneFiles(paneInfo, fetchJson = (url) => fetch(url).then((r) => 
   };
   const keyOf = (host, path) => `${host ?? ""}\n${path}`;
   const known = (place) => found.get(keyOf(place.host, place.path));
-  /** The first of `value`'s places whose file is there, as far as known now. */
-  const foundAt = (value) => placesOf(value).find((place) => known(place)?.ok) ?? null;
+  /** The first of `value`'s places whose file, or folder Files can show, is there, as far as known now. */
+  const foundAt = (value) => placesOf(value).find((place) => { const ok = known(place)?.ok; return ok === "folder" ? shows(place.path, pane) : !!ok; }) ?? null;
 
   function remember(host, dir, name, ok) {
     const k = keyOf(host, dir === "/" ? `/${name}` : `${dir}/${name}`), was = found.get(k);
@@ -82,17 +87,17 @@ export function paneFiles(paneInfo, fetchJson = (url) => fetch(url).then((r) => 
   }
   async function list(job) {
     const mine = gen;
-    const isFile = (e) => e.k === "f" || e.k === "l";
+    const kind = (e) => (e.k === "f" || e.k === "l" ? "file" : isFolderEntry(e) ? "folder" : false);
     const ask = (params) => fetchPage(`/fb/api/ls?${query({ path: job.dir, limit: String(PAGE), ...params }, job.host)}`, mine);
     const page = await settled(() => ask({}));
     if (!page || page.status !== "ready") return [...job.names].map((n) => [n, false]);
     if (page.total <= page.entries.length) {
-      const files = new Set(page.entries.filter(isFile).map((e) => e.n));
-      return [...job.names].map((n) => [n, files.has(n)]);
+      const kinds = new Map(page.entries.map((e) => [e.n, kind(e)]));
+      return [...job.names].map((n) => [n, kinds.get(n) ?? false]);
     }
     return Promise.all([...job.names].map(async (n) => {                            // more than a page: by name
       const one = await ask({ filter: n });
-      return [n, !!one?.entries?.some((e) => e.n === n && isFile(e))];
+      return [n, kind(one?.entries?.find((e) => e.n === n) ?? {})];
     }));
   }
   function next() {
@@ -126,7 +131,7 @@ export function paneFiles(paneInfo, fetchJson = (url) => fetch(url).then((r) => 
     soon ||= setTimeout(() => { soon = 0; next(); }, 0);             // once the marking pass named all it sees
   }
 
-  /** "yes": its file is there; "no": not, or not known yet; or {error}: the pane's folder is not
+  /** "yes": its file or folder is there; "no": not, or not known yet; or {error}: the pane's folder is not
    *  known (a click says why). Asked in the background when not known (listeners hear when one
    *  turns out to be there). */
   function state(value) {
@@ -136,6 +141,7 @@ export function paneFiles(paneInfo, fetchJson = (url) => fetch(url).then((r) => 
     const places = placesOf(value);
     if (!places.length) return { error: `Cannot tell where ${value} is: this session's folder is not known.` };
     for (const place of places) {
+      if (value.endsWith("/") && !shows(place.path, pane)) continue;   // a folder Files cannot show: never a link, not asked
       const k = known(place);
       const stale = !k || (!k.pending && performance.now() - k.at > (k.ok ? KEEP_FOUND : AGAIN[Math.min(AGAIN.length, k.tries) - 1]));
       if (stale) enqueue(place);
@@ -144,10 +150,12 @@ export function paneFiles(paneInfo, fetchJson = (url) => fetch(url).then((r) => 
   }
   return {
     state,
-    /** Whether the file a printed path names is there, as far as known now. */
+    /** Whether the file or folder a printed path names is there, as far as known now. */
     there: (value) => state(value) === "yes",
-    /** The absolute path of the file a printed path names, where it is there; null when none is known. */
+    /** The absolute path of the file or folder a printed path names, where it is there; null when none is known. */
     pathOf: (value) => foundAt(value)?.path ?? null,
+    /** Whether what a printed path names is a folder that is there. */
+    isFolder: (value) => { const place = foundAt(value); return !!place && known(place).ok === "folder"; },
     /** Another pane is shown: its folder and files are asked again. */
     forget() { gen++; pane = null; paneAt = -Infinity; asking = null; found = new Map(); queue.length = 0; },
     /** fn() when files turned out to be there or the pane's folder changed (at most every 250 ms). */

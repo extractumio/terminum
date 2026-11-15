@@ -438,7 +438,7 @@ Scenario: AC-66 edge — remembered, across unloaded pages
 ```gherkin
 Scenario: AC-67 happy path — Markdown, HTML, anchors, web
   When the user clicks a link to "docs/guide.md" in a rendered file
-  Then "docs/guide.md" opens in a new tab Rendered; a link to "docs/report.html#sec2" opens report.html rendered in a sandboxed frame scrolled to "#sec2" with its relative images; "<a href='../README.md#sandbox'>" inside report.html opens README.md at "#sandbox"; "Reveal in tree" expands the file's folders and selects it; it is offered only for a file under the folder Files shows (the pane's, which the page tells View)
+  Then "docs/guide.md" opens in a new tab Rendered; a link to "docs/report.html#sec2" opens report.html rendered in a sandboxed frame scrolled to "#sec2" with its relative images; "<a href='../README.md#sandbox'>" inside report.html opens README.md at "#sandbox"; "Reveal in tree" expands the file's folders and selects it (a file the tree does not show says "Not shown in the tree: <path> (hidden, filtered out or gone)", one outside its folder "Not in this tree: <path> is outside <folder>"); it is offered only for a file under the folder Files shows (the pane's, which the page tells View)
   When the user clicks a link to "https://github.com/tmux/tmux"
   Then the reader's default browser opens it (new tab, noopener) and the panel stays
 

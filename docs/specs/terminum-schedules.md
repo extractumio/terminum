@@ -100,7 +100,7 @@ Scenario: AC-160 happy path — changed at any time
   Then S_TERM-41 goes on as it began, and the next firing's task has the new text
 
 Scenario: AC-160 happy path — paused and deleted
-  When the user ticks Paused and presses Save
+  When the user turns Paused on and presses Save
   Then nothing fires, its kept slot is free (AC-161), and its card says "paused"
   When the user presses Delete and confirms "Delete SCH-1? Its tasks stay."
   Then it is gone from the board, its tasks and its firings in the Scheduled page stay under its name

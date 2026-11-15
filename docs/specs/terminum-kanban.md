@@ -990,7 +990,7 @@ Scenario: AC-139 happy path — a new project
 
 Scenario: AC-139 happy path — changing it
   When the user presses the pencil on Billing's row in the project menu
-  Then its window, as wide as a writing window, shows tabs: General (its name, server, folder, task ID letters, language, template, Agents at once), Agents (its own pool's agents as tiles, as many to a row as fit, and Add agent), Integration (terminum-integration.md AC-186), Memory limits and Archived; General first, each filled as it is chosen, no window opening over it
+  Then its window, sized as `terminum.md` AC-173 says, shows tabs: General (its name, server, folder, task ID letters, language, template, Agents at once), Agents (its own pool's agents as tiles, as many to a row as fit, and Add agent), Integration (terminum-integration.md AC-186), Memory limits and Archived; General first, each filled as it is chosen, no window opening over it
   And each tab's own keys stand in the window's foot, always in view: General's Delete project and Done, Integration's Save, Memory limits' Use the global ones and Save; a new project's window has General alone
   When the user changes the name, folder and Agents at once and presses Done
   Then all are kept at once and every page shows them
