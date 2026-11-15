@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 //! What waits for a pane's next hook that carries context: Dispatcher's words its agent could not take at once
-//! (`terminum-dispatcher.md` §9): fixed words with a T-number, never a title, text or comment.
+//! (`terminum-dispatcher.md` §9): fixed words with a T-number, never a title, text or comment; and the integration
+//! queue's notices' first lines (`terminum-integration.md` AC-192), terminumd's words with IDs, commits and file names.
 
 use std::collections::{HashMap, HashSet};
 
