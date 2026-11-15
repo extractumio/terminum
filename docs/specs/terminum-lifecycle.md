@@ -548,10 +548,17 @@ Scenario: AC-104 edge — deterministic benchmark verdicts under concurrent chec
   And samples just below each budget pass; a sample at any budget fails, and the slowest of ten samples counts toward p95
   And an explicitly stalled stand-in still hits the cleanup test's short deadline and leaves no running process in the harness's own group
 
-Scenario: AC-104 edge — a session hears of a changed pipeline
-  Given origin/main changed scripts/land.py since a tree's base
+Scenario Outline: AC-104 edge — a session hears of a changed pipeline
+  Given origin/main changed <script> since a tree's base
   When the session's prompt hook runs in that tree
-  Then it says "origin/main changed the checks or the landing (scripts/land.py): read it there and merge it (CLAUDE.md §9)"
+  Then it says "origin/main changed the checks or the landing (<script>): read it there and merge it (CLAUDE.md §9)"
+
+  Examples:
+    | script                 |
+    | scripts/land.py         |
+    | scripts/check_slots.py  |
+    | scripts/heavy_slots.py  |
+    | scripts/live_slots.py   |
 
 Scenario: AC-104 edge — the landing says GitHub CI's last verdict on main
   Given GitHub CI's last run on main to end, not cancelled, failed on origin/main's head 8f3c2a1d0
