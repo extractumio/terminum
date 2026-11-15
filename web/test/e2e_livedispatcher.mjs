@@ -7,7 +7,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { DatabaseSync } from "node:sqlite";
-import { boardKit, nap, pressRun } from "./boardkit.mjs";
+import { boardKit, intoStore, nap, pressRun } from "./boardkit.mjs";
 import { check, until } from "./check.mjs";
 
 const FAKE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../scripts/fake_agent.py");
@@ -341,10 +341,14 @@ export async function liveDispatcher(page, opts) {
   await run(restart, { agent: await agent("Restart", `--title '✳ Restart' --stop-after '${stopAfter}'`) });
   await hasStatus(restart, "IN PROGRESS", 15000);
   await stop();
+  // Model the persisted working turn: a screen read before shutdown may already have observed idle.
+  intoStore(opts.app, `UPDATE runs SET turn_ended = 0 WHERE id = (
+    SELECT r.id FROM runs r JOIN run_tasks rt ON rt.run = r.id JOIN tasks t ON t.id = rt.task
+    WHERE t.slug = '${restart}' ORDER BY r.rowid DESC LIMIT 1);`);
   fs.writeFileSync(stopAfter, "");
   check("AC-131 the agent's Stop is attempted while terminumd is down", await until(() => fs.existsSync(`${stopAfter}.sent`)));
   const saved = restartState();
-  check("AC-131 no Stop or result request was saved before the restart", saved?.turn_ended === 0 && saved?.nudged === 0, JSON.stringify(saved));
+  check("AC-131 the persisted run still records a working turn and no result request", saved?.turn_ended === 0 && saved?.nudged === 0, JSON.stringify(saved));
   await start();
   await page.goto(`${base}/kanban/?project=${project}`);
   await page.waitForSelector('.col[data-status="TODO"]');

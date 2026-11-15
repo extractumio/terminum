@@ -1560,7 +1560,7 @@ Scenario: AC-131 edge — terminumd restarts
   Then the session runs on in tmux; Dispatcher reads from the store each run's clocks and the hook facts of §9, reads each screen before acting, and takes no ending action for one idle period
 
 Scenario: AC-131 edge — a Stop during the restart
-  Given the agent just took API-12 into IN PROGRESS, its Stop reaches no terminumd during the restart, and its recognizable agent screen is idle
+  Given the agent just took API-12 into IN PROGRESS, its persisted run still records a working turn, its Stop reaches no terminumd during the restart, and its recognizable agent screen is idle
   When terminumd starts again
   Then Dispatcher recovers the turn's end from the screen and asks for a result through the gate after 5 minutes of no activity (AC-123)
   And API-12 stays IN PROGRESS until an hour of no activity after the request, then is FAILED with "No result from the agent within an hour of Dispatcher's request."
