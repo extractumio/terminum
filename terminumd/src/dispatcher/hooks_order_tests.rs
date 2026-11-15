@@ -2,6 +2,7 @@
 //! AC-157, AC-123, AC-138: hold the initial hook in the real queue until task tools have answered.
 
 use super::*;
+use crate::tasks::closeout::ASKED;
 use crate::tasks::store::{Store, HUMAN};
 use crate::tasks::tools::{self, Who};
 use serde_json::json;
@@ -78,7 +79,7 @@ impl Drop for Fixture {
 async fn ac157_a_delayed_initial_hook_keeps_the_early_question_and_run_state() {
     let f = Fixture::new(&["TODO"]);
     f.queue("UserPromptSubmit", PROMPT);
-    f.tool("ask_human", json!({"id": f.ids[0], "questions": "v1 or v2? Recommended: v2."}));
+    f.tool("ask_human", json!({"id": f.ids[0], "questions": ASKED}));
     let (_page, mut messages) = f.app.pages.add(Default::default(), String::new(), crate::page::trace::Recorder::new(f.root.clone())).unwrap();
     let history = f.app.tasks.with(|tx| ops::history(tx, &f.ids[0])).unwrap();
     f.app.tasks.with(|tx| runs::change(tx, &f.run, |r| { r.open_tools = 2; r.budget_used = 17; }).map(drop)).unwrap();
@@ -123,7 +124,7 @@ async fn ac138_an_early_question_waits_with_open_siblings_and_keeps_finished_one
     let f = Fixture::new(&["TODO", "TODO", "TODO"]);
     f.queue("UserPromptSubmit", PROMPT);
     f.tool("finish_task", json!({"id": f.ids[0], "result": RESULT}));
-    f.tool("ask_human", json!({"id": f.ids[1], "questions": "Which API? Recommended: v2."}));
+    f.tool("ask_human", json!({"id": f.ids[1], "questions": ASKED}));
     f.drain().await;
     assert_eq!(f.statuses(), ["DONE", "WAIT FOR HUMAN", "WAIT FOR HUMAN"]);
     assert!(f.read().asked);
@@ -139,7 +140,7 @@ async fn ac157_normal_start_and_resumed_work_accept_the_initial_prompt_once() {
         assert_eq!(f.statuses(), ["IN PROGRESS"]);
         let r = f.read();
         assert!(!r.asked && !r.turn_ended && r.budget_used == 0);
-        f.tool("ask_human", json!({"id": f.ids[0], "questions": "Which API? Recommended: v2."}));
+        f.tool("ask_human", json!({"id": f.ids[0], "questions": ASKED}));
         // A human's real new prompt still starts new work after the first acknowledgment.
         f.queue("UserPromptSubmit", "Use v2");
         f.drain().await;
@@ -151,12 +152,12 @@ async fn ac157_normal_start_and_resumed_work_accept_the_initial_prompt_once() {
 #[tokio::test]
 async fn ac157_a_humans_new_prompt_cannot_consume_the_pending_first_acknowledgment() {
     let f = Fixture::new(&["WAIT FOR HUMAN"]);
-    f.tool("ask_human", json!({"id": f.ids[0], "questions": "First question?"}));
+    f.tool("ask_human", json!({"id": f.ids[0], "questions": format!("{ASKED} First.")}));
     // The new prompt overtakes the first hook in transport, rather than only in its queue.
     f.queue("UserPromptSubmit", "Use v2");
     f.drain().await;
     assert_eq!(f.statuses(), ["IN PROGRESS"]);
-    f.tool("ask_human", json!({"id": f.ids[0], "questions": "Second question?"}));
+    f.tool("ask_human", json!({"id": f.ids[0], "questions": format!("{ASKED} Second.")}));
     f.queue("UserPromptSubmit", "The human\n ran these tasks");
     f.drain().await;
     assert_eq!(f.statuses(), ["WAIT FOR HUMAN"]);
@@ -201,7 +202,7 @@ async fn ac157_a_resumed_runs_early_question_or_result_survives_its_first_hook()
             let f = Fixture::new(&[status]);
             f.app.tasks.with(|tx| runs::change(tx, &f.run, |r| { r.asked = true; r.budget_used = 30; }).map(drop)).unwrap();
             f.queue("UserPromptSubmit", PROMPT);
-            f.tool(tool, json!({"id": f.ids[0], "questions": "Which API?", "result": RESULT}));
+            f.tool(tool, json!({"id": f.ids[0], "questions": ASKED, "result": RESULT}));
             f.drain().await;
             assert_eq!(f.statuses(), [if tool == "ask_human" { "WAIT FOR HUMAN" } else { "DONE" }]);
             let r = f.read();
@@ -219,7 +220,7 @@ async fn ac157_a_taskless_session_is_not_accepted_by_a_task_tool() {
         tx.execute("DELETE FROM run_tasks WHERE run = ?1", [&f.run]).map_err(ops::sql)?;
         tx.execute("UPDATE runs SET task = NULL, prompt = NULL WHERE id = ?1", [&f.run]).map(drop).map_err(ops::sql)
     }).unwrap();
-    let (said, _) = f.tool("ask_human", json!({"id": f.ids[0], "questions": "Which API?"}));
+    let (said, _) = f.tool("ask_human", json!({"id": f.ids[0], "questions": ASKED}));
     assert!(said.ends_with("Wait for the answer in this session."));
     assert_eq!(f.read().state, Phase::Typed);
     assert!(!f.read().asked);

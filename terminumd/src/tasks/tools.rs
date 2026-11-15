@@ -280,8 +280,13 @@ pub fn run(store: &Store, state_dir: &Path, who: &Who, tool: &str, args: &Value)
             "ask_human" => {
                 let id = arg(args, "id")?;
                 not_queued(tx, &own(tx, who, id)?)?;
+                let questions = rules::clean(arg(args, "questions")?);
+                // a human reads why first, the default next, the whole issue last (AC-157)
+                if let Some(why) = closeout::unshaped(id, &questions) {
+                    return Err(why);
+                }
                 let me = me()?;
-                ops::questions(tx, &me, id, &rules::clean(arg(args, "questions")?), at)?;
+                ops::questions(tx, &me, id, &questions, at)?;
                 ops::move_to(tx, &me, id, "WAIT FOR HUMAN", at)?;
                 let then = asked(tx, who, true)?;
                 // in a run of several its other tasks in progress wait with it: one question closes the session (AC-185)
