@@ -997,6 +997,16 @@ Scenario: AC-168 failure — its usage command fails
   Then its process group is ended, the stripes keep the last reading, and the agent's window says in the danger color "its usage command failed 09:00: it ended with exit 1: Error: not logged in"
   And terminumd's log says it once per ask, and it is asked again in 10 minutes, not an hour
 
+Scenario: AC-168 failure — Codex ends without an answer
+  Given its usage command consumes the three request lines
+  When it ends successfully without replying
+  Then the failure says "it ended without an answer"
+
+Scenario: AC-168 failure — Codex closes its input before the request
+  Given its usage command has ended before terminumd writes the request
+  When terminumd writes to its closed input pipe
+  Then the failure says "its input closed" with the operating system's broken-pipe error
+
 Scenario: AC-168 edge — a restart
   Given Claude Code's last reading was at 09:00
   When terminumd restarts at 09:30

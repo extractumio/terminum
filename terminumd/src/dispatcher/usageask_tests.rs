@@ -106,8 +106,21 @@ async fn ac168_a_failing_command_says_why() {
     assert!(why("no-such-program-tm168 -p /usage").await.contains("not found on terminumd's PATH"));
     assert_eq!(why("echo 'Error: not logged in' >&2; exit 1").await, "it ended with exit 1: Error: not logged in");
     assert_eq!(why("echo '[{\"type\":\"result\",\"result\":\"API key\"}]'").await, "no subscription limits in its answer: API key");
-    let codex = ask("codex", "exit 0", &d, Duration::from_secs(10)).await.unwrap_err();
+    // AC-168: EOF after the request, rather than a race with the request's write.
+    let codex = ask("codex", "read -r a && read -r b && read -r c", &d, Duration::from_secs(10)).await.unwrap_err();
     assert_eq!(codex, "it ended without an answer");
+}
+
+#[tokio::test]
+async fn ac168_codex_s_input_closing_before_the_request_says_why() {
+    // AC-168: force the other ordering of the exit-only stand-in and the request's write.
+    let mut child = tokio::process::Command::new("/bin/sh")
+        .args(["-c", "exit 0"]).current_dir(crate::testutil::temp_root())
+        .stdin(Stdio::piped()).stdout(Stdio::piped()).kill_on_drop(true).spawn().unwrap();
+    let (mut input, out) = (child.stdin.take().unwrap(), child.stdout.take().unwrap());
+    assert!(tokio::time::timeout(Duration::from_secs(10), child.wait()).await.unwrap().unwrap().success());
+    let why = codex_answer(&mut input, out).await.unwrap_err();
+    assert_eq!(why, format!("its input closed: {}", std::io::Error::from_raw_os_error(libc::EPIPE)));
 }
 
 #[tokio::test]
