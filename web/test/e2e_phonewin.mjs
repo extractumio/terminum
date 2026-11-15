@@ -4,10 +4,8 @@
 // its ways on in a bar at its top with × and the title, what is seldom pressed in a row under its fields, a text
 // field with no full-window key; a question stays a sheet; 601 px and wider keeps the sheets, and a window resized
 // between the two gets its keys back in their order; a row of keys filled anew (a task's) fills the bar anew.
-import fs from "node:fs";
-import path from "node:path";
 import { check, runningIn } from "./check.mjs";
-import { drawn, openPage, pause, PHONE, pressFoot } from "./fake.mjs";
+import { drawn, openPage, pause, PHONE, pressFoot, shot } from "./fake.mjs";
 
 /** Opens dialog `id` alone and measures it: its box, its head's parts, its bar's keys and what is left at its foot. */
 const open = (page, id) => page.evaluate(async (id) => {
@@ -33,7 +31,7 @@ const MEASURE = () => {
 const covers = (m) => m.box.l === 0 && m.box.t === 0 && m.box.r === m.win[0] && m.box.b === m.win[1] && m.radius === "0px";
 /** The bar: at the top, 60 px, × first, then the title, then the keys on its middle, each a finger's, none past the screen's edge. */
 const barred = (m) => m.head.t === 0 && m.x.l >= 0 && m.x.r <= m.title.l && m.bar.length > 0 && m.bar[0].l >= m.title.r && m.bar.every((k) => k.h >= 44 && k.r <= m.win[0] && Math.abs(k.t + k.b - m.head.t - m.head.b) <= 2) && m.head.h === 60 && m.x.h >= 44;
-const shots = (page, name) => process.env.TM_TEST_SHOTS ? (fs.mkdirSync(process.env.TM_TEST_SHOTS, { recursive: true }), page.screenshot({ path: path.join(process.env.TM_TEST_SHOTS, `phonewin-${name}.png`) })) : null;
+const shots = (page, name) => shot(page, `phonewin-${name}`);
 
 export async function webPhoneWin(browser, name) {
   for (const width of [390, 320]) {

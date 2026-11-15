@@ -5,9 +5,8 @@
 // column's keys scrolling with its cards; the lines of tasks that need the human folded into the head's counters,
 // a fresh one pulsing; a wider window keeps its two rows.
 import fs from "node:fs";
-import path from "node:path";
 import { check, runningIn, until } from "./check.mjs";
-import { drawn, openPage, ORIGIN, pause, PHONE, THEME } from "./fake.mjs";
+import { drawn, openPage, ORIGIN, pause, PHONE, shot, THEME } from "./fake.mjs";
 
 const tasks = Array.from({ length: 30 }, (_, i) => ({ id: `API-${i + 1}`, title: `Task ${i + 1} with a title long enough to be cut`, project: "api", status: "TODO",
   severity: i ? "P2" : "P0", owner: "human", owner_name: "Alex", updated_at: i, parent: null }));
@@ -19,7 +18,7 @@ const LINES = { t: "taskmarks", waiting: 2, failed: 1, lines: [{ id: "API-7", ke
 const HEAD = ["#navbtn", "#fproject summary", ".askn.failed", ".askn.waiting", "#findkey", "#newtask"];
 
 /** Where the head's keys stand, and what else is in sight. */
-const look = (page, head) => page.evaluate((head) => {
+const look = (page, head = HEAD) => page.evaluate((head) => {
   const box = (sel) => { const e = document.querySelector(sel), r = e?.getBoundingClientRect(); return r && r.width > 0 && getComputedStyle(e).visibility !== "hidden" ? { l: Math.round(r.left), r: Math.round(r.right), t: Math.round(r.top), b: Math.round(r.bottom), w: Math.round(r.width), h: Math.round(r.height) } : null; };
   return { win: innerWidth, keys: head.map(box), find: box("#find"), picks: box("#picks"), agents: box("#agentbar"), line: box("#poolline"), asks: box("#asks"),
     card: box('.col[data-status="TODO"] .card'), colhead: box('.col[data-status="TODO"] .colhead'), auto: document.getElementById("autokeys").parentElement.id,
@@ -51,13 +50,13 @@ export async function webBoardPhone(browser, name) {
       await go();
       f.say(LINES);
       await page.waitForSelector(".askn.waiting:not([hidden])");
-      let g = await look(page, HEAD);
+      let g = await look(page);
       check("AC-105 phone: the head is one row of keys, each a finger's size, none past the screen's edge",
         g.keys.every((k) => k && k.t === g.keys[0].t && k.w >= 44 && k.h >= 44 && k.l >= 0 && k.r <= g.win) && g.keys.every((k, i) => !i || k.l >= g.keys[i - 1].r), JSON.stringify(g.keys));
       check("AC-105 phone: Find, the filters and the agents take no room; the first card stands under the switch and the line", !g.find && !g.picks && !g.agents && g.line && g.card.t < 240, JSON.stringify(g));
       check("AC-117 board: the lines fold into the head's counters, a single kind too; no line stands over the board", !g.asks && await page.textContent(".askn.waiting") === "2" && await page.textContent(".askn.failed") === "1", JSON.stringify(g.asks));
       check("AC-105 phone: the line says Auto-Dispatch's state first, then the agents and the schedules", /^Auto OFF\s*Agents 2\s*Scheduled 0$/.test(g.lineWords.trim()), g.lineWords);
-      if (process.env.TM_TEST_SHOTS) { fs.mkdirSync(process.env.TM_TEST_SHOTS, { recursive: true }); await page.screenshot({ path: path.join(process.env.TM_TEST_SHOTS, `boardphone-${name}-${width}.png`) }); }
+      await shot(page, `boardphone-${name}-${width}`);
 
       // a counter: its lines as a sheet, the board not moved
       const cardTop = g.card.t;
@@ -67,19 +66,19 @@ export async function webBoardPhone(browser, name) {
       check("AC-117 board: a counter opens its kind's lines as a sheet at most half the screen", sheet.lines === 2 && sheet.h > 0 && sheet.h <= sheet.half + 1, JSON.stringify(sheet));
       await page.keyboard.press("Escape");
       await pause(page, 200);
-      g = await look(page, HEAD);
+      g = await look(page);
       check("AC-117 board: Esc closes the sheet; the cards never moved for the lines", !g.asks && g.card.t === cardTop, JSON.stringify({ asks: g.asks, card: g.card, cardTop }));
 
       // Find and the filters, by the Find key
       await page.click("#findkey");
-      g = await look(page, HEAD);
+      g = await look(page);
       check("AC-105 phone: the Find key shows Find and the filters on rows under the head, the field taking the keys",
         g.find && g.picks && g.find.t >= g.keys[0].b && g.picks.t >= g.find.b && g.find.r <= g.win && await page.evaluate(() => document.activeElement.id === "find" && document.getElementById("findkey").getAttribute("aria-expanded") === "true"), JSON.stringify(g));
       check("AC-105 phone: with nothing narrowed the Find key is not lit", !await page.$("#findkey.lit"));
       await page.fill("#find", "Task 1");
       check("AC-105 phone: a search lights the Find key", await until(() => page.$("#findkey.lit")));
       await page.click("#findkey");
-      g = await look(page, HEAD);
+      g = await look(page);
       check("AC-105 phone: a second press puts them away; the key stays lit while the board is narrowed", !g.find && !g.picks && !!await page.$("#findkey.lit"), JSON.stringify(g));
       await go("?project=api&severity=P0");
       check("AC-105 phone: a filter in the address lights the Find key at once", await until(() => page.$("#findkey.lit")));
@@ -93,10 +92,10 @@ export async function webBoardPhone(browser, name) {
           shaded: document.elementFromPoint(4, 4)?.id }; });
       check("AC-105 phone: the line opens Auto-Dispatch, the agents and the schedules as one centered sheet over a shade",
         pool.l === 16 && pool.r === 16 && pool.t >= 0 && pool.b >= 0 && pool.parts.every(Boolean) && pool.agents === 2 && pool.shaded === "sheetscrim", JSON.stringify(pool));
-      if (process.env.TM_TEST_SHOTS) await page.screenshot({ path: path.join(process.env.TM_TEST_SHOTS, `boardphone-${name}-${width}-pool.png`) });
+      await shot(page, `boardphone-${name}-${width}-pool`);
       await page.keyboard.press("Escape");
       await pause(page, 200);
-      check("AC-105 phone: Esc closes it", !(await look(page, HEAD)).agents && await page.getAttribute("#poolline", "aria-expanded") === "false");
+      check("AC-105 phone: Esc closes it", !(await look(page)).agents && await page.getAttribute("#poolline", "aria-expanded") === "false");
 
       // New task's × closes it and keeps what was typed (kanbanform.js's draft)
       await page.click("#newtask");
@@ -112,12 +111,12 @@ export async function webBoardPhone(browser, name) {
       await until(() => page.evaluate(() => !document.getElementById("newbox").open));
 
       // a column's own keys go with its cards
-      const before = (await look(page, HEAD)).colhead;
+      const before = (await look(page)).colhead;
       await page.$eval('.col[data-status="TODO"]', (c) => { c.scrollTop = 150; });
-      const after = (await look(page, HEAD)).colhead;
+      const after = (await look(page)).colhead;
       check("AC-105 phone: a column's keys scroll away with its cards", before.t - after.t === 150, JSON.stringify({ before, after }));
       f.say({ ...LINES, waiting: 3 });                // any news redraws the board's counts; a redraw keeps the scroll
-      await page.evaluate(() => new Promise((r) => setTimeout(r, 300)));
+      await pause(page, 300);
       check("no page errors", !f.errors.length, f.errors.join(" | "));
     } finally { await f.close(); }
   }
@@ -159,12 +158,12 @@ export async function webBoardPhone(browser, name) {
     check("AC-117 board: where the buttons float the counters stand in the head there too", !g.asks && await t.page.isVisible(".askn.waiting"));
     await t.page.setViewportSize({ width: 390, height: 700 });
     await pause(t.page, 200);
-    const narrow = await look(t.page, HEAD);
+    const narrow = await look(t.page);
     await t.page.click("#poolline");                 // its sheet open while the window grows
     await t.page.waitForSelector("#pool[data-sheet]");
     await t.page.setViewportSize({ width: 700, height: 700 });
     await pause(t.page, 500);
-    const back = await look(t.page, ["#navbtn"]);
+    const back = await look(t.page);
     const left = await t.page.evaluate(() => ({ sheet: "sheet" in document.getElementById("pool").dataset, shade: document.elementFromPoint(350, 600)?.id }));
     check("AC-105 a window made narrow, then wide again with the sheet open: Auto-Dispatch's keys go to the sheet and come back to the head, no sheet and no shade left",
       narrow.auto === "pool" && back.auto === "boardacts" && !!back.agents && !left.sheet && left.shade !== "sheetscrim", JSON.stringify({ narrow: narrow.auto, back: back.auto, left }));

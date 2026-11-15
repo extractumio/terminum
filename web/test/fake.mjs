@@ -128,6 +128,13 @@ export async function pressFab(page, sel, how = "click") {
   await page[how](sel);
 }
 
+/** A screenshot `name`.png into TM_TEST_SHOTS, when a run asks for them (docs/UI-GUIDELINES.md §6). */
+export async function shot(page, name) {
+  const dir = process.env.TM_TEST_SHOTS;
+  if (!dir) return;
+  fs.mkdirSync(dir, { recursive: true });
+  await page.screenshot({ path: path.join(dir, `${name}.png`) });
+}
 /** Leaves window `box` (a dialog or a list's form) without keeping: its Cancel; on a phone, where the window covers
  *  the screen and has none, the × of its bar (phonewin.js, terminum.md AC-173). */
 export async function pressCancel(page, box) {

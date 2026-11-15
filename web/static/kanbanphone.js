@@ -6,10 +6,10 @@
 // columns' switch, which opens them as a sheet. They are the page's own parts, moved, never copies.
 import { asksFold } from "./askfold.js";
 import { placeModal } from "./fabpane.js";
+import { $ } from "./kanbanutil.js";
 import { el } from "./listparts.js";
 import { PHONE } from "./phonewin.js";
 
-const $ = (id) => document.getElementById(id);
 const phone = matchMedia(PHONE);
 const bar = $("bar"), find = $("findkey"), pool = $("pool"), line = $("poolline"), auto = $("autokeys"), clear = $("clearfilters");
 
@@ -31,35 +31,35 @@ function lit() {
 }
 new MutationObserver(lit).observe(clear, { attributes: true, attributeFilter: ["hidden"] });
 
-/** The line's words: Auto-Dispatch's state first, then how many agents and schedules the shown projects have. */
+/** The line's words, on a phone: Auto-Dispatch's state first, then how many agents and schedules the shown projects
+ *  have, as their sections say them (`data-n`: kanbanagents.js, kanbansched.js); written only when they change. */
+let said = "";
 function say() {
-  const part = (name, value) => { const s = el("span", "poolpart", `${name} `); s.append(el("b", null, String(value))); return s; };
-  const schedules = pool.querySelector(".schedtoggle")?.textContent.replace(/\D+/g, "") || 0;
-  line.replaceChildren(part("Auto", $("autostate").textContent), part("Agents", pool.querySelectorAll(".agentcard").length), part("Scheduled", schedules));
+  if (!phone.matches) return;
+  const parts = [["Auto", $("autostate").textContent], ["Agents", pool.querySelector(".agents")?.dataset.n ?? 0], ["Scheduled", pool.querySelector(".schedsection")?.dataset.n ?? 0]];
+  if (said === (said = String(parts))) return;
+  line.replaceChildren(...parts.map(([name, value]) => { const s = el("span", "poolpart", `${name} `); s.append(el("b", null, String(value))); return s; }));
 }
 const watched = new MutationObserver(say);
-for (const part of [pool, auto]) watched.observe(part, { childList: true, subtree: true, characterData: true });
+watched.observe(pool, { attributes: true, attributeFilter: ["data-n"], subtree: true });
+watched.observe($("autostate"), { childList: true, characterData: true, subtree: true });
 
-let open = false;
+const open = () => "sheet" in pool.dataset;        // placeModal's own mark (fabpane.js)
 function close() {
-  if (!open) return;
-  open = false;
-  delete pool.dataset.sheet;                       // its shade goes with it (fabpane.js)
+  delete pool.dataset.sheet;                       // its shade goes with it
   line.setAttribute("aria-expanded", "false");
 }
 line.addEventListener("click", () => {
-  if (open) return close();
-  open = true;
-  line.setAttribute("aria-expanded", "true");
-  placeModal(pool, close, false);                  // no focus on its first key: that is Auto-Dispatch's switch
+  if (open()) return close();
+  line.setAttribute("aria-expanded", String(placeModal(pool, close, false)));   // no focus on its first key: that is Auto-Dispatch's switch
 });
 
 /** Auto-Dispatch's keys: in the head on a computer, first in the sheet on a phone. */
 function arrange() {
   if (phone.matches) pool.prepend(auto);
   else { $("boardacts").prepend(auto); close(); finding(false); }
+  say();
 }
 phone.addEventListener("change", arrange);
 arrange();
 lit();
-say();

@@ -35,8 +35,8 @@
   #pool .agentlist .item { width: auto; }
   #poolline { display: flex; flex: none; justify-content: flex-start; gap: var(--sp-3); margin: var(--sp-2) var(--gutter) 0; overflow: hidden;
     font-size: var(--fs-label); font-weight: var(--fw-body); color: var(--muted-text); white-space: nowrap; }
-  #poolline::after { content: ""; flex: none; width: 6px; height: 6px; margin-left: auto; border: solid currentColor; border-width: 0 1.5px 1.5px 0; transform: rotate(45deg) translate(-1px, -1px); }
-  .poolpart { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--muted-text); }
+  #poolline::after { flex: none; margin-left: auto; }   /* the schedules' arrow (kanban.css), at the line's end */
+  .poolpart { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
   .poolpart:first-child { flex: none; }            /* Auto-Dispatch starts agents: its state is never cut */
   .poolpart b { font-weight: var(--fw-ctl); color: var(--t-fg); font-variant-numeric: tabular-nums; }
   /* a column scrolls whole: its own keys go with its cards */

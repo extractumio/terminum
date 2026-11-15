@@ -67,8 +67,10 @@ export function asksFold({ box, counters }) {
   /** Left of ⟨…⟩ on its row; at the top right under the header where it is not shown (Files, View). The board has no
    *  ⟨…⟩: its counters stand in its head's row. */
   function place() {
-    const fold = $("foldfab"), main = counters.offsetParent;   // none while hidden
-    if (!main || !fold) return;
+    const fold = $("foldfab");
+    if (!fold) return;
+    const main = counters.offsetParent;            // none while hidden
+    if (!main) return;
     const shown = !fold.hidden && fold.offsetHeight > 0;
     const top = shown ? fold.offsetTop : $("over").offsetTop + GAP;
     const right = shown ? fold.offsetLeft - GAP : main.clientWidth - 14;

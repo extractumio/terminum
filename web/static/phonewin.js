@@ -6,6 +6,8 @@
 // fields; × presses the row's Cancel. The bar stands at the top of what is in sight: --app-top follows the visible part of the page, which
 // iOS moves when it brings a focused field over the keyboard.
 
+import { el } from "./listparts.js";
+
 /** Where a window covers the screen: the page's one query of it (phone.css's own is the same). */
 export const PHONE = "(max-width: 600px)";
 const WINDOWS = 'dialog.dlg[data-size]:not([data-size="ask"]), form.footform';
@@ -36,8 +38,7 @@ function arrange(win, refill = false) {
     return;
   }
   if (!bar) {
-    bar = document.createElement("div");
-    bar.className = "actions barkeys";
+    bar = el("div", "actions barkeys");
     head.append(bar);
     refilled.observe(row, { childList: true });
   }
@@ -61,11 +62,13 @@ document.addEventListener("click", (e) => {
 
 const all = () => { for (const win of document.querySelectorAll(WINDOWS)) arrange(win); };
 new MutationObserver((records) => {
+  if (!phone.matches) return;                      // a computer's windows keep their keys: nothing to do on its busy pages
   for (const { target } of records) if (target.matches?.(WINDOWS) && (target.open || (target.matches("form") && !target.hidden))) arrange(target);
 }).observe(document.documentElement, { attributes: true, attributeFilter: ["open", "hidden"], subtree: true });
 phone.addEventListener("change", all);
 all();
 
 const seen = window.visualViewport;
-const top = () => document.documentElement.style.setProperty("--app-top", `${Math.round(seen.offsetTop)}px`);
+let was = -1;
+const top = () => { const now = Math.round(seen.offsetTop); if (now !== was) document.documentElement.style.setProperty("--app-top", `${was = now}px`); };
 if (seen) { top(); seen.addEventListener("resize", top); seen.addEventListener("scroll", top); }
