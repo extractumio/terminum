@@ -315,6 +315,12 @@ Scenario: AC-182 happy path
   When the project's manager calls run_schedule {schedule: "SCH-1"} (terminum-agents.md AC-180)
   Then the same happens, and it is answered the task's ID and status
 
+Scenario: AC-182 edge — Cancel and Escape
+  Given a schedule whose next firing is after the question is closed
+  When the human presses Run now with the pointer and dismisses its question with Cancel or Escape
+  Then the press makes no firing or task
+  And the play key shows no focus ring after the question closes
+
 Scenario: AC-182 edge — paused, once
   Given a paused schedule, or one that ran once
   When it is run now
