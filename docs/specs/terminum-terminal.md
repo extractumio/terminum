@@ -655,6 +655,13 @@ flowchart LR
 
 Widgets are drawn over the first row of a region and removed when the region's lines leave the kept window.
 
+AC-31's browser checks wait for rendered outcomes with `until()` and its load slack. Paced fake-bridge
+cases use controlled browser time after each message reaches the DOM, with a real layout turn at each
+16 ms step so the no-raw-frame observer still sees every intermediate state. Bridge delays consume no
+scenario time; the 150 ms, 500 ms and 1 s contracts stay exact. The real tmux check gates its redraw phase
+until the scrolling assertions finish. The 10,000-line parser check keeps a 500 ms process CPU budget,
+including user and system time, so descheduling alone cannot fail it.
+
 ## 7. Current behavior and gaps
 
 | AC | Gap | Evidence |
