@@ -41,6 +41,8 @@ use crate::tasks::store::DISPATCHER;
 
 pub use hooks::{good_id, heard, hearing};
 pub(crate) use hooks::taking;
+/// A red batch's integration task pressed on its agent (terminum-integration.md AC-194).
+pub(crate) use api::press_integration;
 pub use start::resume_words;
 pub use gate::read as read_screen;
 pub use walk::run as walking;

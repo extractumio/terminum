@@ -16,7 +16,7 @@ use super::query::{self, Query};
 use super::store::{Store, DEFAULT_PROJECT};
 use crate::plans::rules;
 
-pub const NAMES: [&str; 15] = ["list_tasks", "get_task", "create_task", "update_task", "take_task", "move_task", "ask_human", "add_comment", "attach_file", "get_file", "finish_task", "integrate", "withdraw_integration", "integration_status", "dispatch_task"];
+pub const NAMES: [&str; 18] = ["list_tasks", "get_task", "create_task", "update_task", "take_task", "move_task", "ask_human", "add_comment", "attach_file", "get_file", "finish_task", "integrate", "withdraw_integration", "integration_status", "integration_return", "integration_recheck", "integration_add_fix", "dispatch_task"];
 /// All Auto-Dispatcher's round may call (terminum-dispatcher.md AC-170): it reads, starts by dispatch_task and finishes
 /// its own; a tool added later is not its until named here.
 const A_ROUNDS: [&str; 4] = ["list_tasks", "get_task", "get_file", "finish_task"];
@@ -58,7 +58,7 @@ pub struct Who {
     pub dir: Option<String>,
 }
 
-pub(super) fn arg<'a>(args: &'a Value, key: &str) -> Result<&'a str, String> {
+pub(crate) fn arg<'a>(args: &'a Value, key: &str) -> Result<&'a str, String> {
     args[key].as_str().filter(|s| !s.is_empty()).ok_or_else(|| format!("{key} is required"))
 }
 
@@ -143,7 +143,7 @@ fn asked(tx: &Transaction, who: &Who, waits: bool) -> Result<&'static str, Strin
 }
 
 /// Who writes: the run's agent of the pool, else the agent and the session's title.
-pub(super) fn author(tx: &Transaction, who: &Who) -> Result<String, String> {
+pub(crate) fn author(tx: &Transaction, who: &Who) -> Result<String, String> {
     match crate::dispatcher::runs::in_pane(tx, &who.key)? {
         Some(r) => ops::pool_user(tx, &r.agent_id, &r.agent_name),
         None => ops::agent_user(tx, &who.agent, &who.title),
@@ -192,6 +192,10 @@ pub fn run(store: &Store, state_dir: &Path, who: &Who, tool: &str, args: &Value)
         "integrate" => return super::integration_queue::integrate(store, who, args),
         "withdraw_integration" => return super::integration_queue::withdraw(store, who, args),
         "integration_status" => return super::integration_queue::status(store, who, args).map(|text| (text, Vec::new())),
+        // only the run of a red batch's integration task decides for it (terminum-integration.md AC-194)
+        "integration_return" => return store.with(|tx| crate::integrate::agent::give_back(tx, who, args, ops::now())).map(|t| (t, Vec::new())),
+        "integration_recheck" => return store.with(|tx| crate::integrate::agent::recheck(tx, who, args, ops::now())).map(|t| (t, Vec::new())),
+        "integration_add_fix" => return crate::integrate::agent::add_fix(store, who, args, ops::now()).map(|t| (t, Vec::new())),
         _ => {}
     }
     let at = ops::now();
@@ -296,6 +300,9 @@ pub fn run(store: &Store, state_dir: &Path, who: &Who, tool: &str, args: &Value)
             "finish_task" => {
                 let id = arg(args, "id")?;
                 let t = movable(tx, who, id)?;
+                if let Some(why) = crate::integrate::agent::finish_refused(tx, &t.key)? {
+                    return Err(why);
+                }
                 after_its_subtasks(tx, &t)?;
                 let me = me()?;
                 let result = rules::clean(arg(args, "result")?);
@@ -432,4 +439,4 @@ fn file_of(who: &Who, args: &Value) -> Result<(String, Box<dyn std::io::Read>), 
 
 #[cfg(test)]
 #[path = "tools_tests.rs"]
-pub(super) mod tests;
+pub(crate) mod tests;

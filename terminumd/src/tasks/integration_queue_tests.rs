@@ -163,6 +163,36 @@ fn ac187_status_says_the_settings_and_the_queue() {
     assert_eq!(v["queue"][0]["place"].as_str(), Some("1st"));
 }
 
+/// What `terminum integration wait` reads: the task's status, Dispatcher's words, how it left by their mark (AC-187).
+#[test]
+fn ac187_status_of_a_task_says_how_it_left_the_queue() {
+    use crate::integrate::store::{give_back, Left};
+    let r = repo("iq-left");
+    let of = || -> Value { serde_json::from_str::<Value>(&call(&r, "integration_status", json!({"id": r.id})).unwrap()).unwrap()["task"].take() };
+    let queue = || r.s.with(|tx| { let t = ops::get(tx, &r.id)?; if t.status != INTEGRATION { ops::place(tx, HUMAN, &t, INTEGRATION, 3)?; } Ok(()) }).unwrap();
+    call(&r, "integrate", json!({"id": r.id, "result": result()})).unwrap();
+    assert_eq!((of()["status"].as_str(), &of()["left"]), (Some(INTEGRATION), &Value::Null), "still queued");
+    for (how, word) in [(Left::Red, "red"), (Left::Conflict, "conflict"), (Left::Out, "out")] {
+        queue();
+        let key = r.s.with(|tx| ops::key_of(tx, &r.id)).unwrap();
+        r.s.with(|tx| give_back(tx, &key, &format!("{} returned, as {word}.", r.id), how, 5)).unwrap();
+        let t = of();
+        assert_eq!((t["status"].as_str(), t["left"].as_str()), (Some("IN PROGRESS"), Some(word)));
+        assert_eq!(t["said"].as_array().unwrap().last().unwrap()["text"].as_str(), Some(format!("{} returned, as {word}.", r.id).as_str()));
+    }
+    // queued again and moved out by a human: no mark since it was queued, so taken out
+    call(&r, "integrate", json!({"id": r.id, "result": result()})).unwrap();
+    r.s.with(|tx| { let t = ops::get(tx, &r.id)?; ops::place(tx, HUMAN, &t, "IN PROGRESS", 7) }).unwrap();
+    assert_eq!(of()["left"].as_str(), Some("out"), "an earlier mark is not this leaving's");
+    queue();
+    r.s.with(|tx| {
+        ops::left_queue(tx, DISPATCHER, &r.id, "Integrated into origin/main at 3e9b5c2 in batch 2.", "landed", 8)?;
+        let t = ops::get(tx, &r.id)?;
+        ops::place(tx, DISPATCHER, &t, "DONE", 8)
+    }).unwrap();
+    assert_eq!(of()["left"].as_str(), Some("landed"));
+}
+
 #[test]
 fn ordinals_and_lists_read_as_words() {
     assert_eq!([1, 2, 3, 4, 11, 12, 13, 21, 22].map(ordinal), ["1st", "2nd", "3rd", "4th", "11th", "12th", "13th", "21st", "22nd"]);

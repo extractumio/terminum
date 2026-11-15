@@ -2,6 +2,7 @@
 //! The integration queue's engine (`terminum-integration.md`): batches built, checked and published by terminumd,
 //! one batch in work on the machine at a time, a step each beat off the async workers.
 
+pub mod agent;
 pub mod batch;
 pub mod engine;
 pub mod git;
@@ -31,7 +32,23 @@ pub async fn run(app: Shared) {
             Err(e) => tracing::error!(event = "integration.panic", error = %e),
             Ok(Ok(())) => {}
         }
+        start_agents(&app).await;
         crate::page::projects::tell(&app);
         tokio::time::sleep(BEAT).await;
+    }
+}
+
+/// Each red batch's integration agent started on its task, with its budget (AC-194); a press refused leaves the
+/// batch to a human, saying why.
+async fn start_agents(app: &Shared) {
+    use crate::tasks::api::store;
+    let Ok(wanted) = store(app, |tx| agent::take_wanted(tx, crate::tasks::ops::now())).await else { return };
+    for (batch, id, who) in wanted {
+        if let Err(why) = crate::dispatcher::press_integration(app, &id, &who).await {
+            let _ = store(app, move |tx| {
+                let b = store::by_id(tx, batch)?;
+                store::wait_for_human(tx, &b, &format!("Batch {}'s integration agent did not start: {why}", b.number), crate::tasks::ops::now())
+            }).await;
+        }
     }
 }

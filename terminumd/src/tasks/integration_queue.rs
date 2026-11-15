@@ -174,16 +174,29 @@ pub fn withdraw(store: &Store, who: &Who, args: &Value) -> Result<(String, Vec<S
 /// The project's settings and queue, or one task's place in it.
 pub fn status(store: &Store, who: &Who, args: &Value) -> Result<String, String> {
     store.with(|tx| {
-        let project = match args["id"].as_str().filter(|i| !i.is_empty()) {
-            Some(id) => visible(tx, who, id)?.project,
+        let task = args["id"].as_str().filter(|i| !i.is_empty()).map(|id| visible(tx, who, id)).transpose()?;
+        let project = match &task {
+            Some(t) => t.project.clone(),
             None => who.project.clone().unwrap_or_else(|| super::store::DEFAULT_PROJECT.to_string()),
         };
         let s = integration::read(tx, &project)?;
         let queue: Vec<Value> = queue_of(tx, &project)?.iter().enumerate()
             .map(|(i, e)| json!({"task": e.id, "place": ordinal(i + 1), "commit": short(&e.commit), "batch": e.batch})).collect();
-        let v = json!({"on": s.on, "target": s.target, "check": s.check, "publish": s.publish, "after": s.after, "batch_size": s.size(), "batch_most": s.batch_most, "queue": queue});
+        let mut v = json!({"on": s.on, "target": s.target, "check": s.check, "publish": s.publish, "after": s.after, "batch_size": s.size(), "batch_most": s.batch_most, "queue": queue});
+        if let Some(t) = task {
+            v["task"] = of_task(tx, &t)?;
+        }
         Ok(v.to_string())
     })
+}
+
+/// A task as `terminum integration wait` follows it (AC-187): its status, Dispatcher's newest words on it, and,
+/// out of INTEGRATION, how it left (the mark its words carry): landed, red, conflict, or out (taken out, given up,
+/// integration turned off).
+fn of_task(tx: &Transaction, t: &Task) -> Result<Value, String> {
+    let said: Vec<Value> = ops::newest_by(tx, &t.key, super::store::DISPATCHER, 20)?.into_iter().map(|(id, text)| json!({"id": id, "text": text})).collect();
+    let left = if t.status == INTEGRATION { None } else { Some(ops::how_left(tx, &t.key)?.unwrap_or_else(|| "out".into())) };
+    Ok(json!({"id": t.id, "status": t.status, "left": left, "said": said}))
 }
 
 #[cfg(test)]
