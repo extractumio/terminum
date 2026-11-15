@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-//! Server-sent events fan-out: one broadcast channel, every panel subscribes.
+//! Events fan-out (AC-61): one broadcast channel, every panel subscribes.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -96,8 +96,37 @@ pub fn publish_change(cache: &Arc<Cache>, bus: &Bus, dirs: &[PathBuf], files: &[
     let text = |p: &Path| p.display().to_string();
     bus.send(Event::FsChange {
         dirs: dirs.iter().map(|d| text(d)).collect(),
-        files: files.iter().map(|f| Stamp { path: text(f), etag: std::fs::metadata(f).ok().map(|m| etag(&m)) }).collect(),
+        files: files.iter().filter_map(|f| file_stamp(f)).collect(),
         moved: moved.iter().map(|(f, t)| Moved { from: text(f), to: text(t) }).collect(),
         host: None,
     });
+}
+
+fn file_stamp(path: &Path) -> Option<Stamp> {
+    let etag = match std::fs::metadata(path) {
+        Ok(m) => Some(etag(&m)),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+        Err(e) => {
+            tracing::debug!(event = "watch.metadata_failed", path = %path.display(), error = %e);
+            return None;
+        }
+    };
+    Some(Stamp { path: path.display().to_string(), etag })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_missing_files_publish_deletion_stamps() {
+        let root = crate::testutil::fresh_dir("event-stamps");
+        let file = root.join("app.py");
+        std::fs::write(&file, "print(1)\n").unwrap();
+        assert!(file_stamp(&file).unwrap().etag.is_some());
+        std::fs::remove_file(&file).unwrap();
+        assert!(file_stamp(&file).unwrap().etag.is_none());
+        assert!(file_stamp(Path::new("bad\0path")).is_none(), "a metadata error is not a deletion");
+        std::fs::remove_dir(root).unwrap();
+    }
 }
