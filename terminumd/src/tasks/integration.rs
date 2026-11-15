@@ -193,6 +193,11 @@ pub fn tree_in(home: &FsPath, project: &str) -> PathBuf {
     home.join("integration").join(project).join("tree")
 }
 
+/// Where a batch's round keeps the log of its `step` (check, publish, after), beside its tree.
+pub fn log_in(home: &FsPath, project: &str, batch: i64, round: i64, step: &str) -> PathBuf {
+    tree_in(home, project).with_file_name(format!("batch-{batch}.{round}.{step}.log"))
+}
+
 /// "What runs", in terminumd's words: each line with the folder it runs in, and what it gets.
 fn runs(project: &str, dir: &str, s: &Settings) -> Vec<String> {
     let home = crate::config::home().to_string_lossy().to_string();
