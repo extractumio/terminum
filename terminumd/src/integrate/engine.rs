@@ -42,7 +42,10 @@ fn target_now(p: &Place) -> Result<String, String> {
 /// One step.
 pub fn step(store: &Store, runner: &dyn Runner, home: &Path, now: i64) -> Result<(), String> {
     tidy(store, home)?;
-    super::stages::verify_step(store, runner, home, now)?;
+    // a queued task's Prepare and Verify going wrong holds no batch back: said, and tried again next beat
+    if let Err(e) = super::stages::verify_step(store, runner, home, now) {
+        tracing::warn!(event = "integration.verify", error = %e);
+    }
     match store.with(bs::busy)? {
         Some(b) => advance(store, runner, home, b, now),
         None => start_next(store, home, now),

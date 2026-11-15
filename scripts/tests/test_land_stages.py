@@ -88,25 +88,61 @@ class Stages(test_land.Repos, unittest.TestCase):
     def test_queue_with_integration_off_leaves_the_turn_to_check_and_publish(self):  # AC-198
         tree = self.ready()
         said = []
-        self.assertEqual(stages.queue(tree, on=lambda t: False, say=said.append), 0)
+        self.assertEqual(stages.queue(tree, on=lambda *_: False, say=said.append), 0)
         self.assertIn("integration is off", said[0])
 
     def test_queue_with_integration_on_needs_its_task_and_result_and_queues_head_and_waits(self):  # AC-198
         tree, calls = self.ready(), []
         with self.assertRaises(stages.Stop) as stop:
-            stages.queue(tree, on=lambda t: True, **QUIET)
+            stages.queue(tree, on=lambda *_: True, **QUIET)
         self.assertIn("TASK=<ID> and RESULT=", str(stop.exception))
         run = lambda argv, cwd: calls.append(argv) or subprocess.CompletedProcess(argv, 1)
-        self.assertEqual(stages.queue(tree, "API-12", "/r.md", on=lambda t: True, run=run, **QUIET), 1, "the wait's exit: red")
+        self.assertEqual(stages.queue(tree, "API-12", "/r.md", on=lambda *_: True, run=run, **QUIET), 1, "the wait's exit: red")
         self.assertEqual(calls[0][1:], ["integration", "queue", "API-12", "--result-file", "/r.md", "--commit", L.head(tree), "--wait"])
 
-    def test_integration_on_reads_terminums_answer_and_none_when_it_is_not_reached(self):  # AC-198
-        answer = lambda out, code=0: (lambda argv, **_: subprocess.CompletedProcess(argv, code, stdout=out))
+    def test_integration_on_reads_terminums_answer_none_when_it_does_not_run_else_refuses(self):  # AC-198
+        asked = []
+        answer = lambda out, code=0, err="": (lambda argv, **_: asked.append(argv) or subprocess.CompletedProcess(argv, code, stdout=out, stderr=err))
         tree = self.tree("one")
-        self.assertTrue(stages.integration_on(tree, run=answer('{"on": true, "queue": []}')))
+        self.assertTrue(stages.integration_on(tree, "API-12", run=answer('{"on": true, "queue": []}')))
+        self.assertEqual(asked[-1][-1], '{"id": "API-12"}', "the task's own project, not the caller's")
         self.assertFalse(stages.integration_on(tree, run=answer('{"on": false}')))
-        self.assertIsNone(stages.integration_on(tree, run=answer("terminum is not running", 1)))
-        self.assertIsNone(stages.integration_on(tree, run=answer("not json")))
+        self.assertIsNone(stages.integration_on(tree, run=answer("", 1, "terminum is not running; go on without it.")))
+        for bad in [answer("not json"), answer("", 1, "terminum tool runs in a session of terminum, or with a token in TERMINUM_TOKEN")]:
+            with self.assertRaises(stages.Stop) as stop:
+                stages.integration_on(tree, run=bad)
+            self.assertIn("nothing pushed", str(stop.exception), "never pushed from the tree when it may be on")
+
+    def test_publish_and_after_by_hand_are_refused_while_integration_is_on_but_not_from_terminumd(self):  # AC-198
+        tree = self.ready()
+        with self.assertRaises(stages.Stop) as stop:
+            stages.not_while_queued(tree, "publish", env={}, on=lambda *_: True)
+        self.assertIn("integration is on", str(stop.exception))
+        stages.not_while_queued(tree, "after", env={"TM_INTEGRATION_BATCH": "7"}, on=lambda *_: True)
+        stages.not_while_queued(tree, "publish", env={}, on=lambda *_: False)
+
+    def test_check_refuses_a_tree_being_edited_and_marks_nothing_it_did_not_check_whole(self):  # AC-198
+        tree = self.ready()
+        (tree / "loose.txt").write_text("z\n")
+        with self.assertRaises(stages.Stop) as stop:
+            L.smoke_green(tree, lambda t: True, **QUIET)
+        self.assertIn("uncommitted", str(stop.exception))
+        (tree / "loose.txt").unlink()
+        commit = L.head(tree)
+        with self.assertRaises(stages.Stop) as stop:
+            L.smoke_green(tree, lambda t: bool(self.commit(tree, "during.txt", "d\n")), **QUIET)
+        self.assertIn("changed while landing, during its check", str(stop.exception))
+        self.assertFalse(L.green_mark(tree, commit).exists())
+
+    def test_queue_refuses_uncommitted_work_and_reads_its_result_from_where_it_was_run(self):  # AC-198
+        tree, calls = self.ready(), []
+        run = lambda argv, cwd: calls.append(argv) or subprocess.CompletedProcess(argv, 0)
+        self.assertEqual(stages.queue(tree, "API-12", "result.md", on=lambda *_: True, run=run, **QUIET), 0)
+        self.assertEqual(calls[0][5], str(Path("result.md").resolve()))
+        (tree / "loose.txt").write_text("z\n")
+        with self.assertRaises(stages.Stop) as stop:
+            stages.queue(tree, "API-12", "result.md", on=lambda *_: True, run=run, **QUIET)
+        self.assertIn("uncommitted", str(stop.exception))
 
     def test_cleanup_is_worktree_py_sweep(self):  # AC-198
         calls = []

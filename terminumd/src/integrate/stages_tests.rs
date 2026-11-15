@@ -11,7 +11,7 @@ fn ac198_a_queued_task_is_prepared_and_verified_in_its_own_tree_before_its_batch
     let a = queued_with(&w, 1, "b.txt", "b\n", true);
     let r = Sh::default();
     go(&w, &r, 1);
-    assert!(r.lines.lock().unwrap().iter().any(|l| l.starts_with("verify-1: echo prepared > prepared.txt && test -f prepared.txt")), "{:?}", r.lines.lock().unwrap());
+    assert!(r.lines.lock().unwrap().iter().any(|l| l.starts_with("verify-1: (\necho prepared > prepared.txt\n)") && l.contains("test -f prepared.txt")), "{:?}", r.lines.lock().unwrap());
     assert!(w.s.with(|tx| ops::history(tx, &a)).unwrap().to_string().contains("Verifying"));
     go(&w, &r, 4);
     assert_eq!(status(&w, &a), "DONE", "verified, then batched and published");
@@ -72,4 +72,36 @@ fn ac198_cleanup_runs_after_after_once_and_its_failure_undoes_nothing() {
     assert!(r.lines.lock().unwrap().iter().any(|l| l.ends_with(".cleanup: exit 4")), "{:?}", r.lines.lock().unwrap());
     let said = w.s.with(|tx| ops::history(tx, &bs::slug(tx, b.task.as_deref().unwrap())?)).unwrap().to_string();
     assert!(said.contains("Cleanup ended with status 4; nothing is undone"), "{said}");
+}
+
+#[test]
+fn ac198_a_verify_that_fails_with_2_through_make_is_red_and_its_commit_not_queued_again() {
+    let w = world("is-make", Settings { verify: "exit 2".into(), ..Settings::default() });
+    let a = queued_with(&w, 1, "b.txt", "b\n", true);
+    go(&w, &Sh::default(), 2);
+    assert_eq!(w.s.with(|tx| ops::how_left(tx, &ops::key_of(tx, &a)?)).unwrap().as_deref(), Some("red"), "make's 2 for any failure is no conflict");
+    let returned: i64 = w.s.with(|tx| tx.query_row("SELECT count(*) FROM integration_returns", [], |r| r.get(0)).map_err(sql)).unwrap();
+    assert_eq!(returned, 1);
+}
+
+#[test]
+fn ac198_a_lost_verify_window_runs_again() {
+    let w = world("is-lost", Settings { verify: "true".into(), ..Settings::default() });
+    let a = queued_with(&w, 1, "b.txt", "b\n", true);
+    go(&w, &Sh { hang: true, ..Default::default() }, 1);   // started in a runner that then forgets it: lost
+    let r = Sh::default();
+    go(&w, &r, 4);
+    assert_eq!(status(&w, &a), "DONE", "started again, verified, published: {:?}", r.lines.lock().unwrap());
+}
+
+#[test]
+fn ac198_the_line_keeps_each_stages_text_apart() {
+    assert_eq!(line_of("", ""), "");
+    assert_eq!(line_of("", "make v # all"), "(\nmake v # all\n) || exit 1");
+    let both = line_of("make p", "make v");
+    assert!(both.starts_with("(\nmake p\n) || { s=$?; [ \"$s\" -eq 2 ] && exit 2; exit 1; }\n(\nmake v\n) || exit 1"), "{both}");
+    for (prepare, verify, code) in [("exit 2", "true", 2), ("exit 3", "true", 1), ("true", "exit 2", 1), ("true", "true # c", 0)] {
+        let got = std::process::Command::new("/bin/sh").arg("-c").arg(line_of(prepare, verify)).status().unwrap().code();
+        assert_eq!(got, Some(code), "{prepare} / {verify}");
+    }
 }

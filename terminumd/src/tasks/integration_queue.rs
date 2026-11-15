@@ -180,7 +180,8 @@ pub fn status(store: &Store, who: &Who, args: &Value) -> Result<String, String> 
         let s = integration::read(tx, &project)?;
         let queue: Vec<Value> = queue_of(tx, &project)?.iter().enumerate()
             .map(|(i, e)| json!({"task": e.id, "place": ordinal(i + 1), "commit": short(&e.commit), "batch": e.batch})).collect();
-        let mut v = json!({"on": s.on, "target": s.target, "check": s.check, "publish": s.publish, "after": s.after, "batch_size": s.size(), "batch_most": s.batch_most, "queue": queue});
+        let mut v = json!({"on": s.on, "target": s.target, "prepare": s.prepare, "verify": s.verify, "check": s.check, "publish": s.publish, "after": s.after,
+                           "cleanup": s.cleanup, "batch_size": s.size(), "batch_most": s.batch_most, "queue": queue});
         if let Some(t) = task {
             v["task"] = of_task(tx, &t)?;
         }

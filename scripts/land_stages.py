@@ -41,32 +41,57 @@ def verify(tree, check=land.checks_of, say=print):
     say("verify: passed")
 
 
-def integration_on(tree, run=None):
-    """Whether terminum queues this project's landings: its integration_status, as the tree's session calls it;
-    None when terminum is not reached (the stages then run here, in order)."""
+# what `terminum` says when terminumd does not run (cli/mcp.rs DOWN): the stages then run here, in order
+DOWN = "terminum is not running"
+
+
+def integration_on(tree, task=None, run=None):
+    """Whether terminum queues the landings of task `task`'s project (else the calling session's): its
+    integration_status. None when terminum is not running or not installed: the stages run here, in order. Any
+    other answer it cannot read refuses: a landing never pushes from the tree when integration may be on."""
+    ask = json.dumps({"id": task} if task else {})
     try:
-        done = (run or subprocess.run)([terminum(), "tool", "integration_status", "{}"], cwd=tree, capture_output=True, text=True, timeout=30)
-    except (OSError, subprocess.TimeoutExpired):
+        done = (run or subprocess.run)([terminum(), "tool", "integration_status", ask], cwd=tree, capture_output=True, text=True, timeout=30)
+    except FileNotFoundError:
         return None
-    if done.returncode:
+    except (OSError, subprocess.TimeoutExpired) as e:
+        raise Stop(1, f"whether integration is on is not known ({e}): nothing pushed") from e
+    said = f"{done.stdout or ''} {done.stderr or ''}"
+    if done.returncode and DOWN in said:
         return None
     try:
+        if done.returncode:
+            raise ValueError(said.strip())
         return bool(json.loads(done.stdout)["on"])
-    except (ValueError, KeyError, TypeError):
-        return None
+    except (ValueError, KeyError, TypeError) as e:
+        raise Stop(1, f"whether integration is on is not known: {e}: nothing pushed; give TASK=<ID> from a session of terminum") from e
+
+
+def from_terminumd(env=os.environ):
+    """Whether terminumd's queue runs this stage: its commands get the batch's variables (§9)."""
+    return bool(env.get("TM_INTEGRATION_BATCH") or env.get("TM_INTEGRATION_TASK"))
+
+
+def not_while_queued(tree, stage, env=os.environ, on=None):
+    """Publish and After move what terminumd's queue moves: by hand they are refused while integration is on."""
+    if not from_terminumd(env) and (on or integration_on)(tree, env.get("TASK")):
+        raise Stop(1, f"{stage}: integration is on: terminumd publishes and runs After; queue with make land TASK=<ID> RESULT=<file>")
 
 
 def queue(tree, task=None, result=None, on=integration_on, run=None, say=print):
     """Stage 3: with integration on, the tree's HEAD queued by terminum for task `task` with its result file, and
     waited for (exit 0 landed, 1 red, 2 conflict, 3 taken out); off, nothing to queue: check and publish take the
     landing turn."""
-    if not on(tree):
+    if not on(tree, task):
         say("queue: integration is off: the landing turn orders check and publish")
         return 0
     if not task or not result:
         raise Stop(1, "queue: integration is on: give TASK=<ID> and RESULT=<file with the result finish_task "
                       "would take>, or queue from the session with integrate {id, result}")
-    argv = [terminum(), "integration", "queue", task, "--result-file", str(result), "--commit", land.head(tree), "--wait"]
+    if git("status", "--porcelain", cwd=tree).stdout.strip():
+        raise Stop(1, f"{tree} has uncommitted changes: commit them first")
+    # read from where make land was run, not from the tree the queue runs in
+    argv = [terminum(), "integration", "queue", task, "--result-file", str(Path(result).resolve()), "--commit", land.head(tree), "--wait"]
     return (run or subprocess.run)(argv, cwd=tree).returncode
 
 
@@ -111,9 +136,11 @@ def run_stage(stage, slug, primary, env=os.environ):
     elif stage == "check":
         land.smoke_green(tree)
     elif stage == "publish":
+        not_while_queued(tree, stage, env)
         with land.Turn(tree):
             land.publish(tree)
     elif stage == "after":
+        not_while_queued(primary, stage, env)
         after(primary, env=env)
     else:
         return cleanup(primary)

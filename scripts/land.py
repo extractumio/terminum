@@ -208,8 +208,14 @@ def smoke_green(tree, smoke=lambda tree: checks_of(tree, "--land", minutes=SMOKE
     if mark.exists():
         say(f"check: {commit[:9]} is green already")
         return
+    dirty = lambda: git("status", "--porcelain", cwd=tree).stdout.strip()
+    if dirty():
+        raise Stop(1, f"{tree} has uncommitted changes: check a commit, not a tree being edited")
     if not smoke(tree):
         raise Stop(1, f"smoke checks failed: {tree} stays with its merge of {BASE}, nothing pushed")
+    # the green is that commit's only when the tree held it, unchanged, the whole run
+    if head(tree) != commit or dirty():
+        raise Stop(1, f"{tree} changed while landing, during its check: nothing marked green, nothing pushed; commit any changes and land again")
     mark.parent.mkdir(parents=True, exist_ok=True)
     mark.write_text(commit + "\n")
 
@@ -367,8 +373,8 @@ def main(argv):
         if staged:
             return land_stages.run_stage(argv[0], argv[1] if len(argv) > 1 else None, primary)
         # the project's integration on: terminum runs the stages; this tree is queued, never pushed from here
-        if land_stages.integration_on(tree):
-            return land_stages.queue(tree, os.environ.get("TASK"), os.environ.get("RESULT"), on=lambda _: True)
+        if land_stages.integration_on(tree, os.environ.get("TASK")):
+            return land_stages.queue(tree, os.environ.get("TASK"), os.environ.get("RESULT"), on=lambda *_: True)
     except Stop as stop:
         print(f"land: {stop}", file=sys.stderr)
         return stop.code

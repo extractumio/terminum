@@ -17,8 +17,22 @@ use crate::tasks::integration;
 use crate::tasks::ops::{self, sql};
 use crate::tasks::store::{Store, DISPATCHER};
 
-/// How many tasks' Prepare and Verify run at once.
-pub const VERIFY_MOST: usize = 2;
+/// How many tasks' Prepare and Verify run at once: a targeted pass is as heavy as a batch's check.
+pub const VERIFY_MOST: usize = 1;
+
+/// Prepare and Verify as one window that says which failed: Prepare's 2 stays 2 (a conflict), any other failure of
+/// either is 1 (a red check), whatever the line's own tool makes of its status (make turns each into 2). Each line
+/// stands on lines of its own, so nothing it holds (a `#`, a quote) reaches the frame; lines hold no line ends.
+pub(crate) fn line_of(prepare: &str, verify: &str) -> String {
+    let mut parts = Vec::new();
+    if !prepare.is_empty() {
+        parts.push(format!("(\n{prepare}\n) || {{ s=$?; [ \"$s\" -eq 2 ] && exit 2; exit 1; }}"));
+    }
+    if !verify.is_empty() {
+        parts.push(format!("(\n{verify}\n) || exit 1"));
+    }
+    parts.join("\n")
+}
 
 /// A task's Prepare and Verify as kept, with what judging it needs.
 struct Run {
@@ -71,9 +85,9 @@ fn follow(store: &Store, runner: &dyn Runner, home: &Path, run: &Run, now: i64) 
     let log = integration::verify_log_in(home, &run.project, run.number);
     let code = match window(runner, pane, &log, now - run.started > run.minutes * 60) {
         Window::Running => return Ok(true),
-        // lost with its window: run again
+        // lost with its window: forgotten, so the next beat starts it again
         Window::Lost => {
-            store.with(|tx| tx.execute("UPDATE integration_verifies SET pane = NULL WHERE task = ?1", [&run.task]).map(drop).map_err(sql))?;
+            finish(store, home, run)?;
             return Ok(false);
         }
         Window::Ended(code) => code,
@@ -104,7 +118,7 @@ fn ready(tx: &Transaction, task: &str) -> Result<(), String> {
 /// A task's tree made at its commit and its Prepare and Verify started there; one that cannot start goes back.
 fn start(store: &Store, runner: &dyn Runner, home: &Path, task: &str, project: &str, commit: &str, now: i64) -> Result<(), String> {
     let p = place(store, home, project)?;
-    let line = [p.s.prepare.as_str(), p.s.verify.as_str()].into_iter().filter(|l| !l.is_empty()).collect::<Vec<_>>().join(" && ");
+    let line = line_of(&p.s.prepare, &p.s.verify);
     if line.is_empty() {
         return store.with(|tx| ready(tx, task));   // the settings changed since it was queued
     }

@@ -638,7 +638,7 @@ sequenceDiagram
 | AC-192 | Notices are comments: queued (the tool's answer), in a batch, held, returned, landed; overlaps while working, the hooks' context, the waiting command and the gate: not built. | `terminumd/src/integrate/store.rs` |
 | AC-193 | The column stands as a plain list where integration is on; the batch's group, its marks, Pause, Batches…: not built. The keys of AC-194 stand in the integration task's window. | `web/static/kanbanbatch.js` |
 | AC-194 | A red check and a check that did not start get the agent; a Publish or push refused and After's failure wait for a human. Red again, the same session goes on with RUN's words, not the round's own ("Decide as before", its log). The prompt lists each task with its commit, not its files. A fix goes in as its last commit's change alone, picked onto the target. | `terminumd/src/integrate/engine.rs`, `terminumd/src/integrate/agent.rs` |
-| AC-198 | The settings Prepare, Verify and Cleanup, their rows in the Integration tab, and terminumd running them: not built; `land.py <stage>` and `make land-<stage>` are, and `make land` queues with integration on. | `scripts/land_stages.py` |
+| AC-198 | Verify runs the whole targeted pass in each task's tree, its pass kept in that tree only, so a pass the agent ran in its own tree is not reused; one task's Verify runs at a time. | `terminumd/src/integrate/stages.rs`, `scripts/land_stages.py` |
 
 ## 8. Recommendation and ownership
 
@@ -763,7 +763,7 @@ Every page hears `{"t": "integration"}` when a batch or the queue changes.
 | 6 After | `after` | the project's folder, once a batch | this build is installed |
 | 7 Cleanup | `cleanup` | the project's folder, after After | nothing is left to take |
 
-A task's verify tree is `~/.terminum/integration/<project>/verify-<number>`, detached at the queued commit, made as the candidate's is and removed when its Verify ends or the task leaves the queue; Prepare's merge, if any, stays there, so the queued commit is the agent's own. Prepare and Verify get `TM_INTEGRATION_TASK` (its ID), `TM_INTEGRATION_SHA` (the queued commit), `TM_INTEGRATION_TARGET`, `TM_INTEGRATION_TREE` (the verify tree) and `TM_INTEGRATION_PROJECT_DIR`; Cleanup gets Check's. Prepare's status 2 is a conflict, any other failure of Prepare or Verify a red check.
+A task's verify tree is `~/.terminum/integration/<project>/verify-<number>`, detached at the queued commit, made as the candidate's is and removed when its Verify ends or the task leaves the queue; Prepare's merge, if any, stays there, so the queued commit is the agent's own. Prepare and Verify get `TM_INTEGRATION_TASK` (its ID), `TM_INTEGRATION_SHA` (the queued commit), `TM_INTEGRATION_TARGET`, `TM_INTEGRATION_TREE` (the verify tree) and `TM_INTEGRATION_PROJECT_DIR`; Cleanup gets Check's. Prepare's status 2 is a conflict, any other failure of Prepare or Verify a red check, whatever tool runs the line (make turns each failure into 2, so the window says which stage failed). By hand, `land-publish` and `land-after` are refused while the project's integration is on: terminumd publishes and runs After.
 
 **This repository's own settings.** terminum checks on this machine (the first way):
 
@@ -771,9 +771,9 @@ A task's verify tree is `~/.terminum/integration/<project>/verify-<number>`, det
 |---|---|
 | On | on |
 | Target | `origin/main` |
-| Prepare | `make land-prepare` |
-| Verify | `python3 scripts/worktree.py link . && make land-verify` |
-| Check | `python3 scripts/worktree.py link . && make land-check` |
+| Prepare | `python3 scripts/land.py prepare` |
+| Verify | `python3 scripts/worktree.py link . && python3 scripts/land.py verify` |
+| Check | `python3 scripts/worktree.py link . && python3 scripts/land.py check` |
 | Publish | empty: terminum's push |
 | After | `make land-after` (the install on the maintainer's machine, by `TM_LAND_INSTALL := 1` in `local.mk`) |
 | Cleanup | `make land-cleanup` (`worktree.py sweep`) |
@@ -810,4 +810,4 @@ A task's verify tree is `~/.terminum/integration/<project>/verify-<number>`, det
 - [ ] AC-192 — `cargo test integration::notices` (each notice's words, said once, what is compared), `scripts/e2e_integration.py` (a hook's context, the gate only in Dispatcher's pane), `web/test/e2e_liveintegration.mjs` (the comment on the card)
 - [ ] AC-193 — `web/test/e2e_liveintegration.mjs` (Chromium and WebKit, wide and phone: the column only where on, the batch's group, places and waits, each key and its refusal, Batches…)
 - [ ] AC-194 — `cargo test integrate::agent` (wanted in its own worktree at the candidate, its prompt without a task's words, each tool and its refusals, several returned for one round, the unchanged round once, red rounds spent, no agent, everything returned, a fix picked onto the target that outlives a red round and is published, a fix that needs the batch, each agent's own kept slot), `cargo test integrate::engine` (made with its batch, DONE on green with no agent, the human's keys), `cargo test dispatcher` (its budget counts the analysis alone), `scripts/e2e_integration.py` with `scripts/fake_agent.py` (a red round, a return with its analysis, round 2 green and published), `TM_TEST_REAL_INTEGRATION=1` (a Sonnet agent names the task whose change broke a stand-in check, three short runs)
-- [ ] AC-198 — `python3 scripts/tests/test_land_stages.py` (each stage's done-check run again, Prepare's conflict exit 2, Publish refusing an unchecked commit or a moved target, Queue on and off, Cleanup as the sweep); to come: `cargo test integrate::stages` (Prepare and Verify in a verify tree before a batch, their failures' returns, a task taken out while verified, Cleanup after After), `web/test/e2e_liveintegration.mjs` (the seven rows)
+- [ ] AC-198 — `python3 scripts/tests/test_land_stages.py` (each stage's done-check run again, Prepare's conflict exit 2, Publish refusing an unchecked commit or a moved target, Queue on and off, Cleanup as the sweep), `cargo test integrate::stages` (Prepare and Verify in a tree of its own before a batch, a red Verify through make, Prepare's conflict, a lost window run again, a task taken out while verified, Cleanup after After), `web/test/e2e_liveintegration.mjs` (the seven rows, saved, What runs)
