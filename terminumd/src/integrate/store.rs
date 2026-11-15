@@ -102,6 +102,11 @@ pub fn slug(tx: &Transaction, key: &str) -> Result<String, String> {
     tx.query_row("SELECT slug FROM tasks WHERE id = ?1", [key], |r| r.get(0)).map_err(sql)
 }
 
+/// `key`'s commit returned for a red check: the same commit is not queued again (AC-187).
+pub fn not_again(tx: &Transaction, key: &str, commit: &str, at: i64) -> Result<(), String> {
+    tx.execute("INSERT OR IGNORE INTO integration_returns (task, commit_sha, why, at) VALUES (?1, ?2, 'red', ?3)", rusqlite::params![key, commit, at]).map(drop).map_err(sql)
+}
+
 /// How a task went back from the queue, as `terminum integration wait` exits for it (AC-187).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Left {

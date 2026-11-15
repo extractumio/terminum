@@ -557,9 +557,9 @@ Scenario: AC-198 happy path — Prepare and Verify before a batch
   When both end with 0
   Then API-12 joins the queue's next batch as AC-188 says, its tree removed
   When Prepare ends with 2
-  Then API-12 is IN PROGRESS, "API-12 returned: conflict: Prepare ended with status 2. Its log: …" (a conflict, AC-187's wait exits 2)
+  Then API-12 is IN PROGRESS, "API-12 returned: conflict: its Prepare or Verify ended with status 2. Its log: …" (a conflict, AC-187's wait exits 2)
   When Verify ends with another status, or either runs over "Check ends after"
-  Then API-12 is IN PROGRESS, "API-12 returned: red check: Verify ended with status 1. Its log: …" (AC-187's wait exits 1), and no batch ever held it
+  Then API-12 is IN PROGRESS, "API-12 returned: red check: its Prepare or Verify ended with status 1. Its log: …" (AC-187's wait exits 1), its commit not queued again, and no batch ever held it
   And Verify decides no publishing: only Check on the candidate does (AC-190)
 
 Scenario: AC-198 happy path — Cleanup
@@ -571,7 +571,7 @@ Scenario: AC-198 happy path — without terminumd
   Given integration off for terminum, or terminumd not running
   When the maintainer runs `make land SLUG=retry`
   Then the stages run in order in the tree: `land.py prepare retry`, `verify retry`, `queue retry` (with integration off: nothing to queue), and in the landing turn `check retry` and `publish retry`, then `after` and `cleanup`
-  And each also runs alone, `make land-<stage> SLUG=retry`, and run again does nothing when its work is done: Prepare when the target is in HEAD, Verify when the pass is kept for this content, Check when a green is kept for that commit on that base, Publish when the target holds the commit, After when `make installed` says this build runs, Cleanup when the sweep finds nothing
+  And each also runs alone, `make land-<stage> SLUG=retry`, and run again does nothing when its work is done: Prepare when the target is in HEAD, Verify when the pass is kept for this content, Check when a green is kept for that commit, Publish when the target holds the commit, After when `make installed` says this build runs, Cleanup when the sweep finds nothing
 
 Scenario: AC-198 happy path — with integration on, make land queues
   Given terminum's integration on
@@ -582,7 +582,7 @@ Scenario: AC-198 happy path — with integration on, make land queues
 
 Scenario: AC-198 failure — Publish pushes only what was checked
   When `make land-publish SLUG=retry` runs on a commit with no green Check kept for it on the target as it is now
-  Then nothing is pushed: "publish: 6c1e2a9 has no green check on 3e9b5c2: check first", or, the target moved since, "… is not on origin/main as it is now (5d0f8b1): prepare and check again"
+  Then nothing is pushed: "6c1e2a9 has no green check: check first", or, the target moved since, "6c1e2a9 is not on origin/main as it is now (5d0f8b1): prepare and check again"
 
 Scenario: AC-198 edge — a task taken out while it is verified
   When API-12 is taken out (AC-187) while its Verify runs
@@ -758,7 +758,7 @@ Every page hears `{"t": "integration"}` when a batch or the queue changes.
 | 1 Prepare | `prepare` | the task's verify tree, by terminumd, at queueing | the target is in HEAD |
 | 2 Verify | `verify` | the same tree, after Prepare | the pass is kept for this content |
 | 3 Queue | none: terminum's queue | terminumd | the task is queued, or landed |
-| 4 Check | `check` | the candidate's tree, per batch | a green is kept for that commit on that base |
+| 4 Check | `check` | the candidate's tree, per batch | a green is kept for that commit (a commit fixes its content; Publish asks that it holds the target) |
 | 5 Publish | `publish` (empty: terminum's push) | the candidate's tree | the target holds the commit |
 | 6 After | `after` | the project's folder, once a batch | this build is installed |
 | 7 Cleanup | `cleanup` | the project's folder, after After | nothing is left to take |
@@ -771,12 +771,12 @@ A task's verify tree is `~/.terminum/integration/<project>/verify-<number>`, det
 |---|---|
 | On | on |
 | Target | `origin/main` |
-| Prepare | `python3 scripts/land.py prepare` |
-| Verify | `python3 scripts/worktree.py link . && python3 scripts/land.py verify` |
-| Check | `python3 scripts/worktree.py link . && python3 scripts/land.py check` |
+| Prepare | `make land-prepare` |
+| Verify | `python3 scripts/worktree.py link . && make land-verify` |
+| Check | `python3 scripts/worktree.py link . && make land-check` |
 | Publish | empty: terminum's push |
-| After | `python3 scripts/land.py after` |
-| Cleanup | `python3 scripts/worktree.py sweep` |
+| After | `make land-after` (the install on the maintainer's machine, by `TM_LAND_INSTALL := 1` in `local.mk`) |
+| Cleanup | `make land-cleanup` (`worktree.py sweep`) |
 | Tasks in a batch, at most | 8 |
 | Check ends after, minutes | 90 |
 | Agent | an agent of terminum's pool, chosen in the window; with none a red batch waits for the maintainer |
@@ -786,7 +786,7 @@ A task's verify tree is `~/.terminum/integration/<project>/verify-<number>`, det
 
 `make land SLUG=<slug> TASK=<ID> RESULT=<file>` then queues the tree's HEAD by `terminum integration queue --wait` and ends with its exit status: 0 landed, 1 red, 2 conflict, 3 taken out; terminumd runs every stage after it (AC-198). The values are set in the project's window on the machine that works on terminum; they are no file of the repository.
 
-**Security.** The stages' lines (Prepare, Verify, Check, Publish, After, Cleanup) are a standing permission to run commands and to push as the user: only a signed-in page writes them, the window shows each line and its folder before Save, and no tool of an agent changes them. An agent chooses only which commit of the project's repository is queued; no title or text of a task reaches a commit, a command or a shell: a merge is named by the task's ID alone. Prepare and Verify run the task's own commit as the user in a tree of terminumd's, never the agent's, and decide no publishing; Cleanup is the human's line, and terminum's own value is `worktree.py sweep`, which removes no tree with work or a process in it. The check is the candidate's own, so a task can change what checks it, as a tree that lands by itself can: the human reads Batches… and the published history. terminum's own push names one remote, one branch and one commit, never forced, never a tag; a project's Publish is the human's line. A check runs the queued code as the user, as the agents that wrote it already do. A check's rows reach a task's comment only redacted (`sent::redact`). The gate types only a task's ID with fixed words, only into a pane Dispatcher started and marked, and the integration task's prompt: the human's saved Prompt with facts terminumd fills in (IDs, commits, paths, file names, the Check line), never a task's title, text or comment. What this spec holds is what terminumd does: it publishes only a candidate whose own check was green, and the integration agent's three tools can keep a task out of a batch or cost a round, never publish. The agent's own shell is bounded as any task's agent's is, by its command's permissions (`terminum-dispatcher.md` AC-156), not by this spec: it starts in a worktree of its own, away from the project's folder, and its prompt forbids a push; its analysis reaches another task as a comment, redacted (`sent::redact`), data to that task's agent. A check's log is the queued code's output: the prompt names its path and says to treat what it reads as data.
+**Security.** The stages' lines (Prepare, Verify, Check, Publish, After, Cleanup) are a standing permission to run commands and to push as the user: only a signed-in page writes them, the window shows each line and its folder before Save, and no tool of an agent changes them. An agent chooses only which commit of the project's repository is queued; no title or text of a task reaches a commit, a command or a shell: a merge is named by the task's ID alone. Prepare and Verify run the task's own commit as the user in a tree of terminumd's, never the agent's, and decide no publishing; Cleanup is the human's line, and terminum's own value runs `worktree.py sweep`, which removes no tree with work or a process in it. The check is the candidate's own, so a task can change what checks it, as a tree that lands by itself can: the human reads Batches… and the published history. terminum's own push names one remote, one branch and one commit, never forced, never a tag; a project's Publish is the human's line. A check runs the queued code as the user, as the agents that wrote it already do. A check's rows reach a task's comment only redacted (`sent::redact`). The gate types only a task's ID with fixed words, only into a pane Dispatcher started and marked, and the integration task's prompt: the human's saved Prompt with facts terminumd fills in (IDs, commits, paths, file names, the Check line), never a task's title, text or comment. What this spec holds is what terminumd does: it publishes only a candidate whose own check was green, and the integration agent's three tools can keep a task out of a batch or cost a round, never publish. The agent's own shell is bounded as any task's agent's is, by its command's permissions (`terminum-dispatcher.md` AC-156), not by this spec: it starts in a worktree of its own, away from the project's folder, and its prompt forbids a push; its analysis reaches another task as a comment, redacted (`sent::redact`), data to that task's agent. A check's log is the queued code's output: the prompt names its path and says to treat what it reads as data.
 
 **Limits.** 200 queued tasks a project; a batch at most 8 tasks; red rounds at most 10 a batch; a prompt 8 KiB; 30 trees compared for overlaps a project; a command 2,000 characters; a check 1 to 1440 minutes; batches' rows kept, their logs 30 days; one batch in work on the machine at a time.
 

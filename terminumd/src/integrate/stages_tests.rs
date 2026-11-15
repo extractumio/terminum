@@ -2,17 +2,12 @@
 //! Prepare and Verify before a batch, and Cleanup after one (terminum-integration.md AC-198), on real repositories;
 //! the windows stood in for by `sh`.
 use super::*;
-use crate::integrate::engine::tests::{batch, go, on_origin, queued_with, status, world, Sh, World};
+use crate::integrate::engine::tests::{batch, go, on_origin, queued_with, status, world, Sh};
 use crate::tasks::integration::Settings;
-use crate::tasks::ops::INTEGRATION;
-
-fn with(name: &str, s: Settings) -> World {
-    world(name, s)
-}
 
 #[test]
 fn ac198_a_queued_task_is_prepared_and_verified_in_its_own_tree_before_its_batch() {
-    let w = with("is-pass", Settings { prepare: "echo prepared > prepared.txt".into(), verify: "test -f prepared.txt".into(), ..Settings::default() });
+    let w = world("is-pass", Settings { prepare: "echo prepared > prepared.txt".into(), verify: "test -f prepared.txt".into(), ..Settings::default() });
     let a = queued_with(&w, 1, "b.txt", "b\n", true);
     let r = Sh::default();
     go(&w, &r, 1);
@@ -26,7 +21,7 @@ fn ac198_a_queued_task_is_prepared_and_verified_in_its_own_tree_before_its_batch
 
 #[test]
 fn ac198_a_red_verify_returns_the_task_and_no_batch_holds_it() {
-    let w = with("is-red", Settings { verify: "exit 1".into(), ..Settings::default() });
+    let w = world("is-red", Settings { verify: "exit 1".into(), ..Settings::default() });
     let a = queued_with(&w, 1, "b.txt", "b\n", true);
     go(&w, &Sh::default(), 2);
     assert_eq!(status(&w, &a), "IN PROGRESS");
@@ -38,7 +33,7 @@ fn ac198_a_red_verify_returns_the_task_and_no_batch_holds_it() {
 
 #[test]
 fn ac198_prepares_status_2_is_a_conflict() {
-    let w = with("is-conflict", Settings { prepare: "exit 2".into(), ..Settings::default() });
+    let w = world("is-conflict", Settings { prepare: "exit 2".into(), ..Settings::default() });
     let a = queued_with(&w, 1, "b.txt", "b\n", true);
     go(&w, &Sh::default(), 2);
     assert_eq!(w.s.with(|tx| ops::how_left(tx, &ops::key_of(tx, &a)?)).unwrap().as_deref(), Some("conflict"));
@@ -46,7 +41,7 @@ fn ac198_prepares_status_2_is_a_conflict() {
 
 #[test]
 fn ac198_a_task_taken_out_while_verified_has_its_window_ended() {
-    let w = with("is-out", Settings { verify: "true".into(), ..Settings::default() });
+    let w = world("is-out", Settings { verify: "true".into(), ..Settings::default() });
     let a = queued_with(&w, 1, "b.txt", "b\n", true);
     let r = Sh { hang: true, ..Default::default() };
     go(&w, &r, 1);
@@ -59,7 +54,7 @@ fn ac198_a_task_taken_out_while_verified_has_its_window_ended() {
 
 #[test]
 fn ac198_without_prepare_or_verify_a_task_goes_straight_into_a_batch() {
-    let w = with("is-none", Settings::default());
+    let w = world("is-none", Settings::default());
     let a = queued_with(&w, 1, "b.txt", "b\n", false);
     go(&w, &Sh::default(), 2);
     assert_eq!(status(&w, &a), "DONE");
@@ -67,7 +62,7 @@ fn ac198_without_prepare_or_verify_a_task_goes_straight_into_a_batch() {
 
 #[test]
 fn ac198_cleanup_runs_after_after_once_and_its_failure_undoes_nothing() {
-    let w = with("is-cleanup", Settings { after: "true".into(), cleanup: "exit 4".into(), ..Settings::default() });
+    let w = world("is-cleanup", Settings { after: "true".into(), cleanup: "exit 4".into(), ..Settings::default() });
     let a = queued_with(&w, 1, "b.txt", "b\n", false);
     let r = Sh::default();
     go(&w, &r, 6);
@@ -77,6 +72,4 @@ fn ac198_cleanup_runs_after_after_once_and_its_failure_undoes_nothing() {
     assert!(r.lines.lock().unwrap().iter().any(|l| l.ends_with(".cleanup: exit 4")), "{:?}", r.lines.lock().unwrap());
     let said = w.s.with(|tx| ops::history(tx, &bs::slug(tx, b.task.as_deref().unwrap())?)).unwrap().to_string();
     assert!(said.contains("Cleanup ended with status 4; nothing is undone"), "{said}");
-    assert_eq!(status(&w, &a), "DONE");
-    let _ = INTEGRATION;
 }

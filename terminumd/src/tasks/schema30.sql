@@ -15,5 +15,3 @@ CREATE TABLE integration_verifies (
   tree TEXT,
   started INTEGER
 );
--- after After: Cleanup's window
-ALTER TABLE integration_batches ADD COLUMN cleanup_pane TEXT;

@@ -210,6 +210,11 @@ pub fn verify_tree_in(home: &FsPath, project: &str, number: i64) -> PathBuf {
     tree_in(home, project).with_file_name(format!("verify-{number}"))
 }
 
+/// Where a queued task's Prepare and Verify keep their log, beside its tree.
+pub fn verify_log_in(home: &FsPath, project: &str, number: i64) -> PathBuf {
+    tree_in(home, project).with_file_name(format!("verify-{number}.log"))
+}
+
 /// Where a batch's round keeps the log of its `step` (check, publish, after), beside its tree.
 pub fn log_in(home: &FsPath, project: &str, batch: i64, round: i64, step: &str) -> PathBuf {
     tree_in(home, project).with_file_name(format!("batch-{batch}.{round}.{step}.log"))
@@ -220,7 +225,7 @@ fn runs(project: &str, dir: &str, s: &Settings) -> Vec<String> {
     let home = crate::config::home().to_string_lossy().to_string();
     let tree = crate::tmux::titles::tilde(&tree_of(project).to_string_lossy(), &home);
     let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".into());
-    let own = crate::tmux::titles::tilde(&verify_tree_in(&crate::config::tm_home(), project, 0).to_string_lossy(), &home).replace("verify-0", "verify-<task>");
+    let own = crate::tmux::titles::tilde(&tree_of(project).with_file_name("verify-<task>").to_string_lossy(), &home);
     let task_tree = |name: &str, line: &str| if line.is_empty() { format!("{name}: skipped.") } else { format!("{name} runs `{line}` in {own}, a tree of its own at the task's commit.") };
     vec![
         task_tree("Prepare", &s.prepare),

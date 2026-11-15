@@ -96,8 +96,31 @@ fn vars(store: &Store, p: &Place, b: &Batch, tree: &Path) -> Vec<(&'static str, 
         ("TM_INTEGRATION_TREE", tree.display().to_string()), ("TM_INTEGRATION_PROJECT_DIR", p.repo.display().to_string())]
 }
 
+/// What a step's window says now (AC-190): still running, lost with its window (run again, never red), or ended
+/// with its status, its output kept in `log` and the window closed; `over` its time, it is ended with OVER.
+pub(super) enum Window {
+    Running,
+    Lost,
+    Ended(i32),
+}
+
+/// The status of a window ended for running over its time: no program's own.
+pub(super) const OVER: i32 = -1;
+
+pub(super) fn window(runner: &dyn Runner, pane: &str, log: &Path, over: bool) -> Window {
+    match runner.status(pane) {
+        Err(_) => Window::Lost,
+        Ok(None) if over => {
+            runner.stop(pane);
+            Window::Ended(ended(runner, pane, log, OVER))
+        }
+        Ok(None) => Window::Running,
+        Ok(Some(code)) => Window::Ended(ended(runner, pane, log, code)),
+    }
+}
+
 /// A line that ended: its output kept in the batch's log, its window closed; its status.
-pub(super) fn ended(runner: &dyn Runner, pane: &str, log: &Path, status: i32) -> i32 {
+fn ended(runner: &dyn Runner, pane: &str, log: &Path, status: i32) -> i32 {
     let _ = std::fs::write(log, runner.output(pane));
     runner.close(pane);
     status
@@ -156,16 +179,13 @@ fn follow(store: &Store, runner: &dyn Runner, p: &Place, b: Batch, now: i64) -> 
         };
     };
     let log = log_of(p, &b.project, &b, step);
-    let status = match runner.status(&pane) {
+    let over = step == "check" && now - b.step_started.unwrap_or(now) > p.s.check_minutes * 60;
+    let status = match window(runner, &pane, &log, over) {
         // lost with its window: run again, not counted as red (AC-190)
-        Err(_) => return store.with(|tx| { bs::set_pane(tx, b.id, None, now)?; bs::tell_task(tx, &b, &format!("Batch {}'s {step} runs again: its window was lost.", b.number), now) }),
-        Ok(None) if step == "check" && now - b.step_started.unwrap_or(now) > p.s.check_minutes * 60 => {
-            runner.stop(&pane);
-            ended(runner, &pane, &log, -1);
-            return red(store, p, &b, &format!("The check ran over {} minutes.", p.s.check_minutes), now);
-        }
-        Ok(None) => return Ok(()),
-        Ok(Some(code)) => ended(runner, &pane, &log, code),
+        Window::Lost => return store.with(|tx| { bs::set_pane(tx, b.id, None, now)?; bs::tell_task(tx, &b, &format!("Batch {}'s {step} runs again: its window was lost.", b.number), now) }),
+        Window::Running => return Ok(()),
+        Window::Ended(OVER) => return red(store, p, &b, &format!("The check ran over {} minutes.", p.s.check_minutes), now),
+        Window::Ended(code) => code,
     };
     match (step, status) {
         ("check", 0) => store.with(|tx| { bs::set_pane(tx, b.id, None, now)?; bs::round_ends(tx, &b, "green", None, now)?; bs::set_state(tx, b.id, "green", None, now) }),
