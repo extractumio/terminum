@@ -95,7 +95,7 @@ pub fn tell(tx: &Transaction, key: &str, kind: &str, words: &str, at: i64) -> Re
         return Ok(());
     }
     tx.execute("UPDATE integration_entries SET told = told || ?2 || char(10) WHERE task = ?1", (key, kind)).map_err(sql)?;
-    ops::comment(tx, DISPATCHER, &slug(tx, key)?, words, at).map(drop)
+    ops::notice(tx, DISPATCHER, &slug(tx, key)?, words, serde_json::json!({}), at).map(drop)
 }
 
 pub fn slug(tx: &Transaction, key: &str) -> Result<String, String> {
