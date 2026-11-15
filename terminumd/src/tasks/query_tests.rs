@@ -37,6 +37,25 @@ fn ac105_display_sort_precedes_pagination_and_keeps_stable_ties() {
 }
 
 #[test]
+fn ac169_queued_human_waits_are_separate_from_filtered_pagination_totals() {
+    let s = Store::open(crate::testutil::fresh_dir("queued-counts").join("kanban.sqlite"));
+    s.with(|tx| {
+        let first = create(tx, HUMAN, NewTask { title: "first".into(), ..Default::default() }, 1)?;
+        let second = create(tx, HUMAN, NewTask { title: "second".into(), severity: Some("P0".into()), ..Default::default() }, 1)?;
+        for id in [&first.id, &second.id] { super::super::ops::move_to(tx, HUMAN, id, "WAIT FOR HUMAN", 2)?; }
+        crate::dispatcher::waits::add(tx, &first, "not-in-pool", "default", &json!({"also": [second.id]}), 3)?;
+        let q = Query { statuses: vec!["WAIT FOR HUMAN".into()], limit: 1, ..Default::default() };
+        assert_eq!((counts(tx, &q)?["WAIT FOR HUMAN"].clone(), counts(tx, &q)?["queued_waiting"].clone()), (json!(2), json!(2)));
+        assert_eq!(list(tx, &Query { after: 1, ..q.clone() })?.len(), 1, "all queued cards stay reachable");
+        let filtered = counts(tx, &Query { severities: vec!["P0".into()], ..q.clone() })?;
+        assert_eq!((filtered["WAIT FOR HUMAN"].clone(), filtered["queued_waiting"].clone()), (json!(1), json!(1)));
+        crate::dispatcher::waits::remove(tx, &first.key)?;
+        assert_eq!(counts(tx, &q)?["queued_waiting"], 0, "cancellation restores human attention");
+        Ok(())
+    }).unwrap();
+}
+
+#[test]
 fn ac105_unknown_sort_is_refused() {
     assert!(Sort::parse(None).is_ok());
     assert!(Sort::parse(Some("recent")).is_ok());

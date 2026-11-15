@@ -6,6 +6,14 @@ import { atWork, cardState, liveSession, slotState } from "../static/cardstate.j
 
 const task = (session, more = {}) => ({ status: "IN PROGRESS", session: { key: "k", closed: false, agent: "claude", ...session }, ...more });
 
+test("AC-169 the agent queue precedes old human-wait and closed-session states, with English ordinal places", () => {
+  for (const [place, words] of [[1, "1st"], [2, "2nd"], [3, "3rd"], [11, "11th"], [12, "12th"], [13, "13th"], [21, "21st"], [112, "112th"]]) {
+    for (const session of [{ closed: true }, { state: "waiting" }]) {
+      assert.equal(cardState(task(session, { status: "WAIT FOR HUMAN", waits: "Codex", wait_position: place })).words, `queued for Codex, ${words}`);
+    }
+  }
+});
+
 test("AC-136 a stopped agent with its task open says so", () => {
   assert.deepEqual(cardState(task({ state: "done" })), { cls: "stopped", words: "stopped, task open", why: undefined });
   assert.equal(cardState(task({ state: "done", agent: null })).words, "no agent");

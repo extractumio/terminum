@@ -68,8 +68,9 @@ pub fn boxes(tx: &Transaction, parents: &[&str]) -> Result<HashMap<String, Vec<V
         return Ok(out);
     }
     let marks = (1..=parents.len()).map(|i| format!("?{i}")).collect::<Vec<_>>().join(", ");
-    let found = rows(tx, &format!("SELECT parent, slug, status, title FROM tasks WHERE parent IN ({marks}) AND archived_at IS NULL ORDER BY number"),
-                     rusqlite::params_from_iter(parents.iter()), |r| Ok((r.get::<_, String>(0)?, json!({"id": r.get::<_, String>(1)?, "status": r.get::<_, String>(2)?, "title": r.get::<_, String>(3)?}))))?;
+    let queued = crate::dispatcher::waits::queued_task("t");
+    let found = rows(tx, &format!("SELECT parent, slug, status, title, {queued} FROM tasks t WHERE parent IN ({marks}) AND archived_at IS NULL ORDER BY number"),
+                     rusqlite::params_from_iter(parents.iter()), |r| Ok((r.get::<_, String>(0)?, json!({"id": r.get::<_, String>(1)?, "status": r.get::<_, String>(2)?, "title": r.get::<_, String>(3)?, "queued": r.get::<_, bool>(4)?}))))?;
     for (parent, kid) in found {
         out.entry(parent).or_default().push(kid);
     }

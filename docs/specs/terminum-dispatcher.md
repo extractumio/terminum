@@ -1189,7 +1189,7 @@ Scenario: AC-158 happy path — a press at a limit
   Given Opus reviewer with 1 at once, held by API-12
   When the user runs API-13 on it, first or to go on in a closed session, and adds it to the queue (AC-169)
   Then the press is kept, its comment kept on API-13 at once, and the answer and a toast say "It waits for Opus reviewer: Opus reviewer is at its limit of 1: API-12 is working. It starts when there is room."
-  And API-13's card and window say "waits for Opus reviewer"; its column does not change
+  And API-13's card and window show its queue state as AC-169; its column does not change
   And while it waits, an agent's move_task or finish_task on it is refused, "API-13 waits in Opus reviewer's queue: it starts when there is room. You can read it and comment.": no other session calls off a human's or a manager's press; a human's move still does
   When API-12's session closes, its agent goes or it is given up
   Then within a walk API-13's press goes again as RUN would go now: every check of a press read anew, the folder, hooks, the host's link, the text the human saw
@@ -1237,6 +1237,16 @@ Scenario: AC-169 happy path — offered at a limit
   Then API-13 is the last of Opus reviewer's queue and waits for room (AC-158)
   When the user closes the window instead
   Then nothing waits and API-13 stays where it stood
+
+Scenario: AC-169 happy path — an answered question waits for its agent
+  Given API-13 in WAIT FOR HUMAN with its session closed and API-12 first in Codex's queue
+  When the human or project's manager answers API-13 with RUN and agrees to the queue
+  Then its card and task window say "queued for Codex, 2nd", before any closed-session or human-wait state
+  And it keeps its column (AC-158), but does not count as waiting for the human (terminum-kanban.md AC-117)
+  And its place is in that agent's full queue, even when a board filter hides the tasks before it; reordering updates it everywhere
+  And every task of a queued press for several shares its queue place and can stop that press's wait
+  When its wait is taken out or called off before it starts
+  Then its existing column and human-wait indication apply again; when it starts, AC-158 applies
 
 Scenario: AC-169 edge — no room found only at the press
   Given the window showed Opus reviewer with room, or Run goes on in a closed session (AC-122)
@@ -1761,7 +1771,7 @@ Taking a first prompt is one transition, shared by its hook and a status-changin
 CREATE TABLE run_waits (task TEXT PRIMARY KEY REFERENCES tasks, agent_id TEXT NOT NULL, project TEXT NOT NULL, status TEXT NOT NULL, body TEXT NOT NULL, at INTEGER NOT NULL, pos INTEGER NOT NULL DEFAULT 0);
 ```
 
-`body` is the press as `POST /api/tasks/<id>/run` took it; `status` the task's column then; `pos` its place in the line, lowest first, one line for all agents: an agent's queue is its waits in that order. Each walk, in the line's order, a wait whose agent and project have room is pressed again; none holds a slot, a pane or a clock. `POST /api/tasks/<id>/give-up` on a waiting task calls the wait off; `POST /api/tasks/<id>/leave-queue` does only that, and refuses a task that waits no more. `POST /api/task-agents/<id>/queue {"tasks": ["API-16", "API-13"]}` deals the places that agent's waits hold anew in that order, refused unless it names exactly its queue. The board's `slots` carry `"queue": {"<agent id>": [{"id": "API-13", "title": "…", "project": "<project id>", "also": ["API-14"]}]}`, `also` the other tasks of a press for several.
+`body` is the press as `POST /api/tasks/<id>/run` took it; `status` the task's column then; `pos` its place in the line, lowest first, one line for all agents: an agent's queue is its waits in that order. Each walk, in the line's order, a wait whose agent and project have room is pressed again; none holds a slot, a pane or a clock. `POST /api/tasks/<id>/give-up` on a waiting task calls the wait off; `POST /api/tasks/<id>/leave-queue` does only that, and refuses a task that waits no more. `POST /api/task-agents/<id>/queue {"tasks": ["API-16", "API-13"]}` deals the places that agent's waits hold anew in that order, refused unless it names exactly its queue. The task card and window carry `waits` (agent name), `wait_position` (one-based place in its full agent queue) and `wait_task` (the primary task whose wait Stop waiting cancels). The board's `slots` carry `"queue": {"<agent id>": [{"id": "API-13", "title": "…", "project": "<project id>", "also": ["API-14"]}]}`, `also` the other tasks of a press for several.
 
 **Auto-Dispatcher** (AC-170, `terminumd/src/dispatcher/auto.rs`, `terminumd/src/tasks/auto.rs`). A project's setting and a task's agent in the store:
 
@@ -1933,7 +1943,7 @@ Depends on `terminum-kanban.md`'s Stage 1. All three stages belong to terminum's
 - [ ] AC-156 — `cargo test tasks::agents`, `cargo test dispatcher::press`, `web/test/e2e_liveboardagents.mjs`, `web/test/e2e_livedispatcher.mjs` (the inline words), `SECURITY.md` carries the operator's command
 - [ ] AC-157 — `cargo test dispatcher::plan`, `cargo test dispatcher::press`, `cargo test dispatcher::hooks` (held initial event, early tools and mixed outcomes), `cargo test dispatcher::start` (stale start watcher), `cargo test tasks::tools`, `cargo test tasks::integration_queue` (early integration), `cargo test cli::mcp`, `web/test/e2e_livedispatcher.mjs`
 - [ ] AC-158 — `cargo test dispatcher::waits`, `web/test/e2e_liveboardagents.mjs`
-- [x] AC-169 — `cargo test dispatcher::waits`, `web/test/e2e_livequeue.mjs` (a wide and a phone size), `web/test/e2e_liveboardagents.mjs`
+- [x] AC-169 — `cargo test dispatcher::waits`, `cargo test ac169` (filtered counts, queued members and unanswered subtasks), `web/test/e2e_livequeue.mjs`, `web/test/e2e_livequeuewait.mjs` (a wide and a phone size: answered WAIT FOR HUMAN, positions, counts, reordering, cancellation), `web/test/e2e_liveboardagents.mjs`
 - [x] AC-170 — `cargo test dispatcher::auto`, `cargo test tasks::auto`, `cargo test tasks::tools` (a round's pane), `web/test/e2e_liveauto.mjs` on `scripts/fake_agent.py`; no test of its own: two dispatch_task calls at once through the socket, a new place among the cards leaving the wait as it was, a candidate with an earlier conversation started anew; not run on a real model: whether a real agent follows the round's words
 - [x] AC-185 — `cargo test ac185` (dispatcher::press, tasks::tools), `cargo test dispatcher::auto` (a main task as a candidate, its agent's words), `web/test/e2e_livemain.mjs` on `scripts/fake_agent.py` (a human's RUN, a subtask failed, run again); no test of its own: Auto-Dispatcher's start of a main task through the page, the ask and its answers through the page, a manager's run_task; not run on a real model: whether a real agent follows the words
 - [x] AC-183 — `cargo test dispatcher::runs`, `cargo test dashboard::`, `web/test/e2e_liveboardagents.mjs` (a drop, a page's press, the new-task window, + Session), `web/test/e2e_liveschedules.mjs` (a firing), `web/test/e2e_liveauto.mjs` (Auto-Dispatcher's start); no test of its own: a wait's press started later

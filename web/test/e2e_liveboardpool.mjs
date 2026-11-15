@@ -85,10 +85,10 @@ export async function agentPool(page, opts, pressAt) {
   await page.keyboard.press("Escape");
   const waits = await j(`/api/tasks/${c}/run`, "POST", { agent: fixer, queue: true });
   check("AC-158 terminumd keeps it waiting, naming what holds the slot", /It waits for Fast fixer: Fast fixer is at its limit of 1/.test(waits.waits) && waits.waits.includes(a), JSON.stringify(waits));
-  check("AC-158 its card says what it waits for", await until(async () => /waits for Fast fixer/.test(await page.textContent(card(c)).catch(() => ""))));
+  check("AC-158 its card says its queue place", await until(async () => /queued for Fast fixer, 1st/.test(await page.textContent(card(c)).catch(() => ""))));
   const folded = await page.$eval(card(c), (k) => { const s = k.querySelector(".cstate.waiting"), r = s?.getBoundingClientRect();
     return { folded: k.matches(".compact:not(.open)"), dot: !!r && r.width >= 7 && r.width < 20, title: s?.title ?? "" }; });
-  check("AC-159 a folded card shows the waiting dot, its words on hover", folded.folded && folded.dot && /waits for Fast fixer/.test(folded.title), JSON.stringify(folded));
+  check("AC-159 a folded card shows the waiting dot, its words on hover", folded.folded && folded.dot && /queued for Fast fixer, 1st/.test(folded.title), JSON.stringify(folded));
   const again = await j(`/api/tasks/${c}/run`, "POST", { agent: fixer, queue: true });
   check("AC-158 a press again on that agent waits on, in its place", /It waits for Fast fixer/.test(again.waits), JSON.stringify(again));
   await j(`/api/tasks/${c}/give-up`, "POST");

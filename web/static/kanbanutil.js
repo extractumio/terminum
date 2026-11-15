@@ -116,7 +116,7 @@ export const statusBox = (t, open) => colorBox(t.status, t.id, [t.id, t.status, 
  *  number of them on that status's color, a press opening the first; null when none. */
 export function needBoxes(kids, open) {
   const boxes = [["FAILED", "failed"], ["WAIT FOR HUMAN", "waiting"]].flatMap(([status, word]) => {
-    const of = kids.filter((k) => k.status === status);
+    const of = kids.filter((k) => k.status === status && (status !== "WAIT FOR HUMAN" || !k.queued));
     if (!of.length) return [];
     const b = colorBox(status, `${of.length} ${word}`, `${plural(of.length, "subtask")} ${status}: ${of.map((k) => k.id).join(", ")}`, () => open(of[0].id));
     b.classList.add("word");

@@ -141,9 +141,12 @@ pub fn subtasks(tx: &Transaction, parent: &str) -> Result<Vec<Task>, String> {
 /// The count of each column under the filter (`q`'s `statuses` ignored), so a head says it.
 pub fn counts(tx: &Transaction, q: &Query) -> Result<Value, String> {
     let (filter, args) = filter_of(&Query { statuses: Vec::new(), ..q.clone() });
-    let found: Vec<(String, i64)> = rows(tx, &format!("SELECT t.status, count(*) FROM tasks t JOIN users u ON u.id = t.owner{filter} GROUP BY t.status"), rusqlite::params_from_iter(args.iter()), |r| Ok((r.get(0)?, r.get(1)?)))?;
+    let queued = crate::dispatcher::waits::queued_task("t");
+    let found: Vec<(String, i64, i64)> = rows(tx, &format!("SELECT t.status, count(*), SUM(t.status = 'WAIT FOR HUMAN' AND {queued}) FROM tasks t JOIN users u ON u.id = t.owner{filter} GROUP BY t.status"), rusqlite::params_from_iter(args.iter()), |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
     let mut out: serde_json::Map<String, Value> = COLUMNS.iter().map(|c| (c.to_string(), json!(0))).collect();
-    out.extend(found.into_iter().map(|(status, n)| (status, json!(n))));
+    // Totals remain pagination's bounds; only the human-wait header separates its queued cards (AC-169).
+    out.insert("queued_waiting".into(), json!(found.iter().map(|(_, _, queued)| queued).sum::<i64>()));
+    out.extend(found.into_iter().map(|(status, n, _)| (status, json!(n))));
     Ok(Value::Object(out))
 }
 

@@ -663,6 +663,15 @@ Scenario: AC-117 edge — closed and seen
   Then its line comes again
   And a failed line's reason is the one its move gave, never a later note of a human's
 
+Scenario: AC-117 edge — answered and queued for an agent
+  Given a task in WAIT FOR HUMAN answered by the human or project's manager and queued for its agent (terminum-dispatcher.md AC-169)
+  Then it has no human-wait line and counts in neither the section's human-wait counter nor the touch screen's counter nor a parent's waiting-subtask badge
+  And WAIT FOR HUMAN's head and phone tab count only unanswered tasks, with a separate "2 queued" beside that count for its queued cards under the same filters
+  And all its cards remain reachable through pagination, including when every card is queued
+  And an unanswered subtask still counts if its queued parent runs alone as a schedule's task (terminum-dispatcher.md AC-185)
+  When its wait is cancelled before it starts
+  Then the human-wait indication and counts follow its existing status again
+
 Scenario: AC-117 edge — every browser
   Given the lines of API-12 and API-13 on the Mac's Chrome, the Mac's Safari and the iPhone
   When the user closes API-12's line or opens API-12's window in one of them
@@ -1235,7 +1244,7 @@ Sample event: `{"task":"API-12","at":1792003600,"author":"Dispatcher","kind":"co
 | Route | Does |
 |---|---|
 | `GET /`, `/sessions/`, `/kanban/`, `/kanban/API-12` | redirect keeping the query (`?trace=1`); the session page; the board |
-| `GET /api/tasks?project=&severity=&owner=&status=&q=&id=&made_in=&sort=&after=&limit=&counts=1` | a page of 200 at most; `sort=recent` orders by updated time descending, `sort=priority` by severity then updated time descending, both breaking ties by task number descending; omitted, severity then saved rank for tool callers; archived tasks keep archive-time order; each card with its subtasks' `boxes` (AC-112); with `counts=1`, each column's count under the same filters; with `id=API-12`, whether they show that task; with `made_in=<key>`, the tasks made in that pane, subtasks too (AC-150) |
+| `GET /api/tasks?project=&severity=&owner=&status=&q=&id=&made_in=&sort=&after=&limit=&counts=1` | a page of 200 at most; `sort=recent` orders by updated time descending, `sort=priority` by severity then updated time descending, both breaking ties by task number descending; omitted, severity then saved rank for tool callers; archived tasks keep archive-time order; each card with its subtasks' `boxes` (AC-112); with `counts=1`, each column's pagination total under the same filters and `counts.queued_waiting`, the queued WAIT FOR HUMAN cards excluded from the human count (AC-117); with `id=API-12`, whether they show that task; with `made_in=<key>`, the tasks made in that pane, subtasks too (AC-150) |
 | `POST /api/tasks/API-12/seen {key?}` | the human closed API-12's line of that key, as `taskmarks` gave it (its move and words), or, with none, saw the line it has now: its window opened (AC-117); every page hears `taskmarks` when that changed |
 | `POST /api/tasks`, `PATCH /api/tasks/API-12`, `POST /api/tasks/API-12/comments`, `/files` | changes; the answer is the new state or `{"error": "<message>"}`; `PATCH {parent: "API-3" \| null}` puts it under a task or takes it out (AC-112); `POST {made_in, record}` counts it as made in that pane and lets the record go, 409 when it went already (AC-116) |
 | `PATCH /api/task-projects/<id> {prefix?, template?}` | a project's ID letters (AC-148) and its template (AC-145), besides its name and folder |

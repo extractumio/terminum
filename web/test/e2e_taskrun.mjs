@@ -22,6 +22,10 @@ export async function webTaskRun(browser, name) {
     runningIn(`${name} ${size}`);
     const f = await openPage(browser, { device, secret: "a".repeat(64), stored: "a".repeat(64) });
     const { page } = f, all = tasks(), sent = [];
+    let queue = ["API-7", "API-8"], holdBoard = false;
+    const boardReads = [];
+    const slots = () => ({ agents: {}, full: [], full_projects: [], queue: { a1: queue.map((id) => ({ id, title: id, project: "api", also: [] })) } });
+    all[7].wait_position = 2;
     let refused = false, refusedPress = null, releaseUpload = null, holdPreview = false, releasePreview = null, previews = 0;
     let offer = {}, full = null;                   // what terminumd offers for the next read, and answers a press with no room
     const comments = [];
@@ -30,10 +34,13 @@ export async function webTaskRun(browser, name) {
     await page.route(`${ORIGIN}/kanban/**`, (r) => r.fulfill({ contentType: "text/html", body: fs.readFileSync(new URL("../static/kanban.html", import.meta.url), "utf8").replace("__BUILD__", "test") }));
     await page.route("**/api/tasks/meta", (r) => json(r, { ...META, theme: THEME }));
     await page.route("**/api/schedules", (r) => json(r, { schedules: [] }));
-    await page.route("**/api/tasks?*", (r) => json(r, {
-      tasks: all.filter((t) => t.status === new URL(r.request().url()).searchParams.get("status")),
-      counts: Object.fromEntries(COLUMNS.map((s) => [s, all.filter((t) => t.status === s).length])), slots: { agents: {}, full: [], full_projects: [] },
-    }));
+    await page.route("**/api/tasks?*", async (r) => {
+      if (holdBoard) await new Promise((resolve) => boardReads.push(resolve));
+      return json(r, {
+        tasks: all.filter((t) => t.status === new URL(r.request().url()).searchParams.get("status")),
+        counts: Object.fromEntries(COLUMNS.map((s) => [s, all.filter((t) => t.status === s).length])), slots: slots(),
+      });
+    });
     await page.route("**/api/tasks/API-*", (r) => json(r, all.find((t) => r.request().url().endsWith(`/${t.id}`))));
     await page.route("**/api/tasks/API-*/run?*", async (r) => {
       const no = refused;
@@ -73,6 +80,24 @@ export async function webTaskRun(browser, name) {
         await close();
       }
       await open("API-8");
+      holdBoard = true;
+      queue = ["API-8"];
+      all[7].wait_position = 1;
+      f.say({ t: "taskchange", id: "API-7" });
+      check("AC-169 fixture: another task's change holds the board response", await until(() => boardReads.length > 0));
+      f.say({ t: "taskusage", items: {}, slots: slots() });
+      check("AC-169 usage arriving before a board response updates the open task's place", await until(async () => /queued for Claude, 1st/.test(await page.textContent("#taskbody .fieldvalue"))));
+      holdBoard = false;
+      boardReads.splice(0).forEach((release) => release());
+      queue = [];
+      all[7].waits = null;
+      f.say({ t: "taskusage", items: {}, slots: slots() });
+      check("AC-169 a queued member's open window follows another task's cancellation", await until(async () => await run().isEnabled() && !/queued for/.test(await page.textContent("#taskbody .fieldvalue"))));
+      queue = ["API-7", "API-8"];
+      all[7].waits = "Claude";
+      all[7].wait_position = 2;
+      f.say({ t: "taskusage", items: {}, slots: slots() });
+      check("AC-169 a newly queued member's open window follows its primary", await until(async () => /queued for Claude, 2nd/.test(await page.textContent("#taskbody .fieldvalue"))));
       await dropFile();
       if (!await until(() => releaseUpload !== null)) throw new Error("the comment upload did not start");
       const footerSave = windowKey(page, "#taskbox", "Save");

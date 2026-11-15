@@ -41,11 +41,13 @@ struct Asks {
 /// WAIT FOR HUMAN and FAILED, or only task `one` (its store key) of them; the reason is the one its mover gave with
 /// that move, else the move's own words (who moved it), never a later note (a human's choice of agent).
 fn asks(tx: &Transaction, one: Option<&str>) -> Result<Vec<Asks>, String> {
-    rows(tx, "SELECT t.slug, t.status = 'FAILED', COALESCE(m.author != 'human', 0),
+    let queued = crate::dispatcher::waits::queued_task("t");
+    rows(tx, &format!("SELECT t.slug, t.status = 'FAILED', COALESCE(m.author != 'human', 0),
             COALESCE((SELECT text FROM events e WHERE e.task = t.id AND e.kind = 'why' AND e.author = m.author AND e.rowid > m.rowid ORDER BY e.at DESC, e.rowid DESC LIMIT 1), m.text, ''),
             COALESCE(m.rowid, 0), t.line_seen
         FROM tasks t LEFT JOIN events m ON m.rowid = (SELECT e.rowid FROM events e WHERE e.task = t.id AND e.kind = 'move' ORDER BY e.at DESC, e.rowid DESC LIMIT 1)
-        WHERE t.status IN ('WAIT FOR HUMAN', 'FAILED') AND t.archived_at IS NULL AND (?1 IS NULL OR t.id = ?1) ORDER BY t.number DESC", [one], |r| {
+        WHERE t.status IN ('WAIT FOR HUMAN', 'FAILED') AND (t.status = 'FAILED' OR NOT {queued})
+            AND t.archived_at IS NULL AND (?1 IS NULL OR t.id = ?1) ORDER BY t.number DESC"), [one], |r| {
         let (id, failed): (String, bool) = (r.get(0)?, r.get(1)?);
         let why = r.get::<_, String>(3)?;
         let words = match reason(&why) {
@@ -136,9 +138,12 @@ impl Marks {
                 sessions.entry(key).or_default().push(id);
             }
             // as the board's cards: a subtask in its main task's column stands under it, counted once (AC-112)
-            let cards = tx.query_row("SELECT COALESCE(SUM(t.status = 'WAIT FOR HUMAN'), 0), COALESCE(SUM(t.status = 'FAILED'), 0) FROM tasks t
+            let (queued, parent_queued) = (crate::dispatcher::waits::queued_task("t"), crate::dispatcher::waits::queued_task("p"));
+            let cards = tx.query_row(&format!("SELECT COALESCE(SUM(t.status = 'WAIT FOR HUMAN'), 0), COALESCE(SUM(t.status = 'FAILED'), 0) FROM tasks t
                 WHERE t.status IN ('WAIT FOR HUMAN', 'FAILED') AND t.archived_at IS NULL
-                    AND NOT EXISTS (SELECT 1 FROM tasks p WHERE p.id = t.parent AND p.status = t.status AND p.archived_at IS NULL)", [], |r| Ok((r.get(0)?, r.get(1)?))).map_err(ops::sql)?;
+                    AND (t.status = 'FAILED' OR NOT {queued})
+                    AND NOT EXISTS (SELECT 1 FROM tasks p WHERE p.id = t.parent AND p.status = t.status AND p.archived_at IS NULL
+                        AND (p.status = 'FAILED' OR NOT {parent_queued}))"), [], |r| Ok((r.get(0)?, r.get(1)?))).map_err(ops::sql)?;
             Ok(Held { counts, sessions, attention: asks(tx, None)?, cards })
         });
         // a passing failure says nothing about the tasks: the last numbers stand
@@ -182,6 +187,42 @@ mod tests {
     fn lines(marks: &Marks) -> (Value, Value) {
         let told: Value = serde_json::from_str(&marks.message()).unwrap();
         (json!(told["waiting"].as_u64().unwrap() + told["failed"].as_u64().unwrap()), told["lines"].clone())
+    }
+
+    #[test]
+    fn ac169_queued_answers_and_their_members_need_no_human_but_an_unanswered_child_does() {
+        let store = Store::open(crate::testutil::fresh_dir("marks-queued").join("kanban.sqlite"));
+        let marks = Marks::default();
+        let (parent, child, member) = store.with(|tx| {
+            let make = |title: &str| create(tx, HUMAN, NewTask { title: title.into(), ..Default::default() }, 1);
+            let (parent, child, member) = (make("parent")?, make("child")?, make("member")?);
+            super::super::family::set_parent(tx, HUMAN, &child.id, Some(&parent.id), 2)?;
+            // A schedule's task runs alone (AC-185); its unanswered child is not carried by its queued press.
+            tx.execute("INSERT INTO schedules (id, number, project, title, body, severity, agent_id, once_at, budget_seconds, last_due, author, created_at, updated_at)
+                VALUES ('s', 1, 'default', 's', 's', 'P2', 'unknown', 99999, 60, 0, 'human', 1, 1)", []).map_err(ops::sql)?;
+            tx.execute("INSERT INTO schedule_fires (schedule, due_at, at, task, state) VALUES ('s', 1, 1, ?1, 'made')", [&parent.key]).map_err(ops::sql)?;
+            for t in [&parent, &child, &member] { move_to(tx, DISPATCHER, &t.id, "WAIT FOR HUMAN", 3)?; }
+            crate::dispatcher::waits::add(tx, &parent, "unknown", "default", &json!({"also": [member.id]}), 4)?;
+            Ok((parent, child, member))
+        }).unwrap();
+        marks.refresh(&store).unwrap();
+        let (need, told) = lines(&marks);
+        assert_eq!(need, 1, "the nonqueued child counts even though its parent shares the stored status");
+        assert_eq!(told.as_array().unwrap().iter().map(|l| l["id"].as_str().unwrap()).collect::<Vec<_>>(), [child.id.as_str()]);
+        store.with(|tx| {
+            let kids = super::super::family::boxes(tx, &[&parent.key])?;
+            assert_eq!(kids[&parent.key][0]["queued"], false, "an unanswered subtask's badge stays");
+            crate::dispatcher::waits::add(tx, &child, "unknown", "default", &json!({}), 5)?;
+            assert_eq!(super::super::family::boxes(tx, &[&parent.key])?[&parent.key][0]["queued"], true);
+            crate::dispatcher::waits::remove(tx, &child.key)?;
+            crate::dispatcher::waits::remove(tx, &parent.key)?;
+            Ok(())
+        }).unwrap();
+        marks.refresh(&store).unwrap();
+        let (need, told) = lines(&marks);
+        assert_eq!(need, 2, "unanswered child counts with parent again, member separately");
+        assert_eq!(told.as_array().unwrap().len(), 3, "all unanswered lines return");
+        assert!(told.as_array().unwrap().iter().any(|l| l["id"] == member.id));
     }
 
     #[test]

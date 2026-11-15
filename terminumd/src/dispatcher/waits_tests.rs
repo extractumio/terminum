@@ -38,8 +38,30 @@ fn ac158_a_wait_keeps_its_place_and_its_newest_press() {
         let all = all(tx)?;
         assert_eq!(all.iter().map(|w| w.task.as_str()).collect::<Vec<_>>(), [one.key.as_str(), two.key.as_str()], "its place in the line stays");
         assert_eq!((all[0].agent.as_str(), all[0].body["comment"].as_str(), all[0].at, all[0].status.as_str()), ("b", Some("again"), 10, "TODO"));
-        assert_eq!(on_cards(tx, &[&one.key, &two.key])?.get(&one.key).map(String::as_str), Some("Jones"), "a card names the agent it waits for");
+        assert_eq!(on_cards(tx, &[&one.key, &two.key])?.get(&one.key).map(|w| w.agent.as_str()), Some("Jones"), "a card names the agent it waits for");
         assert!(remove(tx, &one.key)? && !remove(tx, &one.key)?);
+        Ok(())
+    }).unwrap();
+}
+
+#[test]
+fn ac169_cards_share_the_press_and_full_agent_queue_position() {
+    store("waits-cards").with(|tx| {
+        let (first, second, member, other, child) = (task(tx, "api"), task(tx, "api"), task(tx, "api"), task(tx, "api"), task(tx, "api"));
+        crate::tasks::family::set_parent(tx, HUMAN, &child.id, Some(&second.id), 2)?;
+        add(tx, &first, "a", "api", &json!({}), 10)?;
+        add(tx, &other, "b", "api", &json!({}), 11)?;
+        add(tx, &second, "a", "api", &json!({"also": [member.id]}), 12)?;
+        let shown = on_cards(tx, &[&second.key, &member.key, &other.key, &child.key])?;
+        for key in [&second.key, &member.key, &child.key] {
+            let w = &shown[key];
+            assert_eq!((w.agent.as_str(), w.position, w.task.as_str()), ("Smith", 2, second.id.as_str()), "filtered first card still takes a place; several tasks share one press");
+        }
+        assert_eq!(shown[&other.key].position, 1, "each agent's own line");
+        reorder(tx, "a", &[second.id.clone(), first.id.clone()])?;
+        assert_eq!(on_cards(tx, &[&member.key])?[&member.key].position, 1);
+        take_out(tx, &second.id)?;
+        assert!(on_cards(tx, &[&second.key, &member.key, &child.key])?.is_empty(), "cancelling clears every member");
         Ok(())
     }).unwrap();
 }
