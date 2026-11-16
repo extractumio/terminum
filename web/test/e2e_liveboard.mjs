@@ -4,7 +4,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { check, until, within } from "./check.mjs";
-import { pressCard } from "./boardkit.mjs";
+import { pressCard, showColumnOf } from "./boardkit.mjs";
 
 const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==", "base64");
 
@@ -212,6 +212,7 @@ export async function liveBoard(page, { base, tmux, work, shots }) {
   check("AC-106 New Task in a row's menu fills in its session", await page.inputValue("#newsession") === key, await page.inputValue("#newsession"));
   check("AC-106 and leaves the address clean", new URL(page.url()).search === "", page.url());
   await page.click("#newdiscard");
+  await showColumnOf(page, first);
   await page.click(`.col[data-status="IN PROGRESS"] .card[data-id="${first}"] .ctitle`);
   await page.waitForSelector("#taskbox[open]");
   await page.click("#taskclose");

@@ -30,6 +30,7 @@ import { liveSession } from "./cardstate.js";
 import { el, iconButton, plural, projectInk, textKey } from "./listparts.js";
 import { integrationColumn } from "./kanbanqueuecol.js";
 import { boardColumns } from "./kanbancols.js";
+import { columnPanel } from "./kanbanpanel.js";
 import { $, COLUMNS, agentChip, api, button, guardQueuedRun, hasFiles, placeChildren, say, sessionLine, showError, signInElsewhere, statusBox, needBoxes, underParents } from "./kanbanutil.js";
 
 const signIn = signInElsewhere();                  // with no sign-in the board goes to /sessions/, whose form signs in
@@ -39,7 +40,6 @@ const PAGE = 200;
 let meta = { projects: [], users: [], sessions: [], agents: [], hosts: [] };
 let cards = new Map(COLUMNS.map((c) => [c, []]));
 let counts = {};
-let shownColumn = "TODO";
 const narrow = matchMedia("(max-width: 860px)"), still = matchMedia("(prefers-reduced-motion: reduce)");
 let dragging = null;                               // the tasks of a drag
 const picked = new Set();                          // the tasks ⌘ or Ctrl+click chose (terminum-dispatcher.md AC-138)
@@ -247,7 +247,8 @@ async function runThem(tasks, agent) {
 
 const queueColumn = integrationColumn({ openTask: (id) => openTask(id), reload: () => loadMeta().then(() => readSoon()) });
 /** The columns stand once; a draw fills them, each keeping its scroll. */
-const columns = boardColumns({ sorting, showColumn: (c) => showColumn(c), newTask: () => form.open(), queueKeys: queueColumn.keys });
+const columns = boardColumns({ sorting, showColumn: (c) => panel.show(c), newTask: () => form.open(), queueKeys: queueColumn.keys });
+const panel = columnPanel(columns, still);
 let socket = null;
 /** A press in the session list: as the session page's, over the one socket. */
 function send(m) {
@@ -264,8 +265,6 @@ const agents = agentsSection({ getMeta: () => meta, chosen: () => filters().proj
 $("agentbar").append(agents.box);
 const scheduled = scheduledSection({ getMeta: () => meta, chosen: () => filters().project, openTask });
 $("schedbar").append(scheduled.box);
-$("board").replaceChildren(...[...columns.values()].map((c) => c.col));
-$("colswitch").replaceChildren(...[...columns.values()].map((p) => p.tab));
 
 /** The cards drawn, by task: one whose task shows the same (`key`) is the same element at the next draw, so a press
  *  that straddles a redraw of its column lands (AC-133). */
@@ -307,30 +306,8 @@ function draw() {
     const run = runFocused ? c?.querySelector(".crun:not(:disabled)") : null;
     (active.isConnected ? active : run?.getClientRects().length ? run : c)?.focus({ preventScroll: true });
   }
-  markTab();
+  panel.mark();
 }
-
-/** A phone's one column, by its tab or a swipe. */
-function showColumn(column) {
-  shownColumn = column;
-  columns.get(column).col.scrollIntoView({ inline: "start", block: "nearest", behavior: still.matches ? "auto" : "smooth" });
-  markTab();
-}
-
-function markTab() {
-  for (const [name, { tab }] of columns) {
-    const on = name === shownColumn;
-    if (tab.getAttribute("aria-selected") === String(on)) continue;
-    tab.setAttribute("aria-selected", String(on));
-    if (on) tab.scrollIntoView({ inline: "nearest", block: "nearest" });
-  }
-}
-
-$("board").addEventListener("scroll", () => {
-  if (!narrow.matches) return;
-  const b = $("board"), now = [...columns.keys()][Math.round(b.scrollLeft / Math.max(1, b.clientWidth))];
-  if (now && now !== shownColumn) { shownColumn = now; markTab(); }
-}, { passive: true });
 
 /** The session list changed: the pickers' sessions, the cards' rows and states come with it, no task did. */
 function sessionsCame(groups) {

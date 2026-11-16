@@ -45,11 +45,14 @@ export async function webKanbanSort(browser, name) {
     try {
       await go();
       check("AC-105 default priority then recent; exactly two labelled keys per column", await first("API-1") && await page.locator('.col:not([hidden]) .colsort button').count() === 10 && await page.getAttribute(PRIORITY, "aria-pressed") === "true");
-      const head = await page.$$eval(".col:not([hidden]) .colhead", (heads) => heads.map((h) => {
+      // the columns in sight: a phone's one, else TODO and the panel's, whose count its tab says (AC-105)
+      const head = await page.$$eval(".col:not([hidden]) .colhead", (heads) => heads.filter((h) => h.offsetWidth).map((h) => {
         const sort = h.querySelector(".colsort"), count = h.querySelector(".count"), box = h.getBoundingClientRect(), s = sort.getBoundingClientRect(), c = count.getBoundingClientRect();
-        return { before: sort.nextElementSibling === count && s.right <= c.left, fits: s.top >= box.top && s.bottom <= box.bottom, keys: [...sort.children].map((b) => { const r = b.getBoundingClientRect(); return [r.width, r.height]; }) };
+        const tab = document.querySelector(`#colswitch button[data-status="${h.parentElement.dataset.status}"] .tabn`);
+        return { before: sort.nextElementSibling === count && (c.width ? s.right <= c.left : tab?.textContent === count.textContent), fits: s.top >= box.top && s.bottom <= box.bottom,
+          keys: [...sort.children].map((b) => { const r = b.getBoundingClientRect(); return [r.width, r.height]; }) };
       }));
-      check("AC-105 sort keys stand immediately left of each count, inside the header", head.every((h) => h.before && h.fits), JSON.stringify(head));
+      check("AC-105 sort keys stand immediately left of each count, inside the header, or the panel's tab says it", head.length && head.every((h) => h.before && h.fits), JSON.stringify(head));
       if (device === PHONE) check("AC-105 phone sort keys are at least 44 by 44", head.every((h) => h.keys.every(([w, h]) => w >= 44 && h >= 44)), JSON.stringify(head));
       await page.focus(RECENT);
       await tabKey(page);

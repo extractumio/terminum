@@ -1,0 +1,40 @@
+/* SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial */
+/* Where the columns stand wider than a phone (terminum-kanban.md AC-105; kanbanpanel.js): TODO a column of its own,
+   the others in a panel beside it, one at a time under their tabs, its cards a grid. The board's tracks are the
+   agents' (kanban.css .tracks): six from 1500 px of board (TODO two, the panel's cards four columns), three from
+   1100 (TODO one, the cards two); under 1100 px (a tablet's portrait) TODO stands over the panel, as tall as its cards
+   up to 40% of the board, both the board's width, the cards two columns. After kanban.css; a phone's one column at
+   a time: kanban.css. */
+@media (min-width: 601px) {
+  #board { --tracks: 2; --todo: 2; --cards: 2; display: grid; grid-template-columns: repeat(var(--tracks), minmax(0, 1fr)); grid-template-rows: fit-content(40%) minmax(0, 1fr); gap: var(--sp-2); }
+  @container board (min-width: 1100px) { #board { --tracks: 3; --todo: 1; --cards: 2; grid-template-rows: minmax(0, 1fr); } }
+  @container board (min-width: 1500px) { #board { --tracks: 6; --todo: 2; --cards: 4; } }
+  #board > .col { grid-column: span var(--todo); }
+  /* the panel: its tabs and the shown column's keys on one row, its cards under them */
+  .colpanel { grid-column: span max(var(--tracks) - var(--todo), var(--todo)); display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: auto minmax(0, 1fr);
+    min-width: 0; min-height: 0; border-radius: var(--r-lg); background: var(--surface-1); }
+  .colpanel > .col:not(.shown) { display: none; }
+  .colpanel > .col.shown { display: contents; }
+  .colpanel .colhead { grid-row: 1; grid-column: 2; align-self: start; flex-wrap: nowrap; }
+  .colpanel .colhead :is(.colname, .count, .colnote) { display: none; }   /* its tab says them; INTEGRATION's note: Batches… */
+  .colpanel .cards { grid-row: 2; grid-column: 1 / -1; display: grid; grid-template-columns: repeat(var(--cards), minmax(0, 1fr)); align-content: start; align-items: start; }
+  .colpanel .cards > :is(.colempty, .colmore) { grid-column: 1 / -1; }
+  #colswitch { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1); min-width: 0; margin: 0 var(--sp-2); align-self: center; justify-self: start; }   /* every count in sight; the row as tall as TODO's head */
+  #colswitch button[data-status="TODO"] { display: none; }      /* TODO stands beside it */
+}
+/* a tab, wherever the tabs stand: its name, then its count as a tag; WAIT FOR HUMAN's and FAILED's in their hues while
+   they hold tasks, its glow pulsing (the page's one blink, as the head's counters: askfold.css) */
+#colswitch button { display: inline-flex; align-items: center; gap: var(--sp-1); flex: none; padding-inline: var(--sp-2); white-space: nowrap; }
+#colswitch button[hidden] { display: none; }
+.tabn { position: relative; min-width: 1.6em; padding: 0 var(--sp-1); border-radius: var(--r-xs); font-size: var(--fs-micro); font-weight: var(--fw-head);
+  line-height: 18px; text-align: center; font-variant-numeric: tabular-nums; color: var(--muted-text); background: var(--surface-3); }
+#colswitch .alarm .tabn { --fill: var(--waiting); color: var(--waiting-ink); background: var(--fill); }
+#colswitch .alarm[data-status="FAILED"] .tabn { --fill: var(--danger-fill); color: var(--danger-ink); }
+@media (prefers-reduced-motion: no-preference) {
+  #colswitch .alarm .tabn::after { content: ""; position: absolute; inset: -2px; border-radius: inherit; pointer-events: none; opacity: 0;
+    box-shadow: 0 0 8px 3px color-mix(in srgb, var(--fill) 70%, transparent); animation: askpulse 2s var(--ease-out) infinite alternate; }
+}
+/* TODO's + New task: a text key as tall as the head's icon keys, the keys and the count on one line with it */
+#board .colhead .new { height: var(--icon-key-list); min-height: 0; gap: var(--sp-1); padding: 0 var(--sp-2) 0 var(--sp-1); margin-left: auto; font-size: var(--fs-label); }
+.colhead .new + .colsort { margin-left: 0; }
+@media (max-width: 860px), (pointer: coarse) { #board .colhead .new { height: var(--icon-key-touch); } }   /* as the sort keys (controls.css); #board: over the keys' own rule */

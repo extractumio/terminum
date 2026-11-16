@@ -54,7 +54,7 @@ Open questions: none.
 
 | ID | Priority | Case |
 |---|---|---|
-| AC-105 | [MUST / P0] | `/kanban/` shows five columns of task cards (a sixth, INTEGRATION, where a shown project's integration is on: `terminum-integration.md` AC-193), each sorted by recent updates or by priority then recent updates, chosen by two icons before its count and remembered per project in this browser; `/sessions/` is the session list, `/` leads to it; a phone shows one column at a time. |
+| AC-105 | [MUST / P0] | `/kanban/` shows TODO as a column of its own and the other columns (IN PROGRESS, WAIT FOR HUMAN, INTEGRATION where a shown project's integration is on: `terminum-integration.md` AC-193, FAILED, DONE) one at a time in a panel beside it under their tabs, each tab with its count, WAIT FOR HUMAN's and FAILED's pulsing while they hold tasks; each column sorted by recent updates or by priority then recent updates, chosen by two icons before its count and remembered per project in this browser; a tablet's head is one row; `/sessions/` is the session list, `/` leads to it; a phone shows one column at a time. |
 | AC-159 | [MUST / P0] | TODO and DONE show each card as one line, its ID, severity, title and its state's dot; a press shows one whole, folding the one before; the other columns show cards whole. |
 | AC-106 | [MUST / P0] | A window makes a task (title, Markdown with preview, files dropped or pasted, project, severity, owner, parent), in TODO unless said; a draft survives closing; a selection in a terminal can start one. |
 | AC-107 | [MUST / P0] | A human moves a task only by running it (terminum-dispatcher.md AC-138); agents and Dispatcher move it; every change is kept in the task's history with who and when. |
@@ -104,6 +104,22 @@ Scenario: AC-105 happy path — columns and order
   And subtasks still stand under their parent in the same column (AC-112)
   And a drop within a column changes no task's order; a drop on an agent still runs it (AC-138)
 
+Scenario: AC-105 happy path — TODO and the panel
+  Given a board 601 px wide or wider, a computer's or a tablet's
+  Then TODO stands as a column of its own; IN PROGRESS, WAIT FOR HUMAN, INTEGRATION (where it stands), FAILED and DONE share the rest of the board as one panel, one at a time under their tabs, IN PROGRESS shown first
+  And each tab names its column and its count; WAIT FOR HUMAN's and FAILED's counts stand in the waiting and the danger hue and pulse slowly while they hold tasks, whichever tab is shown (still with Reduce Motion)
+  And the shown column's sort keys stand at the end of the tabs' row; its cards fill the panel as a grid
+  When the user presses DONE's tab
+  Then the panel shows DONE's cards, and this browser shows DONE first next time; when INTEGRATION's tab goes, the panel shows IN PROGRESS
+  And the board has tracks: six from 1500 px of board, TODO two of them, the panel's cards four columns, an agent a track (terminum-dispatcher.md AC-138); three from 1100 px, TODO one, the cards two; under 1100 px TODO stands over the panel, as tall as its cards up to 40% of the board, the cards two columns
+  And TODO's head and the tabs' row stand on one line, their cards start on one line, and every left edge is the gutter's or a track's
+
+Scenario: AC-105 edge — a tablet
+  Given a touch screen 601 px wide or wider (an iPad, in either orientation), or a window 601 to 860 px wide
+  Then the head is one row: the list's key, the sections where they fit, the project, Find, Filters (it names how many are on and opens the filters on a row under the head), the counters of tasks that need the human (AC-117), Auto-Dispatch, its settings and + Task; every key 44 px on a touch screen
+  And where the row is short, Auto-Dispatch's word goes first, then the project's name gives way, then Find narrows; only then do the project, Find and Filters take a second row
+  And no column, card title or column head is cut to fit: TODO and the panel at least 300 px wide each, a column head on one line
+
 Scenario: AC-105 happy path — a project's sort choices
   Given Billing's TODO is set to recently updated first and Web's TODO to priority then recently updated
   When the user switches between those projects or reloads
@@ -126,16 +142,15 @@ Scenario: AC-105 happy path — a card
   And a press on a card opens its window; ⌘ or Ctrl+press chooses it (terminum-dispatcher.md AC-138)
 
 Scenario: AC-105 edge — a phone
-  Given a width under 860 px
-  Then one column shows, a swipe goes to the next, a switch over it names the five with their counts and follows; a card runs by its Run key
-  And its head leaves the cards the room: the list's key and + Task on one row, the project, Find and Filters on the next; the filters open under Filters
+  Given a width of 600 px or less
+  Then one column shows, TODO first, a swipe goes to the next, a switch over it names every column with its count, as the panel's tabs do, and follows; a card runs by its Run key
 
 Scenario: AC-105 edge — a phone's one-row head
   Given a width of 600 px or less
   Then the head is one row: the list's key, the project, the counters of tasks that need the human (AC-117), a Find key and + Task as an icon key; every key 44 px, the project's name giving way first, none past the screen's edge at 320 px
   And a press on the Find key shows the Find field and the filters on rows under the head, a second press puts them away; the key is lit while a search or a filter is on, so a narrowed board never looks merely short
   And under the columns' switch one line says Auto-Dispatch's state first, then how many agents and how many schedules the shown projects have; a press opens Auto-Dispatch's switch and settings, the agents and the schedules as one sheet (terminum.md AC-18), and they take no room over the cards
-  And a column's own keys (TODO's +, the two sort keys, the count) scroll away with its cards
+  And a column's own keys (TODO's + New task, the two sort keys, the count) scroll away with its cards
 
 Scenario: AC-105 edge — many cards
   Given 1,000 DONE tasks
@@ -216,7 +231,7 @@ Scenario: AC-106 happy path — the rest folded
   Then Owner and Session stand under "Owner and session", folded: most tasks are the user's and start with no session
 
 Scenario: AC-106 happy path — from TODO's head
-  Then TODO's head always shows a [+] key before the sort keys and count, in the look of the session list's group-header [+]
+  Then TODO's head always shows a + New task key, its icon and words, before the sort keys and count, as tall as they are and on their line
   When the user presses it
   Then the same window opens as + Task's, the draft with it
   And a phone keeps + Task in the board's head as well
@@ -1280,7 +1295,7 @@ Depends on: nothing more.
 
 ## 11. Checklist with Definition of Done
 
-- [x] AC-105 — `cargo test tasks::query`, `web/test/e2e_kanbansort.mjs` (`node web/test/e2e_all.mjs webKanbanSort`), `web/test/e2e_liveboardsort.mjs` (`node web/test/e2e_live.mjs boardsort`), `web/test/e2e_liveboard.mjs` (`node web/test/e2e_live.mjs board`), a phone's in `liveBoardPhone`, its projects and filters not read in `web/test/e2e_liveboardedge.mjs`, a phone's one-row head in `web/test/e2e_boardphone.mjs` (`node web/test/e2e_all.mjs webBoardPhone`: 390 and 320 px, and the two rows a 700 px window keeps)
+- [x] AC-105 — `cargo test tasks::query`, `web/test/e2e_kanbansort.mjs` (`node web/test/e2e_all.mjs webKanbanSort`), `web/test/e2e_liveboardsort.mjs` (`node web/test/e2e_live.mjs boardsort`), `web/test/e2e_liveboard.mjs` (`node web/test/e2e_live.mjs board`), a phone's in `liveBoardPhone`, its projects and filters not read in `web/test/e2e_liveboardedge.mjs`, a phone's one-row head in `web/test/e2e_boardphone.mjs` (`node web/test/e2e_all.mjs webBoardPhone`: 390 and 320 px), TODO and the panel and a tablet in `web/test/e2e_boardpanel.mjs` (`node web/test/e2e_all.mjs webBoardPanel`: a computer at 1900 and 1400 px, an iPad at 1180×820, 1366×1024, 820×1180 and 744×1133)
 - [x] AC-159 — `web/test/e2e_liveschedules.mjs` (`liveFolded`: one line, shown whole, the next folds it, a window on the second press, Esc, kept as the columns are read; wide and phone), `web/test/e2e_liveboardpool.mjs` (a folded card's waiting dot, its words on hover)
 - [x] AC-106 — `web/test/e2e_liveboard.mjs`, `web/test/e2e_liveboardpool.mjs`, `web/test/e2e_newtask.mjs` (unspecified agent, explicit choice, removal and refusal), `web/test/e2e_livenotes.mjs` (New task from selection), `cargo test tasks::ops`
 - [x] AC-107 — `cargo test tasks::ops`, `web/test/e2e_liveboard.mjs`
