@@ -418,3 +418,22 @@ fn ac199_a_store_s_titles_give_their_type_s_word_to_their_type_once() {
     let events: i64 = conn.query_row("SELECT count(*) FROM events", [], |r| r.get(0)).unwrap();
     assert_eq!(events, 0, "nothing in their history: a human's words stay a human's, an agent's an agent's (AC-154)");
 }
+
+#[test]
+fn ac198_upgrading_running_verifies_assigns_distinct_persistent_attempts() {
+    let path = crate::testutil::fresh_dir("store-schema33").join("kanban.sqlite");
+    let mut conn = Connection::open(&path).unwrap();
+    upgrade(&mut conn, &path, &MIGRATIONS[..32]).unwrap();
+    conn.execute_batch("INSERT INTO integration_verifies (task, project, commit_sha, pane, tree, started) VALUES
+        ('a', 'default', 'abc', '%1', '/srv/verify-1', 100), ('b', 'default', 'def', '%2', '/srv/verify-2', 100);").unwrap();
+    upgrade(&mut conn, &path, &MIGRATIONS).unwrap();
+    let read = |c: &Connection| c.prepare("SELECT task, pane, attempt FROM integration_verifies ORDER BY task").unwrap()
+        .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?))).unwrap().collect::<Result<Vec<_>, _>>().unwrap();
+    let runs = read(&conn);
+    assert_eq!(runs.iter().map(|(t, p, _)| (t.as_str(), p.as_str())).collect::<Vec<_>>(), [("a", "%1"), ("b", "%2")]);
+    assert!(runs.iter().all(|(_, _, a)| a.len() == 32 && a.chars().all(|c| c.is_ascii_hexdigit())));
+    assert_ne!(runs[0].2, runs[1].2);
+    upgrade(&mut conn, &path, &MIGRATIONS).unwrap();
+    drop(conn);
+    assert_eq!(read(&Connection::open(path).unwrap()), runs, "upgrade and restart retain active attempts");
+}

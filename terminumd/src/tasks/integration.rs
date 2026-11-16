@@ -213,9 +213,9 @@ pub fn agent_tree_in(home: &FsPath, project: &str, number: i64) -> PathBuf {
     tree_in(home, project).with_file_name(format!("agent-{number}"))
 }
 
-/// Where a queued task's Prepare and Verify keep their log, beside its tree.
-pub fn verify_log_in(home: &FsPath, project: &str, number: i64) -> PathBuf {
-    tree_in(home, project).with_file_name(format!("verify-{number}.log"))
+/// Where one attempt of a queued task's Prepare and Verify keeps its log, beside its tree (AC-198).
+pub fn verify_log_in(home: &FsPath, project: &str, number: i64, attempt: &str) -> PathBuf {
+    tree_in(home, project).with_file_name(format!("verify-{number}.{attempt}.log"))
 }
 
 /// Where a batch's round keeps the log of its `step` (check, publish, after), beside its tree.
