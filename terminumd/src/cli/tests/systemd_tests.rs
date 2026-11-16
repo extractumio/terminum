@@ -37,27 +37,26 @@ fn ctx(home: &Home) -> (super::super::Ctx, PathBuf) {
 fn the_unit_stops_terminumd_alone_starts_at_login_and_restarts_for_ever() {
     let home = Home::new();
     let (ctx, _) = ctx(&home);
-    let unit = systemd::unit(&ctx).unwrap();
+    let unit = systemd::unit(&ctx);
     for line in ["KillMode=process", "Restart=always", "RestartSec=1", "StartLimitIntervalSec=0", "WantedBy=default.target"] {
         assert!(unit.lines().any(|l| l == line), "{line} in:\n{unit}");
     }
     let program = ctx.program().display().to_string();
     assert!(unit.contains(&format!("ExecStart=\"{program}\" serve")), "{unit}");
-    assert!(unit.contains(&format!("StandardOutput=append:{}", ctx.log().display())), "{unit}");
+    assert!(unit.contains("StandardOutput=null\nStandardError=null"), "{unit}");
     assert!(unit.lines().any(|l| l.starts_with("Environment=\"PATH=")), "{unit}");
 }
 
 #[test]
-fn a_home_with_a_percent_or_a_quote_is_escaped_and_one_with_a_space_refused() {
+fn ac196_a_home_with_a_percent_quote_or_space_is_escaped() {
     let home = Home::new();
     let (mut ctx, _) = ctx(&home);
     ctx.root = home.path("a%b\"c");
-    let unit = systemd::unit(&ctx).unwrap();
+    let unit = systemd::unit(&ctx);
     assert!(unit.contains("a%%b\\\"c/daemon/terminumd"), "{unit}");
-    let log = ctx.log().display().to_string().replace('%', "%%");
-    assert!(log.contains("a%%b\"c") && unit.contains(&format!("StandardOutput=append:{log}\nStandardError=append:{log}\n")), "the log's path a path, not a specifier:\n{unit}");
+    assert!(unit.contains("StandardOutput=null\nStandardError=null"), "{unit}");
     ctx.root = home.path("with space");
-    assert!(systemd::unit(&ctx).unwrap_err().contains("systemd cannot append to a path with spaces"));
+    assert!(systemd::unit(&ctx).contains("with space/daemon/terminumd\" serve"));
 }
 
 #[test]

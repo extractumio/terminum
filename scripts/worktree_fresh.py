@@ -42,6 +42,7 @@ PIPELINE = {"CLAUDE.md", "Makefile", ".claude/settings.json", "scripts/check_all
             "scripts/check_step.py", "scripts/check_cancel.py", "scripts/check_docs.py", "scripts/heavy_slots.py",
             "scripts/land.py", "scripts/land_stages.py", "scripts/load_gate.py", "scripts/release_turn.py",
             "scripts/worktree.py", "scripts/worktree_fresh.py", "scripts/process_cwd.py", "scripts/test_scripts.py",
+            "scripts/check_logs.py", "scripts/log_sink.rs", "terminumd/src/logs/rotation.rs", "terminumd/src/fslock.rs",
             "scripts/check_slots.py", "scripts/live_slots.py"}
 
 

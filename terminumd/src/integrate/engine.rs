@@ -125,7 +125,9 @@ pub(super) fn window(runner: &dyn Runner, pane: &str, log: &Path, over: bool) ->
 
 /// A line that ended: its output kept in the batch's log, its window closed; its status.
 fn ended(runner: &dyn Runner, pane: &str, log: &Path, status: i32) -> i32 {
-    let _ = std::fs::write(log, runner.output(pane));
+    if let Err(e) = crate::logs::snapshot(log, &runner.output(pane)) {
+        tracing::warn!(event = "integration.log", path = %log.display(), error = %e);
+    }
     runner.close(pane);
     status
 }
