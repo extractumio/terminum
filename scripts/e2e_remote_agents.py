@@ -263,7 +263,7 @@ def main():
               and p.get("eta"), plan)
         db = sqlite3.connect(f"file:{os.path.join(t.app, 'kanban.sqlite')}?mode=ro", uri=True)
         try:
-            tasks = db.execute("SELECT title, by_agent FROM tasks").fetchall()
+            tasks = db.execute("SELECT shown, by_agent FROM tasks").fetchall()   # the title with its type's word (AC-199)
         finally:
             db.close()
         check("AC-99 terminum-kanban.md AC-120 the host agent's task stands in the Mac's store, by an agent", ("Bug: host parser drops a BOM", 1) in tasks, tasks)

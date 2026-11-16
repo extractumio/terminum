@@ -293,7 +293,7 @@ def main():
         row = row_until(ws, "devbox", lambda it: it.get("plan", {}).get("eta"))
         db = sqlite3.connect(f"file:{os.path.join(t.app, 'kanban.sqlite')}?mode=ro", uri=True)
         try:
-            tasks = db.execute("SELECT title, by_agent FROM tasks").fetchall()
+            tasks = db.execute("SELECT shown, by_agent FROM tasks").fetchall()   # the title with its type's word (AC-199)
         finally:
             db.close()
         check(f"[{v}] AC-99 the host row has the ETA, and the agent's task stands in the Mac's store, by an agent (terminum-kanban.md AC-120)", row is not None and ("Feat: host task", 1) in tasks, [row, tasks])
