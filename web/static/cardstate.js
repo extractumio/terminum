@@ -11,6 +11,13 @@ export const liveSession = (it) => ({ key: it.id, state: it.state, agent: it.age
  *  work it started runs in the background, however long (the row's bar and the board's dot pulse by it). */
 export const atWork = (it) => it?.state === "working" || (it?.state === "done" && !!it.background);
 
+/** The card and task window share the queue's words (AC-169), ahead of any old session state. */
+export function queuedWords(t) {
+  const n = t.wait_position;
+  const suffix = n % 100 >= 11 && n % 100 <= 13 ? "th" : ({ 1: "st", 2: "nd", 3: "rd" }[n % 10] ?? "th");
+  return `queued for ${t.waits}${n ? `, ${n}${suffix}` : ""}`;
+}
+
 /** What a session in an agent's slot does now (terminum-dispatcher.md AC-138), by terminumd's slot `s` and its live
  *  row: quiet "idle" or "integration", otherwise "starting", "waits" or "working". */
 export function slotState(s, row) {
@@ -23,7 +30,7 @@ export function slotState(s, row) {
 export function cardState(t) {
   const s = t.session;
   const line = (cls, words, why) => ({ cls, words, why });
-  if (t.waits) return line("waiting", `waits for ${t.waits}`, "Run waits for that agent's room, then starts");
+  if (t.waits) return line("waiting", queuedWords(t), "Run waits for that agent's room, then starts");
   if (!s && !t.run) return null;
   const open = t.status === "IN PROGRESS";
   if (t.run === "no_result") return line("stopped", "DONE, no result");

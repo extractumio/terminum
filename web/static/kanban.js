@@ -54,6 +54,14 @@ let metaWait = 0;
 const sorting = columnSort(() => filters().project, () => load(true));
 const columnQuery = (column) => query({ status: column, sort: sorting.mode(column), limit: PAGE });
 
+/** Both board reads and live usage carry queue changes; either refreshes an open task's place (AC-169). */
+function slotsCame(next) {
+  if (!next) return;
+  const changed = JSON.stringify(slots.queue ?? {}) !== JSON.stringify(next.queue ?? {});
+  slots = next;
+  if (changed) windowed.refresh(false, true);
+}
+
 function moreState() {
   for (const [column, { list }] of columns) {
     const key = list.querySelector(".colmore");
@@ -95,7 +103,7 @@ async function load(reset = false) {
     cards = new Map(COLUMNS.map((c, i) => [c, parts[i].tasks]));
     cardQueries = queries;
     counts = parts[0].counts;
-    slots = parts[0].slots ?? slots;
+    slotsCame(parts[0].slots);
     readings = parts[0].readings ?? readings;
     agents.draw();
     failed.tasks = "";
@@ -282,8 +290,7 @@ function draw() {
     // a session's state changes on its card alone (sessionsCame): a column is drawn anew without it, a card with it
     const have = cards.get(column), n = counts[column] ?? 0, seen = have.map((t) => JSON.stringify([{ ...t, session: t.session?.key }, inks.get(t.project)]));
     const shown = JSON.stringify([seen, n, !!filtered, one]);
-    part.count.textContent = String(n);
-    part.tab.textContent = `${column} ${n}`;
+    part.drawCount(counts);
     if (shown === part.drawn) continue;
     part.drawn = shown;
     const scroll = [part.list.scrollTop, part.col.scrollTop], keys = new Map(have.map((t, i) => [t.id, `${seen[i]}${JSON.stringify(t.session ?? null)}${one}`]));
@@ -464,7 +471,7 @@ async function listen(retry = false, tried = () => {}) {
     else if (m.t === "schedules") { scheduled.load(); readSoon(); }   // its tasks and the slots it keeps
     else if (m.t === "taskusage") {
       usage = m.items ?? {};
-      slots = m.slots ?? slots;
+      slotsCame(m.slots);
       agents.draw();
       for (const c of document.querySelectorAll(".card")) showUsage(c, c.dataset.id);
     }

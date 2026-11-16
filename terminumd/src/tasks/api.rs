@@ -184,7 +184,7 @@ async fn board(State(app): State<Shared>, Params(q): Params<HashMap<String, Stri
                     v["agent"] = agent.clone();
                 }
                 if let Some(on) = waits.get(&t.key) {
-                    v["waits"] = json!(on);               // RUN waits for that agent's room (terminum-dispatcher.md AC-158)
+                    on.mark(&mut v);
                 }
                 if let Some(kids) = boxes.remove(&t.key) {
                     v["boxes"] = json!(kids);
@@ -325,7 +325,7 @@ async fn window(State(app): State<Shared>, Path(id): Path<String>) -> Response {
         v["history"] = history;
         v["files"] = json!(attached);
         v["run_holds"] = json!(held);
-        v["waits"] = json!(waits);
+        if let Some(wait) = waits { wait.mark(&mut v); }
         v["schedule"] = json!(from);
         v["runs_on"] = json!(runs_on);                // the agent a human chose to run it (terminum-dispatcher.md AC-170)
         if let Some(agent) = agent {

@@ -5,6 +5,7 @@
 // comes due (terminum-schedules.md AC-161), so no agent runs: `node web/test/e2e_live.mjs schedules chromium`.
 import { check, until } from "./check.mjs";
 import { boardKit, nap } from "./boardkit.mjs";
+import { liveQueuedAnswers } from "./e2e_livequeuewait.mjs";
 import { liveIntegrationSlots } from "./e2e_liveintegrationslots.mjs";
 
 export async function liveQueue(page, live) {
@@ -19,6 +20,7 @@ export async function liveQueue(page, live) {
   const [a, b, c] = [await made("Queued first"), await made("Queued second"), await made("Queued third")];
   const queue = async () => ((await j(`/api/tasks?project=${project}&limit=1&counts=1`)).slots.queue?.[agent] ?? []).map((t) => t.id);
   await open(`?project=${project}`);
+  if (narrow) await page.click("#poolline");
   const owl = `#agentbar .agentcard[data-agent="${agent}"]`;
   await page.waitForSelector(owl);
 
@@ -31,6 +33,7 @@ export async function liveQueue(page, live) {
   check("AC-169 an agent with no queue has no queue key", await page.locator(`${owl} .agqueue`).count() === 0);
 
   // RUN's window: the offer in its words, Add to queue its yes
+  if (narrow) await page.keyboard.press("Escape");
   if (narrow) await page.evaluate((s) => document.querySelector(s).scrollIntoView({ block: "center" }), card(a));
   await page.click(`${card(a)} .ctitle`);
   await page.click(`${card(a)} .crun`);
@@ -44,12 +47,13 @@ export async function liveQueue(page, live) {
   await page.fill("#runmessage", "mind the queue");
   await page.click("#rungo");
   const said = async () => [(await queue()).join(), (await j(`/api/tasks/${a}`)).waits, await page.textContent(card(a)), JSON.stringify((await j(`/api/tasks/${a}`)).history)];
-  check("AC-169 Add to queue keeps it waiting, its message kept", await until(async () => { const [q, waits, shown, history] = await said(); return q === a && /Queue owl/.test(waits) && /waits for Queue owl/.test(shown) && /mind the queue/.test(history); }),
+  check("AC-169 Add to queue keeps it waiting, its message kept", await until(async () => { const [q, waits, shown, history] = await said(); return q === a && /Queue owl/.test(waits) && /queued for Queue owl.*1st/.test(shown) && /mind the queue/.test(history); }),
     JSON.stringify(await said()).slice(0, 900));
   for (const id of [b, c]) await j(`/api/tasks/${id}/run`, "POST", { agent, queue: true });
   check("AC-169 the queue is in the order they were added", (await queue()).join() === [a, b, c].join(), JSON.stringify(await queue()));
 
   // on the agent: a pale dot each, and the key that opens the queue
+  if (narrow) await page.click("#poolline");
   check("AC-169 a pale dot for each queued task, and their count", await until(async () => await page.locator(`${owl} .agqueue .agwait`).count() === 3 && /3 queued/.test(await page.textContent(`${owl} .agqueue`))), await page.textContent(owl));
   const colors = await page.evaluate((s) => ({ wait: getComputedStyle(document.querySelector(`${s} .agwait`)).backgroundColor, kept: getComputedStyle(document.querySelector(`${s} .agkept`)).backgroundColor }), owl);
   check("AC-169 a queued task's dot is filled, a kept slot's ring empty", colors.wait !== colors.kept && /rgba?\(0, 0, 0, 0\)/.test(colors.kept), JSON.stringify(colors));
@@ -141,7 +145,9 @@ export async function liveQueue(page, live) {
   check("AC-169 the window stays open through it", await page.isVisible("#agentbox[open]"));
   for (const id of [b, c]) await j(`/api/tasks/${id}/give-up`, "POST");
   check("AC-169 an empty queue says so", await until(async () => /No task waits for this agent/.test(await page.textContent("#agentqueue"))), await page.textContent("#agentqueue"));
-  await page.click('#agentbox button[value="cancel"]');
+  await page.keyboard.press("Escape");
+  await page.waitForSelector("#agentbox", { state: "hidden" });
+  await liveQueuedAnswers(page, live, project, agent);
   await j(`/api/schedules/${kept.id}`, "DELETE");
   for (const id of [agent, two]) await j(`/api/task-agents/${id}`, "DELETE");
   await liveIntegrationSlots(page, live);

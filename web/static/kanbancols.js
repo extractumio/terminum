@@ -19,6 +19,12 @@ export function boardColumns({ sorting, showColumn, newTask, queueKeys }) {
     tab.dataset.status = column;
     tab.setAttribute("role", "tab");
     tab.hidden = queue;
-    return [column, { col, count, list, tab, drawn: "" }];
+    const drawCount = (counts) => {
+      const n = counts[column] ?? 0, queued = column === "WAIT FOR HUMAN" ? (counts.queued_waiting ?? 0) : 0;
+      const label = `${n - queued}${queued ? ` · ${queued} queued` : ""}`;
+      count.textContent = label;
+      tab.textContent = `${column} ${label}`;
+    };
+    return [column, { col, count, list, tab, drawCount, drawn: "" }];
   }));
 }

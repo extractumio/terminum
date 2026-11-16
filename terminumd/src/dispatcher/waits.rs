@@ -127,10 +127,45 @@ pub fn words(agent: &str, why: &str) -> String {
     format!("It waits for {agent}: {why} It starts when there is room.")
 }
 
-/// The agent each of `keys` waits for, by name, for its card.
-pub fn on_cards(tx: &Transaction, keys: &[&str]) -> Result<HashMap<String, String>, String> {
-    Ok(rows(tx, "SELECT w.task, COALESCE(a.name, w.agent_id) FROM run_waits w LEFT JOIN agents a ON a.id = w.agent_id WHERE w.task IN (SELECT value FROM json_each(?1))",
-            [super::runs::listed_keys(keys)], |r| Ok((r.get(0)?, r.get(1)?)))?.into_iter().collect())
+/// Each queued press and every task it carries (AC-169), shared by cards and human-attention counts.
+const MEMBERS: &str = "WITH chosen AS (SELECT w.task press, w.task FROM run_waits w
+        UNION SELECT w.task, t.id FROM run_waits w, json_each(w.body, '$.also') j JOIN tasks t ON t.slug = j.value)
+    SELECT press, task FROM chosen
+    UNION SELECT c.press, t.id FROM chosen c JOIN tasks t ON t.parent = c.task
+        WHERE t.status <> 'DONE' AND t.archived_at IS NULL
+            AND NOT EXISTS (SELECT 1 FROM schedule_fires f JOIN schedules s ON s.id = f.schedule WHERE f.task = c.task)";
+
+/// Whether task alias `t` belongs to a queued press, including its other tasks (AC-169).
+/// Aliases are source literals, never a request's words.
+pub fn queued_task(t: &str) -> String {
+    format!("{t}.id IN (SELECT task FROM ({MEMBERS}))")
+}
+
+/// A card's wait: its agent, place in that agent's whole queue and the primary task that can cancel the press.
+pub struct CardWait {
+    pub agent: String,
+    pub position: i64,
+    pub task: String,
+}
+
+impl CardWait {
+    pub fn mark(&self, card: &mut Value) {
+        card["waits"] = serde_json::json!(self.agent);
+        card["wait_position"] = serde_json::json!(self.position);
+        card["wait_task"] = serde_json::json!(self.task);
+    }
+}
+
+/// Queue positions are ranked before card filters and pagination, shared by every task of one press (AC-169).
+pub fn on_cards(tx: &Transaction, keys: &[&str]) -> Result<HashMap<String, CardWait>, String> {
+    if keys.is_empty() { return Ok(HashMap::new()); }
+    Ok(rows(tx, &format!("WITH queue AS (
+            SELECT w.task, t.slug, COALESCE(a.name, w.agent_id) agent,
+                row_number() OVER (PARTITION BY w.agent_id ORDER BY w.pos, w.rowid) position
+            FROM run_waits w JOIN tasks t ON t.id = w.task LEFT JOIN agents a ON a.id = w.agent_id), members AS ({MEMBERS})
+        SELECT m.task, q.agent, q.position, q.slug FROM members m JOIN queue q ON q.task = m.press
+        WHERE m.task IN (SELECT value FROM json_each(?1))"),
+        [super::runs::listed_keys(keys)], |r| Ok((r.get(0)?, CardWait { agent: r.get(1)?, position: r.get(2)?, task: r.get(3)? })))?.into_iter().collect())
 }
 
 /// What a wait comes to now: pressed again, still waiting, or called off with these words; the task's ID.
