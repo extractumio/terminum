@@ -4,11 +4,9 @@
 // browser; on a phone (BOARD_PHONE) one column shows at a time, a swipe away from the next, the six tabs over them.
 import { el, read, write } from "./listparts.js";
 import { $ } from "./kanbanutil.js";
-import { PHONE } from "./phonewin.js";
+import { BOARD_PHONE } from "./phonewin.js";
 
 const KEPT = "board.tab", FIRST = "IN PROGRESS";
-/** Where the board is a phone's: a phone upright, or on its side (a touch screen 500 px high or less). */
-export const BOARD_PHONE = `${PHONE}, (pointer: coarse) and (max-height: 500px)`;
 
 /** `columns`: kanbancols.js's, by name; `still`: Reduce Motion's query. */
 export function columnPanel(columns, still) {
@@ -32,7 +30,7 @@ export function columnPanel(columns, still) {
       col.classList.toggle("shown", on);
       if (tab.getAttribute("aria-selected") === String(on)) continue;
       tab.setAttribute("aria-selected", String(on));
-      if (on) tab.scrollIntoView({ inline: "nearest", block: "nearest" });
+      if (on && phone.matches) tab.scrollIntoView({ inline: "nearest", block: "nearest" });   // a phone's tabs scroll; the panel's wrap
     }
   }
 
@@ -51,7 +49,7 @@ export function columnPanel(columns, still) {
   // a phone's swipe: the tab follows the column in sight; a hidden column takes no place
   board.addEventListener("scroll", () => {
     if (!phone.matches) return;
-    const cols = [...board.querySelectorAll(".col")].filter((c) => c.offsetWidth);
+    const cols = [...columns.values()].filter((c) => !c.col.hidden).map((c) => c.col);
     const now = cols[Math.round(board.scrollLeft / Math.max(1, board.clientWidth))]?.dataset.status;
     if (now && now !== swiped) { swiped = now; mark(); }
   }, { passive: true });

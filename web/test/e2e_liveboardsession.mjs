@@ -3,7 +3,7 @@
 // (e2e_live.mjs; terminum-kanban.md AC-134, AC-135): the list's own row, following the session with no
 // task read; a press opens the session at its own address; the project chosen in the head, remembered.
 import path from "node:path";
-import { boardKit, nap } from "./boardkit.mjs";
+import { boardKit, nap, showColumnOf } from "./boardkit.mjs";
 import { check, until } from "./check.mjs";
 
 /** A session's address on its page: `:` stays readable (AC-134). */
@@ -49,10 +49,11 @@ export async function liveBoardSessions(page, opts) {
   check("AC-134 it goes with the task to IN PROGRESS", await until(() => page.isVisible(`.col[data-status="IN PROGRESS"] ${row}`), 4000));
   await j(`/api/tasks/${made}`, "PATCH", { status: "DONE" });
   await until(() => page.$(`.col[data-status="DONE"] ${card(made)}`), 4000);
+  await showColumnOf(page, made);                  // wider than a phone the panel shows one column (terminum-kanban.md AC-105)
   await page.click(`.col[data-status="DONE"] ${card(made)} .ctitle`);   // folded in DONE: shown whole (terminum-kanban.md AC-159)
   check("AC-134 and to DONE", await until(() => page.isVisible(`.col[data-status="DONE"] ${row}`), 4000));
   await j(`/api/tasks/${made}`, "PATCH", { status: "IN PROGRESS" });
-  await until(() => page.isVisible(`.col[data-status="IN PROGRESS"] ${row}`), 4000);
+  await until(async () => { await showColumnOf(page, made); return page.isVisible(`.col[data-status="IN PROGRESS"] ${row}`); }, 4000);
 
   // a drag by its row to another column moves nothing and opens nothing (AC-138)
   await page.dragAndDrop(row, '.col[data-status="FAILED"]', { force: true });

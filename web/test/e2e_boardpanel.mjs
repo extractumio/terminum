@@ -3,9 +3,8 @@
 // a fake terminumd: TODO a column of its own, the other columns one at a time in a panel under their tabs, each with its
 // count, WAIT FOR HUMAN's and FAILED's pulsing while they hold tasks; the board's tracks by its width; on an iPad the head
 // one row of finger-sized keys, nothing cut, every left edge on the gutter or a track.
-import fs from "node:fs";
 import { check, runningIn, until } from "./check.mjs";
-import { drawn, openPage, ORIGIN, pause, shot, THEME } from "./fake.mjs";
+import { drawn, fakeBoard, openPage, ORIGIN, pause, shot, TABLET, THEME } from "./fake.mjs";
 
 const NOW = 1_800_000_000;
 const task = (status, i, extra = {}) => ({ id: `API-${status.length}${i}`, title: `${status} task ${i}: a title long enough to be read whole on a tablet`, project: "api", status,
@@ -31,16 +30,12 @@ const look = (page) => page.evaluate(() => {
     head };
 });
 
-async function board(browser, device, { integration = { on: true }, motion = "reduce" } = {}) {
+async function board(browser, device, { motion = "reduce" } = {}) {
   const f = await openPage(browser, { device: { ...device, reducedMotion: motion }, secret: "a".repeat(64), stored: "a".repeat(64) });
   const { page } = f;
   await drawn(page);
-  const json = (r, data) => r.fulfill({ contentType: "application/json", body: JSON.stringify(data) });
-  await page.route(`${ORIGIN}/kanban/**`, (r) => r.fulfill({ contentType: "text/html", body: fs.readFileSync(new URL("../static/kanban.html", import.meta.url), "utf8").replace("__BUILD__", "test") }));
-  await page.route("**/api/tasks/meta", (r) => json(r, meta(integration)));
-  await page.route("**/api/schedules", (r) => json(r, { schedules: [] }));
-  await page.route("**/api/integration/**", (r) => json(r, { batches: [], projects: [] }));
-  await page.route("**/api/tasks?*", (r) => json(r, { tasks: tasks[new URL(r.request().url()).searchParams.get("status")] ?? [], counts, slots: { agents: {}, full: [], full_projects: [] } }));
+  let integration = { on: true };
+  await fakeBoard(page, { meta: () => meta(integration), tasks: (status) => tasks[status] ?? [], counts });
   const go = async () => {
     await page.goto(`${ORIGIN}/kanban/?project=api`);
     await page.waitForSelector(".col .card");
@@ -48,7 +43,7 @@ async function board(browser, device, { integration = { on: true }, motion = "re
     await page.evaluate(() => { if (!document.getElementById("app").classList.contains("nav-hidden") && innerWidth > 860) document.getElementById("navclose").click(); });
     await pause(page, 100);
   };
-  return { f, page, go };
+  return { f, page, go, integrate: (on) => { integration = on ? { on: true } : null; } };
 }
 
 const near = (a, b, d = 1) => Math.abs(a - b) <= d;
@@ -57,7 +52,7 @@ const near = (a, b, d = 1) => Math.abs(a - b) <= d;
 async function computer(browser, name) {
   for (const [w, h, tracks] of [[1900, 1000, 6], [1400, 900, 3]]) {
     runningIn(`${name} ${w}×${h}`);
-    const { f, page, go } = await board(browser, { viewport: { width: w, height: h } }, { motion: "no-preference" });
+    const { f, page, go, integrate } = await board(browser, { viewport: { width: w, height: h } }, { motion: "no-preference" });
     try {
       await go();
       const g = await look(page);
@@ -85,7 +80,7 @@ async function computer(browser, name) {
       check(`AC-105 ${w} px: after a reload this browser shows DONE first`, (await look(page)).shown === "DONE");
       if (tracks === 3) {
         await page.click('#colswitch button[data-status="INTEGRATION"]');
-        await page.route("**/api/tasks/meta", (r) => r.fulfill({ contentType: "application/json", body: JSON.stringify(meta(null)) }));
+        integrate(false);
         counts.INTEGRATION = 0;
         tasks.INTEGRATION = [];
         await go();
@@ -111,7 +106,7 @@ async function computer(browser, name) {
 async function tablet(browser, name) {
   for (const [w, h] of [[1180, 820], [1366, 1024], [820, 1180], [744, 1133]]) {
     runningIn(`${name} iPad ${w}×${h}`);
-    const { f, page, go } = await board(browser, { viewport: { width: w, height: h }, hasTouch: true });
+    const { f, page, go } = await board(browser, { ...TABLET, viewport: { width: w, height: h } });
     try {
       await go();
       const g = await look(page);

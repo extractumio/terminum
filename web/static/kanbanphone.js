@@ -8,7 +8,7 @@ import { asksFold } from "./askfold.js";
 import { placeModal } from "./fabpane.js";
 import { $ } from "./kanbanutil.js";
 import { el } from "./listparts.js";
-import { BOARD_PHONE } from "./kanbanpanel.js";
+import { BOARD_PHONE } from "./phonewin.js";
 
 const phone = matchMedia(BOARD_PHONE);
 const bar = $("bar"), find = $("findkey"), pool = $("pool"), line = $("poolline"), auto = $("autokeys"), clear = $("clearfilters");

@@ -7,7 +7,7 @@ import { icon } from "./icons.js";
 import { el } from "./listparts.js";
 import { COLUMNS, button } from "./kanbanutil.js";
 
-const ALARMS = ["WAIT FOR HUMAN", "FAILED"];
+const ALARMS = { "WAIT FOR HUMAN": "waiting", FAILED: "failed" };   // their counts in the head counters' hues (askfold.css)
 
 /** TODO's + New task, a text key as tall as the head's icon keys (AC-106). */
 function newKey(newTask) {
@@ -38,7 +38,9 @@ export function boardColumns({ sorting, showColumn, newTask, queueKeys }) {
       const label = `${n - queued}${queued ? ` · ${queued} queued` : ""}`;
       count.textContent = label;
       tabCount.textContent = label;
-      tab.classList.toggle("alarm", ALARMS.includes(column) && n - queued > 0);   // tasks that wait for the human (AC-117)
+      const alarm = column in ALARMS && n - queued > 0;   // tasks that wait for the human (AC-117)
+      tab.classList.toggle("alarm", alarm);
+      if (ALARMS[column]) tabCount.classList.toggle(ALARMS[column], alarm);
     };
     return [column, { col, count, list, tab, drawCount, drawn: "" }];
   }));

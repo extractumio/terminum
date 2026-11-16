@@ -7,7 +7,7 @@
    a time, a phone on its side's too (a touch screen 500 px high or less): kanban.css. */
 @media (min-width: 601px) and (min-height: 501px), (min-width: 601px) and (pointer: fine) {
   #board { --tracks: 2; --todo: 2; --cards: 2; display: grid; grid-template-columns: repeat(var(--tracks), minmax(0, 1fr)); grid-template-rows: fit-content(40%) minmax(0, 1fr); gap: var(--sp-2); }
-  @container board (min-width: 1100px) { #board { --tracks: 3; --todo: 1; --cards: 2; grid-template-rows: minmax(0, 1fr); } }
+  @container board (min-width: 1100px) { #board { --tracks: 3; --todo: 1; grid-template-rows: minmax(0, 1fr); } }
   @container board (min-width: 1500px) { #board { --tracks: 6; --todo: 2; --cards: 4; } }
   #board > .col { grid-column: span var(--todo); }
   /* the panel: its tabs and the shown column's keys on one row, its cards under them */
@@ -28,13 +28,8 @@
 #colswitch button[hidden] { display: none; }
 .tabn { position: relative; min-width: 1.6em; padding: 0 var(--sp-1); border-radius: var(--r-xs); font-size: var(--fs-micro); font-weight: var(--fw-head);
   line-height: 18px; text-align: center; font-variant-numeric: tabular-nums; color: var(--muted-text); background: var(--surface-3); }
-#colswitch .alarm .tabn { --fill: var(--waiting); color: var(--waiting-ink); background: var(--fill); }
-#colswitch .alarm[data-status="FAILED"] .tabn { --fill: var(--danger-fill); color: var(--danger-ink); }
+#colswitch .alarm .tabn { background: var(--fill); }   /* its hue: askfold.css, as the head's counters */
 @media (prefers-reduced-motion: no-preference) {
   #colswitch .alarm .tabn::after { content: ""; position: absolute; inset: -2px; border-radius: inherit; pointer-events: none; opacity: 0;
     box-shadow: 0 0 8px 3px color-mix(in srgb, var(--fill) 70%, transparent); animation: askpulse 2s var(--ease-out) infinite alternate; }
 }
-/* TODO's + New task: a text key as tall as the head's icon keys, the keys and the count on one line with it */
-#board .colhead .new { height: var(--icon-key-list); min-height: 0; gap: var(--sp-1); padding: 0 var(--sp-2) 0 var(--sp-1); margin-left: auto; font-size: var(--fs-label); }
-.colhead .new + .colsort { margin-left: 0; }
-@media (max-width: 860px), (pointer: coarse) { #board .colhead .new { height: var(--icon-key-touch); } }   /* as the sort keys (controls.css); #board: over the keys' own rule */

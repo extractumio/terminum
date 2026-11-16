@@ -359,7 +359,7 @@ ${"z".repeat(400)}
     },
     async dragleave_cleaned() {
       const id = await make("drag cancelled"); await open();
-      const box = await (await page.$(card(id))).boundingBox(), to = await (await page.$('.col[data-status="FAILED"]')).boundingBox();
+      const box = await (await page.$(card(id))).boundingBox(), to = await (await page.$(".colpanel")).boundingBox() ?? await (await page.$('.col[data-status="FAILED"]')).boundingBox();   // the panel, a phone's column
       await page.mouse.move(box.x + 30, box.y + 30); await page.mouse.down(); await page.mouse.move(to.x + 30, to.y + 80, { steps: 6 }); await page.keyboard.press("Escape"); await page.mouse.up(); await nap(200);
       check("a cancelled drag leaves no lit column and no lifted card", await page.evaluate(() => !document.querySelector(".col.over") && !document.querySelector(".card.lifted")));
     },
