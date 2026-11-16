@@ -283,16 +283,14 @@ function keptCard(t, under, key) {
 function draw() {
   if (dragging) return;
   folds.keep(cards);
-  const focused = document.activeElement?.closest?.(".card")?.dataset.id, filtered = narrowed(), one = filters().project.length === 1;
+  const active = document.activeElement, focused = active?.closest?.(".card")?.dataset.id, runFocused = active?.matches(".crun");
+  const filtered = narrowed(), one = filters().project.length === 1;
   const inks = new Map(meta.projects.map((p) => [p.id, [p.name, p.color]]));
   for (const [column, part] of columns) {
     // a session's state changes on its card alone (sessionsCame): a column is drawn anew without it, a card with it
     const have = cards.get(column), n = counts[column] ?? 0, seen = have.map((t) => JSON.stringify([{ ...t, session: t.session?.key }, inks.get(t.project)]));
     const shown = JSON.stringify([seen, n, !!filtered, one]);
-    const queued = column === "WAIT FOR HUMAN" ? (counts.queued_waiting ?? 0) : 0;
-    const label = `${n - queued}${queued ? ` · ${queued} queued` : ""}`;
-    part.count.textContent = label;
-    part.tab.textContent = `${column} ${label}`;
+    part.drawCount(counts);
     if (shown === part.drawn) continue;
     part.drawn = shown;
     const scroll = [part.list.scrollTop, part.col.scrollTop], keys = new Map(have.map((t, i) => [t.id, `${seen[i]}${JSON.stringify(t.session ?? null)}${one}`]));
@@ -304,7 +302,11 @@ function draw() {
   const onBoard = new Set([...cards.values()].flat().map((t) => t.id));
   for (const id of drawnCards.keys()) if (!onBoard.has(id)) drawnCards.delete(id);
   queueColumn.draw(columns.get("INTEGRATION"), meta, filters().project, counts.INTEGRATION ?? 0);   // its order is the queue's (AC-193)
-  if (focused) document.querySelector(`.card[data-id="${focused}"]`)?.focus({ preventScroll: true });
+  if (focused && document.activeElement !== active) {
+    const c = document.querySelector(`.card[data-id="${focused}"]`);
+    const run = runFocused ? c?.querySelector(".crun:not(:disabled)") : null;
+    (active.isConnected ? active : run?.getClientRects().length ? run : c)?.focus({ preventScroll: true });
+  }
   markTab();
 }
 

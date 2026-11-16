@@ -177,8 +177,8 @@ export function fillSelect(select, options, chosen) {
 export const agentsOf = (meta, project) => meta.agents.filter((a) => a.project === project);
 
 /** How many of `a`'s slots are taken, by terminumd's `counted` slots: its sessions and the slots its schedules keep;
- *  an Auto-Dispatcher round's session takes none (terminum-dispatcher.md AC-170, terminum-schedules.md AC-161). */
-export const slotsUsed = (counted, a) => (counted.agents?.[a.id] ?? []).filter((s) => !s.kept && !s.round).length + (counted.kept?.[a.id]?.length ?? 0);
+ *  Auto-Dispatcher rounds and integration waits take none (terminum-dispatcher.md AC-169, AC-170, terminum-schedules.md AC-161). */
+export const slotsUsed = (counted, a) => (counted.agents?.[a.id] ?? []).filter((s) => !s.kept && !s.round && !s.integration).length + (counted.kept?.[a.id]?.length ?? 0);
 
 /** A project's `agents` for `select`, a busy one said so by `busy` and chosen all the same: a run waits for its
  *  room (terminum-dispatcher.md AC-158); the first of `wanted`, else the first. `none`: the label of a choice of

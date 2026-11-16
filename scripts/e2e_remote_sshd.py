@@ -170,6 +170,22 @@ def main():
         st, body = api(t, secret, f"/fb/api/file?path={HOME}/notes.md", host="devbox")
         check("AC-82 a host's file is read through the helper", st == 200 and body.get("text") == "# on the host\n", body)
 
+        # AC-196: the actual Linux writer follows a rotation without another startup.
+        def helper_pids():
+            return [v[0] for line in on_host(procs).splitlines() if len(v := line.split()) > 2 and v[2].startswith("terminumd-agent")]
+        agent_pids = helper_pids()
+        on_host('dd if=/dev/zero bs=1024 count=1100 >> "$HOME/.terminum/logs/agent.log" 2>/dev/null')
+        rotated = ""
+        until = time.monotonic() + 75
+        while time.monotonic() < until:
+            rotated = on_host('test -f "$HOME/.terminum/logs/agent.log.1" && '
+                              'test "$(stat -c %s "$HOME/.terminum/logs/agent.log")" -lt 1048576 && echo yes').strip()
+            if rotated == "yes":
+                break
+            time.sleep(1)
+        check("AC-196 the running Linux agent rotates at its size limit",
+              bool(agent_pids) and rotated == "yes" and helper_pids() == agent_pids, (agent_pids, helper_pids(), rotated))
+
         # AC-84: the host's helper is of another build (a stand-in that says an old id)
         t.stop()
         on_host(f"cd $HOME/.terminum/bin && rm -f terminumd-agent-{own} && "
@@ -190,6 +206,9 @@ def main():
         st, body = unix_request(t.sock, "POST", "/hosts/files-remove", {"name": "devbox"})
         left = on_host("ls $HOME/.terminum/bin 2>/dev/null | grep terminumd-agent || echo none").strip()
         check("AC-83 the helper is removed from the host", st == 200 and left == "none", left)
+        logs_gone = on_host('test ! -e "$HOME/.terminum/logs/agent.log.1" && '
+                            'test ! -e "$HOME/.terminum/logs/.agent.log.since" && echo yes').strip()
+        check("AC-196 host removal deletes rotated logs and clock metadata", logs_gone == "yes")
     finally:
         if t:
             if not all(results):

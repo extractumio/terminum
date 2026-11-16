@@ -247,7 +247,7 @@ pub fn package(home: &Home, build: &str, answers: Option<&str>, crash: bool) -> 
     let _ = std::fs::remove_dir_all(&pkg);
     let exe = std::env::current_exe().unwrap();
     let run = if crash {
-        "echo '2026-10-15T09:00:00.000Z level=error event=listen msg=\"port 48080 is in use (set `port` in ~/.terminum/settings.json)\"'\nexit 1".to_string()
+        "echo '2026-10-15T09:00:00.000Z level=error event=listen msg=\"port 48080 is in use (set `port` in ~/.terminum/settings.json)\"' >> \"${TM_HOME:-$HOME/.terminum}/logs/terminumd.log\"\nexit 1".to_string()
     } else {
         format!("exec /usr/bin/env TM_FAKE_TERMINUMD=1 TM_FAKE_BUILD='{build}' '{}' --exact cli::tests::fake_terminumd --nocapture --test-threads=1 -q", exe.display())
     };

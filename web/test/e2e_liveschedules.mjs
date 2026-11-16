@@ -3,7 +3,7 @@
 // (terminum-kanban.md AC-159, terminum-dispatcher.md AC-138), and schedules (terminum-schedules.md AC-160 to
 // AC-164): `node web/test/e2e_live.mjs schedules chromium`.
 import { check, coversWindow, until } from "./check.mjs";
-import { boardKit, intoStore, nap, ring, startOf, tabKey } from "./boardkit.mjs";
+import { boardKit, hold, intoStore, nap, ring, startOf, tabKey } from "./boardkit.mjs";
 
 export async function liveFolded(page, live) {
   const { j, card, open } = boardKit(page, live);
@@ -78,7 +78,37 @@ export async function liveFolded(page, live) {
   await page.focus(card(a));
   await tabKey(page);
   const r = await ring(page, run);
-  check("AC-138 Tab still reaches the card's play key and rings it", r.focused && r.lit, JSON.stringify(r));
+  check("AC-138 Tab still reaches the card's play key and rings it", r.focused && r.lit && await page.isVisible(run), JSON.stringify(r));
+
+  // An unrelated task's six column reads arrive after Tab: the focused key's DOM survives the draw.
+  const refresh = await hold(page, "**/api/tasks?**", "GET");
+  try {
+    await j(`/api/tasks/${b}`, "PATCH", { title: "Refreshed beside the focused play key" });
+    const held = await until(() => refresh.sent() >= 6);
+    refresh.release();
+    const drawn = await until(async () => await page.textContent(`${card(b)} .ctitle`) === "Refreshed beside the focused play key");
+    const kept = await ring(page, run);
+    check("AC-138 a held board refresh keeps the play key's keyboard focus and ring", held && drawn && kept.focused && kept.lit && await page.isVisible(run), JSON.stringify(kept));
+  } finally { refresh.release(); await refresh.end(); }
+  await j(`/api/tasks/${a}`, "PATCH", { title: "Focused task refreshed" });
+  const changed = await until(async () => await page.textContent(`${card(a)} .ctitle`) === "Focused task refreshed");
+  const replaced = await ring(page, run);
+  check("AC-138 replacing the focused card keeps its play key's keyboard focus and ring", changed && replaced.focused && replaced.lit && await page.isVisible(run), JSON.stringify(replaced));
+  await shot("run-keyboard-focus");
+  await page.keyboard.press("Enter");
+  check("AC-138 the refreshed play key still opens RUN from the keyboard", await until(() => page.isVisible("#runbox[open]")));
+  await page.keyboard.press("Escape");
+  await until(async () => !(await page.isVisible("#runbox[open]")));
+  // A custom stylesheet can hide Run on a replacement; restore its card rather than a hidden key.
+  await page.focus(card(a));
+  await tabKey(page);
+  const hide = await page.addStyleTag({ content: `${card(a)}[data-budget="300"] .crun { display: none !important; }` });
+  try {
+    const changed = await j(`/api/tasks/${a}`, "PATCH", { title: "Task refreshed with Run hidden", budget_minutes: 5 });
+    const hidden = changed.code === 200 && await until(async () => await page.textContent(`${card(a)} .ctitle`) === "Task refreshed with Run hidden");
+    const state = await page.$eval(card(a), c => ({ card: document.activeElement === c, budget: c.dataset.budget, display: getComputedStyle(c.querySelector(".crun")).display, active: document.activeElement.className }));
+    check("AC-138 a refresh hiding Run returns keyboard focus to its card", hidden && !(await page.isVisible(run)) && state.card, JSON.stringify(state));
+  } finally { await hide.evaluate(e => e.remove()); }
   for (const id of ids) await j(`/api/task-agents/${id}`, "DELETE");
   for (const id of [a, b]) await j(`/api/tasks/${id}/archive`, "POST", { on: true });
 }

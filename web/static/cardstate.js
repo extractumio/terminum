@@ -19,8 +19,9 @@ export function queuedWords(t) {
 }
 
 /** What a session in an agent's slot does now (terminum-dispatcher.md AC-138), by terminumd's slot `s` and its live
- *  row: "idle" only when its row is not at work too, "starting", "waits" or "working". */
+ *  row: quiet "idle" or "integration", otherwise "starting", "waits" or "working". */
 export function slotState(s, row) {
+  if (s.integration && row?.state !== "waiting" && !atWork(row)) return "integration";
   if (s.idle && !atWork(row)) return "idle";
   return ["starting", "typed"].includes(s.state) ? "starting" : s.state === "asking" || row?.state === "waiting" ? "waits" : "working";
 }

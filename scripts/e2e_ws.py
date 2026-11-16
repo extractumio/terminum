@@ -9,6 +9,7 @@ import hmac
 import http.client
 import json
 import os
+from pathlib import Path
 import shutil
 import signal
 import socket
@@ -210,7 +211,8 @@ class Terminumd:
         self.env.pop("TMUX", None)
         self.env["HISTFILE"] = "/dev/null"   # an ending shell would write it into the folder being removed
         self.proc = None
-        self.log_path = os.path.join(self.root, "terminumd.log")
+        self.log_path = os.path.join(self.home, "logs", "terminumd.log")
+        self.console_path = os.path.join(self.root, "console.log")
 
     def through_fake_ssh(self, home, socket_name, pids, **more):
         """Its ssh is fake_ssh.py: `home` the far side's, `socket_name` its tmux, `pids` the file of its stand-ins; `more`: more of the environment."""
@@ -227,7 +229,7 @@ class Terminumd:
             os.makedirs(self.home, exist_ok=True)
             with open(settings, "w") as f:
                 json.dump({"dispatcher": {"usageCommands": {"claude": "", "codex": ""}}}, f)
-        log = open(self.log_path, "a")
+        log = open(self.console_path, "a")
         self.proc = subprocess.Popen([BIN], env=self.env, stdout=log, stderr=log)
         for _ in range(100):
             if os.path.exists(self.sock):
@@ -258,10 +260,13 @@ class Terminumd:
         shutil.rmtree(self.root, ignore_errors=True)
 
     def log(self):
-        try:
-            return open(self.log_path).read()[-4000:]
-        except OSError:
-            return ""
+        text = ""
+        for path in (self.console_path, self.log_path):
+            try:
+                text += Path(path).read_text()[-4000:]
+            except OSError:
+                pass
+        return text[-4000:]
 
     def health(self):
         return unix_request(self.sock, "GET", "/health")[1]

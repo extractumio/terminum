@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 """AC-104: real module subprocesses preserve counts, bound concurrency and turn failures red."""
 import json
+from contextlib import contextmanager
 import os
 from pathlib import Path
 import signal
@@ -9,6 +10,7 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from testrun import short_tmp
@@ -116,6 +118,42 @@ class Cases(unittest.TestCase):
         for count in ("0", "4", "many"):
             with self.subTest(count=count):
                 self.assertEqual(self.run_modules("--jobs", count).returncode, 2)
+
+    def test_noisy_module_output_rotates_without_changing_its_result(self):  # AC-196
+        self.module("test_noisy.py", """import sys, unittest
+class Cases(unittest.TestCase):
+    def test_output(self):
+        sys.stdout.write('module line\\n' * 1_000_000)
+        print('last module record')
+""")
+        result = self.run_modules()
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertIn("scripts: 1 tests", result.stdout)
+        reports, = (self.root / "logs").glob("tm-scripts-*")
+        log = reports / "test_noisy.py.log"
+        parts = [Path(str(log) + suffix) for suffix in (".2", ".1", "")]
+        self.assertTrue(Path(str(log) + ".1").exists())
+        self.assertTrue(all(p.stat().st_size <= 10 << 20 for p in parts if p.exists()))
+        kept = b"".join(p.read_bytes() for p in parts if p.exists())
+        self.assertEqual(kept.count(b"module line\n"), 1_000_000)
+        self.assertIn(b"last module record\n", kept)
+
+    def test_a_green_module_with_a_failed_output_sink_cannot_pass(self):  # AC-196
+        import test_scripts
+        self.module("test_good.py", "import unittest\nclass Cases(unittest.TestCase):\n def test_good(self): pass\n")
+        reports = self.root / "reports"
+        reports.mkdir()
+
+        @contextmanager
+        def failed_sink(*_):
+            with open(os.devnull, "wb") as out:
+                yield out
+            raise RuntimeError("sink failed")
+
+        with mock.patch.object(test_scripts, "bounded_log", failed_sink):
+            with self.assertRaisesRegex(RuntimeError, "sink failed"):
+                test_scripts.pool(self.tests, reports, 1)
+        self.assertTrue(json.loads((reports / "test_good.py.json").read_text())["successful"])
 
     def test_cancelling_the_direct_runner_ends_its_module_process(self):
         ready = self.root / "ready"

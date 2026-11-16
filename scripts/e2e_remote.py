@@ -278,7 +278,10 @@ def main():
         unix_request(t.sock, "POST", "/hosts/remove", {"name": "devbox"})
         blocker = os.path.join(remote_home, ".terminum")
         shutil.rmtree(blocker, ignore_errors=True)
-        open(blocker, "w").close()   # a file where the helper's folder goes: the copy fails
+        try:
+            open(blocker, "w").close()   # a file where the helper's folder goes: the copy fails
+        except IsADirectoryError as error:
+            raise AssertionError(f"Helper folder remained or reappeared after removal; children: {os.listdir(blocker)}") from error
         st, body = unix_request(t.sock, "POST", "/hosts/add", {"name": "", "recipe": "alex@devbox.example -p 2222"})
         remote = offer_until(lambda r: r.get("why"))
         rec = next((h for h in unix_request(t.sock, "GET", "/hosts")[1]["hosts"] if h["name"] == "devbox"), {})

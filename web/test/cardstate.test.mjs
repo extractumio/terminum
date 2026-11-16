@@ -14,6 +14,16 @@ test("AC-169 the agent queue precedes old human-wait and closed-session states, 
   }
 });
 
+test("AC-138 AC-169 integration sessions stay visible and keep actual activity honest", () => {
+  const slot = { state: "working", integration: true };
+  assert.equal(slotState(slot, null), "integration");
+  assert.equal(slotState(slot, { state: "done" }), "integration");
+  assert.equal(slotState(slot, { state: "working" }), "working", "its current turn may still finish");
+  assert.equal(slotState(slot, { state: "done", background: true }), "working", "background work still pulses");
+  assert.equal(slotState(slot, { state: "waiting" }), "waits", "a permission question stays visible");
+  assert.equal(slotState({ state: "typed", integration: false }, null), "starting", "startup still reserves room");
+});
+
 test("AC-136 a stopped agent with its task open says so", () => {
   assert.deepEqual(cardState(task({ state: "done" })), { cls: "stopped", words: "stopped, task open", why: undefined });
   assert.equal(cardState(task({ state: "done", agent: null })).words, "no agent");

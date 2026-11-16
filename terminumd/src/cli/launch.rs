@@ -62,7 +62,7 @@ fn xml(s: &str) -> String {
 pub fn plist(ctx: &Ctx, port: u16) -> String {
     let s = |v: &str| format!("<string>{}</string>", xml(v));
     let env: String = service_env(ctx).iter().map(|(k, v)| format!("\t\t<key>{}</key>\n\t\t{}\n", xml(k), s(v))).collect();
-    let log = s(&ctx.log().display().to_string());
+    let log = s("/dev/null");
     format!(
         "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
 <!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n\
@@ -105,8 +105,7 @@ pub fn plist_port(ctx: &Ctx) -> Option<u16> {
     after.split("<string>").nth(1)?.split("</string>").next()?.trim().parse().ok()
 }
 
-/// The private folders and the log file, made here so they are 0700 and 0600 (launchd
-/// would create the log world-readable).
+/// Prepare private folders and the 0600 log before starting terminumd (AC-196).
 pub fn prepare(ctx: &Ctx) -> Result<(), String> {
     use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
     let err = |p: &Path, e: std::io::Error| format!("{}: {e}", p.display());
@@ -253,7 +252,7 @@ enum Bound {
     Unknown,
 }
 
-fn bound(ctx: &Ctx, mark: u64) -> Bound {
+fn bound(ctx: &Ctx, mark: crate::logs::Mark) -> Bound {
     let deadline = Instant::now() + ctx.wait;
     loop {
         // the log first: an unbound terminumd never answers, an answer may still be the last one's
@@ -317,14 +316,10 @@ fn retire_legacy(ctx: &Ctx) -> Result<(), String> {
     std::fs::rename(&plist, &aside).map_err(|e| format!("{}: {e}", plist.display()))
 }
 
-/// The old name's log goes in front of terminumd.log, so `terminum logs` keeps its history
-/// (before terminumd is started: launchd opens the log path anew at each start).
+/// Preserve the old name as a retained segment, by rename (AC-196).
 fn merge_legacy_log(ctx: &Ctx) {
-    let old = ctx.log_dir().join("terminusd.log");
-    let Ok(mut text) = std::fs::read(&old) else { return };
-    text.extend(std::fs::read(ctx.log()).unwrap_or_default());
-    if crate::config::write_private(&ctx.log(), &text).is_ok() {
-        let _ = std::fs::remove_file(&old);
+    if let Err(e) = crate::logs::adopt_legacy(&ctx.log()) {
+        eprintln!("terminum: could not retain the old diagnostic log: {e}");
     }
 }
 
@@ -394,9 +389,9 @@ pub fn wait_healthy(ctx: &Ctx, build: Option<&str>) -> bool {
     }
 }
 
-/// The log's size now: later failures are read from what follows it.
-pub fn log_mark(ctx: &Ctx) -> u64 {
-    std::fs::metadata(ctx.log()).map_or(0, |m| m.len())
+/// The log's inode and offset: later failures remain readable across a rotation.
+pub fn log_mark(ctx: &Ctx) -> crate::logs::Mark {
+    crate::logs::mark(&ctx.log())
 }
 
 fn is_error_line(line: &str) -> bool {
@@ -423,23 +418,17 @@ fn msg_field(line: &str) -> Option<&str> {
     None
 }
 
-/// The last error terminumd logged (after `since`, else in its last 16 KB), e.g.
+/// The last error terminumd logged (after `since`, else in its last 100 lines), e.g.
 /// "port 48080 is in use (set `port` in ~/.terminum/settings.json)".
-pub fn log_reason(ctx: &Ctx, since: Option<u64>) -> Option<String> {
-    use std::io::{Read, Seek, SeekFrom};
-    let mut f = std::fs::File::open(ctx.log()).ok()?;
-    let size = f.seek(SeekFrom::End(0)).ok()?;
-    let start = since.unwrap_or(size.saturating_sub(16384)).max(size.saturating_sub(65536));
-    f.seek(SeekFrom::Start(start)).ok()?;
-    let mut raw = Vec::new();
-    f.read_to_end(&mut raw).ok()?;
+pub fn log_reason(ctx: &Ctx, since: Option<crate::logs::Mark>) -> Option<String> {
+    let raw = crate::logs::recent(&ctx.log(), crate::logs::DAEMON, 100, since).ok()?;
     let text = String::from_utf8_lossy(&raw);
     let line = text.lines().rev().find(|l| is_error_line(l))?;
     Some(msg_field(line).unwrap_or(line.trim()).chars().take(300).collect())
 }
 
 /// What runs instead of `build`, for status and failure messages.
-pub fn describe(ctx: &Ctx, build: Option<&str>, since: Option<u64>) -> String {
+pub fn describe(ctx: &Ctx, build: Option<&str>, since: Option<crate::logs::Mark>) -> String {
     if let Some(h) = health(ctx) {
         return match build {
             Some(_) => format!("terminumd answers as build {}", h["build"].as_str().unwrap_or("unknown")),

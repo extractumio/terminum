@@ -72,18 +72,7 @@ pub fn link_path(dir: &Path, mac: &str) -> PathBuf {
 
 /// Serializes helpers' shared link changes on the existing directory inode, with no lock file.
 fn lock_dir(dir: &Path) -> Result<std::fs::File, String> {
-    use std::os::fd::AsRawFd;
-    use std::os::unix::fs::OpenOptionsExt;
-    let file = std::fs::OpenOptions::new().read(true).custom_flags(libc::O_DIRECTORY | libc::O_NOFOLLOW)
-        .open(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
-    loop {
-        // SAFETY: the descriptor is our checked run directory; File drop releases the lock.
-        if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX) } == 0 { return Ok(file) }
-        let error = std::io::Error::last_os_error();
-        if error.kind() != std::io::ErrorKind::Interrupted {
-            return Err(format!("{}: {error}", dir.display()));
-        }
-    }
+    crate::fslock::directory(dir).map_err(|e| format!("{}: {e}", dir.display()))
 }
 
 /// Points `mac-<mac>.sock` at `sock` atomically (a temp symlink renamed over it).

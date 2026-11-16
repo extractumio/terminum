@@ -31,6 +31,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from check_docs import AC  # noqa: E402
 import heavy_slots  # noqa: E402
 import live_slots  # noqa: E402
+from check_logs import bounded_log, preserve_attempt, tail as log_tail
 from check_cancel import run_guard  # noqa: E402
 from check_step import LEFT  # noqa: E402
 from load_gate import for_task, MINUTES  # noqa: E402
@@ -316,13 +317,13 @@ def say_late(root):
 
 
 def tail(log):
-    return "".join(f"     {line}\n" for line in log.read_text(errors="replace").splitlines()[-15:])
+    return "".join(f"     {line}\n" for line in log_tail(log))
 
 
 def attempt(root, name, command, log, nice, landing):
     """One run of a step, its output in log: its exit code and seconds."""
     heavy = heavy_slots.slot(root, name, landing, lambda words: print(words, flush=True)) if "cargo " in command else nullcontext()
-    with heavy, log.open("w") as out:
+    with heavy, bounded_log(root, log) as out:
         started = time.monotonic()
         # under make check's guard (AC-102): a step that leaves a process or a file fails here too
         guarded = (NICE.split() if nice else []) + [sys.executable, "-I", str(root / "scripts" / "check_step.py")]
@@ -357,12 +358,13 @@ def run(steps, root=REPO, gate=True, nice=False, landing=False):
             # one unchanged retry (AC-197): not when the run is red already, nor for a leftover (AC-102)
             if code not in (0, LEFT) and not optional and not failed and retried(name):
                 first = log.with_name(f"changed.{name}.first.log")
-                log.replace(first)
+                preserve_attempt(log, first)
                 print(f"note {name} ({seconds} s) failed, run once more unchanged; the first run's last lines:", flush=True)
-                print(tail(first), end="", flush=True)   # said here: make land deletes the tree and its logs
+                first_tail = tail(first)
+                print(first_tail, end="", flush=True)   # said here: make land deletes the tree and its logs
                 code, seconds = attempt(root, name, command, log, nice, landing)
                 if code == 0:
-                    again.append(name)
+                    again.append((name, first_tail))
             if code == 0 or optional:
                 print(f"{'ok  ' if code == 0 else 'note'} {name} ({seconds} s)" + ("" if code == 0 else f": {log}"), flush=True)
             else:
@@ -372,7 +374,9 @@ def run(steps, root=REPO, gate=True, nice=False, landing=False):
     said = logs / "retried"
     if again:   # a landing's smoke set adds to its targeted run's, so make land says both
         with said.open("a" if landing else "w") as out:
-            out.write(f"PASSED ONLY ON RETRY, the first run red: {' '.join(again)}: name each with its open task\n")
+            out.write(f"PASSED ONLY ON RETRY, the first run red: {' '.join(name for name, _ in again)}: name each with its open task\n")
+            for name, lines in again:
+                out.write(f"{name}: the first run's last lines:\n{lines}")
     elif not landing:
         said.unlink(missing_ok=True)   # a targeted run says only its own retries
     note = logs / "skipped"

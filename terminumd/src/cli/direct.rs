@@ -71,12 +71,10 @@ pub fn stop(ctx: &Ctx) {
 }
 
 pub fn start(ctx: &Ctx) -> Result<(), String> {
-    use std::os::unix::fs::OpenOptionsExt;
     use std::os::unix::process::CommandExt;
     let program = ctx.program();
-    let log = std::fs::OpenOptions::new().append(true).create(true).mode(0o600).open(ctx.log()).map_err(|e| format!("{}: {e}", ctx.log().display()))?;
     let mut cmd = Command::new(&program);
-    cmd.arg("serve").stdin(Stdio::null()).stdout(log.try_clone().map_err(|e| e.to_string())?).stderr(log);
+    cmd.arg("serve").stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
     cmd.env_clear().envs(&ctx.env).envs(super::launch::service_env(ctx));
     // SAFETY: setsid and umask::restore are async-signal-safe; terminumd leaves the installer's
     // session and group, and starts with the caller's umask, not the CLI's private one (AC-09)

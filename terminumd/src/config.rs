@@ -63,6 +63,7 @@ pub fn app_dir() -> PathBuf {
     let meta = std::fs::metadata(&dir).expect("app dir");
     // SAFETY: geteuid has no preconditions
     if meta.uid() != unsafe { libc::geteuid() } {
+        tracing::error!(event = "start.failed", msg = %format!("{} belongs to another user", dir.display()));
         eprintln!("error: {} belongs to another user", dir.display());
         std::process::exit(2);
     }
@@ -73,6 +74,7 @@ pub fn app_dir() -> PathBuf {
 pub fn private_dir(dir: &Path) {
     use std::os::unix::fs::PermissionsExt;
     if let Err(e) = std::fs::create_dir_all(dir) {
+        tracing::error!(event = "start.failed", msg = %format!("{}: {e}", dir.display()));
         eprintln!("error: {}: {e}", dir.display());
         std::process::exit(2);
     }
