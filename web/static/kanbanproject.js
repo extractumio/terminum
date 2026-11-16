@@ -93,9 +93,12 @@ export function projectWindow({ getMeta, reload, agents, archived, auto, deleteP
     $("projectfields").hidden = !real;
     $("projectnodir").hidden = !p || !real || !!p.dir;      // terminum-dispatcher.md AC-140
     $("projecttabs").hidden = !p;
-    show(p ? tab : "general");
     say("");
     box.showModal();
+    // its tab once the open dialog's style is resolved: a panel shown in the same style pass as a closed dialog's
+    // `visibility: hidden` (motion.css, where there is no `overlay`) gives way keeps `hidden` in WebKit for good
+    void box.offsetWidth;
+    show(p ? tab : "general");
     fit();
     if (real && (!p || tab === "general")) $(p && !p.dir ? "projectdir" : "projectname").focus();
   }
