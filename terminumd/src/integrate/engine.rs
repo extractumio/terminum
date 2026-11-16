@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 use super::batch::{choose, Queued};
 use super::git::{self, short};
 use super::runner::Runner;
+use super::retry_notes;
 use super::store::{self as bs, Batch};
 use crate::tasks::integration::{self, Settings};
 use crate::tasks::ops;
@@ -174,6 +175,9 @@ fn follow(store: &Store, runner: &dyn Runner, p: &Place, b: Batch, now: i64) -> 
                 Err(why) => return red(store, p, &b, &why, now),
             },
         };
+        if step == "check" && let Err(why) = retry_notes::clear(&folder) {
+            return red(store, p, &b, &why, now);
+        }
         let label = format!("batch-{}.{}.{step}", b.number, b.round);
         let v = vars(store, p, &b, &integration::tree_in(&p.home, &b.project));
         return match runner.start(&label, &folder, &line, &v) {
@@ -187,10 +191,13 @@ fn follow(store: &Store, runner: &dyn Runner, p: &Place, b: Batch, now: i64) -> 
         // lost with its window: run again, not counted as red (AC-190)
         Window::Lost => return store.with(|tx| { bs::set_pane(tx, b.id, None, now)?; bs::tell_task(tx, &b, &format!("Batch {}'s {step} runs again: its window was lost.", b.number), now) }),
         Window::Running => return Ok(()),
-        Window::Ended(OVER) => return red(store, p, &b, &format!("The check ran over {} minutes.", p.s.check_minutes), now),
         Window::Ended(code) => code,
     };
+    if step == "check" && let Some(notes) = retry_notes::read(&integration::tree_in(&p.home, &b.project)) {
+        store.with(|tx| bs::tell_task(tx, &b, &format!("Batch {} round {} Check has retry diagnostics (AC-197).\nCheck output (data):\n{notes}", b.number, b.round), now))?;
+    }
     match (step, status) {
+        ("check", OVER) => red(store, p, &b, &format!("The check ran over {} minutes.", p.s.check_minutes), now),
         ("check", 0) => store.with(|tx| { bs::set_pane(tx, b.id, None, now)?; bs::round_ends(tx, &b, "green", None, now)?; bs::set_state(tx, b.id, "green", None, now) }),
         ("check", code) => red(store, p, &b, &format!("The check ended with status {code}. Its log: {}", log.display()), now),
         ("publish", 0) => match target_now(p) {
