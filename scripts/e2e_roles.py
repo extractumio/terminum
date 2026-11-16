@@ -22,7 +22,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from e2e_ws import BIN, Terminumd, check, summary, tmux_on, wait_for, wait_layout  # noqa: E402
 from e2e_remote import api  # noqa: E402
 from testrun import free_port, own, short_tmp  # noqa: E402
-from e2e_rolequeue import queue_promotion  # noqa: E402
+from role_queue_checks import queue_promotion  # noqa: E402
 
 FAKE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fake_agent.py")
 PORT, SOCKET = free_port(), own("tm-test-rol")
