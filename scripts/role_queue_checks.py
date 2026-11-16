@@ -33,7 +33,7 @@ def queue_promotion(t, call, typed, tool, boss, plain, project, fake):
     urgent = task("urgent QUESTIONS", "P0")
     out, rc = typed(boss, tool("run_task", id=urgent, agent="Queue"), 40)
     asked = wait_for(lambda: get(urgent), lambda v: v["status"] == "WAIT FOR HUMAN" and v.get("session", {}).get("closed"), 30, 0.3, last=True)
-    check("AC-169 setup: a P0 asks with a resumable conversation", rc == "0" and asked["status"] == "WAIT FOR HUMAN" and latest(urgent)[2], out)
+    check("AC-169 setup: a P0 asks with a resumable conversation", rc == "0" and asked["status"] == "WAIT FOR HUMAN" and asked.get("session", {}).get("closed") and latest(urgent)[2], out)
     saved = latest(urgent)
     call(f"/api/tasks/{urgent}", "PATCH", {"title": "urgent WORKS"})
     holder = task("queue holder WORKS")
