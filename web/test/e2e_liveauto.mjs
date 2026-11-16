@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-// Auto-Dispatch against a real private terminumd (terminum-dispatcher.md AC-170): its switch and cog in the board's
-// bar and its window, a round of the picking agent starting the TODO tasks on their agents with no press, its session
+// Auto-Dispatch against a real private terminumd (terminum-dispatcher.md AC-170): its switch in the board's bar and
+// its tab in the project's window, the bar's cog opening that window, a round of the picking agent starting the TODO tasks on their agents with no press, its session
 // taking no slot, the severities and the wait it goes by, a task's own agent, the setting turning itself off when
 // what it starts fails, and the bar with several projects shown and at a phone's size. scripts/fake_agent.py picks and
 // works by the real hooks and tools: `node web/test/e2e_live.mjs auto chromium`.
@@ -33,26 +33,26 @@ export async function liveAuto(page, live) {
   check("AC-170 a project is made taking P0 and P1 after 10 minutes", made0.severities.join() === "P0,P1" && made0.wait_minutes === 10, JSON.stringify(made0));
   check("AC-170 the setting takes only agents of the pool", /That agent is gone/.test((await put({ agent: "nobody", default: null, off_why: null })).error ?? ""));
   check("AC-170 on needs the agent that picks", /Choose the agent that picks first/.test((await put({ on: true, off_why: null })).error ?? ""));
-  check("AC-170 the project's window holds no key of it", await page.locator("#projectauto").count() === 0);
+  check("AC-170 its settings are a tab of the project's window", await page.textContent("#projecttabauto") === "Auto-Dispatch");
   const other = newPane("no-round");
   await keyOf(other);
   const noRound = tool(other, "dispatch_task", { id: a, why: "x" });
   check("AC-170 only a round's own session starts tasks", /Only Auto-Dispatcher's round starts tasks/.test(noRound) && (await task(a)).status === "TODO", noRound.slice(-400));
   endPanes();
 
-  // its switch, with no agent chosen yet, opens its window with On ticked: the agent that picks, the default one, what it takes
+  // its switch, with no agent chosen yet, opens the project's window on its tab with On ticked: the agent that picks, the default one, what it takes
   await page.click("#autoswitch");
-  await page.waitForSelector("#autobox[open]");
+  await page.waitForSelector("#projectbox[open] #autopanel:not([hidden])");
   const rules = await page.textContent("#autorules");
   check("AC-170 its window says what it takes, in what order and when it stops, and offers the pool", /with no one pressing Run/.test(await page.textContent("#autotext")) && /What it takes/.test(rules) && /P0 first, then saved task order/.test(rules) && /display sort/.test(rules) && /It turns itself off/.test(rules)
-    && (await page.$$eval("#autoagent option", (o) => o.map((x) => x.textContent))).join().startsWith("Choose one,") && await page.inputValue("#autoagent") === "" && await page.isChecked("#autoon") && await page.locator("#autoprojectrow").isHidden());
+    && (await page.$$eval("#autoagent option", (o) => o.map((x) => x.textContent))).join().startsWith("Choose one,") && await page.inputValue("#autoagent") === "" && await page.isChecked("#autoon") && await page.textContent("#projecthead") === "Autos");
   check("AC-170 its window shows the tasks of 24 hours and how many are started", await page.inputValue("#automost") === "10" && /Started in the last 24 hours: 0\./.test(await page.textContent("#autoday")));
   check("AC-170 its window shows the severities ticked and the wait", (await page.$$eval("#autoseverities input", (l) => l.map((t) => `${t.value}${t.checked ? "+" : "-"}`))).join() === "P0+,P1+,P2-,P3-" && await page.inputValue("#autowait") === "10");
   await page.click("#autook");
   check("AC-170 a Save with On and no agent is refused in the window", await until(async () => /Choose the agent that picks first/.test(await page.textContent("#autoerror"))));
   for (const p of ["P2", "P3"]) await page.check(`#autoseverities input[value="${p}"]`);
   await page.fill("#autowait", "0");
-  const fits = await page.evaluate(() => { const d = document.querySelector("#autobox"); return d.scrollWidth <= d.clientWidth + 1 && d.getBoundingClientRect().right <= innerWidth; });
+  const fits = await page.evaluate(() => { const d = document.querySelector("#projectbox"); return d.scrollWidth <= d.clientWidth + 1 && d.getBoundingClientRect().right <= innerWidth; });
   check("AC-170 its window fits the page, no sideways scroll", fits);
   await shot("auto-window");
   await page.selectOption("#autoagent", picker);
@@ -87,7 +87,7 @@ export async function liveAuto(page, live) {
   check("AC-170 a press of the switch turns it off, its agents kept", await until(async () => (await state()) === "false OFF") && (await setting()).agent === picker && (await setting()).default === runner);
   const idle = await made("Auto idle: made while it is off", { severity: "P0", agent: spare });
   await page.click("#autoswitch");
-  check("AC-170 a press turns it on again, no window", await until(async () => (await state()) === "true ON") && !(await page.locator("#autobox").evaluate((d) => d.open)));
+  check("AC-170 a press turns it on again, no window", await until(async () => (await state()) === "true ON") && !(await page.locator("#projectbox").evaluate((d) => d.open)));
   check("AC-170 on again, it takes what stood in TODO", await until(async () => (await task(idle)).status === "IN PROGRESS", 30000), (await task(idle)).status);
   await j(`/api/tasks/${idle}/give-up`, "POST");
   // what it takes: the severities ticked, after the wait (10 minutes: 2 s at this clock)
@@ -115,8 +115,11 @@ export async function liveAuto(page, live) {
   await put({ severities: ["P0", "P1", "P2", "P3"], wait_minutes: 0, off_why: null });
 
   // the other way of picking: by priority and saved order, terminumd itself, no agent and no round
-  await page.click("#autocog");
-  await page.waitForSelector("#autobox[open]");
+  await page.click("#projectcog");
+  await page.waitForSelector("#projectbox[open]");
+  check("AC-170 the bar's cog opens the shown project's window on General", await page.textContent("#projecthead") === "Autos" && await page.getAttribute("#projecttabgeneral", "aria-selected") === "true" && await page.isVisible("#projectname"));
+  await page.click("#projecttabauto");
+  await page.waitForSelector("#projectbox[open] #autopanel:not([hidden])");
   check("AC-170 its window offers the two ways of picking, an agent's first", (await page.$$eval("#automode button", (l) => l.map((b) => `${b.value}:${b.getAttribute("aria-pressed")}`))).join() === "agent:true,order:false" && await page.locator("#autoagentrow").isVisible());
   await page.click('#automode button[value="order"]');
   check("AC-170 by priority and saved order no agent is chosen, and its words say what that means", await page.locator("#autoagentrow").isHidden() && await page.locator("#autorules .byorder").isVisible() && await page.locator("#autorules .byagent").isHidden()
@@ -161,16 +164,16 @@ export async function liveAuto(page, live) {
   const unseen = await put({ on: true, off_why: null });
   check("AC-170 a page that did not show why it stopped does not turn it on again", /It turned itself off meanwhile: the last two tasks/.test(unseen.error ?? "") && (await setting()).on === false, JSON.stringify(unseen));
   await page.click("#autoswitch");
-  await page.waitForSelector("#autobox[open]");
+  await page.waitForSelector("#projectbox[open] #autopanel:not([hidden])");
   check("AC-170 a press of the switch then opens the window, which says why: it is not on again unread", /It turned itself off: the last two tasks it started failed/.test(await page.textContent("#autowhy")) && await page.inputValue("#autoagent") === picker && await page.isChecked("#autoon") && (await setting()).on === false);
   await page.fill("#autowait", "");
   await page.click("#autook");
   check("AC-170 an empty wait is refused, never taken as none", await until(async () => /Wait: 0 to 1440 minutes/.test(await page.textContent("#autoerror"))) && (await setting()).on === false);
   await shot("auto-stopped");
-  await page.click('#autobox button[value="cancel"]');
+  await page.click('#projectbox button[value="cancel"]');
   await j(`/api/tasks/${left}/archive`, "POST", {});                // nothing left for it to start
 
-  // several projects shown: how many it is on for; a press turns those off, and turning on is a project's own, in the window
+  // several projects shown: how many it is on for; a press turns those off, and turning on is a project's own, in its window
   const offWhy = (await setting()).off_why;
   check("AC-170 a page that showed why turns it on again", (await put({ on: true, off_why: offWhy })).ok === true && (await setting()).on === true && (await setting()).off_why === null);
   const every = (await j("/api/tasks/meta")).projects.map((p) => p.id), count = every.length;
@@ -179,25 +182,29 @@ export async function liveAuto(page, live) {
   await page.click("#autoswitch");
   check("AC-170 a press turns it off for those it is on for", await until(async () => (await state()) === `false 0 of ${count}`) && (await setting()).on === false, await state());
   await page.click("#autoswitch");
-  await page.waitForSelector("#autobox[open]");
-  check("AC-170 with none on, a press opens the window with its project to choose: no press turns several on", await page.locator("#autoprojectrow").isVisible() && (await page.$$eval("#autoproject option", (o) => o.length)) === count && (await setting()).on === false);
-  await page.selectOption("#autoproject", project);
-  check("AC-170 the window shows the chosen project's setting", await page.inputValue("#autoagent") === picker && await page.inputValue("#autodefault") === runner);
-  await page.click('#autobox button[value="cancel"]');
+  check("AC-170 with none on, a press says to select one project: no press turns several on", await until(async () => /Multiple projects are selected: select only one to turn Auto-Dispatch on/.test(await page.textContent("#toast")))
+    && !(await page.locator("#projectbox").evaluate((d) => d.open)) && (await setting()).on === false, await page.textContent("#toast"));
+  await page.click("#projectcog");
+  check("AC-170 with several shown, the cog says to select one project", await until(async () => /Multiple projects are selected: select only one to edit its settings/.test(await page.textContent("#toast")))
+    && !(await page.locator("#projectbox").evaluate((d) => d.open)), await page.textContent("#toast"));
 
-  // a phone's size: the switch and the cog stand in the sheet the board's line opens (terminum-kanban.md AC-105), the window fits
+  // a phone's size: the switch stands in the sheet the board's line opens, the cog in the head (terminum-kanban.md AC-105), the window fits
   const size = page.viewportSize();
   await page.setViewportSize({ width: 390, height: 844 });
   await page.click("#poolline");
   await page.waitForSelector("#pool[data-sheet]");
-  const phone = await page.evaluate(() => { const r = (id) => document.querySelector(id).getBoundingClientRect(), [k, c] = [r("#autoswitch"), r("#autocog")]; return { in: k.left >= 0 && c.right <= innerWidth && k.width > 0 && c.width > 0, tall: Math.min(k.height, c.height), wide: document.documentElement.scrollWidth <= innerWidth }; });
-  check("AC-170 at a phone's size its switch and cog are in the line's sheet, a finger's height, no sideways scroll", phone.in && phone.tall >= 40 && phone.wide, JSON.stringify(phone));
-  await page.click("#autocog");
-  await page.waitForSelector("#autobox[open]");
-  const fitsPhone = await page.evaluate(() => { const d = document.querySelector("#autobox"), r = d.getBoundingClientRect(); return { wide: d.scrollWidth <= d.clientWidth + 1, left: r.left, right: r.right, bottom: r.bottom, w: innerWidth, h: innerHeight }; });
+  const phone = await page.evaluate(() => { const r = (id) => document.querySelector(id).getBoundingClientRect(), [k, c] = [r("#autoswitch"), r("#projectcog")];
+    return { in: k.left >= 0 && c.right <= innerWidth && k.width > 0 && c.width > 0, sheet: !!document.querySelector("#pool #autoswitch"), head: !!document.querySelector("#bar #projectcog"), tall: Math.min(k.height, c.height), wide: document.documentElement.scrollWidth <= innerWidth }; });
+  check("AC-170 at a phone's size its switch is in the line's sheet, the cog in the head, a finger's height, no sideways scroll", phone.in && phone.sheet && phone.head && phone.tall >= 40 && phone.wide, JSON.stringify(phone));
+  await page.keyboard.press("Escape");
+  await open(`?project=${project}`);
+  await page.click("#projectcog");
+  await page.click("#projecttabauto");
+  await page.waitForSelector("#projectbox[open] #autopanel:not([hidden])");
+  const fitsPhone = await page.evaluate(() => { const d = document.querySelector("#projectbox"), r = d.getBoundingClientRect(); return { wide: d.scrollWidth <= d.clientWidth + 1, left: r.left, right: r.right, bottom: r.bottom, w: innerWidth, h: innerHeight }; });
   check("AC-170 at a phone's size its window fits", fitsPhone.wide && fitsPhone.left >= 0 && fitsPhone.right <= fitsPhone.w && fitsPhone.bottom <= fitsPhone.h + 1, JSON.stringify(fitsPhone));
   await shot("auto-phone");
-  await page.click("#autobox .dhead .x");   // a phone's window: × is its Cancel (terminum.md AC-173)
+  await page.click("#projectbox .dhead .x");   // a phone's window: × is its Cancel (terminum.md AC-173)
   await page.setViewportSize(size);
 
   // the sessions it started are given up, so no slot stays held for the suites after

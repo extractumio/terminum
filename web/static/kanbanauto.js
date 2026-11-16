@@ -1,21 +1,20 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-// Auto-Dispatch in the board's bar (terminum-dispatcher.md AC-170), always shown: a switch saying whether it is on
-// for the projects shown, and a cog that opens its settings. One project shown: a press turns it on or off. Several:
-// a press turns off those that are on; turning on is each project's own, in the window, so no press starts tasks of
-// projects nobody looked at. The window: a project's switch, the agent that picks, the agent that runs a task naming
-// none, the severities it takes and the wait before a task is taken, with what it does in fixed words. Having turned
-// itself off it says why, in the switch and in the window, and only a page that showed why turns it on again.
-// terminumd keeps the setting and says what is wrong; every page hears.
+// Auto-Dispatch (terminum-dispatcher.md AC-170): a switch in the board's bar, always shown, saying whether it is on
+// for the projects shown, and its settings, a tab of the project's window. One project shown: a press turns it on or
+// off. Several: a press turns off those that are on; turning on is each project's own, in its window, so no press
+// starts tasks of projects nobody looked at. The tab: the project's switch, the agent that picks, the agent that runs
+// a task naming none, the severities it takes and the wait before a task is taken, with what it does in fixed words.
+// Having turned itself off it says why, in the switch and in the tab, and only a page that showed why turns it on
+// again. terminumd keeps the setting and says what is wrong; every page hears.
 import { oneAtATime } from "./dialogs.js";
 import { $, agentLabel, agentsOf, api, fillSelect, say, showError } from "./kanbanutil.js";
 
-/** `getMeta()`: terminumd's projects and agents; `chosen()`: the projects the board's filter names, none: all;
- *  `reload()`: read them anew. */
-export function autoDispatcher({ getMeta, chosen, reload }) {
-  const box = $("autobox"), key = $("autoswitch"), ticks = [...$("autoseverities").querySelectorAll("input")];
+/** `getMeta()`: terminumd's projects and agents; `shown()`: the projects the board shows; `reload()`: read them anew;
+ *  `openProject(p)`: the project's window on this tab. */
+export function autoDispatcher({ getMeta, shown: projects, reload, openProject }) {
+  const box = $("autopanel"), key = $("autoswitch"), ticks = [...$("autoseverities").querySelectorAll("input")];
   let shown = null;
 
-  const projects = () => { const ids = chosen(), all = getMeta().projects; return ids.length ? all.filter((p) => ids.includes(p.id)) : all; };
   const put = (p, body) => api(`/api/task-projects/${p.id}/auto`, { method: "PUT", body: { ...body, off_why: p.auto?.off_why ?? null } });
 
   /** What a press of the switch does, and its words for the switch's title. One project shown: on or off, through
@@ -26,7 +25,7 @@ export function autoDispatcher({ getMeta, chosen, reload }) {
     const how = (p) => (p.auto.mode === "order" ? `${p.name}'s TODO tasks start by priority and saved order on the free slots` : `${agentLabel(getMeta().agents.find((a) => a.id === p.auto.agent))} picks ${p.name}'s TODO tasks for the free slots and starts them`);
     if (on.length) return { all, on, act: "off", says: full + (one ? `${how(one)}. Press to turn it off` : `On for ${on.map((p) => p.name).join(", ")}. Press to turn it off for them`) };
     if ((one?.auto?.agent || one?.auto?.mode === "order") && !one.auto.off_why) return { all, on, act: "on", says: `No task of ${one.name} starts by itself. Press to turn Auto-Dispatch on` };
-    return { all, on, act: "open", says: one ? `No task of ${one.name} starts by itself. Press for its settings, to turn Auto-Dispatch on` : "No task starts by itself. Press to choose a project and turn it on" };
+    return { all, on, act: "open", says: one ? `No task of ${one.name} starts by itself. Press for its settings, to turn Auto-Dispatch on` : "No task starts by itself. Select one project to turn it on" };
   }
 
   /** The bar's switch: on while it is on for a project shown, with how many when there are several. */
@@ -38,15 +37,14 @@ export function autoDispatcher({ getMeta, chosen, reload }) {
     key.title = [...stopped.map((p) => `It turned itself off for ${p.name}: ${p.auto.off_why}`), says].join(" ");
   }
 
-  /** The way of picking the window shows: by priority and saved order no agent picks, and its words say so. */
+  /** The way of picking the tab shows: by priority and saved order no agent picks, and its words say so. */
   const modes = [...$("automode").querySelectorAll("button")];
   const setMode = (mode) => { box.dataset.mode = mode; for (const m of modes) m.setAttribute("aria-pressed", String(m.value === mode)); };
 
-  /** The window's fields as project `p` has them. */
+  /** The tab's fields as project `p` has them. */
   function fill(p) {
     shown = p;
     const agents = agentsOf(getMeta(), p.id).map((a) => [a.id, a.name]), auto = p.auto ?? {};
-    $("autoproject").value = p.id;
     $("autoon").checked = !!auto.on;
     fillSelect($("autoagent"), [["", "Choose one"], ...agents], auto.agent ?? "");
     fillSelect($("autodefault"), [["", "None"], ...agents], auto.default ?? "");
@@ -59,42 +57,38 @@ export function autoDispatcher({ getMeta, chosen, reload }) {
     showError($("autoerror"), "");
   }
 
-  /** The window, on the first project shown, with what terminumd says now; `on`: its switch ticked for the human to save. */
-  async function open(on = false) {
+  /** Its tab, in the window of the one project shown, with what terminumd says now, its switch ticked for the human
+   *  to save; several shown: which one is the human's to say. */
+  async function open() {
     await reload();
     const all = projects();
-    if (!all.length) return say("Make a project first.");
-    fillSelect($("autoproject"), all.map((x) => [x.id, x.name]), all[0].id);
-    $("autoprojectrow").hidden = all.length < 2;
-    fill(all[0]);
-    if (on) $("autoon").checked = true;
-    box.showModal();
+    if (all.length !== 1) return say(all.length ? "Multiple projects are selected: select only one to turn Auto-Dispatch on." : "Make a project first.");
+    openProject(all[0]);
+    $("autoon").checked = true;
   }
 
-  const keep = oneAtATime(box, async () => {
+  /** Save: what the tab holds, for its project; refused, it says why in the tab. True once kept. */
+  async function save() {
     try {
       // an empty number is terminumd's to refuse, never a 0 nobody typed
       const number = (id) => ($(id).value === "" ? null : Number($(id).value));
       await put(shown, { on: $("autoon").checked, mode: box.dataset.mode, agent: $("autoagent").value || null, default: $("autodefault").value || null,
         severities: ticks.filter((t) => t.checked).map((t) => t.value), wait_minutes: number("autowait"), day_most: number("automost") });
-      box.close();
       await reload();
-    } catch (e) { showError($("autoerror"), e.message); }
-  });
+      return true;
+    } catch (e) { showError($("autoerror"), e.message); return false; }
+  }
 
   async function press() {
     const { all, on, act } = next();
-    if (act === "open") return open(true);
+    if (act === "open") return open();
     try {
       for (const p of act === "off" ? on : all) await put(p, { on: act === "on" });
     } catch (e) { say(e.message); }
     await reload();
   }
 
-  $("autook").addEventListener("click", keep);
-  $("autoproject").addEventListener("change", () => fill(getMeta().projects.find((p) => p.id === $("autoproject").value)));
-  $("autocog").addEventListener("click", () => open());
   for (const m of modes) m.addEventListener("click", () => setMode(m.value));
   key.addEventListener("click", oneAtATime(key, press));
-  return { draw };
+  return { draw, fill, save };
 }

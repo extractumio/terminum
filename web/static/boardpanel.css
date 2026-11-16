@@ -26,6 +26,7 @@
    they hold tasks, its glow pulsing (the page's one blink, as the head's counters: askfold.css) */
 #colswitch button { display: inline-flex; align-items: center; gap: var(--sp-1); flex: none; padding-inline: var(--sp-2); white-space: nowrap; }
 #colswitch button[hidden] { display: none; }
+@container board (max-width: 1099px) { #colswitch button { padding-inline: var(--sp-1); } }   /* at the board's size, five tabs and the keys on one row of an iPad mini */
 .tabn { position: relative; min-width: 1.6em; padding: 0 var(--sp-1); border-radius: var(--r-xs); font-size: var(--fs-micro); font-weight: var(--fw-head);
   line-height: 18px; text-align: center; font-variant-numeric: tabular-nums; color: var(--muted-text); background: var(--surface-3); }
 #colswitch .alarm .tabn { background: var(--fill); }   /* its hue: askfold.css, as the head's counters */

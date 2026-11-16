@@ -12,6 +12,7 @@ const ALARMS = { "WAIT FOR HUMAN": "waiting", FAILED: "failed" };   // their cou
 /** TODO's + New task, a text key as tall as the head's icon keys (AC-106). */
 function newKey(newTask) {
   const b = button("textkey new", "", (e) => { e.stopPropagation(); newTask(); });
+  b.id = "newtask";
   b.title = "A new task in TODO";
   b.setAttribute("aria-label", "New task");
   b.append(icon("plus", 14), el("span", null, "New task"));

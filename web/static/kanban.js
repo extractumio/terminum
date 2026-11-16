@@ -360,10 +360,13 @@ async function madeHidden(t) {
 
 const newSession = sessionStarter({ getMeta: () => meta, slots: () => slots, addAgent: (project) => agents.add(project), askFolder });
 const bar = filterBar({ getMeta: () => meta, changed: () => { load(true); side.draw(); drawPool(); }, editProject: (p) => project.open(p), newProject: () => project.open(), newSession });
-const project = projectWindow({ getMeta: () => meta, reload: loadMeta, agents, archived: archivedWindow({ openTask }), deleteProject: side.deleteProject, chosen: (id) => bar.setFilters({ project: [id] }) });
+/** The projects the board shows: the filter's, none named: all. */
+const shownProjects = () => { const ids = filters().project; return ids.length ? meta.projects.filter((p) => ids.includes(p.id)) : meta.projects; };
+const project = projectWindow({ getMeta: () => meta, reload: loadMeta, agents, archived: archivedWindow({ openTask }), auto: () => auto, deleteProject: side.deleteProject,
+  chosen: (id) => bar.setFilters({ project: [id] }), shown: shownProjects });
 /** What goes by the pool and the projects shown. */
 const drawPool = () => { agents.draw(); scheduled.draw(); project.refresh(); auto.draw(); };
-const auto = autoDispatcher({ getMeta: () => meta, chosen: () => filters().project, reload: loadMeta });
+const auto = autoDispatcher({ getMeta: () => meta, shown: shownProjects, reload: loadMeta, openProject: (p) => project.open(p, "auto") });
 const needs = taskLines($("asks"), (id) => openTask(id), say);
 const windowed = taskWindow({ getMeta: () => meta, runs, openTask, newSubtask: (t) => form.open({ parent: t.id, project: t.project }), openSchedule: (key) => scheduled.openKey(key) });
 const address = taskAddress({ windowed, needs });
@@ -412,7 +415,6 @@ if (seen) { fit(); seen.addEventListener("resize", fit); }
 // A phone's page wakes: what it missed is read; its WebSocket says for itself when it is gone
 document.addEventListener("visibilitychange", () => { if (!document.hidden) load(); });
 
-$("newtask").addEventListener("click", () => form.open());
 /** The columns are read again once a burst ends. */
 let readWait = 0, windowToo = false, columnsToo = false;
 function readSoon(columns = true) {
