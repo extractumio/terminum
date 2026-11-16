@@ -89,7 +89,7 @@ pub(super) fn link(tx: &Transaction, who: &Who, args: &Value, at: i64) -> Result
     let other = visible(tx, who, other)?;
     let remove = args["remove"].as_str() == Some("yes");
     let reason = args["reason"].as_str().map(rules::clean);
-    attrs::link(tx, &author(tx, who)?, &t.key, list, &other.id, reason.as_deref(), remove, at)?;
+    attrs::link(tx, &author(tx, who)?, &t.key, &attrs::Link { list, task: &other.id, reason: reason.as_deref(), remove }, at)?;
     Ok((format!("{} is {} {id}'s {}.", other.id, if remove { "out of" } else { "in" }, attrs::said(list)), vec![t.id]))
 }
 

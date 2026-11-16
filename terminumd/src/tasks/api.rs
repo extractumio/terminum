@@ -372,7 +372,7 @@ async fn change(State(app): State<Shared>, Path(id): Path<String>, Json(body): J
         }
         ops::edit(tx, HUMAN, &id, edit, at)?;
         if let Some((list, task, reason, remove)) = &linked {
-            super::attrs::link(tx, HUMAN, &was.key, list, task, reason.as_deref(), *remove, at)?;
+            super::attrs::link(tx, HUMAN, &was.key, &super::attrs::Link { list, task, reason: reason.as_deref(), remove: *remove }, at)?;
         }
         files::attach(tx, &dropped, &id, None)?;   // what was dropped in its text as it was edited (AC-109)
         if let Some(minutes) = budget {

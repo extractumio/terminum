@@ -264,9 +264,18 @@ pub fn list_of(tx: &Transaction, key: &str, list: &str) -> Result<Vec<(String, S
     rows(tx, "SELECT x.slug, l.reason FROM task_links l JOIN tasks x ON x.id = l.other WHERE l.task = ?1 AND l.kind = ?2 ORDER BY l.place", (key, list), |r| Ok((r.get(0)?, r.get(1)?)))
 }
 
-/// Task `key`'s list with `other` in it, its reason given or kept; or taken out with `remove`.
-pub fn link(tx: &Transaction, author: &str, key: &str, list: &str, other: &str, reason: Option<&str>, remove: bool, at: i64) -> Result<(), String> {
-    let other = found(tx, other)?.id;
+/// One task into a list or out of it: `reason` given or kept; out with `remove`.
+pub struct Link<'a> {
+    pub list: &'a str,
+    pub task: &'a str,
+    pub reason: Option<&'a str>,
+    pub remove: bool,
+}
+
+/// Task `key`'s list with `change` made.
+pub fn link(tx: &Transaction, author: &str, key: &str, change: &Link, at: i64) -> Result<(), String> {
+    let Link { list, reason, remove, .. } = *change;
+    let other = found(tx, change.task)?.id;
     let mut tasks = list_of(tx, key, list)?;
     let at_place = tasks.iter().position(|(id, _)| *id == other);
     match (at_place, remove) {

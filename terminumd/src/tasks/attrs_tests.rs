@@ -80,7 +80,7 @@ fn ac199_an_external_link_is_a_web_address_and_a_target_any_short_words() {
 fn ac199_blocked_by_and_follow_ups_hold_tasks_of_the_project_with_their_reasons() {
     let s = fresh("attrs-lists");
     let (a, b, c, far) = (made(&s, "a", "api"), made(&s, "b", "api"), made(&s, "c", "api"), made(&s, "far", "web"));
-    let link = |of: &ops::Task, list: &str, other: &str, reason: Option<&str>, remove: bool| s.with(|tx| super::link(tx, HUMAN, &of.key, list, other, reason, remove, 3));
+    let link = |of: &ops::Task, list: &str, other: &str, reason: Option<&str>, remove: bool| s.with(|tx| super::link(tx, HUMAN, &of.key, &Link { list, task: other, reason, remove }, 3));
     link(&a, "blocked_by", &b.id, Some("needs b's column"), false).unwrap();
     link(&a, "blocked_by", &c.id, None, false).unwrap();
     link(&a, "follow_ups", &c.id, Some("then c"), false).unwrap();
@@ -112,7 +112,7 @@ fn ac199_blocked_by_and_follow_ups_hold_tasks_of_the_project_with_their_reasons(
 fn ac199_a_task_moved_to_another_project_leaves_the_lists_across_projects() {
     let s = fresh("attrs-move");
     let (a, b) = (made(&s, "a", "api"), made(&s, "b", "api"));
-    s.with(|tx| super::link(tx, HUMAN, &a.key, "blocked_by", &b.id, Some("why"), false, 3)).unwrap();
+    s.with(|tx| super::link(tx, HUMAN, &a.key, &Link { list: "blocked_by", task: &b.id, reason: Some("why"), remove: false }, 3)).unwrap();
     s.with(|tx| ops::change_project(tx, HUMAN, &b.id, "web", None, 4)).unwrap();
     assert_eq!(s.with(|tx| lists_of(tx, &a.key)).unwrap()["blocked_by"], serde_json::json!([]));
     assert!(said(&s, &a.id).iter().any(|l| l.contains("to another project: it left Blocked by")));
