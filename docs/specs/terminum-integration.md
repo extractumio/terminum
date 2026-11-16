@@ -416,9 +416,9 @@ Scenario: AC-193 happy path — the batch and the queue
 
 Scenario: AC-193 happy path — keys
   Then the column's head holds Pause, which becomes Resume, and Batches…
-  And a card's menu, by its ⋯ key or a right click, holds Integrate on an IN PROGRESS card and Take out on a queued one (AC-187), never on a batch's integration task
+  And a card's menu, by its ⋯ key or a right click, holds Integrate on an IN PROGRESS card and Take out on a queued one (AC-187), never on a batch's integration task: terminumd lists each card's keys, the page draws them
   And each card of a batch that stands "not published" holds Publish again (AC-191) in its menu
-  And each card of a batch whose last round is red holds, for the human: Return… (its own, asking for a line of why), Check again and Return all (AC-194), the same requests as the integration task's window
+  And each card of a batch whose last round is red holds, for the human: Return… (its own, asking for a line of why), Check again and Return all (AC-194), the same requests as the integration task's window; the batch's head card holds what that window holds but Return…
   When the user drops an IN PROGRESS card on INTEGRATION, its column or its tab, or presses Integrate in its menu
   Then its session's folder's HEAD is queued as integrate would, its result "Queued by <the human>: no result from its agent.", its place said in a toast; refused, a toast says integrate's words
   When the user drops a card from INTEGRATION on IN PROGRESS, its column or its tab

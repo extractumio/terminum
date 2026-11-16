@@ -7,9 +7,27 @@ import { el } from "./listparts.js";
 import { api, button, row, showError } from "./kanbanutil.js";
 import { sessionUrl } from "./tasklink.js";
 
-export const BATCH_WORDS = { "check-again": "Check again", "publish-again": "Publish again", "return-all": "Return all", close: "Close…" };
+const BATCH_WORDS = { "check-again": "Check again", "publish-again": "Publish again", "return-all": "Return all", close: "Close…" };
 /** A human's key on batch `id` (its store ID); answers terminumd's words for what it did, or throws its refusal. */
 export const pressBatch = async (id, key, body) => (await api(`/api/integration/batch/${id}/${key}`, { method: "POST", body: body ?? {} })).said;
+
+/** A human's Integrate ("integrate") or Take out ("take-out") of task `id` (AC-193); answers what terminumd did. */
+export async function pressQueue(id, key) {
+  const out = key === "take-out", r = await api(`/api/integration/task/${encodeURIComponent(id)}/${out ? "out" : "queue"}`, { method: "POST", body: {} });
+  return out ? `${id} is IN PROGRESS again.` : r.said;
+}
+
+/** Batch `b`'s ({number, count?}) key `key` as [label, press], Return… for task `task`, in the integration task's window
+ *  and on its group's cards alike. `send(key, body)` presses it: a line of why is asked in the page's own dialog, where
+ *  a refusal's words stay; any other refusal goes to `fail(e)`. */
+export function batchKey(b, key, task, send, fail) {
+  const ask = (text, yes, body) => () => askName(text, "", yes, 600, (why) => send(key, { ...body, why }));
+  const press = () => send(key).catch(fail);
+  if (key === "return") return [`Return ${task}…`, ask(`Why does ${task} go back? Its agent reads it.`, "Return", { task })];
+  if (key === "close") return [BATCH_WORDS[key], ask(`Close batch ${b.number}: why?`, "Close")];
+  if (key === "return-all") return [BATCH_WORDS[key], async () => { if (await askConfirm(`Return batch ${b.number}'s ${b.count ? `${b.count} ` : ""}tasks to their agents?`, "Return all")) press(); }];
+  return [BATCH_WORDS[key], press];
+}
 
 /** A task of a project whose integration is on: Integrate while it is in work, Take out while it is queued (AC-193);
  *  terminumd says what it refuses, here. */
@@ -22,7 +40,7 @@ function queueKeys(t, refresh, meta) {
   const queued = t.status === "INTEGRATION";
   const key = button("textkey", queued ? "Take out" : "Integrate", async () => {
     try {
-      await api(`/api/integration/task/${encodeURIComponent(t.id)}/${queued ? "out" : "queue"}`, { method: "POST", body: {} });
+      await pressQueue(t.id, queued ? "take-out" : "integrate");
       showError(error, "");
       refresh();
     } catch (e) { showError(error, e.message); }
@@ -39,28 +57,18 @@ export function batchPart(t, refresh, meta) {
   error.setAttribute("role", "alert");
   error.hidden = true;
   wrap.append(line, keys, error);
-  const send = async (b, key, body) => {
-    await pressBatch(b.batch, key, body);
-    showError(error, "");
-    refresh();
-  };
-  const press = (b, key, body) => async () => { try { await send(b, key, body); } catch (e) { showError(error, e.message); } };
-  /** A line of why, asked in the page's own dialog: refused, terminumd's words stay in it. */
-  const why = (b, key, text, yes, body) => () => askName(text, "", yes, 600, (words) => send(b, key, { ...body, why: words }));
   api(`/api/integration/task/${encodeURIComponent(t.id)}`).then((b) => {
     line.textContent = `Batch ${b.number} · ${b.state} · round ${b.round}${b.why ? ` · ${b.why}` : ""} · ${b.tasks.map((x) => `${x.id} ${x.status}`).join(", ")}`;
     // its step's window, shown as a session is (AC-193)
     if (b.window) keys.append(button("textkey", "Show its window", () => { location.href = sessionUrl(b.window); }));
+    const send = async (key, body) => {
+      await pressBatch(b.batch, key, body);
+      showError(error, "");
+      refresh();
+    };
+    const fail = (e) => showError(error, e.message), shown = { number: b.number, count: b.tasks.length };
     for (const key of b.keys) {
-      if (key === "return") {
-        for (const x of b.tasks) keys.append(button("textkey", `Return ${x.id}…`, why(b, "return", `Why does ${x.id} go back? Its agent reads it.`, "Return", { task: x.id })));
-      } else if (key === "return-all") {
-        keys.append(button("textkey", BATCH_WORDS[key], async () => { if (await askConfirm(`Return batch ${b.number}'s ${b.tasks.length} tasks to their agents?`, "Return all")) press(b, key)(); }));
-      } else if (key === "close") {
-        keys.append(button("textkey", BATCH_WORDS[key], why(b, key, `Close batch ${b.number}: why?`, "Close")));
-      } else {
-        keys.append(button("textkey", BATCH_WORDS[key], press(b, key)));
-      }
+      for (const x of key === "return" ? b.tasks : [null]) keys.append(button("textkey", ...batchKey(shown, key, x?.id, send, fail)));
     }
   }).catch((e) => showError(error, e.message));
   return wrap;

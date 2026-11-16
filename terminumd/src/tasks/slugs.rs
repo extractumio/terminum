@@ -17,6 +17,11 @@ pub(super) const SCHEDULED: &str = "S_";
 /// A batch's integration task (terminum-integration.md AC-194).
 pub(super) const INTEGRATING: &str = "I_";
 
+/// A batch's integration task, by its ID's mark (`terminum-integration.md` AC-194).
+pub fn is_integration(id: &str) -> bool {
+    id.starts_with(INTEGRATING)
+}
+
 /// A prefix as kept: 1–8 of A–Z and 0–9, a letter first; lower case taken as upper.
 pub fn check_prefix(prefix: &str) -> Result<String, String> {
     let p = prefix.trim().to_ascii_uppercase();

@@ -119,9 +119,23 @@ fn ac193_a_red_batchs_cards_hold_its_keys_and_a_checking_ones_none() {
         Ok(marks(tx, std::slice::from_ref(&t), ops::now())?.remove(&t.key).unwrap_or_default())
     }).unwrap();
     let card = mark(&a);
-    assert_eq!((card["batch_id"].as_i64(), card["keys"].clone()), (Some(b.id), json!(["check-again", "return", "return-all"])), "{card}");
+    assert_eq!((card["batch_id"].as_i64(), card["keys"].clone()), (Some(b.id), json!(["take-out", "check-again", "return", "return-all"])), "{card}");
     let head = mark(&i);
     assert_eq!((head["head"].as_bool(), head["keys"].clone()), (Some(true), json!(["check-again", "return", "return-all"])), "{head}");
     w.s.with(|tx| tx.execute("UPDATE integration_batches SET state = 'checking' WHERE id = ?1", [b.id]).map(drop).map_err(sql)).unwrap();
-    assert_eq!(mark(&a)["keys"], json!([]), "nothing to decide while it is checked");
+    assert_eq!(mark(&a)["keys"], json!(["take-out"]), "nothing to decide while it is checked: only Take out");
+}
+
+#[test]
+fn ac193_integrate_where_the_project_integrates_and_never_on_a_batchs_task() {
+    let w = world("ic-integrate", Settings::default());
+    let id = w.s.with(|tx| {
+        let t = ops::create(tx, HUMAN, crate::tasks::ops::NewTask { title: "w".into(), text: "b".into(), project: Some("api".into()), ..Default::default() }, 1)?;
+        ops::move_to(tx, crate::tasks::store::DISPATCHER, &t.id, "IN PROGRESS", 2)?;
+        Ok(t.id)
+    }).unwrap();
+    let keys = || w.s.with(|tx| { let t = ops::get(tx, &id)?; Ok(marks(tx, std::slice::from_ref(&t), ops::now())?.remove(&t.key).unwrap_or_default()) }).unwrap()["keys"].clone();
+    assert_eq!(keys(), json!(["integrate"]));
+    w.s.with(|tx| tx.execute("UPDATE project_integration SET is_on = 0 WHERE project = 'api'", []).map(drop).map_err(sql)).unwrap();
+    assert_eq!(keys(), Value::Null, "integration off: no key");
 }

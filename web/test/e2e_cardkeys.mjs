@@ -4,6 +4,7 @@
 // INTEGRATION's tab, a queued card dropped on IN PROGRESS's, other columns taking no drop, and a refusal in a toast.
 import fs from "node:fs";
 import { check, runningIn, until } from "./check.mjs";
+import { dropCard } from "./boardkit.mjs";
 import { drawn, group, item, openPage, ORIGIN, SIZES, THEME } from "./fake.mjs";
 
 const STATUSES = ["TODO", "IN PROGRESS", "WAIT FOR HUMAN", "INTEGRATION", "FAILED", "DONE"];
@@ -14,9 +15,11 @@ export async function webCardKeys(browser, name) {
   for (const [size, device] of SIZES) for (const light of [false, true]) {
     const mode = light ? "light" : "dark", theme = light ? { ...THEME, bg: "#ffffff", fg: "#1f2328", dark: false } : THEME;
     runningIn(`${name} ${size} ${mode}`);
-    const tasks = [task(1, "IN PROGRESS"), task(2, "INTEGRATION", { queue: { mark: "1st" } }),
-      task(3, "INTEGRATION", { queue: { mark: "in batch 7", batch: 7, batch_id: 42, keys: ["check-again", "return", "return-all"] } }),
-      task(4, "IN PROGRESS", { project: "web" }), task(5, "TODO")];
+    // each card's keys as terminumd lists them (column.rs marks): API-4's project does not integrate
+    const tasks = [task(1, "IN PROGRESS", { queue: { keys: ["integrate"] } }), task(2, "INTEGRATION", { queue: { mark: "1st", keys: ["take-out"] } }),
+      task(3, "INTEGRATION", { queue: { mark: "in batch 7", batch: 7, batch_id: 42, keys: ["take-out", "check-again", "return", "return-all"] } }),
+      task(4, "IN PROGRESS", { project: "web" }), task(5, "TODO"),
+      task(6, "WAIT FOR HUMAN", { id: "I_API-6", queue: { mark: "batch 7 · red: waits for you · 3 min", batch: 7, batch_id: 42, head: true, keys: ["check-again", "return", "return-all"] } })];
     const meta = { projects: [{ id: "api", name: "API", color: 0, dir: "/workspace", integration: true }, { id: "web", name: "Web", color: 1, dir: "/web" }],
       users: [], hosts: [], theme, agents: [], sessions: [] };
     const f = await openPage(browser, { device, layout: [group("main", [item("tmux:local:terminum:%1", "a shell")])], secret: "a".repeat(64), stored: "a".repeat(64),
@@ -88,19 +91,12 @@ export async function webCardKeys(browser, name) {
       await menuOf("API-3");
       await page.keyboard.press("Escape");
       check("AC-193 Esc closes the card's menu", await until(async () => !(await page.isVisible("#cardmenu"))));
+      await show("WAIT FOR HUMAN");
+      check("AC-193 the batch's head card holds the batch's keys, no Return… of its own, and no Take out",
+        JSON.stringify(await menuOf("I_API-6")) === '["Check again","Return all"]');
+      await page.keyboard.press("Escape");
 
-      // the drag's own events: Playwright's WebKit carries no drag through the mouse alone
-      const drop = (from, on) => page.evaluate(([from, on]) => {
-        const dt = new DataTransfer(), held = document.querySelector(from), zone = document.querySelector(on), r = zone.getBoundingClientRect();
-        const at = { bubbles: true, cancelable: true, dataTransfer: dt, clientX: r.left + 4, clientY: r.top + 4 };
-        held.dispatchEvent(new DragEvent("dragstart", { bubbles: true, dataTransfer: dt }));
-        const over = new DragEvent("dragover", at);
-        zone.dispatchEvent(over);
-        const lit = zone.classList.contains("over");
-        if (over.defaultPrevented) zone.dispatchEvent(new DragEvent("drop", at));
-        held.dispatchEvent(new DragEvent("dragend", { bubbles: true, dataTransfer: dt }));
-        return { taken: over.defaultPrevented, lit };
-      }, [from, on]);
+      const drop = (from, on) => dropCard(page, from, on);
       const before = posted.length;
       await show("IN PROGRESS");
       const on = await drop(card("API-1"), tab("INTEGRATION"));
@@ -108,6 +104,11 @@ export async function webCardKeys(browser, name) {
         on.taken && on.lit && await until(() => posted.slice(before).some((p) => p.u === "/api/integration/task/API-1/queue")), JSON.stringify(on));
       const todo = await drop(card("API-1"), tab("DONE"));
       check("AC-107 another column takes no drop of it", !todo.taken && !todo.lit, JSON.stringify(todo));
+      await page.click(card("API-1"), { modifiers: ["Meta"] });
+      await page.click(card("API-4"), { modifiers: ["Meta"] });
+      const mixed = await drop(card("API-1"), tab("INTEGRATION"));
+      check("AC-193 a drag of several, one of a project that does not integrate, lights nothing and takes no drop", !mixed.taken && !mixed.lit, JSON.stringify(mixed));
+      await page.keyboard.press("Escape");
       await show("INTEGRATION");
       const off = await drop(card("API-2"), tab("IN PROGRESS"));
       check("AC-193 a queued card dropped on IN PROGRESS's tab is taken out",

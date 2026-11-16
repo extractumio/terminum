@@ -1,103 +1,49 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-// The integration queue's keys where the user works on the board (terminum-integration.md AC-193): a card's menu, by
-// its ⋯ key or a right click, holds Integrate on an IN PROGRESS task of a project that integrates, Take out on a queued
-// one, and on a deciding batch's cards its keys (Return… with a line of why, Check again, Return all, Publish again);
-// an IN PROGRESS card dropped on INTEGRATION (its column or its tab) is queued, a queued one dropped on IN PROGRESS is
-// taken out; other columns take no drop (terminum-kanban.md AC-107). Refused, a toast says terminumd's words.
-import { askConfirm, askName } from "./dialogs.js";
-import { inside, placeModal } from "./fabpane.js";
-import { icon } from "./icons.js";
-import { el, iconButton, pointerKey } from "./listparts.js";
-import { $, api, say } from "./kanbanutil.js";
-import { BATCH_WORDS, pressBatch } from "./kanbanbatch.js";
+// The integration queue's keys where the user works on the board (terminum-integration.md AC-193), each as terminumd
+// lists it on the card (its `queue.keys`): a card's menu, by its ⋯ key or a right click, holds Integrate, Take out and a
+// deciding batch's keys (Return… with a line of why, Check again, Return all, Publish again, Close…); a card that may be
+// integrated dropped on INTEGRATION (its column or its tab) is queued, one that may be taken out dropped on IN PROGRESS
+// is taken out; other columns take no drop (terminum-kanban.md AC-107). Refused, a toast says terminumd's words.
+import { iconButton } from "./listparts.js";
+import { $, say } from "./kanbanutil.js";
+import { batchKey, pressBatch, pressQueue } from "./kanbanbatch.js";
+import { dropLit } from "./droplit.js";
+import { menuBox } from "./menubox.js";
 
-const integrates = (meta, t) => meta.projects.some((p) => p.id === t.project && p.integration);
-/** Integrate: an IN PROGRESS task of a project that integrates, never a batch's own ("I_", AC-187). */
-const canQueue = (meta, t) => t.status === "IN PROGRESS" && !t.id.startsWith("I_") && integrates(meta, t);
-/** Take out: a queued task, never a batch's integration task: it ends with its batch. */
-const canTakeOut = (t) => t.status === "INTEGRATION" && !t.queue?.head;
+const QUEUE = { integrate: "Integrate", "take-out": "Take out" };
+const MARKS = { integrate: "arrow-right-left", "take-out": "undo-2", return: "undo-2", "return-all": "undo-2", "check-again": "history", "publish-again": "history", close: "x" };
+/** What a drop on each column presses, by the key a card must hold. */
+const DROPS = { INTEGRATION: "integrate", "IN PROGRESS": "take-out" };
+const keysOf = (t) => t.queue?.keys ?? [];
 
-const queue = async (t) => (await api(`/api/integration/task/${encodeURIComponent(t.id)}/queue`, { method: "POST", body: {} }))?.said;
-const takeOut = (t) => api(`/api/integration/task/${encodeURIComponent(t.id)}/out`, { method: "POST", body: {} }).then(() => `${t.id} is IN PROGRESS again.`);
-
-/** `getMeta()`: the board's meta; `dragging()`: the tasks of a drag; `reload()`: the columns read again. */
-export function cardKeys({ getMeta, dragging, reload }) {
-  const box = $("cardmenu");
-  let back = null;
-  const hide = () => {
-    if (!box.open) return;
-    box.close();
-    if (back?.isConnected) back.focus({ preventScroll: true });
-  };
-  /** One key's press: what terminumd says, kept or refused, in a toast; the columns read again. */
-  const run = (go) => async () => {
-    hide();
-    try {
-      const said = await go();
-      if (said) say(said);
-    } catch (e) { say(e.message); }
+/** `dragging()`: the tasks of a drag; `reload()`: the columns read again. */
+export function cardKeys({ dragging, reload }) {
+  const menu = menuBox($("cardmenu"), MARKS);
+  /** What terminumd says it did, or its refusal, in a toast; the columns read again either way. */
+  const told = async (go) => {
+    try { say(await go()); } catch (e) { say(e.message); }
     reload();
   };
 
-  /** The menu's items for `t`, as [label, icon, press]. */
+  /** The menu's items for `t`, as [label, action, press]. */
   function items(t) {
-    const out = [], q = t.queue, keys = q?.batch_id ? q.keys ?? [] : [];
-    if (canQueue(getMeta(), t)) out.push(["Integrate", "arrow-right-left", run(() => queue(t))]);
-    if (canTakeOut(t)) out.push(["Take out", "undo-2", run(() => takeOut(t))]);
-    const send = (key, body) => pressBatch(q.batch_id, key, body);
-    for (const key of keys) {
-      if (key === "return" && !q.head) {
-        out.push([`Return ${t.id}…`, "undo-2", () => { hide(); askName(`Why does ${t.id} go back? Its agent reads it.`, "", "Return", 600, async (why) => { say(await send(key, { task: t.id, why })); reload(); }); }]);
-      } else if (key === "return-all") {
-        out.push([BATCH_WORDS[key], "undo-2", async () => { hide(); if (await askConfirm(`Return batch ${q.batch}'s tasks to their agents?`, "Return all")) run(() => send(key))(); }]);
-      } else if (key === "check-again" || key === "publish-again") {
-        out.push([BATCH_WORDS[key], "history", run(() => send(key))]);
-      }
-    }
-    return out;
+    const q = t.queue;
+    // a batch's key said as its window says it; Return…'s refusal stays in its dialog, any other goes to a toast
+    const send = async (key, body) => { say(await pressBatch(q.batch_id, key, body)); reload(); }, fail = (e) => { say(e.message); reload(); };
+    return keysOf(t).filter((key) => !(key === "return" && q.head)).map((key) => {
+      const [label, press] = key in QUEUE ? [QUEUE[key], () => told(() => pressQueue(t.id, key))] : batchKey({ number: q.batch }, key, t.id, send, fail);
+      return [label, key, press];
+    });
   }
 
   function open(t, x, y) {
-    const list = items(t);
-    if (!list.length) return;
-    const head = el("div", "mhead"), close = el("button", null, "×");
-    close.type = "button";
-    close.title = "Close this menu";
-    close.setAttribute("aria-label", "Close this menu");
-    close.addEventListener("click", hide);
-    head.append(el("span", null, `${t.id} · ${t.title}`), close);
-    box.replaceChildren(head, ...list.map(([label, mark, press]) => {
-      const b = pointerKey(el("button", null, label));
-      b.type = "button";
-      b.setAttribute("role", "menuitem");
-      b.prepend(icon(mark, 16));
-      b.addEventListener("click", (e) => { e.stopPropagation(); press(); });
-      return b;
-    }));
-    back = document.activeElement;
-    box.showModal();
-    if (!placeModal(box, hide)) {                  // a computer's: at the press; a phone's: a sheet
-      box.style.left = `${inside(x, box.offsetWidth, innerWidth)}px`;
-      box.style.top = `${inside(y, box.offsetHeight, innerHeight)}px`;
-    }
-    box.querySelector("button[role=menuitem]")?.focus({ preventScroll: true });
+    menu.fill(`${t.id} · ${t.title}`, ...items(t).map(([label, action, press]) => menu.button(label, action, () => { menu.hide(); press(); })));
+    menu.open(x, y);
   }
-  box.addEventListener("click", (e) => {           // a press on the shade closes it and reaches nothing under it
-    if (e.target !== box) return;
-    const r = box.getBoundingClientRect();
-    if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) hide();
-  });
-  box.addEventListener("cancel", (e) => { e.preventDefault(); hide(); });
-  box.addEventListener("keydown", (e) => {         // ↑ ↓ through its items, as a menu
-    if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
-    e.preventDefault();
-    const all = [...box.querySelectorAll("button[role=menuitem]")], i = all.indexOf(document.activeElement);
-    all[(i + (e.key === "ArrowDown" ? 1 : all.length - 1)) % all.length]?.focus();
-  });
 
-  /** On card `c` of `t`: its ⋯ key when it has items, and its right click. */
+  /** On card `c` of `t`: its ⋯ key and its right click, where terminumd lists a key for it. */
   function onCard(c, t, head) {
-    if (!items(t).length) return;
+    if (!keysOf(t).length) return;
     head.append(iconButton("icon cmenu", "ellipsis", `${t.id}'s menu`, "Integrate, Take out and the batch's keys", (b) => {
       const r = b.getBoundingClientRect();
       open(t, r.left, r.bottom);
@@ -109,41 +55,36 @@ export function cardKeys({ getMeta, dragging, reload }) {
     });
   }
 
-  /** What a drop of the dragged tasks on `column` does, or null where it takes none. */
-  function dropOn(column) {
-    const tasks = dragging();
-    if (!tasks?.length) return null;
-    if (column === "INTEGRATION" && tasks.every((t) => canQueue(getMeta(), t))) return () => tasks.map((t) => () => queue(t));
-    if (column === "IN PROGRESS" && tasks.every(canTakeOut)) return () => tasks.map((t) => () => takeOut(t));
-    return null;
+  /** The dragged tasks a drop on `column` takes: every one holding its key, else none. */
+  function taken(column) {
+    const tasks = dragging(), key = DROPS[column];
+    return tasks?.length && tasks.every((t) => keysOf(t).includes(key)) ? tasks : null;
   }
-  /** INTEGRATION and IN PROGRESS, by their column and their tab, light under a drag they take; one at a time, each
-   *  said: a refused one moves nothing. */
+  /** INTEGRATION and IN PROGRESS, by their column and their tab, light under a drag they take; the tasks go one at a
+   *  time, each said: a refused one moves nothing. */
   function drops(columns) {
-    for (const column of ["INTEGRATION", "IN PROGRESS"]) {
+    for (const [column, key] of Object.entries(DROPS)) {
       const { col, tab } = columns.get(column);
       for (const zone of [col, tab]) {
+        const lit = dropLit((on) => zone.classList.toggle("over", on));   // gone once the drag ends, however it ends
         zone.addEventListener("dragover", (e) => {
-          if (!dropOn(column)) return;
+          if (!taken(column)) return;
           e.preventDefault();
-          zone.classList.add("over");
+          lit(true);
         });
-        zone.addEventListener("dragleave", (e) => { if (!zone.contains(e.relatedTarget)) zone.classList.remove("over"); });
+        zone.addEventListener("dragleave", (e) => { if (!zone.contains(e.relatedTarget)) lit(false); });
         zone.addEventListener("drop", async (e) => {
-          const presses = dropOn(column);
-          if (!presses) return;
+          const tasks = taken(column);
+          if (!tasks) return;
           e.preventDefault();
-          zone.classList.remove("over");
+          lit(false);
           const said = [];
-          for (const press of presses()) {
-            try { said.push(await press()); } catch (no) { said.push(no.message); }
-          }
-          say(said.filter(Boolean).join(" · "));
+          for (const t of tasks) said.push(await pressQueue(t.id, key).catch((no) => no.message));
+          say(said.join(" · "));
           reload();
         });
       }
     }
-    document.addEventListener("dragend", () => document.querySelectorAll(".col.over, #colswitch .over").forEach((z) => z.classList.remove("over")));
   }
   return { onCard, drops };
 }

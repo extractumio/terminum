@@ -5,6 +5,7 @@
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import { dropCard } from "./boardkit.mjs";
 import { check, until } from "./check.mjs";
 
 const git = (dir, ...args) => execFileSync("git", ["-C", dir, "-c", "user.name=t", "-c", "user.email=t@example.com", ...args], { stdio: "pipe" });
@@ -154,15 +155,7 @@ async function cardKeyChecks(page, { j, gitty, t, base, work, newPane, keyOf }) 
     return page.$$eval("#cardmenu[open] [role=menuitem]", (bs) => bs.map((b) => b.textContent.trim()));
   };
   const menu = async (item) => { await openMenu(); await page.click(`#cardmenu[open] [role=menuitem]:has-text("${item}")`); };
-  const drop = (on) => page.evaluate(([from, on]) => {
-    const dt = new DataTransfer(), held = document.querySelector(from), zone = document.querySelector(on), at = { bubbles: true, cancelable: true, dataTransfer: dt };
-    held.dispatchEvent(new DragEvent("dragstart", { bubbles: true, dataTransfer: dt }));
-    const over = new DragEvent("dragover", at);
-    zone.dispatchEvent(over);
-    if (over.defaultPrevented) zone.dispatchEvent(new DragEvent("drop", at));
-    held.dispatchEvent(new DragEvent("dragend", { bubbles: true, dataTransfer: dt }));
-    return over.defaultPrevented;
-  }, [card, on]);
+  const drop = async (on) => (await dropCard(page, card, on)).taken;
   const toast = (words) => until(async () => (await page.textContent("#toast").catch(() => "")) === words);
 
   await menu("Integrate");
