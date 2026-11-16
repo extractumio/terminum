@@ -201,6 +201,11 @@ Scenario: AC-106 happy path — the window
   And a file dropped or pasted into the text puts a link to it at the cursor, an image as an image
   And the text says it takes files in its placeholder, no frame round it, and lights under a drag (a dashed edge only then); the text of an open task takes them the same way, its editor opening as they drop
 
+Scenario: AC-106 happy path — one text editor for every task
+  Given a new task's window, a schedule's window with every field shown, and an open task's text being edited
+  Then each text field shows 16 lines at least, however many fields share its window, in the terminal's type
+  And Write and Preview stand on Text's line over each; Preview shows the Markdown in the field's place, as tall, and Write gives the field back as typed
+
 Scenario: AC-106 failure — no project chosen
   Given the board shows Default and Billing
   When the user presses + Task
@@ -1297,7 +1302,7 @@ Depends on: nothing more.
 
 - [x] AC-105 — `cargo test tasks::query`, `web/test/e2e_kanbansort.mjs` (`node web/test/e2e_all.mjs webKanbanSort`), `web/test/e2e_liveboardsort.mjs` (`node web/test/e2e_live.mjs boardsort`), `web/test/e2e_liveboard.mjs` (`node web/test/e2e_live.mjs board`), a phone's in `liveBoardPhone`, its projects and filters not read in `web/test/e2e_liveboardedge.mjs`, a phone's one-row head in `web/test/e2e_boardphone.mjs` (`node web/test/e2e_all.mjs webBoardPhone`: 390 and 320 px), TODO and the panel and a tablet in `web/test/e2e_boardpanel.mjs` (`node web/test/e2e_all.mjs webBoardPanel`: a computer at 1900 and 1400 px, an iPad at 1180×820, 1366×1024, 820×1180 and 744×1133, a phone on its side at 844×390)
 - [x] AC-159 — `web/test/e2e_liveschedules.mjs` (`liveFolded`: one line, shown whole, the next folds it, a window on the second press, Esc, kept as the columns are read; wide and phone), `web/test/e2e_liveboardpool.mjs` (a folded card's waiting dot, its words on hover)
-- [x] AC-106 — `web/test/e2e_liveboard.mjs`, `web/test/e2e_liveboardpool.mjs`, `web/test/e2e_newtask.mjs` (unspecified agent, explicit choice, removal and refusal), `web/test/e2e_livenotes.mjs` (New task from selection), `cargo test tasks::ops`
+- [x] AC-106 — `web/test/e2e_liveboard.mjs`, `web/test/e2e_tasktext.mjs` (one text editor), `web/test/e2e_liveboardpool.mjs`, `web/test/e2e_newtask.mjs` (unspecified agent, explicit choice, removal and refusal), `web/test/e2e_livenotes.mjs` (New task from selection), `cargo test tasks::ops`
 - [x] AC-107 — `cargo test tasks::ops`, `web/test/e2e_liveboard.mjs`
 - [x] AC-108 — `cargo test tasks::ops`, `web/test/e2e_liveboard.mjs`
 - [x] AC-109 — `cargo test tasks::files` (a failed purge, a stop's leftovers), `cargo test tasks::tools`, `web/test/e2e_liveboard.mjs`

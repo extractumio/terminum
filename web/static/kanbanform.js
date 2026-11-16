@@ -89,7 +89,7 @@ export function taskForm({ getMeta, getFilter, onMade, onRun, slots }) {
     canCreate();
   }
 
-  const view = writePreview("new", $("newtext"), $("newshown"));
+  const view = writePreview($("newtabs"), $("newtext"), $("newshown"));
 
   /** The chosen project's pool: only an explicit choice picks an agent (AC-106); otherwise assignment chooses later.
    *  One at a limit is said so: Run offers its queue (terminum-dispatcher.md AC-169). */

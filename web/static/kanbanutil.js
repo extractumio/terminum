@@ -301,17 +301,29 @@ export function countOf(n) {
   return n >= 1e6 ? `${(n / 1e6).toFixed(1).replace(/\.0$/, "")}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1).replace(/\.0$/, "")}k` : String(n);
 }
 
-/** A text's Write and Preview keys (`${prefix}write`, `${prefix}preview`) over its area and its rendered Markdown; the view. */
-export function writePreview(prefix, area, shown) {
-  const view = (preview) => {
-    $(`${prefix}write`).setAttribute("aria-selected", String(!preview));
-    $(`${prefix}preview`).setAttribute("aria-selected", String(preview));
-    area.hidden = preview;
-    shown.hidden = !preview;
-    if (preview) renderInto(shown, area.value);
+/** A task's text typed (a new task's, a schedule's, an open task's editor: terminum-kanban.md AC-106): fills `tabs`
+ *  with its Write and Preview keys over its area and its rendered Markdown; the view. */
+export function writePreview(tabs, area, shown) {
+  tabs.className = "seg";
+  tabs.setAttribute("role", "tablist");
+  tabs.setAttribute("aria-label", "Text view");
+  const [write, preview] = ["Write", "Preview"].map((word) => {
+    const b = el("button", null, word);
+    b.type = "button";
+    b.setAttribute("role", "tab");
+    return b;
+  });
+  tabs.replaceChildren(write, preview);
+  const view = (on) => {
+    write.setAttribute("aria-selected", String(!on));
+    preview.setAttribute("aria-selected", String(on));
+    area.hidden = on;
+    shown.hidden = !on;
+    if (on) renderInto(shown, area.value);
   };
-  $(`${prefix}write`).addEventListener("click", () => view(false));
-  $(`${prefix}preview`).addEventListener("click", () => view(true));
+  write.addEventListener("click", () => view(false));
+  preview.addEventListener("click", () => view(true));
+  view(false);
   return view;
 }
 
