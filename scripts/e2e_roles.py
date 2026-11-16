@@ -22,6 +22,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from e2e_ws import BIN, Terminumd, check, summary, tmux_on, wait_for, wait_layout  # noqa: E402
 from e2e_remote import api  # noqa: E402
 from testrun import free_port, own, short_tmp  # noqa: E402
+from e2e_rolequeue import queue_promotion  # noqa: E402
 
 FAKE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fake_agent.py")
 PORT, SOCKET = free_port(), own("tm-test-rol")
@@ -29,7 +30,7 @@ tmux = partial(tmux_on, SOCKET)
 
 
 def main():
-    t = Terminumd(PORT, SOCKET, env={"TM_TEST_HOOKS": "1"})
+    t = Terminumd(PORT, SOCKET, env={"TM_TEST_HOOKS": "1", "TM_TEST_CLOCK_SCALE": "60", "TM_TEST_CLOSE_AFTER": "7200"})
     work = tempfile.mkdtemp(prefix="tmr-", dir=short_tmp())
     outside = {k: v for k, v in t.env.items() if k not in ("TMUX", "TMUX_PANE", "TERMINUM_TOKEN")}
     n = [0]
@@ -152,6 +153,9 @@ def main():
         check("AC-179 its message is kept on the task under the manager's name", "keep it short" in history and "Shell · manager" in history, [e for e in call(f"/api/tasks/{task}")[1]["history"] if e["kind"] == "comment"])
         out, rc = typed(boss, tool("list_runs"))
         check("AC-179 list_runs shows the project's runs", rc == "0" and '"kind":"session"' in out, out)
+
+        # AC-169: explicit queue promotion, through the manager's real pane, preserves a P0 conversation.
+        queue_promotion(t, call, typed, tool, boss, plain, project, FAKE)
 
         # the project's sessions: read, typed into, closed; never its own, another manager's, another project's
         out, rc = typed(boss, tool("list_sessions"))

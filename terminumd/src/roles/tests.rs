@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 //! Who is a manager and what each role may run (terminum-agents.md AC-174 to AC-181).
 
+#[path = "queue_tests.rs"]
+mod queue_tests;
+
 use serde_json::json;
 
 use super::*;
