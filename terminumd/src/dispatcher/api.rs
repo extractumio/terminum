@@ -270,7 +270,12 @@ async fn pressed(app: &Shared, id: &str, body: Press) -> Result<Value, String> {
                 if let (Some(a), Some(c), true) = (&mut answers, &said, by.manager.is_some()) {
                     a.push(c.clone());
                 }
-                with_open(again_words(&tasks[0].id, &ops::user_name(tx, by.by())?, said.as_deref(), answers.as_deref(), by.manager.is_some()), &tasks)
+                // a later red round of a batch: its own words, the same session deciding as before (terminum-integration.md AC-194)
+                if by.how == How::Integration && let Some(words) = crate::integrate::agent::red_again(tx, &tasks[0].key, &crate::config::tm_home(), answers.as_deref())? {
+                    words
+                } else {
+                    with_open(again_words(&tasks[0].id, &ops::user_name(tx, by.by())?, said.as_deref(), answers.as_deref(), by.manager.is_some()), &tasks)
+                }
             }
         };
         Ok((tasks, w, again))
