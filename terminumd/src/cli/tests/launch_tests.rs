@@ -196,6 +196,7 @@ fn the_agent_of_the_old_name_is_unloaded_before_this_one_is_loaded() {
 
 #[test]
 fn ac196_the_old_names_log_is_adopted_by_rename() {
+    crate::umask::private();           // as the command does before it writes (cli/mod.rs): the mode below is this umask's, whatever test ran before
     let home = Home::new();
     let (ctx, _dir) = stubbed(&home, &[]);
     std::fs::create_dir_all(ctx.log_dir()).unwrap();
