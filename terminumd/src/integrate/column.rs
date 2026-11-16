@@ -43,6 +43,7 @@ pub fn state_words(tx: &Transaction, b: &Batch) -> Result<String, String> {
         "checking" if b.round > 1 => format!("checking again{round}"),
         "checking" => "checking".into(),
         "green" | "publishing" => "publishing".into(),
+        "published" => "published: After waits for its turn".into(),
         "after" => "After runs".into(),
         "cleanup" => "Cleanup runs".into(),
         "red" => {

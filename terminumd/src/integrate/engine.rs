@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 //! One step of the integration queue (`terminum-integration.md` AC-188…AC-191): with no batch in work, the next
 //! project's batch is built; else the batch in work moves on: its check started, followed or ended, a green one
-//! published only while its target has not moved (else built anew on it and checked again), its tasks DONE, the
-//! project's folder fast-forwarded, After run once. Nothing but a candidate whose own check was green is published;
-//! a project whose integration was turned off gives its batch up.
+//! published only while its target has not moved (else built anew on it and checked again), its tasks DONE. A
+//! published batch leaves the work to its After and Cleanup, which run beside the next batch (`tail`). Nothing but a
+//! candidate whose own check was green is published; a project whose integration was turned off gives its batch up.
 
 use std::path::{Path, PathBuf};
 
@@ -19,7 +19,7 @@ use crate::tasks::store::Store;
 /// A project's facts for a step: its settings, name and repository.
 pub(super) struct Place {
     pub(super) s: Settings,
-    name: String,
+    pub(super) name: String,
     pub(super) repo: PathBuf,
     /// terminum's own folder (`TM_HOME`): the candidate's tree and logs are under it
     pub(super) home: PathBuf,
@@ -36,7 +36,10 @@ pub(super) fn place(store: &Store, home: &Path, project: &str) -> Result<Place, 
 /// The target as fetched now.
 fn target_now(p: &Place) -> Result<String, String> {
     let (remote, branch) = integration::target_of(&p.s.target)?;
-    git::run(&p.repo, &["fetch", "--quiet", remote]).map_err(|e| format!("{remote} could not be fetched: {e}"))?;
+    let fetch = || git::run(&p.repo, &["fetch", "--quiet", remote]);
+    // a fetch beside it (an After's, a Prepare's) holding the same ref: tried once more after a second
+    fetch().or_else(|e| if e.contains("cannot lock ref") { std::thread::sleep(std::time::Duration::from_secs(1)); fetch() } else { Err(e) })
+        .map_err(|e| format!("{remote} could not be fetched: {e}"))?;
     git::run(&p.repo, &["rev-parse", &format!("refs/remotes/{remote}/{branch}")]).map_err(|_| format!("{}: no such branch at {remote}.", p.s.target))
 }
 
@@ -47,10 +50,12 @@ pub fn step(store: &Store, runner: &dyn Runner, home: &Path, now: i64) -> Result
     if let Err(e) = super::stages::verify_step(store, runner, home, now) {
         tracing::warn!(event = "integration.verify", error = %e);
     }
-    match store.with(bs::busy)? {
+    let work = match store.with(bs::busy)? {
         Some(b) => advance(store, runner, home, b, now),
         None => start_next(store, home, now),
-    }
+    };
+    // after the work, whatever it met: a batch published in this step takes its After's turn in it
+    work.and(super::tail::step(store, runner, home, now))
 }
 
 fn start_next(store: &Store, home: &Path, now: i64) -> Result<(), String> {
@@ -134,8 +139,8 @@ fn ended(runner: &dyn Runner, pane: &str, log: &Path, status: i32) -> i32 {
 
 fn advance(store: &Store, runner: &dyn Runner, home: &Path, b: Batch, now: i64) -> Result<(), String> {
     let p = place(store, home, &b.project)?;
-    // turned off: nothing more is merged or pushed (AC-186); a published batch's After runs on
-    if !p.s.on && !matches!(b.state.as_str(), "after" | "cleanup") {
+    // turned off: nothing more is merged or pushed (AC-186); a published batch's After runs on (`tail`)
+    if !p.s.on {
         if let Some(pane) = &b.pane {
             runner.stop(pane);
             runner.close(pane);
@@ -143,7 +148,7 @@ fn advance(store: &Store, runner: &dyn Runner, home: &Path, b: Batch, now: i64) 
         return store.with(|tx| bs::give_up(tx, &b, &format!("integration was turned off for {}", p.name), now));
     }
     match b.state.as_str() {
-        "checking" | "publishing" | "after" | "cleanup" => follow(store, runner, &p, b, now),
+        "checking" | "publishing" => follow(store, runner, &p, b, now),
         "green" => publish(store, &p, b, now),
         // a task left the batch: the rest built anew on the target as it is, a running line ended first
         "rebuild" => {
@@ -161,7 +166,7 @@ fn advance(store: &Store, runner: &dyn Runner, home: &Path, b: Batch, now: i64) 
 }
 
 /// A line of the batch's step: started, followed, ended; the pane cleared in the transaction that moves the state on.
-fn follow(store: &Store, runner: &dyn Runner, p: &Place, b: Batch, now: i64) -> Result<(), String> {
+pub(super) fn follow(store: &Store, runner: &dyn Runner, p: &Place, b: Batch, now: i64) -> Result<(), String> {
     let (step, line, folder) = match b.state.as_str() {
         "checking" => ("check", p.s.check.clone(), None),
         "publishing" => ("publish", p.s.publish.clone(), None),
@@ -188,8 +193,15 @@ fn follow(store: &Store, runner: &dyn Runner, p: &Place, b: Batch, now: i64) -> 
         };
     };
     let log = log_of(p, &b.project, &b, step);
-    let over = step == "check" && now - b.step_started.unwrap_or(now) > p.s.check_minutes * 60;
+    // After holds the machine's tail for every project: over the check's time it fails as a check does (AC-191)
+    let over = matches!(step, "check" | "after") && now - b.step_started.unwrap_or(now) > p.s.check_minutes * 60;
     let status = match window(runner, &pane, &log, over) {
+        // After lost with its window is not run again (AC-191): what it did is not known
+        Window::Lost if step == "after" => return store.with(|tx| {
+            bs::set_pane(tx, b.id, None, now)?;
+            bs::tell_task(tx, &b, &format!("After's outcome is not known for batch {}: its window was lost. After is not run again.", b.number), now)?;
+            bs::set_state(tx, b.id, after_after(&p.s), None, now)
+        }),
         // lost with its window: run again, not counted as red (AC-190)
         Window::Lost => return store.with(|tx| { bs::set_pane(tx, b.id, None, now)?; bs::tell_task(tx, &b, &format!("Batch {}'s {step} runs again: its window was lost.", b.number), now) }),
         Window::Running => return Ok(()),
@@ -217,9 +229,10 @@ fn follow(store: &Store, runner: &dyn Runner, p: &Place, b: Batch, now: i64) -> 
         }),
         (_, 0) => store.with(|tx| { bs::set_pane(tx, b.id, None, now)?; bs::set_state(tx, b.id, after_after(&p.s), None, now) }),
         (_, code) => store.with(|tx| {
+            let how = if code == OVER { format!("it ran over {} minutes", p.s.check_minutes) } else { format!("status {code}") };
             bs::set_pane(tx, b.id, None, now)?;
-            bs::set_state(tx, b.id, "after failed", Some(&format!("status {code}")), now)?;
-            bs::wait_for_human(tx, &b, &format!("After failed for batch {} with status {code}: the batch stays published and its tasks DONE. Its log: {}", b.number, log.display()), now)
+            bs::set_state(tx, b.id, "after failed", Some(&how), now)?;
+            bs::wait_for_human(tx, &b, &format!("After failed for batch {} with {how}: the batch stays published and its tasks DONE. Its log: {}", b.number, log.display()), now)
         }),
     }
 }
@@ -343,42 +356,33 @@ fn again(store: &Store, p: &Place, b: &Batch, target: &str, now: i64) -> Result<
     })
 }
 
-/// Published: its tasks DONE with their results, the size doubled, the project's folder fast-forwarded, After next.
-/// Nothing after the push may fail for a task gone meanwhile: its DONE is skipped, the rest go on.
+/// Published: its tasks DONE with their results, the size doubled; the project's folder and After wait for their
+/// turn (`tail`), so the next batch is built and checked meanwhile. Nothing after the push may fail for a task gone
+/// meanwhile: its DONE is skipped, the rest go on.
 fn landed(store: &Store, p: &Place, b: Batch, target: &str, now: i64) -> Result<(), String> {
     let candidate = b.candidate.clone().unwrap_or_default();
     if !git::ok(&p.repo, &["merge-base", "--is-ancestor", &candidate, target])? {
         return not_published(store, &b, &format!("{} is not in {} after the publish.", short(&candidate), p.s.target), now);
     }
-    let moved = folder_follows(p);
     store.with(|tx| {
         bs::set_pane(tx, b.id, None, now)?;
+        // published first: a task's DONE takes it out of the queue, which leaves a batch in work without it (store::left)
+        bs::set_state(tx, b.id, bs::PUBLISHED, None, now)?;
         let ids = bs::done_all(tx, &b, &p.s.target, &candidate, now)?;
         bs::resize(tx, &b.project, true)?;
         bs::round_ends(tx, &b, "published", None, now)?;
-        let folder = match &moved {
-            Ok(()) => String::new(),
-            Err(w) => format!(" {}'s folder stays where it is: {w}", p.name),
-        };
-        bs::close_task(tx, &b, &format!("Batch {} published at {}: {}.{folder}", b.number, short(&candidate), ids.join(", ")), now)?;
-        let next = if p.s.after.is_empty() || moved.is_err() { after_after(&p.s) } else { "after" };
-        bs::set_state(tx, b.id, next, None, now)
+        bs::close_task(tx, &b, &format!("Batch {} published at {}: {}.", b.number, short(&candidate), ids.join(", ")), now)?;
+        // a human deciding a failed After hears what was published on top of it (AC-191)
+        if let Some(failed) = bs::after_failed(tx, &b.project)? {
+            bs::tell_task(tx, &failed, &format!("Batch {} was published on top of batch {}; its After waits for this task's end.", b.number, failed.number), now)?;
+        }
+        Ok(())
     })
 }
 
 /// What follows a published batch's After: its Cleanup, when the project has one (AC-198).
-fn after_after(s: &Settings) -> &'static str {
+pub(super) fn after_after(s: &Settings) -> &'static str {
     if s.cleanup.is_empty() { "ended" } else { "cleanup" }
-}
-
-/// The project's folder fast-forwarded to the target when it stands clean on its branch (AC-191).
-fn folder_follows(p: &Place) -> Result<(), String> {
-    let (remote, branch) = integration::target_of(&p.s.target)?;
-    let on = git::run(&p.repo, &["branch", "--show-current"])?;
-    if on != branch {
-        return Err(format!("it is on {}, not {branch}", if on.is_empty() { "no branch" } else { &on }));
-    }
-    git::run(&p.repo, &["merge", "--ff-only", "--quiet", &format!("{remote}/{branch}")]).map(drop)
 }
 
 #[cfg(test)]

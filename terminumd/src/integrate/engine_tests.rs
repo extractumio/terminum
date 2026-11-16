@@ -10,19 +10,27 @@ use crate::integrate::runner::with_vars;
 use crate::tasks::ops::{sql, NewTask, INTEGRATION};
 use crate::tasks::store::HUMAN;
 
-/// Runs a line at once with `sh`, or, `hang`, never ends it.
+/// Runs a line at once with `sh`, or, `hang` or its label ending in one of `hang_on`, never ends it.
 #[derive(Default)]
 pub(crate) struct Sh {
     pub(crate) ran: Mutex<HashMap<String, (Option<i32>, String)>>,
     pub(crate) lines: Mutex<Vec<String>>,
     pub(crate) hang: bool,
+    pub(crate) hang_on: Vec<&'static str>,
+}
+
+impl Sh {
+    /// A hung line `pane` ended with `code`, as its program would.
+    pub(crate) fn end(&self, pane: &str, code: i32) {
+        self.ran.lock().unwrap().get_mut(pane).expect("a started line").0 = Some(code);
+    }
 }
 
 impl Runner for Sh {
     fn start(&self, label: &str, folder: &Path, line: &str, vars: &[(&str, String)]) -> Result<String, String> {
         self.lines.lock().unwrap().push(format!("{label}: {line}"));
         let o = Command::new("/bin/sh").arg("-c").arg(with_vars(line, vars)).current_dir(folder).output().map_err(|e| e.to_string())?;
-        let status = if self.hang { None } else { o.status.code() };
+        let status = if self.hang || self.hang_on.iter().any(|s| label.ends_with(s)) { None } else { o.status.code() };
         let handle = format!("%{}", self.ran.lock().unwrap().len() + 1);
         self.ran.lock().unwrap().insert(handle.clone(), (status, String::from_utf8_lossy(&o.stdout).to_string()));
         Ok(handle)
