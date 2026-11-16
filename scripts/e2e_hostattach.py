@@ -170,6 +170,21 @@ def main():
         phone = t.page()
         phone.send({"t": "sub", "id": pane})
         phone.until(lambda m: m["t"] == "screen", 5)
+        # the two pages' messages are handled apart: each order of "hidden" and "another pane" is checked
+        ws.send({"t": "sub", "id": own(groups)["items"][0]["id"]})
+        ws.until(lambda m: m["t"] == "screen", 5)
+        time.sleep(0.5)
+        check("AC-89 another pane opened while another page in sight still shows it: the window keeps its size",
+              size_of("work:") == "100x32 manual 1", size_of("work:"))
+        phone.send({"t": "pause"})
+        for _ in range(30):
+            if "manual" not in size_of("work:"):
+                break
+            time.sleep(0.1)
+        check("AC-89 then that last page in sight hidden, though it never sized it: its own size back", "manual" not in size_of("work:"), size_of("work:"))
+        ws.send({"t": "sub", "id": pane})
+        ws.until(lambda m: m["t"] == "sized", 5)
+        phone.send({"t": "resume"})
         phone.send({"t": "pause"})
         ws.send({"t": "sub", "id": own(groups)["items"][0]["id"]})
         ws.until(lambda m: m["t"] == "screen", 5)

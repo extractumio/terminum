@@ -276,23 +276,28 @@ fn later(app: &Shared, page: &Arc<Page>, why: Why) {
 
 /// `page` was hidden: a window it sized goes to the pages still looking at it (AC-13), so a
 /// locked phone never keeps a computer's view at the phone's size; one of the user's own tmux
-/// that no page looks at gets tmux's own size back (AC-89).
+/// that no page looks at gets tmux's own size back (AC-89), whoever sized it: the page that
+/// did may have opened another pane while this one was still in sight (`left` kept it then).
 pub fn handover(app: &Shared, page: &Arc<Page>) {
     let Some((server, pane, f)) = shown_window(page) else { return };
     let key = (server.id(), f.window.clone());
-    if app.sizes.0.lock().get(&key).and_then(|w| w.by) != Some(page.id) {
-        return;
-    }
-    let others: Vec<_> = viewers(app, &server, &f.window).into_iter().filter(|v| v.id != page.id && v.state.lock().active()).collect();
-    if others.is_empty() && users_pane(&server, &pane) {
+    // the record and the pages in sight read under one lock, as `left` does: of a hide and
+    // another pane opened at once, the later sees what the earlier did
+    let (by, others, manual) = {
+        let mut g = app.sizes.0.lock();
+        let Some(by) = g.get(&key).map(|w| w.by) else { return };
+        let others: Vec<_> = viewers(app, &server, &f.window).into_iter().filter(|v| v.id != page.id && v.state.lock().active()).collect();
+        let free = others.is_empty() && users_pane(&server, &pane);
+        (by, others, free && g.remove(&key).is_some_and(|w| w.manual))
+    };
+    if manual {
         // sent now, in order: the page's next message (its resume) comes after it, and waits for nothing
-        if app.sizes.0.lock().remove(&key).is_some_and(|w| w.manual) {
-            server.send_on(&pane, own_size(&f.window));
-        }
-        return;
+        server.send_on(&pane, own_size(&f.window));
     }
-    for v in others {
-        later(app, &v, Why::Active);
+    if by == Some(page.id) {
+        for v in others {
+            later(app, &v, Why::Active);
+        }
     }
 }
 
@@ -333,9 +338,10 @@ pub async fn typed(app: &Shared, page: &Arc<Page>) {
 pub fn left(app: &Shared, page: &Arc<Page>, old: &Shown) {
     let Some(f) = old.ctl.fields.lock().clone() else { return };
     let key = (old.server.id(), f.window.clone());
-    let others = viewers(app, &old.server, &f.window).into_iter().any(|p| p.id != page.id && p.state.lock().active());
-    let win = {
+    let (win, others) = {
         let mut g = app.sizes.0.lock();
+        // read under the lock, as `handover` does: a page hidden meanwhile sees this record after
+        let others = viewers(app, &old.server, &f.window).into_iter().any(|p| p.id != page.id && p.state.lock().active());
         let Some(w) = g.get_mut(&key) else { return };
         if w.by == Some(page.id) {
             w.by = None;
@@ -344,7 +350,7 @@ pub fn left(app: &Shared, page: &Arc<Page>, old: &Shown) {
         if !others {
             g.remove(&key);
         }
-        w
+        (w, others)
     };
     if win.manual && !others {
         old.server.send_on(&old.pane, own_size(&f.window));   // sent now, in order; nothing waits for that server (AC-132)
