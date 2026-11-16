@@ -278,8 +278,7 @@ pub fn new_round(tx: &Transaction, b: &Batch, chosen: &[Queued], fixes: &[String
 /// or fixes are not its round's; else the same candidate checked again, a new round, `why` written on it.
 pub fn check_again(tx: &Transaction, b: &Batch, why: Option<&str>, at: i64) -> Result<String, String> {
     if changed_since_round(tx, b)? {
-        tx.execute("UPDATE integration_batches SET state = 'rebuild', pane = NULL WHERE id = ?1", [b.id]).map_err(sql)?;
-        back_to_work(tx, b, at)?;
+        rebuild(tx, b, at)?;
         return Ok(format!("Batch {} is built anew from what is in it now and checked: round {}.", b.number, b.round + 1));
     }
     tx.execute("UPDATE integration_batches SET unchanged_rechecks = unchanged_rechecks + 1, state = 'checking', pane = NULL, round = round + 1 WHERE id = ?1", [b.id]).map_err(sql)?;
@@ -296,6 +295,12 @@ pub fn changed_since_round(tx: &Transaction, b: &Batch) -> Result<bool, String> 
         .optional().map_err(sql)?;
     let list = |t: &str| serde_json::from_str::<Vec<String>>(t).unwrap_or_default();
     Ok(built.is_none_or(|(tasks, fixes)| b.tasks != list(&tasks) || b.fixes != list(&fixes)))
+}
+
+/// The batch built anew at the engine's next step, from what is in it then.
+pub fn rebuild(tx: &Transaction, b: &Batch, at: i64) -> Result<(), String> {
+    tx.execute("UPDATE integration_batches SET state = 'rebuild', pane = NULL WHERE id = ?1", [b.id]).map_err(sql)?;
+    back_to_work(tx, b, at)
 }
 
 /// Its integration task back in INTEGRATION while terminumd works on its batch again: no agent is wanted for it.

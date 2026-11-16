@@ -35,7 +35,7 @@ pub(super) fn place(store: &Store, home: &Path, project: &str) -> Result<Place, 
 
 /// The target as fetched now.
 fn target_now(p: &Place) -> Result<String, String> {
-    let (remote, branch) = integration::target_parts(&p.s.target).ok_or_else(|| integration::not_a_target(&p.s.target))?;
+    let (remote, branch) = integration::target_of(&p.s.target)?;
     git::run(&p.repo, &["fetch", "--quiet", remote]).map_err(|e| format!("{remote} could not be fetched: {e}"))?;
     git::run(&p.repo, &["rev-parse", &format!("refs/remotes/{remote}/{branch}")]).map_err(|_| format!("{}: no such branch at {remote}.", p.s.target))
 }
@@ -287,7 +287,7 @@ fn publish(store: &Store, p: &Place, b: Batch, now: i64) -> Result<(), String> {
     if !p.s.publish.is_empty() {
         return store.with(|tx| bs::set_state(tx, b.id, "publishing", None, now));
     }
-    let (remote, branch) = integration::target_parts(&p.s.target).ok_or_else(|| integration::not_a_target(&p.s.target))?;
+    let (remote, branch) = integration::target_of(&p.s.target)?;
     // never forced: no "+", the remote refuses what is not a fast-forward
     match git::run(&p.repo, &["push", "--quiet", remote, &format!("{candidate}:refs/heads/{branch}")]) {
         Ok(_) => match target_now(p) {
@@ -373,7 +373,7 @@ fn after_after(s: &Settings) -> &'static str {
 
 /// The project's folder fast-forwarded to the target when it stands clean on its branch (AC-191).
 fn folder_follows(p: &Place) -> Result<(), String> {
-    let (remote, branch) = integration::target_parts(&p.s.target).ok_or_else(|| integration::not_a_target(&p.s.target))?;
+    let (remote, branch) = integration::target_of(&p.s.target)?;
     let on = git::run(&p.repo, &["branch", "--show-current"])?;
     if on != branch {
         return Err(format!("it is on {}, not {branch}", if on.is_empty() { "no branch" } else { &on }));

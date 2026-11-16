@@ -13,7 +13,7 @@ use serde_json::{json, Value};
 use super::store::{self as bs, Batch};
 use crate::app::Shared;
 use crate::tasks::api::{answer, store};
-use crate::tasks::ops::{self, sql};
+use crate::tasks::ops;
 use crate::tasks::store::{DISPATCHER, HUMAN};
 
 /// The states a human decides in.
@@ -65,8 +65,7 @@ pub fn return_one(tx: &Transaction, id: i64, task: &str, why: &str, at: i64) -> 
     if b.state == bs::RED {
         bs::check_again(tx, &b, None, at)?;
     } else if b.state == "not published" {
-        tx.execute("UPDATE integration_batches SET state = 'rebuild', pane = NULL WHERE id = ?1", [b.id]).map_err(sql)?;
-        bs::back_to_work(tx, &b, at)?;
+        bs::rebuild(tx, &b, at)?;
     }
     Ok(format!("{} went back to its agent.", t.id))
 }
