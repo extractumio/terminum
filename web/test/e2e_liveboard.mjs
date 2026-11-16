@@ -334,6 +334,7 @@ async function sameKinds(page, base, phone) {
   const theirs = { search: await look(".search"), key: await look(".icon"), track: await look(".seg"), plus: await look(".grp h2 .new") };
   await page.goto(`${base}/kanban/`);
   await page.waitForSelector(".card");
+  if (phone) await page.click("#findkey");   // a phone's Find and filters stand under the head when its key is pressed (AC-105)
   await page.waitForTimeout(500);
   const ours = { search: await look("#filters .search"), key: await look("#filters .pick summary, #filtersbtn"), track: await look("#colswitch"), plus: await look(".colhead .new") };
   // matched on a computer, whose session list shows a group's [+] (AC-106)
