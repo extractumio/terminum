@@ -172,6 +172,8 @@ export function taskForm({ getMeta, getFilter, onMade, onRun, slots }) {
   $("newrun").addEventListener("click", () => create(true));
   // Enter in the title is Create; what is typed never goes by a slip: Discard asks
   box.querySelector("form").addEventListener("submit", (e) => { e.preventDefault(); create(); });
+  // Details' fields make the form one of several fields: a browser then submits nothing on Enter, so the title says it
+  $("newtitle").addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.isComposing) { e.preventDefault(); create(); } });
   onSend($("newtext"), () => create());
   $("newdiscard").addEventListener("click", async () => {
     const typed = $("newtitle").value.trim() || $("newtext").value.trim() || files.length;

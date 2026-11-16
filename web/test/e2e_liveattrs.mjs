@@ -63,6 +63,8 @@ export async function liveBoardAttrs(page, opts) {
   check("AC-199 × takes it out", await until(async () => !(await api()).lists.follow_ups.length));
   const ring = await j(`/api/tasks/${b}`, "PATCH", { link: { list: "blocked_by", task: a.id } });
   check("AC-199 a task never waits for one that waits for it", ring.code === 400 && /waits for this task already/.test(ring.error), JSON.stringify(ring));
+  // the window drawn anew after × (one line left) before the press: a press on a line being replaced is lost
+  await page.waitForFunction((p) => document.querySelectorAll(`${p} .attrrow`).length === 1, pane);
   await page.click(`${pane} .attrrow .linklike`);
   check("AC-199 a listed task's ID opens its window", await until(async () => (await page.textContent("#tasktitle")).startsWith(b)));
   await page.click("#taskclose");
