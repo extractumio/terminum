@@ -99,7 +99,7 @@ Open questions:
 | AC-101 | [NICE TO HAVE / later] | On a computer the session list shows a tip of the day, quiet, with Next, × until tomorrow and Turn off, and Settings turns tips on and off (on for a new browser). |
 | AC-89 | [SHOULD / P1] | The user attaches a session of their own tmux on this Mac or on a host by its name ("Attach tmux sessions", offered after Add host): it is listed and used like terminum's own sessions, is never started or closed by terminum, is sized as any pane while a page in sight shows it and gets tmux's own size back after, and shows while it does not run as a group that says so. |
 | AC-147 | [SHOULD / P1] | Everything terminum writes into a pane is a row of the input log in the tasks' store, for later analysis: what the user types, pastes or the Files panel types, from which page, browser and address, and what Dispatcher pastes and launches, with its run, tasks and agent; each row with its time, machine, session, window, program, folder and project; a secret typed at a password prompt is not kept. Beside it, each message sent (a shell's command at Enter, a coding agent's prompt) is kept with its sender, pane, folder and project, its words indexed.
-| AC-151 | [SHOULD / P1] | The Message history at `/history/`, Messages among the sections (AC-167): every message kept, the user's and Dispatcher's (marked), found by its words, the best matches first (BM25) or newest first by day, narrowed by days (a strip of a column a day), project, sender and agent or shell, all in the address; a message opens its session there, shows what was sent around it, copies. |
+| AC-151 | [SHOULD / P1] | The Message history at `/history/`, Messages among the sections (AC-167): every message kept, a reading column beside a rail of quick filters with counts; each row says when, who sent it (the user, Dispatcher, a manager) to which agent or a shell, in which session, project and tasks, right over its text; found by its words, the best matches first (BM25) or newest first by day, narrowed by kind, sender, days (a strip of a column a day), project, session and task, all in the address; a message opens its session there, its tasks, shows what was sent around it, copies. |
 | AC-152 | [SHOULD / P1] | The Dashboard at `/dashboard/` has four tabs, You, Tasks (AC-176), System (AC-171) and Costs (AC-172), over one period (a day, 2 weeks, a month, a quarter, a year) and one project or all. You shows how much the user works here, how engaged and how loaded, never counting Dispatcher: active time, active days, engagement (the share of active minutes they acted or read in, from the interaction log, AC-175), the longest stretch, switches between sessions, board actions, how long tasks waited for them, off hours, the phone's share, each against the span before; active time by project, context switching against the usual, the working day, the week's hours, the projects, the sessions at once, the board actions. |
 | AC-165 | [MUST / P0] | One question at a time: a dialog asked while another is open (the page's, the Files panel's) waits for that one's answer, so one Enter, Esc or press answers one question; a window that keeps something sends it once, Enter again and Esc waiting until terminumd answered. |
 | AC-167 | [MUST / P0] | One switcher of the sections (Sessions, Kanban, Dashboard, Messages) stands first in every page's top left corner, the shown one marked, any other one press away; words where they fit, icons where not; the session list's filter folds to a key beside it. |
@@ -856,7 +856,7 @@ Scenario: AC-147 edge — a secret is not kept
   And text kept goes through the sent history's redaction (secret-shaped words and known token shapes become "[redacted]")
 Scenario: AC-147 happy path — a message sent
   When the user sends a shell's command (Enter at its prompt) or a coding agent's prompt (its hooks' UserPromptSubmit, else what stood in its input box), or Dispatcher's gate sends a prompt
-  Then one row of the table `messages` holds the text as terminum-terminal.md AC-90 keeps it (redacted, left out as it says), its time, sender (`dispatcher` for a prompt its gate typed into that pane in the last 5 minutes, else `human`), how it came (`hook`, `page`), the agent, the pane, the line it was sent on, the pane's host and folder, the session list's title and project
+  Then one row of the table `messages` holds the text as terminum-terminal.md AC-90 keeps it (redacted, left out as it says), its time, sender (`dispatcher` for a prompt its gate typed into that pane in the last 5 minutes, `manager` for one a project's manager typed there with Enter in the last 30 minutes (send_to_session, terminum-agents.md AC-179; a busy agent says a prompt at its turn's end), each matched once, else `human`), how it came (`hook`, `page`), the agent, the pane, the line it was sent on, the pane's host and folder, the session list's title and project, and the IDs of the tasks on its session's row when it was kept (linked to the pane, not done, not archived: terminum-kanban.md AC-113)
   And its words go into a full-text index (SQLite FTS5, Unicode words, case and accents folded), kept by the table's triggers; rows go as the input log's do (180 days, 500,000 rows), the oldest by time
 Scenario: AC-147 failure — tmux refuses, the store cannot be used
   When tmux refuses what was sent (a pane gone, a server that does not answer)
@@ -871,27 +871,36 @@ Scenario: AC-147 failure — tmux refuses, the store cannot be used
 Scenario: AC-151 happy path — newest first
   Given messages kept (AC-147)
   When the user opens the Message history (`/history/`; Messages among the sections, AC-167)
-  Then it shows the newest first under a head a day ("Today · 41", "Mon 2 Nov · 352"), 50 at a time (the next 50 as its foot comes into view, and its Show more key), each row the session list's look: the project's bar and color, the agent's mark or a shell's, the session's title, the project, Dispatcher's tag on Dispatcher's, the time; three lines of what was sent in the terminal's font (a shell's after "$ "); the folder, the host when not this Mac, "session ended" when its pane is gone
-  And over them a strip of a column a day, from the first day kept (at most 180), its height the root of the day's count; hover, a tap or ← → say a day's count; a press shows that day (pressed again: every day), Clear dates every day
+  Then it shows the newest first under a head a day ("Today · 41", "Mon 2 Nov · 352"), 50 at a time (the next 50 as its foot comes into view, and its Show more key), in a reading column at most 900 px wide however wide the window, the quick filters' rail at its left
+  And a row's head is one line that starts with its time at the row's left: the time, who sent it (You, Dispatcher, Manager: the word in the hue of who wrote a task's comment, terminum-kanban.md AC-149, Dispatcher's and a manager's with an icon), an arrow, to what (the agent's mark and name, or a shell's tile and "Shell"), the session's title, then the project (its dot and name; none: nothing) and the tasks it was sent for (two IDs, more counted "+1"); the row's bar is its project's color
+  And right under the head stand three lines of what was sent in the terminal's font (a shell's after "$ "), then the folder, the host when not this Mac, "session ended" when its pane is gone
+  And over them a strip of a column a day, from the first day kept (at most 180), its height the root of the day's count; hover, a tap or ← → say a day's count; a press shows that day (pressed again: every day)
 
 Scenario: AC-151 happy path — words
   When the user types words in the search field (`/` focuses it; 200 ms after the last key, Enter at once)
   Then terminumd looks for every word as a whole word or a word's start, a "quoted phrase" as it is, leaves out a -word, and treats nothing typed as syntax; a word of one letter is not looked for
   And the best matches come first (BM25, Best match), or the newest (Newest, the order without words); each hit is marked in the text, three lines shown from the first hit's; the strip counts the matches a day; past 1,000 best matches the count says "showing the best 1,000"
+  And the best matches stand under no day's head: each row's time says its day too ("Tue 14:32", "3 Nov 14:32")
   And the field's ? says how words are matched: whole or by their start, never their other forms
 
-Scenario: AC-151 happy path — filters and the address
-  When the user chooses days (All kept, Today, 7 or 30 days, or from and to), a project (with its count; "No project"), the sender (You and Dispatcher, You, Dispatcher) or agents' prompts or shells' commands
-  Then the list, its count and the strip narrow at once, and the address holds every choice (`?q=&sort=&from=&to=&project=&sender=&kind=`): Back undoes one, a link shows the same list
-  And on a phone or a narrow window the search field takes the width and the filters stand behind one Filters key
+Scenario: AC-151 happy path — quick filters and the address
+  Given the rail's groups: Type (Prompts, under it each agent that has any, Commands), From (You, Dispatcher, Manager when it has any), When (Today, Last 7 days, Last 30 days, from and to), Project (each that has any, most first; "No project")
+  When the user presses a row
+  Then the list, its count and the strip narrow at once to that choice; the row stays pressed, and pressed again lets its filter go
+  And each row says how many messages it would show: the words and every other group's choice narrow a group's counts, its own choice does not
+  And a chip for each filter in force stands over the list, pressed to let it go, with Clear all when there are two
+  And the address holds every choice (`?q=&sort=&from=&to=&project=&sender=&kind=&pane=&task=`; `kind`: `agent`, `shell` or one agent's name): Back undoes one, a link shows the same list
+  And on a window under 1100 px or a touch screen the list takes the width and the rail stands behind one Filters key; on a phone a row's project and tasks stand on a line of their own under its head
 
 Scenario: AC-151 happy path — a message opened
   When the user presses a row (or Space; ↑ ↓ choose one, from the field too)
-  Then it shows all its text and its keys: Open in session, Context, Copy (`c`)
+  Then it shows all its text and its keys: Open in session, Open <ID> for each of its tasks (the task on the board), Context, Copy (`c`); and Show only: This session, and each of its tasks
   When the user presses Open in session (Enter)
   Then the session page opens at that session (`/sessions/?then=msg:<id>#/<key>/`, the hand-off dropped from the address once read) and brings the message into view as terminum-terminal.md AC-90's Jump to message does, else says why where the page is ("These lines are no longer in this session's history.")
   When the user presses Context
   Then the 3 messages sent before it in that pane and the 3 after it show under it, it marked
+  When the user presses This session, or a task under Show only
+  Then the list shows the messages sent in that pane, or for that task, a chip naming the session by its title or the task by its ID
 
 Scenario: AC-151 edge — nothing found, a session gone
   When no message matches
@@ -1330,7 +1339,7 @@ A forwarded request may do everything but what AC-10 refuses it, so: the page, `
 | `GET /api/hello?n=&id=` | the proof (no sign-in): `{"proof", "boot"}`, both made and used as AC-09 says | AC-09 |
 | `GET /custom.css`, `/api/settings` | the user's stylesheet and the page settings | AC-19 |
 | `GET /history/`, `/dashboard/` | the Message history and the Dashboard | AC-151, AC-152 |
-| `GET /api/messages?q=&sort=best\|new&from=&to=&project=&sender=&kind=&cursor=` | a page of 50 messages: `{items, next, capped}`, the first with `total` and `days`; `project` ids comma-separated, `-` for none | AC-151 |
+| `GET /api/messages?q=&sort=best\|new&from=&to=&project=&sender=&kind=&pane=&task=&cursor=` | a page of 50 messages: `{items, next, capped}`, an item with `tasks` when it has any, the first page with `total`, `days` and `facets` (`{sender, agent, project}`: the list's counts by each, its own filter left out; `""` a shell, no project); `project` ids comma-separated, `-` for none; `sender`: `human`, `dispatcher`, `manager`; `kind`: `agent`, `shell` or an agent's name | AC-151 |
 | `GET /api/messages/meta`, `/api/messages/{id}/context` | the filters' projects, first day, hosts, the theme; a message's neighbours in its pane | AC-151 |
 | `GET /api/dashboard?tab=you\|tasks\|system\|costs&period=day\|2w\|month\|quarter\|year&project=` | that tab's numbers of the period: `tiles`, `series` (one a bucket), `buckets` (`from`, `to`, an hour's `hour`), `unit` (hour, day, week, month), `before` (the span before's tiles, null when what is kept does not reach it), `kept_from`; `project` as above | AC-152, AC-171, AC-172, AC-176 |
 | `POST /api/interactions {now, rows: [{at, ended, kind, surface, target, n, amount, pane}]}` | what a page counted, by the minute: `{kept}`; 64 KiB and 300 rows at most | AC-175 |
@@ -1419,7 +1428,7 @@ The input log (AC-147): table `inputs` of `kanban.sqlite`, a row per write into 
 
 The interaction log (AC-175): table `user_interaction` of `kanban.sqlite`, a row per clock minute, kind, place, control and pane: `at` and `ended` (unix ms, the first and the last of them), `kind` (`click`, `key`, `scroll`, `drag`, `move`, `front`), `surface` (`sessions`, `kanban`, `history`, `dashboard`, `scheduled`, `files`, `view`, `quick`), `target` (the id of a control of the page pressed or dragged, else empty), `n` (how many), `amount` (pixels scrolled or dragged, seconds in front), `pane` and `project` (the pane shown and its project, `''` in none; NULL where the page shows no pane), `device` (`mac`, `web`, `phone`). The request's handler writes it in one transaction off the async workers; the input log's writer drops its old rows each hour.
 
-The message history (AC-147, AC-151; the Dashboard reads it, AC-152): table `messages` of `kanban.sqlite`: `id`, `at` (unix ms), `sender`, `via` (`hook`, `page`), `agent` (`claude`, `codex`; NULL a shell), `pane`, `line`, `host` (the pane's server, `local` for this Mac), `cwd`, `title`, `project`, `project_name`, `text`; `messages_fts` (FTS5, external content, `unicode61 remove_diacritics 2`) kept by triggers. Read with `sqlite3 ~/.terminum/state/kanban.sqlite "SELECT datetime(at/1000,'unixepoch','localtime'), sender, text FROM messages ORDER BY at DESC LIMIT 20"`.
+The message history (AC-147, AC-151; the Dashboard reads it, AC-152): table `messages` of `kanban.sqlite`: `id`, `at` (unix ms), `sender` (`human`, `dispatcher`, `manager`), `via` (`hook`, `page`), `agent` (`claude`, `codex`; NULL a shell), `pane`, `line`, `host` (the pane's server, `local` for this Mac), `cwd`, `title`, `project`, `project_name`, `tasks` (IDs, comma-separated; NULL none), `text`; `messages_fts` (FTS5, external content, `unicode61 remove_diacritics 2`) kept by triggers. Read with `sqlite3 ~/.terminum/state/kanban.sqlite "SELECT datetime(at/1000,'unixepoch','localtime'), sender, text FROM messages ORDER BY at DESC LIMIT 20"`.
 
 Sign-ins `state/signins.json` (AC-09): `{"items": [{"sha256": "…", "id": "…", "proof_key": "…", "expires": 1794592000, "by": "password"}]}`. Workspaces, bookmarks and the password live in `workspaces.json`, `web-bookmarks.json` and `web.json`.
 

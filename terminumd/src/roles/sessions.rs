@@ -94,7 +94,7 @@ pub async fn send(app: &Shared, boss: &Boss, args: &Value) -> Result<String, Str
         return Err("Not typed: the text has control or invisible characters.".into());
     }
     let enter = args["enter"] != "no";
-    let done = typed(app, &server, &pane, text, enter).await;
+    let done = typed(app, &server, &pane, &key, text, enter).await;
     let project = app.projects.lock().by_id(&boss.project).map(|p| (p.id.clone(), p.name.clone()));
     let words = if enter && done.is_ok() { format!("{text}<Enter>") } else { text.to_string() };
     crate::inputs::wrote(app, crate::inputs::Who::manager("manager.send", &boss.name), "prompt", &server, &pane, &words, done.as_ref().err().cloned(), project.as_ref().map(|(i, n)| (i.as_str(), n.as_str())));
@@ -103,7 +103,7 @@ pub async fn send(app: &Shared, boss: &Boss, args: &Value) -> Result<String, Str
 }
 
 /// `text` pasted into `pane`, then Enter: behind the pane's own queue of typing, never into a tmux mode.
-async fn typed(app: &Shared, server: &Arc<Server>, pane: &str, text: &str, enter: bool) -> Result<(), String> {
+async fn typed(app: &Shared, server: &Arc<Server>, pane: &str, key: &str, text: &str, enter: bool) -> Result<(), String> {
     let _held = server.typing(pane).lock_owned().await;
     let mode = server.run(format!("display -p -t {pane} '#{{pane_in_mode}}'")).await.map_err(|e| format!("tmux does not answer: {e}"))?;
     if mode.first().map(String::as_str) != Some("0") {
@@ -112,6 +112,8 @@ async fn typed(app: &Shared, server: &Arc<Server>, pane: &str, text: &str, enter
     let client = server.client(pane).ok_or("tmux does not answer")?;
     crate::page::typing::paste_buffer(app, &client, server, pane, text).await?;
     if enter {
+        // before Enter, as Dispatcher's gate: its agent's hook may say the prompt before tmux answers (AC-147)
+        app.sent.managers.remember(key, text);
         tokio::time::sleep(BEFORE_ENTER).await;
         client.run(format!("send-keys -t {pane} Enter")).await.map_err(|e| format!("tmux did not take Enter: {e}"))?;
     }

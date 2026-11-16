@@ -34,7 +34,10 @@ pub async fn keep(app: &Shared, host: &str, path: &str, key: &str, text: &str, i
         if let Some(p) = a.projects.lock().of(&m.pane) {
             (m.project, m.project_name) = (Some(p.id.clone()), Some(p.name.clone()));
         }
-        a.tasks.with(|tx| crate::messages::insert(tx, &m))
+        a.tasks.with(|tx| {
+            m.tasks = Some(crate::tasks::marks::of_session(tx, &m.pane)?.join(",")).filter(|t| !t.is_empty());
+            crate::messages::insert(tx, &m)
+        })
     }).await;
     match kept {
         Ok(_) => app.pages.tell(&json!({"t": "sentnew", "host": host, "path": path, "key": key}).to_string()),
