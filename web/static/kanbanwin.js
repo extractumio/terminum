@@ -7,7 +7,7 @@
 import { askConfirm, choose, oneAtATime } from "./dialogs.js";
 import { batchPart } from "./kanbanbatch.js";
 import { el, iconButton, read, write } from "./listparts.js";
-import { $, SEVERITIES, agentChip, agentsOf, api, button, download, fillSelect, guardQueuedRun, knownAgent, onFiles, onSend, madeChanged, renderInto, row, say, sessionOptions, statusTag, upload, withFileLink, withoutFileLinks, goneFiles, goneSaid, FILE_GONE } from "./kanbanutil.js";
+import { $, SEVERITIES, agentChip, agentsOf, api, button, download, fillSelect, guardQueuedRun, knownAgent, onFiles, onSend, madeChanged, renderInto, row, say, sessionOptions, statusTag, upload, withFileLink, withoutFileLinks, goneFiles, goneSaid, FILE_GONE, writePreview, writeTabs } from "./kanbanutil.js";
 import { taskBoxes } from "./taskboxes.js";
 import { activity, editor } from "./kanbanactivity.js";
 import { family } from "./kanbansubs.js";
@@ -189,7 +189,8 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
       editing = true;
       wrap.classList.remove("droparea", "dropping");
       const area = editor(t.text, "Text, Markdown");
-      area.rows = 10;
+      area.classList.add("taskmd");
+      area.rows = 16;
       area.placeholder = "Markdown. Drop or paste files here.";
       const dropped = [], kept = (file) => dropped.push(file.id);
       takesFiles(area, (list) => addFiles(list, area, kept));
@@ -202,8 +203,15 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
       // a secret pasted by mistake leaves the store for good by this (AC-109): seldom wanted, so only here
       const purge = t.text ? button("danger", "Purge text", () => confirmed(`Purge the text of ${t.id}? It leaves the store for good. Use this for a secret pasted by mistake.`, "Purge",
         () => api(`/api/tasks/${t.id}/purge`, { method: "POST" }).then(() => refresh(wrap)))) : null;
-      keys.remove();
-      wrap.replaceChildren(head, expandable(area), row(purge, button("fromright", "Cancel", () => refresh(wrap)), save));
+      // Write and Preview over it, as a new task's and a schedule's (AC-106)
+      const tabs = writeTabs(), shown = el("div", "markdown");
+      shown.hidden = true;
+      shown.tabIndex = 0;
+      writePreview(tabs, area, shown);
+      keys.replaceWith(tabs);
+      const box = expandable(area);
+      box.insertBefore(shown, box.lastElementChild);
+      wrap.replaceChildren(head, box, row(purge, button("fromright", "Cancel", () => refresh(wrap)), save));
       area.focus();
       addFiles(files, area, kept);
     };

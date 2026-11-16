@@ -109,15 +109,15 @@ export async function webTaskWin(browser, name) {
     // a phone's window (e2e_phonewin.mjs): Save and Run in its bar, Archive in the row under the task
     check("AC-173 its keys stand at the window's foot (a phone: its ways on in its bar), in sight while the task scrolls above them",
       (phone ? m.acts.keys === "Archive" && m.acts.bar === "Save,Run" : m.acts.keys === "Archive,Save,Run" && !m.acts.bar) && !m.acts.inBody && m.acts.shown, JSON.stringify(m.acts));
-    // the text being edited: its head holds the word alone, so Text stays 12 px under the fields and 4 px over its field
+    // the text being edited: its head (the word, Write and Preview) 12 px under the fields, the word 4 px over its field
     await f.page.click('#taskbody .tasktext button[aria-label="Edit"]');
     const edit = await f.page.evaluate(() => { const top = (s) => document.querySelector(`#taskbody ${s}`).getBoundingClientRect();
-      const word = top(".tasktext .edithead span"), grid = top(".taskown .fieldgrid"), area = top(".tasktext textarea");
+      const head = top(".tasktext .edithead"), word = top(".tasktext .edithead span"), grid = top(".taskown .fieldgrid"), area = top(".tasktext textarea");
       const keys = [...document.querySelectorAll("#taskbody .tasktext .actions button")], purge = keys[0], save = keys.at(-1);
-      return { over: Math.round(word.top - grid.bottom), under: Math.round(area.top - word.bottom), keys: document.querySelectorAll("#taskbody .tasktext .seckeys").length,
+      return { over: Math.round(head.top - grid.bottom), under: Math.round(area.top - word.bottom), keys: document.querySelectorAll("#taskbody .tasktext .seckeys").length,
         acts: keys.map((b) => b.textContent).join(), left: Math.round(purge.getBoundingClientRect().left - area.left), right: Math.round(area.right - save.getBoundingClientRect().right),
         red: getComputedStyle(purge).color !== getComputedStyle(keys[1]).color }; });
-    check("AC-149 a text being edited keeps Text 12 px under the fields and 4 px over its field, its keys gone", edit.over === 12 && edit.under === 4 && edit.keys === 0, JSON.stringify(edit));
+    check("AC-149 a text being edited keeps its head 12 px under the fields, Text 4 px over its field, its keys gone", edit.over === 12 && edit.under === 4 && edit.keys === 0, JSON.stringify(edit));
     check("AC-109 Purge text stands only by a text being edited: at the left in the danger color, Cancel and Save at the right",
       edit.acts === "Purge text,Cancel,Save" && edit.left === 0 && edit.right === 0 && edit.red, JSON.stringify(edit));
     // its boxes to read or type in, each with its key to the whole window (terminum.md AC-184)

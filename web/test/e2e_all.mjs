@@ -80,12 +80,13 @@ import { webAskFold } from "./e2e_askfold.mjs";
 import { webTouchKeys } from "./e2e_touchkeys.mjs";
 import { webTabHead } from "./e2e_tabhead.mjs";
 import { webDraftFiles } from "./e2e_draftfiles.mjs";
+import { webTaskText } from "./e2e_tasktext.mjs";
 import { webBoardPhone } from "./e2e_boardphone.mjs";
 import { webBoardPanel } from "./e2e_boardpanel.mjs";
 import { webPhoneWin } from "./e2e_phonewin.mjs";
 
 const CHECKS = { webBoardPhone, webBoardPanel, webPhoneWin, webRequestOwners, webRequests, webTerm, webApp, webMove, webTrace, webCtxTrace, webClip, webWidgets, webWidgetFolds, webWidgetTables, webWidgetPng, webWidgetSteady, webTableForms, webDialogCenter, webMarks, webProgCopy, webTouch, webEdit, webBoxNav,
-  webSignin, webTmux, webScreen, webLook, webMotion, webCodex, webSplit, webSent, webIdeKeys, webScreenFolds, webProjects, webListDrag, webPhoneRow, webRows, webResize, webOpenEnd, webSwitch, webDock, webSheets, webFold, webHeader, webNotes, webFoot, webMarksScope, webListOrder, webPlans, webLastLines, webPlansFind, webPathFold, webMarkNav, webPaneWin, webReview, webTips, webHold, webListPlace, webIsolation, webSections, webDialogSize, webTaskWin, webTaskRun, webTaskClose, webExpand, webKanbanSort, webSwitches, webNewTask, webQueueOrder, webIntegrationSlots, webTaskLines, webAskFold, webTouchKeys, webTabHead, webDraftFiles };
+  webSignin, webTmux, webScreen, webLook, webMotion, webCodex, webSplit, webSent, webIdeKeys, webScreenFolds, webProjects, webListDrag, webPhoneRow, webRows, webResize, webOpenEnd, webSwitch, webDock, webSheets, webFold, webHeader, webNotes, webFoot, webMarksScope, webListOrder, webPlans, webLastLines, webPlansFind, webPathFold, webMarkNav, webPaneWin, webReview, webTips, webHold, webListPlace, webIsolation, webSections, webDialogSize, webTaskWin, webTaskRun, webTaskClose, webExpand, webKanbanSort, webSwitches, webNewTask, webQueueOrder, webIntegrationSlots, webTaskLines, webAskFold, webTouchKeys, webTabHead, webDraftFiles, webTaskText };
 const BROWSERS = ["chromium", "webkit"], KNOWN = [...BROWSERS, "firefox"];
 // Checks a user saw fail in Firefox and that need no touch screen (Firefox has no isMobile).
 const FIREFOX_TOO = ["webProgCopy"];
