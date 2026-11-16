@@ -35,6 +35,20 @@ class Stages(test_land.Repos, unittest.TestCase):
             L.prepare(tree, **QUIET)
         self.assertIn("uncommitted", str(stop.exception))
 
+    def test_prepare_with_a_ref_held_by_another_fetch_fails_red_with_gits_words(self):  # AC-198
+        tree = self.ready()
+        lock = Path(git("rev-parse", "--path-format=absolute", "--git-common-dir", cwd=tree)) / "refs/remotes/origin/main.lock"
+        lock.write_text("")   # another tree's fetch holds it through the retry
+        before = git("rev-parse", "HEAD", cwd=tree)
+        with self.assertRaises(stages.Stop) as stop:
+            L.prepare(tree, **QUIET)
+        self.assertEqual(stop.exception.code, 1, "red, never a conflict")
+        self.assertIn("git fetch origin:", str(stop.exception))
+        self.assertIn("lock", str(stop.exception))
+        self.assertEqual(git("rev-parse", "HEAD", cwd=tree), before, "nothing merged")
+        lock.unlink()
+        self.assertTrue(L.prepare(tree, **QUIET), "the lock gone, Prepare merges")
+
     def test_prepare_leaves_a_conflict_in_the_tree_exit_2(self):  # AC-198
         tree = self.tree("one")
         self.commit(tree, "a.txt", "ours\n")
