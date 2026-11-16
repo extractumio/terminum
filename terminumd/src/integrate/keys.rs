@@ -102,17 +102,21 @@ pub fn close(tx: &Transaction, id: i64, why: &str, at: i64) -> Result<String, St
     Ok(format!("Batch {} is closed.", b.number))
 }
 
+/// The keys a human has on batch `b` in its state, as its integration task's window and its group's cards show them (AC-193).
+pub fn keys_of(b: &Batch) -> &'static [&'static str] {
+    match b.state.as_str() {
+        "red" => &["check-again", "return", "return-all"],
+        "not published" => &["publish-again", "return", "return-all"],
+        "after failed" => &["close"],
+        _ => &[],
+    }
+}
+
 /// A batch as its integration task's window shows it.
 fn of_task(tx: &Transaction, task: &str) -> Result<Value, String> {
     let b = bs::by_task(tx, &ops::key_of(tx, task)?)?.ok_or_else(|| format!("{task} is no batch's task."))?;
     let tasks: Vec<Value> = b.tasks.iter().map(|k| { let t = ops::get(tx, &bs::slug(tx, k)?)?; Ok(json!({"id": t.id, "status": t.status})) }).collect::<Result<_, String>>()?;
-    let keys: Vec<&str> = match b.state.as_str() {
-        "red" => vec!["check-again", "return", "return-all"],
-        "not published" => vec!["publish-again", "return", "return-all"],
-        "after failed" => vec!["close"],
-        _ => vec![],
-    };
-    Ok(json!({"batch": b.id, "number": b.number, "state": b.state, "why": b.why, "round": b.round, "red_rounds": b.red_rounds, "tasks": tasks, "keys": keys, "pane": b.pane}))
+    Ok(json!({"batch": b.id, "number": b.number, "state": b.state, "why": b.why, "round": b.round, "red_rounds": b.red_rounds, "tasks": tasks, "keys": keys_of(&b), "pane": b.pane}))
 }
 
 pub fn routes() -> Router<Shared> {
