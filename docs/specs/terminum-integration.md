@@ -778,6 +778,8 @@ Every page hears `{"t": "integration"}` when a batch or the queue changes.
 
 A task's verify tree is `~/.terminum/integration/<project>/verify-<number>`, detached at the queued commit, made as the candidate's is and removed when its Verify ends or the task leaves the queue; Prepare's merge, if any, stays there, so the queued commit is the agent's own. Prepare and Verify get `TM_INTEGRATION_TASK` (its ID), `TM_INTEGRATION_SHA` (the queued commit), `TM_INTEGRATION_TARGET`, `TM_INTEGRATION_TREE` (the verify tree) and `TM_INTEGRATION_PROJECT_DIR`; Cleanup gets Check's. Prepare's status 2 is a conflict, any other failure of Prepare or Verify a red check, whatever tool runs the line (make turns each failure into 2, so the window says which stage failed). By hand, `land-publish` and `land-after` are refused while the project's integration is on: terminumd publishes and runs After.
 
+Retry diagnostics (AC-197) are read from the stage tree's `.checks/retried` before it is removed: Verify keeps them in the queued task's history and as a notice to its agent; Check keeps them in the batch integration task's history. The file holds the retry names and first-run tails as check output, cleaned and redacted before storage, at most 64 KiB read with truncation said; only a regular file is read, without following symlinks. Each stage starts with this file cleared, so an ignored `.checks` in a reused tree carries no earlier run's notes. Retry eligibility and the stage's exit status remain the project's command's rules.
+
 **This repository's own settings.** terminum checks on this machine (the first way):
 
 | Field | Value |
