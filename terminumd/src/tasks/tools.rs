@@ -150,10 +150,10 @@ pub(crate) fn author(tx: &Transaction, who: &Who) -> Result<String, String> {
 }
 
 /// An agent's title: cleaned, cut to the limit after its type's word (AC-145).
-pub(super) fn title_of(raw: &str) -> Result<String, String> {
+pub(super) fn title_of(raw: &str) -> String {
     let clean = rules::clean(raw);
     let bare = super::attrs::split_title(&clean).1;
-    Ok(format!("{}{}", &clean[..clean.len() - bare.len()], bare.chars().take(super::ops::TITLE_MOST).collect::<String>()))
+    format!("{}{}", &clean[..clean.len() - bare.len()], bare.chars().take(super::ops::TITLE_MOST).collect::<String>())
 }
 
 /// What refuses an agent's bug below P2 (AC-145, AC-154).
@@ -165,19 +165,18 @@ pub(super) fn below_floor(kind: Option<&str>, severity: &str) -> bool {
 }
 
 /// The type an agent's new task takes, by `type` or its title's word; what is wrong goes to `faults` (AC-199).
-fn type_of(title: Option<&str>, given: Option<&str>, faults: &mut Vec<String>) -> Option<&'static str> {
-    match title.map(|t| super::attrs::titled(t, given.filter(|g| !g.is_empty()))) {
-        Some(Ok((_, Some(Some(kind))))) => Some(kind),
-        Some(Err(e)) => { faults.push(e); None }
-        Some(Ok(_)) => { faults.push(NEEDS_TYPE.to_string()); None }
-        None => None,
+fn type_of(title: &str, given: Option<&str>, faults: &mut Vec<String>) -> Option<&'static str> {
+    match super::attrs::titled(title, given.filter(|g| !g.is_empty())) {
+        Ok((_, Some(Some(kind)))) => Some(kind),
+        Ok(_) => { faults.push(NEEDS_TYPE.to_string()); None }
+        Err(e) => { faults.push(e); None }
     }
 }
 
 /// An agent's title and text, each checked when given; every fault of both goes to `faults`, so
 /// one refusal says them all (AC-145, AC-155).
 pub(super) fn words_of(tx: &Transaction, project: &str, title: Option<&str>, text: Option<&str>, faults: &mut Vec<String>) -> (Option<String>, Option<String>) {
-    let title = title.and_then(|t| title_of(t).map_err(|e| faults.push(e)).ok());
+    let title = title.map(title_of);
     let text = text.and_then(|t| text_of(tx, project, t).map_err(|e| faults.push(e)).ok());
     (title, text)
 }
@@ -221,13 +220,15 @@ pub fn run(store: &Store, state_dir: &Path, who: &Who, tool: &str, args: &Value)
                 if args["severity"].as_str().is_none_or(str::is_empty) {
                     faults.push("Give it a severity: P0, P1, P2 or P3.".to_string());
                 }
-                let kind = type_of(Some(&title_of(arg(args, "title")?)?), args["type"].as_str(), &mut faults);
-                let words = words_of(tx, &project, Some(arg(args, "title")?), Some(args["text"].as_str().unwrap_or_default()), &mut faults);
+                // the title's faults before the text's: one refusal reads in the order of the call
+                let title = title_of(arg(args, "title")?);
+                let kind = type_of(&title, args["type"].as_str(), &mut faults);
+                let text = text_of(tx, &project, args["text"].as_str().unwrap_or_default()).map_err(|e| faults.push(e)).ok();
                 if below_floor(kind, args["severity"].as_str().unwrap_or_default()) {
                     faults.push(BUG_FLOOR.to_string());
                 }
-                let attrs = super::attrs::Attrs { external_link: args["external_link"].as_str().map(str::to_string), target: args["target"].as_str().map(str::to_string), ..Default::default() };
-                let ((Some(title), Some(text)), true) = (words, faults.is_empty()) else { return Err(faults.join("\n")) };
+                let attrs = super::attrs::Attrs::of_json(args)?;
+                let (Some(text), true) = (text, faults.is_empty()) else { return Err(faults.join("\n")) };
                 if let Some(same) = super::query::repeat_of(tx, &project, &super::attrs::shown(kind, super::attrs::split_title(&title).1))? {
                     return Err(format!("Not kept: {same} already says this. Read it with execute_tool(\"get_task\", {{id}}), and comment if you have more."));
                 }
@@ -395,8 +396,11 @@ fn list_tasks(store: &Store, who: &Who, args: &Value) -> Result<String, String> 
 
 fn get_task(store: &Store, who: &Who, args: &Value) -> Result<String, String> {
     let id = arg(args, "id")?;
-    let (t, text, history, attached) = store.with(|tx| Ok((visible(tx, who, id)?, ops::text_of(tx, id)?, ops::history(tx, id)?, files::of_task(tx, id)?)))?;
-    let lists = store.with(|tx| super::attrs::lists_of(tx, &t.key))?;
+    let (t, text, history, attached, lists) = store.with(|tx| {
+        let t = visible(tx, who, id)?;
+        let lists = super::attrs::lists_of(tx, &t.key)?;
+        Ok((t, ops::text_of(tx, id)?, ops::history(tx, id)?, files::of_task(tx, id)?, lists))
+    })?;
     let cut = pages(history.as_array().map_or(&[], Vec::as_slice));
     let pages = cut.len();
     let page = match args["page"].as_str() {

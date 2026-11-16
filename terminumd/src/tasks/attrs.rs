@@ -8,7 +8,7 @@ use std::collections::HashSet;
 use rusqlite::Transaction;
 use serde_json::{json, Value};
 
-use super::ops::{get, log, rows, sql, user_name};
+use super::ops::{log, rows, sql, user_name};
 
 /// Each type and the word its title is shown with.
 pub const TYPES: [(&str, &str); 4] = [("Feature", "Feat"), ("Bug", "Bug"), ("Debt", "Debt"), ("Story", "Story")];
@@ -39,10 +39,15 @@ pub fn split_title(title: &str) -> (Option<&'static str>, &str) {
     (None, title)
 }
 
+/// The word a type's title is shown with.
+fn word(kind: &str) -> Option<&'static str> {
+    TYPES.iter().find(|(name, _)| *name == kind).map(|(_, word)| *word)
+}
+
 /// The title as shown: its type's word, then the title.
 pub fn shown(kind: Option<&str>, title: &str) -> String {
-    match TYPES.iter().find(|(name, _)| Some(*name) == kind) {
-        Some((_, word)) => format!("{word}: {title}"),
+    match kind.and_then(word) {
+        Some(w) => format!("{w}: {title}"),
         None => title.to_string(),
     }
 }
@@ -53,14 +58,9 @@ pub fn titled(title: &str, given: Option<&str>) -> Result<(String, Option<Option
     let (word, bare) = split_title(title);
     let given = given.map(check_type).transpose()?;
     match (word, given) {
-        (Some(w), Some(g)) if Some(w) != g => Err(format!("The title says {}: and Type says {}: give one.", shown_word(w), g.unwrap_or("none"))),
-        _ if bare.is_empty() => Err(format!("Title: 1–{} characters", super::ops::TITLE_MOST)),
+        (Some(w), Some(g)) if Some(w) != g => Err(format!("The title says {}: and Type says {}: give one.", self::word(w).unwrap_or(w), g.unwrap_or("none"))),
         _ => Ok((bare.to_string(), given.or(word.map(Some)))),
     }
-}
-
-fn shown_word(kind: &str) -> &'static str {
-    TYPES.iter().find(|(name, _)| *name == kind).map_or("", |(_, word)| word)
 }
 
 /// A link to an outside tracker: an http or https address; none for an empty one.
@@ -120,17 +120,18 @@ impl Attrs {
 
 /// Sets the type (none: off), with its line of history.
 pub fn set_type(tx: &Transaction, author: &str, key: &str, kind: Option<&str>, at: i64) -> Result<(), String> {
-    let was: Option<String> = tx.query_row("SELECT type FROM tasks WHERE id = ?1", [key], |r| r.get(0)).map_err(sql)?;
-    if was.as_deref() == kind {
+    if !changed(tx, key, "type", kind)? {
         return Ok(());
     }
-    tx.execute("UPDATE tasks SET type = ?1 WHERE id = ?2", (kind, key)).map_err(sql)?;
     let who = user_name(tx, author)?;
     log(tx, key, author, "edit", &kind.map_or(format!("{who} took its type off"), |k| format!("{who} set its type to {k}")), None, at).map(|_| ())
 }
 
 /// Sets what `attrs` gives on task `key`, each change a line of its history.
 pub fn apply(tx: &Transaction, author: &str, key: &str, attrs: &Attrs, at: i64) -> Result<(), String> {
+    if attrs.is_empty() {
+        return Ok(());
+    }
     let who = user_name(tx, author)?;
     if let Some(given) = &attrs.external_link {
         let link = check_link(given)?;
@@ -160,7 +161,8 @@ fn changed(tx: &Transaction, key: &str, column: &str, value: Option<&str>) -> Re
     Ok(true)
 }
 
-fn said(list: &str) -> &'static str {
+/// A list's name as a human reads it.
+pub fn said(list: &str) -> &'static str {
     LISTS.iter().find(|(l, _)| *l == list).map_or("", |(_, s)| s)
 }
 
@@ -180,7 +182,7 @@ pub fn set_list(tx: &Transaction, author: &str, key: &str, list: &str, tasks: &[
     let who = user_name(tx, author)?;
     let mut seen = HashSet::new();
     for (place, (id, reason)) in tasks.iter().enumerate() {
-        let other = get(tx, id.trim())?;
+        let other = found(tx, id.trim())?;
         if other.key == key {
             return Err(format!("{name}: a task cannot name itself"));
         }
@@ -213,6 +215,18 @@ pub fn set_list(tx: &Transaction, author: &str, key: &str, list: &str, tasks: &[
     Ok(())
 }
 
+/// A task named in a list: its key, ID and project.
+struct Named {
+    key: String,
+    id: String,
+    project: String,
+}
+
+fn found(tx: &Transaction, id: &str) -> Result<Named, String> {
+    let number = super::ops::number_of(tx, id)?;
+    tx.query_row("SELECT id, slug, project FROM tasks WHERE number = ?1", [number], |r| Ok(Named { key: r.get(0)?, id: r.get(1)?, project: r.get(2)? })).map_err(sql)
+}
+
 /// Task `key` moved to another project: its lists keep only that project's tasks, and other projects' lists let it
 /// go (a list holds its project's tasks only); each said in the history of the task whose list it left.
 pub fn moved(tx: &Transaction, author: &str, key: &str, at: i64) -> Result<(), String> {
@@ -234,11 +248,13 @@ fn blocks(tx: &Transaction, waiting: &str, key: &str) -> Result<bool, String> {
 
 /// The tasks of each list of `key`: their IDs, shown titles, statuses and reasons, in order.
 pub fn lists_of(tx: &Transaction, key: &str) -> Result<Value, String> {
-    let mut out = serde_json::Map::new();
-    for (list, _) in LISTS {
-        let found = rows(tx, "SELECT x.slug, x.shown, x.status, l.reason FROM task_links l JOIN tasks x ON x.id = l.other WHERE l.task = ?1 AND l.kind = ?2 ORDER BY l.place", (key, list),
-                         |r| Ok(json!({"id": r.get::<_, String>(0)?, "title": r.get::<_, String>(1)?, "status": r.get::<_, String>(2)?, "reason": r.get::<_, String>(3)?})))?;
-        out.insert(list.to_string(), Value::Array(found));
+    let mut out: serde_json::Map<String, Value> = LISTS.iter().map(|(list, _)| (list.to_string(), json!([]))).collect();
+    let all = rows(tx, "SELECT l.kind, x.slug, x.shown, x.status, l.reason FROM task_links l JOIN tasks x ON x.id = l.other WHERE l.task = ?1 ORDER BY l.kind, l.place", [key],
+                   |r| Ok((r.get::<_, String>(0)?, json!({"id": r.get::<_, String>(1)?, "title": r.get::<_, String>(2)?, "status": r.get::<_, String>(3)?, "reason": r.get::<_, String>(4)?}))))?;
+    for (list, item) in all {
+        if let Some(Value::Array(items)) = out.get_mut(&list) {
+            items.push(item);
+        }
     }
     Ok(Value::Object(out))
 }
@@ -250,7 +266,7 @@ pub fn list_of(tx: &Transaction, key: &str, list: &str) -> Result<Vec<(String, S
 
 /// Task `key`'s list with `other` in it, its reason given or kept; or taken out with `remove`.
 pub fn link(tx: &Transaction, author: &str, key: &str, list: &str, other: &str, reason: Option<&str>, remove: bool, at: i64) -> Result<(), String> {
-    let other = get(tx, other)?.id;
+    let other = found(tx, other)?.id;
     let mut tasks = list_of(tx, key, list)?;
     let at_place = tasks.iter().position(|(id, _)| *id == other);
     match (at_place, remove) {

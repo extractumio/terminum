@@ -131,6 +131,7 @@ pub(super) fn listed(tools: &[Tool]) -> Vec<Value> {
                 "severity" => json!({"type": "string", "enum": SEVERITIES}),
                 "archive" | "remove" => json!({"type": "string", "enum": ARCHIVE}),
                 "list" => json!({"type": "string", "enum": LISTS}),
+                "type" => json!({"type": "string", "enum": std::iter::once("").chain(TYPES.map(|(name, _)| name)).collect::<Vec<_>>()}),
                 f => match super::mcp_manager::values(f) {
                     Some(values) => json!({"type": "string", "enum": values}),
                     None => json!({"type": "string"}),

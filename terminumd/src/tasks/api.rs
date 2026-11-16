@@ -327,7 +327,7 @@ async fn change(State(app): State<Shared>, Path(id): Path<String>, Json(body): J
     let attrs = super::attrs::Attrs { external_link: text(&body, "external_link"), target: text(&body, "target"), ..Default::default() };
     let edit = Edit { title: text(&body, "title"), text: text(&body, "text"), severity: text(&body, "severity"), owner: text(&body, "owner"), kind: text(&body, "type"), attrs };
     // a task into or out of one of its lists, one at a time: a window's list never overwrites another's (AC-199)
-    let linked = ["link", "unlink"].into_iter().find_map(|k| body.get(k).map(|v| (v.clone(), k == "unlink")));
+    let linked = [("link", false), ("unlink", true)].into_iter().find_map(|(k, remove)| body.get(k).map(|v| (text(v, "list").unwrap_or_default(), text(v, "task").unwrap_or_default(), text(v, "reason"), remove)));
     let dropped = crate::config::strings(&body["files"]);
     let before = body.get("before").filter(|b| !b.is_null());
     let reorder = before.is_some() || body.get("order_end").is_some();
@@ -371,8 +371,8 @@ async fn change(State(app): State<Shared>, Path(id): Path<String>, Json(body): J
             super::family::set_parent(tx, HUMAN, &id, up.as_str(), at)?;
         }
         ops::edit(tx, HUMAN, &id, edit, at)?;
-        if let Some((l, remove)) = &linked {
-            super::attrs::link(tx, HUMAN, &was.key, l["list"].as_str().unwrap_or_default(), l["task"].as_str().unwrap_or_default(), l["reason"].as_str(), *remove, at)?;
+        if let Some((list, task, reason, remove)) = &linked {
+            super::attrs::link(tx, HUMAN, &was.key, list, task, reason.as_deref(), *remove, at)?;
         }
         files::attach(tx, &dropped, &id, None)?;   // what was dropped in its text as it was edited (AC-109)
         if let Some(minutes) = budget {

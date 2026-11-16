@@ -6,26 +6,31 @@
 import { el, iconButton } from "./listparts.js";
 import { api, button, statusTag } from "./kanbanutil.js";
 
-export const TYPES = ["Feature", "Bug", "Debt", "Story"];
+const TYPES = ["Feature", "Bug", "Debt", "Story"];
 export const LISTS = [["blocked_by", "Blocked by", "Why it waits for it"], ["follow_ups", "Follow-ups", "Why it follows"]];
 /** Found tasks a search shows at most. */
 const FOUND_MOST = 12;
 
 /** What the summary says of a folded pane: what is set. */
-export function summaryOf(v) {
+function summaryOf(v) {
   const said = [v.type, v.target && `target ${v.target}`, v.external_link && "link",
     ...LISTS.map(([list, name]) => (v[list]?.length ? `${name.toLowerCase()} ${v[list].length}` : ""))].filter(Boolean);
   return said.length ? `Details: ${said.join(", ")}` : "Details";
 }
 
 /** A web address a press may open in a new tab; anything else opens nothing. */
-export const webLink = (s) => /^https?:\/\/\S+$/i.test(s ?? "");
+const webLink = (s) => /^https?:\/\/\S+$/i.test(s ?? "");
 
 /** The tasks of `project` whose ID, title or text has `text`, without `left` (IDs), newest first. */
-export async function findTasks(project, text, left) {
+async function findTasks(project, text, left) {
   const q = new URLSearchParams({ project, q: text, subtasks: "1", sort: "recent", limit: String(FOUND_MOST + left.length) });
   const { tasks } = await api(`/api/tasks?${q}`);
   return tasks.filter((t) => !left.includes(t.id)).slice(0, FOUND_MOST);
+}
+
+/** `node`'s change goes to terminumd by `send(value)`; refused, it shows `was` again (and `after()` runs). */
+function saves(node, send, was, after = () => {}) {
+  node.addEventListener("change", async () => { if (!await send(node.value.trim())) { node.value = was; after(); } });
 }
 
 /** The pane. `v`: {type, external_link, target, blocked_by, follow_ups: [{id, title, status, reason}]}; `self`: the
@@ -44,7 +49,7 @@ export function detailsPane({ v, self = null, project, open = false, onToggle = 
   const type = el("select", "field");
   type.append(new Option("None", ""), ...TYPES.map((t) => new Option(t, t)));
   type.value = v.type ?? "";
-  type.addEventListener("change", async () => { if (!await set("type", type.value)) type.value = v.type ?? ""; });
+  saves(type, (value) => set("type", value), v.type ?? "");
   typeRow.append(type);
 
   const linkRow = el("label", "fieldrow", "External link");
@@ -58,14 +63,14 @@ export function detailsPane({ v, self = null, project, open = false, onToggle = 
   };
   showGo();
   address.addEventListener("input", showGo);
-  address.addEventListener("change", async () => { if (!await set("external_link", address.value.trim())) { address.value = v.external_link ?? ""; showGo(); } });
+  saves(address, (value) => set("external_link", value), v.external_link ?? "", showGo);
   linkLine.append(address, go);
   linkRow.append(linkLine);
 
   const targetRow = el("label", "fieldrow", "Target");
   const target = el("input", "field");
   Object.assign(target, { type: "text", value: v.target ?? "", maxLength: 64, placeholder: "A release, such as v1.4", autocomplete: "off" });
-  target.addEventListener("change", async () => { if (!await set("target", target.value.trim())) target.value = v.target ?? ""; });
+  saves(target, (value) => set("target", value), v.target ?? "");
   targetRow.append(target);
   grid.append(typeRow, linkRow, targetRow);
   pane.append(grid);
@@ -89,7 +94,7 @@ function listPart({ list, name, why, items, self, project, link, unlink, openTas
     const reason = el("input", "field attrreason");
     Object.assign(reason, { type: "text", value: it.reason ?? "", placeholder: why, autocomplete: "off" });
     reason.setAttribute("aria-label", `${why}: ${it.id}`);
-    reason.addEventListener("change", async () => { if (!await link(list, it.id, reason.value.trim())) reason.value = it.reason ?? ""; });
+    saves(reason, (value) => link(list, it.id, value), it.reason ?? "");
     const gone = iconButton("icon", "x", `Take ${it.id} out of ${name}`, `Take ${it.id} out of ${name}`, () => unlink(list, it.id));
     li.append(id, title, ...(it.status ? [statusTag(it)] : []), reason, gone);
     rows.append(li);
@@ -117,6 +122,7 @@ function picker({ name, project, left, done, pick }) {
   let shown = [], active = -1, asked = 0, timer = 0;
   const end = () => { clearTimeout(timer); box.remove(); done(); };
   const mark = (i) => {
+    if (i === active) return;
     active = i;
     [...found.children].forEach((c, n) => { c.classList.toggle("active", n === i); c.setAttribute("aria-selected", String(n === i)); });
     found.children[i]?.scrollIntoView({ block: "nearest" });
@@ -140,6 +146,7 @@ function picker({ name, project, left, done, pick }) {
         return li;
       }));
       note.textContent = tasks.length ? "" : "No task of this project has that.";
+      active = -2;                                // the rows are new: mark the first anew
       mark(tasks.length ? 0 : -1);
     } catch (e) { if (mine === asked) note.textContent = e.message; }
   }

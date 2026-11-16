@@ -3,7 +3,7 @@
 // text, in TODO unless said. A draft survives closing and a reload on this browser.
 import { askConfirm, oneAtATime } from "./dialogs.js";
 import { el, iconButton, read, write } from "./listparts.js";
-import { detailsPane } from "./taskattrs.js";
+import { detailsPane, LISTS } from "./taskattrs.js";
 import { $, AT_LIMIT, agentsOf, api, fileMarkdown, FILE_GONE, fillAgents, fillSelect, goneFiles, goneSaid, onFiles, onSend, onlyProject, projectOptions, sessionOptions, showError, upload, withFileLink, withoutFileLinks, writePreview } from "./kanbanutil.js";
 
 const DRAFT = "tm.taskdraft";
@@ -104,7 +104,7 @@ export function taskForm({ getMeta, getFilter, onMade, onRun, slots }) {
       set: async (field, value) => change({ ...attrs, [field]: value }),
       link: async (list, id, reason, t) => {
         const was = (attrs[list] ?? []).find((x) => x.id === id);
-        return change({ ...attrs, [list]: was ? (attrs[list]).map((x) => (x.id === id ? { ...x, reason } : x)) : [...without(list, id), { id, reason, title: t?.title, status: t?.status }] });
+        return change({ ...attrs, [list]: was ? attrs[list].map((x) => (x.id === id ? { ...x, reason } : x)) : [...(attrs[list] ?? []), { id, reason, title: t?.title, status: t?.status }] });
       },
       unlink: async (list, id) => change({ ...attrs, [list]: without(list, id) }),
     }));
@@ -154,7 +154,7 @@ export function taskForm({ getMeta, getFilter, onMade, onRun, slots }) {
   const send = oneAtATime(box, async (run) => {
     const d = draft(), agent = $("newagent").value;
     try {
-      const lists = Object.fromEntries(["blocked_by", "follow_ups"].map((l) => [l, (d.attrs[l] ?? []).map(({ id, reason }) => ({ id, reason }))]));
+      const lists = Object.fromEntries(LISTS.map(([l]) => [l, (d.attrs[l] ?? []).map(({ id, reason }) => ({ id, reason }))]));
       const made = await api("/api/tasks", { method: "POST", body: { title: d.title, text: d.text, project: d.project, severity: d.severity, owner: d.owner || undefined, agent: agent || undefined, session: d.session || undefined, parent: parent ?? undefined, files: d.files.map((f) => f.id),
         type: d.attrs.type || undefined, external_link: d.attrs.external_link || undefined, target: d.attrs.target || undefined, ...lists } });
       end();

@@ -67,7 +67,7 @@ pub(super) fn update(tx: &Transaction, who: &Who, args: &Value, at: i64) -> Resu
         return Err(faults.join("\n"));
     }
     let me = author(tx, who)?;
-    let more = attrs::Attrs { external_link: link.map(str::to_string), target: target.map(str::to_string), ..Default::default() };
+    let more = attrs::Attrs::of_json(args)?;
     ops::edit(tx, &me, &t.id, Edit { title, text, severity: severity.map(str::to_string), owner: None, kind: kind.map(str::to_string), attrs: more }, at)?;
     let mut cards = vec![t.id.clone()];
     if let Some(p) = parent {
@@ -90,8 +90,7 @@ pub(super) fn link(tx: &Transaction, who: &Who, args: &Value, at: i64) -> Result
     let remove = args["remove"].as_str() == Some("yes");
     let reason = args["reason"].as_str().map(rules::clean);
     attrs::link(tx, &author(tx, who)?, &t.key, list, &other.id, reason.as_deref(), remove, at)?;
-    let said = attrs::LISTS.iter().find(|(l, _)| *l == list).map_or(list, |(_, s)| s);
-    Ok((format!("{} is {} {id}'s {said}.", other.id, if remove { "out of" } else { "in" }), vec![t.id]))
+    Ok((format!("{} is {} {id}'s {}.", other.id, if remove { "out of" } else { "in" }, attrs::said(list)), vec![t.id]))
 }
 
 /// An agents' task off the board, its reason a comment; its DONE subtasks go with it, as when it
