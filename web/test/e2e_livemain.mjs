@@ -43,6 +43,7 @@ export async function liveMain(page, live) {
   check("AC-185 one session ran them all", (await runs(main)).length === 1 && JSON.stringify(await runs(a)) === JSON.stringify(await runs(main)) && JSON.stringify(await runs(b)) === JSON.stringify(await runs(main)), JSON.stringify([await runs(main), await runs(a)]));
   check("AC-185 the agent's reason stands on the failed subtask", (await task(b)).history.some((e) => /It cannot be done/.test(e.text ?? "")));
 
+  await cardInSight(page, main);                   // its column in sight: the panel shows one at a time (terminum-kanban.md AC-105)
   await page.waitForSelector(`${card(main)} .crun`);
   const offer = await j(`/api/tasks/${main}/run?agent=${agent}`);
   check("AC-185 run again on the same agent, its run's tasks go on in its conversation", offer.first === false && JSON.stringify(offer.ids) === JSON.stringify([main, b]), JSON.stringify({ first: offer.first, ids: offer.ids }));
