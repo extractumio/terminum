@@ -37,9 +37,13 @@ pub(super) fn place(store: &Store, home: &Path, project: &str) -> Result<Place, 
 fn target_now(p: &Place) -> Result<String, String> {
     let (remote, branch) = integration::target_of(&p.s.target)?;
     let fetch = || git::run(&p.repo, &["fetch", "--quiet", remote]);
+    let mut fetched = fetch();
     // a fetch beside it (an After's, a Prepare's) holding the same ref: tried once more after a second
-    fetch().or_else(|e| if e.contains("cannot lock ref") { std::thread::sleep(std::time::Duration::from_secs(1)); fetch() } else { Err(e) })
-        .map_err(|e| format!("{remote} could not be fetched: {e}"))?;
+    if matches!(&fetched, Err(e) if e.contains("cannot lock ref")) {
+        std::thread::sleep(std::time::Duration::from_secs(1));
+        fetched = fetch();
+    }
+    fetched.map_err(|e| format!("{remote} could not be fetched: {e}"))?;
     git::run(&p.repo, &["rev-parse", &format!("refs/remotes/{remote}/{branch}")]).map_err(|_| format!("{}: no such branch at {remote}.", p.s.target))
 }
 
@@ -199,8 +203,9 @@ pub(super) fn follow(store: &Store, runner: &dyn Runner, p: &Place, b: Batch, no
         // After lost with its window is not run again (AC-191): what it did is not known
         Window::Lost if step == "after" => return store.with(|tx| {
             bs::set_pane(tx, b.id, None, now)?;
-            bs::tell_task(tx, &b, &format!("After's outcome is not known for batch {}: its window was lost. After is not run again.", b.number), now)?;
-            bs::set_state(tx, b.id, after_after(&p.s), None, now)
+            let words = format!("After's outcome is not known for batch {}: its window was lost. After is not run again.", b.number);
+            bs::tell_task(tx, &b, &words, now)?;
+            bs::set_state(tx, b.id, after_after(&p.s), Some(&words), now)
         }),
         // lost with its window: run again, not counted as red (AC-190)
         Window::Lost => return store.with(|tx| { bs::set_pane(tx, b.id, None, now)?; bs::tell_task(tx, &b, &format!("Batch {}'s {step} runs again: its window was lost.", b.number), now) }),
@@ -225,13 +230,14 @@ pub(super) fn follow(store: &Store, runner: &dyn Runner, p: &Place, b: Batch, no
             if code != 0 {
                 bs::tell_task(tx, &b, &format!("Batch {}'s Cleanup ended with status {code}; nothing is undone. Its log: {}", b.number, log.display()), now)?;
             }
-            bs::set_state(tx, b.id, "ended", None, now)
+            // what its After's turn said stays on the batch's row
+            bs::set_state(tx, b.id, "ended", b.why.as_deref(), now)
         }),
         (_, 0) => store.with(|tx| { bs::set_pane(tx, b.id, None, now)?; bs::set_state(tx, b.id, after_after(&p.s), None, now) }),
         (_, code) => store.with(|tx| {
             let how = if code == OVER { format!("it ran over {} minutes", p.s.check_minutes) } else { format!("status {code}") };
             bs::set_pane(tx, b.id, None, now)?;
-            bs::set_state(tx, b.id, "after failed", Some(&how), now)?;
+            bs::set_state(tx, b.id, bs::AFTER_FAILED, Some(&how), now)?;
             bs::wait_for_human(tx, &b, &format!("After failed for batch {} with {how}: the batch stays published and its tasks DONE. Its log: {}", b.number, log.display()), now)
         }),
     }
@@ -366,7 +372,6 @@ fn landed(store: &Store, p: &Place, b: Batch, target: &str, now: i64) -> Result<
     }
     store.with(|tx| {
         bs::set_pane(tx, b.id, None, now)?;
-        // published first: a task's DONE takes it out of the queue, which leaves a batch in work without it (store::left)
         bs::set_state(tx, b.id, bs::PUBLISHED, None, now)?;
         let ids = bs::done_all(tx, &b, &p.s.target, &candidate, now)?;
         bs::resize(tx, &b.project, true)?;

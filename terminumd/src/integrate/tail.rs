@@ -17,19 +17,35 @@ use crate::tasks::store::Store;
 /// One step of the tail: the running After or Cleanup followed, else the published batch that waited longest takes
 /// the turn: its project's folder brought up to the target, then its After or Cleanup, or it ends with neither.
 pub fn step(store: &Store, runner: &dyn Runner, home: &Path, now: i64) -> Result<(), String> {
-    if let Some(b) = store.with(bs::in_tail)? {
-        let p = engine::place(store, home, &b.project)?;
+    let next = store.with(|tx| match bs::in_tail(tx)? {
+        Some(b) => Ok(Some((b, true))),
+        None => Ok(bs::next_published(tx)?.map(|b| (b, false))),
+    })?;
+    let Some((b, running)) = next else { return Ok(()) };
+    // turned off before its turn, or its project unreadable: it ends without its After and holds no other project's
+    let p = match engine::place(store, home, &b.project) {
+        Ok(p) if running || p.s.on => p,
+        Err(e) if running => return Err(e),
+        found => {
+            let why = match found { Ok(p) => format!("integration was turned off for {}", p.name), Err(e) => e };
+            return not_run(store, &b, &why, "ended", now);
+        }
+    };
+    if running {
         return engine::follow(store, runner, &p, b, now);
     }
-    let Some(b) = store.with(bs::next_published)? else { return Ok(()) };
-    let p = engine::place(store, home, &b.project)?;
-    let moved = folder_follows(&p);
+    match folder_follows(&p) {
+        Err(w) => not_run(store, &b, &format!("{}'s folder stays where it is: {w}", p.name), after_after(&p.s), now),
+        Ok(()) => store.with(|tx| bs::set_state(tx, b.id, if p.s.after.is_empty() { after_after(&p.s) } else { "after" }, None, now)),
+    }
+}
+
+/// A published batch's After not run, said on its integration task and its row (AC-191); `next` follows.
+fn not_run(store: &Store, b: &bs::Batch, why: &str, next: &str, now: i64) -> Result<(), String> {
+    let words = format!("After did not run for batch {}: {why}", b.number);
     store.with(|tx| {
-        if let Err(w) = &moved {
-            bs::tell_task(tx, &b, &format!("After did not run for batch {}: {}'s folder stays where it is: {w}", b.number, p.name), now)?;
-        }
-        let next = if p.s.after.is_empty() || moved.is_err() { after_after(&p.s) } else { "after" };
-        bs::set_state(tx, b.id, next, None, now)
+        bs::tell_task(tx, b, &words, now)?;
+        bs::set_state(tx, b.id, next, Some(&words), now)
     })
 }
 
