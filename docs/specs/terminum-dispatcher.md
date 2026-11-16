@@ -1237,6 +1237,11 @@ Scenario: AC-169 happy path — integration frees room for its blockers
   And the sessions remain watched, listed by list_runs and protected as their tasks' sessions; the current turns may finish, with no Stop hook needed to release room
   And slots kept by a schedule or for integration stay kept
 
+Scenario: AC-169 edge — a new process reserves room before its first prompt
+  Given a RUN starts a new process for a task still in INTEGRATION
+  Then its Starting, Asking and Typed phases hold the agent and project slots reserved at admission (AC-141)
+  And integrate initializes an early run to Working before handing its work to the queue, so the handoff frees room
+
 Scenario: AC-169 edge — a task comes back to its live session
   Given an integration wait freed its slot and other runs filled the agent's or project's limit
   When a conflict or red check returns its task to IN PROGRESS

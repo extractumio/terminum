@@ -90,8 +90,8 @@ pub struct Slots {
 
 impl Slots {
     pub fn read(tx: &Transaction) -> Result<Slots, String> {
-        // Integration owns the work until it returns; keep the session's lifetime and authorization separate (AC-169).
-        let live: Vec<Run> = runs::live(tx)?.into_iter().filter(|r| r.holds_slot() && r.status != ops::INTEGRATION).collect();
+        // Integration owns handed-off work until it returns; a new process still reserves room during startup (AC-169).
+        let live: Vec<Run> = runs::live(tx)?.into_iter().filter(|r| r.holds_slot() && (r.is_starting() || r.status != ops::INTEGRATION)).collect();
         let of_rounds: HashSet<String> = rows(tx, "SELECT m.run FROM run_tasks m JOIN auto_rounds a ON a.task = m.task", [], |r| r.get(0))?.into_iter().collect();
         let (rounds, holding): (Vec<Run>, Vec<Run>) = live.into_iter().partition(|r| of_rounds.contains(&r.id));
         let ids: Vec<&str> = holding.iter().map(|r| r.id.as_str()).collect();
@@ -432,6 +432,12 @@ mod tests {
             project(tx, "api", Some(1))?;
             let (id, queued) = working(tx, "a", "api");
             ops::place(tx, HUMAN, &queued, ops::INTEGRATION, 2)?;
+            for state in [runs::Phase::Starting, runs::Phase::Asking, runs::Phase::Typed] {
+                runs::change(tx, &id, |r| r.state = state)?;
+                assert!(check(tx, Some(&agent("a", 1)), "api", None)?.is_some(), "{state:?}: a new process keeps its reservation before accepting the task");
+            }
+            runs::change(tx, &id, |r| r.state = runs::Phase::Working)?;
+            assert!(check(tx, Some(&agent("a", 1)), "api", None)?.is_none(), "the handed-off work frees room after startup");
             let other = ops::create(tx, HUMAN, NewTask { title: "another task".into(), project: Some("api".into()), ..Default::default() }, 1)?;
             tx.execute("INSERT INTO run_tasks (run, task) VALUES (?1, ?2)", (&id, &other.key)).map_err(sql)?;
             for status in ["IN PROGRESS", "WAIT FOR HUMAN", "TODO", "DONE", "FAILED"] {
