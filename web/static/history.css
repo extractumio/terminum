@@ -2,11 +2,12 @@
 /* The Message history (terminum.md AC-151): the quick filters' rail beside a reading column no wider than a prompt
    reads (--read-w), the day strip, the rows. A row says who sent it to what, in which session, project and task,
    on one line that starts with its time, right over what was sent in the terminal's font. */
+#hpage { --rail-w: 232px; --read-w: 900px; }   /* the rail; the widest a list of prose reads: about 100 characters of the terminal's font */
 #mpage { --strip-ink: color-mix(in srgb, var(--t-fg) 30%, var(--t-bg)); --row-on: color-mix(in srgb, var(--accent) 16%, var(--chrome)); }
 #hpage { display: grid; grid-template-columns: var(--rail-w) minmax(0, var(--read-w)); grid-template-areas: "pages tools" "rail main";
   column-gap: var(--sp-6); row-gap: var(--sp-3); align-items: start; padding: var(--sp-2) var(--gutter) 0; }
 #hpage > .mpages { grid-area: pages; justify-self: start; }
-#htools { grid-area: tools; display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); }
+#htools { grid-area: tools; padding: 0; }   /* the tools' line (msgpage.css .mtools), in the list's column */
 #htools .search { flex: 1 1 260px; height: var(--key-h); }
 #htools .search input { font-size: var(--fs-body); }
 #htools #hfilters { display: none; }   /* over the keys' display (controls.css) */
@@ -25,7 +26,7 @@
 .frow { display: flex; align-items: center; gap: var(--sp-2); width: 100%; min-height: 28px; padding: 0 var(--sp-2); border-radius: var(--r-sm); text-align: left;
   font-family: var(--ui); font-size: var(--fs-small); color: var(--t-fg); cursor: pointer; }
 .frow.sub { padding-left: var(--sp-5); }
-.frow .pname { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.frow .pname { flex: 1 1 auto; }
 .frow .fnum { flex: none; font-size: var(--fs-meta); color: var(--muted-text); font-variant-numeric: tabular-nums; }
 .frow.none:not([aria-pressed="true"]) { color: var(--muted-text); }
 .frow[aria-pressed="true"] { background: var(--row-on); font-weight: var(--fw-ctl); }
@@ -37,10 +38,8 @@
 
 /* the filters in force: a chip each, pressed to let it go */
 #hchips { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); }
-#hchips[hidden] { display: none; }
 .hchip { display: inline-flex; align-items: center; gap: var(--sp-1); max-width: 100%; min-height: 26px; padding: 0 var(--sp-2); border-radius: var(--r-pill);
   background: var(--row-on); font-family: var(--ui); font-size: var(--fs-label); color: var(--t-fg); cursor: pointer; }
-.hchip span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hchip svg { flex: none; color: var(--muted-text); }
 @media (hover: hover) { .hchip:hover svg { color: var(--t-fg); } }
 
@@ -75,7 +74,6 @@
 .msess::before { content: "· "; color: var(--muted-text); font-weight: var(--fw-body); }
 .mtags { display: inline-flex; align-items: center; gap: var(--sp-1); min-width: 0; }
 .mproj { display: inline-flex; align-items: center; gap: 5px; max-width: 22ch; padding: 1px var(--sp-2); border-radius: var(--r-pill); background: var(--surface-2); font-size: var(--fs-label); color: var(--muted-text); }
-.mproj .pname { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mtask { padding: 1px 6px; border-radius: var(--r-xs); background: var(--surface-3); font-size: var(--fs-micro); font-weight: var(--fw-head); color: var(--t-fg); font-variant-numeric: tabular-nums; white-space: nowrap; }
 :is(.mtext, .mmeta, .macts, .mfind, .ctx) { margin-left: var(--in); }
 .mtext { font-family: var(--term-font, ui-monospace, Menlo, monospace); font-size: var(--fs-small); line-height: var(--lh-prose); white-space: pre-wrap; overflow-wrap: anywhere;
@@ -90,7 +88,6 @@
 .macts a { text-decoration: none; }
 .macts a[aria-disabled="true"] { opacity: .45; cursor: not-allowed; }
 .ctx { display: flex; flex-direction: column; gap: 2px; margin-top: var(--sp-1); padding: var(--sp-1) var(--sp-2); border-radius: var(--r-sm); background: var(--surface-2); }
-.ctx[hidden] { display: none; }
 .ctxrow { display: flex; gap: var(--sp-2); font-size: var(--fs-small); color: var(--muted-text); min-width: 0; }
 .ctxrow.self { color: var(--t-fg); font-weight: var(--fw-ctl); }
 .ctxtime { flex: none; font-variant-numeric: tabular-nums; }
@@ -110,8 +107,8 @@
   .dayhead { position: static; }
 }
 @media (max-width: 860px), (pointer: coarse) {
-  .frow { min-height: var(--h-touch); }
-  .hchip { min-height: var(--h-touch); }
+  :is(.frow, .hchip) { min-height: var(--h-touch); }
+  .hrange input { height: var(--h-touch); font-size: 16px; }        /* a finger's size; iOS does not zoom */
   #results, #results.dated { --time-w: auto; }
   .msg { --in: 0px; min-height: 60px; }
   .mhead { flex-wrap: wrap; row-gap: 2px; }

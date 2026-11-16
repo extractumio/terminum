@@ -10,6 +10,7 @@ import { agentMark, agentName } from "./nav.js";
 import { sessionUrl, taskUrl } from "./tasklink.js";
 import { copyText } from "./touchcopy.js";
 import { toast } from "./toast.js";
+import { button } from "./kanbanutil.js";
 import { api, dotOf, hmOf, inkOf, projectLabel, timeLabel } from "./msgpage.js";
 
 const HIT = "\u0002", HIT_END = "\u0003";
@@ -17,8 +18,8 @@ const HIT = "\u0002", HIT_END = "\u0003";
 const LINES = 3;
 /** Tasks a row's head names; more are counted ("+2"). */
 const TASKS = 2;
-/** Who sent a message: its word, its hue's class (a task's comment's, taskwin.css), its icon. */
-const SENDERS = { human: ["You", "by-human"], dispatcher: ["Dispatcher", "by-system", "bot", "Dispatcher typed it, for a task"], manager: ["Manager", "by-agent", "crown", "A project's manager typed it (send_to_session)"] };
+/** Who sent a message, by the store's user: its word, its hue's class (a task's comment's, taskwin.css), its icon, its title. */
+export const SENDERS = { human: ["You", "by-human"], dispatcher: ["Dispatcher", "by-system", "bot", "Dispatcher typed it, for a task"], manager: ["Manager", "by-agent", "crown", "A project's manager typed it (send_to_session)"] };
 
 /** `text` with terminumd's hit marks as <mark>s, into `box`; what goes before the first hit's line is left
  *  out when `short` and that line is past the first LINES (an ellipsis says so). */
@@ -104,14 +105,6 @@ export function messageRow(it, { projects, dated, onPick, only }) {
   return row;
 }
 
-/** A text key. */
-function key(cls, label, title) {
-  const b = el("button", cls, label);
-  b.type = "button";
-  if (title) b.title = title;
-  return b;
-}
-
 /** The opened row: all its text, its keys, the keys that narrow the list to it, a place for its context. */
 function openRow(row, it, text, only) {
   if (row.querySelector(".macts")) return;
@@ -122,21 +115,14 @@ function openRow(row, it, text, only) {
   const go = el("a", "textkey primary", "Open in session");
   if (it.live) go.href = sessionUrl(it.key, `msg:${it.id}`);
   else { go.setAttribute("aria-disabled", "true"); go.title = "This session has ended"; }
-  const ctx = key("textkey", "Context", "The messages sent before and after it in that pane");
-  const copy = key("textkey", "Copy");
   const box = el("div", "ctx");
   box.hidden = true;
-  ctx.addEventListener("click", () => context(box, it, ctx));
-  copy.addEventListener("click", async () => toast((await copyText({ text: it.text })).said));
+  const ctx = Object.assign(button("textkey", "Context", () => context(box, it, ctx)), { title: "The messages sent before and after it in that pane" });
+  const copy = button("textkey", "Copy", async () => toast((await copyText({ text: it.text })).said));
   acts.append(go, ...(it.tasks ?? []).map((id) => Object.assign(el("a", "textkey", `Open ${id}`), { href: taskUrl(id), title: "Its task on the board" })), ctx, copy);
   const find = el("div", "mfind");
-  const session = key("textkey", "This session", "Every message sent in this session");
-  session.addEventListener("click", () => only({ pane: it.key }));
-  find.append(el("span", "", "Show only"), session, ...(it.tasks ?? []).map((id) => {
-    const b = key("textkey", id, `Every message sent for ${id}`);
-    b.addEventListener("click", () => only({ task: id }));
-    return b;
-  }));
+  const session = Object.assign(button("textkey", "This session", () => only({ pane: it.key })), { title: "Every message sent in this session" });
+  find.append(el("span", "", "Show only"), session, ...(it.tasks ?? []).map((id) => Object.assign(button("textkey", id, () => only({ task: id })), { title: `Every message sent for ${id}` })));
   row.append(acts, find, box);
   row.copy = () => copy.click();
   row.context = () => ctx.click();

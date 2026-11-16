@@ -166,7 +166,9 @@ pub async fn hook_on(app: Shared, server: Option<std::sync::Arc<crate::tmux::ser
     // the agent's own turns (a background task's end, another session's message) and a subagent's
     // prompts are no one's: neither that nor a message (AC-90)
     let prompt = ev["prompt"].as_str().filter(|p| ev["event"] == "UserPromptSubmit" && whose == crate::tmux::hookstate::Whose::Main && !crate::messages::injected(p));
+    // who typed it: Dispatcher's gate, a project's manager (send_to_session; as a human's for AC-131), else the human (AC-147)
     let typed = prompt.is_some_and(|p| app.dispatcher.typed_it(&key, p));
+    let sender = if typed { crate::tasks::store::DISPATCHER } else if prompt.is_some_and(|p| app.sent.managers.has(&key, p, true)) { crate::inputs::MANAGER } else { crate::tasks::store::HUMAN };
     if prompt.is_some() {
         if !typed {
             app.inputs.human(&key);
@@ -176,8 +178,6 @@ pub async fn hook_on(app: Shared, server: Option<std::sync::Arc<crate::tmux::ser
         tokio::spawn(async move { crate::page::projects::raise(&app, &key).await });
     }
     if let (Some(prompt), Some(cwd)) = (prompt, ev["cwd"].as_str()) {
-        // who typed it: Dispatcher's gate, a project's manager (send_to_session), else the human (AC-147)
-        let sender = if typed { crate::tasks::store::DISPATCHER } else if app.sent.take_manager_typed(&key, prompt) { crate::inputs::MANAGER } else { crate::tasks::store::HUMAN };
         let (prompt, cwd, info) = (prompt.to_string(), cwd.to_string(), json!({"agent": ev["agent"], "via": "hook", "sender": sender}));
         let (app, key, host) = (app.clone(), key.clone(), server.name.clone());
         tokio::spawn(async move { crate::page::sent::keep(&app, &host, &cwd, &key, &prompt, info).await });

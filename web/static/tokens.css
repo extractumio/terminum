@@ -102,8 +102,6 @@
   /* ---- heights (wide; the touch sizes are in controls.css) ---- */
   --h-bar: 56px;     /* list head, header, Files head */
   --h-touch: 44px;   /* a finger */
-  --rail-w: 232px;   /* the Message history's rail of quick filters */
-  --read-w: 900px;   /* the widest a list of prose reads: about 100 characters of the terminal's font */
 
   /* ---- motion (motion.css) ---- */
   --dur-press: 60ms;    /* a press must feel instant */

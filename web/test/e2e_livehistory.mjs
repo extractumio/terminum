@@ -9,6 +9,8 @@ import { boardKit, intoStore, nap } from "./boardkit.mjs";
 import { check, until } from "./check.mjs";
 
 const rows = (page) => page.$$eval("#results .msg", (r) => r.map((x) => x.querySelector(".mtext").textContent));
+/** A row of the rail's group `group` (kind, sender, when, project) by its words. */
+const railRow = (group, label) => `#f${group} .frow:has(.pname:text-is("${label}"))`;
 
 /** AC-152's selected day and navigation readiness, before Enter and after a timeout. */
 const dayState = async (page) => ({ url: page.url(), ...await page.evaluate(() => {
@@ -86,7 +88,14 @@ export async function liveHistory(page, opts) {
   const railCounts = () => page.evaluate(() => Object.fromEntries([...document.querySelectorAll("#hrail .frow")].filter((r) => r.querySelector(".fnum")).map((r) => [r.querySelector(".pname").textContent, Number(r.querySelector(".fnum").textContent.replaceAll(",", ""))])));
   const all = await railCounts(), total = Number((await page.textContent("#hsum")).replace(/\D/g, ""));
   check("AC-151 the rail counts what each choice would show: prompts and commands, each agent, each sender", all.Prompts + all.Commands === total && all["Claude Code"] + all.Codex === all.Prompts && all.You + all.Dispatcher + all.Manager === total
-    && all.Dispatcher >= 1 && all.Manager === 1 && all.Codex >= 1, JSON.stringify([all, total]));
+    && all.Dispatcher >= 1 && all.Manager === 1 && all.Codex >= 1 && all.Today === total && all["Last 7 days"] === total, JSON.stringify([all, total]));
+  // by the keys: a row pressed stays in focus though its group is drawn anew, and lets go on the next press
+  await page.focus(railRow("sender", "Dispatcher"));
+  await page.keyboard.press("Enter");
+  const focused = () => page.evaluate(() => `${document.activeElement?.dataset.row}:${document.activeElement?.getAttribute("aria-pressed")}`);
+  check("AC-151 a rail's row pressed by the keys keeps the focus, pressed", await until(async () => (await rows(page)).length === 1 && await focused() === "Dispatcher:true", 6000), await focused());
+  await page.keyboard.press("Enter");
+  check("AC-151 pressed again by the keys it lets go, still in focus", await until(async () => (await rows(page)).length >= 5 && await focused() === "Dispatcher:false", 6000), await focused());
   check("AC-151 the day strip draws a column a day", (await page.$$("#stripplot rect.hit")).length >= 30);
 
   await page.fill("#q", "boar");
@@ -94,9 +103,9 @@ export async function liveHistory(page, opts) {
   check("AC-151 the hits are marked", (await page.textContent("#results .msg mark.hit")) === "board");
   check("AC-151 ranked by relevance with words", await page.getAttribute('#hsort [data-sort="best"]', "aria-pressed") === "true");
   check("AC-151 the words are in the address", new URL(page.url()).searchParams.get("q") === "boar", page.url());
-  await page.click('#fsender .frow:has(.pname:text-is("You"))');
+  await page.click(railRow("sender", "You"));
   check("AC-151 From: You, one press, leaves Dispatcher's out", await until(async () => (await rows(page)).length === 1, 6000), JSON.stringify(await rows(page)));
-  check("AC-151 the filter is in the address, its row pressed, a chip says it", new URL(page.url()).searchParams.get("sender") === "human" && await page.getAttribute('#fsender .frow:has(.pname:text-is("You"))', "aria-pressed") === "true"
+  check("AC-151 the filter is in the address, its row pressed, a chip says it", new URL(page.url()).searchParams.get("sender") === "human" && await page.getAttribute(railRow("sender", "You"), "aria-pressed") === "true"
     && await page.textContent("#hchips .hchip") === "From You", `${page.url()} | ${await page.textContent("#hchips")}`);
   const narrowed = await railCounts();
   check("AC-151 a group's own choice does not narrow its own counts; the words and the other groups' do", narrowed.Dispatcher === 1 && narrowed.You === 1 && narrowed.Prompts === 1 && narrowed.Commands === 0, JSON.stringify(narrowed));
@@ -109,9 +118,9 @@ export async function liveHistory(page, opts) {
   check("AC-151 a -word alone ranks nothing: newest first", await until(async () => (await rows(page)).length >= 3, 6000) && await page.isDisabled('#hsort [data-sort="best"]'));
   await page.fill("#q", "");
   await until(async () => (await rows(page)).length >= 5, 6000);
-  await page.click('#fkind .frow:has(.pname:text-is("Codex"))');
+  await page.click(railRow("kind", "Codex"));
   check("AC-151 Type: one agent's prompts", await until(async () => JSON.stringify(await rows(page)) === JSON.stringify(["say where its task stands"]), 6000) && new URL(page.url()).searchParams.get("kind") === "codex", JSON.stringify(await rows(page)));
-  await page.click('#fkind .frow:has(.pname:text-is("Codex"))');
+  await page.click(railRow("kind", "Codex"));
   check("AC-151 a chosen row pressed again lets its filter go", await until(async () => (await rows(page)).length >= 5, 6000) && !new URL(page.url()).searchParams.get("kind") && await page.isHidden("#hchips"), page.url());
   // a task's messages, from an opened row's keys; its chip lets it go
   await page.click('#results .msg:has-text("T-0007: the board task for Dispatcher")');
@@ -127,11 +136,11 @@ export async function liveHistory(page, opts) {
   await page.click('#results .msg.open .mfind button:text-is("This session")');
   check("AC-151 Show only this session: its pane's messages, the chip naming it", await until(async () => (await rows(page)).length === 4 && new URL(page.url()).searchParams.get("pane") === key && await page.textContent("#hchips .hchip") === "Session: histagent", 6000),
     `${JSON.stringify(await rows(page))} | ${page.url()} | ${await page.textContent("#hchips")}`);
-  await page.click('#fsender .frow:has(.pname:text-is("Manager"))');
+  await page.click(railRow("sender", "Manager"));
   check("AC-151 two filters: a chip each and Clear all, which lets both go", await until(async () => (await rows(page)).length === 1 && (await page.$$("#hchips .hchip")).length === 2, 6000));
   await page.click('#hchips button:text-is("Clear all")');
   check("AC-151 Clear all shows every message again", await until(async () => (await rows(page)).length >= 5 && !new URL(page.url()).search, 6000), page.url());
-  await page.click('#fkind .frow:has(.pname:text-is("Commands"))');
+  await page.click(railRow("kind", "Commands"));
   const shellsOnly = () => page.$$eval("#results .msg", (r) => r.length > 0 && r.every((x) => x.querySelector(".mtext.shell")));
   check("AC-151 Type: commands only", await until(async () => (await rows(page)).includes("echo history probe words") && await shellsOnly(), 6000), JSON.stringify(await rows(page)));
   if (shots) await page.screenshot({ path: path.join(shots, "history.png") });
@@ -321,28 +330,25 @@ export async function liveHistory(page, opts) {
     await page.waitForSelector("#tiles .tile");
     await nap(500);
     await page.screenshot({ path: path.join(shots, "dashboard.png"), fullPage: true });
-    for (const [name, query, width] of [["seeded", "?q=seeded", 0], ["wide", "", 2250], ["narrow", "", 1000]]) {
-      const size = page.viewportSize();
-      if (width) await page.setViewportSize({ width, height: 925 });
+    const size = page.viewportSize();
+    const shot = async (name, query = "") => {
       await page.goto(`${base}/history/${query}`);
       await page.waitForSelector("#results .msg");
       await nap(300);
       await page.screenshot({ path: path.join(shots, `history-${name}.png`) });
-      if (name === "wide") {
-        // a light theme: the words in who's hue, the chips and the chosen row must still read
-        await page.route("**/api/messages/meta", async (r) => { const got = await r.fetch(), meta = await got.json(); await r.fulfill({ response: got, json: { ...meta, theme: { ...meta.theme, bg: "#ffffff", fg: "#1f2328", cursor: "#0969da", dark: false } } }); }, { times: 1 });
-        await page.reload();
-        await page.waitForSelector("#results .msg");
-        await nap(300);
-        await page.screenshot({ path: path.join(shots, "history-light.png") });
-        await page.reload();
-        await page.waitForSelector("#results .msg");
-        await page.click('#fsender .frow:has(.pname:text-is("Dispatcher"))');
-        await page.click('#results .msg:has-text("make the board wait for its selector")');
-        await page.screenshot({ path: path.join(shots, "history-open.png") });
-      }
-      await page.setViewportSize(size);
-    }
+    };
+    await shot("seeded", "?q=seeded");
+    await page.setViewportSize({ width: 2250, height: 925 });
+    await shot("wide");
+    await page.click(railRow("sender", "Dispatcher"));
+    await page.click('#results .msg:has-text("make the board wait for its selector")');
+    await page.screenshot({ path: path.join(shots, "history-open.png") });
+    // a light theme: the words in who's hue, the chips and the chosen row must still read
+    await page.route("**/api/messages/meta", async (r) => { const got = await r.fetch(), meta = await got.json(); await r.fulfill({ response: got, json: { ...meta, theme: { ...meta.theme, bg: "#ffffff", fg: "#1f2328", cursor: "#0969da", dark: false } } }); }, { times: 1 });
+    await shot("light", "?sender=dispatcher");
+    await page.setViewportSize({ width: 1000, height: 925 });
+    await shot("narrow");
+    await page.setViewportSize(size);
   }
   endPanes();
 }
@@ -362,10 +368,11 @@ export async function liveHistoryPhone(page, { base, shots }) {
   await page.goto(`${base}/history/`);
   check("AC-151 the phone's filters stand behind one key", await page.isVisible("#hfilters") && !(await page.isVisible("#fsender")));
   await page.click("#hfilters");
-  const rail = await page.evaluate(() => [...document.querySelectorAll("#hrail .frow")].map((r) => Math.round(r.getBoundingClientRect().height)));
-  check("AC-151 Filters shows the quick filters, each row a finger's size, with no sideways scroll", await page.isVisible("#fsender") && rail.length >= 6 && rail.every((h) => h >= 44)
+  const rail = await page.evaluate(() => [...document.querySelectorAll("#hrail :is(.frow, input, button)")].map((r) => Math.round(r.getBoundingClientRect().height)));
+  check("AC-151 Filters shows the quick filters, each row, field and key a finger's size, with no sideways scroll", await page.isVisible("#fsender") && rail.length >= 9 && rail.every((h) => h >= 44)
     && await page.evaluate(() => document.documentElement.scrollWidth - innerWidth) <= 0, JSON.stringify(rail));
   if (shots) await page.screenshot({ path: path.join(shots, "history-phone-filters.png") });
   await page.click("#hfilters");
+  await nap(500);                               // WebKit paints the rows that came back into view a frame later
   if (shots) await page.screenshot({ path: path.join(shots, "history-phone-top.png") });
 }

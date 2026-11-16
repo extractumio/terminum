@@ -191,16 +191,33 @@ pub fn days(tx: &Transaction, f: &Filter) -> Result<Vec<Value>, String> {
 
 /// The quick filters' counts of the filtered list: how many each sender sent, each agent took ("" a shell)
 /// and each project holds ("" none). A filter's own choice is left out of its own counts, so they say what
-/// another choice would show. {sender: {human: n, …}, agent: {"": n, claude: n, …}, project: {"": n, …}}
+/// another choice would show: one pass over the list with the three left out, each group counted where it
+/// passes the two others. {sender: {human: n, …}, agent: {"": n, claude: n, …}, project: {"": n, …}}
 pub fn facets(tx: &Transaction, f: &Filter) -> Result<Value, String> {
-    let count = |open: Filter, column: &str| -> Result<Value, String> {
-        let (from, args, _) = open.from(true);
-        let mut st = tx.prepare(&format!("SELECT coalesce({column}, ''), count(*) {from} GROUP BY 1")).map_err(sql)?;
-        let rows = st.query_map(rusqlite::params_from_iter(args.iter()), |r| Ok((r.get::<_, String>(0)?, json!(r.get::<_, i64>(1)?)))).map_err(sql)?;
-        Ok(Value::Object(rows.collect::<Result<_, _>>().map_err(sql)?))
+    let (from, args, _) = Filter { sender: None, kind: None, projects: Vec::new(), ..f.clone() }.from(true);
+    let mut st = tx.prepare(&format!("SELECT m.sender, coalesce(m.agent, ''), coalesce(m.project, ''), count(*) {from} GROUP BY 1, 2, 3")).map_err(sql)?;
+    let groups = st.query_map(rusqlite::params_from_iter(args.iter()), |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?, r.get::<_, i64>(3)?))).map_err(sql)?;
+    let of_sender = |s: &str| f.sender.as_deref().is_none_or(|x| x == s);
+    let of_kind = |agent: &str| match f.kind.as_deref() {
+        None => true,
+        Some("agent") => !agent.is_empty(),
+        Some("shell") => agent.is_empty(),
+        Some(one) => one == agent,
     };
-    Ok(json!({"sender": count(Filter { sender: None, ..f.clone() }, "m.sender")?, "agent": count(Filter { kind: None, ..f.clone() }, "m.agent")?,
-              "project": count(Filter { projects: Vec::new(), ..f.clone() }, "m.project")?}))
+    let of_project = |p: &str| f.projects.is_empty() || f.projects.iter().any(|x| if x == NONE { p.is_empty() } else { x == p });
+    let mut counts = [serde_json::Map::new(), serde_json::Map::new(), serde_json::Map::new()];
+    for group in groups {
+        let (sender, agent, project, n) = group.map_err(sql)?;
+        let (s, k, p) = (of_sender(&sender), of_kind(&agent), of_project(&project));
+        for (to, key, counted) in [(0, sender, k && p), (1, agent, s && p), (2, project, s && k)] {
+            if counted {
+                let was = counts[to].get(&key).and_then(Value::as_i64).unwrap_or(0);
+                counts[to].insert(key, json!(was + n));
+            }
+        }
+    }
+    let [sender, agent, project] = counts;
+    Ok(json!({"sender": sender, "agent": agent, "project": project}))
 }
 
 /// The `before` messages sent in message `id`'s pane before it and the `after` after it, oldest first.

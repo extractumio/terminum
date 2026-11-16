@@ -34,7 +34,7 @@ pub struct Message {
     pub title: Option<String>,
     pub project: Option<String>,
     pub project_name: Option<String>,
-    /// the IDs of the tasks not done whose session the pane was (`open_tasks`), comma-separated
+    /// the IDs of the tasks not done whose session the pane was (`tasks::marks::of_session`), comma-separated
     pub tasks: Option<String>,
     pub text: String,
 }

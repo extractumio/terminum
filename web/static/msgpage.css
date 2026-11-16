@@ -15,7 +15,7 @@ body.msg-page { margin: 0; height: auto; min-height: 100dvh; overflow: visible; 
 .mtools { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); padding: var(--sp-2) var(--gutter) 0; }
 /* a single choice's menu (msgpage.js menu): the chosen row in the accent */
 .menurows button[aria-checked="true"] { color: var(--accent); }
-:is(.pick summary, .menurows) .pname { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+:is(.pick summary, .menurows, .frow, .mproj, .hchip) .pname { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .msum { margin: 0; font-size: var(--fs-meta); color: var(--muted-text); font-variant-numeric: tabular-nums; min-height: 1.4em; }
 .msum.busy { opacity: .7; }
 .merr { margin: 0; color: var(--danger-text); font-size: var(--fs-small); }

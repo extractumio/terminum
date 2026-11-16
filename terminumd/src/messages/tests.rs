@@ -156,7 +156,7 @@ fn ac151_a_message_s_tasks_its_agent_and_the_quick_filters_counts() {
     (ms[2].agent, ms[2].sender, ms[2].tasks) = (Some("codex".into()), DISPATCHER.into(), Some("TERM-12,S_TERM-3".into()));
     (ms[3].agent, ms[3].tasks) = (Some("codex".into()), Some("TERM-12".into()));
     (ms[4].agent, ms[4].sender) = (Some("claude".into()), crate::inputs::MANAGER.into());
-    s.with(|tx| { tx.execute("INSERT INTO users (id, kind, name, role) VALUES ('manager', 'agent', 'manager', 'agent')", []).map_err(sql)?; Ok(()) }).unwrap();
+    s.with(|tx| crate::tasks::users::agent_named(tx, crate::inputs::MANAGER.into(), "Manager")).unwrap();
     put(&s, &ms);
     let got = |f: Filter| s.with(|tx| page(tx, &f, false, None)).unwrap();
     let all = got(Filter::default());

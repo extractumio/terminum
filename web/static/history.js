@@ -6,7 +6,7 @@
 // one, a link shows the same.
 import { el } from "./listparts.js";
 import { columns } from "./charts.js";
-import { showError } from "./kanbanutil.js";
+import { button, showError } from "./kanbanutil.js";
 import { messageRow } from "./historyrows.js";
 import { drawChips, drawRail } from "./historyrail.js";
 import { $, NONE, addDays, api, dayLabel, loadMeta, monthOf, readQuery, today, writeQuery } from "./msgpage.js";
@@ -17,6 +17,7 @@ const NO_FILTERS = { from: "", to: "", project: "", sender: "", kind: "", pane: 
 const WAIT = 200;                       // typing: a search this long after the last key
 let state = readQuery(KEYS), meta = { projects: [] }, projects = new Map();
 let next = null, loading = 0, typing = 0, strip = [], facets = {}, session = "";
+let ranked = false;                     // the list shown is the best matches: no day heads, each row with its day
 
 const hasWords = () => /[\p{L}\p{N}]{2}/u.test(state.q.replace(/(^|\s)-\S*/g, ""));
 const best = () => hasWords() && state.sort !== "new";
@@ -40,8 +41,13 @@ function drawKeys() {
     b.disabled = b.dataset.sort === "best" && !hasWords();
   }
   $("hsort").title = hasWords() ? "" : "Type words to rank by how well they match";
-  drawRail({ state, facets, projects, change });
-  drawChips({ state, projects, session, change });
+  drawFilters();
+}
+
+/** The rail's rows with their counts and the chips. */
+function drawFilters() {
+  drawRail({ state, facets, days: strip, projects, change });
+  drawChips({ state, projects, session, change, clear: () => change(NO_FILTERS) });
 }
 
 /** Changes the state; `push`: a step of Back. */
@@ -56,8 +62,12 @@ function change(next, push = true) {
  *  the words typed, so a search still waiting on the keys is dropped: run late, it would read
  *  the same list again and close the row opened meanwhile. */
 async function load(more = false) {
-  if (!more) clearTimeout(typing);
-  const mine = ++loading;
+  if (!more) {
+    clearTimeout(typing);
+    next = null;                        // the list before has no next page: its foot must not load one meanwhile
+    $("more").hidden = true;
+  }
+  const mine = ++loading, asked = best();
   $("hsum").textContent = more ? $("hsum").textContent : "Searching…";
   $("hsum").classList.add("busy");
   try {
@@ -66,13 +76,14 @@ async function load(more = false) {
     showError($("herr"), "");
     $("results").classList.remove("stale");
     if (!more) {
+      ranked = asked;
       $("results").replaceChildren();
-      $("results").classList.toggle("dated", best());
+      $("results").classList.toggle("dated", ranked);
       strip = page.days ?? [];
       facets = page.facets ?? {};
       session = state.pane ? page.items[0]?.title ?? "" : "";
       drawStrip();
-      drawKeys();
+      drawFilters();
     }
     next = page.next;
     drawRows(page.items, more);
@@ -98,10 +109,7 @@ function empty() {
   box.append(el("p", "", !any ? "Nothing sent yet. The prompts and commands you send in sessions show here."
     : state.q ? `No message matches “${state.q}”${filtered() ? " with these filters" : ""}.` : "Nothing sent with these filters."));
   if (filtered()) {
-    const b = el("button", "textkey", "Clear filters");
-    b.type = "button";
-    b.onclick = () => change(NO_FILTERS);
-    box.append(b);
+    box.append(button("textkey", "Clear filters", () => change(NO_FILTERS)));
   }
   $("results").append(box);
 }
@@ -112,14 +120,14 @@ function drawRows(list, more) {
   let day = more ? box.lastElementChild?.dataset.day : null;
   for (const it of list) {
     const key = it.day;                               // terminumd's local day, as the strip counts
-    if (!best() && key !== day) {
+    if (!ranked && key !== day) {
       day = key;
       const n = strip.find((s) => s.day === key)?.n;
       const h = el("div", "dayhead", `${dayLabel(key)}${n ? ` · ${n.toLocaleString("en-US")}` : ""}`);
       h.setAttribute("role", "presentation");
       box.append(h);
     }
-    const row = messageRow(it, { projects, dated: best(), onPick: choose, only: change });
+    const row = messageRow(it, { projects, dated: ranked, onPick: choose, only: change });
     row.dataset.day = key;
     box.append(row);
   }

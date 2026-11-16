@@ -135,14 +135,14 @@ async fn ac147_a_message_keeps_its_session_s_tasks_and_a_manager_s_is_the_manage
         kept(0).1.unwrap()
     };
     // a busy agent says a prompt at its turn's end: what a manager typed waits for it, blanks aside, once
-    app.sent.manager_typed(&key, "review the diff\nand say what is left");
-    app.sent.manager_typed("tmux:local:other:%9", "go on");
+    app.sent.managers.remember(&key, "review the diff\nand say what is left");
+    app.sent.managers.remember("tmux:local:other:%9", "go on");
     hook_on(app.clone(), Some(server.clone()), prompt("go on")).await;
     let first = wait(1).await;
     assert_eq!((first["sender"].as_str(), first["tasks"].clone()), (Some("human"), json!(["TASK-1"])), "typed into another pane: the human's here; its tasks not done");
     hook_on(app.clone(), Some(server.clone()), prompt("review the diff\n and say what is left")).await;
     assert_eq!(wait(2).await["sender"], "manager");
-    assert!(!app.sent.take_manager_typed(&key, "review the diff\nand say what is left"), "once: the same words typed again are the human's");
+    assert!(!app.sent.managers.has(&key, "review the diff\nand say what is left", true), "once: the same words typed again are the human's");
     drop(app);
     std::fs::remove_dir_all(root).unwrap();
 }
