@@ -70,13 +70,15 @@ pub fn gate_words(n: &Notice) -> Option<String> {
     Some(format!("[terminum Dispatcher] {} came back from integration: {why}. Read why by execute_tool(\"get_task\", {{\"id\": \"{}\"}}), fix it and integrate again.", n.id, n.id))
 }
 
-/// A task's tree still in work, as the walk compares it.
+/// A task's tree, as the walk compares it when its task is IN PROGRESS (`working`); any other task's only tells that
+/// tree from one with no task.
 #[derive(Debug, Clone)]
 pub struct Tree {
     pub task: String,
     pub id: String,
     pub project: String,
     pub dir: PathBuf,
+    pub working: bool,
 }
 
 /// The folder a session's task works in, from its layout row: the one its agent's hooks said (a worktree it went
@@ -111,12 +113,19 @@ static JUDGED: Mutex<Option<HashMap<String, Option<Vec<String>>>>> = Mutex::new(
 /// Each task's overlapping tasks as the last walk found them, by task key, with when (AC-193).
 static OVERLAPS: Mutex<Option<HashMap<String, (i64, Vec<String>)>>> = Mutex::new(None);
 
-/// The judgement under `key`, made by `judge` the first time only, outside the lock.
-fn judged(key: String, judge: impl FnOnce() -> Option<Vec<String>>) -> Option<Vec<String>> {
+/// The judgement under `key`, made by `judge` the first time only, outside the lock; git failing is said and judged
+/// again at the next walk.
+fn judged(key: String, judge: impl FnOnce() -> Result<Option<Vec<String>>, String>) -> Option<Vec<String>> {
     if let Some(v) = JUDGED.lock().as_ref().and_then(|m| m.get(&key)) {
         return v.clone();
     }
-    let v = judge();
+    let v = match judge() {
+        Ok(v) => v,
+        Err(e) => {
+            tracing::warn!(event = "integration.walk", error = %e, "git could not judge {key}");
+            return None;
+        }
+    };
     let mut j = JUDGED.lock();
     let map = j.get_or_insert_with(HashMap::new);
     if map.len() > 10_000 {
@@ -129,7 +138,7 @@ fn judged(key: String, judge: impl FnOnce() -> Option<Vec<String>>) -> Option<Ve
 /// Whether `key` is judged for the first time now.
 fn first_time(key: String) -> bool {
     let mut fresh = false;
-    judged(key, || { fresh = true; None });
+    judged(key, || { fresh = true; Ok(None) });
     fresh
 }
 
@@ -149,13 +158,14 @@ pub fn walk(store: &Store, home: &Path, trees: &[Tree], sessions: &[(PathBuf, St
         let Ok(target) = git::run(&p.repo, &["rev-parse", &format!("refs/remotes/{remote}/{branch}")]) else { continue };
         let common = git::run(&p.repo, &["rev-parse", "--path-format=absolute", "--git-common-dir"]).unwrap_or_default();
         let ours: Vec<&Tree> = trees.iter().filter(|t| t.project == project).collect();
-        let mut heads: Vec<Head> = ours.iter().take(TREES_MOST).filter_map(|t| head_of(t, &p.repo, &common, &target)).collect();
+        let mut heads: Vec<Head> = ours.iter().filter(|t| t.working).take(TREES_MOST).filter_map(|t| head_of(t, &p.repo, &common, &target)).collect();
         let entries = store.with(|tx| queue_of(tx, project))?;
         heads.extend(entries.into_iter().enumerate().filter_map(|(i, e)| {
             Some(Head { files: changed(&p.repo, &target, &e.commit)?, task: e.task, id: e.id, head: e.commit, queued: Some(ordinal(i + 1)) })
         }));
         let taken: HashSet<&str> = heads.iter().map(|h| h.head.as_str()).chain([target.as_str()]).collect();
-        let loose = loose_trees(&p.repo, &home.join("integration"), &target, &taken, sessions);
+        let claimed: Vec<&Path> = ours.iter().map(|t| t.dir.as_path()).collect();
+        let loose = loose_trees(&p.repo, &home.join("integration"), &target, (&taken, &claimed), sessions);
         let mut found: HashMap<&str, Vec<String>> = HashMap::new();
         for (i, a) in heads.iter().enumerate().filter(|(_, h)| h.queued.is_none()) {
             moved(store, a, &p.repo, &p.s.target, &target, now)?;
@@ -191,41 +201,49 @@ fn conflict(repo: &Path, a: &str, b: &str, a_files: &HashSet<String>, b_files: &
     if a_files.is_disjoint(b_files) {
         return None;
     }
-    judged(format!("{a}-{b}@{target}"), || merge(repo, a, b).ok().and_then(Result::err))
+    judged(format!("{a}-{b}@{target}"), || merge(repo, a, b).map(Result::err))
 }
 
-/// The project's worktrees with commits of their own and no task (`taken`: the HEADs of its tasks, and the target),
-/// newest first, at most `TREES_MOST`, none of terminum's own under `ours`; each named by its branch and the session
-/// in it, else its folder.
-fn loose_trees(repo: &Path, ours: &Path, target: &str, taken: &HashSet<&str>, sessions: &[(PathBuf, String)]) -> Vec<Loose> {
+/// The project's worktrees with commits of their own and no task, newest first, at most `TREES_MOST`, none of
+/// terminum's own under `ours`; each named by its branch and the session in it, else its folder. A tree with a task:
+/// one holding a task's folder (`claimed`), or at a HEAD a task or the target holds (`taken`).
+fn loose_trees(repo: &Path, ours: &Path, target: &str, (taken, claimed): (&HashSet<&str>, &[&Path]), sessions: &[(PathBuf, String)]) -> Vec<Loose> {
     let Ok(listed) = git::run(repo, &["worktree", "list", "--porcelain"]) else { return Vec::new() };
     let real = |d: &Path| std::fs::canonicalize(d).unwrap_or_else(|_| d.to_path_buf());
     let ours = real(ours);
-    let sessions: Vec<(PathBuf, &String)> = sessions.iter().map(|(d, n)| (real(d), n)).collect();
     let all: Vec<(PathBuf, String, Option<String>)> = listed.split("\n\n").filter_map(|block| {
         let field = |k: &str| block.lines().find_map(|l| l.strip_prefix(k)).map(str::to_string);
         Some((real(Path::new(&field("worktree ")?)), field("HEAD ")?, field("branch ").map(|b| b.trim_start_matches("refs/heads/").to_string())))
     }).collect();
-    let mut found: Vec<(i64, PathBuf, String, Option<String>)> = all.iter().filter(|(dir, head, _)| !dir.starts_with(&ours) && !taken.contains(head.as_str()))
-        .filter_map(|(dir, head, branch)| Some((git::run(repo, &["show", "-s", "--format=%ct", head]).ok()?.parse().ok()?, dir.clone(), head.clone(), branch.clone())))
-        .collect();
-    found.sort_by(|a, b| b.0.cmp(&a.0));
-    found.into_iter().take(TREES_MOST).filter_map(|(_, dir, head, branch)| {
-        let files = changed(repo, target, &head).filter(|f| !f.is_empty())?;
-        // the session working in this tree: in its folder, and in no deeper tree of the project
-        let deepest = |d: &Path| all.iter().filter(|(t, _, _)| d.starts_with(t)).max_by_key(|(t, _, _)| t.as_os_str().len()).map(|(t, _, _)| t.clone());
-        let session = sessions.iter().find(|(d, _)| deepest(d).as_ref() == Some(&dir)).map(|(_, n)| n);
-        let place = match session {
-            Some(n) => format!("session {}", plain(n)),
-            None => format!("folder {}", dir.display()),
+    // the tree a folder is in: the deepest holding it (a primary checkout holds its .worktrees)
+    let tree_of = |d: &Path| { let d = real(d); all.iter().filter(|(t, _, _)| d.starts_with(t)).max_by_key(|(t, _, _)| t.as_os_str().len()).map(|(t, _, _)| t.clone()) };
+    let held: HashSet<PathBuf> = claimed.iter().filter_map(|d| tree_of(d)).collect();
+    let free: Vec<&(PathBuf, String, Option<String>)> = all.iter().filter(|(dir, head, _)| !dir.starts_with(&ours) && !held.contains(dir) && !taken.contains(head.as_str())).collect();
+    if free.is_empty() {
+        return Vec::new();
+    }
+    // when each HEAD was made, in one git call
+    let mut args = vec!["log", "--no-walk=unsorted", "--format=%H %ct"];
+    args.extend(free.iter().map(|(_, head, _)| head.as_str()));
+    let made: HashMap<String, i64> = git::run(repo, &args).unwrap_or_default().lines()
+        .filter_map(|l| l.split_once(' ').and_then(|(h, t)| Some((h.to_string(), t.parse().ok()?)))).collect();
+    let mut free: Vec<(i64, &(PathBuf, String, Option<String>))> = free.into_iter().filter_map(|t| Some((*made.get(&t.1)?, t))).collect();
+    free.sort_by(|a, b| b.0.cmp(&a.0));
+    let sessions: Vec<(Option<PathBuf>, &String)> = sessions.iter().map(|(d, n)| (tree_of(d), n)).collect();
+    free.into_iter().take(TREES_MOST).filter_map(|(_, (dir, head, branch))| {
+        let files = changed(repo, target, head).filter(|f| !f.is_empty())?;
+        let place = match sessions.iter().find(|(t, _)| t.as_ref() == Some(dir)) {
+            Some((_, n)) => format!("session \"{}\"", plain(n, 60)),
+            None => format!("folder {}", plain(&dir.display().to_string(), 300)),
         };
-        Some(Loose { name: format!("{} ({place})", branch.unwrap_or_else(|| format!("detached {}", short(&head)))), head, files })
+        let branch = branch.clone().unwrap_or_else(|| format!("detached {}", short(head)));
+        Some(Loose { name: format!("{branch} ({place})"), head: head.clone(), files })
     }).collect()
 }
 
-/// A session's name as a notice says it: quoted, no control character, 60 characters at most.
-fn plain(name: &str) -> String {
-    format!("\"{}\"", name.chars().filter(|c| !c.is_control()).take(60).collect::<String>())
+/// A name or folder as a notice says it: no control character, no double quote, `most` characters at most.
+fn plain(name: &str, most: usize) -> String {
+    name.chars().filter(|c| !c.is_control() && *c != '"').take(most).collect()
 }
 
 /// A tree's HEAD and the files it changed since the target; none when it is no checkout of the project's repository
@@ -240,9 +258,9 @@ fn head_of(t: &Tree, repo: &Path, common: &str, target: &str) -> Option<Head> {
     (!files.is_empty()).then(|| Head { task: t.task.clone(), id: t.id.clone(), head: head.to_string(), files, queued: None })
 }
 
-/// The files `head` changed since it left `target`.
+/// The files `head` changed since it left `target`, asked of git once for those commits.
 fn changed(repo: &Path, target: &str, head: &str) -> Option<HashSet<String>> {
-    Some(git::changed(repo, target, head).ok()?.into_iter().collect())
+    judged(format!("files {target}...{head}"), || git::changed(repo, target, head).map(Some)).map(|f| f.into_iter().collect())
 }
 
 /// `a`'s agent told, once for that pair of commits, that `b`'s commits do not merge with its own; a queued task learns

@@ -91,17 +91,18 @@ async fn deliver(app: &Shared, last: &mut Option<i64>) {
     }
 }
 
-/// The trees of tasks in work, newest first: the folder its agent works in, as its hooks said, else its session's, on
-/// this Mac; with every session's folder, which names a tree with no task; compared off the async workers.
+/// The trees of tasks with a session, newest first, those in work compared: the folder its agent works in, as its hooks
+/// said, else its session's, on this Mac; with every session's folder, which names a tree with no task; compared off
+/// the async workers.
 async fn walk(app: &Shared) {
-    let Ok(tasks) = crate::tasks::api::store(app, |tx| crate::tasks::ops::rows(tx, "SELECT t.id, t.slug, t.project, t.session_key FROM tasks t
-        JOIN project_integration i ON i.project = t.project WHERE i.is_on = 1 AND t.status = 'IN PROGRESS' AND t.session_key IS NOT NULL AND t.archived_at IS NULL
-        ORDER BY t.updated_at DESC", [], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?, r.get::<_, String>(3)?)))).await else { return };
+    let Ok(tasks) = crate::tasks::api::store(app, |tx| crate::tasks::ops::rows(tx, "SELECT t.id, t.slug, t.project, t.session_key, t.status = 'IN PROGRESS' FROM tasks t
+        JOIN project_integration i ON i.project = t.project WHERE i.is_on = 1 AND t.session_key IS NOT NULL AND t.archived_at IS NULL
+        ORDER BY t.updated_at DESC", [], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?, r.get::<_, String>(3)?, r.get::<_, bool>(4)?)))).await else { return };
     let (trees, sessions): (Vec<notices::Tree>, Vec<_>) = {
         let layout = app.layout.read();
-        let trees = tasks.into_iter().filter_map(|(task, id, project, key)| {
+        let trees = tasks.into_iter().filter_map(|(task, id, project, key, working)| {
             let dir = notices::tree_dir(crate::page::marks::find_item(&layout, &key)?)?;
-            Some(notices::Tree { task, id, project, dir })
+            Some(notices::Tree { task, id, project, dir, working })
         }).collect();
         // every session's folders on this Mac, to name a tree with no task by the session in it
         let groups = layout.as_array().map_or(&[][..], |a| a.as_slice());

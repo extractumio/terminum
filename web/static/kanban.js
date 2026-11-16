@@ -173,7 +173,9 @@ function card(t, under = "") {
   head.append(el("span", "cid", t.id), el("span", `csev ${t.severity}`, t.severity));
   if (t.parent) head.append(el("span", "cparent", `in ${t.parent}`));
   if (t.schedule) head.append(el("span", "cfrom", t.schedule));   // made by that schedule (terminum-schedules.md AC-163)
-  if (t.queue) head.append(el("span", "qmark", t.queue.mark));     // what the integration queue says of it (terminum-integration.md AC-193)
+  if (t.queue?.mark) head.append(el("span", "qmark", t.queue.mark));     // what the integration queue says of it (terminum-integration.md AC-193)
+  // each task its commits overlap, a press opening that task (terminum-integration.md AC-193)
+  head.append(...(t.queue?.overlaps ?? []).map((id) => button("qmark qoverlap linklike", `overlaps ${id}`, (e) => { e.stopPropagation(); openTask(id); })));
   c.classList.toggle("inbatch", t.queue?.batch != null);
   c.classList.toggle("batchhead", !!t.queue?.head);
   if (t.agent) head.append(agentChip(t.agent));

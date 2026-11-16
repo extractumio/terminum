@@ -22,7 +22,7 @@ fn working(w: &World, n: u32, file: &str, text: &str) -> Tree {
     sh(&dir, &["add", file]);
     sh(&dir, &["commit", "-qm", &format!("w{n}")]);
     let task = w.s.with(|tx| ops::key_of(tx, &id)).unwrap();
-    Tree { task, id, project: "api".into(), dir }
+    Tree { task, id, project: "api".into(), dir, working: true }
 }
 
 fn said(w: &World, id: &str) -> Vec<String> {
@@ -65,10 +65,15 @@ fn ac192_a_tree_with_no_task_is_only_the_other_side_named_by_its_session_or_fold
     loose(&w, &bare, None, "a.txt", "other\n");
     loose(&w, &home.join("integration").join("api").join("tree"), None, "a.txt", "candidate\n");   // terminum's own: not compared
     loose(&w, &w.root.join("loose-3"), Some("feat/calm"), "c.txt", "elsewhere\n");
+    // a task waiting for a human has a tree of its own, though it is not compared: never "a tree with no task"
+    let mut asks = working(&w, 4, "a.txt", "asking\n");
+    w.s.with(|tx| ops::move_to(tx, DISPATCHER, &asks.id, "WAIT FOR HUMAN", 3).map(drop)).unwrap();
+    asks.working = false;
     std::fs::create_dir(named.join("src")).unwrap();
-    let sessions = [(named.join("src"), "ops\u{7}".to_string()), (w.root.join("elsewhere"), "far".to_string())];
-    walk(&w.s, &home, std::slice::from_ref(&a), &sessions, 10).unwrap();
-    walk(&w.s, &home, std::slice::from_ref(&a), &sessions, 11).unwrap();
+    let sessions = [(named.join("src"), "ops\u{7}\"".to_string()), (w.root.join("elsewhere"), "far".to_string())];
+    let trees = [a.clone(), asks.clone()];
+    walk(&w.s, &home, &trees, &sessions, 10).unwrap();
+    walk(&w.s, &home, &trees, &sessions, 11).unwrap();
     let real = std::fs::canonicalize(&bare).unwrap();
     let mut told = said(&w, &a.id);
     told.sort();
@@ -76,7 +81,8 @@ fn ac192_a_tree_with_no_task_is_only_the_other_side_named_by_its_session_or_fold
         format!("{}: its commits and detached {} (folder {}), a tree with no task, change the same files: a.txt. Whichever lands second merges origin/main first: once it lands, merge origin/main before you queue.",
                 a.id, git::short(&sh(&bare, &["rev-parse", "HEAD"])), real.display()),
         format!("{}: its commits and fix/retry (session \"ops\"), a tree with no task, change the same files: a.txt. Whichever lands second merges origin/main first: once it lands, merge origin/main before you queue.", a.id),
-    ], "once per pair of commits; a session named without control characters; terminum's own tree and one changing other files said nothing");
+    ], "once per pair of commits; a session named without control characters or quotes; terminum's own tree, a waiting task's and one changing other files said nothing");
+    assert!(said(&w, &asks.id).is_empty(), "a task not in work is not compared");
     assert!(overlaps_of(&a.task, 11).is_empty(), "a tree with no task has no card to open: no mark");
 }
 
