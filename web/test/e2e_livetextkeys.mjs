@@ -16,7 +16,8 @@ export async function liveTextKeys(page, live, phone = false) {
   await open(`?project=${project}`);
   const bar = {
     "AC-106 + Task": ["#newtask", async () => { await page.keyboard.press("Escape"); await shut(page, "#newbox"); }],
-    ...(phone ? { "AC-111 Filters": ["#filtersbtn"], "AC-105 a column's tab": ['#colswitch button[data-status="DONE"]'] }
+    // a phone's filters stand behind its Find key, put away by a second press (terminum-kanban.md AC-105 "a phone's one-row head")
+    ...(phone ? { "AC-105 Find and filters": ["#findkey", () => page.click("#findkey")], "AC-105 a column's tab": ['#colswitch button[data-status="DONE"]'] }
       : { "AC-111 the project's menu": ["#fproject summary"], "AC-112 Show subtasks": ["#fsubtasks"], "AC-142 + Session": ["#adhocsession"],
         "AC-138 an agent's card": [`.agentcard[data-agent="${agent}"]`] }),
   };

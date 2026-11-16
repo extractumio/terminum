@@ -7,7 +7,7 @@
 import { asksFold } from "./askfold.js";
 import { placeModal } from "./fabpane.js";
 import { $ } from "./kanbanutil.js";
-import { el } from "./listparts.js";
+import { el, pointerKey } from "./listparts.js";
 import { BOARD_PHONE } from "./phonewin.js";
 
 const phone = matchMedia(BOARD_PHONE);
@@ -20,7 +20,7 @@ function finding(on) {
   find.setAttribute("aria-expanded", String(on));
   if (on) $("find").focus();
 }
-find.addEventListener("click", () => finding(!bar.classList.contains("finding")));
+pointerKey(find).addEventListener("click", () => finding(!bar.classList.contains("finding")));
 
 /** The Find key says a narrowed board: kanbanfilters.js shows Clear filters exactly then. */
 function lit() {
