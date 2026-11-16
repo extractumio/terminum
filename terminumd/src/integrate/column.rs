@@ -2,7 +2,7 @@
 //! The board's INTEGRATION column (`terminum-integration.md` AC-193): what terminumd says on each card (the batch in
 //! work on its integration task's card, "in batch 7", a place in the queue or what it waits for, a return on a card
 //! in IN PROGRESS), each project's queue paused or waiting, and the keys: Pause and Resume, a human's Integrate and
-//! Take out, Batches…. The column's order is the queue's (`tasks::query`); terminumd says each state in words.
+//! Take out, Batches…, and on a deciding batch's cards its keys (`keys.rs`). The column's order is the queue's (`tasks::query`); terminumd says each state in words.
 
 use std::collections::{HashMap, HashSet};
 
@@ -14,6 +14,7 @@ use rusqlite::Transaction;
 use serde_json::{json, Value};
 
 use super::git::short;
+use super::keys::keys_of;
 use super::store::{self as bs, Batch};
 use crate::app::Shared;
 use crate::tasks::api::{answer, store};
@@ -63,15 +64,18 @@ pub fn state_words(tx: &Transaction, b: &Batch) -> Result<String, String> {
 /// With the batch's number, so the page draws a batch's cards as one group.
 pub fn marks(tx: &Transaction, tasks: &[Task], now: i64) -> Result<HashMap<String, Value>, String> {
     let mut out = HashMap::new();
-    let projects: HashSet<&str> = tasks.iter().filter(|t| t.status == INTEGRATION).map(|t| t.project.as_str()).collect();
+    // a batch's integration task keeps its head's line in IN PROGRESS or WAIT FOR HUMAN too ("I_": terminum-kanban.md AC-148)
+    let projects: HashSet<&str> = tasks.iter().filter(|t| t.status == INTEGRATION || t.id.starts_with("I_")).map(|t| t.project.as_str()).collect();
     for project in projects {
         for b in bs::of_project(tx, project, i64::MAX, 5)?.iter().filter(|b| !["ended", "given up"].contains(&b.state.as_str())) {
             if let Some(task) = &b.task {
                 let minutes = (now - b.step_started.unwrap_or(b.created_at)).max(0) / 60;
-                out.insert(task.clone(), json!({"mark": format!("batch {} · {} · {minutes} min", b.number, state_words(tx, b)?), "batch": b.number, "head": true}));
+                out.insert(task.clone(), json!({"mark": format!("batch {} · {} · {minutes} min", b.number, state_words(tx, b)?), "batch": b.number, "head": true,
+                                                "batch_id": b.id, "keys": keys_of(b)}));
             }
+            // each card of the group holds the batch's keys for the human (AC-193): the same as its integration task's window
             for k in &b.tasks {
-                out.insert(k.clone(), json!({"mark": format!("in batch {}", b.number), "batch": b.number}));
+                out.insert(k.clone(), json!({"mark": format!("in batch {}", b.number), "batch": b.number, "batch_id": b.id, "keys": keys_of(b)}));
             }
         }
         let waiting = ops::rows(tx, "SELECT e.task, e.stage, e.waits_for FROM integration_entries e JOIN tasks t ON t.id = e.task

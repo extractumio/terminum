@@ -105,3 +105,23 @@ fn ac193_a_humans_take_out_puts_it_back_in_work_and_never_a_batchs_own_task() {
     let i = w.s.with(|tx| bs::task_of(tx, &bt)).unwrap().unwrap();
     assert!(w.s.with(|tx| out(tx, &i, 7)).unwrap_err().contains("ends with its batch"));
 }
+
+#[test]
+fn ac193_a_red_batchs_cards_hold_its_keys_and_a_checking_ones_none() {
+    let w = world("ic-keys", Settings { check: "exit 3".into(), ..Settings::default() });
+    let a = queued(&w, 1, "b.txt", "b\n");
+    go(&w, &Sh::default(), 4);
+    let b = batch(&w);
+    assert_eq!(b.state, "red");
+    let i = w.s.with(|tx| bs::task_of(tx, &b)).unwrap().unwrap();
+    let mark = |id: &str| w.s.with(|tx| {
+        let t = ops::get(tx, id)?;
+        Ok(marks(tx, std::slice::from_ref(&t), ops::now())?.remove(&t.key).unwrap_or_default())
+    }).unwrap();
+    let card = mark(&a);
+    assert_eq!((card["batch_id"].as_i64(), card["keys"].clone()), (Some(b.id), json!(["check-again", "return", "return-all"])), "{card}");
+    let head = mark(&i);
+    assert_eq!((head["head"].as_bool(), head["keys"].clone()), (Some(true), json!(["check-again", "return", "return-all"])), "{head}");
+    w.s.with(|tx| tx.execute("UPDATE integration_batches SET state = 'checking' WHERE id = ?1", [b.id]).map(drop).map_err(sql)).unwrap();
+    assert_eq!(mark(&a)["keys"], json!([]), "nothing to decide while it is checked");
+}
