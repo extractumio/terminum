@@ -28,46 +28,49 @@
     <nav class="sections seg" aria-label="Sections"></nav>
   </header>
   <!-- /the shared head -->
-  <div id="htools" class="mtools">
+  <!-- pages | tools over rail | list (history.css #hpage); a narrow window: one column, the rail behind Filters -->
+  <div id="hpage">
     <nav class="seg mpages" aria-label="Messages' pages">
-      <a href="/history/" aria-current="page" title="What you sent, searched"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:14px"><path d="M14 9a2 2 0 0 1-2 2H6l-4 4V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2z"/><path d="M18 9h2a2 2 0 0 1 2 2v11l-4-4h-6a2 2 0 0 1-2-2v-1"/></svg><span>History</span></a>
+      <a href="/history/" aria-current="page" title="What was sent, searched"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:14px"><path d="M14 9a2 2 0 0 1-2 2H6l-4 4V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2z"/><path d="M18 9h2a2 2 0 0 1 2 2v11l-4-4h-6a2 2 0 0 1-2-2v-1"/></svg><span>History</span></a>
       <a href="/scheduled/" title="Every run of a schedule"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:14px"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg><span>Scheduled</span></a>
     </nav>
-    <label class="search field"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:15px"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></svg>
-      <input id="q" type="search" placeholder="Search what you sent" aria-label="Search what you sent" aria-controls="results" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="search">
-      <kbd class="wide-only" title="Press / to search">/</kbd>
-    </label>
-    <button id="hhelp" class="icon" type="button" aria-expanded="false" aria-controls="hhelpbox" title="How words are looked for" aria-label="How words are looked for"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg></button>
-    <button id="hfilters" class="textkey" type="button" aria-expanded="false" aria-controls="hpicks">Filters</button>
-    <div id="hpicks">
-      <details id="fwhen" class="pick" name="hpick"><summary class="textkey" title="When it was sent">All kept</summary>
-        <div class="box menurows" role="group" aria-label="When">
-          <div class="rows"></div>
-          <div class="hrange"><label>From <input id="hfrom" type="date" class="field"></label><label>To <input id="hto" type="date" class="field"></label><button id="hrangego" class="textkey primary" type="button">Show</button></div>
-        </div></details>
-      <details id="fproject" class="pick" name="hpick"><summary class="textkey" title="The session list's project">All projects</summary><div class="box menurows" role="group" aria-label="Projects"></div></details>
-      <details id="fsender" class="pick" name="hpick"><summary class="textkey" title="Who sent it">You and Dispatcher</summary><div class="box menurows" role="group" aria-label="From"></div></details>
-      <details id="fkind" class="pick" name="hpick"><summary class="textkey" title="A coding agent's prompt or a shell's command">Agents and shells</summary><div class="box menurows" role="group" aria-label="Where"></div></details>
+    <div id="htools" class="mtools">
+      <label class="search field"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:15px"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></svg>
+        <input id="q" type="search" placeholder="Search messages" aria-label="Search messages" aria-controls="results" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="search">
+        <kbd class="wide-only" title="Press / to search">/</kbd>
+      </label>
+      <button id="hhelp" class="icon" type="button" aria-expanded="false" aria-controls="hhelpbox" title="How words are looked for" aria-label="How words are looked for"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg></button>
+      <button id="hfilters" class="textkey" type="button" aria-expanded="false" aria-controls="hrail">Filters</button>
       <div id="hsort" class="seg" role="group" aria-label="Order">
         <button type="button" data-sort="best" title="The best matches first (BM25)">Best match</button>
         <button type="button" data-sort="new" title="The newest first">Newest</button>
       </div>
     </div>
+    <aside id="hrail" aria-label="Filters">
+      <section class="fgroup"><h2 id="fkindh">Type</h2><div id="fkind" class="frows" role="group" aria-labelledby="fkindh"></div></section>
+      <section class="fgroup"><h2 id="fsenderh">From</h2><div id="fsender" class="frows" role="group" aria-labelledby="fsenderh"></div></section>
+      <section class="fgroup"><h2 id="fwhenh">When</h2><div id="fwhen" class="frows" role="group" aria-labelledby="fwhenh"></div>
+        <div class="hrange"><label>From <input id="hfrom" type="date" class="field"></label><label>To <input id="hto" type="date" class="field"></label><button id="hrangego" class="textkey" type="button">Show</button></div></section>
+      <section class="fgroup"><h2 id="fprojecth">Project</h2><div id="fproject" class="frows" role="group" aria-labelledby="fprojecth"></div></section>
+    </aside>
+    <div id="hmain">
+      <div id="hhelpbox" class="box" hidden>
+        <p><code>page history</code>: both words, each also as the start of a longer one.</p>
+        <p><code>"jump to message"</code>: those words together.</p>
+        <p><code>-codex</code>: without that word. Other signs are plain text.</p>
+        <p>Words are matched whole or by their start, not by their forms: <code>поиск</code> finds <code>поиска</code>, not <code>искать</code>.</p>
+      </div>
+      <div id="hchips" role="group" aria-label="Filters in force" hidden></div>
+      <figure id="strip" class="strip">
+        <figcaption class="striphead"><span id="stripsay" aria-live="polite"></span></figcaption>
+        <div id="stripplot" class="stripplot" tabindex="0" role="group" aria-label="Messages a day: ← and → choose a day, Enter shows it"></div>
+      </figure>
+      <p id="hsum" class="msum" role="status"></p>
+      <p id="herr" class="merr" role="alert" hidden></p>
+      <div id="results" role="listbox" aria-label="Messages"></div>
+      <div id="hfoot"><button id="more" class="textkey" type="button" hidden>Show more</button></div>
+    </div>
   </div>
-  <div id="hhelpbox" class="box" hidden>
-    <p><code>page history</code>: both words, each also as the start of a longer one.</p>
-    <p><code>"jump to message"</code>: those words together.</p>
-    <p><code>-codex</code>: without that word. Other signs are plain text.</p>
-    <p>Words are matched whole or by their start, not by their forms: <code>поиск</code> finds <code>поиска</code>, not <code>искать</code>.</p>
-  </div>
-  <figure id="strip" class="strip">
-    <figcaption class="striphead"><span id="stripsay" aria-live="polite"></span><button id="stripclear" class="textkey" type="button" hidden>Clear dates</button></figcaption>
-    <div id="stripplot" class="stripplot" tabindex="0" role="group" aria-label="Messages a day: ← and → choose a day, Enter shows it"></div>
-  </figure>
-  <p id="hsum" class="msum" role="status"></p>
-  <p id="herr" class="merr" role="alert" hidden></p>
-  <div id="results" role="listbox" aria-label="Messages"></div>
-  <div id="hfoot"><button id="more" class="textkey" type="button" hidden>Show more</button></div>
 </main>
 <script type="module" src="grain.js"></script>
 <script type="module" src="interact.js"></script>

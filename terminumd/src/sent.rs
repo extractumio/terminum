@@ -31,6 +31,8 @@ const HINTS: usize = 4;
 /// Quotes asked about kept per pane (AC-37), and the most of one's text kept.
 const ASKED: usize = 100;
 const ASKED_TEXT: usize = 4000;
+/// How long what a manager typed waits for its agent's hook to say it, in seconds: a busy agent queues a prompt to its turn's end.
+const MANAGER_FOR: u64 = 30 * 60;
 
 pub struct Sent {
     root: PathBuf,
@@ -38,6 +40,9 @@ pub struct Sent {
     last: Mutex<HashMap<String, (String, Instant)>>,
     /// per hooked pane: (the loose first line of what the page saw, its line), newest last
     hints: Mutex<HashMap<String, VecDeque<(String, i64)>>>,
+    /// what a project's manager typed with Enter into a pane (send_to_session): its agent's hook says it as a
+    /// prompt, the manager's message (AC-147)
+    pub managers: crate::dispatcher::Typed<MANAGER_FOR>,
     write: Mutex<()>,
 }
 
@@ -52,7 +57,7 @@ pub use redaction::redact;
 
 impl Sent {
     pub fn new(root: PathBuf) -> Sent {
-        Sent { root, last: Mutex::default(), hints: Mutex::default(), write: Mutex::default() }
+        Sent { root, last: Mutex::default(), hints: Mutex::default(), managers: Default::default(), write: Mutex::default() }
     }
 
     /// A project's folder: its answers' ends, quotes and asked quotes.

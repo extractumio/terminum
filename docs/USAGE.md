@@ -136,12 +136,16 @@ page says how; how the sign-in is kept is in [SECURITY.md](../SECURITY.md). `tmu
   are in `docs/specs/terminum.md` §9 Data formats (AC-147). What an agent was actually given is
   its own record, in the sent history above.
 - **Message history** (`/history/`, Messages among the sections in the page's top
-  left corner): every prompt and command sent, yours and Dispatcher's (tagged), kept in the
-  table `messages` beside the input log. Type words to find them, the best matches first (each word
-  also as the start of a longer one, `"a phrase"`, `-word` to leave out), or browse newest first by
-  day; narrow by days (the strip of a column a day), project, sender and agents or shells. A row
-  opens its session at that message, shows what was sent around it, or copies it. Every choice is in
-  the address, so Back and links work.
+  left corner): every prompt and command sent, kept in the table `messages` beside the input log.
+  Each row starts with its time and says who sent it (you, Dispatcher, or a project's manager) to
+  which agent or a shell, in which session, project and tasks, right over its text. The rail at the
+  left narrows the list in one press, each choice with its count: prompts (any agent's or one's) or
+  commands, the sender, days, the project; the strip shows a column a day. Type words to find
+  messages, the best matches first (each word also as the start of a longer one, `"a phrase"`,
+  `-word` to leave out), or browse newest first by day. A row opens to its whole text and its keys:
+  its session at that message, its tasks, what was sent around it, Copy, and Show only this session
+  or task. A chip stands for each filter in force; every choice is in the address, so Back and
+  links work.
 - **Scheduled runs** (`/scheduled/`, Scheduled beside History in the Message history): every firing of
   your schedules, newest first: when, the schedule, its task (a press opens it on the board), its
   agent and status, when it went IN PROGRESS and ended; a row opens to the prompt that went in and

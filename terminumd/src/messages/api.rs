@@ -2,10 +2,9 @@
 //! The Message history's routes (terminum.md AC-151), behind the
 //! page's sign-in; reads only, off the async workers.
 //!
-//! `GET /api/messages?q=&sort=best|new&from=&to=&project=a,b&sender=&kind=&pane=&cursor=` (project `-`:
-//! none): a page
-//! (search::page), each item with `live` (its pane is in the session list), the first page with
-//! the day strip's `days`; `GET /api/messages/meta`: the filters' projects, first day, the page's
+//! `GET /api/messages?q=&sort=best|new&from=&to=&project=a,b&sender=&kind=&pane=&task=&cursor=`
+//! (project `-`: none): a page (search::page), each item with `live` (its pane is in the session list), the
+//! first page with the day strip's `days` and the quick filters' counts (`facets`); `GET /api/messages/meta`: the filters' projects, first day, the page's
 //! theme;
 //! `GET /api/messages/{id}/context?before=&after=`.
 
@@ -38,9 +37,10 @@ pub fn filter(q: &HashMap<String, String>) -> Filter {
         from: some("from"),
         to: some("to"),
         projects: q.get("project").filter(|p| !p.is_empty()).map(|p| p.split(',').map(str::to_string).collect()).unwrap_or_default(),
-        sender: some("sender").filter(|s| s == crate::tasks::store::HUMAN || s == crate::tasks::store::DISPATCHER),
-        kind: some("kind").filter(|k| k == "agent" || k == "shell"),
+        sender: some("sender").filter(|s| [crate::tasks::store::HUMAN, crate::tasks::store::DISPATCHER, crate::inputs::MANAGER].contains(&s.as_str())),
+        kind: some("kind"),
         pane: some("pane"),
+        task: some("task").filter(|t| !t.contains(',')),
     }
 }
 
@@ -61,6 +61,7 @@ async fn list(State(app): State<Shared>, Query(q): Params) -> Response {
         let mut page = search::page(tx, &f, best, cursor.as_deref())?;
         if cursor.is_none() {
             page["days"] = serde_json::json!(search::days(tx, &f)?);
+            page["facets"] = search::facets(tx, &f)?;
         }
         Ok(page)
     }).await;
