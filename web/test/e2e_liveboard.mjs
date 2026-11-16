@@ -108,7 +108,7 @@ export async function liveBoard(page, { base, tmux, work, shots }) {
 
   // a human moves a task by running it: a drag across columns moves nothing (AC-138); the test places it by the route
   await page.waitForTimeout(300);   // the order's own read is in: a drag begun on a column being rebuilt is lost
-  await page.dragAndDrop(card(urgent), '.col[data-status="DONE"]');
+  await page.dragAndDrop(card(urgent), await page.isVisible(".colpanel") ? ".colpanel" : '.col[data-status="DONE"]');   // the panel beside TODO, a phone's column (AC-105)
   await page.waitForTimeout(300);
   check("AC-138 a drag across columns moves nothing", (await inColumn("TODO")).includes(urgent) && !(await inColumn("DONE")).includes(urgent));
   check("AC-138 a card has no key to move it, its play key opens the run window", !(await page.$(".cmove")) && !(await page.$("#movebox")) && !!(await page.$(`${card(second)} .crun`)));

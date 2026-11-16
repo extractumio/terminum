@@ -56,7 +56,7 @@ export async function liveBoardSessions(page, opts) {
   await until(async () => { await showColumnOf(page, made); return page.isVisible(`.col[data-status="IN PROGRESS"] ${row}`); }, 4000);
 
   // a drag by its row to another column moves nothing and opens nothing (AC-138)
-  await page.dragAndDrop(row, '.col[data-status="FAILED"]', { force: true });
+  await page.dragAndDrop(row, await page.isVisible(".colpanel") ? ".colpanel" : '.col[data-status="FAILED"]', { force: true });   // the panel beside TODO, a phone's column (AC-105)
   await nap(300);
   check("AC-134 a drag by the row moves no card", await page.isVisible(`.col[data-status="IN PROGRESS"] ${row}`) && (await j(`/api/tasks/${made}`)).status === "IN PROGRESS");
   check("AC-134 and opens no session", new URL(page.url()).pathname === "/kanban/", page.url());
