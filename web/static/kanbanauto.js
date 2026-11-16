@@ -7,11 +7,11 @@
 // Having turned itself off it says why, in the switch and in the tab, and only a page that showed why turns it on
 // again. terminumd keeps the setting and says what is wrong; every page hears.
 import { oneAtATime } from "./dialogs.js";
-import { $, agentLabel, agentsOf, api, fillSelect, say, showError } from "./kanbanutil.js";
+import { $, agentLabel, agentsOf, api, fillSelect, oneProject, say, showError } from "./kanbanutil.js";
 
-/** `getMeta()`: terminumd's projects and agents; `shown()`: the projects the board shows; `reload()`: read them anew;
+/** `getMeta()`: terminumd's projects and agents; `shownProjects()`: the projects the board shows; `reload()`: read them anew;
  *  `openProject(p)`: the project's window on this tab. */
-export function autoDispatcher({ getMeta, shown: projects, reload, openProject }) {
+export function autoDispatcher({ getMeta, shownProjects, reload, openProject }) {
   const box = $("autopanel"), key = $("autoswitch"), ticks = [...$("autoseverities").querySelectorAll("input")];
   let shown = null;
 
@@ -20,7 +20,7 @@ export function autoDispatcher({ getMeta, shown: projects, reload, openProject }
   /** What a press of the switch does, and its words for the switch's title. One project shown: on or off, through
    *  its window when no agent picks yet or it turned itself off, which the window says. Several: off for those on. */
   function next() {
-    const all = projects(), on = all.filter((p) => p.auto?.on), one = all.length === 1 ? all[0] : null;
+    const all = shownProjects(), on = all.filter((p) => p.auto?.on), one = all.length === 1 ? all[0] : null;
     const full = on.filter((p) => p.auto.started_day >= p.auto.day_most).map((p) => `${p.name}'s ${p.auto.day_most} tasks of 24 hours are started: it waits. `).join("");
     const how = (p) => (p.auto.mode === "order" ? `${p.name}'s TODO tasks start by priority and saved order on the free slots` : `${agentLabel(getMeta().agents.find((a) => a.id === p.auto.agent))} picks ${p.name}'s TODO tasks for the free slots and starts them`);
     if (on.length) return { all, on, act: "off", says: full + (one ? `${how(one)}. Press to turn it off` : `On for ${on.map((p) => p.name).join(", ")}. Press to turn it off for them`) };
@@ -61,9 +61,9 @@ export function autoDispatcher({ getMeta, shown: projects, reload, openProject }
    *  to save; several shown: which one is the human's to say. */
   async function open() {
     await reload();
-    const all = projects();
-    if (all.length !== 1) return say(all.length ? "Multiple projects are selected: select only one to turn Auto-Dispatch on." : "Make a project first.");
-    openProject(all[0]);
+    const p = oneProject(shownProjects(), "turn Auto-Dispatch on");
+    if (!p) return;
+    openProject(p);
     $("autoon").checked = true;
   }
 

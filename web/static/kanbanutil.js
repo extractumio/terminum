@@ -141,6 +141,12 @@ export const row = (...kids) => { const r = el("div", "actions"); r.append(...ki
 
 /** One short message, where the action was taken cannot hold it. */
 export const say = (text) => toast(text, 4000);
+/** The one project of `all` the board shows; with several or none, says why there is none to `act` on (terminum-kanban.md AC-139). */
+export function oneProject(all, act) {
+  if (all.length === 1) return all[0];
+  say(all.length ? `Multiple projects are selected: select only one to ${act}.` : "Make a project first.");
+  return null;
+}
 
 /** A text pressed ⌘Enter in goes where its button would. */
 export const onSend = (area, go) => area.addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); go(); } });

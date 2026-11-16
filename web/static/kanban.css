@@ -4,8 +4,7 @@
 body.board-page { margin: 0; overflow: hidden; background: var(--surface-0); color: var(--t-fg); }
 /* one size for the board's words (terminum-kanban.md AC-105 "one type size"): its fields, choices, labels, keys, tabs,
    switches, folds, hints and file names as large as a task's text; counts, badges and the cards keep theirs */
-.board-page :is(#bar, #pool, #poolline, #colswitch, .colhead, .cards > :is(.colempty, .colmore), dialog.dlg, #taskbox, #runbox) { --fs-label: var(--fs-body); --fs-small: var(--fs-body); }
-.board-page :is(#bar, #pool, #colswitch, dialog.dlg, #taskbox, #runbox) :is(.seg :is(button, a), .search input) { font-size: var(--fs-body); }
+.board-page :is(#bar, #pool, #poolline, #colswitch, .colhead, .cards > :is(.colempty, .colmore), dialog.dlg) { --fs-label: var(--fs-body); --fs-small: var(--fs-body); }
 /* left the session page's widget, right the board: the same two parts, the same line between them (style.css, layout.css);
    the widget's foot stays on the session page */
 .board-page :is(.nav-foot, #tip) { display: none; }

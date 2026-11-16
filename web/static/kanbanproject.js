@@ -7,12 +7,12 @@
 import { oneAtATime } from "./dialogs.js";
 import { folderPicker } from "./kanbanfolder.js";
 import { integrationWindow } from "./kanbanintegration.js";
-import { $, DEFAULT, api, fillSelect, hostOptions, say as toast } from "./kanbanutil.js";
+import { $, DEFAULT, api, fillSelect, hostOptions, oneProject, say as toast } from "./kanbanutil.js";
 
 /** `agents`: the agents' section; `archived`: its Archived list (AC-118); `auto`: Auto-Dispatch's tab (kanbanauto.js);
  *  `deleteProject(id)`: asks, as the session list's menu does; `chosen(id)`: a project just made is shown;
- *  `shown()`: the projects the board shows. */
-export function projectWindow({ getMeta, reload, agents, archived, auto, deleteProject, chosen, shown: onBoard }) {
+ *  `shownProjects()`: the projects the board shows. */
+export function projectWindow({ getMeta, reload, agents, archived, auto, deleteProject, chosen, shownProjects }) {
   const box = $("projectbox"), picker = folderPicker(), integration = integrationWindow({ getMeta });
   let shown = null;
 
@@ -56,7 +56,7 @@ export function projectWindow({ getMeta, reload, agents, archived, auto, deleteP
     $("integrationok").hidden = tab !== "integration";
     $("limitsok").hidden = $("limitsglobal").hidden = tab !== "limits";
     $("projectdelete").hidden = !general || !shown || shown.id === DEFAULT;
-    if (tab === "auto") auto().fill(getMeta().projects.find((p) => p.id === shown.id) ?? shown);   // as terminumd says now
+    if (tab === "auto") auto.fill(getMeta().projects.find((p) => p.id === shown.id) ?? shown);   // as terminumd says now
     if (tab === "limits") openLimits(shown.id);
     if (tab === "integration") integration.open(shown.id);
     if (tab === "archived") archived.open(shown);
@@ -93,7 +93,7 @@ export function projectWindow({ getMeta, reload, agents, archived, auto, deleteP
     say("");
     box.showModal();
     fit();
-    if (real && !box.querySelector(".projpanel[data-tab=general]").hidden) $(p && !p.dir ? "projectdir" : "projectname").focus();
+    if (real && (!p || tab === "general")) $(p && !p.dir ? "projectdir" : "projectname").focus();
   }
 
   /** Its letters, language and template, only those changed: a refusal says why and keeps the window. */
@@ -133,12 +133,11 @@ export function projectWindow({ getMeta, reload, agents, archived, auto, deleteP
   });
 
   $("projectok").addEventListener("click", keep);
-  $("autook").addEventListener("click", oneAtATime(box, async () => { if (await auto().save()) box.close(); }));
+  $("autook").addEventListener("click", oneAtATime(box, async () => { if (await auto.save()) box.close(); }));
   /** The bar's cog: the window of the one project shown; several: which one is the human's to say. */
   $("projectcog").addEventListener("click", () => {
-    const all = onBoard();
-    if (all.length === 1) open(all[0]);
-    else toast(all.length ? "Multiple projects are selected: select only one to edit its settings." : "Make a project first.");
+    const p = oneProject(shownProjects(), "edit its settings");
+    if (p) open(p);
   });
   box.addEventListener("keydown", (e) => {
     if (e.key === "Enter" && !e.isComposing && e.target.matches("input, #projectdir")) { e.preventDefault(); keep(); }   // a folder is one line; the template has many
