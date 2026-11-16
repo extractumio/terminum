@@ -398,6 +398,8 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
   }
 
   function draw(t) {
+    // the same task's Details as the page shows them, whatever toggle is still on its way: a redraw can come first
+    if (shown?.id === t.id) attrsOpen = body.querySelector(".taskown .taskattrs")?.open ?? attrsOpen;
     shown = t;
     drawn = JSON.stringify(t);
     $("tasktitle").textContent = `${t.id} ${t.title}`;
@@ -460,10 +462,11 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
     const held = (e) => !e.matches(".xbox") || !e.querySelector("textarea:disabled");   // a closed editor's box holds nothing
     const editing = () => box.dataset.busy || [...body.querySelectorAll(HELD)].some(held);   // a comment being kept: it closes
     if (editing()) return;
-    const mine = ++reading;
+    const mine = ++reading, id = shown.id;
     try {
-      const t = await api(`/api/tasks/${shown.id}`);
-      if (mine !== reading) return;              // a newer read, or another task opened meanwhile: that one stays
+      const t = await api(`/api/tasks/${id}`);
+      // a newer read, or another task opened meanwhile (its read may have begun before this one): that one stays
+      if (mine !== reading || shown?.id !== id) return;
       if (!editing() && (!news || JSON.stringify(t) !== drawn)) draw(t);   // an editor opened while it was read stays
     } catch (e) { say(e.message); }
   }
