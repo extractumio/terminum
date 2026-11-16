@@ -56,7 +56,7 @@ export function projectWindow({ getMeta, reload, agents, archived, auto, deleteP
     $("integrationok").hidden = tab !== "integration";
     $("limitsok").hidden = $("limitsglobal").hidden = tab !== "limits";
     $("projectdelete").hidden = !general || !shown || shown.id === DEFAULT;
-    if (tab === "auto") auto.fill(getMeta().projects.find((p) => p.id === shown.id) ?? shown);   // as terminumd says now
+    if (tab === "auto") auto.fill(shown);
     if (tab === "limits") openLimits(shown.id);
     if (tab === "integration") integration.open(shown.id);
     if (tab === "archived") archived.open(shown);
@@ -72,8 +72,12 @@ export function projectWindow({ getMeta, reload, agents, archived, auto, deleteP
     $("projectagentlist").hidden = !rows.length;
   };
 
-  /** `p` to change, none for a new one, on its `tab`. Default's place is fixed: only its limits change. */
-  function open(p = null, tab = "general") {
+  /** `p` to change, as terminumd says it now, none for a new one, on its `tab`. Default's place is fixed: only its limits change. */
+  async function open(p = null, tab = "general") {
+    if (p) {
+      await reload();
+      p = getMeta().projects.find((x) => x.id === p.id) ?? p;
+    }
     shown = p;
     const real = p?.id !== DEFAULT;
     fillSelect($("projecthost"), hostOptions(getMeta().hosts), p?.host ?? "");
@@ -122,12 +126,11 @@ export function projectWindow({ getMeta, reload, agents, archived, auto, deleteP
       const { id } = await api("/api/task-projects", { method: "POST", body: { name, dir, host } });
       await reload();
       chosen(id);
-      open(getMeta().projects.find((p) => p.id === id));
+      await open(getMeta().projects.find((p) => p.id === id));
       await api(`/api/task-projects/${id}/agents-at-once`, { method: "PUT", body: atOnce });
       if (Object.keys(own).length) {
         await api(`/api/task-projects/${id}`, { method: "PATCH", body: own });
-        await reload();
-        open(getMeta().projects.find((p) => p.id === id));
+        await open(getMeta().projects.find((p) => p.id === id));
       }
     } catch (e) { say(e.message); }
   });

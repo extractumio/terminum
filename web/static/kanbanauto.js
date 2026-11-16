@@ -57,13 +57,12 @@ export function autoDispatcher({ getMeta, shownProjects, reload, openProject }) 
     showError($("autoerror"), "");
   }
 
-  /** Its tab, in the window of the one project shown, with what terminumd says now, its switch ticked for the human
+  /** Its tab, in the window of the one project shown (read anew), its switch ticked for the human
    *  to save; several shown: which one is the human's to say. */
   async function open() {
-    await reload();
     const p = oneProject(shownProjects(), "turn Auto-Dispatch on");
     if (!p) return;
-    openProject(p);
+    await openProject(p);
     $("autoon").checked = true;
   }
 

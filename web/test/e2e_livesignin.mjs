@@ -17,7 +17,7 @@ export async function liveBoardSignin(page, opts) {
   try {
     // Commit deliberately exposes the startup interval: default goto's load wait usually hides it.
     await page.goto(`${opts.base}/kanban/`, { waitUntil: "commit" });
-    await page.waitForSelector("#newtask");   // static markup is not sign-in readiness
+    await page.waitForSelector("#projectcog");   // the head's static markup is not sign-in readiness
     if (!await until(() => requested)) throw new Error("the board never requested its sign-in module");
     check("AC-09 the renewed context keeps its sign-in while the new document waits for its module",
       await page.evaluate(() => !!localStorage.getItem("tm.session") && /\[native code\]/.test(String(fetch))));
