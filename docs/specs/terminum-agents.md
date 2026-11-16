@@ -435,6 +435,8 @@ Scenario: AC-179 happy path — a task started, followed, answered
   Then the conversation goes on with "BILL-12: answers to your questions follow, the humans' comments and the project's manager's message. …", then the humans' comments since the questions and the manager's message, never another agent's comment
   When the agent has no room
   Then run_task answers "Not started: … Nothing waits: call run_task again with queue "yes" to wait for a slot, or choose another agent."; with queue "yes" it waits (terminum-dispatcher.md AC-158)
+  When the manager calls promote_queued_task {id: "BILL-12"} on a waiting task of its project
+  Then its whole press moves to the front of its agent's queue under terminum-dispatcher.md AC-169; list_runs lists waits in that order
 
 Scenario: AC-179 happy path — stopped, read
   When the manager calls stop_task {id: "BILL-12"}
@@ -692,7 +694,7 @@ MCP tools:
 
 The catalog (every tool above but the first three, with the task tools of `terminum-kanban.md` §9) and each tool's card: `terminumd/src/cli/mcp_catalog.rs`; the index: `mcp_search.rs`.
 
-A manager's tools (AC-174), every argument a string: `list_runs`; `run_task` `id`, `agent`, `comment`, `fresh` yes|no, `queue` yes|no; `stop_task` `id`; `list_agents`; `create_agent` `name`, `kind` claude|codex, `command`, `effort`, `at_once`, `week_limit`, `month_limit`; `update_agent` `agent` and the same; `delete_agent` `agent`; `list_schedules`; `create_schedule` `title`, `text`, `agent`, `cron` or `once_at` (unix seconds), `budget_minutes`, `severity`, `paused` yes|no; `update_schedule` `schedule` and the same; `delete_schedule`, `run_schedule` `schedule`; `list_sessions`; `get_session` `session`, `lines`; `send_to_session` `session`, `text` (≤ 20,000 bytes), `enter` yes|no; `close_session` `session`; `get_dashboard` `tab` you|system|costs, `period` day|2w|month|quarter|year. Definitions and cards: `terminumd/src/cli/mcp_manager.rs`; what each does: `terminumd/src/roles/`.
+A manager's tools (AC-174), every argument a string: `list_runs`; `run_task` `id`, `agent`, `comment`, `fresh` yes|no, `queue` yes|no; `promote_queued_task` `id`; `stop_task` `id`; `list_agents`; `create_agent` `name`, `kind` claude|codex, `command`, `effort`, `at_once`, `week_limit`, `month_limit`; `update_agent` `agent` and the same; `delete_agent` `agent`; `list_schedules`; `create_schedule` `title`, `text`, `agent`, `cron` or `once_at` (unix seconds), `budget_minutes`, `severity`, `paused` yes|no; `update_schedule` `schedule` and the same; `delete_schedule`, `run_schedule` `schedule`; `list_sessions`; `get_session` `session`, `lines`; `send_to_session` `session`, `text` (≤ 20,000 bytes), `enter` yes|no; `close_session` `session`; `get_dashboard` `tab` you|system|costs, `period` day|2w|month|quarter|year. Definitions and cards: `terminumd/src/cli/mcp_manager.rs`; what each does: `terminumd/src/roles/`.
 
 Commands (AC-181): `terminum tools [search <words> | info <name>…]`, `terminum tool <name> ['<json>' | -]`, `terminum tokens [add <name> --role manager|worker --project <project> [--days N] | remove <name>]`. The private socket: `POST /agent` takes `{token, tool, args}` in place of a pane; `POST /tokens {action: list|add|remove, name, role, project, days}`. A probe answers `role`. Store: table `tokens` (`tasks/schema21.sql`).
 

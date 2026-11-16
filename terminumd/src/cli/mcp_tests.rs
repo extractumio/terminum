@@ -388,7 +388,7 @@ fn ac174_a_manager_s_session_finds_and_runs_its_tools() {
     let init = asked(&e, &forward, "initialize", json!({}));
     assert_eq!(init["result"]["instructions"], format!("{INSTRUCTIONS}{MANAGER_INSTRUCTIONS}"));
     assert!(asked(&e, &forward, "tools/list", json!({}))["result"]["tools"].to_string().contains("sessions (the project's sessions"));
-    for (query, tool) in [("start a task on an agent", "run_task"), ("add a new agent to the pool", "create_agent"), ("run a schedule now", "run_schedule"),
+    for (query, tool) in [("start a task on an agent", "run_task"), ("add a new agent to the pool", "create_agent"), ("run a schedule now", "run_schedule"), ("promote queued task to front", "promote_queued_task"),
                           ("type text into a session", "send_to_session"), ("close a session", "close_session"), ("what is running", "list_runs"), ("costs statistics", "get_dashboard")] {
         let (found, _) = tool_text(&e, &forward, "search_tools", json!({"query": query}));
         assert!(found.contains(&format!("{tool}(")), "{query}: {found}");
