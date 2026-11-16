@@ -170,7 +170,7 @@ async function cardKeyChecks(page, { j, gitty, t, base, repo, newPane, keyOf }) 
   // its session in the project's checkout, one commit past origin/main
   fs.writeFileSync(path.join(repo, "card.txt"), "card\n");
   git(repo, "add", "card.txt");
-  git(repo, "commit", "-q", "-m", "card");
+  git(repo, "commit", "-q", "--allow-empty", "-m", "card");   // a later browser's run finds card.txt as an earlier one left it
   const key = await keyOf(newPane("card-keys", repo));
   await j(`/api/tasks/${t}`, "PATCH", { session: key });
   await until(async () => (await j(`/api/tasks/${t}`)).session?.key === key);
@@ -188,8 +188,10 @@ async function cardKeyChecks(page, { j, gitty, t, base, repo, newPane, keyOf }) 
   // a red batch: its card holds the batch's keys; its integration task keeps its head's line where it waits
   // the target fetched from an origin of the test's own, as a batch's build fetches it first
   const origin = path.join(path.dirname(repo), "integration-origin.git");
-  execFileSync("git", ["init", "-q", "--bare", origin]);
-  git(repo, "remote", "add", "origin", origin);
+  if (!fs.existsSync(origin)) {   // a later browser's run finds the origin an earlier one made, the remote named
+    execFileSync("git", ["init", "-q", "--bare", origin]);
+    git(repo, "remote", "add", "origin", origin);
+  }
   git(repo, "push", "-q", "origin", "refs/remotes/origin/main:refs/heads/main");
   await j(`/api/task-projects/${gitty}/integration`, "PUT", { on: true, check: "false" });
   await page.waitForFunction(([sel]) => document.querySelector(sel)?.closest(".col")?.dataset.status === "IN PROGRESS", [card]);
