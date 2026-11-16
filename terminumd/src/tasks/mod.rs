@@ -4,6 +4,7 @@
 pub mod agents;
 pub mod api;
 pub mod archiving;
+pub mod attrs;
 pub mod auto;
 pub mod closeout;
 mod columns;
@@ -31,3 +32,4 @@ pub mod tell;
 pub mod template;
 pub mod tools;
 pub mod users;
+mod windowapi;

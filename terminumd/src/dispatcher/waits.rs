@@ -81,7 +81,7 @@ pub fn ahead(tx: &Transaction, agent: &str, project: &str, task: &str) -> Result
 /// Each agent's queue for the board (AC-169): its waiting presses in the line's order, each with its task's title and
 /// project, and the other tasks of a press for several (`also`).
 pub fn queues(tx: &Transaction) -> Result<BTreeMap<String, Vec<Value>>, String> {
-    let found: Vec<(String, Value)> = rows(tx, "SELECT w.agent_id, t.slug, t.title, w.project, COALESCE(json_extract(w.body, '$.also'), '[]') FROM run_waits w JOIN tasks t ON t.id = w.task ORDER BY w.pos, w.rowid", [],
+    let found: Vec<(String, Value)> = rows(tx, "SELECT w.agent_id, t.slug, t.shown, w.project, COALESCE(json_extract(w.body, '$.also'), '[]') FROM run_waits w JOIN tasks t ON t.id = w.task ORDER BY w.pos, w.rowid", [],
         |r| Ok((r.get(0)?, serde_json::json!({"id": r.get::<_, String>(1)?, "title": r.get::<_, String>(2)?, "project": r.get::<_, String>(3)?,
                                                "also": serde_json::from_str::<Value>(&r.get::<_, String>(4)?).unwrap_or_default()}))))?;
     let mut out: BTreeMap<String, Vec<Value>> = BTreeMap::new();

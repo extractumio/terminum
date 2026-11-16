@@ -1,0 +1,26 @@
+/* SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial */
+/* A task's Details (terminum-kanban.md AC-199): folded under its fields; its lists of tasks, each a line with its
+   reason and ×, and the search a + opens. Type sizes are the fields' and labels' own (controls.css, taskwin.css). */
+.taskattrs .attrline { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
+.taskattrs .attrline > .field { flex: 1; min-width: 0; }
+.taskattrs .attrgo { flex: none; color: var(--link, var(--accent)); }
+.taskattrs .attrlist { display: flex; flex-direction: column; gap: var(--sp-1); }
+.taskattrs .attrhead { display: flex; align-items: center; gap: var(--sp-2); }
+.taskattrs .attrrows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-1); }
+.taskattrs .attrrows:empty { display: none; }
+.taskattrs .attrrow { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
+.taskattrs .attrid { flex: none; font-variant-numeric: tabular-nums; }
+.taskattrs .attrtitle { flex: 1 1 30%; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.taskattrs .attrreason { flex: 1 1 40%; min-width: 120px; }
+.taskattrs .attrpick { display: flex; flex-direction: column; gap: var(--sp-1); }
+.taskattrs .attrfound { list-style: none; margin: 0; padding: 0; max-height: 240px; overflow-y: auto; }
+.taskattrs .attrfind { display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-1) var(--sp-2); border-radius: var(--r-xs); cursor: pointer; min-width: 0; }
+.taskattrs .attrfind.active { background: var(--surface-4); }
+.taskattrs .attrnote { margin: 0; color: var(--muted); }
+.taskattrs .attrnote:empty { display: none; }
+/* a phone: a line's reason under its task */
+@media (max-width: 600px) {
+  .taskattrs .fieldgrid.three { grid-template-columns: minmax(0, 1fr); }
+  .taskattrs .attrrow { flex-wrap: wrap; }
+  .taskattrs .attrreason { flex-basis: 100%; order: 5; }
+}

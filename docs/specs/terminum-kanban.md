@@ -66,8 +66,9 @@ Open questions: none.
 | AC-113 | [MUST / P0] | A task has at most one session, a session one IN PROGRESS task at most; moving a task across projects asks about its session; a closed session is said on the card. |
 | AC-114 | [MUST / P0] | [DROPPED — a human no longer moves a task across the board: AC-107] |
 | AC-115 | [MUST / P0] | `terminum mcp` lists, reads, makes, moves, comments and finishes tasks of the agent's project, whatever session made or holds them, but one a human's RUN holds in another session; a free task can be taken. |
-| AC-145 | [MUST / P0] | What an agent leaves undone reaches its project's board by `create_task`: only what must be done, its title saying Bug:, Feat: or Debt:, with its severity, a bug's never below P2, its text in the sections of its project's template (a setting of the project; by default problem or goal, context, expected result, prerequisites). |
-| AC-154 | [SHOULD / P1] | An agent grooms its project's board with `update_task`: the severity and parent of any task it reaches, a human's with its reason; the title and text of an agents' task; such a task archived with its reason; an agent's change of title or severity never sets a bug below P2. |
+| AC-145 | [MUST / P0] | What an agent leaves undone reaches its project's board by `create_task`: only what must be done, its type said (AC-199: by `type` or its title's first word Bug:, Feat:, Debt:, Story:), with its severity, a bug's never below P2, its text in the sections of its project's template (a setting of the project; by default problem or goal, context, expected result, prerequisites). |
+| AC-154 | [SHOULD / P1] | An agent grooms its project's board with `update_task`: the severity, parent and AC-199's details of any task it reaches, a human's with its reason; the title and text of an agents' task; such a task archived with its reason; an agent's change of title, type or severity never sets a bug below P2. |
+| AC-199 | [SHOULD / P1] | A task has a type (Feature, Bug, Debt, Story) shown as its title's first word, an external link, a target, and the tasks of its project that block it and that follow it, each with its reason: set in a folded Details part of the new-task and task windows (lists by + with a search and ×, never typed IDs) and by `create_task`, `update_task` and `link_task`. |
 | AC-116 | [SHOULD / P1] | A bookmark or reminder becomes a TODO task in one small window (severity, project, session), its text linking its session, the board not opened; the record goes once the task is kept. |
 | AC-117 | [MUST / P0] | WAIT FOR HUMAN and FAILED raise the banner of waiting agents and counts of cards on the Kanban tab, yellow and red, the same in every browser: terminumd keeps which lines a human closed or saw; so does a task returned from integration with no live agent (`terminum-integration.md` AC-192). |
 | AC-118 | [SHOULD / P1] | Archive hides a task from the board and can return it; DONE archives itself after 2 days; each project has an Archived list. |
@@ -558,7 +559,8 @@ Scenario: AC-115 failure — no store or no pane
 Scenario: AC-145 happy path
   Given an agent in a session of project api finds a bug outside what it was given
   When it calls create_task {title: "Bug: the retry loop drops the last item", severity: "P1", text: "lib/retry.rs: ..., reproduced by ..."}
-  Then API-30 stands in TODO of api, by that agent, with that severity
+  Then API-30 stands in TODO of api, by that agent, with that severity, its type Bug (AC-199)
+  And create_task {title: "the retry loop drops the last item", type: "Bug", …} makes the same task
   And `terminum mcp`'s instructions say: only what must be done, fixed or finished, no progress and no findings of no consequence, each with what is needed to act on it
   And they say "a Bug: never below P2"; create_task's description says a Bug: is P1 or above with impact (lost or blocked work, a wrong result, a red main), else P2
 
@@ -567,9 +569,9 @@ Scenario Outline: AC-145 failure — refused with what to do
   Then it is refused, "<words>", and nothing is kept
   Examples:
     | what | words |
-    | a title with no such word | Start the title with Bug:, Feat: or Debt:. |
+    | no type, by type or the title's word | Give it a type: Feature, Bug, Debt or Story, by type or the title's first word (Feat:, Bug:, Debt:, Story:). |
     | no severity | Give it a severity: P0, P1, P2 or P3. |
-    | a title starting Bug: with severity P3 | A Bug: is never below P2: P1 or above when it has impact (lost or blocked work, a wrong result, a red main), else P2. |
+    | type Bug, or a title starting Bug:, with severity P3 | A Bug: is never below P2: P1 or above when it has impact (lost or blocked work, a wrong result, a red main), else P2. |
 
 Scenario: AC-145 happy path — the project's template
   Given project api with no template of its own
@@ -603,7 +605,7 @@ Scenario: AC-154 happy path — severity and parent
 Scenario: AC-154 happy path — an agents' task's words
   Given API-12 made by an agent, its title and text never changed by a human, which no human's RUN holds in another session (AC-115)
   When an agent of the project calls update_task {id: "API-12", title, text}
-  Then they change by create_task's rules (AC-145): the title says Bug:, Feat: or Debt:, the text is in the template's sections, both cleaned and redacted
+  Then they change by create_task's rules (AC-145): a title starting with a type's word sets that type, one without keeps the type, the text is in the template's sections, both cleaned and redacted
 
 Scenario: AC-154 happy path — off the board
   Given API-12 an agents' task as above, its subtasks DONE, no run holding it
@@ -621,8 +623,8 @@ Scenario Outline: AC-154 failure — refused with what to do
     | archive with an open subtask | API-31 has an open subtask, API-12: finish it, archive it or take it out first. |
     | archive with no reason | Give the reason it leaves the board. |
     | archive with another field | archive goes alone, with its reason. |
-    | nothing to change | Give severity, parent, title, text or archive. |
-    | severity P3 for a task titled Bug:, or a title starting Bug: for a P3 task | AC-145's words for a bug below P2 |
+    | nothing to change | Give severity, parent, title, text, type, external_link, target or archive. |
+    | severity P3 for a Bug, or type Bug or a title starting Bug: for a P3 task | AC-145's words for a bug below P2 |
 
 Scenario: AC-154 edge — a human's task
   Given API-7 made by a human
@@ -633,7 +635,69 @@ Scenario: AC-154 edge — a human's task
 Scenario: AC-154 edge — a bug a human left at P3
   Given a human made "Bug: old" at P3 on the board
   When an agent changes its parent with a reason
-  Then it is regrouped and stays P3: the floor refuses an agent's change of title or severity, a human's choice on the board stays the human's
+  Then it is regrouped and stays P3: the floor refuses an agent's change of title, type or severity, a human's choice on the board stays the human's
+```
+
+### AC-199 — A task's details [SHOULD / P1]
+
+```gherkin
+Scenario: AC-199 happy path — the type is the title's first word
+  Given project api
+  When a human makes "Bug: the list loses its scroll" in the new-task window
+  Then API-40's type is Bug, its title is kept as "the list loses its scroll", and the board, its window, Dispatcher's words and the tools show "Bug: the list loses its scroll"
+  When Type is set to Story in its Details
+  Then every place shows "Story: the list loses its scroll"; Type None shows the title alone
+  And a title written again with a type's word (any case, "Feature:" too) sets that type; one without keeps the type
+  And a type's change is a line of its history and never makes the title a human's (AC-154)
+
+Scenario: AC-199 happy path — Details
+  Given API-40's window
+  Then a folded part, Details, stands under its fields, its summary saying what is set ("Details: Bug, blocked by 1")
+  When the human opens it
+  Then it shows Type, External link, Target, then Blocked by and Follow-ups, each a list of tasks with their status, reason and ×, and +
+  And it stays open as the window is drawn anew, folded again for the next task opened
+  When the human types https://tracker.example/browse/API-7 in External link and leaves the field
+  Then it is kept, and Open beside it opens it in a new tab, never in the page
+  When the human presses + under Blocked by
+  Then a search field takes the focus, listing api's tasks with its words in their ID, title or text, newest first, never API-40 or one listed
+  When the human presses ↓ and Enter, or a task found
+  Then that task is in Blocked by, said in API-40's history; its reason is typed beside it and kept when the field is left; × takes it out
+  And Esc closes the search; Enter in it never makes or closes the window
+  And a listed task's ID opens its window
+
+Scenario: AC-199 happy path — New task
+  When the human opens Details in the new-task window, chooses Debt, a target and tasks for Blocked by and Follow-ups, and presses Create
+  Then the task is made with all of them, said in its history; the draft keeps them until then (AC-106)
+
+Scenario: AC-199 happy path — agents
+  When an agent calls create_task or update_task with type, external_link or target, or link_task {id: "API-40", list: "blocked_by", task: "API-12", reason: "needs its column"}
+  Then they change by the window's rules; link_task with remove "yes" takes it out; get_task gives type, the title without its word as name, external_link, target and lists {blocked_by, follow_ups: [{id, title, status, reason}]}
+  And a human's task's type, link or target needs a reason, as its severity (AC-154); its lists do not
+
+Scenario Outline: AC-199 failure — refused, said, nothing kept
+  When <what>
+  Then it is refused, "<words>", and the field shows what is kept
+  Examples:
+    | what | words |
+    | a title's word and Type disagree | The title says Bug: and Type says Debt: give one. |
+    | an unknown type | Type: one of Feature, Bug, Debt, Story |
+    | a link that is no http or https address, or over 2048 characters | External link: an http or https address, at most 2048 characters |
+    | a target over 64 characters | Target: at most 64 characters |
+    | the task itself in a list | Blocked by: a task cannot name itself |
+    | a task of another project | Follow-ups: API-9 is in another project |
+    | API-12 in API-40's Blocked by while API-12 waits for API-40, directly or through others | API-12 waits for this task already: a task cannot wait for one that waits for it |
+    | a 21st task in a list | Blocked by: at most 20 tasks |
+    | a reason over 1000 characters | Blocked by: a reason is at most 1000 characters |
+
+Scenario: AC-199 edge — a task moves to another project
+  Given API-40 blocked by API-12
+  When API-12 moves to project web
+  Then API-12 leaves API-40's Blocked by, said in API-40's history: a list holds its project's tasks only
+
+Scenario: AC-199 edge — titles kept before types
+  Given a store whose titles start "Bug:", "feat:", "Debt:" or "Story:"
+  When terminum starts on it
+  Then each takes that type and keeps the title after the word, in one step with the store's copy kept first (AC-119); no line of history, no change time; "Bug:" alone and other words stay as they were
 ```
 
 ### AC-116 — A record becomes a task [SHOULD / P1]
@@ -1250,11 +1314,15 @@ CREATE TABLE tasks (id TEXT PRIMARY KEY, number INTEGER UNIQUE NOT NULL, project
   status TEXT NOT NULL, severity TEXT NOT NULL, rank REAL NOT NULL, owner TEXT REFERENCES users,
   by_agent INTEGER NOT NULL, session_key TEXT, made_in TEXT, agent_session TEXT, budget_seconds INTEGER, archived_at INTEGER, updated_at INTEGER NOT NULL,
   slug TEXT UNIQUE, created_at INTEGER NOT NULL,   -- slug: its ID now (AC-148); number: the store's order only
-  title TEXT NOT NULL, body TEXT NOT NULL);   -- the long columns last: a scan of the others never walks a text's pages
+  title TEXT NOT NULL, body TEXT NOT NULL,   -- the long columns last: a scan of the others never walks a text's pages (columns added later stand after them)
+  type TEXT, external_link TEXT, target TEXT,   -- AC-199: one of Feature, Bug, Debt, Story (tasks/attrs.rs); none
+  shown TEXT GENERATED ALWAYS AS (<type's word: > || title) VIRTUAL);   -- the title as every list and text shows it
 CREATE INDEX tasks_board ON tasks (archived_at, status, severity, rank);
 CREATE INDEX tasks_project ON tasks (project, archived_at);
 CREATE INDEX tasks_session ON tasks (session_key, status, archived_at, number);
 CREATE INDEX tasks_parent ON tasks (parent, status);
+CREATE TABLE task_links (task TEXT REFERENCES tasks ON DELETE CASCADE, kind TEXT CHECK (kind IN ('blocked_by','follow_ups')),
+  other TEXT REFERENCES tasks ON DELETE CASCADE, reason TEXT NOT NULL DEFAULT '', place INTEGER NOT NULL, PRIMARY KEY (task, kind, other));   -- AC-199
 CREATE TABLE task_slugs (slug TEXT PRIMARY KEY, task TEXT NOT NULL REFERENCES tasks) WITHOUT ROWID;   -- every ID a task had, its own too
 CREATE TABLE events (id TEXT PRIMARY KEY, task TEXT REFERENCES tasks, at INTEGER NOT NULL, author TEXT REFERENCES users, kind TEXT NOT NULL, text TEXT, data TEXT, edited_at INTEGER);
 CREATE INDEX events_task ON events (task, at);
@@ -1271,7 +1339,7 @@ Sample event: `{"task":"API-12","at":1792003600,"author":"Dispatcher","kind":"co
 | `GET /`, `/sessions/`, `/kanban/`, `/kanban/API-12` | redirect keeping the query (`?trace=1`); the session page; the board |
 | `GET /api/tasks?project=&severity=&owner=&status=&q=&id=&made_in=&sort=&after=&limit=&counts=1` | a page of 200 at most; `sort=recent` orders by updated time descending, `sort=priority` by severity then updated time descending, both breaking ties by task number descending; omitted, severity then saved rank for tool callers; archived tasks keep archive-time order; each card with its subtasks' `boxes` (AC-112); with `counts=1`, each column's pagination total under the same filters and `counts.queued_waiting`, the queued WAIT FOR HUMAN cards excluded from the human count (AC-117); with `id=API-12`, whether they show that task; with `made_in=<key>`, the tasks made in that pane, subtasks too (AC-150) |
 | `POST /api/tasks/API-12/seen {key?}` | the human closed API-12's line of that key, as `taskmarks` gave it (its move and words), or, with none, saw the line it has now: its window opened (AC-117); every page hears `taskmarks` when that changed |
-| `POST /api/tasks`, `PATCH /api/tasks/API-12`, `POST /api/tasks/API-12/comments`, `/files` | changes; the answer is the new state or `{"error": "<message>"}`; `PATCH {parent: "API-3" \| null}` puts it under a task or takes it out (AC-112); `POST {made_in, record}` counts it as made in that pane and lets the record go, 409 when it went already (AC-116) |
+| `POST /api/tasks`, `PATCH /api/tasks/API-12`, `POST /api/tasks/API-12/comments`, `/files` | changes; the answer is the new state or `{"error": "<message>"}`; `PATCH {parent: "API-3" \| null}` puts it under a task or takes it out (AC-112); `POST` and `PATCH` take `type`, `external_link`, `target` (empty: off), `POST` also `blocked_by` and `follow_ups` as `[{id, reason}]`, `PATCH {link: {list, task, reason?}}` and `{unlink: {list, task}}` one task at a time (AC-199); a task's `title` is shown with its type's word, `name` without it, its window's `lists` its lists; `POST {made_in, record}` counts it as made in that pane and lets the record go, 409 when it went already (AC-116) |
 | `PATCH /api/task-projects/<id> {prefix?, template?}` | a project's ID letters (AC-148) and its template (AC-145), besides its name and folder |
 | `GET /api/task-files/<id>` | header sign-in only, never an address (terminum.md AC-09): the page fetches and shows a blob, as `web/static/shown.js` does; `Content-Disposition: attachment` and `X-Content-Type-Options: nosniff`; inline only for PNG, JPEG, GIF, WebP |
 
@@ -1279,9 +1347,9 @@ Sample event: `{"task":"API-12","at":1792003600,"author":"Dispatcher","kind":"co
 
 Pages hear over the page's WebSocket: `taskchange {id, history?}` (`""` for several: a server's links), upon which a board reads its columns and an open window of that task reads it, and with `history: true`, a line of a task's history that changes no card, only the window reads; `taskmarks {marks, counts, waiting, failed, lines}` when the open tasks by session, the tasks by project or the tasks that need a human change (`waiting`, `failed`: AC-117's counts of cards), for the session list and both pages' lines (AC-117: `lines` only those no human closed or saw); the `layout` it hears anyway gives a board its cards' session rows and its Sessions column, a row's plan carrying `doing`; `/sessions/?open=<key>` shows that session once and cleans its address (AC-134); `board.project` in the browser's storage keeps the project chosen (AC-135); `board.sort.<project>` keeps the columns' display sorts (`*` for All projects and multiple projects, AC-105).
 
-**MCP tools** added to `terminum mcp`'s catalog: `list_tasks`, `get_task`, `create_task`, `update_task` (AC-154), `take_task`, `move_task`, `ask_human` (terminum-dispatcher.md AC-157), `add_comment`, `attach_file`, `get_file`, `finish_task`; none is listed: each is found with `search_tools` and run with `execute_tool`, and terminum's own words write the call, `execute_tool("finish_task", {id, result})` (terminum-agents.md AC-155). `add_notes_for_user`, `update_notes_for_user`, `get_notes_for_user` and `delete_notes_for_user` go (AC-98).
+**MCP tools** added to `terminum mcp`'s catalog: `list_tasks`, `get_task`, `create_task`, `update_task` (AC-154), `link_task` (AC-199), `take_task`, `move_task`, `ask_human` (terminum-dispatcher.md AC-157), `add_comment`, `attach_file`, `get_file`, `finish_task`; none is listed: each is found with `search_tools` and run with `execute_tool`, and terminum's own words write the call, `execute_tool("finish_task", {id, result})` (terminum-agents.md AC-155). `add_notes_for_user`, `update_notes_for_user`, `get_notes_for_user` and `delete_notes_for_user` go (AC-98).
 
-**Limits.** Title 1–200 characters; text 1 MiB; a project's template 8 KiB; ID letters 1–8; comment 256 KiB; a file 100 MB, no limit per project; 200 cards a page; 200 open tasks by agents a project; 50 projects (`terminum.md` AC-92), Default not counted. Over a host's link, a request of 64 KB (`terminum-remote.md` §9).
+**Limits.** Title 1–200 characters, its type's word aside; external link 2048 characters; target 64; a list 20 tasks, a reason 1000 characters; text 1 MiB; a project's template 8 KiB; ID letters 1–8; comment 256 KiB; a file 100 MB, no limit per project; 200 cards a page; 200 open tasks by agents a project; 50 projects (`terminum.md` AC-92), Default not counted. Over a host's link, a request of 64 KB (`terminum-remote.md` §9).
 
 **Performance.** With AS-112's tasks, on the owner's Mac: first page of the board p95 < 300 ms, a move shown on another page p95 < 200 ms, Find p95 < 300 ms; measured by `liveBoardScale` (`node web/test/e2e_live.mjs board`). No board work blocks a screen's frames (`terminum.md` budgets).
 
@@ -1307,6 +1375,7 @@ Depends on: nothing more.
 
 - [x] AC-105 — `cargo test tasks::query`, `web/test/e2e_kanbansort.mjs` (`node web/test/e2e_all.mjs webKanbanSort`), `web/test/e2e_liveboardsort.mjs` (`node web/test/e2e_live.mjs boardsort`), `web/test/e2e_liveboard.mjs` (`node web/test/e2e_live.mjs board`), a phone's in `liveBoardPhone`, its projects and filters not read in `web/test/e2e_liveboardedge.mjs`, a phone's one-row head in `web/test/e2e_boardphone.mjs` (`node web/test/e2e_all.mjs webBoardPhone`: 390 and 320 px), TODO and the panel and a tablet in `web/test/e2e_boardpanel.mjs` (`node web/test/e2e_all.mjs webBoardPanel`: a computer at 1900 and 1400 px, an iPad at 1180×820, 1366×1024, 820×1180 and 744×1133, a phone on its side at 844×390), one type size in `web/test/e2e_boardtype.mjs` (`node web/test/e2e_all.mjs webBoardType`: 1400 px and a phone)
 - [x] AC-159 — `web/test/e2e_liveschedules.mjs` (`liveFolded`: one line, shown whole, the next folds it, a window on the second press, Esc, kept as the columns are read; wide and phone), `web/test/e2e_liveboardpool.mjs` (a folded card's waiting dot, its words on hover)
+- [x] AC-199 — `cargo test tasks::attrs`, `tasks::groom` (agents' fields and link_task), `tasks::store` (the titles' words moved once), `cli::mcp`, `web/test/e2e_liveattrs.mjs` (`node web/test/e2e_live.mjs boardtasks`: Details in a task's and New task's window, the search, a ring refused)
 - [x] AC-106 — `web/test/e2e_liveboard.mjs`, `web/test/e2e_tasktext.mjs` (one text editor), `web/test/e2e_liveboardpool.mjs`, `web/test/e2e_newtask.mjs` (unspecified agent, explicit choice, removal and refusal), `web/test/e2e_livenotes.mjs` (New task from selection), `cargo test tasks::ops`
 - [x] AC-107 — `cargo test tasks::ops`, `web/test/e2e_liveboard.mjs`
 - [x] AC-108 — `cargo test tasks::ops`, `web/test/e2e_liveboard.mjs`

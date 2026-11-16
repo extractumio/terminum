@@ -44,7 +44,7 @@ const measure = (page) => page.evaluate(async (meta) => {
   const body = document.getElementById("taskbody"), own = body.querySelector(".taskown"), q = (s) => own.querySelector(s);
   const frame = own.getBoundingClientRect(), pad = getComputedStyle(own), pre = body.querySelector(".evscreen");
   return {
-    fields: [...own.querySelectorAll(".fieldgrid > .fieldrow")].map((f) => ({ name: f.firstChild.textContent.trim(), row: box(f), field: box(f.querySelector(".field")) })),
+    fields: [...own.querySelectorAll(":scope > .fieldgrid > .fieldrow")].map((f) => ({ name: f.firstChild.textContent.trim(), row: box(f), field: box(f.querySelector(".field")) })),
     lines: [...own.children].map((e) => ({ cls: e.className, box: box(e) })),
     inner: [frame.left + parseFloat(pad.paddingLeft), frame.right - parseFloat(pad.paddingRight)].map(Math.round),
     status: { box: box(q(".stbox")), agent: box(q(".cagent")), conv: q(".cconv").getClientRects().length, value: box(q(".fieldvalue")), words: q(".stbox").textContent },
@@ -80,6 +80,25 @@ const conversation = (page) => page.evaluate(async () => {
   return { asked, read, stays: { parts: parts(), last: lines().at(-1) } };
 });
 
+/** AC-133: a read of the shown task that began while another task was opening, and answers after it, draws nothing
+ *  over it (a task opened from a window's list right after a change was heard). Each answer waits for its gate. */
+async function staleRead(page) {
+  const gates = {}, held = (id) => new Promise((go) => { gates[id] = go; });
+  await page.evaluate(async () => { window.agentAsked = false; await window.taskwin.tryClose(); await window.taskwin.open("API-12"); });
+  const late = { "API-12": held("API-12"), "API-14": held("API-14") };
+  for (const id of Object.keys(late)) {
+    await page.unroute(`**/api/tasks/${id}`);
+    await page.route(`**/api/tasks/${id}`, async (r) => { await late[id]; r.fulfill({ contentType: "application/json", body: JSON.stringify(id === "API-12" ? TASK : ASKED) }); });
+  }
+  await page.evaluate(() => { window.opening = window.taskwin.open("API-14"); });
+  await page.evaluate(() => { window.reading = window.taskwin.refresh(); });   // the shown API-12 read again meanwhile
+  gates["API-14"]();
+  await page.evaluate(() => window.opening);
+  gates["API-12"]();
+  const shown = await page.evaluate(async () => { await window.reading; return window.taskwin.shownId(); });
+  check("AC-133 a read of the task shown before, answering after another task opened, draws nothing over it", shown === "API-14", String(shown));
+}
+
 export async function webTaskWin(browser, name) {
   for (const [size, device] of SIZES) {
     runningIn(`${name} ${size}`);
@@ -97,7 +116,7 @@ export async function webTaskWin(browser, name) {
     check("AC-149 the task's lines stand on one left edge, its fields and Text's keys on one right edge",
       m.lines.every((l) => l.box[0] === m.inner[0]) && m.fields.filter((_, i) => i % per === per - 1).every((x) => x.field[2] === m.inner[1]) && m.keys[2] === m.inner[1], said);
     const gaps = m.lines.slice(1).map((l, i) => [l.cls, l.box[1] - m.lines[i].box[3]]);
-    check("AC-149 its groups stand 12 px apart", gaps.length === 4 && gaps.every(([, gap]) => gap === 12), JSON.stringify(gaps));
+    check("AC-149 its groups stand 12 px apart, folded Details last (AC-199)", gaps.length === 5 && m.lines.at(-1).cls.includes("taskattrs") && gaps.every(([, gap]) => gap === 12), JSON.stringify(gaps));
     const mid = (b) => (b[1] + b[3]) / 2;
     check("AC-149 its status is whole on a line with its agent, its conversation's ID unbroken where it fits",
       m.status.words === "WAIT FOR HUMAN" && m.status.box[3] - m.status.box[1] <= 24 && Math.abs(mid(m.status.box) - mid(m.status.agent)) <= 1 && (phone || m.status.conv === 1), said);
@@ -149,6 +168,7 @@ export async function webTaskWin(browser, name) {
     await f.page.click("#taskbody .tasktext .markdown");
     const ring = await f.page.$eval("#taskbody .tasktext .markdown", (text) => [document.activeElement === text, getComputedStyle(text).outlineStyle]);
     check("AC-149 a text pressed to read takes the keys and shows no focus ring", ring[0] && ring[1] === "none", String(ring));
+    await staleRead(f.page);
     if (process.env.TM_TEST_SHOTS) {
       fs.mkdirSync(process.env.TM_TEST_SHOTS, { recursive: true });
       for (const [id, what] of [["API-12", "read"], ["API-14", "asked"]]) {

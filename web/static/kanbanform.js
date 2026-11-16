@@ -3,6 +3,7 @@
 // text, in TODO unless said. A draft survives closing and a reload on this browser.
 import { askConfirm, oneAtATime } from "./dialogs.js";
 import { el, iconButton, read, write } from "./listparts.js";
+import { detailsPane, LISTS } from "./taskattrs.js";
 import { $, AT_LIMIT, agentsOf, api, fileMarkdown, FILE_GONE, fillAgents, fillSelect, goneFiles, goneSaid, onFiles, onSend, onlyProject, projectOptions, sessionOptions, showError, upload, withFileLink, withoutFileLinks, writePreview } from "./kanbanutil.js";
 
 const DRAFT = "tm.taskdraft";
@@ -12,20 +13,22 @@ const DRAFT = "tm.taskdraft";
 export function taskForm({ getMeta, getFilter, onMade, onRun, slots }) {
   const box = $("newbox");
   let files = [], offered = "", parent = null, chose = "";   // chose: the agent the user picked in this window, "" for none
+  /** Its Details (AC-199): kept with the draft; folded until opened, open once opened in this window. */
+  let attrs = {}, attrsOpen = false;
   /** Each its own draft: a subtask's never takes a new task's. */
   const draftKey = () => (parent ? `${DRAFT}.${parent}` : DRAFT);
   /** Each draft's files on their way, and its generation: one sent or discarded is another draft from then on, so an
    *  upload that ends late never lands in it (AC-133). */
   const uploads = new Map(), ended = new Map();
   const pending = (key = draftKey()) => uploads.get(key) ?? 0;
-  const end = () => { ended.set(draftKey(), (ended.get(draftKey()) ?? 0) + 1); uploads.delete(draftKey()); files = []; write(draftKey(), null); };
+  const end = () => { ended.set(draftKey(), (ended.get(draftKey()) ?? 0) + 1); uploads.delete(draftKey()); files = []; attrs = {}; write(draftKey(), null); };
   /** Create waits for the files on their way: pressed earlier, they would not be on the task (AC-133). */
   const canCreate = () => { if (!box.dataset.busy) $("newcreate").disabled = $("newrun").disabled = pending() > 0; };
 
   const error = (text) => showError($("newerror"), text);
   /** Said as the window opens with no project chosen, terminumd's words for it (tasks/ops.rs TASK_NEEDS_PROJECT). */
   let unchosen = false;
-  const draft = () => ({ title: $("newtitle").value, text: $("newtext").value, project: $("newproj").value, severity: $("newsev").value, owner: $("newowner").value, session: $("newsession").value, files });
+  const draft = () => ({ title: $("newtitle").value, text: $("newtext").value, project: $("newproj").value, severity: $("newsev").value, owner: $("newowner").value, session: $("newsession").value, files, attrs });
   const keep = () => write(draftKey(), draft());
 
   function showFiles() {
@@ -91,6 +94,22 @@ export function taskForm({ getMeta, getFilter, onMade, onRun, slots }) {
 
   const view = writePreview($("newtabs"), $("newtext"), $("newshown"));
 
+  /** Its Details as chosen so far: each change is the draft's, sent with Create. */
+  function showAttrs() {
+    attrsOpen = $("newattrs").firstElementChild?.open ?? attrsOpen;   // as it shows now, whatever toggle is still on its way
+    const change = (next) => { attrs = next; keep(); showAttrs(); return true; };
+    const without = (list, id) => (attrs[list] ?? []).filter((x) => x.id !== id);
+    $("newattrs").replaceChildren(detailsPane({
+      v: attrs, project: () => $("newproj").value, open: attrsOpen, onToggle: (o) => { attrsOpen = o; },
+      set: async (field, value) => change({ ...attrs, [field]: value }),
+      link: async (list, id, reason, t) => {
+        const was = (attrs[list] ?? []).find((x) => x.id === id);
+        return change({ ...attrs, [list]: was ? attrs[list].map((x) => (x.id === id ? { ...x, reason } : x)) : [...(attrs[list] ?? []), { id, reason, title: t?.title, status: t?.status }] });
+      },
+      unlink: async (list, id) => change({ ...attrs, [list]: without(list, id) }),
+    }));
+  }
+
   /** The chosen project's pool: only an explicit choice picks an agent (AC-106); otherwise assignment chooses later.
    *  One at a limit is said so: Run offers its queue (terminum-dispatcher.md AC-169). */
   function showAgents() {
@@ -115,6 +134,10 @@ export function taskForm({ getMeta, getFilter, onMade, onRun, slots }) {
     fillSelect($("newowner"), meta.users.map((u) => [u.id, u.name]), saved.owner ?? "human");
     $("newtitle").value = given.title ?? saved.title ?? "";
     $("newtext").value = given.text ? `${saved.text ? `${saved.text}\n\n` : ""}${given.text}` : saved.text ?? "";
+    attrs = saved.attrs ?? {};
+    $("newattrs").replaceChildren();
+    attrsOpen = false;
+    showAttrs();
     files = saved.files ?? [];
     showFiles();
     canCreate();
@@ -131,7 +154,9 @@ export function taskForm({ getMeta, getFilter, onMade, onRun, slots }) {
   const send = oneAtATime(box, async (run) => {
     const d = draft(), agent = $("newagent").value;
     try {
-      const made = await api("/api/tasks", { method: "POST", body: { title: d.title, text: d.text, project: d.project, severity: d.severity, owner: d.owner || undefined, agent: agent || undefined, session: d.session || undefined, parent: parent ?? undefined, files: d.files.map((f) => f.id) } });
+      const lists = Object.fromEntries(LISTS.map(([l]) => [l, (d.attrs[l] ?? []).map(({ id, reason }) => ({ id, reason }))]));
+      const made = await api("/api/tasks", { method: "POST", body: { title: d.title, text: d.text, project: d.project, severity: d.severity, owner: d.owner || undefined, agent: agent || undefined, session: d.session || undefined, parent: parent ?? undefined, files: d.files.map((f) => f.id),
+        type: d.attrs.type || undefined, external_link: d.attrs.external_link || undefined, target: d.attrs.target || undefined, ...lists } });
       end();
       box.close();
       if (run) onRun(made, agent); else onMade(made);
@@ -147,6 +172,8 @@ export function taskForm({ getMeta, getFilter, onMade, onRun, slots }) {
   $("newrun").addEventListener("click", () => create(true));
   // Enter in the title is Create; what is typed never goes by a slip: Discard asks
   box.querySelector("form").addEventListener("submit", (e) => { e.preventDefault(); create(); });
+  // Details' fields make the form one of several fields: a browser then submits nothing on Enter, so the title says it
+  $("newtitle").addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.isComposing) { e.preventDefault(); create(); } });
   onSend($("newtext"), () => create());
   $("newdiscard").addEventListener("click", async () => {
     const typed = $("newtitle").value.trim() || $("newtext").value.trim() || files.length;
