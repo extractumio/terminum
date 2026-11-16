@@ -275,7 +275,8 @@ function keptCard(t, under, key) {
 function draw() {
   if (dragging) return;
   folds.keep(cards);
-  const focused = document.activeElement?.closest?.(".card")?.dataset.id, filtered = narrowed(), one = filters().project.length === 1;
+  const active = document.activeElement, focused = active?.closest?.(".card")?.dataset.id, runFocused = active?.matches(".crun");
+  const filtered = narrowed(), one = filters().project.length === 1;
   const inks = new Map(meta.projects.map((p) => [p.id, [p.name, p.color]]));
   for (const [column, part] of columns) {
     // a session's state changes on its card alone (sessionsCame): a column is drawn anew without it, a card with it
@@ -294,7 +295,11 @@ function draw() {
   const onBoard = new Set([...cards.values()].flat().map((t) => t.id));
   for (const id of drawnCards.keys()) if (!onBoard.has(id)) drawnCards.delete(id);
   queueColumn.draw(columns.get("INTEGRATION"), meta, filters().project, counts.INTEGRATION ?? 0);   // its order is the queue's (AC-193)
-  if (focused) document.querySelector(`.card[data-id="${focused}"]`)?.focus({ preventScroll: true });
+  if (focused && document.activeElement !== active) {
+    const c = document.querySelector(`.card[data-id="${focused}"]`);
+    const run = runFocused ? c?.querySelector(".crun:not(:disabled)") : null;
+    (active.isConnected ? active : run?.getClientRects().length ? run : c)?.focus({ preventScroll: true });
+  }
   markTab();
 }
 
