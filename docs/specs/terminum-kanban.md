@@ -77,7 +77,7 @@ Open questions: none.
 | AC-133 | [MUST / P0] | The board's flow survives what people and machines do: the last drop stands, a move shows at once and a refused one goes back; a late answer never stands over a newer; what is typed is never lost by a slip, a refusal or a change by another. |
 | AC-134 | [MUST / P0] | A card with a live session carries that session's own row from the session list: bar in the project's color, pulsing while its agent works, plan, what it does now, every state; a press opens that session. |
 | AC-135 | [MUST / P0] | The board's head chooses the project; left of the columns stands the session page's own list, as wide as there, with its menus and its head, without its foot; it hides and shows; a press opens a session. |
-| AC-139 | [MUST / P0] | New project…, the last row of the project's menu, makes an empty project on its server, in a window with its name, its full folder path, a picker for it and Agents at once; a project's pencil opens the same window, with its pool's keys beside. |
+| AC-139 | [MUST / P0] | New project…, the last row of the project's menu, makes an empty project on its server, in a window with its name, its full folder path, a picker for it and Agents at once; a project's pencil, or the board's cog with that project shown alone, opens the same window, with its pool's keys and Auto-Dispatch beside. |
 | AC-120 | [SHOULD / P1] | An agent on a remote host sees and works with its whole project through the Mac's link. |
 | AC-148 | [MUST / P0] | A task's ID is its project's letters and the project's own count (TERM-7), "S_" before them for a task a schedule made (S_TERM-8), "I_" for a batch's integration task (`terminum-integration.md` AC-194): the letters come from the project's folder and can be set; every ID a task had, and its key's start, still find it. |
 | AC-149 | [MUST / P0] | A task's window sets the task apart from its subtasks and from its comments and history, read as a conversation: a comment's kind shows by its bar, oldest first, the comment field last; what the human must react to (questions, a result, a failure) stands first, the field under it; tasks, subtasks and comments say when they were made and changed. |
@@ -117,7 +117,7 @@ Scenario: AC-105 happy path — TODO and the panel
 
 Scenario: AC-105 edge — a tablet
   Given a touch screen 601 px wide or wider (an iPad, in either orientation), or a window 601 to 860 px wide
-  Then the head is one row: the list's key, the sections where they fit, the project, Find, Filters (it names how many are on and opens the filters on a row under the head), the counters of tasks that need the human (AC-117), Auto-Dispatch, its settings and + Task; every key 44 px on a touch screen
+  Then the head is one row: the list's key, the sections where they fit, the project, Find, Filters (it names how many are on and opens the filters on a row under the head), the counters of tasks that need the human (AC-117), Auto-Dispatch and the project's cog (AC-139); every key 44 px on a touch screen
   And where the row is short, Auto-Dispatch's word goes first, then the project's name gives way, then Find narrows; only then do the project, Find and Filters take a second row
   And no column, card title or column head is cut to fit: TODO and the panel at least 300 px wide each, a column head on one line
 
@@ -138,6 +138,11 @@ Scenario: AC-105 failure — a sort read fails or answers late
   Then it adds no cards and clears no newer error
   And an unknown API sort is refused with "Sort: one of recent, priority"
 
+Scenario: AC-105 happy path — one type size
+  Given the board, its head, its columns' heads and tabs, and any of its windows (a new task's, a task's, a project's tabs)
+  Then every one-line field, choice, label, key, tab, switch, fold, file name and hint stands in the size of a task's text in the new task's window, on every screen
+  And a window's title, counts, severity and ID badges and a card's own lines keep their sizes
+
 Scenario: AC-105 happy path — a card
   Then a card shows its ID, title, severity, owner, project in the project's color, subtask progress and its session (AC-134), or "session closed"
   And a press on a card opens its window; ⌘ or Ctrl+press chooses it (terminum-dispatcher.md AC-138)
@@ -148,9 +153,9 @@ Scenario: AC-105 edge — a phone
 
 Scenario: AC-105 edge — a phone's one-row head
   Given a width of 600 px or less, or a touch screen 500 px high or less (a phone on its side)
-  Then the head is one row: the list's key, the project, the counters of tasks that need the human (AC-117), a Find key and + Task as an icon key; every key 44 px, the project's name giving way first, none past the screen's edge at 320 px
+  Then the head is one row: the list's key, the project, the counters of tasks that need the human (AC-117), a Find key and the project's cog (AC-139); every key 44 px, the project's name giving way first, none past the screen's edge at 320 px
   And a press on the Find key shows the Find field and the filters on rows under the head, a second press puts them away; the key is lit while a search or a filter is on, so a narrowed board never looks merely short
-  And under the columns' switch one line says Auto-Dispatch's state first, then how many agents and how many schedules the shown projects have; a press opens Auto-Dispatch's switch and settings, the agents and the schedules as one sheet (terminum.md AC-18), and they take no room over the cards
+  And under the columns' switch one line says Auto-Dispatch's state first, then how many agents and how many schedules the shown projects have; a press opens Auto-Dispatch's switch, the agents and the schedules as one sheet (terminum.md AC-18), and they take no room over the cards
   And a column's own keys (TODO's + New task, the two sort keys, the count) scroll away with its cards
 
 Scenario: AC-105 edge — many cards
@@ -195,7 +200,7 @@ Scenario: AC-159 edge — what stays
 
 ```gherkin
 Scenario: AC-106 happy path — the window
-  When the user presses + Task in the board's head, a key as its neighbours, not a primary one
+  When the user presses + New task in TODO's head
   Then a window opens with Title, the text (Markdown editor with Preview, raw HTML off), Files, Project (the filter's only project, else the only project there is, else none chosen), Severity P2, Agent "Choose when it runs" (none specified, even with a last-used agent), Owner the user, Session none, Parent none, Budget none
   When the user types "Fix the retry loop", drops shot.png and presses Create
   Then API-12 stands in TODO with shot.png, every page shows it within 2 s and the window closes
@@ -209,7 +214,7 @@ Scenario: AC-106 happy path — one text editor for every task
 
 Scenario: AC-106 failure — no project chosen
   Given the board shows Default and Billing
-  When the user presses + Task
+  When the user presses + New task
   Then Project says "Choose a project", none chosen, and the window says "Choose the project to make it in." at once
   When the user presses Create all the same
   Then terminumd refuses it in those words, nothing is kept and the window stays with what was typed
@@ -238,9 +243,7 @@ Scenario: AC-106 happy path — the rest folded
 
 Scenario: AC-106 happy path — from TODO's head
   Then TODO's head always shows a + New task key, its icon and words, before the sort keys and count, as tall as they are and on their line
-  When the user presses it
-  Then the same window opens as + Task's, the draft with it
-  And a phone keeps + Task in the board's head as well
+  And the board's head holds no key of its own for it: TODO's is the one, on a phone too, where TODO is the first column
 
 Scenario: AC-106 happy path — from a session and from a terminal's selection
   When the user picks New task in a session's menu
@@ -1089,9 +1092,11 @@ Scenario: AC-139 happy path — a new project
   Then the project stands, empty, chosen on the board, and the window stays, now with its pool, empty, and its keys
 
 Scenario: AC-139 happy path — changing it
-  When the user presses the pencil on Billing's row in the project menu
-  Then its window, sized as `terminum.md` AC-173 says, shows tabs: General (its name, server, folder, task ID letters, language, template, Agents at once), Agents (its own pool's agents as tiles, as many to a row as fit, and Add agent), Integration (terminum-integration.md AC-186), Memory limits and Archived; General first, each filled as it is chosen, no window opening over it
-  And each tab's own keys stand in the window's foot, always in view: General's Delete project and Done, Integration's Save, Memory limits' Use the global ones and Save; a new project's window has General alone
+  When the user presses the pencil on Billing's row in the project menu, or the cog in the board's head while the board shows Billing alone
+  Then its window, sized as `terminum.md` AC-173 says, shows tabs: General (its name, server, folder, task ID letters, language, template, Agents at once), Agents (its own pool's agents as tiles, as many to a row as fit, and Add agent), Auto-Dispatch (terminum-dispatcher.md AC-170), Integration (terminum-integration.md AC-186), Memory limits and Archived; General first, each filled as it is chosen, no window opening over it; on a phone the tabs take a second row, none past its edge
+  And each tab's own keys stand in the window's foot, always in view: General's Delete project and Done, Auto-Dispatch's and Integration's Save, Memory limits' Use the global ones and Save; a new project's window has General alone
+  When the board shows several projects (All projects, or a choice of several) and the user presses the cog
+  Then no window opens and the page says "Multiple projects are selected: select only one to edit its settings."
   When the user changes the name, folder and Agents at once and presses Done
   Then all are kept at once and every page shows them
 
@@ -1368,7 +1373,7 @@ Depends on: nothing more.
 
 ## 11. Checklist with Definition of Done
 
-- [x] AC-105 — `cargo test tasks::query`, `web/test/e2e_kanbansort.mjs` (`node web/test/e2e_all.mjs webKanbanSort`), `web/test/e2e_liveboardsort.mjs` (`node web/test/e2e_live.mjs boardsort`), `web/test/e2e_liveboard.mjs` (`node web/test/e2e_live.mjs board`), a phone's in `liveBoardPhone`, its projects and filters not read in `web/test/e2e_liveboardedge.mjs`, a phone's one-row head in `web/test/e2e_boardphone.mjs` (`node web/test/e2e_all.mjs webBoardPhone`: 390 and 320 px), TODO and the panel and a tablet in `web/test/e2e_boardpanel.mjs` (`node web/test/e2e_all.mjs webBoardPanel`: a computer at 1900 and 1400 px, an iPad at 1180×820, 1366×1024, 820×1180 and 744×1133, a phone on its side at 844×390)
+- [x] AC-105 — `cargo test tasks::query`, `web/test/e2e_kanbansort.mjs` (`node web/test/e2e_all.mjs webKanbanSort`), `web/test/e2e_liveboardsort.mjs` (`node web/test/e2e_live.mjs boardsort`), `web/test/e2e_liveboard.mjs` (`node web/test/e2e_live.mjs board`), a phone's in `liveBoardPhone`, its projects and filters not read in `web/test/e2e_liveboardedge.mjs`, a phone's one-row head in `web/test/e2e_boardphone.mjs` (`node web/test/e2e_all.mjs webBoardPhone`: 390 and 320 px), TODO and the panel and a tablet in `web/test/e2e_boardpanel.mjs` (`node web/test/e2e_all.mjs webBoardPanel`: a computer at 1900 and 1400 px, an iPad at 1180×820, 1366×1024, 820×1180 and 744×1133, a phone on its side at 844×390), one type size in `web/test/e2e_boardtype.mjs` (`node web/test/e2e_all.mjs webBoardType`: 1400 px and a phone)
 - [x] AC-159 — `web/test/e2e_liveschedules.mjs` (`liveFolded`: one line, shown whole, the next folds it, a window on the second press, Esc, kept as the columns are read; wide and phone), `web/test/e2e_liveboardpool.mjs` (a folded card's waiting dot, its words on hover)
 - [x] AC-199 — `cargo test tasks::attrs`, `tasks::groom` (agents' fields and link_task), `tasks::store` (the titles' words moved once), `cli::mcp`, `web/test/e2e_liveattrs.mjs` (`node web/test/e2e_live.mjs boardtasks`: Details in a task's and New task's window, the search, a ring refused)
 - [x] AC-106 — `web/test/e2e_liveboard.mjs`, `web/test/e2e_tasktext.mjs` (one text editor), `web/test/e2e_liveboardpool.mjs`, `web/test/e2e_newtask.mjs` (unspecified agent, explicit choice, removal and refusal), `web/test/e2e_livenotes.mjs` (New task from selection), `cargo test tasks::ops`
@@ -1387,7 +1392,7 @@ Depends on: nothing more.
 - [x] AC-136 — `cargo test tasks::tell` (fresh settlement with and without background work, a new prompt), `web/test/e2e_liveboardedge.mjs`, `web/test/e2e_livebackground.mjs` (monitor-only Stop, work ending, immediate failure), `web/test/cardstate.test.mjs` (its background work)
 - [x] AC-133 — `web/test/e2e_taskclose.mjs` (pending reads after ×, Esc and Back; a deliberate reopen; a Save press under a refresh), `web/test/e2e_liveclose.mjs` (a real subtask read held while its parent's window closes, a real change under a Save press, two quick field changes with the first answer held, a refused one going back, a text saved under a comment's edit; `node web/test/e2e_live.mjs boardtasks`), `web/test/e2e_liveboardedge.mjs`, `web/test/e2e_liveboard.mjs`, `web/test/e2e_liveboardbusy.mjs` (a file that lands late; alone: `node web/test/e2e_live.mjs boardpool`) (`node web/test/e2e_live.mjs board` also measures §9's budgets on AS-112's tasks: `liveBoardScale`)
 - [x] AC-134 — `web/test/e2e_liveboardsession.mjs`, `cargo test page::plans`
-- [x] AC-139 — `cargo test page::projects`, `cargo test tasks::folder`, `web/test/e2e_liveboardagents.mjs` (a 200-character folder, the picker up, in, Cancel and Choose)
+- [x] AC-139 — `cargo test page::projects`, `cargo test tasks::folder`, `web/test/e2e_liveboardagents.mjs` (a 200-character folder, the picker up, in, Cancel and Choose), `web/test/e2e_boardtype.mjs` (the cog with one project and with several, six tabs inside a phone)
 - [x] AC-135 — `web/test/e2e_liveboardsession.mjs`, `web/test/e2e_liveboard.mjs`
 - [x] AC-148 — `cargo test tasks::slugs`, `cargo test tasks::store` (an older store), `web/test/e2e_liveboardids.mjs`
 - [x] AC-149 — `web/test/e2e_liveboardids.mjs`, `web/test/e2e_taskwin.mjs` (the parts, the kinds' bars, what leads, a change while open)

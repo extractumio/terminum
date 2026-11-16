@@ -2,6 +2,9 @@
 /* The board at /kanban/ (terminum-kanban.md). Its keys, fields, menus and dialogs are the page's kinds
    (controls.css); here only their place, and what is the board's own: a column and a card. */
 body.board-page { margin: 0; overflow: hidden; background: var(--surface-0); color: var(--t-fg); }
+/* one size for the board's words (terminum-kanban.md AC-105 "one type size"): its fields, choices, labels, keys, tabs,
+   switches, folds, hints and file names as large as a task's text; counts, badges and the cards keep theirs */
+.board-page :is(#bar, #pool, #poolline, #colswitch, .colhead, .cards > :is(.colempty, .colmore), dialog.dlg) { --fs-label: var(--fs-body); --fs-small: var(--fs-body); }
 /* left the session page's widget, right the board: the same two parts, the same line between them (style.css, layout.css);
    the widget's foot stays on the session page */
 .board-page :is(.nav-foot, #tip) { display: none; }
@@ -147,20 +150,20 @@ body.board-page { margin: 0; overflow: hidden; background: var(--surface-0); col
 .agkept { border: 1.5px dashed var(--ag); }
 /* Auto-Dispatcher's round (AC-170): a session that takes no slot: its dot a square */
 .agdot.round { border-radius: 2px; }
-/* Auto-Dispatch in the bar: a switch (its track: controls.css; having turned itself off, its state in the danger color) and the cog of its settings; in its window the severities' ticks in a row, its rules a list */
+/* Auto-Dispatch in the bar: a switch (its track: controls.css; having turned itself off, its state in the danger color); in the project window's tab the severities' ticks in a row, its rules a list */
 #autokeys { display: inline-flex; align-items: center; gap: var(--sp-1); }
 #autoswitch { gap: var(--sp-2); }
 #autostate { color: var(--muted); font-variant-numeric: tabular-nums; }
 #autoswitch.stopped #autostate { color: var(--danger-text); }
 .autoticks { display: flex; flex-wrap: wrap; gap: var(--sp-2) var(--sp-4); min-width: 0; margin: 0; padding: 0; border: 0; }
-#autobox .checkrow { align-self: start; }
+#autopanel .checkrow { align-self: start; }
 #automode { display: flex; flex-wrap: wrap; }
 #automode button { flex: 1 1 auto; }
 .autoticks label { display: inline-flex; align-items: center; gap: var(--sp-2); min-height: var(--key-h); }
 #autorules { margin: 0; font-size: var(--fs-small); }
 #autorules dt { margin-top: var(--sp-2); color: var(--muted); }
 #autorules dd { margin: 0; }
-#autobox[data-mode="order"] :is(.byagent, #autoagentrow), #autobox[data-mode="agent"] .byorder { display: none; }
+#autopanel[data-mode="order"] :is(.byagent, #autoagentrow), #autopanel[data-mode="agent"] .byorder { display: none; }
 .agfree { border: 1.5px solid color-mix(in srgb, var(--muted) 60%, transparent); }
 .agwait { background: color-mix(in srgb, var(--muted) 45%, transparent); }
 .agqueue { display: inline-flex; align-items: center; gap: var(--sp-1); min-height: 20px; margin-left: var(--sp-1); padding: 0 var(--sp-1); border-radius: var(--r-xs); }
@@ -264,7 +267,8 @@ body.board-page { margin: 0; overflow: hidden; background: var(--surface-0); col
 .folderrow .name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #projectform, #projectfields { display: flex; flex-direction: column; gap: var(--sp-3); }
 /* a project's window (terminum-kanban.md AC-139): its tabs, one panel shown; its agents as the board's tiles */
-.projtabs { align-self: flex-start; }
+.projtabs { align-self: flex-start; flex-wrap: wrap; max-width: 100%; }   /* six tabs: on a phone they take a second row, never past its edge */
+.projtabs button { white-space: nowrap; }
 .projpanel { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; }
 .projpanel[hidden] { display: none; }
 #projectagents .agentlist { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: var(--sp-2); }

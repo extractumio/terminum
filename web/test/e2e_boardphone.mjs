@@ -14,7 +14,7 @@ const META = { projects: [{ id: "api", name: "API service with a long name", col
   agents: [{ id: "a1", project: "api", name: "Claude Code" }, { id: "a2", project: "api", name: "Codex" }] };
 const LINES = { t: "taskmarks", waiting: 2, failed: 1, lines: [{ id: "API-7", key: "w7", words: "API-7 waits for you" },
   { id: "API-9", key: "w9", words: "API-9 waits for you" }, { id: "API-3", key: "f3", words: "API-3 failed", failed: true }] };
-const HEAD = ["#navbtn", "#fproject summary", ".askn.failed", ".askn.waiting", "#findkey", "#newtask"];
+const HEAD = ["#navbtn", "#fproject summary", ".askn.failed", ".askn.waiting", "#findkey", "#projectcog"];
 
 /** Where the head's keys stand, and what else is in sight. */
 const look = (page, head = HEAD) => page.evaluate((head) => {
@@ -83,7 +83,7 @@ export async function webBoardPhone(browser, name) {
       await page.click("#poolline");
       await pause(page, 200);
       const pool = await page.evaluate(() => { const p = document.getElementById("pool"), r = p.getBoundingClientRect(), seen = (id) => document.getElementById(id).getBoundingClientRect().height > 0;
-        return { l: Math.round(r.left), r: Math.round(innerWidth - r.right), t: r.top, b: visualViewport.height - r.bottom, parts: ["autoswitch", "autocog", "agentbar", "newschedule"].map(seen), agents: p.querySelectorAll(".agentcard").length,
+        return { l: Math.round(r.left), r: Math.round(innerWidth - r.right), t: r.top, b: visualViewport.height - r.bottom, parts: ["autoswitch", "agentbar", "newschedule"].map(seen), agents: p.querySelectorAll(".agentcard").length,
           shaded: document.elementFromPoint(4, 4)?.id }; });
       check("AC-105 phone: the line opens Auto-Dispatch, the agents and the schedules as one centered sheet over a shade",
         pool.l === 16 && pool.r === 16 && pool.t >= 0 && pool.b >= 0 && pool.parts.every(Boolean) && pool.agents === 2 && pool.shaded === "sheetscrim", JSON.stringify(pool));

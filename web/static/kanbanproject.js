@@ -1,15 +1,18 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // A project's window (terminum-kanban.md AC-139): a new empty one, or one to change: its name, server,
 // folder (typed, or chosen in its picker), the letters of its tasks' IDs (AC-148), the language its agents write
-// in on the board (terminum-dispatcher.md AC-166), the template its agents write tasks by (AC-145), memory limits and integration (terminum-integration.md AC-186), the pool's keys beside them. terminumd checks what is
-// kept and says what is wrong.
+// in on the board (terminum-dispatcher.md AC-166), the template its agents write tasks by (AC-145), Auto-Dispatch
+// (AC-170), memory limits and integration (terminum-integration.md AC-186), the pool's keys beside them. The bar's
+// cog opens it for the one project shown. terminumd checks what is kept and says what is wrong.
 import { oneAtATime } from "./dialogs.js";
 import { folderPicker } from "./kanbanfolder.js";
 import { integrationWindow } from "./kanbanintegration.js";
-import { $, DEFAULT, api, fillSelect, hostOptions, say as toast } from "./kanbanutil.js";
+import { $, DEFAULT, api, fillSelect, hostOptions, oneProject, say as toast } from "./kanbanutil.js";
 
-/** `agents`: the agents' section; `archived`: its Archived list (AC-118); `deleteProject(id)`: asks, as the session list's menu does; `chosen(id)`: a project just made is shown. */
-export function projectWindow({ getMeta, reload, agents, archived, deleteProject, chosen }) {
+/** `agents`: the agents' section; `archived`: its Archived list (AC-118); `auto`: Auto-Dispatch's tab (kanbanauto.js);
+ *  `deleteProject(id)`: asks, as the session list's menu does; `chosen(id)`: a project just made is shown;
+ *  `shownProjects()`: the projects the board shows. */
+export function projectWindow({ getMeta, reload, agents, archived, auto, deleteProject, chosen, shownProjects }) {
   const box = $("projectbox"), picker = folderPicker(), integration = integrationWindow({ getMeta });
   let shown = null;
 
@@ -40,7 +43,7 @@ export function projectWindow({ getMeta, reload, agents, archived, deleteProject
     $("limitsglobal").onclick = () => kept({ warn: null, end: null });
   }
 
-  /** The window's tabs (General, Agents, Integration, Memory limits, Archived): one shown, each filled as it is
+  /** The window's tabs (General, Agents, Auto-Dispatch, Integration, Memory limits, Archived): one shown, each filled as it is
    *  chosen; a new project has General alone. Done and Delete are General's. */
   const tabs = [...$("projecttabs").querySelectorAll("[role=tab]")], panels = [...box.querySelectorAll(".projpanel")];
   function show(tab) {
@@ -49,9 +52,11 @@ export function projectWindow({ getMeta, reload, agents, archived, deleteProject
     const general = tab === "general";
     // each tab's own keys stand in the window's foot, always in view
     $("projectok").hidden = !general;
+    $("autook").hidden = tab !== "auto";
     $("integrationok").hidden = tab !== "integration";
     $("limitsok").hidden = $("limitsglobal").hidden = tab !== "limits";
     $("projectdelete").hidden = !general || !shown || shown.id === DEFAULT;
+    if (tab === "auto") auto.fill(shown);
     if (tab === "limits") openLimits(shown.id);
     if (tab === "integration") integration.open(shown.id);
     if (tab === "archived") archived.open(shown);
@@ -67,8 +72,12 @@ export function projectWindow({ getMeta, reload, agents, archived, deleteProject
     $("projectagentlist").hidden = !rows.length;
   };
 
-  /** `p` to change, none for a new one. Default's place is fixed: only its limits change. */
-  function open(p = null) {
+  /** `p` to change, as terminumd says it now, none for a new one, on its `tab`. Default's place is fixed: only its limits change. */
+  async function open(p = null, tab = "general") {
+    if (p) {
+      await reload();
+      p = getMeta().projects.find((x) => x.id === p.id) ?? p;
+    }
     shown = p;
     const real = p?.id !== DEFAULT;
     fillSelect($("projecthost"), hostOptions(getMeta().hosts), p?.host ?? "");
@@ -84,11 +93,11 @@ export function projectWindow({ getMeta, reload, agents, archived, deleteProject
     $("projectfields").hidden = !real;
     $("projectnodir").hidden = !p || !real || !!p.dir;      // terminum-dispatcher.md AC-140
     $("projecttabs").hidden = !p;
-    show("general");
+    show(p ? tab : "general");
     say("");
     box.showModal();
     fit();
-    if (real) $(p && !p.dir ? "projectdir" : "projectname").focus();
+    if (real && (!p || tab === "general")) $(p && !p.dir ? "projectdir" : "projectname").focus();
   }
 
   /** Its letters, language and template, only those changed: a refusal says why and keeps the window. */
@@ -117,17 +126,22 @@ export function projectWindow({ getMeta, reload, agents, archived, deleteProject
       const { id } = await api("/api/task-projects", { method: "POST", body: { name, dir, host } });
       await reload();
       chosen(id);
-      open(getMeta().projects.find((p) => p.id === id));
+      await open(getMeta().projects.find((p) => p.id === id));
       await api(`/api/task-projects/${id}/agents-at-once`, { method: "PUT", body: atOnce });
       if (Object.keys(own).length) {
         await api(`/api/task-projects/${id}`, { method: "PATCH", body: own });
-        await reload();
-        open(getMeta().projects.find((p) => p.id === id));
+        await open(getMeta().projects.find((p) => p.id === id));
       }
     } catch (e) { say(e.message); }
   });
 
   $("projectok").addEventListener("click", keep);
+  $("autook").addEventListener("click", oneAtATime(box, async () => { if (await auto.save()) box.close(); }));
+  /** The bar's cog: the window of the one project shown; several: which one is the human's to say. */
+  $("projectcog").addEventListener("click", () => {
+    const p = oneProject(shownProjects(), "edit its settings");
+    if (p) open(p);
+  });
   box.addEventListener("keydown", (e) => {
     if (e.key === "Enter" && !e.isComposing && e.target.matches("input, #projectdir")) { e.preventDefault(); keep(); }   // a folder is one line; the template has many
   });

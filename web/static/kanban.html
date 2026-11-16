@@ -134,7 +134,7 @@
   <!-- The lines of #asks folded into two counters where the buttons float (terminum-kanban.md AC-117, askfold.js); a phone's Find key (AC-105). -->
   <div id="askcount" hidden><button class="askn failed" data-kind="failed" type="button" aria-expanded="false" aria-controls="asks" hidden></button><button class="askn waiting" data-kind="waiting" type="button" aria-expanded="false" aria-controls="asks" hidden></button></div>
   <button id="findkey" class="icon" type="button" aria-expanded="false" aria-controls="filters" title="Find and filters" aria-label="Find and filters"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:18px"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></svg></button>
-  <div id="boardacts"><span id="autokeys" role="group" aria-label="Auto-Dispatch"><button id="autoswitch" class="textkey" type="button" role="switch" aria-checked="false"><span class="word">Auto-Dispatch</span><span id="autostate">OFF</span><span class="track" aria-hidden="true"></span></button><button id="autocog" class="icon" type="button" title="Auto-Dispatch: its settings" aria-label="Auto-Dispatch: its settings" aria-haspopup="dialog"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915"/><circle cx="12" cy="12" r="3"/></svg></button></span><button id="newtask" class="textkey" type="button" title="A new task, in TODO" aria-label="New task"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:14px"><path d="M5 12h14"/><path d="M12 5v14"/></svg><span>Task</span></button></div>
+  <div id="boardacts"><span id="autokeys" role="group" aria-label="Auto-Dispatch"><button id="autoswitch" class="textkey" type="button" role="switch" aria-checked="false"><span class="word">Auto-Dispatch</span><span id="autostate">OFF</span><span class="track" aria-hidden="true"></span></button></span><button id="projectcog" class="icon" type="button" title="The project's settings" aria-label="The project's settings" aria-haspopup="dialog"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915"/><circle cx="12" cy="12" r="3"/></svg></button></div>
 </header>
 <div id="boardbanner" class="banner" role="status" hidden></div>
 <div id="asks" aria-live="polite" hidden></div>
@@ -283,7 +283,7 @@
   <form method="dialog" id="projectform">
     <div class="dhead"><h2 id="projecthead">New project</h2><button class="icon x" type="button" title="Close (Esc)" aria-label="Close"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
     <div id="projecttabs" class="seg projtabs" role="tablist" aria-label="The project's settings">
-      <button id="projecttabgeneral" type="button" role="tab" data-tab="general" aria-selected="true">General</button><button id="projecttabagents" type="button" role="tab" data-tab="agents" aria-selected="false">Agents</button><button id="projectintegration" type="button" role="tab" data-tab="integration" aria-selected="false">Integration</button><button id="projectlimits" type="button" role="tab" data-tab="limits" aria-selected="false">Memory limits</button><button id="projectarchived" type="button" role="tab" data-tab="archived" aria-selected="false">Archived</button>
+      <button id="projecttabgeneral" type="button" role="tab" data-tab="general" aria-selected="true">General</button><button id="projecttabagents" type="button" role="tab" data-tab="agents" aria-selected="false">Agents</button><button id="projecttabauto" type="button" role="tab" data-tab="auto" aria-selected="false">Auto-Dispatch</button><button id="projectintegration" type="button" role="tab" data-tab="integration" aria-selected="false">Integration</button><button id="projectlimits" type="button" role="tab" data-tab="limits" aria-selected="false">Memory limits</button><button id="projectarchived" type="button" role="tab" data-tab="archived" aria-selected="false">Archived</button>
     </div>
     <section class="projpanel" data-tab="general" role="tabpanel">
     <div id="projectfields">
@@ -310,6 +310,27 @@
     <section id="projectagents" class="projpanel" data-tab="agents" role="tabpanel" aria-label="Agents" hidden>
       <div class="edithead"><span id="projectagentsfor" class="colempty">Each runs the project's tasks; drop a task on one to run it.</span><span class="agentkeys"><button id="projectaddagent" class="textkey" type="button">Add agent</button></span></div>
       <div id="projectagentlist" class="agentlist"></div>
+    </section>
+    <section id="autopanel" class="projpanel" data-tab="auto" role="tabpanel" aria-label="Auto-Dispatch" hidden>
+      <p id="autotext" class="colempty">While it is on, tasks of this project start with no one pressing Run, a text an agent wrote too.</p>
+      <p id="autowhy" role="status" hidden></p>
+      <label class="fieldrow checkrow">On: it starts this project's tasks <input id="autoon" type="checkbox" role="switch"></label>
+      <div class="fieldrow"><span id="automodelabel">How tasks are picked</span><div id="automode" class="seg" role="group" aria-labelledby="automodelabel"><button type="button" value="agent" aria-pressed="true">An agent scores them by RICE</button><button type="button" value="order" aria-pressed="false">By priority and saved order, no agent</button></div></div>
+      <div class="fieldgrid">
+        <label id="autoagentrow" class="fieldrow">The agent that picks: it scores the tasks by RICE <select id="autoagent" class="field"></select></label>
+        <label class="fieldrow">Default agent: runs a task that names none; with None such tasks stay <select id="autodefault" class="field"></select></label>
+      </div>
+      <fieldset id="autoseverities" class="autoticks"><legend>It takes tasks of severity</legend><label><input type="checkbox" value="P0"> P0</label><label><input type="checkbox" value="P1"> P1</label><label><input type="checkbox" value="P2"> P2</label><label><input type="checkbox" value="P3"> P3</label></fieldset>
+      <label class="fieldrow">Minutes a task stands in TODO before it is taken <input id="autowait" class="field" type="number" min="0" step="1" inputmode="numeric"></label>
+      <label class="fieldrow">Tasks it starts in 24 hours at most <input id="automost" class="field" type="number" min="1" step="1" inputmode="numeric"></label>
+      <p id="autoday" class="colempty"></p>
+      <dl id="autorules">
+        <dt>What it takes</dt><dd>TODO tasks of the severities ticked that nobody runs, made, moved or edited no later than the wait ago: one still being written is left; a comment does not start the wait anew. A task it started once it starts again only after you move or edit it. A task with subtasks still to do waits for them.</dd>
+        <dt>In what order</dt><dd class="byorder">P0 first, then saved task order, each task while its agent has a free slot. The columns' display sort does not change which task starts. No agent reads the tasks: one whose text does not say what to do starts all the same. A task runs on the agent named in its window, else on the default one.</dd><dd class="byagent">P0 first, then saved task order, independent of the columns' display sort. A round, one more session of the picking agent that takes no slot, is given the first few tasks for each free slot; it reads them, scores them by RICE (reach, impact, confidence, effort) and starts the best; one round at a time over all projects, the project that waited longest first. What it leaves with a slot still free is passed over for a day, unless you move or edit it, and the next round gets the tasks below; after a round that started nothing it rests half an hour, unless a task is made or changed. A task runs on the agent named in its window, else on the default one.</dd>
+        <dt>When it waits</dt><dd>No free slot, or no task to take; the tasks of its 24 hours are started; an agent past its week's or month's limit starts nothing.</dd>
+        <dt>When it stops</dt><dd>You turn it off: what runs goes on, nothing more starts. It turns itself off, saying why here and in the bar, when its round fails, a task cannot be started, or two tasks it started fail in a row.</dd>
+      </dl>
+      <p id="autoerror" role="alert" hidden></p>
     </section>
     <section id="integrationpanel" class="projpanel" data-tab="integration" role="tabpanel" hidden>
       <p id="integrationtext" class="colempty">Finished tasks queue their commits; terminum merges up to the batch's size that merge cleanly, runs Check once on the candidate, and publishes only a candidate whose check was green. A red one goes to the agent below.</p>
@@ -363,6 +384,7 @@
       <button id="limitsglobal" type="button" hidden>Use the global ones</button>
       <button value="cancel" type="submit" class="fromright" formnovalidate>Cancel</button>
       <button id="projectok" type="button" class="primary">Create</button>
+      <button id="autook" type="button" hidden class="primary">Save</button>
       <button id="integrationok" type="button" hidden class="primary">Save</button>
       <button id="limitsok" type="button" hidden class="primary">Save</button>
     </div>
@@ -378,36 +400,6 @@
     <div class="actions">
       <button value="cancel" type="submit" formnovalidate>Cancel</button>
       <button id="folderok" type="button" class="primary">Choose</button>
-    </div>
-  </form>
-</dialog>
-
-<dialog id="autobox" data-size="form" class="box dlg" aria-labelledby="autohead">
-  <form method="dialog">
-    <div class="dhead"><h2 id="autohead">Auto-Dispatch</h2><button class="icon x" type="button" title="Close (Esc)" aria-label="Close"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
-    <p id="autotext">While it is on, tasks of this project start with no one pressing Run, a text an agent wrote too.</p>
-    <label id="autoprojectrow" class="fieldrow">Project <select id="autoproject" class="field"></select></label>
-    <p id="autowhy" role="status" hidden></p>
-    <label class="fieldrow checkrow">On: it starts this project's tasks <input id="autoon" type="checkbox" role="switch"></label>
-    <div class="fieldrow"><span id="automodelabel">How tasks are picked</span><div id="automode" class="seg" role="group" aria-labelledby="automodelabel"><button type="button" value="agent" aria-pressed="true">An agent scores them by RICE</button><button type="button" value="order" aria-pressed="false">By priority and saved order, no agent</button></div></div>
-    <div class="fieldgrid">
-      <label id="autoagentrow" class="fieldrow">The agent that picks: it scores the tasks by RICE <select id="autoagent" class="field"></select></label>
-      <label class="fieldrow">Default agent: runs a task that names none; with None such tasks stay <select id="autodefault" class="field"></select></label>
-    </div>
-    <fieldset id="autoseverities" class="autoticks"><legend>It takes tasks of severity</legend><label><input type="checkbox" value="P0"> P0</label><label><input type="checkbox" value="P1"> P1</label><label><input type="checkbox" value="P2"> P2</label><label><input type="checkbox" value="P3"> P3</label></fieldset>
-    <label class="fieldrow">Minutes a task stands in TODO before it is taken <input id="autowait" class="field" type="number" min="0" step="1" inputmode="numeric"></label>
-    <label class="fieldrow">Tasks it starts in 24 hours at most <input id="automost" class="field" type="number" min="1" step="1" inputmode="numeric"></label>
-    <p id="autoday" class="colempty"></p>
-    <dl id="autorules">
-      <dt>What it takes</dt><dd>TODO tasks of the severities ticked that nobody runs, made, moved or edited no later than the wait ago: one still being written is left; a comment does not start the wait anew. A task it started once it starts again only after you move or edit it. A task with subtasks still to do waits for them.</dd>
-      <dt>In what order</dt><dd class="byorder">P0 first, then saved task order, each task while its agent has a free slot. The columns' display sort does not change which task starts. No agent reads the tasks: one whose text does not say what to do starts all the same. A task runs on the agent named in its window, else on the default one.</dd><dd class="byagent">P0 first, then saved task order, independent of the columns' display sort. A round, one more session of the picking agent that takes no slot, is given the first few tasks for each free slot; it reads them, scores them by RICE (reach, impact, confidence, effort) and starts the best; one round at a time over all projects, the project that waited longest first. What it leaves with a slot still free is passed over for a day, unless you move or edit it, and the next round gets the tasks below; after a round that started nothing it rests half an hour, unless a task is made or changed. A task runs on the agent named in its window, else on the default one.</dd>
-      <dt>When it waits</dt><dd>No free slot, or no task to take; the tasks of its 24 hours are started; an agent past its week's or month's limit starts nothing.</dd>
-      <dt>When it stops</dt><dd>You turn it off: what runs goes on, nothing more starts. It turns itself off, saying why here and in the bar, when its round fails, a task cannot be started, or two tasks it started fail in a row.</dd>
-    </dl>
-    <p id="autoerror" role="alert" hidden></p>
-    <div class="actions">
-      <button value="cancel" type="submit" formnovalidate>Cancel</button>
-      <button id="autook" type="button" class="primary">Save</button>
     </div>
   </form>
 </dialog>

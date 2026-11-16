@@ -212,7 +212,7 @@ page says how; how the sign-in is kept is in [SECURITY.md](../SECURITY.md). `tmu
   FAILED and DONE, with a severity, an owner, a project, Markdown comments and files. Each column
   has two icons before its count: recently updated first, or priority then recently updated (the default).
   Each project keeps its column choices in this browser; All projects and selections of several projects
-  share a separate choice. Sorting replaces dragging cards into order; drops on agents still run tasks. + Task
+  share a separate choice. Sorting replaces dragging cards into order; drops on agents still run tasks. TODO's + New task
   takes files dropped or pasted in, also from a session's menu or a terminal's selection (the
   bookmark dialog's New task from selection). A task can be linked to a session: its row shows the
   task, and when you move the task its agent hears of it at its next tool call. Agents use
@@ -229,12 +229,12 @@ page says how; how the sign-in is kept is in [SECURITY.md](../SECURITY.md). `tmu
   does the same. New waits join last regardless of severity; your project's manager can move a waiting run to
   its agent's front with `promote_queued_task {id}` (the primary task shown by `list_runs`). It keeps the same agent and conversation, and slot limits
   still apply. Repeated promotions can delay older work. Sessions waiting in INTEGRATION stay visible but stop counting toward the at-once limits; kept slots stay kept, and a returned run counts again.
-  Auto-Dispatch, a switch and a cog in the board's bar (off by default), starts a
-  project's TODO tasks by itself: the cog's window holds the agent that picks, a default agent to run them, the
+  Auto-Dispatch, a switch in the board's bar (off by default), starts a
+  project's TODO tasks by itself: the Auto-Dispatch tab of the project's window (the bar's cog, with one project shown) holds the agent that picks, a default agent to run them, the
   severities it takes (as made: P0 and P1), the minutes a task stands in TODO before it is taken (10) and the
   tasks it starts in 24 hours at most (10); the switch
   then turns it on or off in one press (with several projects shown a press turns it off for them, and turning on is
-  each project's own in the window); "How tasks are picked" chooses between an agent's scoring and priority and saved order (P0 first, then saved rank, started by terminum itself with no agent); with an agent, when slots are free it starts one more session of the picking agent, which
+  each project's own in its window); "How tasks are picked" chooses between an agent's scoring and priority and saved order (P0 first, then saved rank, started by terminum itself with no agent); with an agent, when slots are free it starts one more session of the picking agent, which
   scores the first such tasks by RICE and starts the best, each on the agent named in the task's window (Agent),
   else the default; what a round leaves is passed over for a day and the next takes the tasks below; a task it
   started is started again only after you move or edit it; a failed round or two failed tasks turn it off, and its
