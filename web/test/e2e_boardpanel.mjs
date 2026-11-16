@@ -131,7 +131,22 @@ async function tablet(browser, name) {
   }
 }
 
+/** A phone on its side: a touch screen 500 px high or less keeps a phone's board, the cards the room. */
+async function sideways(browser, name) {
+  runningIn(`${name} phone 844×390`);
+  const { f, page, go } = await board(browser, { viewport: { width: 844, height: 390 }, isMobile: true, hasTouch: true });
+  try {
+    await go();
+    const g = await page.evaluate(() => ({ cols: [...document.querySelectorAll(".col")].filter((c) => c.offsetWidth).map((c) => Math.round(c.getBoundingClientRect().width)),
+      line: !!document.getElementById("poolline").offsetWidth, agents: !!document.getElementById("agentbar").offsetWidth, find: !!document.getElementById("findkey").offsetWidth,
+      card: Math.round(document.querySelector('.col[data-status="TODO"] .card').getBoundingClientRect().top) }));
+    check("AC-105 a phone on its side: one column a screen wide, the one-row head's Find key, the agents behind one line, the first card under 240 px as upright",
+      g.cols.every((w) => w === 844) && g.line && !g.agents && g.find && g.card < 240, JSON.stringify(g));
+  } finally { await f.close(); }
+}
+
 export async function webBoardPanel(browser, name) {
   await computer(browser, name);
   await tablet(browser, name);
+  await sideways(browser, name);
 }

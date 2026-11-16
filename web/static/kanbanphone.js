@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // The board where room is short (terminum-kanban.md AC-105 "a phone's one-row head", AC-117; boardphone.css).
 // Where the buttons float, the lines of tasks that need the human fold into the head's two counters (askfold.js).
-// On a phone (600 px or narrower) the head is one row: Find and the filters open under it by the Find key, lit
-// while the board is narrowed; Auto-Dispatch, the agents and the schedules stand behind one line under the
-// columns' switch, which opens them as a sheet. They are the page's own parts, moved, never copies.
+// On a phone (600 px or narrower, or on its side: BOARD_PHONE) the head is one row: Find and the filters open under
+// it by the Find key, lit while the board is narrowed; Auto-Dispatch, the agents and the schedules stand behind one
+// line under the columns' switch, which opens them as a sheet. They are the page's own parts, moved, never copies.
 import { asksFold } from "./askfold.js";
 import { placeModal } from "./fabpane.js";
 import { $ } from "./kanbanutil.js";
 import { el } from "./listparts.js";
-import { PHONE } from "./phonewin.js";
+import { BOARD_PHONE } from "./kanbanpanel.js";
 
-const phone = matchMedia(PHONE);
+const phone = matchMedia(BOARD_PHONE);
 const bar = $("bar"), find = $("findkey"), pool = $("pool"), line = $("poolline"), auto = $("autokeys"), clear = $("clearfilters");
 
 asksFold({ box: $("asks"), counters: $("askcount") });

@@ -1,16 +1,18 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // Where the columns stand (terminum-kanban.md AC-105; boardpanel.css): wider than a phone, TODO is a column of its own
 // and the others share the rest of the board, one at a time under their tabs, the one chosen remembered in this
-// browser; on a phone one column shows at a time, a swipe away from the next, the six tabs over them.
+// browser; on a phone (BOARD_PHONE) one column shows at a time, a swipe away from the next, the six tabs over them.
 import { el, read, write } from "./listparts.js";
 import { $ } from "./kanbanutil.js";
 import { PHONE } from "./phonewin.js";
 
 const KEPT = "board.tab", FIRST = "IN PROGRESS";
+/** Where the board is a phone's: a phone upright, or on its side (a touch screen 500 px high or less). */
+export const BOARD_PHONE = `${PHONE}, (pointer: coarse) and (max-height: 500px)`;
 
 /** `columns`: kanbancols.js's, by name; `still`: Reduce Motion's query. */
 export function columnPanel(columns, still) {
-  const phone = matchMedia(PHONE), board = $("board"), tabs = $("colswitch"), panel = el("div", "colpanel");
+  const phone = matchMedia(BOARD_PHONE), board = $("board"), tabs = $("colswitch"), panel = el("div", "colpanel");
   const todo = columns.get("TODO");
   panel.append(...[...columns.values()].filter((c) => c !== todo).map((c) => c.col));
   board.replaceChildren(todo.col, panel);

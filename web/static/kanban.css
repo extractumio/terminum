@@ -287,8 +287,8 @@ body.board-page { margin: 0; overflow: hidden; background: var(--surface-0); col
   #fproject summary { max-width: 140px; }
   #autoswitch .word { display: none; }
 }
-/* a phone: one column, a swipe away from the next, the six tabs over them naming it (kanbanpanel.js) */
-@media (max-width: 600px) {
+/* a phone, upright or on its side: one column, a swipe away from the next, the six tabs over them naming it (kanbanpanel.js) */
+@media (max-width: 600px), (pointer: coarse) and (max-height: 500px) {
   #colswitch { display: flex; flex: none; overflow-x: auto; scrollbar-width: none; margin: var(--sp-2) var(--gutter) 0; }
   #colswitch::-webkit-scrollbar { display: none; }
   #board { display: flex; gap: 0; padding: var(--sp-2) 0 0; overflow: auto hidden; scroll-snap-type: x mandatory; scrollbar-width: none; overscroll-behavior-x: contain; }

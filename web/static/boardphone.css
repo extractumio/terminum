@@ -2,12 +2,13 @@
 /* The board where room is short (terminum-kanban.md AC-105 "a phone's one-row head", AC-117; kanbanphone.js);
    after controls.css and askfold.css. The counters of tasks that need the human stand in the head's row
    wherever they show; the rest is a phone's (600 px or narrower): one row of keys, Find and the filters under
-   it when asked, Auto-Dispatch, the agents and the schedules behind one line, the cards the rest. */
+   it when asked, Auto-Dispatch, the agents and the schedules behind one line, the cards the rest; a touch screen 500 px
+   high or less (a phone on its side) is a phone's too. */
 .board-page #askcount { position: static; flex: none; gap: var(--sp-2); }
-@media (min-width: 601px) { #findkey, #poolline { display: none !important; } }   /* a phone's alone (the keys' own rules weigh an id) */
+@media (min-width: 601px) and (min-height: 501px), (min-width: 601px) and (pointer: fine) { #findkey, #poolline { display: none !important; } }   /* a phone's alone (the keys' own rules weigh an id) */
 #pool { display: contents; }
 
-@media (max-width: 600px) {
+@media (max-width: 600px), (pointer: coarse) and (max-height: 500px) {             /* a phone, upright or on its side (kanbanpanel.js BOARD_PHONE) */
   /* one row: the list's key, the project (it gives way first), the counters, Find, + Task as an icon key */
   .board-page #bar { flex-wrap: wrap; align-items: center; }
   #filters { display: contents; }
