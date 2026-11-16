@@ -16,14 +16,17 @@ fn a_grid_stays_within_its_bounds() {
 #[test]
 fn a_split_window_shrinks_only_for_typing() {
     let split = Fields { panes: 2, window_size: (129, 68), ..Fields::default() };
-    assert_eq!(target((46, 32), &split, None, Why::Open), (129, 68), "a phone that only looks takes nothing from the hidden panes");
-    assert_eq!(target((46, 32), &split, None, Why::Active), (129, 68));
-    assert_eq!(target((46, 32), &split, None, Why::Typed), (46, 32));
-    assert_eq!(target((180, 50), &split, None, Why::View), (180, 68), "each direction on its own");
-    assert_eq!(target((87, 32), &split, Some((140, 60)), Why::Open), (140, 68),
-        "a grow to 140 columns still on its way: an opening page's look never shrinks the window back to the fields' 129");
+    assert_eq!(target((46, 32), &split, split.window_size, Why::Open), (129, 68), "a phone that only looks takes nothing from the hidden panes");
+    assert_eq!(target((46, 32), &split, split.window_size, Why::Active), (129, 68));
+    assert_eq!(target((46, 32), &split, split.window_size, Why::Typed), (46, 32));
+    assert_eq!(target((180, 50), &split, split.window_size, Why::View), (180, 68), "each direction on its own");
+    let ends = |asked| Win { manual: true, asked: Some(asked), ..Win::default() }.ends_at(split.window_size);
+    assert_eq!(target((87, 32), &split, ends((140, 60)), Why::Open), (140, 60),
+        "a grow to 140×60 still on its way: an opening page's look never shrinks the window back to the fields' 129×68");
+    assert_eq!(target((87, 32), &split, ends((46, 32)), Why::Open), (87, 32),
+        "a typer's shrink to 46×32 still on its way: an opening page grows the window from there, not from the fields' 129×68");
     let one = Fields { panes: 1, ..split };
-    assert_eq!(target((46, 32), &one, None, Why::Open), (46, 32), "a window of one pane has nothing to squeeze");
+    assert_eq!(target((46, 32), &one, one.window_size, Why::Open), (46, 32), "a window of one pane has nothing to squeeze");
 }
 
 /// AC-13 failure: tmux refusing a resize undoes the claim (the window is not that page's), a
@@ -57,8 +60,7 @@ fn ac13_a_refused_resize_gives_the_window_back_to_who_had_it() {
 }
 
 /// AC-13: a window is at a page's grid only when tmux's last-read size and the grid terminumd last
-/// asked for agree: a view that changes back while the resize to its old grid is on its way is sized
-/// again, not skipped on fields that predate that resize (the quick shell closed, TERM-394).
+/// asked for agree (the quick shell closed while the resize to its narrower view was on its way).
 #[test]
 fn ac13_a_resize_on_its_way_is_not_the_window_s_size() {
     let sized = Win { manual: true, asked: Some((87, 30)), ..Win::default() };
@@ -66,6 +68,5 @@ fn ac13_a_resize_on_its_way_is_not_the_window_s_size() {
     let on_its_way = Win { asked: Some((56, 30)), ..sized.clone() };
     assert!(!on_its_way.holds((87, 30), (87, 30)), "the fields say 87, but 56 is on its way: 87 goes again");
     assert!(!sized.holds((56, 30), (87, 30)), "tmux reads another size: sized again");
-    assert!(!Win { manual: false, ..sized.clone() }.holds((87, 30), (87, 30)), "held by tmux's own policy: another client would take it");
     assert!(!Win::default().holds((87, 30), (87, 30)), "never sized by terminumd");
 }

@@ -561,7 +561,7 @@ Scenario: AC-13 edge — the smallest and the largest grid
 Scenario: AC-13 edge — the view changes back while its resize is on its way
   Given the Mac's page sizes %3 at 87 columns, opens the quick shell on the left (AC-88) and its resize to 56 columns is sent to tmux
   When the quick shell closes before tmux has answered or the pane's next frame was read, and the page sends 87 columns again
-  Then the window ends at 87 columns: a window counts as at a page's grid only when tmux's last-read size and the grid terminumd last asked for agree, so the new grid is sent after the old one (in its second, AC-13 happy path) and is never dropped as already there
+  Then the window ends at 87 columns: the new grid follows the old one in its second (AC-13 happy path), never dropped as already there
 Scenario: AC-13 edge — a resize that fails
   Given a pane's resize waits on a tmux server that stalled, and the user shows another pane
   When tmux refuses it or the server goes

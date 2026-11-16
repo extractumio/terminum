@@ -47,18 +47,23 @@ struct Win {
     zoom_by: Option<u64>,
     /// window-size manual was set by terminumd
     manual: bool,
-    /// the grid terminumd last asked tmux for: a pane's fields lag a resize still on its way (AC-13)
+    /// the grid terminumd last asked tmux for (`holds`)
     asked: Option<(usize, usize)>,
     /// the claim that wrote this record (`resize`): a refused one is undone only while it is the last
     claim: u64,
 }
 
 impl Win {
-    /// Whether the window is at `grid` as terminumd sized it: tmux's last-read size (`now`, the pane's
-    /// fields) and the grid terminumd last asked for agree; fields read before a resize still on its
-    /// way to another grid say nothing of where the window ends (AC-13).
+    /// Where the window ends: the grid terminumd last asked for, else tmux's last-read size (`now`, the
+    /// pane's fields), which a resize still on its way to tmux leaves behind (AC-13).
+    fn ends_at(&self, now: (usize, usize)) -> (usize, usize) {
+        self.asked.unwrap_or(now)
+    }
+
+    /// Whether the window is at `grid` as terminumd sized it: tmux's last-read size and the grid
+    /// terminumd last asked for agree (asked only with `window-size manual` set).
     fn holds(&self, now: (usize, usize), grid: (usize, usize)) -> bool {
-        self.manual && now == grid && self.asked == Some(grid)
+        now == grid && self.asked == Some(grid)
     }
 }
 
@@ -175,7 +180,7 @@ async fn resize(app: &Shared, page: &Arc<Page>, why: Why) -> bool {
     let (before, claim, manual_at, (cols, rows)) = {
         let mut g = app.sizes.0.lock();
         let mut win = g.get(&key).cloned().unwrap_or_default();
-        let (cols, rows) = target(grid, &f, win.asked, why);
+        let (cols, rows) = target(grid, &f, win.ends_at(f.window_size), why);
         let mut manual_at = None;
         if !win.holds(f.window_size, (cols, rows)) {
             // also at its size already: held by tmux's own policy, another client would take it
@@ -265,9 +270,9 @@ async fn claim(app: &Shared, page: &Arc<Page>, why: Why) -> bool {
     }
     let key = (server.id(), f.window.clone());
     let win = app.sizes.0.lock().get(&key).cloned().unwrap_or_default();
-    let (by, mine) = (win.by, win.by == Some(page.id));
+    let mine = win.by == Some(page.id);
     // free: nobody sizes it, or the page that does no longer shows it or is hidden (a locked phone, a tab in the background)
-    let free = by.is_none_or(|id| !viewers(app, &server, &f.window).iter().any(|v| v.id == id && v.state.lock().active()));
+    let free = win.by.is_none_or(|id| !viewers(app, &server, &f.window).iter().any(|v| v.id == id && v.state.lock().active()));
     let view = page.state.lock().view.map(|(c, r)| (c as usize, r as usize));
     if mine && f.whole() && view.is_some_and(|v| win.holds(f.window_size, v)) {
         return false;                                         // it has this page's grid already: the once-a-second slot stays free
@@ -276,13 +281,11 @@ async fn claim(app: &Shared, page: &Arc<Page>, why: Why) -> bool {
 }
 
 /// The grid the window gets for `grid`: a window of several panes grows on any claim and shrinks
-/// only for typing: a phone that just looks would squeeze the panes the zoom hides (AC-13). It grows
-/// from the larger of tmux's last-read size and the grid terminumd last `asked` for, which a resize
-/// still on its way leaves the fields short of.
-fn target(grid: (usize, usize), f: &Fields, asked: Option<(usize, usize)>, why: Why) -> (usize, usize) {
+/// only for typing: a phone that just looks would squeeze the panes the zoom hides (AC-13); `now`:
+/// where the window ends (`Win::ends_at`).
+fn target(grid: (usize, usize), f: &Fields, now: (usize, usize), why: Why) -> (usize, usize) {
     if f.panes > 1 && why != Why::Typed {
-        let (c, r) = asked.unwrap_or_default();
-        return (grid.0.max(f.window_size.0).max(c), grid.1.max(f.window_size.1).max(r));
+        return (grid.0.max(now.0), grid.1.max(now.1));
     }
     grid
 }
