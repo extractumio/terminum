@@ -613,7 +613,7 @@ Scenario: AC-198 failure — Publish and After by hand while integration is on
   Given terminum's integration is on
   When `make land-publish SLUG=retry` or `make land-after SLUG=retry` runs outside terminumd's queue
   Then nothing is pushed and nothing installed: "publish: integration is on: terminumd publishes and runs After; queue with make land TASK=<ID> RESULT=<file>" ("after: …" for After), exit 1
-  And when terminumd cannot say whether integration is on, it is refused the same way: "whether integration is on is not known (<why>): nothing pushed"
+  And when the ask fails, times out or its answer cannot be read, it is refused: "whether integration is on is not known …: nothing pushed"; when terminum is not running or not installed, the stages run here, in order, as without integration
 
 Scenario: AC-198 edge — a task taken out while it is verified
   When API-12 is taken out (AC-187) while its Verify runs
