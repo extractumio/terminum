@@ -17,10 +17,7 @@ fn working(w: &World, n: u32, file: &str, text: &str) -> Tree {
         Ok(t.id)
     }).unwrap();
     let dir = w.root.join(format!("tree-{n}"));
-    sh(&w.api, &["worktree", "add", "-q", "--detach", dir.to_str().unwrap(), "origin/main"]);
-    std::fs::write(dir.join(file), text).unwrap();
-    sh(&dir, &["add", file]);
-    sh(&dir, &["commit", "-qm", &format!("w{n}")]);
+    loose(w, &dir, None, file, text);
     let task = w.s.with(|tx| ops::key_of(tx, &id)).unwrap();
     Tree { task, id, project: "api".into(), dir, working: true }
 }
@@ -44,7 +41,7 @@ fn ac192_two_trees_whose_commits_do_not_merge_are_each_told_once() {
     assert!(said(&w, &other.id).is_empty(), "another file: nothing to tell");
 }
 
-/// A worktree of api's checkout with no task, at `dir`, on `branch` (none: detached), committing `file` with `text`.
+/// A worktree of api's checkout, at `dir`, on `branch` (none: detached), committing `file` with `text`.
 fn loose(w: &World, dir: &Path, branch: Option<&str>, file: &str, text: &str) {
     match branch {
         Some(b) => sh(&w.api, &["worktree", "add", "-q", "-b", b, dir.to_str().unwrap(), "origin/main"]),
@@ -52,7 +49,7 @@ fn loose(w: &World, dir: &Path, branch: Option<&str>, file: &str, text: &str) {
     };
     std::fs::write(dir.join(file), text).unwrap();
     sh(dir, &["add", file]);
-    sh(dir, &["commit", "-qm", "no task"]);
+    sh(dir, &["commit", "-qm", file]);
 }
 
 #[test]
