@@ -558,6 +558,10 @@ Scenario: AC-13 happy path — the active page sizes the pane
 Scenario: AC-13 edge — the smallest and the largest grid
   When a page's view holds fewer than 45×14 cells (a phone's split, a narrow window, big text) or more than 240×70 (a large display)
   Then terminumd sizes the window to 45 to 240 columns and 14 to 70 rows: an iPhone in portrait at 13 px holds the smallest, about a 1920×1200 window the largest; a pane wider than the view is drawn as AC-04 says, rows the view does not hold scroll, and a view larger than the grid leaves the rest blank; a view under 20×5 (an animation, a dragged edge, a hidden part) sends no size and the pane keeps its own
+Scenario: AC-13 edge — the view changes back while its resize is on its way
+  Given the Mac's page sizes %3 at 87 columns, opens the quick shell on the left (AC-88) and its resize to 56 columns is sent to tmux
+  When the quick shell closes before tmux has answered or the pane's next frame was read, and the page sends 87 columns again
+  Then the window ends at 87 columns: a window counts as at a page's grid only when tmux's last-read size and the grid terminumd last asked for agree, so the new grid is sent after the old one (in its second, AC-13 happy path) and is never dropped as already there
 Scenario: AC-13 edge — a resize that fails
   Given a pane's resize waits on a tmux server that stalled, and the user shows another pane
   When tmux refuses it or the server goes
@@ -1545,7 +1549,7 @@ All cases are shipped. What AC-195's lines may call for, each only once the inst
 - [x] AC-09 — scripts/e2e_access.py, scripts/e2e_ws.py, web/test/e2e_signin.mjs, `node web/test/e2e_live.mjs signin` (a renewed context, delayed sign-in installation and a genuine refusal), web/test/proof.test.mjs, terminumd/src/auth/web_tests.rs, terminumd/src/auth/signin_tests.rs, terminumd/src/auth/credential_tests.rs, terminumd/src/auth/checks_tests.rs, terminumd/src/auth/websignin_tests.rs, terminumd/src/umask_tests.rs
 - [x] AC-10 — terminumd/src/auth/checks_tests.rs, scripts/e2e_access.py
 - [x] AC-12 — terminumd/src/theme_tests.rs, web/test/e2e_live.mjs, web/test/e2e_split.mjs, web/test/e2e_liveprogs.mjs
-- [x] AC-13 — `cargo test page::zoom`, `cargo test page::sizing` (a refused resize undone), scripts/e2e_sizing.py, scripts/e2e_attach.py, scripts/e2e_sizestale.py, scripts/e2e_core.py, web/test/e2e_screen.mjs, web/test/e2e_livesplit.mjs, web/test/e2e_live.mjs
+- [x] AC-13 — `cargo test page::zoom`, `cargo test page::sizing` (a refused resize undone, a resize on its way), scripts/e2e_sizing.py, scripts/e2e_attach.py, scripts/e2e_sizestale.py, scripts/e2e_core.py, web/test/e2e_screen.mjs, web/test/e2e_livesplit.mjs, web/test/e2e_live.mjs
 - [x] AC-18 — web/test/e2e_tmux.mjs, web/test/e2e_hold.mjs, web/test/e2e_phonerow.mjs, web/test/e2e_sheets.mjs, web/test/e2e_fold.mjs, web/test/onekbd.test.mjs, web/test/e2e_touchkeys.mjs (the keyboard's light, a hardware keyboard, the cursor), web/test/e2e_tabhead.mjs (a tablet's header)
 - [x] AC-19 — terminumd/src/settings_tests.rs, web/test/e2e_signin.mjs, web/test/e2e_live.mjs, web/test/e2e_tmux.mjs
 - [x] AC-20 — scripts/bench_load.py, scripts/bench_echo.py, terminumd/benches/frame.rs (`cargo bench frame`)

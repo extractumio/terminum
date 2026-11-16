@@ -10,6 +10,7 @@ and no subshell.
 import json
 import os
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -82,6 +83,29 @@ def collect(ws, seconds):
     while (m := ws.until(lambda _: True, max(0.1, end - time.time()))) is not None and time.time() < end:
         got.append(m)
     return got
+
+
+def in_flight(t, pid, pane):
+    """AC-13: a page's view changes back while terminumd's resize to its last view is still on its way
+    to tmux (the quick shell closed just as its narrower view was being applied): the window ends at the
+    view's latest grid. The private tmux server is held (SIGSTOP) so the old resize is unanswered when the
+    new view comes; only that server, by its own pid."""
+    ws = open_pane(t, pid, 87, 30)
+    check("AC-13 in flight: the page sizes its pane", settle(pane, "87x30") == "87x30", window_of(pane))
+    time.sleep(1.2)                                        # past sizing.rs EVERY (1 s): the next view's resize goes at once
+    server = int(tmux("display", "-p", "#{pid}").strip())
+    os.kill(server, signal.SIGSTOP)
+    try:
+        ws.send({"t": "size", "cols": 56, "rows": 30, "typing": False})   # the quick shell opened on the left
+        time.sleep(0.5)                                    # its resize reaches the held server, unanswered
+        ws.send({"t": "size", "cols": 87, "rows": 30, "typing": False})   # it closed: the view is as before
+        time.sleep(0.3)
+    finally:
+        os.kill(server, signal.SIGCONT)
+    check("AC-13 in flight: the view's latest grid wins over the resize still on its way",
+          settle(pane, "87x30", 5) == "87x30", window_of(pane))
+    ws.close()
+    time.sleep(0.5)
 
 
 def screens_off(t, pid, pane, work):
@@ -327,6 +351,7 @@ def main():
         ws.close()
         first_frame(t, pid, pane)
         hidden(t, pid, pane)
+        in_flight(t, pid, pane)
         screens_off(t, pid, pane, work)
         split(t, pid, pane)
         drag(t, pid, pane)
