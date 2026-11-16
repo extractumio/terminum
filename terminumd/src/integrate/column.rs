@@ -60,7 +60,7 @@ pub fn state_words(tx: &Transaction, b: &Batch) -> Result<String, String> {
 
 /// What a card says of the queue, by task key: the batch's line on its integration task's card ("batch 7 ·
 /// checking · 12 min"), "in batch 7", a place, "verifying", "waits for API-12"; a task back in work, "returned: …".
-/// With the batch's number, so the page draws a batch's cards as one group.
+/// With the batch's number, so the page draws a batch's cards as one group; a task in work, the tasks it overlaps.
 pub fn marks(tx: &Transaction, tasks: &[Task], now: i64) -> Result<HashMap<String, Value>, String> {
     let mut out = HashMap::new();
     let projects: HashSet<&str> = tasks.iter().filter(|t| t.status == INTEGRATION).map(|t| t.project.as_str()).collect();
@@ -97,6 +97,13 @@ pub fn marks(tx: &Transaction, tasks: &[Task], now: i64) -> Result<HashMap<Strin
             _ => continue,
         };
         out.insert(key, json!({"mark": words}));
+    }
+    // a task in work whose commits overlap others' says each (AC-193), as the last walk found it
+    for key in working {
+        let ids = super::notices::overlaps_of(key, now);
+        if !ids.is_empty() {
+            out.entry(key.to_string()).or_insert_with(|| json!({}))["overlaps"] = json!(ids);
+        }
     }
     Ok(out)
 }

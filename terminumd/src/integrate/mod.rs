@@ -91,21 +91,29 @@ async fn deliver(app: &Shared, last: &mut Option<i64>) {
     }
 }
 
-/// The trees of tasks in work, newest first: the folder its agent works in, as its hooks said, else its session's, on
-/// this Mac; compared off the async workers.
+/// The trees of tasks with a session, newest first, those in work compared: the folder its agent works in, as its hooks
+/// said, else its session's, on this Mac; with every session's folder, which names a tree with no task; compared off
+/// the async workers.
 async fn walk(app: &Shared) {
-    let Ok(tasks) = crate::tasks::api::store(app, |tx| crate::tasks::ops::rows(tx, "SELECT t.id, t.slug, t.project, t.session_key FROM tasks t
-        JOIN project_integration i ON i.project = t.project WHERE i.is_on = 1 AND t.status = 'IN PROGRESS' AND t.session_key IS NOT NULL AND t.archived_at IS NULL
-        ORDER BY t.updated_at DESC", [], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?, r.get::<_, String>(3)?)))).await else { return };
-    let trees: Vec<notices::Tree> = {
+    let Ok(tasks) = crate::tasks::api::store(app, |tx| crate::tasks::ops::rows(tx, "SELECT t.id, t.slug, t.project, t.session_key, t.status = 'IN PROGRESS' FROM tasks t
+        JOIN project_integration i ON i.project = t.project WHERE i.is_on = 1 AND t.status != 'DONE' AND t.session_key IS NOT NULL AND t.archived_at IS NULL
+        ORDER BY t.updated_at DESC", [], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?, r.get::<_, String>(3)?, r.get::<_, bool>(4)?)))).await else { return };
+    let (trees, sessions): (Vec<notices::Tree>, Vec<_>) = {
         let layout = app.layout.read();
-        tasks.into_iter().filter_map(|(task, id, project, key)| {
+        let trees = tasks.into_iter().filter_map(|(task, id, project, key, working)| {
             let dir = notices::tree_dir(crate::page::marks::find_item(&layout, &key)?)?;
-            Some(notices::Tree { task, id, project, dir })
-        }).collect()
+            Some(notices::Tree { task, id, project, dir, working })
+        }).collect();
+        // every session's folders on this Mac, to name a tree with no task by the session in it
+        let groups = layout.as_array().map_or(&[][..], |a| a.as_slice());
+        let sessions = groups.iter().flat_map(|g| {
+            let name = g["label"].as_str().unwrap_or_default().to_string();
+            g["items"].as_array().into_iter().flatten().filter_map(move |it| Some((notices::tree_dir(it)?, name.clone())))
+        }).collect();
+        (trees, sessions)
     };
     let store = app.tasks.clone();
-    match tokio::task::spawn_blocking(move || notices::walk(&store, &crate::config::tm_home(), &trees, crate::tasks::ops::now())).await {
+    match tokio::task::spawn_blocking(move || notices::walk(&store, &crate::config::tm_home(), &trees, &sessions, crate::tasks::ops::now())).await {
         Ok(Err(e)) => tracing::warn!(event = "integration.walk", error = %e),
         Err(e) => tracing::error!(event = "integration.panic", error = %e),
         Ok(Ok(())) => {}
