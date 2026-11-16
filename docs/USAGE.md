@@ -212,11 +212,11 @@ page says how; how the sign-in is kept is in [SECURITY.md](../SECURITY.md). `tmu
   FAILED and DONE, with a severity, an owner, a project, Markdown comments and files. Each column
   has two icons before its count: recently updated first, or priority then recently updated (the default).
   Each project keeps its column choices in this browser; All projects and selections of several projects
-  share a separate choice. Sorting replaces dragging cards into order; drops on agents still run tasks. TODO's + New task
+  share a separate choice. A drop inside a column changes no order; a drop on an agent runs the task. TODO's + New task
   takes files dropped or pasted in, also from a session's menu or a terminal's selection (the
   bookmark dialog's New task from selection). A task can be linked to a session: its row shows the
   task, and when you move the task its agent hears of it at its next tool call. Agents use
-  `list_tasks`, `get_task`, `create_task`, `take_task`, `move_task`, `ask_human`, `add_comment`, `attach_file`,
+  `list_tasks`, `get_task`, `create_task`, `link_task`, `take_task`, `move_task`, `ask_human`, `add_comment`, `attach_file`,
   `get_file` and `finish_task`: on every task of their project, whatever session made or holds it, but one a human's RUN holds in another session, until that session is closed;
   an agent Dispatcher starts runs its command as you wrote it, so write the permissions it needs there (`claude --dangerously-skip-permissions`);
   Dispatcher adds only the agent's inline (not full-screen) TUI, Codex in its own process rather than in a Codex app's shared server, and the effort (Run's window shows the whole line; a Claude Code command that names its own `--settings` gets none added, so set `"tui": "default"` there yourself); when it
@@ -240,7 +240,7 @@ page says how; how the sign-in is kept is in [SECURITY.md](../SECURITY.md). `tmu
   started is started again only after you move or edit it; a failed round or two failed tasks turn it off, and its
   switch says why;
   `create_task`'s text follows the project's template (its window: Template for agents' tasks).
-  An agent's bug (a title starting `Bug:`) is never below P2: P1 or above when it has impact (lost
+  An agent's bug (its type Bug, by `type` or a title starting `Bug:`) is never below P2: P1 or above when it has impact (lost
   or blocked work, a wrong result, a red main), else P2; its tools refuse P3 for one.
   With `update_task` an agent grooms its project's board: severity and parent of any task (a
   human's with a reason, kept as a comment), title and text of a task agents wrote, and such a task
@@ -263,7 +263,7 @@ page says how; how the sign-in is kept is in [SECURITY.md](../SECURITY.md). `tmu
   HUMAN's and FAILED's pulse while they hold tasks); on a phone one column shows at a time.
   **Scheduled tasks**: the line Scheduled N between the agents and the columns opens (and stays
   open in that browser) to the schedules of the projects shown; + Schedule opens a schedule's
-  window: title, text, project, severity, the agent that runs it, When (every 1–45 minutes, every
+  window: title, text, project, severity, the agent that runs it, When (every 1, 5, 10, 15, 20, 30 or 45 minutes, every
   N hours, every day, weekdays, chosen days of the week, a day of the month, once, or five cron
   fields, in the Mac's local time, the next three runs said under it),
   a time budget (required: no one watches the run) and Paused; What the agent gets shows the
@@ -303,6 +303,12 @@ page says how; how the sign-in is kept is in [SECURITY.md](../SECURITY.md). `tmu
   only when something is left to choose); Run from scratch stands on the Status line. A task that
   waits for you (its agent's questions, a result, a failure) shows that first, with the field to
   answer under it; a card shows its subtasks as boxes in their status's color.
+  Details, folded under a task's fields and in the new-task window, holds its Type (Feature, Bug, Debt,
+  Story: shown as the title's first word, and set by writing that word in the title), an External link
+  (http or https, Open beside it), a Target, and Blocked by and Follow-ups: tasks of the same project,
+  added by + with a search, each with a reason, taken out by ×. Agents set them with `create_task` and
+  `update_task` (`type`, `external_link`, `target`) and `link_task`. The lists are kept and shown;
+  nothing runs or waits by them.
   Run on a task with subtasks takes those not DONE into the same session: its agent does them one
   after another in the order it decides, the main task last; one that cannot be done fails with
   its main task, and Run on the main task again runs what is not DONE. Auto-Dispatch does the same.
@@ -310,6 +316,11 @@ page says how; how the sign-in is kept is in [SECURITY.md](../SECURITY.md). `tmu
   session, and opens them in the same window; Convert to task on a bookmark or reminder (its pane,
   its bar, the list below the sessions) makes one in TODO without leaving the session.
   What agents kept for you before tasks stays with your bookmarks and reminders.
+- **Idle agents' exit** (Settings: "Exit idle agents after, days"; off until set): a Claude Code or
+  Codex left idle at an empty box in a pane that no page and no tmux client of yours showed for that
+  many days is ended (Ctrl+C twice, then `/exit`), never one that works, asks, holds a draft or is
+  Dispatcher's. Its pane then says which agent and session it was, its command line and folder, and a
+  `Resume:` line that starts it again with the options it had (`specs/terminum-agents.md` AC-153).
 - **The view's menu** has 20 color schemes (one for every browser, kept in settings.json),
   the Markdown text size and the history lines of new terminals. Option or ⌘ with ↑/↓ pages.
 - **Keys of an IDE**: ⌘[ and ⌘] go back and forward through the last 20 sessions you showed,

@@ -16,7 +16,7 @@ A snapshot of what terminum must do, not a record of how it came to be: git hold
 
 **Who it affects.** One person running many Claude Code and Codex sessions from a Mac or a phone; later a team sharing a central store.
 
-**Expected outcome.** `/kanban/` shows tasks in TODO, IN PROGRESS, WAIT FOR HUMAN, FAILED and DONE, filtered by several projects, severity and owner. A task has a Markdown text, comments, files, an owner, a severity P0…P3, a project and at most one session. Humans and agents move tasks; a human's move reaches the task's session. Tasks live in one local database file with no service to run.
+**Expected outcome.** `/kanban/` shows tasks in TODO, IN PROGRESS, WAIT FOR HUMAN, INTEGRATION (where a project's integration is on), FAILED and DONE, filtered by several projects, severity and owner. A task has a Markdown text, comments, files, an owner, a severity P0…P3, a project and at most one session. Agents and Dispatcher move tasks; a human moves one only by running it (AC-107). Tasks live in one local database file with no service to run.
 
 **Scenario.** Alex drops a screenshot into the new-task window, writes "Fix the retry loop", picks P1 and presses Create: API-12 stands on top of the P1 cards in TODO. RUN (`terminum-dispatcher.md` AC-121) starts an agent on it. An hour later the board's tab counts one card in WAIT FOR HUMAN; Alex comments and presses RUN, and the agent goes on.
 
@@ -64,7 +64,7 @@ Open questions: none.
 | AC-111 | [SHOULD / P1] | Filters by severity, owner and text, and the projects chosen (AC-135), kept in the URL. |
 | AC-112 | [SHOULD / P1] | One level of subtasks, each a full task with a parent: made, put under another task, taken out; the parent's card shows each as a box of its ID in its status's color, and how many FAILED and WAIT FOR HUMAN in a red and a waiting-colored box, folded too. |
 | AC-113 | [MUST / P0] | A task has at most one session, a session one IN PROGRESS task at most; moving a task across projects asks about its session; a closed session is said on the card. |
-| AC-114 | [MUST / P0] | [DROPPED — a human no longer moves a task across the board: AC-107] |
+| AC-114 | [MUST / P0] | [DROPPED: a human moves a task only by running it, AC-107] |
 | AC-115 | [MUST / P0] | `terminum mcp` lists, reads, makes, moves, comments and finishes tasks of the agent's project, whatever session made or holds them, but one a human's RUN holds in another session; a free task can be taken. |
 | AC-145 | [MUST / P0] | What an agent leaves undone reaches its project's board by `create_task`: only what must be done, its type said (AC-199: by `type` or its title's first word Bug:, Feat:, Debt:, Story:), with its severity, a bug's never below P2, its text in the sections of its project's template (a setting of the project; by default problem or goal, context, expected result, prerequisites). |
 | AC-154 | [SHOULD / P1] | An agent grooms its project's board with `update_task`: the severity, parent and AC-199's details of any task it reaches, a human's with its reason; the title and text of an agents' task; such a task archived with its reason; an agent's change of title, type or severity never sets a bug below P2. |
@@ -664,6 +664,12 @@ Scenario: AC-199 happy path — Details
   Then that task is in Blocked by, said in API-40's history; its reason is typed beside it and kept when the field is left; × takes it out
   And Esc closes the search; Enter in it never makes or closes the window
   And a listed task's ID opens its window
+
+Scenario: AC-199 edge — Enter before the search answers
+  Given the search under Blocked by lists API-12 first for "ret"
+  When the human types on to "retry column" and presses Enter before that search has answered
+  Then the pick waits for the search of "retry column" and takes its first row: a row of an older search is never taken
+  And with nothing found Enter picks nothing
 
 Scenario: AC-199 happy path — New task
   When the human opens Details in the new-task window, chooses Debt, a target and tasks for Blocked by and Follow-ups, and presses Create
@@ -1283,15 +1289,15 @@ Comments and history are one table, `events`: a window lists them in one order. 
 
 | AC | Gap | Evidence |
 |---|---|---|
-| AC-113, AC-115 | A refusal names a session by its pane (Session %7), not its title. | `terminumd/src/tasks/ops.rs` |
+| AC-113, AC-115 | A refusal names a session by its pane (Session %7), not its title. | `terminumd/src/tasks/columns.rs` |
 | AC-119 | The session list says nothing of a store that cannot be read; the board's banner does. | `web/static/kanban.js` |
 | AC-154 | An agent may take a human's free task (take_task) and finish it (finish_task): DONE, then archived after 2 days (AC-118), with no human deciding. | `terminumd/src/tasks/tools.rs` |
 
 ## 8. Recommendation and ownership
 
-SQLite in one file through `rusqlite`, with one writer task off the async workers and `events` as the log. JSON files like `projects.json` were rejected: a move, its history and a project's deletion must be one transaction, and filters must page over 100,000 tasks. Projects move into the store (AC-110): two owners of one list would disagree, and a project's deletion must be one transaction with its tasks.
+SQLite in one file through `rusqlite`, with one writer task off the async workers and `events` as the log. JSON files like `projects.json` do not fit: a move, its history and a project's deletion must be one transaction, and filters must page over 100,000 tasks. Projects move into the store (AC-110): two owners of one list would disagree, and a project's deletion must be one transaction with its tasks.
 
-The board is a second page (`web/static/kanban.html`), plain JavaScript, using the Panel's bundle for the Markdown editor and rules. A second page was the owner's choice over one page with tabs.
+The board is a second page (`web/static/kanban.html`), plain JavaScript, using the Panel's bundle for the Markdown editor and rules.
 
 | Part | Owner |
 |---|---|
@@ -1313,7 +1319,7 @@ CREATE TABLE project_members (project TEXT REFERENCES projects, pane_key TEXT UN
 CREATE TABLE tasks (id TEXT PRIMARY KEY, number INTEGER UNIQUE NOT NULL, project TEXT REFERENCES projects, parent TEXT REFERENCES tasks,
   status TEXT NOT NULL, severity TEXT NOT NULL, rank REAL NOT NULL, owner TEXT REFERENCES users,
   by_agent INTEGER NOT NULL, session_key TEXT, made_in TEXT, agent_session TEXT, budget_seconds INTEGER, archived_at INTEGER, updated_at INTEGER NOT NULL,
-  slug TEXT UNIQUE, created_at INTEGER NOT NULL,   -- slug: its ID now (AC-148); number: the store's order only
+  slug TEXT UNIQUE, created_at INTEGER NOT NULL,   -- slug: its ID (AC-148); number: the store's order only
   title TEXT NOT NULL, body TEXT NOT NULL,   -- the long columns last: a scan of the others never walks a text's pages (columns added later stand after them)
   type TEXT, external_link TEXT, target TEXT,   -- AC-199: one of Feature, Bug, Debt, Story (tasks/attrs.rs); none
   shown TEXT GENERATED ALWAYS AS (<type's word: > || title) VIRTUAL);   -- the title as every list and text shows it
