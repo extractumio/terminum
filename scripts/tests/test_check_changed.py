@@ -259,7 +259,8 @@ class Run(unittest.TestCase):
         self.assertIn("     run 1\n", said)   # the red run's lines are said: make land deletes the tree's logs
         self.assertEqual((self.root / ".checks" / "changed.critical.log").read_text(), "run 2\n")
         self.assertEqual(check_changed.note(self.root, "retried"),
-                         "PASSED ONLY ON RETRY, the first run red: critical: name each with its open task")
+                         "PASSED ONLY ON RETRY, the first run red: critical: name each with its open task\n"
+                         "critical: the first run's last lines:\n     run 1")
         self.assertEqual(check_changed.late_notes(self.root), check_changed.note(self.root, "retried"))
 
     def test_ac197_red_again_on_its_retry_fails_and_says_no_retry_pass(self):  # AC-197
@@ -281,7 +282,10 @@ class Run(unittest.TestCase):
         self.run_codes([("critical", "a")], [1, 0])
         failed, ran, _ = self.run_codes([("smoke", "node smoke")], [1, 0], landing=True)
         self.assertEqual((failed, len(ran)), ([], 2))
-        self.assertEqual(len(check_changed.note(self.root, "retried").splitlines()), 2)
+        note = check_changed.note(self.root, "retried")
+        self.assertEqual(note.count("PASSED ONLY ON RETRY"), 2)
+        self.assertIn("critical: the first run's last lines:\n     run 1", note)
+        self.assertIn("smoke: the first run's last lines:\n     run 1", note)
         self.run_codes([("e2e_core", "b")], [0], landing=True)   # a landing with no retry keeps what was said
         self.assertIsNotNone(check_changed.note(self.root, "retried"))
 

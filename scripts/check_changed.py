@@ -360,10 +360,11 @@ def run(steps, root=REPO, gate=True, nice=False, landing=False):
                 first = log.with_name(f"changed.{name}.first.log")
                 preserve_attempt(log, first)
                 print(f"note {name} ({seconds} s) failed, run once more unchanged; the first run's last lines:", flush=True)
-                print(tail(first), end="", flush=True)   # said here: make land deletes the tree and its logs
+                first_tail = tail(first)
+                print(first_tail, end="", flush=True)   # said here: make land deletes the tree and its logs
                 code, seconds = attempt(root, name, command, log, nice, landing)
                 if code == 0:
-                    again.append(name)
+                    again.append((name, first_tail))
             if code == 0 or optional:
                 print(f"{'ok  ' if code == 0 else 'note'} {name} ({seconds} s)" + ("" if code == 0 else f": {log}"), flush=True)
             else:
@@ -373,7 +374,9 @@ def run(steps, root=REPO, gate=True, nice=False, landing=False):
     said = logs / "retried"
     if again:   # a landing's smoke set adds to its targeted run's, so make land says both
         with said.open("a" if landing else "w") as out:
-            out.write(f"PASSED ONLY ON RETRY, the first run red: {' '.join(again)}: name each with its open task\n")
+            out.write(f"PASSED ONLY ON RETRY, the first run red: {' '.join(name for name, _ in again)}: name each with its open task\n")
+            for name, lines in again:
+                out.write(f"{name}: the first run's last lines:\n{lines}")
     elif not landing:
         said.unlink(missing_ok=True)   # a targeted run says only its own retries
     note = logs / "skipped"

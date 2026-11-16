@@ -885,8 +885,25 @@ Scenario: AC-197 happy path — red once, green on its unchanged retry
   When that step fails
   Then check_changed.py says the failed run's last lines and runs the step once more with nothing changed
   And when it passes, the step counts as passed and the pass is recorded
-  And "PASSED ONLY ON RETRY, the first run red: <step>: name each with its open task" is said in red last, by check_changed.py and by make land after "landed"
+  And "PASSED ONLY ON RETRY, the first run red: <step>: name each with its open task" is said in red last by check_changed.py and, with integration off, by make land after "landed"
   And the first run's log stays as .checks/changed.<step>.first.log while the tree stays
+
+Scenario Outline: AC-197 happy path — integration keeps a retry pass where its result is read
+  Given integration is on and a step passes only on its unchanged retry during <stage>
+  When the stage ends
+  Then <record> names the step and keeps the first run's last lines as quoted check output, redacted
+  And the record stays after the stage's tree is removed or reused
+  And Verify's notice reaches the task's agent at its next hook
+
+  Examples:
+    | stage  | record                          |
+    | Verify | the queued task's history       |
+    | Check  | the batch integration task's history |
+
+Scenario: AC-197 edge — a reused integration tree has no old retry report
+  Given a batch's Check left retry notes in its tree
+  When another Check starts there and passes without a retry
+  Then the earlier Check's retry is not reported for this Check
 
 Scenario Outline: AC-197 failure — no retry, or red on it
   Given <what>
@@ -1132,6 +1149,6 @@ All cases are shipped; nothing is staged.
 - [x] AC-102 — `scripts/check_step.py` guards each step of `scripts/check_all.sh` and `scripts/check_changed.py`; `scripts/tests/test_check_step.py`; `scripts/tests/test_check_cancel.py` (outer cancellation and guard recovery); `scripts/tests/test_process_ownership.py` (metadata only, directory boundaries and query failures on both platforms); `scripts/tests/test_leftovers.py`; `cargo test cli::tests::the_fake_terminumd_ends_when_its_home_goes`; `scripts/tests/test_testrun.py` (`WithItsFolder`)
 - [x] AC-104 — `scripts/tests/test_land.py`, `scripts/tests/test_land_install.py`, `scripts/tests/test_land_said.py`, `scripts/tests/test_heavy_slots.py`, `scripts/tests/test_test_scripts.py`, `scripts/tests/test_live_slots.py`, `scripts/tests/test_check_live_slots.py`, `scripts/tests/test_check_changed.py`, `scripts/tests/test_package.py`, `scripts/tests/test_release_turn.py`, `scripts/tests/test_release.py`, `scripts/tests/test_ci_mac.py`, `scripts/tests/test_ci_mac_node.py`, `scripts/tests/test_check_docker.py`, `scripts/tests/test_worktree_fresh.py`
 - [x] AC-146 — `scripts/tests/test_load_gate.py`, `scripts/tests/test_release_turn.py`, `scripts/tests/test_check_changed.py`, `scripts/tests/test_check_live_slots.py`, `scripts/tests/test_access.py`, `scripts/e2e_access.py`
-- [x] AC-197 — `scripts/tests/test_check_changed.py` (`test_ac197_*`)
+- [x] AC-197 — `scripts/tests/test_check_changed.py` (`test_ac197_*`), `cargo test integrate::retry_notes`, `cargo test integrate::stages::tests::ac197` (Verify and Check histories, cleanup, a reused tree), `cargo test integrate::retry_live_tests` (real retry commands through private tmux, Verify and Check)
 - [x] AC-103 — `scripts/tests/test_check_docs.py`; `python3 scripts/check_docs.py`
 - [x] AC-196 — `cargo test logs::`, `cargo test cli::tests`, `cargo test sent::`, `scripts/tests/test_check_logs.py`, `scripts/e2e_logs.py`

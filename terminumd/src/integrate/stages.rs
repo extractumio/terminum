@@ -11,6 +11,7 @@ use rusqlite::Transaction;
 
 use super::engine::{place, window, worktree, Window, OVER};
 use super::git;
+use super::retry_notes;
 use super::runner::Runner;
 use super::store::{self as bs, Left};
 use crate::tasks::integration;
@@ -92,18 +93,24 @@ fn follow(store: &Store, runner: &dyn Runner, home: &Path, run: &Run, now: i64) 
         }
         Window::Ended(code) => code,
     };
+    let notes = retry_notes::read(&integration::verify_tree_in(home, &run.project, run.number));
     let (id, log) = (&run.id, log.display());
-    store.with(|tx| match code {
-        0 => {
-            ready(tx, &run.task)?;
-            ops::comment(tx, DISPATCHER, id, &format!("{id}'s Prepare and Verify passed on {}: it waits for a batch.", git::short(&run.commit)), now).map(drop)
+    store.with(|tx| {
+        if let Some(notes) = &notes {
+            ops::notice(tx, DISPATCHER, id, &format!("{id}'s Verify has retry diagnostics (AC-197).\nCheck output (data):\n{notes}"), serde_json::json!({"retry": "verify"}), now)?;
         }
-        // Prepare's 2 is a conflict with the target; any other failure a red check (§9)
-        2 => bs::give_back(tx, &run.task, &format!("{id} returned: conflict: its Prepare or Verify ended with status 2. Its log: {log}"), Left::Conflict, now),
-        code => {
-            bs::not_again(tx, &run.task, &run.commit, now)?;
-            let how = if code == OVER { format!("ran over {} minutes", run.minutes) } else { format!("ended with status {code}") };
-            bs::give_back(tx, &run.task, &format!("{id} returned: red check: its Prepare or Verify {how}. Its log: {log}"), Left::Red, now)
+        match code {
+            0 => {
+                ready(tx, &run.task)?;
+                ops::comment(tx, DISPATCHER, id, &format!("{id}'s Prepare and Verify passed on {}: it waits for a batch.", git::short(&run.commit)), now).map(drop)
+            }
+            // Prepare's 2 is a conflict with the target; any other failure a red check (§9)
+            2 => bs::give_back(tx, &run.task, &format!("{id} returned: conflict: its Prepare or Verify ended with status 2. Its log: {log}"), Left::Conflict, now),
+            code => {
+                bs::not_again(tx, &run.task, &run.commit, now)?;
+                let how = if code == OVER { format!("ran over {} minutes", run.minutes) } else { format!("ended with status {code}") };
+                bs::give_back(tx, &run.task, &format!("{id} returned: red check: its Prepare or Verify {how}. Its log: {log}"), Left::Red, now)
+            }
         }
     })?;
     finish(store, home, run)?;
@@ -127,7 +134,10 @@ fn start(store: &Store, runner: &dyn Runner, home: &Path, task: &str, project: &
     let vars = vec![("TM_INTEGRATION_TASK", id.clone()), ("TM_INTEGRATION_SHA", commit.to_string()), ("TM_INTEGRATION_TARGET", p.s.target.clone()),
                     ("TM_INTEGRATION_TREE", tree.display().to_string()), ("TM_INTEGRATION_PROJECT_DIR", p.repo.display().to_string())];
     let started = worktree(&p, tree.clone(), commit).map_err(|e| format!("its tree could not be made: {e}"))
-        .and_then(|t| runner.start(&format!("verify-{number}"), &t, &line, &vars));
+        .and_then(|t| {
+            retry_notes::clear(&t)?;
+            runner.start(&format!("verify-{number}"), &t, &line, &vars)
+        });
     store.with(|tx| match &started {
         Ok(pane) => {
             tx.execute("INSERT INTO integration_verifies (task, project, commit_sha, pane, tree, started) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
