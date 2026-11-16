@@ -8,7 +8,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
-use super::{INTEGRATION, TURN, lock_dir, remove};
+use super::{INTEGRATION, TURN, create_dir, lock_dir, remove};
 
 const SCAN: usize = 500;
 const DELETES: usize = 16;
@@ -16,6 +16,7 @@ const DELETES: usize = 16;
 /// A completed step's bounded tail; new captured output, never a copy of an old log.
 pub fn snapshot(path: &Path, text: &str) -> io::Result<()> {
     let _turn = TURN.lock().unwrap_or_else(|e| e.into_inner());
+    create_dir(path.parent().unwrap_or(Path::new(".")))?;
     let _dir = lock_dir(path.parent().unwrap_or(Path::new(".")))?;
     let mut start = text.len().saturating_sub(INTEGRATION.bytes as usize);
     while !text.is_char_boundary(start) { start += 1; }
@@ -65,7 +66,11 @@ impl Sweeper {
                 continue;
             };
             let _turn = TURN.lock().unwrap_or_else(|e| e.into_inner());
-            let _dir = lock_dir(&project.dir)?;
+            let _dir = match lock_dir(&project.dir) {
+                Ok(dir) => dir,
+                Err(e) if e.kind() == io::ErrorKind::NotFound => { self.current = None; continue },
+                Err(e) => return Err(e),
+            };
             let Some(entry) = project.entries.next() else { self.current = None; continue };
             let entry = entry?;
             let path = entry.path();

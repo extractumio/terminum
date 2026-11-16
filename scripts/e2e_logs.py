@@ -18,6 +18,14 @@ def fill(path, size):
         out.write(b"rotation-test\n" * (size // 14 + 1))
 
 
+def rotation_state(daemon, agent, expired):
+    """A rename can briefly remove either active path before its replacement opens."""
+    try:
+        return daemon.stat().st_size, agent.stat().st_size, expired.exists()
+    except FileNotFoundError:
+        return None
+
+
 def main():
     t = Terminumd(free_port(), own("tm-test-logs"))
     agent = follower = None
@@ -53,8 +61,8 @@ def main():
         expired.write_text("expired\n")
         old = time.time() - 31 * 86_400
         os.utime(expired, (old, old))
-        wait_for(lambda: (path.stat().st_size, agent_log.stat().st_size, expired.exists()),
-                 lambda v: v[0] < 100_000 and v[1] < 100_000 and not v[2], seconds=75)
+        wait_for(lambda: rotation_state(path, agent_log, expired),
+                 lambda v: v is not None and v[0] < 100_000 and v[1] < 100_000 and not v[2], seconds=75)
         check("AC-196 daemon and agent rotate while alive, idle integration expires",
               t.proc.poll() is None and agent.poll() is None and Path(str(agent_log) + ".1").exists())
 

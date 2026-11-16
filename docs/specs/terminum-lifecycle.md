@@ -927,6 +927,21 @@ Scenario: A log stays under its limits
   When a record is written or the maintenance minute arrives
   Then that segment is appended to without a rename or a rewrite
 
+Scenario: A removed log folder stays removed
+  Given a writer has initialized its log folder
+  When the owning host is removed and the folder is deleted
+  Then late records and maintenance fail without recreating that folder
+  And unlinked active logs and clock files are not recreated by ordinary appends
+  And completed-log cleanup advances past a deleted project and continues with other projects
+  And opening a new writer explicitly initializes its folder
+
+Scenario: Clock metadata is missing, corrupt, or temporarily unwritable
+  Given the active log exists
+  When maintenance finds that its clock cannot be read
+  Then the normal bounded rotation repairs the clock
+  And a failed repair keeps records in an appendable active file and retries after a minute
+  And after the obstruction is removed the same writer resumes its size and period limits
+
 Scenario: Rotation does not hold an async worker
   When logs are written and maintained
   Then diagnostic records go through a bounded queue to one blocking writer thread

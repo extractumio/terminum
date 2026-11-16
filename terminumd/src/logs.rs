@@ -8,7 +8,7 @@ pub mod writer;
 pub use completed::{Sweeper, snapshot};
 pub use reader::{Mark, follow, mark, recent};
 pub use rotation::{AGENT, DAEMON, EVERY, INTEGRATION, Log, Policy, adopt_legacy, segment};
-use rotation::{TURN, lock_dir, remove};
+use rotation::{TURN, create_dir, lock_dir, remove};
 
 // Check the std-only sink's OS bindings at compile time on every daemon target.
 const _: () = {

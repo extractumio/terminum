@@ -250,6 +250,106 @@ fn ac196_verify_and_batch_snapshots_share_expiry_and_count() {
 }
 
 #[test]
+fn ac196_late_records_and_maintenance_do_not_recreate_a_removed_log_folder() {
+    let dir = Temp::new();
+    let folder = dir.0.join("logs");
+    let path = folder.join("agent.log");
+    let mut log = Log::open(path.clone(), AGENT).unwrap();
+    log.append(b"before removal\n").unwrap();
+    fs::remove_dir_all(&folder).unwrap();
+    assert_eq!(log.append(b"late stop\n").unwrap_err().kind(), std::io::ErrorKind::NotFound);
+    assert_eq!(log.maintain().unwrap_err().kind(), std::io::ErrorKind::NotFound);
+    assert_eq!(recent(&path, AGENT, 10, None).unwrap_err().kind(), std::io::ErrorKind::NotFound);
+    assert!(!folder.exists());
+    Log::open(path.clone(), AGENT).unwrap().append(b"new writer\n").unwrap();
+    assert_eq!(fs::read(path).unwrap(), b"new writer\n");
+}
+
+#[test]
+fn ac196_late_records_do_not_recreate_unlinked_log_or_clock_in_an_existing_folder() {
+    let dir = Temp::new();
+    let path = dir.path();
+    let clock = path.with_file_name(".test.log.since");
+    let mut log = Log::open(path.clone(), AGENT).unwrap();
+    fs::remove_file(&path).unwrap();
+    fs::remove_file(&clock).unwrap();
+    assert_eq!(log.append(b"late stop\n").unwrap_err().kind(), std::io::ErrorKind::NotFound);
+    assert_eq!(log.maintain().unwrap_err().kind(), std::io::ErrorKind::NotFound);
+    assert!(!path.exists() && !clock.exists());
+    assert!(dir.0.is_dir());
+}
+
+#[test]
+fn ac196_clock_write_failure_keeps_the_rotated_active_file_appendable() {
+    let dir = Temp::new();
+    let path = dir.path();
+    let clock = path.with_file_name(".test.log.since");
+    let p = policy(8, 3);
+    let mut log = Log::open(path.clone(), p).unwrap();
+    log.append(b"one-one\n").unwrap();
+    fs::remove_file(&clock).unwrap();
+    fs::create_dir(&clock).unwrap();
+    log.append(b"two-two\n").unwrap();
+    assert_eq!(fs::read(segment(&path, 1)).unwrap(), b"one-one\n");
+    let history = String::from_utf8(recent(&path, p, 20, None).unwrap()).unwrap();
+    assert!(history.starts_with("one-one\n") && history.ends_with("two-two\n"));
+    assert!(history.contains("log.rotation"));
+}
+
+#[test]
+fn ac196_missing_corrupt_and_repaired_clock_recovers_without_reopening_writer() {
+    let dir = Temp::new();
+    let path = dir.path();
+    let clock = path.with_file_name(".test.log.since");
+    let p = policy(64, 30);
+    let mut log = Log::open(path.clone(), p).unwrap();
+    log.append(b"before\n").unwrap();
+    for replacement in [None, Some("corrupt")] {
+        fs::remove_file(&clock).unwrap();
+        if let Some(text) = replacement { fs::write(&clock, text).unwrap(); }
+        log.elapse_maintenance_minute();
+        log.maintain().unwrap();
+        assert!(fs::read_to_string(&clock).unwrap().parse::<u64>().is_ok());
+        log.append(b"after metadata repair\n").unwrap();
+    }
+    fs::remove_file(&clock).unwrap();
+    fs::create_dir(&clock).unwrap();
+    log.elapse_maintenance_minute();
+    log.maintain().unwrap();
+    log.append(b"during clock failure\n").unwrap();
+    fs::remove_dir(&clock).unwrap();
+    log.elapse_maintenance_minute();
+    log.maintain().unwrap();
+    assert!(fs::read_to_string(&clock).unwrap().parse::<u64>().is_ok());
+    log.append(&b"continued\n".repeat(100)).unwrap();
+    assert!(fs::metadata(&path).unwrap().len() <= p.bytes);
+    let history = String::from_utf8(recent(&path, p, 1000, None).unwrap()).unwrap();
+    assert!(history.starts_with("before\n") && history.contains("during clock failure\n"));
+    assert_eq!(history.matches("after metadata repair\n").count(), 2);
+    assert_eq!(history.matches("continued\n").count(), 100);
+}
+
+#[test]
+fn ac196_cleanup_advances_past_a_project_removed_between_ticks() {
+    let dir = Temp::new();
+    let removed = dir.0.join("integration/removed");
+    fs::create_dir_all(&removed).unwrap();
+    for i in 0..INTEGRATION.keep + 40 {
+        fs::write(removed.join(format!("batch-{i}.1.check.log")), "recent\n").unwrap();
+    }
+    let mut sweep = Sweeper::new(dir.0.clone());
+    sweep.tick().unwrap(); // the delete budget leaves this project's iterator open
+    fs::remove_dir_all(&removed).unwrap();
+    let expired = dir.0.join("integration/active/verify-1.log");
+    snapshot(&expired, "expired\n").unwrap();
+    File::options().write(true).open(&expired).unwrap()
+        .set_modified(SystemTime::now() - INTEGRATION.age - Duration::from_secs(1)).unwrap();
+    for _ in 0..4 { sweep.tick().unwrap(); }
+    assert!(!removed.exists());
+    assert!(!expired.exists());
+}
+
+#[test]
 fn ac196_exit_flush_works_after_rust_thread_locals_are_destroyed() {
     let dir = Temp::new();
     let output = Command::new(std::env::current_exe().unwrap())

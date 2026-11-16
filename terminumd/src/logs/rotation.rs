@@ -30,13 +30,16 @@ pub(super) fn now() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs()
 }
 
+pub(super) fn create_dir(dir: &Path) -> io::Result<()> {
+    fs::DirBuilder::new().recursive(true).mode(0o700).create(dir)
+}
+
 pub(super) fn lock_dir(dir: &Path) -> io::Result<File> {
-    fs::DirBuilder::new().recursive(true).mode(0o700).create(dir)?;
     crate::fslock::directory(dir)
 }
 
-fn private_file(path: &Path) -> io::Result<File> {
-    OpenOptions::new().create(true).append(true).mode(0o600).custom_flags(crate::fslock::NOFOLLOW).open(path)
+fn append_file(path: &Path, create: bool) -> io::Result<File> {
+    OpenOptions::new().create(create).append(true).mode(0o600).custom_flags(crate::fslock::NOFOLLOW).open(path)
 }
 
 pub fn segment(path: &Path, n: usize) -> PathBuf {
@@ -64,13 +67,16 @@ pub(super) fn set_since(path: &Path, at: u64) -> io::Result<()> {
     result
 }
 
-fn since(path: &Path, at: u64) -> io::Result<u64> {
+fn read_since(path: &Path, at: u64) -> io::Result<u64> {
     let state = since_file(path);
-    if let Ok(mut file) = OpenOptions::new().read(true).custom_flags(crate::fslock::NOFOLLOW).open(state) {
-        let mut text = String::new();
-        Read::by_ref(&mut file).take(32).read_to_string(&mut text)?;
-        if let Ok(n) = text.parse::<u64>() { return Ok(n.min(at)) }
-    }
+    let mut file = OpenOptions::new().read(true).custom_flags(crate::fslock::NOFOLLOW).open(state)?;
+    let mut text = String::new();
+    Read::by_ref(&mut file).take(32).read_to_string(&mut text)?;
+    text.parse::<u64>().map(|n| n.min(at)).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
+}
+
+fn initialize_since(path: &Path, at: u64) -> io::Result<u64> {
+    if let Ok(started) = read_since(path, at) { return Ok(started) }
     let started = fs::metadata(path).and_then(|m| m.modified()).ok()
         .and_then(|t| t.duration_since(UNIX_EPOCH).ok()).map_or(at, |d| d.as_secs());
     set_since(path, started)?;
@@ -94,11 +100,11 @@ fn rename(from: &Path, to: &Path) -> io::Result<()> {
 fn rotate(path: &Path, policy: Policy, at: u64) -> io::Result<()> {
     remove(&segment(path, policy.keep))?;
     for n in (1..policy.keep).rev() { rename(&segment(path, n), &segment(path, n + 1))?; }
-    rename(path, &segment(path, 1))?;
-    // Persist the new clock before opening: a crash cannot give a fresh segment an old clock.
-    set_since(path, at)?;
-    private_file(path)?;
-    Ok(())
+    fs::rename(path, segment(path, 1))?;
+    // Try the clock first, but leave an appendable active file even if that metadata fails.
+    let clock = set_since(path, at);
+    append_file(path, true)?;
+    clock
 }
 
 fn expire(path: &Path, policy: Policy, at: u64) -> io::Result<()> {
@@ -120,7 +126,20 @@ pub struct Log {
 }
 
 impl Log {
+    #[cfg(test)]
+    pub(super) fn elapse_maintenance_minute(&mut self) {
+        self.checked = Instant::now() - EVERY;
+        self.failed = self.failed.map(|_| Instant::now() - EVERY);
+    }
+
     pub fn open(path: PathBuf, policy: Policy) -> io::Result<Self> {
+        {
+            let _turn = TURN.lock().unwrap_or_else(|e| e.into_inner());
+            create_dir(path.parent().unwrap_or(Path::new(".")))?;
+            let _dir = lock_dir(path.parent().unwrap_or(Path::new(".")))?;
+            append_file(&path, true)?;
+            initialize_since(&path, now())?;
+        }
         let mut log = Self { path, policy, checked: Instant::now() - EVERY, failed: None };
         log.maintain()?;
         Ok(log)
@@ -130,7 +149,7 @@ impl Log {
 
     fn rotation_failed(&mut self, error: io::Error) -> io::Result<()> {
         self.failed = Some(Instant::now());
-        let mut file = private_file(&self.path)?;
+        let mut file = append_file(&self.path, false)?;
         writeln!(file, "ERROR event=log.rotation msg=\"Rotation failed; retry in 60 s\" error={error}")
     }
 
@@ -148,25 +167,32 @@ impl Log {
     pub fn append(&mut self, mut bytes: &[u8]) -> io::Result<()> {
         let _turn = TURN.lock().unwrap_or_else(|e| e.into_inner());
         let _dir = lock_dir(self.path.parent().unwrap_or(Path::new(".")))?;
+        let mut file = append_file(&self.path, false)?;
         let at = now();
         if self.failed.is_some_and(|at| at.elapsed() >= EVERY) { self.failed = None; }
         let timed = self.checked.elapsed() >= EVERY;
         if timed && self.may_rotate() {
             self.checked = Instant::now();
-            let started = since(&self.path, at)?;
-            let size = fs::metadata(&self.path).map_or(0, |m| m.len());
-            if size > 0 && (size >= self.policy.bytes || at.saturating_sub(started) >= self.policy.period.as_secs()) {
+            let needs_rotation = match read_since(&self.path, at) {
+                Ok(started) => {
+                    let size = file.metadata()?.len();
+                    size > 0 && (size >= self.policy.bytes || at.saturating_sub(started) >= self.policy.period.as_secs())
+                }
+                Err(_) => true, // repair clock metadata through the same bounded rotation
+            };
+            if needs_rotation {
+                drop(file);
                 self.rotate(at)?;
+                file = append_file(&self.path, false)?;
             }
             if let Err(e) = expire(&self.path, self.policy, at) { self.rotation_failed(e)?; }
         }
-        let mut file = private_file(&self.path)?;
         while !bytes.is_empty() {
             let size = file.metadata()?.len();
             if self.may_rotate() && (size >= self.policy.bytes || (size > 0 && size + bytes.len() as u64 > self.policy.bytes)) {
                 drop(file);
                 self.rotate(at)?;
-                file = private_file(&self.path)?;
+                file = append_file(&self.path, false)?;
             }
             let take = if self.failed.is_some() { bytes.len() } else { bytes.len().min(self.policy.bytes as usize) };
             file.write_all(&bytes[..take])?;
@@ -179,6 +205,7 @@ impl Log {
 /// Adopt the old daemon name as an archive without loading either file into memory.
 pub fn adopt_legacy(path: &Path) -> io::Result<()> {
     let _turn = TURN.lock().unwrap_or_else(|e| e.into_inner());
+    create_dir(path.parent().unwrap_or(Path::new(".")))?;
     let _dir = lock_dir(path.parent().unwrap_or(Path::new(".")))?;
     let old = path.with_file_name("terminusd.log");
     if old.is_file() {
