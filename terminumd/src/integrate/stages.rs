@@ -163,12 +163,17 @@ fn start(store: &Store, runner: &dyn Runner, home: &Path, task: &str, project: &
     Ok(())
 }
 
-/// The task's tree removed with git, and its run forgotten once the tree is gone; a tree git could not remove is
-/// tried again at the next beat.
+/// The task's tree removed with git, and its run forgotten once the tree is gone. A folder git will not remove
+/// (no longer its worktree) is terminumd's own: removed, links not followed, and git told; one that still cannot
+/// go is tried again at the next beat.
 fn finish(store: &Store, home: &Path, run: &Run) -> Result<(), String> {
     let tree = integration::verify_tree_in(home, &run.project, run.number);
-    if tree.exists() && let Ok(p) = place(store, home, &run.project) {
-        let _ = git::run(&p.repo, &["worktree", "remove", "--force", &tree.to_string_lossy()]);
+    if tree.exists() && let Ok(p) = place(store, home, &run.project)
+        && git::run(&p.repo, &["worktree", "remove", "--force", &tree.to_string_lossy()]).is_err() {
+        if let Err(e) = std::fs::remove_dir_all(&tree) {
+            tracing::warn!(event = "integration.verify_tree", path = %tree.display(), error = %e);
+        }
+        let _ = git::run(&p.repo, &["worktree", "prune"]);
     }
     if tree.exists() {
         return store.with(|tx| tx.execute("UPDATE integration_verifies SET pane = NULL WHERE task = ?1", [&run.task]).map(drop).map_err(sql));

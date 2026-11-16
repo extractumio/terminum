@@ -248,13 +248,13 @@ fn ac198_three_at_once_counts_every_project_of_the_machine() {
 }
 
 #[test]
-fn ac198_a_verify_over_its_time_with_its_waits_counted_is_red() {
+fn ac198_a_verify_over_its_time_from_its_own_start_is_red() {
     let w = world("is-over", Settings { verify: "true".into(), check_minutes: 5, ..Settings::default() });
     let a = queued_with(&w, 1, "b.txt", "b\n", true);
     let (r, home) = (Sh { hang: true, ..Default::default() }, w.root.join("home"));
     verify_step(&w.s, &r, &home, 100).unwrap();
     verify_step(&w.s, &r, &home, 100 + 5 * 60).unwrap();
-    assert_eq!(status(&w, &a), ops::INTEGRATION, "five minutes, a slot's wait among them: still its time");
+    assert_eq!(status(&w, &a), ops::INTEGRATION, "five minutes from its start: still its time");
     verify_step(&w.s, &r, &home, 101 + 5 * 60).unwrap();
     assert_eq!(status(&w, &a), "IN PROGRESS");
     assert!(said(&w, &a).contains("returned: red check: its Prepare or Verify ran over 5 minutes"), "{}", said(&w, &a));
@@ -264,7 +264,11 @@ fn ac198_a_verify_over_its_time_with_its_waits_counted_is_red() {
 fn ac198_a_run_whose_window_is_gone_and_tree_left_is_removed_and_started_again() {
     let (w, _) = verified("is-left");
     let a = queued_with(&w, 1, "b.txt", "b\n", true);
-    // as a lost window leaves it when git could not remove its tree then: no window, the row kept
+    // as a lost window leaves it when git could not remove its tree then: no window, the row kept, and a folder
+    // that is no worktree of git's any more, so git refuses to remove it
+    let left = w.root.join("home/integration/api/verify-1");
+    std::fs::create_dir_all(left.join("target")).unwrap();
+    std::fs::write(left.join("target/built"), "x").unwrap();
     w.s.with(|tx| tx.execute("INSERT INTO integration_verifies (task, project, commit_sha, pane, tree, started)
                               SELECT task, project, commit_sha, NULL, 'gone', 50 FROM integration_entries", []).map(drop).map_err(sql)).unwrap();
     let r = Sh::default();
