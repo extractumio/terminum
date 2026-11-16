@@ -93,7 +93,9 @@ export async function liveHistory(page, opts) {
   await page.focus(railRow("sender", "Dispatcher"));
   await page.keyboard.press("Enter");
   const focused = () => page.evaluate(() => `${document.activeElement?.dataset.row}:${document.activeElement?.getAttribute("aria-pressed")}`);
-  check("AC-151 a rail's row pressed by the keys keeps the focus, pressed", await until(async () => (await rows(page)).length === 1 && await focused() === "Dispatcher:true", 6000), await focused());
+  // other suites of a whole run leave Dispatcher's messages too: every row shown is Dispatcher's, however many
+  const onlyDispatchers = () => page.$$eval("#results .msg .mwho", (w) => w.length > 0 && w.every((x) => x.classList.contains("by-system")));
+  check("AC-151 a rail's row pressed by the keys keeps the focus, pressed", await until(async () => await onlyDispatchers() && await focused() === "Dispatcher:true", 6000), await focused());
   await page.keyboard.press("Enter");
   check("AC-151 pressed again by the keys it lets go, still in focus", await until(async () => (await rows(page)).length >= 5 && await focused() === "Dispatcher:false", 6000), await focused());
   check("AC-151 the day strip draws a column a day", (await page.$$("#stripplot rect.hit")).length >= 30);
