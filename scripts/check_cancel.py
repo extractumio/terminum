@@ -1,9 +1,13 @@
 # SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 """AC-102, AC-104: cancel a guarded step without interrupting its owned-child cleanup."""
+import ctypes
+import errno
+from functools import lru_cache
 import os
 import shutil
 import signal
 import subprocess
+import sys
 import tempfile
 import time
 
@@ -44,11 +48,46 @@ def signal_guard(child, started, number):
             pass
 
 
+class _DarwinSiginfo(ctypes.Structure):
+    # Darwin sys/signal.h: the complete siginfo_t, including pointer alignment and reserved space.
+    _fields_ = [("si_signo", ctypes.c_int), ("si_errno", ctypes.c_int),
+                ("si_code", ctypes.c_int), ("si_pid", ctypes.c_int),
+                ("si_uid", ctypes.c_uint), ("si_status", ctypes.c_int),
+                ("si_addr", ctypes.c_void_p), ("si_value", ctypes.c_void_p),
+                ("si_band", ctypes.c_long), ("pad", ctypes.c_ulong * 7)]
+
+
+@lru_cache(maxsize=1)
+def _darwin_waitid():
+    wait = ctypes.CDLL("/usr/lib/libSystem.B.dylib", use_errno=True).waitid
+    wait.argtypes = [ctypes.c_int, ctypes.c_uint, ctypes.POINTER(_DarwinSiginfo), ctypes.c_int]
+    wait.restype = ctypes.c_int
+    return wait
+
+
+def _darwin_info(pid):
+    info = _DarwinSiginfo()
+    # Darwin sys/wait.h: P_PID=1; WEXITED | WNOHANG | WNOWAIT. Python exposes these on macOS from 3.13.
+    while _darwin_waitid()(1, pid, ctypes.byref(info), 0x04 | 0x01 | 0x20) == -1:
+        number = ctypes.get_errno()
+        if number != errno.EINTR:
+            raise OSError(number, os.strerror(number))
+    return info if info.si_pid else None
+
+
 def unreaped_status(child):
     """An exited child's status, or None; keep its PID and private group pinned until cleanup ends."""
-    ended = os.waitid(os.P_PID, child.pid, os.WEXITED | os.WNOHANG | os.WNOWAIT)
+    waitid = getattr(os, "waitid", None)
+    if sys.platform == "darwin" and waitid is None:
+        ended = _darwin_info(child.pid)
+    else:
+        ended = waitid(os.P_PID, child.pid, os.WEXITED | os.WNOHANG | os.WNOWAIT)
     if ended:
-        return ended.si_status if ended.si_code == os.CLD_EXITED else -ended.si_status
+        # Darwin and Linux CLD_EXITED=1, CLD_KILLED=2, CLD_DUMPED=3; a stopped child is still running.
+        if ended.si_code == 1:
+            return ended.si_status
+        if ended.si_code in (2, 3):
+            return -ended.si_status
     return None
 
 

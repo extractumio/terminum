@@ -25,7 +25,11 @@ raise SystemExit(bool(check_changed.run([('critical', step)], root=Path.cwd(), g
     let started = Instant::now();
     loop {
         engine::step(&w.s, &runner, &w.root.join("home"), 100 + started.elapsed().as_secs() as i64).unwrap();
-        if status(&w, &a) == "DONE" { break }
+        let state = status(&w, &a);
+        if state == "DONE" { break }
+        assert_ne!(state, "IN PROGRESS", "integration returned its task: {}\n{}",
+            w.s.with(|tx| ops::history(tx, &a)).unwrap(),
+            std::fs::read_to_string(w.root.join("home/integration/api/verify-1.log")).unwrap_or_default());
         assert!(started.elapsed() < Duration::from_secs(120), "integration did not finish: {}", w.s.with(|tx| ops::history(tx, &a)).unwrap());
         std::thread::sleep(Duration::from_millis(100));
     }
