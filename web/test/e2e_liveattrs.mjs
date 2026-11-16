@@ -2,7 +2,7 @@
 // A task's Details against a real private terminumd (e2e_live.mjs; terminum-kanban.md AC-199): its type shown as the
 // title's word, an external link, a target, and Blocked by and Follow-ups chosen by search, in the task's window and
 // in New task's. `node web/test/e2e_live.mjs tasks chromium` runs it with the tasks' suites.
-import { boardKit } from "./boardkit.mjs";
+import { boardKit, tabKey } from "./boardkit.mjs";
 import { check, until } from "./check.mjs";
 
 export async function liveBoardAttrs(page, opts) {
@@ -29,15 +29,15 @@ export async function liveBoardAttrs(page, opts) {
   check("AC-199 Details stay open as the window is drawn anew", await page.$eval(pane, (d) => d.open));
   const link = `${pane} input[type=url]`;
   await page.fill(link, "https://tracker.example/browse/API-7");
-  await page.press(link, "Tab");
+  await page.focus(link); await tabKey(page);
   check("AC-199 an external link is kept", await until(async () => (await api()).external_link === "https://tracker.example/browse/API-7"));
   check("AC-199 its Open opens it in a new tab, never in this page", await page.$eval(`${pane} .attrgo`, (g) => !g.hidden && g.target === "_blank" && g.rel.includes("noopener") && g.href === "https://tracker.example/browse/API-7"));
   await page.fill(link, "javascript:alert(1)");
-  await page.press(link, "Tab");
+  await page.focus(link); await tabKey(page);
   check("AC-199 a link that is no web address is refused and the field goes back", await until(async () => (await page.inputValue(link)) === "https://tracker.example/browse/API-7") && (await api()).external_link === "https://tracker.example/browse/API-7");
   const target = `${pane} input[placeholder^="A release"]`;
   await page.fill(target, "v0.32.0");
-  await page.press(target, "Tab");
+  await page.focus(target); await tabKey(page);
   check("AC-199 a target is kept", await until(async () => (await api()).target === "v0.32.0"));
 
   // Blocked by: + opens a search over the project's tasks; Enter takes the one marked
@@ -51,9 +51,9 @@ export async function liveBoardAttrs(page, opts) {
   await page.press(search, "Enter");
   check("AC-199 Enter puts the task found in Blocked by", await until(async () => (await api()).lists.blocked_by[0]?.id === b));
   await page.waitForSelector(`${pane} .attrrow`);
-  const reason = `${pane} .attrlist:first-of-type .attrreason`;
+  const reason = `${pane} .attrrow .attrreason`;
   await page.fill(reason, "needs the column");
-  await page.press(reason, "Tab");
+  await page.focus(reason); await tabKey(page);
   check("AC-199 a reason is kept beside its task", await until(async () => (await api()).lists.blocked_by[0]?.reason === "needs the column"));
   await page.click(`${pane} button[aria-label="Add a task to Follow-ups"]`);
   await page.fill(search, "docs");

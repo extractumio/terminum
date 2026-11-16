@@ -96,6 +96,7 @@ export function taskForm({ getMeta, getFilter, onMade, onRun, slots }) {
 
   /** Its Details as chosen so far: each change is the draft's, sent with Create. */
   function showAttrs() {
+    attrsOpen = $("newattrs").firstElementChild?.open ?? attrsOpen;   // as it shows now, whatever toggle is still on its way
     const change = (next) => { attrs = next; keep(); showAttrs(); return true; };
     const without = (list, id) => (attrs[list] ?? []).filter((x) => x.id !== id);
     $("newattrs").replaceChildren(detailsPane({
@@ -134,6 +135,7 @@ export function taskForm({ getMeta, getFilter, onMade, onRun, slots }) {
     $("newtitle").value = given.title ?? saved.title ?? "";
     $("newtext").value = given.text ? `${saved.text ? `${saved.text}\n\n` : ""}${given.text}` : saved.text ?? "";
     attrs = saved.attrs ?? {};
+    $("newattrs").replaceChildren();
     attrsOpen = false;
     showAttrs();
     files = saved.files ?? [];
