@@ -212,6 +212,7 @@ async function cardKeyChecks(page, { j, gitty, t, base, repo, newPane, keyOf }) 
   check("AC-193 Return all from the card sends its task back to work, said in a toast",
     await until(async () => await status() === "IN PROGRESS") && await until(async () => /went back to their agents/.test(await page.textContent("#toast").catch(() => ""))));
   await j(`/api/task-projects/${gitty}/integration`, "PUT", { on: true });
+}
 
 /** Two tasks IN PROGRESS of `gitty`, each with a session in a worktree of `repo` whose commit changes retry.txt its
  *  own way: their commits do not merge (AC-192). Their IDs. */
