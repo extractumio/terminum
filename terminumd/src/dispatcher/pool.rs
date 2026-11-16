@@ -86,15 +86,19 @@ pub struct Slots {
     in_kept: HashMap<String, String>,
     /// the runs of Auto-Dispatcher's rounds: live and shown, but no slot is theirs, so they are not in `holding` (AC-170)
     rounds: Vec<Run>,
+    /// retained sessions whose work is in integration: shown, but no ordinary slot is theirs (AC-169)
+    integrating: Vec<Run>,
 }
 
 impl Slots {
     pub fn read(tx: &Transaction) -> Result<Slots, String> {
         let live: Vec<Run> = runs::live(tx)?.into_iter().filter(Run::holds_slot).collect();
         let of_rounds: HashSet<String> = rows(tx, "SELECT m.run FROM run_tasks m JOIN auto_rounds a ON a.task = m.task", [], |r| r.get(0))?.into_iter().collect();
-        let (rounds, holding): (Vec<Run>, Vec<Run>) = live.into_iter().partition(|r| of_rounds.contains(&r.id));
+        let (rounds, ordinary): (Vec<Run>, Vec<Run>) = live.into_iter().partition(|r| of_rounds.contains(&r.id));
+        // Integration owns handed-off work until it returns; a new process still reserves room during startup.
+        let (integrating, holding): (Vec<Run>, Vec<Run>) = ordinary.into_iter().partition(|r| !r.is_starting() && r.status == ops::INTEGRATION);
         let ids: Vec<&str> = holding.iter().map(|r| r.id.as_str()).collect();
-        Ok(Slots { in_kept: in_kept(tx, &ids)?, kept: schedules::kept_by_agent(tx)?, holding, rounds })
+        Ok(Slots { in_kept: in_kept(tx, &ids)?, kept: schedules::kept_by_agent(tx)?, holding, rounds, integrating })
     }
 
     /// Whether a process of `agent` (none: one deleted since, its slot no one's) can start in `project`, `but` run
@@ -218,18 +222,19 @@ fn in_runs(tx: &Transaction, ids: &[&str]) -> Result<HashMap<String, Vec<Value>>
 
 /// What the board shows of the slots (AC-138): each agent's sessions, and the agents and projects at their limit.
 pub fn board(tx: &Transaction) -> Result<Value, String> {
-    let Slots { holding, kept, in_kept, rounds } = Slots::read(tx)?;
-    let mut tasks = in_runs(tx, &holding.iter().chain(&rounds).map(|r| r.id.as_str()).collect::<Vec<_>>())?;
+    let Slots { holding, kept, in_kept, rounds, integrating } = Slots::read(tx)?;
+    let mut tasks = in_runs(tx, &holding.iter().chain(&rounds).chain(&integrating).map(|r| r.id.as_str()).collect::<Vec<_>>())?;
     let mut of_agent: BTreeMap<&str, Vec<Value>> = BTreeMap::new();
     let mut in_project: HashMap<&str, i64> = HashMap::new();
     // a slot its schedules keep counts once, whether its run is live or not (AC-161)
     let mut others: HashMap<&str, usize> = HashMap::new();
-    // a round's session is shown on its agent and takes no slot (AC-170)
-    for (r, round) in holding.iter().map(|r| (r, false)).chain(rounds.iter().map(|r| (r, true))) {
+    // rounds and integration waits stay visible on their agent without taking ordinary slots (AC-138, AC-169, AC-170)
+    for (r, round, integration) in holding.iter().map(|r| (r, false, false))
+        .chain(rounds.iter().map(|r| (r, true, false))).chain(integrating.iter().map(|r| (r, false, true))) {
         let in_slot = in_kept.contains_key(&r.id);
         of_agent.entry(&r.agent_id).or_default().push(json!({"run": r.id, "tasks": r.names(), "state": r.state, "key": r.pane_key, "project": r.project, "idle": !r.busy() && !r.ad_hoc(), "kept": in_slot,
-            "round": round, "list": tasks.remove(&r.id).unwrap_or_default()}));
-        if round {
+            "round": round, "integration": integration, "list": tasks.remove(&r.id).unwrap_or_default()}));
+        if round || integration {
             continue;
         }
         if !in_slot {
@@ -379,6 +384,77 @@ mod tests {
                 assert!(check(tx, Some(&agent("a", 1)), "api", None)?.is_some());
                 runs::change(tx, &id, |r| r.state = runs::Phase::of(state).unwrap())?;
                 assert_eq!(check(tx, Some(&agent("a", 1)), "api", None)?, None, "{state}");
+            }
+            Ok(())
+        }).unwrap();
+    }
+
+    /// AC-169, AC-198: integration waits must leave room for their own Verify prerequisites.
+    #[test]
+    fn ac169_four_integration_waits_free_slots_and_a_return_counts_again() {
+        let root = crate::testutil::fresh_dir("pool-integration");
+        let s = Store::open(root.join("kanban.sqlite"));
+        let returned = s.with(|tx| {
+            project(tx, "api", Some(3))?;
+            tx.execute("INSERT INTO agents (id, project, name, kind, command, color, at_once) VALUES ('a', 'api', 'A', 'codex', 'codex', 0, 3)", []).map_err(sql)?;
+            let mut queued = Vec::new();
+            for _ in 0..4 {
+                let (id, t) = working(tx, "a", "api");
+                ops::place(tx, HUMAN, &t, ops::INTEGRATION, 2)?;
+                // No Stop is needed: integrate itself hands the work off.
+                assert!(runs::by_id(tx, &id)?.holds_slot(), "session ownership and task protection remain");
+                queued.push(t);
+            }
+            let slots = Slots::read(tx)?;
+            assert_eq!((slots.free_of(&agent("a", 3)), slots.free_in(tx, "api")?), (3, Some(3)));
+            assert_eq!(check(tx, Some(&agent("a", 3)), "api", None)?, None);
+            let blocker = ops::create(tx, HUMAN, NewTask { title: "Verify prerequisite".into(), project: Some("api".into()), ..Default::default() }, 3)?;
+            super::super::waits::add(tx, &blocker, "a", "api", &json!({"agent": "a"}), 3)?;
+            assert_eq!(super::super::waits::ahead(tx, "a", "api", "newer-task")?, Some(blocker.id), "an already queued blocker has room ahead of new presses");
+            let shown = board(tx)?;
+            assert!(shown["full"].as_array().unwrap().is_empty() && shown["full_projects"].as_array().unwrap().is_empty());
+            let visible = shown["agents"]["a"].as_array().unwrap();
+            assert_eq!(visible.len(), 4, "AC-138: all retained sessions stay visible");
+            assert!(visible.iter().all(|r| r["integration"] == true && r["list"][0]["status"] == ops::INTEGRATION));
+            for _ in 0..3 { working(tx, "a", "api"); }
+            Ok(queued[0].id.clone())
+        }).unwrap();
+        // A restart derives occupancy from the same tasks; nothing transient owns the exemption.
+        Store::open(root.join("kanban.sqlite")).with(|tx| {
+            assert_eq!(Slots::read(tx)?.holding.len(), 3);
+            let t = ops::get(tx, &returned)?;
+            crate::integrate::store::give_back(tx, &t.key, "returned: red check", crate::integrate::store::Left::Red, 4)?;
+            assert_eq!(Slots::read(tx)?.holding.len(), 4, "a live return may exceed the limit under AC-141");
+            assert_eq!(runs::live(tx)?.len(), 7, "the integration sessions stayed watched and visible");
+            let shown = board(tx)?;
+            let visible = shown["agents"]["a"].as_array().unwrap();
+            assert_eq!(visible.len(), 7, "all sessions remain openable after a return");
+            assert_eq!(visible.iter().filter(|r| r["integration"] == true).count(), 3, "only the returned wait counts again");
+            let full = check(tx, Some(&agent("a", 3)), "api", None)?.unwrap();
+            assert!(full.words.contains(&returned) && full.close.is_none(), "later starts wait, no integration pane closed");
+            Ok(())
+        }).unwrap();
+    }
+
+    #[test]
+    fn ac169_only_runs_with_every_unfinished_task_in_integration_free_room() {
+        store("pool-integration-mixed").with(|tx| {
+            project(tx, "api", Some(1))?;
+            let (id, queued) = working(tx, "a", "api");
+            ops::place(tx, HUMAN, &queued, ops::INTEGRATION, 2)?;
+            for state in [runs::Phase::Starting, runs::Phase::Asking, runs::Phase::Typed] {
+                runs::change(tx, &id, |r| r.state = state)?;
+                assert!(check(tx, Some(&agent("a", 1)), "api", None)?.is_some(), "{state:?}: a new process keeps its reservation before accepting the task");
+            }
+            runs::change(tx, &id, |r| r.state = runs::Phase::Working)?;
+            assert!(check(tx, Some(&agent("a", 1)), "api", None)?.is_none(), "the handed-off work frees room after startup");
+            let other = ops::create(tx, HUMAN, NewTask { title: "another task".into(), project: Some("api".into()), ..Default::default() }, 1)?;
+            tx.execute("INSERT INTO run_tasks (run, task) VALUES (?1, ?2)", (&id, &other.key)).map_err(sql)?;
+            for status in ["IN PROGRESS", "WAIT FOR HUMAN", "TODO", "DONE", "FAILED"] {
+                ops::move_to(tx, HUMAN, &other.id, status, 3)?;
+                let finished = matches!(status, "DONE" | "FAILED");
+                assert_eq!(check(tx, Some(&agent("a", 1)), "api", None)?.is_none(), finished, "{status}");
+                assert_eq!(runs::by_id(tx, &id)?.status == ops::INTEGRATION, finished, "{status}: unfinished status wins");
             }
             Ok(())
         }).unwrap();

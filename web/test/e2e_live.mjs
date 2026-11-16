@@ -53,10 +53,11 @@ import { liveWaitingRun } from "./e2e_livewaiting.mjs";
 import { liveHistory, liveHistoryPhone } from "./e2e_livehistory.mjs";
 import { liveFolded, liveSchedules } from "./e2e_liveschedules.mjs";
 import { liveQueue } from "./e2e_livequeue.mjs";
+import { liveIntegrationSlots } from "./e2e_liveintegrationslots.mjs";
 import { liveAuto } from "./e2e_liveauto.mjs";
 import { liveIconKeys } from "./e2e_liveiconkeys.mjs";
 import { SORT_ALONE, BOARD_ALONE, TASKS_ALONE, WAITING_ALONE, POOL_ALONE, SMOKE, LINKS_ALONE, HISTORY_ALONE,
-  AUTO_ALONE, SCHEDULES_ALONE, NOTES_ALONE, ICONS_ALONE, REQUESTS_ALONE, SIGNIN_ALONE, QUEUE_ALONE, MAIN_ALONE, BACKGROUND_ALONE, ARCHIVED_ALONE, FOLDS_ALONE, FOLDED_ALONE } from "./e2e_livemodes.mjs";
+  AUTO_ALONE, SCHEDULES_ALONE, NOTES_ALONE, ICONS_ALONE, REQUESTS_ALONE, SIGNIN_ALONE, QUEUE_ALONE, INTEGRATION_SLOTS_ALONE, MAIN_ALONE, BACKGROUND_ALONE, ARCHIVED_ALONE, FOLDS_ALONE, FOLDED_ALONE } from "./e2e_livemodes.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const SHORT = SMOKE || LINKS_ALONE || FOLDS_ALONE || FOLDED_ALONE;   // a few checks, the wide size only
@@ -176,6 +177,7 @@ async function wide(browser, name) {
     for (const suite of suites) { await renew(); await suite(page, live); }
   };
   await renew();
+  if (INTEGRATION_SLOTS_ALONE) { await boards([liveIntegrationSlots]); return ctx; }
   if (FOLDS_ALONE) { await liveFolds(page, live); return ctx; }
   if (FOLDED_ALONE) { await liveFolded(page, live); return ctx; }
   if (BACKGROUND_ALONE) {
@@ -404,6 +406,7 @@ async function phone(browser, name) {
   const page = await ctx.newPage();
   await signIn(page);
   const live = { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP, stop, start };
+  if (INTEGRATION_SLOTS_ALONE) { await liveIntegrationSlots(page, live); await ctx.close(); return; }
   if (REQUESTS_ALONE) { await liveRequests(page, live); await ctx.close(); return; }
   if (WAITING_ALONE || ARCHIVED_ALONE) {
     const suite = ARCHIVED_ALONE ? liveArchived : liveWaitingRun;

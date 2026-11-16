@@ -109,7 +109,7 @@ export function boardKit(page, { base, tmux, work, bin, home, app }) {
     const sock = tmux("display", "-p", "#{socket_path}"), pid = tmux("display", "-p", "#{pid}");
     return { ...process.env, TM_HOME: home, TM_APP_DIR: app, TMUX: `${sock},${pid},0`, TMUX_PANE: pane };
   };
-  const hook = (pane, event, more = {}) => execFileSync(cli, ["hook", "claude"], { input: JSON.stringify({ session_id: `s-${pane}`, cwd: work, hook_event_name: event, ...more }), env: envOf(pane), encoding: "utf8", timeout: 8000 });
+  const hook = (pane, event, more = {}, kind = "claude") => execFileSync(cli, ["hook", kind], { input: JSON.stringify({ session_id: `s-${pane}`, cwd: work, hook_event_name: event, ...more }), env: envOf(pane), encoding: "utf8", timeout: 8000 });
   /** One tool of `terminum mcp`, as the pane's agent calls it. */
   const tool = (pane, name, args) => {
     const lines = [...mcpOpening, rpc(2, "tools/call", { name, arguments: args })];

@@ -44,19 +44,19 @@ export function agentsSection({ getMeta, chosen, reload, refreshQueue, slots: co
   /** At a limit, as terminumd says: its own, or its project's. */
   const full = (a) => counted().full.includes(a.id) || counted().full_projects.includes(a.project);
 
-  const WORDS = { starting: "starting", working: "working", waits: "waits for you", idle: "idle" };
+  const WORDS = { starting: "starting", working: "working", waits: "waits for you", idle: "idle", integration: "waiting for integration" };
   /** What a session does now. */
   const doing = (s) => slotState(s, s.key ? liveRow(s.key) : null);
 
   /** A session's dot: blinking while it works, still when it waits or idles; a press on it opens it. */
   function dot(s) {
-    const now = doing(s), d = el("span", `agdot ${now === "working" || now === "starting" ? "on" : now}${s.round ? " round" : ""}`);
+    const now = doing(s), d = el("span", `agdot ${now === "working" || now === "starting" ? "on" : now === "integration" ? "idle" : now}${s.round ? " round" : ""}`);
     d.dataset.key = s.key ?? "";
-    d.title = [s.tasks, projectName(s.project), WORDS[now], s.round ? "Auto-Dispatcher's round: it takes no slot" : ""].filter(Boolean).join(" · ");
+    d.title = [s.tasks, projectName(s.project), WORDS[now], s.round ? "Auto-Dispatcher's round: it takes no slot" : "", s.integration ? "Integration wait: it takes no ordinary slot" : ""].filter(Boolean).join(" · ");
     return d;
   }
 
-  /** Its rectangle: its color, name, kind, effort, its project when several are shown, and a dot for each session of what is shown; its limit counts them all. */
+  /** Its rectangle: its color, name, kind, effort, project and live sessions; the count excludes rounds and integration waits. */
   function row(a) {
     const shown = chosen(), mine = slots(a).filter((s) => !shown.length || shown.includes(s.project)), of = whose(a);
     const b = button(`item agentcard${full(a) ? " busy" : ""}`);
