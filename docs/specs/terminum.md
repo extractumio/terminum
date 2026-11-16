@@ -923,6 +923,11 @@ Scenario: AC-152 happy path — tabs, period, project
   And every figure and chart of every tab is of that period and that project, in this Mac's local time, the last column up to now
   And the page scrolls as a document to its last card, at every width
 
+Scenario: AC-152 edge — an address the Dashboard does not know
+  When the user opens "/dashboard/?days=30", "/dashboard/?period=decade" or "/dashboard/?tab=people"
+  Then the Dashboard opens with no error: You for a tab it does not know, Month for a period it does not know or is not given
+  And "GET /api/dashboard" answers alike: any other `period` is the month's, any other `tab` is You's
+
 Scenario: AC-152 happy path — the figures of You
   Given messages kept, the input log (AC-147), the interaction log (AC-175) and the tasks' events
   Then You counts the human's rows only, never Dispatcher's
@@ -1307,6 +1312,7 @@ stateDiagram-v2
 | AC-20 | "Page heap under 150 MB" is read by hand from `?trace=2`'s state, and only where the browser has `performance.memory`. | `web/static/tracebuf.js:280` |
 | AC-20 | The budgets run by hand: `Makefile` has no bench target, and `make test` tests the bench scripts, not the budgets. | `scripts/bench_load.py:7` |
 | AC-152 | A page watched without a touch for over 5 minutes while another window has the focus (a second display) is not active time: a page is in front only when focused. | `web/static/interact.js` (`inFront`) |
+| AC-152 | No check opens the Dashboard at an address it does not know (`?days=30`, an unknown `period` or `tab`). | `terminumd/src/dashboard/mod.rs`, `web/static/dashboard.js` |
 | AC-176 | A Run that goes on in a live session starts no run and is no start: it counts as the human's message alone. | `terminumd/src/dashboard/work.rs` (`read`) |
 | AC-171 | A session's start is its launch row of the input log, kept 180 days: a year's System counts the sessions of the days kept. `runs` has no start or end of its own. | `terminumd/src/dashboard/system.rs` (`read`) |
 | AC-172 | A session the user starts themselves reports no tokens: Costs holds Dispatcher's sessions only. A subscription's fee and its windows' use over time are not kept, so Costs shows list-price dollars and the agents' token limits, not what a subscription cost. | `terminumd/src/dashboard/costs.rs`, `terminumd/src/dispatcher/usage.rs` |

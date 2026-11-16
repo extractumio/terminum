@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 //! Choosing a batch (terminum-integration.md AC-188, AC-189) on a real repository in a temporary folder.
+use std::process::Command;
+
 use super::*;
 
 fn sh(dir: &Path, args: &[&str]) -> String {

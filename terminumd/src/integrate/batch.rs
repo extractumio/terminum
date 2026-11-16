@@ -5,7 +5,8 @@
 //! batch is held back, naming what it waits for; a commit carrying another queued task's waits for that one.
 
 use std::path::Path;
-use std::process::Command;
+
+use super::git::output as git;
 
 /// A queued commit, as the batch sees it.
 #[derive(Debug, Clone, PartialEq)]
@@ -36,10 +37,6 @@ pub enum Conflict {
     Carries(String),
     /// git could not merge it: its words
     Git(String),
-}
-
-fn git(repo: &Path, args: &[&str]) -> Result<std::process::Output, String> {
-    Command::new("git").arg("-C").arg(repo).args(args).output().map_err(|e| format!("git: {e}"))
 }
 
 fn out(o: &std::process::Output) -> String {

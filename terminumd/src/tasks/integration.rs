@@ -112,9 +112,7 @@ pub fn check_fields(s: &Settings) -> Result<(), String> {
             return Err(format!("{name}: one line, at most 2,000 characters."));
         }
     }
-    if target_parts(&s.target).is_none() {
-        return Err(not_a_target(&s.target));
-    }
+    target_of(&s.target)?;
     let within = |n: i64, low: i64, high: i64, words: &str| if (low..=high).contains(&n) { Ok(()) } else { Err(words.to_string()) };
     within(s.batch_most, 1, 8, BATCH)?;
     within(s.check_minutes, 1, 1440, CHECK_MINUTES)?;
@@ -126,8 +124,13 @@ pub fn check_fields(s: &Settings) -> Result<(), String> {
     Ok(())
 }
 
-pub(crate) fn not_a_target(target: &str) -> String {
+fn not_a_target(target: &str) -> String {
     format!("{}: name a remote's branch, as origin/main.", if target.is_empty() { "Target" } else { target })
+}
+
+/// `origin/main` as (origin, main), or the refusal that says how to name it.
+pub(crate) fn target_of(target: &str) -> Result<(&str, &str), String> {
+    target_parts(target).ok_or_else(|| not_a_target(target))
 }
 
 /// `origin/main` as (origin, main).
@@ -150,7 +153,7 @@ pub fn check_place(dir: &FsPath, target: &str, git: &str) -> Result<(), String> 
     if !dir.is_dir() || !run(&["rev-parse", "--git-dir"])?.status.success() {
         return Err(format!("{} is not a git checkout.", dir.display()));
     }
-    let (remote, branch) = target_parts(target).ok_or_else(|| not_a_target(target))?;
+    let (remote, branch) = target_of(target)?;
     if !run(&["rev-parse", "--verify", "--quiet", &format!("refs/remotes/{remote}/{branch}^{{commit}}")])?.status.success() {
         return Err(format!("{target}: no such branch at {remote}."));
     }

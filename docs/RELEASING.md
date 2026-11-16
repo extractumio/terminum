@@ -54,7 +54,7 @@ again with its one-line installer.
 
 ## Before a release
 
-`make release` runs the full checks first (`make check`, once per tree), on a quiet machine and one full run at a time (`scripts/load_gate.py`, spec AC-146): over `TM_GATE_LOAD` (the cores' count) it says it waits, looks each minute, starts 3 minutes after the load fell, and after 15 minutes ends the release: "the build server is not available for a release"; then the Mac test runner's when `TM_MAC_RUNNER` is set: failing tests stop it, and nothing else that is about quality does. A busy runner is tried again for half an hour. One that could not run them (asleep, still busy, a dropped link, over an hour) is said at the end, and the release's notes get a line saying so under Not verified. The commit published is the one the checks saw: another session's `make install` leaves `main` alone during a release, and a moved `HEAD` is refused.
+`make release` runs the full checks first (`make check`, once per tree), on a quiet machine and one full run at a time (`scripts/load_gate.py`; what it waits for and when it gives up: spec AC-146, `TM_GATE_LOAD`); then the Mac test runner's when `TM_MAC_RUNNER` is set: failing tests stop it, and nothing else that is about quality does. A busy runner is tried again for half an hour. One that could not run them (asleep, still busy, a dropped link, over an hour) is said at the end, and the release's notes get a line saying so under Not verified. The commit published is the one the checks saw: another session's `make install` leaves `main` alone during a release, and a moved `HEAD` is refused.
 
 `make rehearse TAG=vX.Y.Z` is the same chain, from a tree at `origin/main`, up to the built package (its macOS builds codesigned with the Developer ID, as for real): no release key, nothing tagged, pushed or published, no notes needed, no mark held. Its own target, so a mistyped variable can never publish. The primary checkout refuses it: it replaces `ui/dist` and `dist/package`.
 
@@ -93,8 +93,9 @@ The Linux job runs `make test`, clippy with warnings as errors, `e2e_install.sh`
 panel's checks and the page's live checks (`e2e_live.mjs`, Chromium and WebKit) against a
 private terminumd and tmux, and `security_check.sh`. The page's own checks (`e2e_all.mjs`)
 measure the layout of Safari and Chrome on the Mac, the page's clients: Linux's fonts and
-WebKit differ (columns, mouse cells, motion, TIFF), so they run on a Mac (`make test-mac`, and
-before every merge on the maintainer's). Timing checks scale by the load per core (`web/test/check.mjs`),
+WebKit differ (columns, mouse cells, motion, TIFF), so they run on a Mac (`make test-mac`; on the
+maintainer's Mac in a release's `make check` and, for the checks a change touches, in its targeted
+pass: spec AC-104). Timing checks scale by the load per core (`web/test/check.mjs`),
 since the runner's machine is shared. A real `systemctl --user` run is not part of it:
 the runner has no user manager, and giving it one (linger) would let a job leave a unit running
 outside the runner's confinement; the systemd half is covered by its unit tests (a stub

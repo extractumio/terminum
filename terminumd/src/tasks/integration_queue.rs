@@ -51,11 +51,7 @@ pub fn ordinal(n: usize) -> String {
     format!("{n}{suffix}")
 }
 
-use crate::integrate::git::{output as git_output, short};
-
-fn git(dir: &Path, args: &[&str]) -> Result<std::process::Output, String> {
-    git_output(dir, args)
-}
+use crate::integrate::git::{output as git, short};
 
 /// The commit to queue: `given`, else the caller's folder's HEAD with nothing uncommitted; one of the project's
 /// repository, not yet in its target.
@@ -76,7 +72,7 @@ fn commit_to_queue(repo: &Path, s: &Settings, given: Option<&str>, folder: Optio
         return Err(format!("{sha} is not a commit of this project's repository."));
     }
     let full = String::from_utf8_lossy(&found.stdout).trim().to_string();
-    let (remote, branch) = integration::target_parts(&s.target).ok_or_else(|| integration::not_a_target(&s.target))?;
+    let (remote, branch) = integration::target_of(&s.target)?;
     if git(repo, &["merge-base", "--is-ancestor", &full, &format!("refs/remotes/{remote}/{branch}")])?.status.success() {
         return Err(format!("{} is already in {}: finish the task with finish_task.", short(&full), s.target));
     }

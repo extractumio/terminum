@@ -6,7 +6,7 @@ Sibling of `terminum-kanban.md` (tasks and the board) and `terminum-dispatcher.m
 
 | Field | Value |
 |---|---|
-| Status | approved by the owner; not built |
+| Status | approved by the owner; built, with the gaps of §7 |
 
 A snapshot of what terminum must do, not a record of how it came to be: git holds that.
 
@@ -105,7 +105,7 @@ Scenario Outline: AC-186 happy path — three ways to check
 
 Scenario: AC-186 happy path — a manager reads it
   When the project's manager calls integration_status {} (AC-187)
-  Then it is told whether integration is on, the target, the three commands and the batch's size; no tool changes them: a signed-in page does
+  Then it is told whether integration is on, the target, each stage's command (Prepare, Verify, Check, Publish, After, Cleanup: AC-198) and the batch's size; no tool changes them: a signed-in page does
 
 Scenario: AC-186 failure — refused
   When Save is pressed on, and the project has no folder, the folder is no git checkout, git is older than 2.38, Target names no remote branch of it, a command is over 2,000 characters or holds a control character, the batch's most is not 1 to 8, the minutes not 1 to 1440, the agent's budget not 5 to 1440 minutes, the red rounds not 1 to 10, the prompt over 8 KiB, Target is not a remote's branch, or the agent is not of the project's own pool
@@ -149,7 +149,7 @@ Scenario: AC-187 happy path — while it stands there
 Scenario: AC-187 happy path — waiting on it
   When the agent, or a project's script, runs "terminum integration wait API-12"
   Then it prints each notice as it comes and ends when API-12 leaves INTEGRATION: exit 0 landed, 1 returned for a red check, 2 returned for a conflict, 3 taken out or integration turned off
-  And "terminum integration queue API-12 [--commit <sha>] [--result-file <path>] [--wait]" queues as the tool does, and with --title "<words>" in place of an ID it makes the task first, as the tool does with a title
+  And "terminum integration queue API-12 --result-file <path> [--commit <sha>] [--wait]" queues as the tool does (without --result-file it is refused: "--result-file <path>: the result finish_task would take, in its sections."), and with --title "<words>" in place of an ID it makes the task first, as the tool does with a title
 
 Scenario: AC-187 happy path — a commit named, a task made
   When integrate is called with commit "9c1d0aa"
@@ -609,6 +609,12 @@ Scenario: AC-198 failure — Publish pushes only what was checked
   When `make land-publish SLUG=retry` runs on a commit with no green Check kept for it on the target as it is now
   Then nothing is pushed: "6c1e2a9 has no green check: check first", or, the target moved since, "6c1e2a9 is not on origin/main as it is now (5d0f8b1): prepare and check again"
 
+Scenario: AC-198 failure — Publish and After by hand while integration is on
+  Given terminum's integration is on
+  When `make land-publish SLUG=retry` or `make land-after SLUG=retry` runs outside terminumd's queue
+  Then nothing is pushed and nothing installed: "publish: integration is on: terminumd publishes and runs After; queue with make land TASK=<ID> RESULT=<file>" ("after: …" for After), exit 1
+  And when the ask fails, times out or its answer cannot be read, it is refused: "whether integration is on is not known …: nothing pushed"; when terminum is not running or not installed, the stages run here, in order, as without integration
+
 Scenario: AC-198 edge — a task taken out while it is verified
   When API-12 is taken out (AC-187) while its Verify runs
   Then its window is ended and its tree removed at terminumd's next step, and nothing of it joins a batch
@@ -758,7 +764,7 @@ A task's status `INTEGRATION` is the one fact that it is queued; its entry holds
 | `integration_recheck {why?}` | only that run: the batch built and checked again; a failed Publish run again |
 | `integration_add_fix {commit}` | only that run: its own commit's change, picked alone onto the target at each round, joins the candidate first |
 
-**Command.** `terminum integration queue (<ID> | --title <words>) [--commit <sha>] [--result-file <path>] [--wait]`, `terminum integration wait <ID>`, `terminum integration status [<ID>]`, over terminumd's socket; exits as AC-187.
+**Command.** `terminum integration queue (<ID> | --title <words>) --result-file <path> [--commit <sha>] [--wait]`, `terminum integration wait <ID>`, `terminum integration status [<ID>]`, over terminumd's socket; exits as AC-187.
 
 **Routes.**
 
@@ -830,8 +836,8 @@ Retry diagnostics (AC-197) are read from the stage tree's `.checks/retried` befo
 - [ ] AC-187 — `cargo test tasks::integration_queue` (queued, again, taken out, a move out leaves the queue, none in by a move, each refusal, a red commit not again), `cargo test tasks::store::tests::integration_ac187` (an older store takes the status, keeps every row), `cargo test integration_queue::tests::ac187_status_of_a_task` (how a task left), `cargo test cli::integration` (the command's usage, the wait's exit statuses); to come: `cargo test tasks::integration_queue` (a task made), `cargo test dispatcher` (no budget, no idle clock, no closing in INTEGRATION)
 - [ ] AC-188 — `cargo test integrate::batch`, `cargo test integrate::engine` on private repositories (`crate::testutil::temp_root()`): the queue's order, the size's doubling and halving, two projects' turns, everything conflicting gives one task a round
 - [ ] AC-189 — `cargo test integrate::batch` and `integrate::engine::tests::ac189_…` (with the target, with a batch-mate, judged again after that batch, a foreseen one)
-- [ ] AC-190 — `cargo test integrate::engine` (green, red, over its time), `cargo test integrate::runner`; to come: `cargo test integration::check` with stand-in lines (green, red, over its time, not started, nothing published but a green candidate), `scripts/e2e_integration.py` (a check outlives a restart of a private terminumd, private tmux)
-- [ ] AC-191 — `cargo test integrate::engine` against a private bare remote (pushed never forced, the target moved, a refused push and Publish again, a publish terminumd did not see end, the folder fast-forwarded); to come (pushed never forced, the target moved, a refused push, the project's Publish that does not land, the folder left where it is, After's failure undoes nothing)
+- [ ] AC-190 — `cargo test integrate::engine` (green, red, over its time), `cargo test integrate::runner`; to come: `cargo test integrate::runner` with stand-in lines (green, red, over its time, not started, nothing published but a green candidate), `scripts/e2e_integration.py` (a check outlives a restart of a private terminumd, private tmux)
+- [ ] AC-191 — `cargo test integrate::engine` against a private bare remote (pushed never forced, the target moved, a refused push and Publish again, a publish terminumd did not see end, the folder fast-forwarded); to come (the project's Publish that does not land, the folder left where it is, After's failure undoes nothing)
 - [ ] AC-192 — `cargo test integrate::notices` (two trees whose commits do not merge told once each, a tree beside a queued task told its place, the target moving in a task's files told once with its conflict, which notices are new, the gate's fixed words for a return alone, a tree with no task the other side only, named by its branch and session or folder, terminum's own tree and a waiting task's not counted as one), `cargo test integrate::agent` and `tasks::integration_queue` (the queue's own notices); to come: `scripts/e2e_integration.py` (a hook's context, the gate only in Dispatcher's pane), `web/test/e2e_liveintegration.mjs` (the comment on the card)
 - [ ] AC-193 — `cargo test integrate::column` (the batch heading the queue in its order, each state in words, a returned task said until queued again, a human's Integrate and Take out and their refusals, Batches newest first with the greens of the last 20, a red batch's cards and head holding its keys and none while checked, Integrate only where the project integrates), `cargo test integrate::notices` (`ac193_a_card_says_which_tasks_it_overlaps_until_it_no_longer_does`: the mark in `/api/tasks`, gone once they merge), `web/test/e2e_liveintegration.mjs` (the column's keys, Pause and Resume with who paused, Batches…, Integrate refused in its words, two tasks' sessions in worktrees whose commits do not merge: "overlaps <ID>" on each card from the real walk, a press opening that task; a card's Integrate and Take out, drops on INTEGRATION's and IN PROGRESS's tabs and none on DONE, a refusal in a toast, a red batch's card holding its keys and Return all from it, its integration task's head line in WAIT FOR HUMAN), `web/test/e2e_cardkeys.mjs` (the card's menu, drops and refusals in Chromium and WebKit, wide and phone); to come: the batch's group and places on the page with a batch in work, at a phone's size
 - [ ] AC-194 — `cargo test integrate::agent` (wanted in its own worktree at the candidate, its prompt without a task's words and with each task's files, red again the round's own words, each tool and its refusals, several returned for one round, the unchanged round once, red rounds spent, no agent, everything returned, a fix picked onto the target that outlives a red round and is published, a fix picked onto the moved target, one the moved target no longer takes or already holds left out, a fix not its own, a fix that needs the batch, each agent's own kept slot), `cargo test integrate::engine` (made with its batch, DONE on green with no agent, the human's keys), `cargo test dispatcher` (its budget counts the analysis alone), `scripts/e2e_integration.py` with `scripts/fake_agent.py` (a red round, a return with its analysis, round 2 green and published), `TM_TEST_REAL_INTEGRATION=1` (a Sonnet agent names the task whose change broke a stand-in check, three short runs)

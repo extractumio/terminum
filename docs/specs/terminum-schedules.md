@@ -367,6 +367,7 @@ sequenceDiagram
 
 | AC | Gap | Evidence |
 |---|---|---|
+| AC-162 | A schedule's prompt says "set by a human", and a later run of its task "The human ran task … again", whoever set the schedule or ran the task: a manager's are not said to be the manager's (`terminum-agents.md` AC-179, AC-180). | `terminumd/src/dispatcher/fire.rs`, `terminumd/src/dispatcher/press.rs` |
 
 ## 8. Recommendation and ownership
 
