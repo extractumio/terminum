@@ -106,6 +106,9 @@ export async function columnChecks(page, { j, gitty }) {
   const back = page.url(), col = '.col[data-status="INTEGRATION"]';
   await j(`/api/task-projects/${gitty}/integration`, "PUT", { on: true });   // no Check: nothing runs while it is looked at
   await page.goto(new URL(`/kanban/?project=${gitty}`, back).href);
+  const tab = '#colswitch button[data-status="INTEGRATION"]';   // wider than a phone, its tab shows it in the panel (terminum-kanban.md AC-105)
+  await page.waitForSelector(`${tab}:not([hidden])`, { state: "attached", timeout: 8000 });
+  if (await page.isVisible(".colpanel")) await page.click(tab);
   await page.waitForSelector(`${col}:not([hidden]) .colhead .queuekeys button`, { timeout: 8000 });
   const key = (words) => `${col} .colhead .queuekeys button:has-text("${words}")`;
   check("AC-193 the column stands with Pause and Batches…, and no sort keys: its order is the queue's",
