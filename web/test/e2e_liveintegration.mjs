@@ -149,8 +149,8 @@ async function cardKeyChecks(page, { j, gitty, t, base, repo, newPane, keyOf }) 
   await page.waitForFunction(() => document.body.dataset.socket === "open");
   /** Its card's menu opened, its column shown first; answers its items. */
   const openMenu = async () => {
-    await page.waitForSelector(card, { state: "attached", timeout: 8000 });
-    const col = await page.$eval(card, (c) => c.closest(".col").dataset.status);
+    // its card in a column (a redraw may stand between a read and the next)
+    const col = await (await page.waitForFunction((sel) => document.querySelector(sel)?.closest(".col")?.dataset.status, card, { timeout: 8000 })).jsonValue();
     if (await page.isVisible(tab(col))) await page.click(tab(col));
     await page.hover(card);
     await page.click(`${card} .cmenu`);
