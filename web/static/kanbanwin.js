@@ -13,10 +13,12 @@ import { activity, editor } from "./kanbanactivity.js";
 import { family } from "./kanbansubs.js";
 import { expandable } from "./expand.js";
 import { queuedWords } from "./cardstate.js";
+import { detailsPane } from "./taskattrs.js";
 
 // a text or a comment being edited; one saved or cancelled is off (refresh) and holds nothing
 const EDITS = ".tasktext textarea:not(:disabled), .markdown textarea:not(:disabled)";
-const HELD = `${EDITS}, .xbox.full`;                     // or a box over the window (AC-184): nothing redraws under it
+// or a box over the window (AC-184), or a Details field being typed in (AC-199): nothing redraws under it
+const HELD = `${EDITS}, .xbox.full, .taskattrs input:focus`;
 
 export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }) {
   taskBoxes();
@@ -30,6 +32,8 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
   /** Whether the window, as opened for its task, shows first what the human reacts to: kept while it stays open, so
    *  a change of the task turns no conversation round under its reader. */
   let leads = true;
+  /** Whether its Details show unfolded: kept through the window's redraws, folded for each task opened. */
+  let attrsOpen = false;
 
   const flushKeys = () => { const paint = pendingKeys; pendingKeys = null; paint?.(); };
   const keyHeld = () => commentSave?.matches(":active") || commentRun?.matches(":active");
@@ -378,7 +382,11 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
     if (from) from.append("From schedule ", button("linklike", `${t.schedule.key}: ${t.schedule.title}`, () => openSchedule(t.schedule.key)));
     const when = el("div", "taskwhen");
     when.append(...[stamps, from].filter(Boolean));
-    wrap.append(...[when, standing(t), batchPart(t, refresh, getMeta()), fields(t), text(t), filesOf(t)].filter(Boolean));   // a batch's keys (terminum-integration.md AC-194)
+    const details = detailsPane({ v: { ...t, ...t.lists }, self: t.id, project: () => t.project, open: attrsOpen, onToggle: (o) => { attrsOpen = o; }, openTask,
+      set: (field, value) => patch(t.id, { [field]: value }),
+      link: (list, task, reason) => patch(t.id, { link: { list, task, reason } }),
+      unlink: (list, task) => patch(t.id, { unlink: { list, task } }) });
+    wrap.append(...[when, standing(t), batchPart(t, refresh, getMeta()), fields(t), details, text(t), filesOf(t)].filter(Boolean));   // a batch's keys (terminum-integration.md AC-194)
     return wrap;
   }
 
@@ -413,7 +421,7 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
     }
     if (mine !== opening) return false;
     const anew = !box.open || shown?.id !== t.id;
-    if (anew) leads = true;
+    if (anew) { leads = true; attrsOpen = false; }
     if (!box.open) {                              // reopening is a new press target, even for the same task,
       commentId = null;
       if (!note?.uploads) note = null;            // and its comment is read from its draft again, unless files are on their way

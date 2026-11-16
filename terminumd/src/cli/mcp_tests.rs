@@ -423,11 +423,11 @@ fn ac155_a_tools_first_refusal_carries_its_card_once() {
     let text = |r: &Value| r["content"][0]["text"].as_str().unwrap().to_string();
     let args = json!({"name": "create_task", "arguments": {"title": "a gap", "text": "x", "severity": "P2"}});
     let e = in_pane();
-    let (r, _) = tool("execute_tool", args.clone(), &e, no("Start the title with Bug:, Feat: or Debt:."));
+    let (r, _) = tool("execute_tool", args.clone(), &e, no("Give it a type: Feature, Bug, Debt or Story."));
     assert_eq!(r["isError"], true);
-    assert_eq!(text(&r), format!("Start the title with Bug:, Feat: or Debt:.\n\n{card}"));
-    let (r, _) = tool("execute_tool", args.clone(), &e, no("Start the title with Bug:, Feat: or Debt:."));
-    assert_eq!(text(&r), "Start the title with Bug:, Feat: or Debt:.", "once a session");
+    assert_eq!(text(&r), format!("Give it a type: Feature, Bug, Debt or Story.\n\n{card}"));
+    let (r, _) = tool("execute_tool", args.clone(), &e, no("Give it a type: Feature, Bug, Debt or Story."));
+    assert_eq!(text(&r), "Give it a type: Feature, Bug, Debt or Story.", "once a session");
     // refused here (the arguments' shape) carries it as well; a success never
     let e = in_pane();
     let (r, sent) = tool("execute_tool", json!({"name": "get_task", "arguments": {}}), &e, Err(()));
@@ -438,12 +438,12 @@ fn ac155_a_tools_first_refusal_carries_its_card_once() {
     let e = in_pane();
     let (r, _) = tool("get_tool_info", json!({"names": ["create_task"]}), &e, Err(()));
     assert_eq!(r["isError"], false);
-    let (r, _) = tool("execute_tool", args.clone(), &e, no("Start the title with Bug:, Feat: or Debt:."));
-    assert_eq!(text(&r), "Start the title with Bug:, Feat: or Debt:.");
+    let (r, _) = tool("execute_tool", args.clone(), &e, no("Give it a type: Feature, Bug, Debt or Story."));
+    assert_eq!(text(&r), "Give it a type: Feature, Bug, Debt or Story.");
     // terminum down: no card, and the next refusal still gets it
     let e = in_pane();
     let (r, _) = tool("execute_tool", args.clone(), &e, Err(()));
     assert_eq!(text(&r), DOWN);
-    let (r, _) = tool("execute_tool", args, &e, no("Start the title with Bug:, Feat: or Debt:."));
+    let (r, _) = tool("execute_tool", args, &e, no("Give it a type: Feature, Bug, Debt or Story."));
     assert!(text(&r).contains("How to call it: create_task("));
 }
