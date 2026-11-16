@@ -101,8 +101,9 @@ export async function integrationChecks(page, { j, fresh, work, pressAt, shots }
 }
 
 /** AC-193: the INTEGRATION column where a shown project integrates: its head's keys, Pause and Resume said where
- *  pressed, Batches…, and a human's Integrate refused in its words in the task's window; the board comes back after. */
-export async function columnChecks(page, { j, gitty }) {
+ *  pressed, Batches…, a human's Integrate refused in its words in the task's window, then the card's keys and drops
+ *  (cardKeyChecks); the board comes back after. */
+export async function columnChecks(page, { j, gitty, work, newPane, keyOf }) {
   const back = page.url(), col = '.col[data-status="INTEGRATION"]';
   await j(`/api/task-projects/${gitty}/integration`, "PUT", { on: true });   // no Check: nothing runs while it is looked at
   await page.goto(new URL(`/kanban/?project=${gitty}`, back).href);
@@ -130,7 +131,93 @@ export async function columnChecks(page, { j, gitty }) {
   await page.click("#taskbox[open] .queuekeys button");
   check("AC-193 Integrate on a task with no session's folder is refused in integrate's words, in its window",
     await until(async () => (await page.textContent("#taskbox[open] .queuekeys .error")) === "This session has no folder on this Mac: name the commit."));
+  await cardKeyChecks(page, { j, gitty, t, base: back, work, newPane, keyOf });
   await page.goto(back);
+}
+
+/** AC-193: IN PROGRESS task `t` of `gitty` (integration on, no Check) queued and taken out by its card's menu and by
+ *  drops on the columns' tabs, on the real page: refused with no session's folder, in a toast; with its session in
+ *  the project's checkout at a commit not in origin/main, queued. The queue stays paused: no batch starts. */
+async function cardKeyChecks(page, { j, gitty, t, base, work, newPane, keyOf }) {
+  const card = `.card[data-id="${t}"]`, tab = (s) => `#colswitch button[data-status="${s}"]`;
+  const status = async () => (await j(`/api/tasks/${t}`)).status;
+  await j(`/api/integration/project/${gitty}/pause`, "POST", { paused: true });
+  await page.goto(new URL(`/kanban/?project=${gitty}`, base).href);
+  await page.waitForFunction(() => document.body.dataset.socket === "open");
+  /** Its card's menu opened, its column shown first; answers its items. */
+  const openMenu = async () => {
+    await page.waitForSelector(card, { state: "attached", timeout: 8000 });
+    const col = await page.$eval(card, (c) => c.closest(".col").dataset.status);
+    if (await page.isVisible(tab(col))) await page.click(tab(col));
+    await page.hover(card);
+    await page.click(`${card} .cmenu`);
+    return page.$$eval("#cardmenu[open] [role=menuitem]", (bs) => bs.map((b) => b.textContent.trim()));
+  };
+  const menu = async (item) => { await openMenu(); await page.click(`#cardmenu[open] [role=menuitem]:has-text("${item}")`); };
+  const drop = (on) => page.evaluate(([from, on]) => {
+    const dt = new DataTransfer(), held = document.querySelector(from), zone = document.querySelector(on), at = { bubbles: true, cancelable: true, dataTransfer: dt };
+    held.dispatchEvent(new DragEvent("dragstart", { bubbles: true, dataTransfer: dt }));
+    const over = new DragEvent("dragover", at);
+    zone.dispatchEvent(over);
+    if (over.defaultPrevented) zone.dispatchEvent(new DragEvent("drop", at));
+    held.dispatchEvent(new DragEvent("dragend", { bubbles: true, dataTransfer: dt }));
+    return over.defaultPrevented;
+  }, [card, on]);
+  const toast = (words) => until(async () => (await page.textContent("#toast").catch(() => "")) === words);
+
+  await menu("Integrate");
+  check("AC-193 a card's Integrate with no session's folder is refused in a toast, in integrate's words",
+    await toast("This session has no folder on this Mac: name the commit.") && await status() === "IN PROGRESS");
+  await until(async () => !(await page.isVisible("#toast")));   // the next toast is the drop's own
+  check("AC-193 a drop on INTEGRATION's tab is refused the same, and moves nothing",
+    await drop(tab("INTEGRATION")) && await toast("This session has no folder on this Mac: name the commit.") && await status() === "IN PROGRESS");
+
+  // its session in the project's checkout, one commit past origin/main
+  const repo = path.join(work, "integration-repo");
+  fs.writeFileSync(path.join(repo, "card.txt"), "card\n");
+  git(repo, "add", "card.txt");
+  git(repo, "commit", "-q", "-m", "card");
+  const key = await keyOf(newPane("card-keys", repo));
+  await j(`/api/tasks/${t}`, "PATCH", { session: key });
+  await until(async () => (await j(`/api/tasks/${t}`)).session?.key === key);
+  await menu("Integrate");
+  check("AC-193 a card's Integrate queues its session's HEAD, its place said in a toast",
+    await until(async () => await status() === "INTEGRATION") && await until(async () => /queued 1st/.test(await page.textContent("#toast").catch(() => ""))));
+  await menu("Take out");
+  check("AC-193 a card's Take out puts it back IN PROGRESS", await until(async () => await status() === "IN PROGRESS"));
+  await page.waitForFunction(([sel]) => document.querySelector(sel)?.closest(".col")?.dataset.status === "IN PROGRESS", [card]);
+  check("AC-193 an IN PROGRESS card dropped on INTEGRATION's tab is queued", await drop(tab("INTEGRATION")) && await until(async () => await status() === "INTEGRATION"));
+  await page.waitForFunction(([sel]) => document.querySelector(sel)?.closest(".col")?.dataset.status === "INTEGRATION", [card]);
+  check("AC-107 a queued card takes no drop on DONE", !(await drop(tab("DONE"))) && await status() === "INTEGRATION");
+  check("AC-193 a queued card dropped on IN PROGRESS's tab is taken out", await drop(tab("IN PROGRESS")) && await until(async () => await status() === "IN PROGRESS"));
+
+  // a red batch: its card holds the batch's keys; its integration task keeps its head's line where it waits
+  // the target fetched from an origin of the test's own, as a batch's build fetches it first
+  const origin = path.join(work, "integration-origin.git");
+  execFileSync("git", ["init", "-q", "--bare", origin]);
+  git(repo, "remote", "add", "origin", origin);
+  git(repo, "push", "-q", "origin", "refs/remotes/origin/main:refs/heads/main");
+  await j(`/api/task-projects/${gitty}/integration`, "PUT", { on: true, check: "false" });
+  await page.waitForFunction(([sel]) => document.querySelector(sel)?.closest(".col")?.dataset.status === "IN PROGRESS", [card]);
+  await menu("Integrate");
+  await until(async () => await status() === "INTEGRATION");
+  await j(`/api/integration/project/${gitty}/pause`, "POST", { paused: false });
+  const red = async () => (await j(`/api/tasks?project=${gitty}&status=INTEGRATION`)).tasks.find((x) => x.id === t)?.queue?.keys?.includes("check-again");
+  check("AC-193 a red check leaves the batch red, its card holding its keys", await until(red, 90000),
+    JSON.stringify({ cards: (await j(`/api/tasks?project=${gitty}&status=INTEGRATION`)).tasks.map((x) => x.queue), queue: (await j("/api/tasks/meta")).projects.find((p) => p.id === gitty)?.queue }));
+  const head = (await j(`/api/tasks?project=${gitty}&status=WAIT FOR HUMAN`)).tasks.find((x) => x.id.startsWith("I_"));
+  check("AC-193 its integration task waiting for the human keeps the group's head line", /^batch \d+ · red: waits for you/.test(head?.queue?.mark ?? ""), JSON.stringify(head?.queue));
+  await page.waitForFunction(([sel]) => document.querySelector(sel)?.closest(".col")?.dataset.status === "INTEGRATION" && document.querySelector(`${sel} .qmark`)?.textContent.startsWith("in batch"), [card]);
+  let items = [];   // the board reads the batch's red at its next news: a menu opened before shows the queue's keys alone
+  await until(async () => { items = await openMenu(); if (items.length > 1) return true; await page.keyboard.press("Escape"); return false; }, 30000);
+  check("AC-193 a red batch's card's menu holds Take out, Check again, Return… and Return all",
+    JSON.stringify(items) === JSON.stringify(["Take out", "Check again", `Return ${t}…`, "Return all"]), JSON.stringify(items));
+  await page.click('#cardmenu[open] [role=menuitem]:has-text("Return all")');
+  await page.waitForSelector("#confirmbox[open]");
+  await page.click("#confirmok");
+  check("AC-193 Return all from the card sends its task back to work, said in a toast",
+    await until(async () => await status() === "IN PROGRESS") && await until(async () => /went back to their agents/.test(await page.textContent("#toast").catch(() => ""))));
+  await j(`/api/task-projects/${gitty}/integration`, "PUT", { on: true });
 }
 
 /** AC-186: play the browser's substitutions on the real fields; paste, drop, IME and prose keep their text. */

@@ -166,7 +166,7 @@ const pressAt = async (page, sel) => {
 /** AC-139, AC-140: a project made empty, its window stays for the pool; with no folder nothing starts; a pencil opens it; a change is kept. */
 async function projectWindowChecks(page, opts) {
   const { base, work } = opts;
-  const { j } = boardKit(page, opts);
+  const kit = boardKit(page, opts), { j } = kit;
   await page.goto(`${base}/kanban/`);
   await page.waitForSelector("#fproject summary");
   const named = async (name) => (await j("/api/tasks/meta")).projects.find((p) => p.name === name);
@@ -200,7 +200,8 @@ async function projectWindowChecks(page, opts) {
   check("AC-139 Done keeps the project and closes its window", await until(() => page.isHidden("#projectbox"), 15000),
     `${done}; ${JSON.stringify(await page.evaluate(() => ({ says: document.getElementById("projecterror")?.textContent, open: [...document.querySelectorAll("dialog[open]")].map((d) => d.id), busy: document.getElementById("projectbox").dataset.busy ?? null, focus: document.activeElement?.id })))}`);
   if (await page.isVisible("#projectbox")) await page.evaluate(() => document.getElementById("projectbox").close());
-  await columnChecks(page, { j, gitty });   // the board's INTEGRATION column, the window closed (AC-193)
+  try { await columnChecks(page, { j, gitty, work, newPane: kit.newPane, keyOf: kit.keyOf }); }   // the board's INTEGRATION column, the window closed (AC-193)
+  finally { kit.endPanes(); }
 
   // no folder: no one knows where an agent would start (AC-140)
   const homeless = (await j("/api/tasks", "POST", { title: "nowhere to run", project: fresh })).id;
