@@ -173,7 +173,7 @@ fn ac194_a_fix_of_its_own_joins_first_outlives_a_red_round_and_is_published() {
     assert!(fixing(&w, "abcdef1234").unwrap_err().contains("is no commit in your worktree"));
     fixing(&w, &fix).unwrap();
     assert_eq!(sh(&tree, &["rev-parse", "HEAD"]), fix, "its worktree stands where it stood");
-    assert!(!PathBuf::from(format!("{}-fix", tree.display())).exists(), "the pick's worktree is gone");
+    assert!(!PathBuf::from(format!("{}-fix-{}", tree.display(), short(&fix))).exists(), "the pick's worktree is gone");
     call(&w, recheck, json!({})).unwrap();
     go(&w, &Sh::default(), 3);
     assert_eq!((batch(&w).state.as_str(), batch(&w).round, batch(&w).fixes.len()), ("red", 2, 1), "red again, its fix kept");
@@ -225,7 +225,7 @@ fn queued_commit(w: &World, id: &str) -> String {
     }).unwrap()
 }
 
-/// The target moved: z.txt committed on origin's main, holding `text`; the new target.
+/// The target moved: `file` committed on origin's main, holding `text`; the new target.
 fn target_moves(w: &World, file: &str, text: &str) -> String {
     sh(&w.api, &["checkout", "-q", "--detach", "origin/main"]);
     std::fs::write(w.api.join(file), text).unwrap();
@@ -239,7 +239,7 @@ fn target_moves(w: &World, file: &str, text: &str) -> String {
 
 #[test]
 fn ac194_red_again_the_same_session_hears_the_round_s_own_words() {
-    let (w, _, _, i) = red_with_agent("ia-redagain", "exit 3", 3);
+    let (w, a, b, i) = red_with_agent("ia-redagain", "exit 3", 3);
     let key = batch(&w).task.unwrap();
     pressed(&w);
     call(&w, recheck, json!({"why": "a port was held"})).unwrap();
@@ -248,11 +248,17 @@ fn ac194_red_again_the_same_session_hears_the_round_s_own_words() {
     let home = w.root.join("home");
     let log = integration::log_in(&home, "api", 1, 2, "check");
     assert!(log.exists(), "round 2's log kept");
-    assert_eq!(w.s.with(|tx| red_again(tx, &key, &home)).unwrap().unwrap(),
-               format!("[terminum Dispatcher] {i}: batch 1's round 2 ended red. Its log: {}. Decide as before.", log.display()));
-    std::fs::remove_file(&log).unwrap();   // a round that left no log, as one whose check did not start
-    assert!(w.s.with(|tx| red_again(tx, &key, &home)).unwrap().unwrap().contains("round 2 ended red: The check ended with status 3"));
-    assert_eq!(w.s.with(|tx| red_again(tx, "no-such-key", &home)).unwrap(), None, "no batch's task: RUN's words");
+    let (b2, ids) = (batch(&w), format!("{a}, {b}"));
+    let words = format!("[terminum Dispatcher] {i}: batch 1's round 2 ended red: The check ended with status 3. Its log: {}. It checked {} with {ids}; your worktree is at it now. Decide as before.",
+                        log.display(), short(b2.candidate.as_deref().unwrap()));
+    assert_eq!(w.s.with(|tx| red_again(tx, &key, &home, None)).unwrap().unwrap(), words);
+    assert_eq!(w.s.with(|tx| red_again(tx, &key, &home, Some(&[]))).unwrap().unwrap(), words, "asked, no answer yet: the round's words alone");
+    let answered = w.s.with(|tx| red_again(tx, &key, &home, Some(&["keep API-14".to_string()]))).unwrap().unwrap();
+    assert!(answered.starts_with(&words) && answered.ends_with("The human answered your questions, in the comments below. Take them into account.\n\nkeep API-14"), "{answered}");
+    w.s.with(|tx| tx.execute("UPDATE integration_batches SET why = 'The check ran over 90 minutes.'", []).map(drop).map_err(sql)).unwrap();
+    assert!(w.s.with(|tx| red_again(tx, &key, &home, None)).unwrap().unwrap().contains(&format!("round 2 ended red: The check ran over 90 minutes. Its log: {}. It checked", log.display())),
+            "why it was red, and its log beside it");
+    assert_eq!(w.s.with(|tx| red_again(tx, "no-such-key", &home, None)).unwrap(), None, "no batch's task: RUN's words");
 }
 
 #[test]
@@ -285,5 +291,29 @@ fn ac194_a_fix_that_no_longer_applies_to_the_moved_target_is_left_out_and_said()
     go(&w, &Sh::default(), 1);
     let again = batch(&w);
     assert_eq!((again.round, again.fixes.len(), again.tasks.len()), (2, 0, 1), "built without its fix");
-    assert!(w.s.with(|tx| ops::history(tx, &i)).unwrap().to_string().contains(&format!("its fix {} does not apply onto origin/main", short(&fix))));
+    assert!(w.s.with(|tx| ops::history(tx, &i)).unwrap().to_string().contains(&format!("its fix {} is left out on origin/main", short(&fix))));
+}
+
+#[test]
+fn ac194_a_fix_must_be_its_own_on_the_candidate_and_change_something() {
+    let (w, a, _, _) = red_with_agent("ia-fixown", "exit 3", 3);
+    pressed(&w);
+    let tree = agent_tree(&w);
+    let task_commit = queued_commit(&w, &a);
+    assert!(fixing(&w, &task_commit).unwrap_err().contains("is no commit of yours on the candidate"), "a queued task's commit is no fix");
+    assert!(fixing(&w, batch(&w).candidate.as_deref().unwrap()).unwrap_err().contains("is no commit of yours"), "the candidate itself is no fix");
+    target_moves(&w, "fix.txt", "fixed\n");
+    std::fs::write(tree.join("fix.txt"), "fixed\n").unwrap();
+    sh(&tree, &["add", "fix.txt"]);
+    sh(&tree, &["commit", "-qm", "the agent's fix"]);
+    // the round's target has not moved for it: it applies; once the target holds the same change, a rebuild says so
+    let fix = sh(&tree, &["rev-parse", "HEAD"]);
+    fixing(&w, &fix).unwrap();
+    let b = batch(&w);
+    let i = i_of(&w);
+    call(&w, recheck, json!({})).unwrap();
+    go(&w, &Sh::default(), 1);
+    assert_eq!(batch(&w).fixes.len(), 0, "left out of round {}", b.round + 1);
+    assert!(w.s.with(|tx| ops::history(tx, &i)).unwrap().to_string().contains(&format!("its fix {} is left out on origin/main at", short(&fix))));
+    assert!(w.s.with(|tx| ops::history(tx, &i)).unwrap().to_string().contains("its change is already there"));
 }

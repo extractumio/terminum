@@ -205,6 +205,11 @@ pub fn verify_tree_in(home: &FsPath, project: &str, number: i64) -> PathBuf {
     tree_in(home, project).with_file_name(format!("verify-{number}"))
 }
 
+/// A red batch's integration agent's own worktree (AC-194), beside the candidate's.
+pub fn agent_tree_in(home: &FsPath, project: &str, number: i64) -> PathBuf {
+    tree_in(home, project).with_file_name(format!("agent-{number}"))
+}
+
 /// Where a queued task's Prepare and Verify keep their log, beside its tree.
 pub fn verify_log_in(home: &FsPath, project: &str, number: i64) -> PathBuf {
     tree_in(home, project).with_file_name(format!("verify-{number}.log"))

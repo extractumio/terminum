@@ -232,7 +232,7 @@ fn red(store: &Store, p: &Place, b: &Batch, why: &str, now: i64) -> Result<(), S
     let agent: Result<PathBuf, String> = match &p.s.agent {
         None => Err(format!("{said} The project has no integration agent: decide by the batch's keys.")),
         Some(_) if b.red_rounds + 1 >= p.s.red_rounds_most => Err(format!("{said} {} red rounds: decide by the batch's keys, or change Check.", p.s.red_rounds_most)),
-        Some(_) => worktree(p, integration::tree_in(&p.home, &b.project).with_file_name(format!("agent-{}", b.number)), b.candidate.as_deref().unwrap_or_default())
+        Some(_) => worktree(p, integration::agent_tree_in(&p.home, &b.project, b.number), b.candidate.as_deref().unwrap_or_default())
             .map_err(|e| format!("{said} Its agent could not start: {e}")),
     };
     store.with(|tx| {
@@ -301,28 +301,31 @@ fn publish(store: &Store, p: &Place, b: Batch, now: i64) -> Result<(), String> {
     }
 }
 
+/// The queue's name of a batch's fixes, picked together onto the target: no task's key.
+const FIX: &str = "fix";
+
 /// The target moved under a green batch, or a task left it: its tasks tried anew on `target`, a new round.
 fn again(store: &Store, p: &Place, b: &Batch, target: &str, now: i64) -> Result<(), String> {
     let (i_id, tasks) = store.with(|tx| Ok((bs::task_of(tx, b)?.unwrap_or_default(), bs::queued_of(tx, b)?)))?;
     // its agent's fixes first: each one's own change picked onto the target as it is now, together one merge named
     // by the integration task (AC-194), then its tasks
-    let (fix, dropped) = if b.fixes.is_empty() {
-        (None, Vec::new())
+    let (fix, fixed, dropped) = if b.fixes.is_empty() {
+        (None, Vec::new(), Vec::new())
     } else {
-        let scratch = super::agent::scratch_of(&integration::tree_in(&p.home, &b.project).with_file_name(format!("agent-{}", b.number)));
-        let (head, left_out) = super::agent::picked_onto(&p.repo, &scratch, &b.fixes, target)?;
-        ((head != target).then(|| Queued { task: "fix".into(), id: i_id.clone(), commit: head }), left_out)
+        let scratch = super::agent::scratch_of(&integration::agent_tree_in(&p.home, &b.project, b.number), "pick");
+        // picks that could not run leave every fix out, said on the integration task: the queue never stalls on them
+        let (head, left_out) = super::agent::picked_onto(&p.repo, &scratch, &b.fixes, target)
+            .unwrap_or_else(|e| (target.to_string(), b.fixes.iter().map(|f| (f.clone(), e.clone())).collect()));
+        let fixed: Vec<String> = b.fixes.iter().filter(|f| !left_out.iter().any(|(d, _)| d == *f)).cloned().collect();
+        ((head != target).then(|| Queued { task: FIX.into(), id: i_id.clone(), commit: head }), fixed, left_out)
     };
     let queue: Vec<Queued> = fix.into_iter().chain(tasks).collect();
+    // the fix stands on the target and is first: it always merges, never held or returned
     let mut c = choose(&p.repo, target, &queue, queue.len().max(1))?;
-    let is_fix = |q: &Queued| q.task == "fix";
-    let fixed: Vec<String> = if c.chosen.iter().any(is_fix) { b.fixes.iter().filter(|f| !dropped.iter().any(|(d, _)| d == *f)).cloned().collect() } else { Vec::new() };
-    c.chosen.retain(|q| !is_fix(q));
-    c.returned.retain(|(q, _)| !is_fix(q));
-    c.held.retain(|(q, _)| !is_fix(q));
+    c.chosen.retain(|q| q.task != FIX);
     store.with(|tx| {
         for (f, why) in &dropped {
-            bs::tell_task(tx, b, &format!("Batch {}: its fix {} does not apply onto {} at {}: left out. {why}", b.number, short(f), p.s.target, short(target)), now)?;
+            bs::tell_task(tx, b, &format!("Batch {}: its fix {} is left out on {} at {}: {why}", b.number, short(f), p.s.target, short(target)), now)?;
         }
         for (q, why) in &c.returned {
             bs::give_back(tx, &q.task, &bs::conflict_words(q, why, &p.s, target), bs::Left::Conflict, now)?;

@@ -37,6 +37,12 @@ pub fn ok(dir: &Path, args: &[&str]) -> Result<bool, String> {
     Ok(output(dir, args)?.status.success())
 }
 
+/// The files `head` changed since it left `base`, as git lists them.
+pub fn changed(repo: &Path, base: &str, head: &str) -> Result<Vec<String>, String> {
+    // quoted as git quotes by default, whatever the user set: no control or invisible character reaches a prompt
+    Ok(run(repo, &["-c", "core.quotePath=true", "diff", "--name-only", &format!("{base}...{head}")])?.lines().map(str::to_string).collect())
+}
+
 /// A commit as people read it: its first nine characters.
 pub fn short(sha: &str) -> &str {
     &sha[..9.min(sha.len())]

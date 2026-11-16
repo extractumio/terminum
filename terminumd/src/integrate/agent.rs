@@ -61,11 +61,13 @@ pub fn prompt_of(tx: &Transaction, key: &str) -> Result<Option<String>, String> 
                     s.agent_budget_minutes)))
 }
 
+/// The most files the prompt names of one task.
+const MOST_FILES: usize = 30;
+
 /// The files a task's commit changed since it left the target, by name alone (§9 Security), at most MOST_FILES. Read
 /// in the press's transaction: once a red round's agent starts, one `git diff` a task of a batch of a few.
 fn changed(repo: &Path, base: &str, commit: &str) -> String {
-    let Ok(listed) = git::run(repo, &["diff", "--name-only", &format!("{base}...{commit}")]) else { return "its files unknown".into() };
-    let files: Vec<&str> = listed.lines().collect();
+    let Ok(files) = git::changed(repo, base, commit) else { return "its files unknown".into() };
     match files.len() {
         0 => "no files".into(),
         n if n > MOST_FILES => format!("{} and {} more", files[..MOST_FILES].join(", "), n - MOST_FILES),
@@ -73,17 +75,25 @@ fn changed(repo: &Path, base: &str, commit: &str) -> String {
     }
 }
 
-/// The most files the prompt names of one task.
-const MOST_FILES: usize = 30;
-
 /// What the same session is told when a later round of its batch is red (AC-194): the round's own fixed words, its
-/// number and its log, or why it did not start when it left no log.
-pub fn red_again(tx: &Transaction, key: &str, home: &Path) -> Result<Option<String>, String> {
+/// number, why and its log, what it checked, where the agent's worktree now stands; then what the humans answered,
+/// when it had asked.
+pub fn red_again(tx: &Transaction, key: &str, home: &Path, answers: Option<&[String]>) -> Result<Option<String>, String> {
     let Some(b) = bs::by_task(tx, key)? else { return Ok(None) };
     let id = bs::slug(tx, key)?;
     let log = integration::log_in(home, &b.project, b.number, b.round, "check");
-    let how = if log.exists() { format!(". Its log: {}", log.display()) } else { format!(": {}", b.why.as_deref().unwrap_or("its check did not start")) };
-    Ok(Some(format!("[terminum Dispatcher] {id}: batch {}'s round {} ended red{how}. Decide as before.", b.number, b.round)))
+    let shown = log.display().to_string();
+    let mut why = b.why.as_deref().unwrap_or("its check was red").trim_end_matches('.').to_string();
+    if log.exists() && !why.contains(&shown) {
+        why.push_str(&format!(". Its log: {shown}"));
+    }
+    let ids: Vec<String> = bs::queued_of(tx, &b)?.into_iter().map(|q| q.id).collect();
+    let mut words = format!("[terminum Dispatcher] {id}: batch {}'s round {} ended red: {why}. It checked {} with {}; your worktree is at it now. Decide as before.",
+                            b.number, b.round, short(b.candidate.as_deref().unwrap_or_default()), ids.join(", "));
+    if let Some(said) = answers.filter(|a| !a.is_empty()) {
+        words.push_str(&format!("\n\nThe human answered your questions, in the comments below. Take them into account.\n\n{}", said.join("\n\n---\n\n")));
+    }
+    Ok(Some(words))
 }
 
 /// The batch the calling session's run decides for: its run holds the batch's integration task, the batch red.
@@ -148,7 +158,13 @@ pub fn add_fix(store: &Store, who: &Who, args: &Value, at: i64) -> Result<String
     let tree = b.agent_tree.clone().ok_or_else(|| format!("Batch {} has no worktree of its agent.", b.number))?;
     let tree = Path::new(&tree);
     let full = git::run(tree, &["rev-parse", "--verify", "--quiet", &format!("{commit}^{{commit}}")]).map_err(|_| format!("{commit} is no commit in your worktree."))?;
-    let (_, left_out) = picked_onto(tree, &scratch_of(tree), std::slice::from_ref(&full), &b.base)?;
+    // its own: made on the candidate it was given, never a task's commit or another branch's
+    let candidate = b.candidate.clone().unwrap_or_default();
+    if full == candidate || !git::ok(tree, &["merge-base", "--is-ancestor", &candidate, &full])? {
+        return Err(format!("{} is no commit of yours on the candidate {}: commit your fix in your worktree.", short(&full), short(&candidate)));
+    }
+    // a path of this call's own: a rebuild of the engine or another call picks beside it, never in it
+    let (_, left_out) = picked_onto(tree, &scratch_of(tree, &format!("fix-{}", short(&full))), std::slice::from_ref(&full), &b.base)?;
     if let Some((_, e)) = left_out.first() {
         return Err(format!("{} does not apply alone to the target at {}: {e}", short(&full), short(&b.base)));
     }
@@ -165,27 +181,31 @@ pub fn add_fix(store: &Store, who: &Who, args: &Value, at: i64) -> Result<String
     })
 }
 
-/// Where a batch's fixes are picked: beside its agent's worktree, `<tree>-fix`.
-pub(super) fn scratch_of(agent_tree: &Path) -> PathBuf {
-    PathBuf::from(format!("{}-fix", agent_tree.display()))
+/// Where a batch's fixes are picked: beside its agent's worktree, `<tree>-<whose>`.
+pub(super) fn scratch_of(agent_tree: &Path, whose: &str) -> PathBuf {
+    PathBuf::from(format!("{}-{whose}", agent_tree.display()))
 }
 
 /// Each of `commits`, its own change alone, picked in turn onto `onto` in `at`, a worktree made for that and removed
-/// after: the agent's own stays as it stood, and no hook of the project runs. (the last commit made, the commits
-/// left out with git's words); `repo` is any worktree of the project's repository.
+/// after: the agent's own stays as it stood, and no hook of the project runs. `repo` is any worktree of the
+/// project's repository. Answers the head the picks made (`onto` when none applied) and each commit left out with
+/// git's words, or "its change is already there" when it would change nothing.
 pub(super) fn picked_onto(repo: &Path, at: &Path, commits: &[String], onto: &str) -> Result<(String, Vec<(String, String)>), String> {
     let path = at.to_string_lossy().to_string();
-    let _ = git::run(repo, &["worktree", "remove", "--force", &path]);
+    // one left by a stop in the middle is locked: twice forced
+    let _ = git::run(repo, &["worktree", "remove", "--force", "--force", &path]);
+    let _ = git::run(repo, &["worktree", "prune"]);
     git::run(repo, &["-c", "core.hooksPath=/dev/null", "worktree", "add", "--quiet", "--detach", &path, onto]).map_err(|e| format!("A worktree to pick fixes in could not be made: {e}"))?;
     let mut left_out = Vec::new();
     for c in commits {
         if let Err(e) = git::run(at, &["-c", "core.hooksPath=/dev/null", "cherry-pick", c]) {
+            let empty = git::ok(at, &["diff", "--cached", "--quiet"]).unwrap_or(false) && git::run(at, &["ls-files", "-u"]).is_ok_and(|u| u.is_empty());
             let _ = git::run(at, &["cherry-pick", "--abort"]);
-            left_out.push((c.clone(), e));
+            left_out.push((c.clone(), if empty { "its change is already there".into() } else { e }));
         }
     }
     let head = git::run(at, &["rev-parse", "HEAD"]);
-    let _ = git::run(repo, &["worktree", "remove", "--force", &path]);
+    let _ = git::run(repo, &["worktree", "remove", "--force", "--force", &path]);
     Ok((head?, left_out))
 }
 
