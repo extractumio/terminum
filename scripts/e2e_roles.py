@@ -62,6 +62,19 @@ def main():
     def tool(called, **args):
         return f"{shlex.quote(BIN)} tool {called} {shlex.quote(json.dumps(args))}"
 
+    def accept_manager(key, number):
+        """The shell stand-in takes its first prompt, as an agent does, before the scaled startup deadline."""
+        wait_layout(ws, lambda gs: any(it["id"] == key for g in gs for it in g["items"]), 10)
+        event = json.dumps({"hook_event_name": "UserPromptSubmit", "session_id": f"roles-manager-{number}", "cwd": work, "prompt": "Manage this test project."})
+        command = f"printf '%s' {shlex.quote(event)} | {shlex.quote(BIN)} hook claude"
+        out, rc = typed(key.rsplit(":", 1)[1], f"sh -c {shlex.quote(command)}")
+
+        def state():
+            with sqlite3.connect(f"file:{os.path.join(t.app, 'kanban.sqlite')}?mode=ro", uri=True) as db:
+                return db.execute("SELECT state FROM runs WHERE pane_key = ?", [key]).fetchone()
+
+        check("setup: the manager's shell stand-in acknowledges startup", rc == "0" and wait_for(state, lambda s: s == ("working",), 10, 0.2), out)
+
     try:
         t.start()
         ws = t.page()
@@ -79,9 +92,11 @@ def main():
         check("setup: + Session opens the manager's session", st == 200 and said.get("key"), said)
         boss_key = said["key"]
         boss = boss_key.rsplit(":", 1)[1]
+        accept_manager(boss_key, 1)
         st, said = call(f"/api/task-projects/{project}/session", "POST", {"agent": shell})
         other_key = said["key"]
         other = other_key.rsplit(":", 1)[1]
+        accept_manager(other_key, 2)
 
         marked = lambda gs: all(it.get("manager") for g in gs for it in g["items"] if it["id"] in (boss_key, other_key)) and any(it["id"] == other_key for g in gs for it in g["items"])  # noqa: E731
         rows = {it["id"]: it for g in wait_layout(ws, marked, 10) for it in g["items"]}
