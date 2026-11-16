@@ -160,7 +160,7 @@ impl CardWait {
 pub fn on_cards(tx: &Transaction, keys: &[&str]) -> Result<HashMap<String, CardWait>, String> {
     if keys.is_empty() { return Ok(HashMap::new()); }
     Ok(rows(tx, &format!("WITH queue AS (
-            SELECT w.task, w.body, t.slug, COALESCE(a.name, w.agent_id) agent,
+            SELECT w.task, t.slug, COALESCE(a.name, w.agent_id) agent,
                 row_number() OVER (PARTITION BY w.agent_id ORDER BY w.pos, w.rowid) position
             FROM run_waits w JOIN tasks t ON t.id = w.task LEFT JOIN agents a ON a.id = w.agent_id), members AS ({MEMBERS})
         SELECT m.task, q.agent, q.position, q.slug FROM members m JOIN queue q ON q.task = m.press
