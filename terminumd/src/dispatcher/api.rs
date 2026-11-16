@@ -262,6 +262,8 @@ async fn pressed(app: &Shared, id: &str, body: Press) -> Result<Value, String> {
         }
         let again = match &w {
             Ok(Way::Anew(_)) => by.first_words(tx, &tasks)?.prompt(said.as_deref()),
+            // a later red round of a batch: its own words, the same session deciding as before (terminum-integration.md AC-194)
+            _ if by.how == How::Integration && let Some(words) = crate::integrate::agent::red_again(tx, &tasks[0].key, &crate::config::tm_home())? => words,
             _ => {
                 // its agent asked: what the humans answered since goes, theirs alone (AC-157), and the pressing manager's
                 // own message (terminum-agents.md AC-179), never another agent's comment

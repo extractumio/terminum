@@ -42,11 +42,12 @@ pub fn take_wanted(tx: &Transaction, at: i64) -> Result<Vec<(i64, String, String
 pub fn prompt_of(tx: &Transaction, key: &str) -> Result<Option<String>, String> {
     let Some(b) = bs::by_task(tx, key)? else { return Ok(None) };
     let s = integration::read(tx, &b.project)?;
-    let (name, _, _) = ops::project_place(tx, &b.project)?;
+    let (name, _, dir) = ops::project_place(tx, &b.project)?;
+    let repo = integration::local_dir(&dir);
     let id = bs::slug(tx, key)?;
     let (why, started, ended): (Option<String>, Option<i64>, Option<i64>) = tx.query_row("SELECT why, started, ended FROM integration_rounds WHERE batch = ?1 AND round = ?2",
         (b.id, b.round), |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).optional().map_err(sql)?.unwrap_or((None, None, None));
-    let tasks: Vec<String> = bs::queued_of(tx, &b)?.iter().map(|q| format!("{} at {}", q.id, short(&q.commit))).collect();
+    let tasks: Vec<String> = bs::queued_of(tx, &b)?.iter().map(|q| format!("{} at {} ({})", q.id, short(&q.commit), changed(&repo, &b.base, &q.commit))).collect();
     let log = integration::log_in(&crate::config::tm_home(), &b.project, b.number, b.round, "check");
     let minutes = match (started, ended) { (Some(a), Some(z)) => format!("{} min", (z - a).max(0) / 60), _ => "an unknown time".into() };
     let what = why.unwrap_or_else(|| "its check was red".into());
@@ -58,6 +59,31 @@ pub fn prompt_of(tx: &Transaction, key: &str) -> Result<Option<String>, String> 
     let filled = facts.iter().fold(template.to_string(), |t, (k, v)| t.replace(k, v));
     Ok(Some(format!("{filled}\n\nYou have {} minutes for this. Your task {id} ends with its batch: never call finish_task on it; decide by the tools above, then end your turn.",
                     s.agent_budget_minutes)))
+}
+
+/// The files a task's commit changed since it left the target, by name alone (§9 Security), at most MOST_FILES. Read
+/// in the press's transaction: once a red round's agent starts, one `git diff` a task of a batch of a few.
+fn changed(repo: &Path, base: &str, commit: &str) -> String {
+    let Ok(listed) = git::run(repo, &["diff", "--name-only", &format!("{base}...{commit}")]) else { return "its files unknown".into() };
+    let files: Vec<&str> = listed.lines().collect();
+    match files.len() {
+        0 => "no files".into(),
+        n if n > MOST_FILES => format!("{} and {} more", files[..MOST_FILES].join(", "), n - MOST_FILES),
+        _ => files.join(", "),
+    }
+}
+
+/// The most files the prompt names of one task.
+const MOST_FILES: usize = 30;
+
+/// What the same session is told when a later round of its batch is red (AC-194): the round's own fixed words, its
+/// number and its log, or why it did not start when it left no log.
+pub fn red_again(tx: &Transaction, key: &str, home: &Path) -> Result<Option<String>, String> {
+    let Some(b) = bs::by_task(tx, key)? else { return Ok(None) };
+    let id = bs::slug(tx, key)?;
+    let log = integration::log_in(home, &b.project, b.number, b.round, "check");
+    let how = if log.exists() { format!(". Its log: {}", log.display()) } else { format!(": {}", b.why.as_deref().unwrap_or("its check did not start")) };
+    Ok(Some(format!("[terminum Dispatcher] {id}: batch {}'s round {} ended red{how}. Decide as before.", b.number, b.round)))
 }
 
 /// The batch the calling session's run decides for: its run holds the batch's integration task, the batch red.
@@ -109,9 +135,9 @@ pub fn recheck(tx: &Transaction, who: &Who, args: &Value, at: i64) -> Result<Str
     bs::check_again(tx, &b, why, at)
 }
 
-/// integration_add_fix {commit}: the agent's own commit, from its worktree, put alone on the batch's target (a
-/// cherry-pick, outside the store's transaction), so it carries no task of the batch and joins the candidate first;
-/// then integration_recheck builds it.
+/// integration_add_fix {commit}: the agent's own commit, from its worktree, kept with the batch once its change applies
+/// alone to the batch's target (a cherry-pick, outside the store's transaction); each round built after picks it
+/// anew onto the target as it is then, so it carries no task of the batch and joins the candidate first.
 pub fn add_fix(store: &Store, who: &Who, args: &Value, at: i64) -> Result<String, String> {
     let commit = arg(args, "commit")?.to_string();
     // a commit as git names it, never an option or a range: it reaches git's arguments
@@ -120,32 +146,47 @@ pub fn add_fix(store: &Store, who: &Who, args: &Value, at: i64) -> Result<String
     }
     let b = store.with(|tx| own_batch(tx, who))?;
     let tree = b.agent_tree.clone().ok_or_else(|| format!("Batch {} has no worktree of its agent.", b.number))?;
-    let fix = alone_on(Path::new(&tree), &commit, &b.base)?;
+    let tree = Path::new(&tree);
+    let full = git::run(tree, &["rev-parse", "--verify", "--quiet", &format!("{commit}^{{commit}}")]).map_err(|_| format!("{commit} is no commit in your worktree."))?;
+    let (_, left_out) = picked_onto(tree, &scratch_of(tree), std::slice::from_ref(&full), &b.base)?;
+    if let Some((_, e)) = left_out.first() {
+        return Err(format!("{} does not apply alone to the target at {}: {e}", short(&full), short(&b.base)));
+    }
     store.with(|tx| {
         let b = own_batch(tx, who)?;
         let mut fixes = b.fixes.clone();
-        if !fixes.contains(&fix) {
-            fixes.push(fix.clone());
+        if !fixes.contains(&full) {
+            fixes.push(full.clone());
         }
         tx.execute("UPDATE integration_batches SET fixes = ?2 WHERE id = ?1", (b.id, serde_json::to_string(&fixes).unwrap_or_default())).map_err(sql)?;
         let i_id = bs::task_of(tx, &b)?.unwrap_or_default();
-        ops::comment(tx, DISPATCHER, &i_id, &format!("Its agent added a fix of its own: {}, on the target as {}. It joins the candidate first.", short(&commit), short(&fix)), at)?;
-        Ok(format!("{} joins batch {}'s candidate first. Call integration_recheck to build and check it.", short(&commit), b.number))
+        ops::comment(tx, DISPATCHER, &i_id, &format!("Its agent added a fix of its own: {}. Its change alone is picked onto the target, first in the candidate.", short(&full)), at)?;
+        Ok(format!("{} joins batch {}'s candidate first. Call integration_recheck to build and check it.", short(&full), b.number))
     })
 }
 
-/// Commit `commit`'s own change picked onto `base`, in a worktree made for that beside the agent's and removed
-/// after: the agent's own stays as it stood, and no hook of the project runs.
-fn alone_on(tree: &Path, commit: &str, base: &str) -> Result<String, String> {
-    let full = git::run(tree, &["rev-parse", "--verify", "--quiet", &format!("{commit}^{{commit}}")]).map_err(|_| format!("{commit} is no commit in your worktree."))?;
-    let pick = PathBuf::from(format!("{}-fix", tree.display()));
-    let at = pick.to_string_lossy().to_string();
-    let _ = git::run(tree, &["worktree", "remove", "--force", &at]);
-    let picked = git::run(tree, &["-c", "core.hooksPath=/dev/null", "worktree", "add", "--quiet", "--detach", &at, base])
-        .and_then(|_| git::run(&pick, &["-c", "core.hooksPath=/dev/null", "cherry-pick", &full]))
-        .and_then(|_| git::run(&pick, &["rev-parse", "HEAD"]));
-    let _ = git::run(tree, &["worktree", "remove", "--force", &at]);
-    picked.map_err(|e| format!("{} does not apply alone to the target at {}: {e}", short(&full), short(base)))
+/// Where a batch's fixes are picked: beside its agent's worktree, `<tree>-fix`.
+pub(super) fn scratch_of(agent_tree: &Path) -> PathBuf {
+    PathBuf::from(format!("{}-fix", agent_tree.display()))
+}
+
+/// Each of `commits`, its own change alone, picked in turn onto `onto` in `at`, a worktree made for that and removed
+/// after: the agent's own stays as it stood, and no hook of the project runs. (the last commit made, the commits
+/// left out with git's words); `repo` is any worktree of the project's repository.
+pub(super) fn picked_onto(repo: &Path, at: &Path, commits: &[String], onto: &str) -> Result<(String, Vec<(String, String)>), String> {
+    let path = at.to_string_lossy().to_string();
+    let _ = git::run(repo, &["worktree", "remove", "--force", &path]);
+    git::run(repo, &["-c", "core.hooksPath=/dev/null", "worktree", "add", "--quiet", "--detach", &path, onto]).map_err(|e| format!("A worktree to pick fixes in could not be made: {e}"))?;
+    let mut left_out = Vec::new();
+    for c in commits {
+        if let Err(e) = git::run(at, &["-c", "core.hooksPath=/dev/null", "cherry-pick", c]) {
+            let _ = git::run(at, &["cherry-pick", "--abort"]);
+            left_out.push((c.clone(), e));
+        }
+    }
+    let head = git::run(at, &["rev-parse", "HEAD"]);
+    let _ = git::run(repo, &["worktree", "remove", "--force", &path]);
+    Ok((head?, left_out))
 }
 
 /// finish_task on a batch's integration task: refused while its batch is not over.

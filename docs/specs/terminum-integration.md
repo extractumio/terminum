@@ -481,7 +481,9 @@ Scenario: AC-194 happy path — no task caused it
   When it calls so a second time in a row for one batch
   Then it is refused: "Batch 8 was checked again unchanged once: return a task, add a fix, or ask a human."
   When the target itself is red and the agent can fix it
-  Then it commits the fix in its own worktree and calls integration_add_fix {commit}: that commit joins the candidate first, "Integrate I_API-31", and is published with the batch; then integration_recheck
+  Then it commits the fix in its own worktree and calls integration_add_fix {commit}: that commit's own change, picked alone onto the target as it is when each round is built, joins the candidate first, "Integrate I_API-31", and is published with the batch; then integration_recheck
+  When the target moved and the fix no longer applies to it
+  Then the round is built without it, and I_API-31 says "Batch 8: its fix 7c1d2e3 does not apply onto origin/main at 5d4e3f2: left out." with git's words
   When it cannot tell, or a human must decide
   Then it calls ask_human (terminum-dispatcher.md AC-157): I_API-31 is WAIT FOR HUMAN with its questions, the batch's tasks stay in INTEGRATION, and the human's answer with RUN goes on
 
@@ -526,7 +528,7 @@ Scenario: AC-194 edge — its batch changes under it
 Scenario: AC-194 failure — refused
   When any session but the run of I_API-31 calls integration_return, integration_recheck or integration_add_fix for batch 8
   Then it is told "Only batch 8's integration task decides for it." and nothing changes
-  When the analysis lacks a section, names a task not in the batch, or the fix's commit is not in the project's repository
+  When the analysis lacks a section, names a task not in the batch, or the fix's commit is not in its worktree or does not apply alone to the target
   Then it is told which, and nothing changes
   When the agent calls finish_task on I_API-31 while its batch has a red round undecided
   Then it is refused: "I_API-31 ends when its batch does: return tasks, check again, or ask a human."
@@ -653,7 +655,7 @@ sequenceDiagram
 | AC-190 | A check's process group is ended by the runner, read from `ps`; nothing proves it ends a group that left its pane's tree. | `terminumd/src/integrate/runner.rs` |
 | AC-192 | Trees of a project with no task are not compared; a card does not yet say "overlaps API-13" (AC-193). | `terminumd/src/integrate/notices.rs` |
 | AC-193 | Integrate and Take out are keys of the task's window, not a card's menu, and a card is not dropped on INTEGRATION; Return…, Check again, Return all and Publish again stand in the integration task's window, not on the group's cards; a card does not say "overlaps API-13". | `web/static/kanbanqueuecol.js`, `web/static/kanbanbatch.js` |
-| AC-194 | Red again, the same session goes on with RUN's words, not the round's own ("Decide as before", its log). The prompt lists each task with its commit, not its files. A fix goes in as its last commit's change alone, picked onto the target. | `terminumd/src/integrate/engine.rs`, `terminumd/src/integrate/agent.rs` |
+| AC-194 | The integration task's text names each task with its ID and commit, not its session or the files it changed (its agent's prompt names the files). | `terminumd/src/integrate/store.rs` |
 
 ## 8. Recommendation and ownership
 
@@ -748,7 +750,7 @@ A task's status `INTEGRATION` is the one fact that it is queued; its entry holds
 | `integration_status {id?}` | the project's settings, the batch in work with its rounds, the queue with places and waits, the last 10 batches; with an id, that task's entry and notices |
 | `integration_return {task, analysis}` | only the run of the batch's integration task: returns a task of its batch, AC-194 |
 | `integration_recheck {why?}` | only that run: the batch built and checked again; a failed Publish run again |
-| `integration_add_fix {commit}` | only that run: its own commit joins the candidate first |
+| `integration_add_fix {commit}` | only that run: its own commit's change, picked alone onto the target at each round, joins the candidate first |
 
 **Command.** `terminum integration queue (<ID> | --title <words>) [--commit <sha>] [--result-file <path>] [--wait]`, `terminum integration wait <ID>`, `terminum integration status [<ID>]`, over terminumd's socket; exits as AC-187.
 
@@ -826,5 +828,5 @@ Retry diagnostics (AC-197) are read from the stage tree's `.checks/retried` befo
 - [ ] AC-191 — `cargo test integrate::engine` against a private bare remote (pushed never forced, the target moved, a refused push and Publish again, a publish terminumd did not see end, the folder fast-forwarded); to come (pushed never forced, the target moved, a refused push, the project's Publish that does not land, the folder left where it is, After's failure undoes nothing)
 - [ ] AC-192 — `cargo test integrate::notices` (two trees whose commits do not merge told once each, a tree beside a queued task told its place, the target moving in a task's files told once with its conflict, which notices are new, the gate's fixed words for a return alone), `cargo test integrate::agent` and `tasks::integration_queue` (the queue's own notices); to come: `scripts/e2e_integration.py` (a hook's context, the gate only in Dispatcher's pane), `web/test/e2e_liveintegration.mjs` (the comment on the card)
 - [ ] AC-193 — `cargo test integrate::column` (the batch heading the queue in its order, each state in words, a returned task said until queued again, a human's Integrate and Take out and their refusals, Batches newest first with the greens of the last 20), `web/test/e2e_liveintegration.mjs` (the column's keys, Pause and Resume with who paused, Batches…, Integrate refused in its words); to come: the batch's group and places on the page with a batch in work, at a phone's size
-- [ ] AC-194 — `cargo test integrate::agent` (wanted in its own worktree at the candidate, its prompt without a task's words, each tool and its refusals, several returned for one round, the unchanged round once, red rounds spent, no agent, everything returned, a fix picked onto the target that outlives a red round and is published, a fix that needs the batch, each agent's own kept slot), `cargo test integrate::engine` (made with its batch, DONE on green with no agent, the human's keys), `cargo test dispatcher` (its budget counts the analysis alone), `scripts/e2e_integration.py` with `scripts/fake_agent.py` (a red round, a return with its analysis, round 2 green and published), `TM_TEST_REAL_INTEGRATION=1` (a Sonnet agent names the task whose change broke a stand-in check, three short runs)
+- [ ] AC-194 — `cargo test integrate::agent` (wanted in its own worktree at the candidate, its prompt without a task's words and with each task's files, red again the round's own words, each tool and its refusals, several returned for one round, the unchanged round once, red rounds spent, no agent, everything returned, a fix picked onto the target that outlives a red round and is published, a fix picked onto the moved target, one the moved target no longer takes left out, a fix that needs the batch, each agent's own kept slot), `cargo test integrate::engine` (made with its batch, DONE on green with no agent, the human's keys), `cargo test dispatcher` (its budget counts the analysis alone), `scripts/e2e_integration.py` with `scripts/fake_agent.py` (a red round, a return with its analysis, round 2 green and published), `TM_TEST_REAL_INTEGRATION=1` (a Sonnet agent names the task whose change broke a stand-in check, three short runs)
 - [ ] AC-198 — `python3 scripts/tests/test_check_changed.py` (a clean commit's id is its tree, an edit under assume-unchanged is content, the merged commit's clean pass reused when origin/main changed none of its files; its file or a check changed, no pass, a retried pass elsewhere, an edit after the merge, no merge: run again), `python3 scripts/tests/test_land_stages.py` (each stage's done-check run again, Prepare's conflict exit 2, Publish refusing an unchecked commit or a moved target, Queue on and off, Cleanup as the sweep), `cargo test integrate::stages` (Prepare and Verify in a tree of its own before a batch, a red Verify through make, Prepare's conflict, a lost window run again, a task taken out while verified, Cleanup after After), `cargo test dispatcher::walk` (a red Verify after two hours returns with fresh idle/request clocks, used budget kept), `web/test/e2e_liveintegration.mjs` (the seven rows, saved, What runs)
