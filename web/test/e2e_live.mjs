@@ -57,10 +57,10 @@ import { liveIntegrationSlots } from "./e2e_liveintegrationslots.mjs";
 import { liveAuto } from "./e2e_liveauto.mjs";
 import { liveIconKeys } from "./e2e_liveiconkeys.mjs";
 import { SORT_ALONE, BOARD_ALONE, TASKS_ALONE, WAITING_ALONE, POOL_ALONE, SMOKE, LINKS_ALONE, HISTORY_ALONE,
-  AUTO_ALONE, SCHEDULES_ALONE, NOTES_ALONE, ICONS_ALONE, REQUESTS_ALONE, SIGNIN_ALONE, QUEUE_ALONE, INTEGRATION_SLOTS_ALONE, MAIN_ALONE, BACKGROUND_ALONE, ARCHIVED_ALONE, FOLDS_ALONE } from "./e2e_livemodes.mjs";
+  AUTO_ALONE, SCHEDULES_ALONE, NOTES_ALONE, ICONS_ALONE, REQUESTS_ALONE, SIGNIN_ALONE, QUEUE_ALONE, INTEGRATION_SLOTS_ALONE, MAIN_ALONE, BACKGROUND_ALONE, ARCHIVED_ALONE, FOLDS_ALONE, FOLDED_ALONE } from "./e2e_livemodes.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
-const SHORT = SMOKE || LINKS_ALONE || FOLDS_ALONE;   // a few checks, the wide size only
+const SHORT = SMOKE || LINKS_ALONE || FOLDS_ALONE || FOLDED_ALONE;   // a few checks, the wide size only
 const BIN = process.env.TERMINUMD_BIN ?? path.join(ROOT, "terminumd/target/debug/terminumd");
 // this run's: checks in several worktrees at once never meet, and purge() ends only this run's server
 const PORT = await freePort(), SOCKET = own("tm-test-live");
@@ -179,6 +179,7 @@ async function wide(browser, name) {
   await renew();
   if (INTEGRATION_SLOTS_ALONE) { await boards([liveIntegrationSlots]); return ctx; }
   if (FOLDS_ALONE) { await liveFolds(page, live); return ctx; }
+  if (FOLDED_ALONE) { await liveFolded(page, live); return ctx; }
   if (BACKGROUND_ALONE) {
     await boards([liveBackground]);
     return ctx;
