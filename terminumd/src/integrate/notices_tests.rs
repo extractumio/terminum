@@ -94,7 +94,7 @@ fn ac193_a_card_says_which_tasks_it_overlaps_until_it_no_longer_does() {
     let shown = |now: i64| w.s.with(|tx| {
         let tasks = crate::tasks::query::list(tx, &crate::tasks::query::Query { statuses: vec!["IN PROGRESS".into()], ..Default::default() })?;
         let marks = super::super::column::marks(tx, &tasks, now)?;
-        Ok(tasks.iter().filter_map(|t| Some((t.id.clone(), marks.get(&t.key)?["overlaps"].clone()))).collect::<std::collections::HashMap<_, _>>())
+        Ok(tasks.iter().filter_map(|t| Some((t.id.clone(), marks.get(&t.key)?.get("overlaps")?.clone()))).collect::<std::collections::HashMap<_, _>>())
     }).unwrap();
     let marks = shown(20);
     assert_eq!(marks.get(&a.id), Some(&serde_json::json!([b.id])), "as /api/tasks gives its card: {marks:?}");
