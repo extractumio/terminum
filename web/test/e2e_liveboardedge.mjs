@@ -7,7 +7,7 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { boardKit, nap, pressCard, showRun } from "./boardkit.mjs";
+import { boardKit, cardInSight, nap, pressCard, showColumnOf, showRun } from "./boardkit.mjs";
 import { check as report, ranToItsEnd, slack, until } from "./check.mjs";
 
 const AGENT = new Set(["agent_stops_with_task_open", "agent_out_of_limits", "agent_process_dies", "pane_closes"]);
@@ -20,7 +20,8 @@ export async function liveBoardEdge(page, { base, tmux, work, bin, home, app, st
   const st = async (id) => (await j(`/api/tasks/${id}`)).status;
   const colOf = (id) => page.evaluate((s) => document.querySelector(s)?.closest(".col")?.dataset.status ?? null, card(id));
   const isOpen = (sel) => page.evaluate((s) => document.querySelector(s).open, sel);
-  const drag = (id, column) => page.dragAndDrop(card(id), `.col[data-status="${column}"]`);
+  // onto a column, or the panel beside TODO that shows one of them (terminum-kanban.md AC-105)
+  const drag = async (id, column) => page.dragAndDrop(card(id), await page.isVisible(`.col[data-status="${column}"]`) ? `.col[data-status="${column}"]` : ".colpanel");
   const colIds = () => page.evaluate(() => [...document.querySelectorAll('.col[data-status="TODO"] .card')].map((c) => c.dataset.id).join());
   const above = async (a, b) => { const ids = (await colIds()).split(","); return ids.includes(a) && ids.includes(b) && ids.indexOf(a) < ids.indexOf(b); };
   const probes = {
@@ -119,7 +120,7 @@ export async function liveBoardEdge(page, { base, tmux, work, bin, home, app, st
       const a = await make("first opened"), b = await make("second opened"); await open();
       let hold = true;
       await page.route(`**/api/tasks/${a}`, async (r) => { if (hold) { hold = false; await nap(900); } await r.continue(); });
-      await page.click(card(a)); await page.click(card(a)); await nap(50);   // a folded card: shown whole, then opened (AC-159)
+      await showColumnOf(page, a); await page.click(card(a)); await page.click(card(a)); await nap(50);   // a folded card: shown whole, then opened (AC-159)
       await page.evaluate((s) => { document.querySelector(s).click(); document.querySelector(s).click(); }, card(b));
       await nap(1300); await page.unroute(`**/api/tasks/${a}`);
       const title = await page.textContent("#tasktitle");
@@ -352,7 +353,7 @@ ${"z".repeat(400)}
     },
     async two_tabs_same_card() {
       const id = await make("two tabs"); await open();
-      const p2 = await page.context().newPage(); await p2.goto(`${base}/kanban/`); await p2.waitForSelector(card(id));
+      const p2 = await page.context().newPage(); await p2.goto(`${base}/kanban/`); await cardInSight(p2, id);
       await p2.evaluate((t) => fetch(`/api/tasks/${t}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: "FAILED" }) }), id);
       check("a change on one page shows on the other", await until(async () => await colOf(id) === "FAILED"), await colOf(id));
       await p2.close();

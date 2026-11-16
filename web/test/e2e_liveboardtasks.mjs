@@ -2,7 +2,7 @@
 // A task's family and its end on the board, against a real private terminumd (e2e_live.mjs;
 // terminum-kanban.md AC-112, AC-118): subtasks made in a window and shown on demand; DONE for 2 days leaves
 // by itself; a project's own Archived, with Find and Return.
-import { boardKit, intoStore, nap, pressCard } from "./boardkit.mjs";
+import { boardKit, cardInSight, intoStore, nap, pressCard } from "./boardkit.mjs";
 import { check, until } from "./check.mjs";
 import { liveTaskClose } from "./e2e_liveclose.mjs";
 
@@ -22,7 +22,7 @@ export async function liveBoardTasks(page, opts) {
 
   // AC-112: New subtask in its parent's window
   const parent = (await j("/api/tasks", "POST", { title: "the parent", project })).id;
-  await page.waitForSelector(card(parent), { timeout: 8000 });
+  await cardInSight(page, parent, 8000);
   await pressCard(page, parent);
   await page.waitForSelector("#taskbox[open]");
   await page.click('#taskbody .subtasks button[aria-label="New subtask"]');

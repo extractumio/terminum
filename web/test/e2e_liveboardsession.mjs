@@ -100,7 +100,7 @@ export async function liveBoardSessions(page, opts) {
   check("AC-135 a name chooses that project, in the URL", await until(() => new URL(page.url()).searchParams.get("project") === project), page.url());
   check("AC-135 the key says it", /Billing/.test(await page.textContent("#fproject summary")) && await page.isVisible("#fproject summary .pdot"));
   check("AC-135 its menu closes", !(await page.evaluate(() => document.querySelector("#fproject").open)));
-  check("AC-135 the columns hold its tasks", await until(() => page.isVisible(card(made))));
+  check("AC-135 the columns hold its tasks", await until(async () => { await showColumnOf(page, made); return page.isVisible(card(made)); }));
   check("AC-135 and the session list stands first", await page.evaluate(() => { const s = document.querySelector("#nav").getBoundingClientRect(), t = document.querySelector('.col[data-status="TODO"]').getBoundingClientRect(); return s.right <= t.left && s.width >= 240; }));
   const listed = () => page.evaluate(() => [...document.querySelectorAll("#sessions .item")].map((e) => e.dataset.id));
   check("AC-135 Billing's session stands beside Billing", await until(async () => (await listed()).includes(key)), (await listed()).join());

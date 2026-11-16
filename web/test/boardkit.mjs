@@ -31,6 +31,13 @@ export async function showColumnOf(page, id) {
   const status = await page.$eval(`.card[data-id="${id}"]`, (c) => { const col = c.closest(".col"); return col.offsetWidth ? "" : col.dataset.status; }).catch(() => "");
   if (status) await page.click(`#colswitch button[data-status="${status}"]`);
 }
+/** A card in sight: drawn, then its column shown, then visible (`timeout` each wait). */
+export async function cardInSight(page, id, timeout) {
+  const sel = `.card[data-id="${id}"]`;
+  await page.waitForSelector(sel, { state: "attached", timeout });
+  await showColumnOf(page, id);
+  await page.waitForSelector(sel, { timeout });
+}
 /** A press that opens a task's window: a folded card's first press shows it whole (terminum-kanban.md AC-159). What a
  *  press did is read from the page: its window's address, or the card shown whole, pressed once more; a press on a
  *  card the board drew anew meanwhile (its task left TODO) did neither and is made again; any other is an error. */

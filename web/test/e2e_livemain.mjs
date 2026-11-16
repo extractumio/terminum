@@ -5,7 +5,7 @@
 // `node web/test/e2e_live.mjs main chromium`.
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { boardKit, pressRun } from "./boardkit.mjs";
+import { boardKit, cardInSight, pressRun } from "./boardkit.mjs";
 import { check, until } from "./check.mjs";
 
 const FAKE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../scripts/fake_agent.py");
@@ -21,7 +21,7 @@ export async function liveMain(page, live) {
   const [a, b, done] = [await made("first subtask", { parent: main }), await made("second subtask", { parent: main }), await made("done before", { parent: main })];
   await j(`/api/tasks/${done}`, "PATCH", { status: "DONE" });
   await open(`?project=${project}`);
-  await page.waitForSelector(card(main));
+  await cardInSight(page, main);
 
   const run = async (words) => {
     await pressRun(page, main);

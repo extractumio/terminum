@@ -7,7 +7,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { DatabaseSync } from "node:sqlite";
-import { boardKit, intoStore, nap, pressRun } from "./boardkit.mjs";
+import { boardKit, cardInSight, intoStore, nap, pressRun } from "./boardkit.mjs";
 import { check, until } from "./check.mjs";
 
 const FAKE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../scripts/fake_agent.py");
@@ -40,7 +40,7 @@ export async function liveDispatcher(page, opts) {
   const first = await task("Fix the retry loop FINISHES", "Its text.");
   await open();
   await page.goto(`${base}/kanban/?project=${project}`);
-  await page.waitForSelector(card(first));
+  await cardInSight(page, first);
   await pressRun(page, first);
   check("AC-121 a card's play key asks which agent", await until(() => page.$("#runbox[open]")));
   check("AC-121 it stays where it was until one takes it", await status(first) === "TODO");
@@ -276,7 +276,7 @@ export async function liveDispatcher(page, opts) {
   // AC-127 a subagent silent and idle: one request to the main agent, then it is said
   const silentSub = await task("has a subagent SUBAGENT");
   await page.goto(`${base}/kanban/?project=${project}`);
-  await page.waitForSelector(card(silentSub));
+  await cardInSight(page, silentSub);
   // watched from the start: the clock runs 300 times faster, and the session ends minutes of its time after this
   const idleShown = until(async () => /idle: reviewer sub-1/.test(await page.textContent(card(silentSub)).catch(() => "")), 30000);
   await run(silentSub);
@@ -293,7 +293,7 @@ export async function liveDispatcher(page, opts) {
   await run(heavy);
   await hasStatus(heavy, "IN PROGRESS", 15000);
   await page.goto(`${base}/kanban/?project=${project}`);
-  await page.waitForSelector(card(heavy));
+  await cardInSight(page, heavy);
   check("AC-128 the card shows CPU, memory and running time", await until(async () => /CPU \d+% · [\d.]+ GiB · \d+ min/.test(await page.textContent(`${card(heavy)} .cusage`).catch(() => "")), 8000), await page.textContent(card(heavy)));
   check("AC-128 over the warning for 2 walks the agent is told", await said(heavy, "The memory warning", 10000), await history(heavy));
   check("AC-128 an end limit of 0 is off", await status(heavy) === "IN PROGRESS", await status(heavy));
@@ -307,7 +307,7 @@ export async function liveDispatcher(page, opts) {
   await run(tokens);
   await hasStatus(tokens, "IN PROGRESS", 15000);
   await page.goto(`${base}/kanban/?project=${project}`);
-  await page.waitForSelector(card(tokens));
+  await cardInSight(page, tokens);
   check("AC-129 the card shows the tokens its session used", await until(async () => /1,234 tokens/.test(await page.textContent(`${card(tokens)} .cusage`).catch(() => "")), 8000), `${await page.textContent(card(tokens))} | ${await history(tokens)}`);
   check("AC-143 its agent's week and month count it", (await j("/api/tasks/meta")).agents.some((a) => a.spent?.week >= 1234 && a.spent?.month >= 1234));
   await j(`/api/tasks/${tokens}/give-up`, "POST");
@@ -423,7 +423,7 @@ export async function liveDispatcherReal(page, opts) {
   check("AC-121 real Claude Code: the gate reads its box, the hook says it took the prompt", await until(async () => ["IN PROGRESS", "DONE"].includes(await status(t)), 90000), await history(t));
   check("AC-123 real Claude Code: finish_task is DONE", await hasStatus(t, "DONE", 180000), await history(t));
   await page.goto(`${opts.base}/kanban/?project=${project}`);
-  await page.waitForSelector(card(t));
+  await cardInSight(page, t);
   check("AC-128 real Claude Code: the card shows CPU, memory and running time", await until(async () => /CPU \d+% · [\d.]+ GiB · \d+ min/.test(await page.textContent(`${card(t)} .cusage`).catch(() => "")), 60000), await page.textContent(card(t)));
   // the installed `terminum hook` is what a real agent runs: this holds once this build is installed
   if (process.env.TM_TEST_REAL_TOKENS) check("AC-129 real Claude Code: and the tokens of its transcript", await until(async () => /[\d,]+ tokens/.test(await page.textContent(`${card(t)} .cusage`).catch(() => "")), 60000), await page.textContent(card(t)));

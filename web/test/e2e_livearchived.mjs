@@ -3,7 +3,7 @@
 // `node web/test/e2e_live.mjs archived chromium webkit`: desktop and phone; no model calls.
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { boardKit, intoStore } from "./boardkit.mjs";
+import { boardKit, intoStore, showColumnOf } from "./boardkit.mjs";
 import { check, until } from "./check.mjs";
 
 const FAKE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../scripts/fake_agent.py");
@@ -44,7 +44,7 @@ export async function liveArchived(page, opts) {
     tmux("send-keys", "-t", archivedPane, "-l", "More work WORKS");
     tmux("send-keys", "-t", archivedPane, "Enter");
     check(`AC-122 ${was}: a human's prompt restores it in progress`, await until(async () => { const t = await j(`/api/tasks/${archived}`); return t.status === "IN PROGRESS" && !t.archived_at; }));
-    check(`AC-122 ${was}: its card returns without reloading`, await until(() => page.isVisible(card(archived))));
+    check(`AC-122 ${was}: its card returns without reloading`, await until(async () => { await showColumnOf(page, archived); return page.isVisible(card(archived)); }));
   }
   tmux("send-keys", "-t", archivedPane, "-l", `${archived} FINISHES`);
   tmux("send-keys", "-t", archivedPane, "Enter");
