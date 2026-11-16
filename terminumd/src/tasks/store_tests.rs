@@ -363,6 +363,8 @@ fn ac195_a_write_that_waited_for_its_turn_names_its_caller_and_is_kept() {
     // another call's transaction, held 150 ms
     let holder = { let s = s.clone(); std::thread::spawn(move || { let turn = s.state.lock(); held.send(()).unwrap(); std::thread::sleep(Duration::from_millis(150)); drop(turn) }) };
     go.recv().unwrap();
+    // the store's opening, slow on a loaded machine, may have said a line: its throttle would hold back the one looked for
+    s.slow.reset();
     let (lines, guard) = crate::testutil::logs();
     let made = s.with(|tx| crate::tasks::ops::create(tx, HUMAN, crate::tasks::ops::NewTask { title: "waited".into(), ..Default::default() }, 1));
     drop(guard);
