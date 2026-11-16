@@ -192,7 +192,7 @@ def prepare(tree, fetch=True, say=print):
     done when the target is in HEAD."""
     if git("status", "--porcelain", cwd=tree).stdout.strip():
         raise Stop(1, f"{tree} has uncommitted changes: commit them first")
-    # trees of one repository fetch at once (the queue's Verifies, the engine, agents): a ref's lock is tried again
+    # trees of one repository fetch at once (the queue's Verifies, the engine, agents): a held ref is waited for
     if fetch and (failed := fetched(tree, FETCH_MOST_S)):
         raise Stop(1, f"git fetch origin: {failed}")
     if has_base(tree):

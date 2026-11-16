@@ -7,7 +7,7 @@
 
 use std::path::Path;
 
-use rusqlite::{OptionalExtension, Transaction};
+use rusqlite::Transaction;
 
 use super::engine::{place, window, worktree, Window, OVER};
 use super::git;
@@ -21,7 +21,6 @@ use crate::tasks::store::{Store, DISPATCHER};
 /// How many tasks' Prepare and Verify run at once on the machine, over all projects (§9 Limits). Their lines pace
 /// their heavy steps themselves (this repository's: a heavy-build slot for each cargo step, one of two live-check
 /// slots for each real-program one), so beside two long runs a third lets a short one, a pass reused, through.
-/// A new one starts a beat, so their first fetches do not meet.
 pub const VERIFY_MOST: usize = 3;
 
 /// Prepare and Verify as one window that says which failed: Prepare's 2 stays 2 (a conflict), any other failure of
@@ -60,9 +59,9 @@ pub fn verify_step(store: &Store, runner: &dyn Runner, home: &Path, now: i64) ->
                 coalesce(i.check_minutes, 90)
             FROM integration_verifies v JOIN tasks t ON t.id = v.task LEFT JOIN project_integration i ON i.project = v.project ORDER BY v.started", [],
             |r| Ok(Run { task: r.get(0)?, id: r.get(1)?, number: r.get(2)?, project: r.get(3)?, commit: r.get(4)?, pane: r.get(5)?, started: r.get(6)?, wanted: r.get(7)?, minutes: r.get(8)? }))?;
-        let next: Option<(String, String, String)> = tx.query_row("SELECT e.task, e.project, e.commit_sha FROM integration_entries e JOIN project_integration i ON i.project = e.project
-            WHERE e.stage = 'verifying' AND i.is_on = 1 AND NOT EXISTS (SELECT 1 FROM integration_verifies v WHERE v.task = e.task) ORDER BY e.queued_at LIMIT 1",
-            [], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).optional().map_err(sql)?;
+        let next: Vec<(String, String, String)> = ops::rows(tx, "SELECT e.task, e.project, e.commit_sha FROM integration_entries e JOIN project_integration i ON i.project = e.project
+            WHERE e.stage = 'verifying' AND i.is_on = 1 AND NOT EXISTS (SELECT 1 FROM integration_verifies v WHERE v.task = e.task) ORDER BY e.queued_at LIMIT ?1",
+            [VERIFY_MOST as i64], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
         Ok((runs, next))
     })?;
     let mut running = 0;
@@ -77,10 +76,10 @@ pub fn verify_step(store: &Store, runner: &dyn Runner, home: &Path, now: i64) ->
             running += 1;
         }
     }
-    match next {
-        Some((task, project, commit)) if running < VERIFY_MOST => start(store, runner, home, &task, &project, &commit, now),
-        _ => Ok(()),
+    for (task, project, commit) in next.into_iter().take(VERIFY_MOST.saturating_sub(running)) {
+        start(store, runner, home, &task, &project, &commit, now)?;
     }
+    Ok(())
 }
 
 /// The task's window followed: whether it still runs. Ended, the task is ready for a batch, or back to its agent.
@@ -101,7 +100,8 @@ fn follow(store: &Store, runner: &dyn Runner, home: &Path, run: &Run, now: i64) 
         Window::Ended(code) => code,
     };
     let tree = integration::verify_tree_in(home, &run.project, run.number);
-    let (notes, skipped) = (retry_notes::read(&tree), (code == 0).then(|| retry_notes::skipped(&tree)).flatten());
+    let notes = retry_notes::read(&tree);
+    let skipped = retry_notes::skipped(&tree).filter(|_| code == 0);
     let (id, log) = (&run.id, log.display());
     store.with(|tx| {
         if let Some(notes) = &notes {

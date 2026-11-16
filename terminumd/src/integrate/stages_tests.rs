@@ -2,7 +2,7 @@
 //! Prepare and Verify before a batch, and Cleanup after one (terminum-integration.md AC-198), on real repositories;
 //! the windows stood in for by `sh`.
 use super::*;
-use crate::integrate::engine::tests::{batch, go, on_origin, queued_with, status, world, Sh};
+use crate::integrate::engine::tests::{batch, go, on_origin, queued_with, status, world, Sh, World};
 use crate::tasks::integration::Settings;
 
 const RETRY: &str = "mkdir -p .checks; printf '%s\\n' 'PASSED ONLY ON RETRY, the first run red: critical: name each with its open task' 'critical first run: expected width 80, got 79' > .checks/retried";
@@ -163,34 +163,40 @@ fn started(r: &Sh) -> Vec<String> {
     r.lines.lock().unwrap().iter().filter_map(|l| l.split(':').next().filter(|s| s.starts_with("verify-")).map(String::from)).collect()
 }
 
-fn verifying(w: &crate::integrate::engine::tests::World) -> i64 {
+fn verifying(w: &World) -> i64 {
     w.s.with(|tx| tx.query_row("SELECT count(*) FROM integration_verifies WHERE pane IS NOT NULL", [], |r| r.get(0)).map_err(sql)).unwrap()
 }
 
+/// A project whose Verify passes, its windows stood in for by ones that run until ended.
+fn verified(name: &str) -> (World, Sh) {
+    (world(name, Settings { verify: "true".into(), ..Settings::default() }), Sh { hang: true, ..Default::default() })
+}
+
+fn said(w: &World, id: &str) -> String {
+    w.s.with(|tx| ops::history(tx, id)).unwrap().to_string()
+}
+
 #[test]
-fn ac198_three_tasks_verify_at_once_one_started_a_beat_and_a_short_one_never_waits_for_long_ones() {
-    let w = world("is-three", Settings { verify: "true".into(), ..Settings::default() });
+fn ac198_three_tasks_verify_at_once_the_oldest_first_and_a_short_one_passes_beside_long_ones() {
+    let (w, r) = verified("is-three");
     let ids: Vec<String> = (1..=4).map(|n| queued_with(&w, n, &format!("f{n}.txt"), "x\n", true)).collect();
-    let r = Sh { hang: true, ..Default::default() };
     go(&w, &r, 1);
-    assert_eq!(started(&r), ["verify-1"], "one a beat, the oldest queued first");
-    go(&w, &r, 4);
-    assert_eq!(started(&r), ["verify-1", "verify-2", "verify-3"], "three at once, the fourth waits");
+    assert_eq!(started(&r), ["verify-1", "verify-2", "verify-3"], "three at once, the oldest queued first");
+    go(&w, &r, 3);
+    assert_eq!(started(&r), ["verify-1", "verify-2", "verify-3"], "the fourth waits");
     assert_eq!(verifying(&w), 3);
     end(&r, "verify-3", 0);   // a pass reused: it ends while the two before it still run
     go(&w, &r, 1);
     assert_eq!(started(&r), ["verify-1", "verify-2", "verify-3", "verify-4"], "the fourth starts in the beat the third ends");
-    let stage: Option<String> = w.s.with(|tx| tx.query_row("SELECT stage FROM integration_entries e JOIN tasks t ON t.id = e.task WHERE t.slug = ?1", [&ids[2]], |r| r.get(0)).map_err(sql)).unwrap_or(None);
-    assert_eq!(stage, None, "{} is ready for a batch at once", ids[2]);
+    assert!(said(&w, &ids[2]).contains("passed on"), "{} is ready for a batch at once", ids[2]);
     assert!(r.ran.lock().unwrap().iter().filter(|(h, _)| ["%1", "%2"].contains(&h.as_str())).all(|(_, (st, _))| st.is_none()), "the long ones run on");
     assert_eq!(verifying(&w), 3);
 }
 
 #[test]
 fn ac198_a_red_verify_beside_another_of_the_same_file_returns_only_its_own_task() {
-    let w = world("is-beside", Settings { verify: "true".into(), ..Settings::default() });
+    let (w, r) = verified("is-beside");
     let (a, b) = (queued_with(&w, 1, "b.txt", "ours\n", true), queued_with(&w, 2, "b.txt", "theirs\n", true));
-    let r = Sh { hang: true, ..Default::default() };
     go(&w, &r, 2);
     assert_eq!(verifying(&w), 2, "two Verifies of overlapping tasks run at once");
     end(&r, "verify-2", 1);
@@ -207,30 +213,27 @@ fn ac198_a_red_verify_beside_another_of_the_same_file_returns_only_its_own_task(
 
 #[test]
 fn ac198_a_restart_follows_two_running_verifies_and_starts_lost_ones_again_once() {
-    let w = world("is-restart", Settings { verify: "true".into(), ..Settings::default() });
+    let (w, r) = verified("is-restart");
     let (a, b) = (queued_with(&w, 1, "b.txt", "b\n", true), queued_with(&w, 2, "c.txt", "c\n", true));
-    let r = Sh { hang: true, ..Default::default() };
     go(&w, &r, 2);
     // terminumd started again, terminum's tmux kept: the same windows, followed where they are
     go(&w, &r, 3);
     assert_eq!(started(&r), ["verify-1", "verify-2"], "neither started twice");
     assert_eq!(verifying(&w), 2);
-    // terminum's tmux gone with the stop: each lost window is started again from its commit, one a beat
+    // terminum's tmux gone with the stop: each lost window is started again from its commit
     let fresh = Sh { hang: true, ..Default::default() };
-    go(&w, &fresh, 1);
-    go(&w, &fresh, 3);
+    go(&w, &fresh, 4);
     assert_eq!(started(&fresh), ["verify-1", "verify-2"], "each started again once");
     end(&fresh, "verify-1", 0);
     end(&fresh, "verify-2", 0);
     go(&w, &fresh, 4);
     assert_eq!((status(&w, &a), status(&w, &b)), ("DONE".to_string(), "DONE".to_string()), "both passed close together: one batch");
-    let said = w.s.with(|tx| ops::history(tx, &a)).unwrap().to_string();
-    assert!(said.contains(&format!("{a} is in batch 1 with {b}")), "{said}");
+    assert!(said(&w, &a).contains(&format!("{a} is in batch 1 with {b}")), "{}", said(&w, &a));
 }
 
 #[test]
 fn ac198_three_at_once_counts_every_project_of_the_machine() {
-    let w = world("is-projects", Settings { verify: "true".into(), ..Settings::default() });
+    let (w, r) = verified("is-projects");
     let ids: Vec<String> = (1..=4).map(|n| queued_with(&w, n, &format!("f{n}.txt"), "x\n", true)).collect();
     w.s.with(|tx| {
         tx.execute("INSERT INTO projects (id, name, color, dir, place) SELECT 'web', 'web', 2, dir, 1 FROM projects WHERE id = 'api'", []).map_err(sql)?;
@@ -240,7 +243,6 @@ fn ac198_three_at_once_counts_every_project_of_the_machine() {
         }
         Ok(())
     }).unwrap();
-    let r = Sh { hang: true, ..Default::default() };
     go(&w, &r, 6);
     assert_eq!(started(&r).len(), 3, "two of api's and one of web's: {:?}", started(&r));
 }
@@ -255,13 +257,12 @@ fn ac198_a_verify_over_its_time_with_its_waits_counted_is_red() {
     assert_eq!(status(&w, &a), ops::INTEGRATION, "five minutes, a slot's wait among them: still its time");
     verify_step(&w.s, &r, &home, 101 + 5 * 60).unwrap();
     assert_eq!(status(&w, &a), "IN PROGRESS");
-    let said = w.s.with(|tx| ops::history(tx, &a)).unwrap().to_string();
-    assert!(said.contains("returned: red check: its Prepare or Verify ran over 5 minutes"), "{said}");
+    assert!(said(&w, &a).contains("returned: red check: its Prepare or Verify ran over 5 minutes"), "{}", said(&w, &a));
 }
 
 #[test]
 fn ac198_a_run_whose_window_is_gone_and_tree_left_is_removed_and_started_again() {
-    let w = world("is-left", Settings { verify: "true".into(), ..Settings::default() });
+    let (w, _) = verified("is-left");
     let a = queued_with(&w, 1, "b.txt", "b\n", true);
     // as a lost window leaves it when git could not remove its tree then: no window, the row kept
     w.s.with(|tx| tx.execute("INSERT INTO integration_verifies (task, project, commit_sha, pane, tree, started)
@@ -279,7 +280,7 @@ fn ac146_a_verify_that_skipped_timed_checks_passes_and_says_so_to_its_task() {
         let w = world(&format!("is-skip-{exit}"), Settings { verify: format!("{skip}; exit {exit}"), ..Settings::default() });
         let a = queued_with(&w, 1, "b.txt", "b\n", true);
         go(&w, &Sh::default(), 3);
-        let said = w.s.with(|tx| ops::history(tx, &a)).unwrap().to_string();
+        let said = said(&w, &a);
         let told = said.contains("passed without the timed checks a busy machine skipped (AC-146)") && said.contains("SKIPPED timed checks, the machine busy");
         assert_eq!(told, exit == 0, "said on a pass, a red one says its own: {said}");
     }

@@ -142,15 +142,19 @@ def ours(cwd):
         return False
 
 
+LOCK_WAIT_MS = 5000
+
+
 def fetched(cwd, timeout):
     """`git fetch origin`: None, or the failure's words. It never asks, ends by SIGTERM at `timeout`
-    (a kill could leave a ref's lock) and tries again when a parallel fetch held a ref's lock."""
+    (a kill could leave a ref's lock), waits up to LOCK_WAIT_MS for a ref a parallel fetch of the same
+    repository holds (its trees, the integration queue's) and tries again once when it still could not."""
     env = dict(os.environ, GIT_TERMINAL_PROMPT="0", LC_ALL="C")  # C: the lock's words below
     if "GIT_SSH_COMMAND" not in env and git("config", "core.sshCommand", cwd=cwd, check=False).returncode != 0:
         env["GIT_SSH_COMMAND"] = "ssh -o BatchMode=yes -o ConnectTimeout=5"
     words = ""
     for _ in range(2):
-        fetch = subprocess.Popen(["git", "fetch", "--quiet", "origin"], cwd=cwd, env=env, text=True,
+        fetch = subprocess.Popen(["git", "-c", f"core.filesRefLockTimeout={LOCK_WAIT_MS}", "fetch", "--quiet", "origin"], cwd=cwd, env=env, text=True,
                                  stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
         try:
             words = fetch.communicate(timeout=timeout)[1].strip()

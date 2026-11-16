@@ -38,7 +38,7 @@ pub(super) fn clear(tree: &Path) -> Result<(), String> {
         }
         Ok(())
     };
-    clear().map_err(|e| format!("Retry diagnostics could not be cleared: {e}"))
+    clear().map_err(|e| format!("Retry diagnostics or skipped checks could not be cleared: {e}"))
 }
 
 fn read_file(tree: &Path, (name, what): (&CStr, &str)) -> io::Result<Option<String>> {
