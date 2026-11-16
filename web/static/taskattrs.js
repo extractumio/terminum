@@ -150,10 +150,13 @@ function picker({ name, project, left, done, pick }) {
       mark(tasks.length ? 0 : -1);
     } catch (e) { if (mine === asked) note.textContent = e.message; }
   }
-  field.addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(search, 150); });
+  /** The search for what is typed now, its answer awaited by Enter: a pick never takes a row of an older search. */
+  let current = null;
+  const now = () => { clearTimeout(timer); timer = 0; current = search(); return current; };
+  field.addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(now, 150); });
   field.addEventListener("keydown", (e) => {
     if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); if (shown.length) mark((active + (e.key === "ArrowDown" ? 1 : shown.length - 1)) % shown.length); }
-    else if (e.key === "Enter") { e.preventDefault(); e.stopPropagation(); if (shown[active]) take(shown[active]); }
+    else if (e.key === "Enter") { e.preventDefault(); e.stopPropagation(); (timer ? now() : current).then(() => { if (shown[active]) take(shown[active]); }); }
     else if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); end(); }
   });
   const close = iconButton("icon", "x", "Close the search", "Close the search (Esc)", end);
@@ -161,6 +164,6 @@ function picker({ name, project, left, done, pick }) {
   line.append(field, close);
   box.append(line, found, note);
   requestAnimationFrame(() => field.focus());
-  search();
+  now();
   return box;
 }
