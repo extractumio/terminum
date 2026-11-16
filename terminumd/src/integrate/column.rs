@@ -62,8 +62,9 @@ pub fn state_words(tx: &Transaction, b: &Batch) -> Result<String, String> {
 
 /// What a card says of the queue, by task key: the batch's line on its integration task's card ("batch 7 ·
 /// checking · 12 min"), "in batch 7", a place, "verifying", "waits for API-12"; a task back in work, "returned: …".
-/// With the batch's number, so the page draws a batch's cards as one group, and the human's keys on the card (AC-193):
-/// "integrate" on a task in work of a project that integrates, "take-out" on a queued one, a deciding batch's own.
+/// With the batch's number, so the page draws a batch's cards as one group; a task in work, the tasks it overlaps;
+/// and the human's keys on the card (AC-193): "integrate" on a task in work of a project that integrates, "take-out" on
+/// a queued one, a deciding batch's own.
 pub fn marks(tx: &Transaction, tasks: &[Task], now: i64) -> Result<HashMap<String, Value>, String> {
     let mut out: HashMap<String, Value> = HashMap::new();
     // a batch's integration task keeps its head's line where it waits for its agent or the human
@@ -106,6 +107,13 @@ pub fn marks(tx: &Transaction, tasks: &[Task], now: i64) -> Result<HashMap<Strin
             _ => continue,
         };
         out.insert(key, json!({"mark": words}));
+    }
+    // a task in work whose commits overlap others' says each (AC-193), as the last walk found it
+    for key in working {
+        let ids = super::notices::overlaps_of(key, now);
+        if !ids.is_empty() {
+            out.entry(key.to_string()).or_insert_with(|| json!({}))["overlaps"] = json!(ids);
+        }
     }
     // Integrate and Take out, where terminumd would take them: never a batch's own task, which ends with its batch
     let on: HashSet<String> = ops::rows(tx, "SELECT project FROM project_integration WHERE is_on = 1", [], |r| r.get(0))?.into_iter().collect();

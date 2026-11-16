@@ -5,8 +5,8 @@
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import { dropCard } from "./boardkit.mjs";
 import { check, until } from "./check.mjs";
+import { cardInSight, dropCard, intoStore } from "./boardkit.mjs";
 
 const git = (dir, ...args) => execFileSync("git", ["-C", dir, "-c", "user.name=t", "-c", "user.email=t@example.com", ...args], { stdio: "pipe" });
 
@@ -102,11 +102,12 @@ export async function integrationChecks(page, { j, fresh, work, pressAt, shots }
 }
 
 /** AC-193: the INTEGRATION column where a shown project integrates: its head's keys, Pause and Resume said where
- *  pressed, Batches…, a human's Integrate refused in its words in the task's window, then the card's keys and drops
- *  (cardKeyChecks); the board comes back after. */
-export async function columnChecks(page, { j, gitty, work, newPane, keyOf }) {
+ *  pressed, Batches…, a human's Integrate refused in its words in the task's window, overlaps (overlapChecks), then the
+ *  card's keys and drops (cardKeyChecks); the board comes back after. */
+export async function columnChecks(page, { j, gitty, repo, newPane, keyOf, app, shots }) {
   const back = page.url(), col = '.col[data-status="INTEGRATION"]';
   await j(`/api/task-projects/${gitty}/integration`, "PUT", { on: true });   // no Check: nothing runs while it is looked at
+  const overlapping = await overlapTrees({ j, gitty, repo, newPane, keyOf, app });   // the walk compares them meanwhile
   await page.goto(new URL(`/kanban/?project=${gitty}`, back).href);
   const tab = '#colswitch button[data-status="INTEGRATION"]';   // wider than a phone, its tab shows it in the panel (terminum-kanban.md AC-105)
   await page.waitForSelector(`${tab}:not([hidden])`, { state: "attached", timeout: 8000 });
@@ -132,14 +133,15 @@ export async function columnChecks(page, { j, gitty, work, newPane, keyOf }) {
   await page.click("#taskbox[open] .queuekeys button");
   check("AC-193 Integrate on a task with no session's folder is refused in integrate's words, in its window",
     await until(async () => (await page.textContent("#taskbox[open] .queuekeys .error")) === "This session has no folder on this Mac: name the commit."));
-  await cardKeyChecks(page, { j, gitty, t, base: back, work, newPane, keyOf });
+  await overlapChecks(page, { j, gitty, ids: overlapping, back, shots });
+  await cardKeyChecks(page, { j, gitty, t, base: back, repo, newPane, keyOf });
   await page.goto(back);
 }
 
 /** AC-193: IN PROGRESS task `t` of `gitty` (integration on, no Check) queued and taken out by its card's menu and by
  *  drops on the columns' tabs, on the real page: refused with no session's folder, in a toast; with its session in
  *  the project's checkout at a commit not in origin/main, queued. The queue stays paused: no batch starts. */
-async function cardKeyChecks(page, { j, gitty, t, base, work, newPane, keyOf }) {
+async function cardKeyChecks(page, { j, gitty, t, base, repo, newPane, keyOf }) {
   const card = `.card[data-id="${t}"]`, tab = (s) => `#colswitch button[data-status="${s}"]`;
   const status = async () => (await j(`/api/tasks/${t}`)).status;
   await j(`/api/integration/project/${gitty}/pause`, "POST", { paused: true });
@@ -166,7 +168,6 @@ async function cardKeyChecks(page, { j, gitty, t, base, work, newPane, keyOf }) 
     await drop(tab("INTEGRATION")) && await toast("This session has no folder on this Mac: name the commit.") && await status() === "IN PROGRESS");
 
   // its session in the project's checkout, one commit past origin/main
-  const repo = path.join(work, "integration-repo");
   fs.writeFileSync(path.join(repo, "card.txt"), "card\n");
   git(repo, "add", "card.txt");
   git(repo, "commit", "-q", "-m", "card");
@@ -186,7 +187,7 @@ async function cardKeyChecks(page, { j, gitty, t, base, work, newPane, keyOf }) 
 
   // a red batch: its card holds the batch's keys; its integration task keeps its head's line where it waits
   // the target fetched from an origin of the test's own, as a batch's build fetches it first
-  const origin = path.join(work, "integration-origin.git");
+  const origin = path.join(path.dirname(repo), "integration-origin.git");
   execFileSync("git", ["init", "-q", "--bare", origin]);
   git(repo, "remote", "add", "origin", origin);
   git(repo, "push", "-q", "origin", "refs/remotes/origin/main:refs/heads/main");
@@ -211,6 +212,40 @@ async function cardKeyChecks(page, { j, gitty, t, base, work, newPane, keyOf }) 
   check("AC-193 Return all from the card sends its task back to work, said in a toast",
     await until(async () => await status() === "IN PROGRESS") && await until(async () => /went back to their agents/.test(await page.textContent("#toast").catch(() => ""))));
   await j(`/api/task-projects/${gitty}/integration`, "PUT", { on: true });
+
+/** Two tasks IN PROGRESS of `gitty`, each with a session in a worktree of `repo` whose commit changes retry.txt its
+ *  own way: their commits do not merge (AC-192). Their IDs. */
+async function overlapTrees({ j, gitty, repo, newPane, keyOf, app }) {
+  const stamp = Date.now().toString(36), ids = [];
+  for (const side of ["a", "b"]) {
+    const dir = path.join(path.dirname(repo), `overlap-${side}-${stamp}`);
+    git(repo, "worktree", "add", "-q", "--detach", dir, "origin/main");
+    fs.writeFileSync(path.join(dir, "retry.txt"), `${side}\n`);
+    git(dir, "add", "retry.txt");
+    git(dir, "commit", "-q", "-m", `side ${side}`);
+    const id = (await j("/api/tasks", "POST", { title: `overlap ${side}`, project: gitty })).id;
+    await j(`/api/tasks/${id}`, "PATCH", { status: "IN PROGRESS" });
+    const key = await keyOf(newPane(`overlap-${side}`, dir));
+    intoStore(app, `UPDATE tasks SET session_key = '${key}' WHERE slug = '${id}' AND project = '${gitty}'`);   // its session, as a run links it
+    ids.push(id);
+  }
+  return ids;
+}
+
+/** AC-193: each card of the pair says "overlaps <the other>" once a walk (each minute) found it; a press opens it. */
+async function overlapChecks(page, { j, gitty, ids: [a, b], back, shots }) {
+  const said = async (id) => JSON.stringify((await j(`/api/tasks?project=${gitty}`)).tasks?.find((t) => t.id === id)?.queue?.overlaps);
+  check("AC-193 /api/tasks gives each card of an overlapping pair the other's ID",
+    await until(async () => await said(a) === JSON.stringify([b]), 90000) && await said(b) === JSON.stringify([a]), `${await said(a)} ${await said(b)}`);
+  await page.goto(new URL(`/kanban/?project=${gitty}`, back).href);
+  await cardInSight(page, a, 8000);
+  const mark = `.card[data-id="${a}"] .qoverlap`;
+  if (await page.$(`.card[data-id="${a}"].compact:not(.open)`)) await page.click(`.card[data-id="${a}"]`);   // a folded card shows it whole first (AC-159)
+  check("AC-193 the card in IN PROGRESS says which task it overlaps", await until(async () => (await page.textContent(mark).catch(() => "")) === `overlaps ${b}`));
+  if (shots) await page.locator(`.card[data-id="${a}"]`).screenshot({ path: `${shots}overlaps-${page.context().browser()?.browserType().name()}.png` });   // its look (docs/UI-GUIDELINES.md §6)
+  await page.click(mark);
+  check("AC-193 a press on the mark opens that task's window",
+    await until(async () => new URL(page.url()).pathname.endsWith(`/${b}`) && await page.isVisible("#taskbox[open]")), page.url());
 }
 
 /** AC-186: play the browser's substitutions on the real fields; paste, drop, IME and prose keep their text. */
