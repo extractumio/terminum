@@ -110,6 +110,44 @@ async fn ac90_an_agents_own_turns_and_a_subagents_prompts_are_no_ones_messages()
 }
 
 #[tokio::test]
+async fn ac147_a_message_keeps_its_session_s_tasks_and_a_manager_s_is_the_manager_s() {
+    let (root, app) = crate::testutil::app_with_tasks("hook-message-who");
+    let server = app.tmux.local.clone();
+    server.set_panes(std::collections::HashMap::from([("%1".to_string(), "main".to_string())]));
+    let key = server.key("%1");
+    app.tasks.with(|tx| {
+        use crate::tasks::ops::{self, NewTask};
+        crate::tasks::slugs::fill(tx)?;
+        for (title, status) in [("here", "IN PROGRESS"), ("done here", "DONE"), ("elsewhere", "IN PROGRESS")] {
+            let id = ops::create(tx, crate::tasks::store::HUMAN, NewTask { title: title.into(), text: "body".into(), ..Default::default() }, 1)?.id;
+            let session = if title == "elsewhere" { "tmux:local:other:%9" } else { key.as_str() };
+            tx.execute("UPDATE tasks SET session_key = ?1, status = ?2 WHERE slug = ?3", (session, status, &id)).map_err(ops::sql)?;
+        }
+        crate::tasks::users::agent_named(tx, crate::inputs::MANAGER.into(), "Manager").map(drop)
+    }).unwrap();
+    let prompt = |p: &str| json!({"agent": "claude", "event": "UserPromptSubmit", "pane": "%1", "session": "s1", "cwd": "/Users/alex/api", "prompt": p});
+    let kept = |n: usize| app.tasks.with(|tx| crate::messages::nth_of_folder(tx, "local", "/Users/alex/api", n)).unwrap();
+    let wait = |n: usize| async move {
+        for _ in 0..300 {
+            if kept(0).0 >= n { break }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+        kept(0).1.unwrap()
+    };
+    // a busy agent says a prompt at its turn's end: what a manager typed waits for it, blanks aside, once
+    app.sent.manager_typed(&key, "review the diff\nand say what is left");
+    app.sent.manager_typed("tmux:local:other:%9", "go on");
+    hook_on(app.clone(), Some(server.clone()), prompt("go on")).await;
+    let first = wait(1).await;
+    assert_eq!((first["sender"].as_str(), first["tasks"].clone()), (Some("human"), json!(["TASK-1"])), "typed into another pane: the human's here; its tasks not done");
+    hook_on(app.clone(), Some(server.clone()), prompt("review the diff\n and say what is left")).await;
+    assert_eq!(wait(2).await["sender"], "manager");
+    assert!(!app.sent.take_manager_typed(&key, "review the diff\nand say what is left"), "once: the same words typed again are the human's");
+    drop(app);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[tokio::test]
 async fn ac92_a_session_that_takes_a_message_goes_to_its_projects_top() {
     let (root, app) = crate::testutil::app("hook-to-top");
     let server = app.tmux.local.clone();

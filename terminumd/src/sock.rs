@@ -176,7 +176,8 @@ pub async fn hook_on(app: Shared, server: Option<std::sync::Arc<crate::tmux::ser
         tokio::spawn(async move { crate::page::projects::raise(&app, &key).await });
     }
     if let (Some(prompt), Some(cwd)) = (prompt, ev["cwd"].as_str()) {
-        let sender = if typed { crate::tasks::store::DISPATCHER } else { crate::tasks::store::HUMAN };
+        // who typed it: Dispatcher's gate, a project's manager (send_to_session), else the human (AC-147)
+        let sender = if typed { crate::tasks::store::DISPATCHER } else if app.sent.take_manager_typed(&key, prompt) { crate::inputs::MANAGER } else { crate::tasks::store::HUMAN };
         let (prompt, cwd, info) = (prompt.to_string(), cwd.to_string(), json!({"agent": ev["agent"], "via": "hook", "sender": sender}));
         let (app, key, host) = (app.clone(), key.clone(), server.name.clone());
         tokio::spawn(async move { crate::page::sent::keep(&app, &host, &cwd, &key, &prompt, info).await });

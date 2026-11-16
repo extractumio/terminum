@@ -34,6 +34,8 @@ pub struct Message {
     pub title: Option<String>,
     pub project: Option<String>,
     pub project_name: Option<String>,
+    /// the IDs of the tasks not done whose session the pane was (`open_tasks`), comma-separated
+    pub tasks: Option<String>,
     pub text: String,
 }
 
@@ -56,18 +58,18 @@ pub(crate) fn sql(e: rusqlite::Error) -> String {
 /// The columns `item` reads, in its order, of the messages as `m` (`m.` or ""); the last, the local day it
 /// was sent (as the day strip counts).
 pub fn columns(m: &str) -> String {
-    let cols = ["id", "at", "sender", "via", "agent", "pane", "line", "host", "cwd", "title", "project", "project_name", "text"];
+    let cols = ["id", "at", "sender", "via", "agent", "pane", "line", "host", "cwd", "title", "project", "project_name", "text", "tasks"];
     format!("{}, date({m}at / 1000, 'unixepoch', 'localtime')", cols.map(|c| format!("{m}{c}")).join(", "))
 }
 /// How many `columns` are.
-pub const N_COLUMNS: usize = 14;
+pub const N_COLUMNS: usize = 15;
 
 /// A row of `columns` as the page reads a message: `at` in unix seconds (AC-90's shape), `key` its pane.
 pub fn item(r: &rusqlite::Row) -> rusqlite::Result<Value> {
     let at: i64 = r.get(1)?;
     let mut v = json!({"id": r.get::<_, i64>(0)?, "at": at / 1000, "ms": at, "sender": r.get::<_, String>(2)?, "via": r.get::<_, String>(3)?,
                        "key": r.get::<_, String>(5)?, "host": r.get::<_, String>(7)?, "path": r.get::<_, String>(8)?, "text": r.get::<_, String>(12)?,
-                       "day": r.get::<_, String>(13)?});
+                       "day": r.get::<_, String>(14)?});
     for (i, k) in [(4, "agent"), (9, "title"), (10, "project"), (11, "project_name")] {
         if let Some(s) = r.get::<_, Option<String>>(i)?.filter(|s| !s.is_empty()) {
             v[k] = json!(s);
@@ -76,13 +78,16 @@ pub fn item(r: &rusqlite::Row) -> rusqlite::Result<Value> {
     if let Some(line) = r.get::<_, Option<i64>>(6)? {
         v["line"] = json!(line);
     }
+    if let Some(tasks) = r.get::<_, Option<String>>(13)?.filter(|t| !t.is_empty()) {
+        v["tasks"] = json!(tasks.split(',').collect::<Vec<_>>());
+    }
     Ok(v)
 }
 
 /// Keeps `m`; its id.
 pub fn insert(tx: &Transaction, m: &Message) -> Result<i64, String> {
-    tx.prepare_cached("INSERT INTO messages (at, sender, via, agent, pane, line, host, cwd, title, project, project_name, text) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)")
-        .and_then(|mut st| st.execute(rusqlite::params![m.at, m.sender, m.via, m.agent, m.pane, m.line, m.host, m.cwd, m.title, m.project, m.project_name, m.text]))
+    tx.prepare_cached("INSERT INTO messages (at, sender, via, agent, pane, line, host, cwd, title, project, project_name, text, tasks) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)")
+        .and_then(|mut st| st.execute(rusqlite::params![m.at, m.sender, m.via, m.agent, m.pane, m.line, m.host, m.cwd, m.title, m.project, m.project_name, m.text, m.tasks]))
         .map_err(sql)?;
     Ok(tx.last_insert_rowid())
 }

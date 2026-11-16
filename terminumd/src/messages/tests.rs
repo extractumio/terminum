@@ -147,3 +147,30 @@ fn ac90_an_agents_own_turns_are_told_apart_and_the_trim_takes_those_kept_before(
     let f = Filter { q: "agent".into(), ..Default::default() };
     assert_eq!(s.with(|tx| page(tx, &f, true, None)).unwrap()["total"], 0, "the search forgets them too");
 }
+
+#[test]
+fn ac151_a_message_s_tasks_its_agent_and_the_quick_filters_counts() {
+    let s = store("messages-facets");
+    let mut ms = vec![msg(1_000, "k1", "ls"), msg(2_000, "k1", "fix the board"), msg(3_000, "k2", "TERM-12: do it"), msg(4_000, "k2", "go on"), msg(5_000, "k3", "review it")];
+    ms[1].agent = Some("claude".into());
+    (ms[2].agent, ms[2].sender, ms[2].tasks) = (Some("codex".into()), DISPATCHER.into(), Some("TERM-12,S_TERM-3".into()));
+    (ms[3].agent, ms[3].tasks) = (Some("codex".into()), Some("TERM-12".into()));
+    (ms[4].agent, ms[4].sender) = (Some("claude".into()), crate::inputs::MANAGER.into());
+    s.with(|tx| { tx.execute("INSERT INTO users (id, kind, name, role) VALUES ('manager', 'agent', 'manager', 'agent')", []).map_err(sql)?; Ok(()) }).unwrap();
+    put(&s, &ms);
+    let got = |f: Filter| s.with(|tx| page(tx, &f, false, None)).unwrap();
+    let all = got(Filter::default());
+    assert_eq!((all["items"][2]["tasks"].clone(), all["items"][4].get("tasks")), (serde_json::json!(["TERM-12", "S_TERM-3"]), None), "the tasks it was sent for; none: no field");
+    assert_eq!(texts(&got(Filter { task: Some("TERM-12".into()), ..Default::default() })), ["go on", "TERM-12: do it"]);
+    assert_eq!(texts(&got(Filter { task: Some("TERM-3".into()), ..Default::default() })).len(), 0, "a whole ID, never a part of one");
+    assert_eq!(texts(&got(Filter { task: Some("S_TERM-3".into()), ..Default::default() })), ["TERM-12: do it"], "an ID's _ is no wildcard");
+    assert_eq!(texts(&got(Filter { kind: Some("codex".into()), ..Default::default() })), ["go on", "TERM-12: do it"], "one agent's prompts");
+    assert_eq!(texts(&got(Filter { sender: Some(crate::inputs::MANAGER.into()), ..Default::default() })), ["review it"]);
+    let facets = |f: Filter| s.with(|tx| search::facets(tx, &f)).unwrap();
+    let project = serde_json::json!({"": 5});
+    assert_eq!(facets(Filter::default()), serde_json::json!({"sender": {"human": 3, "dispatcher": 1, "manager": 1}, "agent": {"": 1, "claude": 2, "codex": 2}, "project": project}));
+    // a filter's own choice does not narrow its own counts; the others' do
+    assert_eq!(facets(Filter { sender: Some(HUMAN.into()), ..Default::default() }), serde_json::json!({"sender": {"human": 3, "dispatcher": 1, "manager": 1}, "agent": {"": 1, "claude": 1, "codex": 1}, "project": {"": 3}}));
+    assert_eq!(facets(Filter { kind: Some("codex".into()), projects: vec!["gone".into()], ..Default::default() }), serde_json::json!({"sender": {}, "agent": {}, "project": {"": 2}}));
+    assert_eq!(facets(Filter { kind: Some("shell".into()), q: "board".into(), ..Default::default() }), serde_json::json!({"sender": {}, "agent": {"claude": 1}, "project": {}}), "the words narrow them too");
+}

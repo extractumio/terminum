@@ -31,6 +31,8 @@ const HINTS: usize = 4;
 /// Quotes asked about kept per pane (AC-37), and the most of one's text kept.
 const ASKED: usize = 100;
 const ASKED_TEXT: usize = 4000;
+/// How long what a manager typed waits for its agent's hook to say it: a busy agent queues a prompt to its turn's end.
+const MANAGER_FOR: Duration = Duration::from_secs(30 * 60);
 
 pub struct Sent {
     root: PathBuf,
@@ -38,6 +40,8 @@ pub struct Sent {
     last: Mutex<HashMap<String, (String, Instant)>>,
     /// per hooked pane: (the loose first line of what the page saw, its line), newest last
     hints: Mutex<HashMap<String, VecDeque<(String, i64)>>>,
+    /// what a project's manager typed with Enter and no hook said yet: (pane, text, when)
+    managers: Mutex<Vec<(String, String, Instant)>>,
     write: Mutex<()>,
 }
 
@@ -52,7 +56,7 @@ pub use redaction::redact;
 
 impl Sent {
     pub fn new(root: PathBuf) -> Sent {
-        Sent { root, last: Mutex::default(), hints: Mutex::default(), write: Mutex::default() }
+        Sent { root, last: Mutex::default(), hints: Mutex::default(), managers: Mutex::default(), write: Mutex::default() }
     }
 
     /// A project's folder: its answers' ends, quotes and asked quotes.
@@ -146,6 +150,22 @@ impl Sent {
         let ring = hints.get_mut(key)?;
         let i = ring.iter().rposition(|(first, _)| prompt.starts_with(first.as_str()))?;
         ring.remove(i).map(|(_, line)| line)
+    }
+
+    /// A project's manager typed `text` with Enter into pane `key` (send_to_session): its agent's hook will say
+    /// it as a prompt, the manager's message (AC-147).
+    pub fn manager_typed(&self, key: &str, text: &str) {
+        let mut all = self.managers.lock();
+        all.retain(|(_, _, at)| at.elapsed() < MANAGER_FOR);
+        all.push((key.to_string(), text.to_string(), Instant::now()));
+    }
+
+    /// Whether `prompt` of pane `key` is what a manager typed there (`manager_typed`): once.
+    pub fn take_manager_typed(&self, key: &str, prompt: &str) -> bool {
+        let mut all = self.managers.lock();
+        all.retain(|(_, _, at)| at.elapsed() < MANAGER_FOR);
+        let at = all.iter().position(|(k, text, _)| k == key && crate::dispatcher::same_prompt(text, prompt));
+        at.map(|i| all.remove(i)).is_some()
     }
 
     /// Pane `key`'s next question number (AC-37 Ask): one more than the highest "Quote #N" it

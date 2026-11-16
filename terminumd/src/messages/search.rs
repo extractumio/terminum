@@ -29,11 +29,13 @@ pub struct Filter {
     pub to: Option<String>,
     /// session list projects' ids; NONE for none
     pub projects: Vec<String>,
-    /// `human` or `dispatcher`
+    /// `human`, `dispatcher` or `manager`
     pub sender: Option<String>,
-    /// `agent` or `shell`
+    /// `agent` (any coding agent's prompt), `shell` (a command), or one agent's name (`claude`, `codex`)
     pub kind: Option<String>,
     pub pane: Option<String>,
+    /// a task's ID, among those the message was sent for
+    pub task: Option<String>,
 }
 
 /// `q` as an FTS5 query: each word a prefix, a "quoted phrase" as it is, a -word left out, all
@@ -101,10 +103,14 @@ impl Filter {
         match self.kind.as_deref() {
             Some("agent") => parts.push("coalesce(m.agent, '') != ''".into()),
             Some("shell") => parts.push("coalesce(m.agent, '') = ''".into()),
-            _ => {}
+            Some(agent) => arg(&mut parts, "m.agent = ?", Sql::Text(agent.into())),
+            None => {}
         }
         if let Some(p) = &self.pane {
             arg(&mut parts, "m.pane = ?", Sql::Text(p.clone()));
+        }
+        if let Some(t) = &self.task {
+            arg(&mut parts, "instr(',' || m.tasks || ',', ',' || ? || ',') > 0", Sql::Text(t.clone()));
         }
         if !self.projects.is_empty() {
             let mut any = Vec::new();
@@ -181,6 +187,20 @@ pub fn days(tx: &Transaction, f: &Filter) -> Result<Vec<Value>, String> {
     let mut st = tx.prepare(&format!("SELECT date(m.at / 1000, 'unixepoch', 'localtime') AS d, count(*) {from} GROUP BY d ORDER BY d")).map_err(sql)?;
     let rows = st.query_map(rusqlite::params_from_iter(args.iter()), |r| Ok(json!({"day": r.get::<_, String>(0)?, "n": r.get::<_, i64>(1)?}))).map_err(sql)?;
     rows.collect::<Result<_, _>>().map_err(sql)
+}
+
+/// The quick filters' counts of the filtered list: how many each sender sent, each agent took ("" a shell)
+/// and each project holds ("" none). A filter's own choice is left out of its own counts, so they say what
+/// another choice would show. {sender: {human: n, …}, agent: {"": n, claude: n, …}, project: {"": n, …}}
+pub fn facets(tx: &Transaction, f: &Filter) -> Result<Value, String> {
+    let count = |open: Filter, column: &str| -> Result<Value, String> {
+        let (from, args, _) = open.from(true);
+        let mut st = tx.prepare(&format!("SELECT coalesce({column}, ''), count(*) {from} GROUP BY 1")).map_err(sql)?;
+        let rows = st.query_map(rusqlite::params_from_iter(args.iter()), |r| Ok((r.get::<_, String>(0)?, json!(r.get::<_, i64>(1)?)))).map_err(sql)?;
+        Ok(Value::Object(rows.collect::<Result<_, _>>().map_err(sql)?))
+    };
+    Ok(json!({"sender": count(Filter { sender: None, ..f.clone() }, "m.sender")?, "agent": count(Filter { kind: None, ..f.clone() }, "m.agent")?,
+              "project": count(Filter { projects: Vec::new(), ..f.clone() }, "m.project")?}))
 }
 
 /// The `before` messages sent in message `id`'s pane before it and the `after` after it, oldest first.

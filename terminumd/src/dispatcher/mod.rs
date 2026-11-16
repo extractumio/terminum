@@ -273,7 +273,8 @@ fn typed_at(t: &mut Vec<(String, String, Instant)>, key: &str, prompt: &str) -> 
     t.iter().position(|(k, text, _)| k == key && same_prompt(text, prompt))
 }
 
-fn same_prompt(a: &str, b: &str) -> bool {
+/// Whether a hook's prompt `b` is the text `a` typed into its pane: their first 20,000 characters, blanks aside.
+pub(crate) fn same_prompt(a: &str, b: &str) -> bool {
     a.chars().filter(|c| !c.is_whitespace()).take(20_000).eq(b.chars().filter(|c| !c.is_whitespace()).take(20_000))
 }
 

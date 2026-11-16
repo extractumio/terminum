@@ -99,6 +99,9 @@ pub async fn send(app: &Shared, boss: &Boss, args: &Value) -> Result<String, Str
     let words = if enter && done.is_ok() { format!("{text}<Enter>") } else { text.to_string() };
     crate::inputs::wrote(app, crate::inputs::Who::manager("manager.send", &boss.name), "prompt", &server, &pane, &words, done.as_ref().err().cloned(), project.as_ref().map(|(i, n)| (i.as_str(), n.as_str())));
     done?;
+    if enter {
+        app.sent.manager_typed(&key, text);
+    }
     Ok(format!("Typed into {key}{}. get_session shows what it does with it.", if enter { ", with Enter" } else { ", no Enter" }))
 }
 

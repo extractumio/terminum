@@ -25,6 +25,14 @@ struct Held {
     cards: (i64, i64),
 }
 
+/// A task that stands on its session's row: not archived, not done (AC-113).
+const OPEN: &str = "archived_at IS NULL AND status <> 'DONE'";
+
+/// The IDs of the tasks that stand on session `key`'s row, by number.
+pub fn of_session(tx: &Transaction, key: &str) -> Result<Vec<String>, String> {
+    rows(tx, &format!("SELECT slug FROM tasks WHERE session_key = ?1 AND {OPEN} ORDER BY number"), [key], |r| r.get(0))
+}
+
 /// A task that needs a human, as its last move left it (AC-117).
 #[derive(PartialEq)]
 struct Asks {
@@ -134,7 +142,7 @@ impl Marks {
         let read = store.with(|tx| {
             let counts = rows(tx, "SELECT project, count(*) FROM tasks WHERE archived_at IS NULL GROUP BY project", [], |r| Ok((r.get(0)?, r.get(1)?)))?.into_iter().collect();
             let mut sessions: BTreeMap<String, Vec<String>> = BTreeMap::new();
-            for (key, id) in rows(tx, "SELECT session_key, slug FROM tasks WHERE session_key IS NOT NULL AND archived_at IS NULL AND status <> 'DONE' ORDER BY number", [], |r| Ok((r.get(0)?, r.get(1)?)))? {
+            for (key, id) in rows(tx, &format!("SELECT session_key, slug FROM tasks WHERE session_key IS NOT NULL AND {OPEN} ORDER BY number"), [], |r| Ok((r.get(0)?, r.get(1)?)))? {
                 sessions.entry(key).or_default().push(id);
             }
             // as the board's cards: a subtask in its main task's column stands under it, counted once (AC-112)
