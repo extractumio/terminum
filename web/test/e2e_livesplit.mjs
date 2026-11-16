@@ -64,16 +64,19 @@ export async function liveSplit(page, { tmux, work, socket, widths }) {
   // The quick shell's old width may still be on its way to tmux. Wait for the latest request AND its
   // frame, unchanged for longer than the page takes to send a new view's width (300 ms, sizing.js) and
   // terminumd to apply it (once a second, sizing.rs): a first look can come before the closed quick
-  // shell reaches the page's layout, or before a resize on its way. Each change is kept for the failure.
+  // shell reaches the page's layout, or before a resize terminumd still holds for its second (the page
+  // shows no sign of that one). Each change is kept for the failure.
   const started = Date.now(), trail = [];
-  const settled = async () => {
-    const s = { window: Number(of("#{window_width}")), requested: widths.get(pane) ?? null, reflow: (await looks()).reflow };
+  let since = null;
+  const sized = await until(async () => {
+    const s = { window: Number(of("#{window_width}")), requested: widths.get(pane) ?? null,
+      reflow: await page.evaluate(() => document.getElementById("term").classList.contains("reflow")) };
     const last = trail.at(-1);
-    if (!last || last.window !== s.window || last.requested !== s.requested || last.reflow !== s.reflow) trail.push({ ms: Date.now() - started, ...s });
-    return s.window === s.requested && !s.reflow;
-  };
-  const held = async (ms) => { for (const end = Date.now() + slack(ms); Date.now() < end; await page.waitForTimeout(150)) if (!(await settled())) return false; return true; };
-  const sized = await until(async () => await settled() && await held(1500), 15000);
+    if (!last || JSON.stringify({ ...last, ms: 0 }) !== JSON.stringify({ ms: 0, ...s })) trail.push({ ms: Date.now() - started, ...s });
+    if (s.window !== s.requested || s.reflow) { since = null; return false; }
+    since ??= Date.now();
+    return Date.now() - since >= slack(1500);
+  }, 15000);
   const before = of("#{window_width}");
   const pre = { ...(await looks()), id: pane, requested: widths.get(pane) ?? null, pane: of("#{pane_width}"), window: before, waitedMs: Date.now() - started, trail };
   const waiting = pre.requested === null ? "the page to request its width"
