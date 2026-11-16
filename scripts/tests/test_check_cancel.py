@@ -146,7 +146,7 @@ class OuterCancellation(unittest.TestCase):
                 self.assertEqual(list((root / ".checks").glob("changed-*.ok")), [])
                 if not recover and not failed_guard:
                     self.assertTrue(cleaned.exists(), "a shell descendant lost its cleanup grace")
-                    self.assertEqual(cleaned.read_text(), str(number), "the first signal must reach the whole group")
+                    self.assertEqual(cleaned.read_text(), str(int(number)), "the first signal must reach the whole group")
             finally:
                 stop_recorded(outer, orderly=True)
                 stop_recorded(unrelated)
@@ -205,7 +205,7 @@ class Boundaries(unittest.TestCase):
             with mock.patch.object(check_cancel.tempfile, "mkdtemp", return_value=str(folder)), \
                     mock.patch.object(check_cancel.subprocess, "Popen", return_value=mock.Mock(pid=42)), \
                     mock.patch.object(owned_children, "identity", return_value="original"), \
-                    mock.patch.object(os, "waitid", return_value=mock.Mock(si_code=os.CLD_EXITED, si_status=0)), \
+                    mock.patch.object(check_cancel, "unreaped_status", return_value=0), \
                     mock.patch.object(check_cancel.shutil, "rmtree", side_effect=remove):
                 with self.assertRaises(SystemExit) as ended:
                     check_cancel.run_guard([], [], cwd=tmp, stdout=None)
@@ -218,7 +218,7 @@ class Boundaries(unittest.TestCase):
             with mock.patch.object(check_cancel.tempfile, "mkdtemp", return_value=str(folder)), \
                     mock.patch.object(check_cancel.subprocess, "Popen", return_value=mock.Mock(pid=42)), \
                     mock.patch.object(owned_children, "identity", return_value="original"), \
-                    mock.patch.object(os, "waitid", return_value=mock.Mock(si_code=os.CLD_EXITED, si_status=1)), \
+                    mock.patch.object(check_cancel, "unreaped_status", return_value=1), \
                     mock.patch.object(check_cancel, "recover", side_effect=OSError("metadata query failed")), \
                     contextlib.redirect_stdout(io.StringIO()) as output:
                 with self.assertRaisesRegex(OSError, "metadata query failed"):
