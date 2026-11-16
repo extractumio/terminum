@@ -1,18 +1,22 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-// The Message history at /history/ (terminum.md AC-151): what the user and Dispatcher sent in panes,
-// searched by its words (terminumd's FTS5, best matches by BM25) or newest first, narrowed by when,
-// project, sender and kind; the day strip says when; a row opens its session at that message.
-// Every choice is in the address: Back undoes one, a link shows the same.
+// The Message history at /history/ (terminum.md AC-151): what the user, Dispatcher and managers sent in
+// panes, searched by its words (terminumd's FTS5, best matches by BM25) or newest first, narrowed by
+// kind, sender, days and project (the rail, historyrail.js), by session and task (a row's keys); the day
+// strip says when; a row opens its session at that message. Every choice is in the address: Back undoes
+// one, a link shows the same.
 import { el } from "./listparts.js";
 import { columns } from "./charts.js";
 import { showError } from "./kanbanutil.js";
 import { messageRow } from "./historyrows.js";
-import { $, NONE, addDays, api, dayLabel, inkOf, loadMeta, menu, monthOf, projectLabel, readQuery, shortDay, today, writeQuery } from "./msgpage.js";
+import { drawChips, drawRail } from "./historyrail.js";
+import { $, NONE, addDays, api, dayLabel, loadMeta, monthOf, readQuery, today, writeQuery } from "./msgpage.js";
 
-const KEYS = ["q", "sort", "from", "to", "project", "sender", "kind"];
+const KEYS = ["q", "sort", "from", "to", "project", "sender", "kind", "pane", "task"];
+/** The filters a chip lets go, all at once by Clear filters. */
+const NO_FILTERS = { from: "", to: "", project: "", sender: "", kind: "", pane: "", task: "" };
 const WAIT = 200;                       // typing: a search this long after the last key
 let state = readQuery(KEYS), meta = { projects: [] }, projects = new Map();
-let next = null, loading = 0, typing = 0, strip = [];
+let next = null, loading = 0, typing = 0, strip = [], facets = {}, session = "";
 
 const hasWords = () => /[\p{L}\p{N}]{2}/u.test(state.q.replace(/(^|\s)-\S*/g, ""));
 const best = () => hasWords() && state.sort !== "new";
@@ -26,29 +30,18 @@ function query(cursor) {
   return q;
 }
 
-/** What the filters' keys say, from the state. */
+const filtered = () => Object.keys(NO_FILTERS).some((k) => state[k]);
+
+/** What the field, the order's keys, the rail and the chips say, from the state. */
 function drawKeys() {
   if (document.activeElement !== $("q")) $("q").value = state.q;
-  const when = state.from || state.to
-    ? (state.from === state.to ? dayLabel(state.from) : `${state.from ? shortDay(state.from) : "…"} – ${state.to ? shortDay(state.to) : "today"}`)
-    : "All kept";
-  setKey("fwhen", when, !!(state.from || state.to));
-  const p = projects.get(state.project);
-  setKey("fproject", state.project ? projectLabel(p ?? { id: state.project === NONE ? "" : state.project }) : "All projects", !!state.project);
-  setKey("fsender", { human: "You", dispatcher: "Dispatcher" }[state.sender] ?? "You and Dispatcher", !!state.sender);
-  setKey("fkind", { agent: "Agents", shell: "Shells" }[state.kind] ?? "Agents and shells", !!state.kind);
   for (const b of $("hsort").querySelectorAll("button")) {
     b.setAttribute("aria-pressed", String((b.dataset.sort === "best") === best()));
     b.disabled = b.dataset.sort === "best" && !hasWords();
   }
   $("hsort").title = hasWords() ? "" : "Type words to rank by how well they match";
-  $("stripclear").hidden = !(state.from || state.to);
-}
-
-function setKey(id, text, on) {
-  const s = $(id).querySelector("summary");
-  s.textContent = text;
-  $(id).classList.toggle("on", on);
+  drawRail({ state, facets, projects, change });
+  drawChips({ state, projects, session, change });
 }
 
 /** Changes the state; `push`: a step of Back. */
@@ -56,21 +49,7 @@ function change(next, push = true) {
   state = { ...state, ...next };
   writeQuery(state, KEYS, push);
   drawKeys();
-  drawMenus();
   load();
-}
-
-/** A filter's menu of `key`'s values: [value, label, color?]. */
-const one = (key, rows) => rows.map(([value, label, color]) => ({ label, color, on: (state[key] ?? "") === value, pick: () => change({ [key]: value }) }));
-
-function drawMenus() {
-  menu($("fproject"), one("project", [["", "All projects"], ...meta.projects.map((p) => [p.id || NONE, `${projectLabel(p)} · ${p.n.toLocaleString("en-US")}`, inkOf(p)])]));
-  const t = today(), days = (label, from, to) => ({ label, on: state.from === from && state.to === to, pick: () => change({ from, to }) });
-  menu($("fwhen"), [days("All kept", "", ""), days("Today", t, t), days("Last 7 days", addDays(t, -6), t), days("Last 30 days", addDays(t, -29), t)]);
-  $("hfrom").value = state.from;
-  $("hto").value = state.to;
-  menu($("fsender"), one("sender", [["", "You and Dispatcher"], ["human", "You"], ["dispatcher", "Dispatcher"]]));
-  menu($("fkind"), one("kind", [["", "Agents and shells"], ["agent", "Agents' prompts"], ["shell", "Shells' commands"]]));
 }
 
 /** The first page for the state (a newer ask wins), or the next one. A first page already holds
@@ -86,7 +65,15 @@ async function load(more = false) {
     if (mine !== loading) return;
     showError($("herr"), "");
     $("results").classList.remove("stale");
-    if (!more) { $("results").replaceChildren(); strip = page.days ?? []; drawStrip(); }
+    if (!more) {
+      $("results").replaceChildren();
+      $("results").classList.toggle("dated", best());
+      strip = page.days ?? [];
+      facets = page.facets ?? {};
+      session = state.pane ? page.items[0]?.title ?? "" : "";
+      drawStrip();
+      drawKeys();
+    }
     next = page.next;
     drawRows(page.items, more);
     if (!more) {                                          // terminumd counts with the first page
@@ -109,11 +96,11 @@ function empty() {
   const box = el("div", "mempty");
   const any = meta.projects.some((p) => p.n > 0);
   box.append(el("p", "", !any ? "Nothing sent yet. The prompts and commands you send in sessions show here."
-    : state.q ? `No message matches “${state.q}”${state.from || state.to || state.project || state.sender || state.kind ? " with these filters" : ""}.` : "Nothing sent with these filters."));
-  if (state.from || state.to || state.project || state.sender || state.kind) {
+    : state.q ? `No message matches “${state.q}”${filtered() ? " with these filters" : ""}.` : "Nothing sent with these filters."));
+  if (filtered()) {
     const b = el("button", "textkey", "Clear filters");
     b.type = "button";
-    b.onclick = () => change({ from: "", to: "", project: "", sender: "", kind: "" });
+    b.onclick = () => change(NO_FILTERS);
     box.append(b);
   }
   $("results").append(box);
@@ -132,7 +119,7 @@ function drawRows(list, more) {
       h.setAttribute("role", "presentation");
       box.append(h);
     }
-    const row = messageRow(it, { projects, onPick: choose });
+    const row = messageRow(it, { projects, dated: best(), onPick: choose, only: change });
     row.dataset.day = key;
     box.append(row);
   }
@@ -196,13 +183,12 @@ document.addEventListener("keydown", (e) => {
   else if (s && e.key === "c") { s.open(); s.copy(); }
 });
 $("hsort").addEventListener("click", (e) => { const b = e.target.closest("button"); if (b && !b.disabled) change({ sort: b.dataset.sort === "new" ? "new" : "" }); });
-$("stripclear").onclick = () => change({ from: "", to: "" });
-$("hrangego").onclick = () => { $("fwhen").open = false; change({ from: $("hfrom").value, to: $("hto").value }); };
+$("hrangego").onclick = () => change({ from: $("hfrom").value, to: $("hto").value });
 $("more").onclick = () => load(true);
 $("hhelp").onclick = () => { const box = $("hhelpbox"); box.hidden = !box.hidden; $("hhelp").setAttribute("aria-expanded", String(!box.hidden)); };
-$("hfilters").onclick = () => { const on = $("hpicks").classList.toggle("open"); $("hfilters").setAttribute("aria-expanded", String(on)); };
+$("hfilters").onclick = () => { const on = $("hrail").classList.toggle("open"); $("hfilters").setAttribute("aria-expanded", String(on)); };
 new IntersectionObserver((seen) => { if (seen.some((s) => s.isIntersecting) && next && !$("more").hidden) load(true); }, { rootMargin: "400px" }).observe($("more"));
-addEventListener("popstate", () => { state = readQuery(KEYS); drawKeys(); drawMenus(); load(); });
+addEventListener("popstate", () => { state = readQuery(KEYS); drawKeys(); load(); });
 let stripWait = 0;
 new ResizeObserver(() => { clearTimeout(stripWait); stripWait = setTimeout(drawStrip, 100); }).observe($("stripplot"));
 
@@ -212,6 +198,5 @@ try {
   showError($("herr"), `The filters could not be read: ${e.message}`);
 }
 projects = new Map(meta.projects.map((p) => [p.id || NONE, p]));
-drawMenus();
 drawKeys();
 load();

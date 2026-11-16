@@ -93,6 +93,8 @@ export const shortDay = (d) => { const t = dayDate(d); return `${t.getDate()} ${
 export const monthOf = (d) => MONTHS[dayDate(d).getMonth()];
 
 const hm = (t) => clock(t.getHours() * 60 + t.getMinutes());
+/** A message's time of day: "14:32". */
+export const hmOf = (ms) => hm(new Date(ms));
 /** A message's time: "14:32" today, "Tue 14:32" this week, "3 Nov 14:32", "3 Nov 2025". */
 export function timeLabel(ms) {
   const t = new Date(ms), d = dayOf(t), age = (Date.now() - ms) / 86_400_000;

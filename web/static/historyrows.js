@@ -1,19 +1,24 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-// The Message history's rows (terminum.md AC-151): a message as the session list shows a session (its
-// project's bar, the agent's mark, the session's title), what was sent under it with the words' hits
-// marked, and, opened, its keys: Open in session, Context, Copy. terminumd's text is only ever text:
-// its highlight's marks (\u0002 … \u0003) become <mark> here, nothing of it is markup.
+// The Message history's rows (terminum.md AC-151): a message's head reads as a sentence that starts with
+// its time: who sent it, to which agent or a shell, in which session, then its project and tasks; what
+// was sent stands right under it with the words' hits marked; opened, its keys: Open in session, its
+// tasks, Context, Copy, and Only this session or task. terminumd's text is only ever text: its
+// highlight's marks (\u0002 … \u0003) become <mark> here, nothing of it is markup.
 import { el } from "./listparts.js";
 import { icon } from "./icons.js";
-import { agentMark } from "./nav.js";
-import { sessionUrl } from "./tasklink.js";
+import { agentMark, agentName } from "./nav.js";
+import { sessionUrl, taskUrl } from "./tasklink.js";
 import { copyText } from "./touchcopy.js";
 import { toast } from "./toast.js";
-import { api, dotOf, inkOf, projectLabel, timeLabel } from "./msgpage.js";
+import { api, dotOf, hmOf, inkOf, projectLabel, timeLabel } from "./msgpage.js";
 
 const HIT = "\u0002", HIT_END = "\u0003";
 /** Lines a closed row shows. */
 const LINES = 3;
+/** Tasks a row's head names; more are counted ("+2"). */
+const TASKS = 2;
+/** Who sent a message: its word, its hue's class (a task's comment's, taskwin.css), its icon. */
+const SENDERS = { human: ["You", "by-human"], dispatcher: ["Dispatcher", "by-system", "bot", "Dispatcher typed it, for a task"], manager: ["Manager", "by-agent", "crown", "A project's manager typed it (send_to_session)"] };
 
 /** `text` with terminumd's hit marks as <mark>s, into `box`; what goes before the first hit's line is left
  *  out when `short` and that line is past the first LINES (an ellipsis says so). */
@@ -45,8 +50,42 @@ function contextRow(it, self) {
   return r;
 }
 
-/** Message `it` as a row; `onPick(row, open)` when it is pressed (an opened row shows its keys). */
-export function messageRow(it, { projects, onPick }) {
+/** A message's head: its time (with its day when `dated`), who → to what, the session, its project and tasks. */
+function headOf(it, p, dated) {
+  const head = el("div", "mhead");
+  const time = el("time", "mtime", dated ? timeLabel(it.ms) : hmOf(it.ms));
+  time.dateTime = new Date(it.ms).toISOString();
+  time.title = new Date(it.ms).toLocaleString();
+  const [word, by, mark, title] = SENDERS[it.sender] ?? [it.sender, ""];
+  const who = el("span", `mwho ${by}`);
+  if (mark) who.append(icon(mark, 12));
+  if (title) who.title = title;
+  who.append(document.createTextNode(word));
+  const to = el("span", "mto");
+  to.append(agentMark({ agent: it.agent }), document.createTextNode(it.agent ? agentName(it.agent) ?? it.agent : "Shell"));
+  head.append(time, who, el("span", "marrow", "→"), to);
+  if (it.title) {
+    const session = el("span", "msess", it.title);
+    session.title = `Session: ${it.title}`;
+    head.append(session);
+  }
+  const tags = el("span", "mtags");
+  if (it.project) {
+    const proj = el("span", "mproj");
+    proj.title = "Project";
+    proj.append(dotOf(inkOf(p)), el("span", "pname", it.project_name || projectLabel(p ?? { id: it.project })));
+    tags.append(proj);
+  }
+  const tasks = it.tasks ?? [];
+  for (const id of tasks.slice(0, TASKS)) tags.append(el("span", "mtask", id));
+  if (tasks.length > TASKS) tags.append(Object.assign(el("span", "mtask", `+${tasks.length - TASKS}`), { title: tasks.slice(TASKS).join(", ") }));
+  if (tags.childElementCount) head.append(tags);
+  return head;
+}
+
+/** Message `it` as a row; `onPick(row, open)` when it is pressed (an opened row shows its keys); `only(filter)`
+ *  narrows the list to its session or a task of it. */
+export function messageRow(it, { projects, dated, onPick, only }) {
   const row = el("div", "msg");
   row.id = `m${it.id}`;
   row.setAttribute("role", "option");
@@ -54,34 +93,27 @@ export function messageRow(it, { projects, onPick }) {
   row.dataset.id = it.id;
   const p = projects.get(it.project ?? "") ?? null;
   row.style.setProperty("--dot", inkOf(p));
-  const head = el("div", "mhead");
-  head.append(agentMark({ agent: it.agent }), el("span", "mtitle2", it.title || (it.agent ? "Agent" : "Shell")));
-  const proj = el("span", "mproj");
-  proj.append(dotOf(inkOf(p)), el("span", "pname", it.project_name || projectLabel(p ?? { id: it.project })));
-  head.append(proj);
-  if (it.sender === "dispatcher") {
-    const tag = el("span", "mbot");
-    tag.title = "Dispatcher typed it, for a task";
-    tag.append(icon("bot", 12), document.createTextNode("Dispatcher"));
-    head.append(tag);
-  }
-  const time = el("time", "mtime", timeLabel(it.ms));
-  time.dateTime = new Date(it.ms).toISOString();
-  time.title = new Date(it.ms).toLocaleString();
-  head.append(time);
   const text = el("div", `mtext${it.agent ? "" : " shell"}`);
   marked(text, it.hl ?? it.text, true);
   // cut at its start when long (right to left), the marks keeping its slashes in place (sent.js's way)
   const foot = el("div", "mmeta", `\u200e${[where(it), it.live ? "" : "session ended"].filter(Boolean).join(" · ")}\u200e`);
   if (!it.live) foot.classList.add("gone");
-  row.append(head, text, foot);
+  row.append(headOf(it, p, dated), text, foot);
   row.addEventListener("click", (e) => { if (!e.target.closest("a, button, .ctx")) onPick(row, true); });
-  row.open = () => openRow(row, it, text);
+  row.open = () => openRow(row, it, text, only);
   return row;
 }
 
-/** The opened row: all its text, its keys, a place for its context. */
-function openRow(row, it, text) {
+/** A text key. */
+function key(cls, label, title) {
+  const b = el("button", cls, label);
+  b.type = "button";
+  if (title) b.title = title;
+  return b;
+}
+
+/** The opened row: all its text, its keys, the keys that narrow the list to it, a place for its context. */
+function openRow(row, it, text, only) {
   if (row.querySelector(".macts")) return;
   text.replaceChildren();
   marked(text, it.hl ?? it.text, false);
@@ -90,17 +122,22 @@ function openRow(row, it, text) {
   const go = el("a", "textkey primary", "Open in session");
   if (it.live) go.href = sessionUrl(it.key, `msg:${it.id}`);
   else { go.setAttribute("aria-disabled", "true"); go.title = "This session has ended"; }
-  const ctx = el("button", "textkey", "Context");
-  ctx.type = "button";
-  ctx.title = "The messages sent before and after it in that pane";
-  const copy = el("button", "textkey", "Copy");
-  copy.type = "button";
+  const ctx = key("textkey", "Context", "The messages sent before and after it in that pane");
+  const copy = key("textkey", "Copy");
   const box = el("div", "ctx");
   box.hidden = true;
   ctx.addEventListener("click", () => context(box, it, ctx));
   copy.addEventListener("click", async () => toast((await copyText({ text: it.text })).said));
-  acts.append(go, ctx, copy);
-  row.append(acts, box);
+  acts.append(go, ...(it.tasks ?? []).map((id) => Object.assign(el("a", "textkey", `Open ${id}`), { href: taskUrl(id), title: "Its task on the board" })), ctx, copy);
+  const find = el("div", "mfind");
+  const session = key("textkey", "This session", "Every message sent in this session");
+  session.addEventListener("click", () => only({ pane: it.key }));
+  find.append(el("span", "", "Show only"), session, ...(it.tasks ?? []).map((id) => {
+    const b = key("textkey", id, `Every message sent for ${id}`);
+    b.addEventListener("click", () => only({ task: id }));
+    return b;
+  }));
+  row.append(acts, find, box);
   row.copy = () => copy.click();
   row.context = () => ctx.click();
   row.go = () => { if (it.live) location.href = go.href; else toast("This session has ended"); };

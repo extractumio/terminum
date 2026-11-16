@@ -27,7 +27,11 @@ export async function liveHistory(page, opts) {
   hook(agent, "UserPromptSubmit", { prompt: "make the board wait for the board selector", prompt_id: "h1" });
   hook(agent, "UserPromptSubmit", { prompt: "Исправь поиск по сообщениям", prompt_id: "h2" });
   // what Dispatcher typed, as its gate keeps it (a real run needs an agent: e2e_livedispatcher.mjs)
-  intoStore(app, `INSERT INTO messages (at, sender, via, agent, pane, host, cwd, text) VALUES (CAST(strftime('%s','now') AS INTEGER) * 1000, 'dispatcher', 'hook', 'claude', '${key}', 'local', '${work}', 'T-0007: the board task for Dispatcher')`);
+  // and what a project's manager typed (send_to_session), the session's tasks kept with each
+  intoStore(app, `INSERT OR IGNORE INTO users (id, kind, name, role) VALUES ('manager', 'agent', 'Manager', 'agent');
+    INSERT INTO messages (at, sender, via, agent, pane, host, cwd, title, tasks, text) VALUES
+      (CAST(strftime('%s','now') AS INTEGER) * 1000, 'dispatcher', 'hook', 'claude', '${key}', 'local', '${work}', 'histagent', 'T-0007,T-0008,T-0009', 'T-0007: the board task for Dispatcher'),
+      (CAST(strftime('%s','now') AS INTEGER) * 1000 + 1, 'manager', 'hook', 'codex', '${key}', 'local', '${work}', 'histagent', 'T-0007', 'say where its task stands')`);
   // a shell's command, typed in the page: what stood after the prompt, with its line. In a pane of its own: the
   // list's first row is whatever the suites before left there, and a row an agent's mark stands on sends prompts
   // (in the test's short folder: a prompt with the runner's checkout in it wraps the typed line). Its window is named
@@ -59,11 +63,30 @@ export async function liveHistory(page, opts) {
   check("AC-167 Scheduled is Messages' page: Messages marked", await until(async () => await shownSection() === "Sessions,Kanban,Dashboard,Messages*"), await shownSection());
   await page.click('#bar .sections a[href="/history/"]');
   await page.waitForSelector("#results");
-  check("AC-151 newest first, every message kept, Dispatcher's too", await until(async () => (await rows(page)).length >= 4, 8000), JSON.stringify(await rows(page)));
+  check("AC-151 newest first, every message kept, Dispatcher's and a manager's too", await until(async () => (await rows(page)).length >= 5, 8000), JSON.stringify(await rows(page)));
   const first = await rows(page);
   check("AC-151 the newest is the shell's command", first[0] === "echo history probe words", first[0]);
   check("AC-151 under a day's head with its count", /^Today · \d+/.test(await page.textContent("#results .dayhead")), await page.textContent("#results .dayhead"));
-  check("AC-151 Dispatcher's is marked", await page.isVisible("#results .msg .mbot"));
+  // a row's head reads from its time: who, to what, the session, its project and tasks, right over the text
+  const headOf = (text) => page.evaluate((text) => {
+    const row = [...document.querySelectorAll("#results .msg")].find((r) => r.querySelector(".mtext").textContent === text);
+    const left = (sel) => row.querySelector(sel)?.getBoundingClientRect().left, top = (sel) => row.querySelector(sel).getBoundingClientRect().top;
+    return { words: [...row.querySelector(".mhead").children].map((c) => c.textContent).join("|").replace("\ufe0e", ""), who: row.querySelector(".mwho").className,
+      order: [".mtime", ".mwho", ".mto", ".msess", ".mtags"].map(left), gap: top(".mtext") - row.querySelector(".mhead").getBoundingClientRect().bottom, time: left(".mtime") - row.getBoundingClientRect().left };
+  }, text);
+  const sent = await headOf("T-0007: the board task for Dispatcher");
+  check("AC-151 a row says when, who sent it to what, in which session, for which tasks: Dispatcher's two tasks and how many more", /^\d\d:\d\d\|Dispatcher\|→\|Claude Code\|histagent\|T-0007T-0008\+1$/.test(sent.words) && /by-system/.test(sent.who), JSON.stringify(sent));
+  check("AC-151 the head starts with its time at the row's left, each part after the one before, the text right under it", sent.time < 30 && sent.order.every((x, i) => i === 0 || x > sent.order[i - 1]) && sent.gap >= 0 && sent.gap < 8, JSON.stringify(sent));
+  const managed = await headOf("say where its task stands");
+  check("AC-151 a manager's message says Manager, to Codex", /\|Manager\|→\|Codex\|histagent\|T-0007$/.test(managed.words) && /by-agent/.test(managed.who), JSON.stringify(managed));
+  const shellHead = await headOf("echo history probe words");
+  check("AC-151 a shell's command says You, to a shell", /^\d\d:\d\d\|You\|→\|Shell\|/.test(shellHead.words) && /by-human/.test(shellHead.who), JSON.stringify(shellHead));
+  const wide = await page.evaluate(() => { const r = (id) => document.getElementById(id).getBoundingClientRect(); return { main: r("hmain").width, rail: r("hrail"), left: r("hmain").left, window: innerWidth }; });
+  check("AC-151 the list is a reading column beside the quick filters' rail, however wide the window", wide.main <= 900 && wide.rail.width > 200 && wide.rail.right <= wide.left && wide.window >= 1400, JSON.stringify(wide));
+  const railCounts = () => page.evaluate(() => Object.fromEntries([...document.querySelectorAll("#hrail .frow")].filter((r) => r.querySelector(".fnum")).map((r) => [r.querySelector(".pname").textContent, Number(r.querySelector(".fnum").textContent.replaceAll(",", ""))])));
+  const all = await railCounts(), total = Number((await page.textContent("#hsum")).replace(/\D/g, ""));
+  check("AC-151 the rail counts what each choice would show: prompts and commands, each agent, each sender", all.Prompts + all.Commands === total && all["Claude Code"] + all.Codex === all.Prompts && all.You + all.Dispatcher + all.Manager === total
+    && all.Dispatcher >= 1 && all.Manager === 1 && all.Codex >= 1, JSON.stringify([all, total]));
   check("AC-151 the day strip draws a column a day", (await page.$$("#stripplot rect.hit")).length >= 30);
 
   await page.fill("#q", "boar");
@@ -71,22 +94,46 @@ export async function liveHistory(page, opts) {
   check("AC-151 the hits are marked", (await page.textContent("#results .msg mark.hit")) === "board");
   check("AC-151 ranked by relevance with words", await page.getAttribute('#hsort [data-sort="best"]', "aria-pressed") === "true");
   check("AC-151 the words are in the address", new URL(page.url()).searchParams.get("q") === "boar", page.url());
-  await page.click("#fsender summary");
-  await page.click('#fsender .pname:text-is("You")');
-  check("AC-151 From: You leaves Dispatcher's out", await until(async () => (await rows(page)).length === 1, 6000), JSON.stringify(await rows(page)));
-  check("AC-151 the filter is in the address", new URL(page.url()).searchParams.get("sender") === "human", page.url());
+  await page.click('#fsender .frow:has(.pname:text-is("You"))');
+  check("AC-151 From: You, one press, leaves Dispatcher's out", await until(async () => (await rows(page)).length === 1, 6000), JSON.stringify(await rows(page)));
+  check("AC-151 the filter is in the address, its row pressed, a chip says it", new URL(page.url()).searchParams.get("sender") === "human" && await page.getAttribute('#fsender .frow:has(.pname:text-is("You"))', "aria-pressed") === "true"
+    && await page.textContent("#hchips .hchip") === "From You", `${page.url()} | ${await page.textContent("#hchips")}`);
+  const narrowed = await railCounts();
+  check("AC-151 a group's own choice does not narrow its own counts; the words and the other groups' do", narrowed.Dispatcher === 1 && narrowed.You === 1 && narrowed.Prompts === 1 && narrowed.Commands === 0, JSON.stringify(narrowed));
   await page.goBack();
   check("AC-151 Back undoes the filter", await until(async () => (await rows(page)).length === 2, 6000) && !new URL(page.url()).searchParams.get("sender"), page.url());
   await page.fill("#q", "поиск");
   check("AC-151 a Cyrillic word is found, any case", await until(async () => JSON.stringify(await rows(page)) === JSON.stringify(["Исправь поиск по сообщениям"]), 6000), JSON.stringify(await rows(page)));
+  check("AC-151 the best matches have no day heads: each row says its day too", await page.$("#results .dayhead") === null && await page.evaluate(() => document.getElementById("results").classList.contains("dated")));
   await page.fill("#q", "-board");
-  check("AC-151 a -word alone ranks nothing: newest first", await until(async () => (await rows(page)).length >= 4, 6000) && await page.isDisabled('#hsort [data-sort="best"]'));
+  check("AC-151 a -word alone ranks nothing: newest first", await until(async () => (await rows(page)).length >= 3, 6000) && await page.isDisabled('#hsort [data-sort="best"]'));
   await page.fill("#q", "");
-  await until(async () => (await rows(page)).length >= 4, 6000);
-  await page.click("#fkind summary");
-  await page.click('#fkind .pname:text-is("Shells\' commands")');
+  await until(async () => (await rows(page)).length >= 5, 6000);
+  await page.click('#fkind .frow:has(.pname:text-is("Codex"))');
+  check("AC-151 Type: one agent's prompts", await until(async () => JSON.stringify(await rows(page)) === JSON.stringify(["say where its task stands"]), 6000) && new URL(page.url()).searchParams.get("kind") === "codex", JSON.stringify(await rows(page)));
+  await page.click('#fkind .frow:has(.pname:text-is("Codex"))');
+  check("AC-151 a chosen row pressed again lets its filter go", await until(async () => (await rows(page)).length >= 5, 6000) && !new URL(page.url()).searchParams.get("kind") && await page.isHidden("#hchips"), page.url());
+  // a task's messages, from an opened row's keys; its chip lets it go
+  await page.click('#results .msg:has-text("T-0007: the board task for Dispatcher")');
+  const keys = await page.$$eval("#results .msg.open :is(.macts, .mfind) :is(a, button)", (k) => k.map((x) => x.textContent).join("|"));
+  check("AC-151 an opened row's keys: its session, its tasks, its context, and the list narrowed to them", keys === "Open in session|Open T-0007|Open T-0008|Open T-0009|Context|Copy|This session|T-0007|T-0008|T-0009"
+    && await page.getAttribute('#results .msg.open .macts a:text-is("Open T-0008")', "href") === "/kanban/T-0008", keys);
+  await page.click('#results .msg.open .mfind button:text-is("T-0008")');
+  check("AC-151 Show only a task: the messages sent for it, in the address, a chip", await until(async () => JSON.stringify(await rows(page)) === JSON.stringify(["T-0007: the board task for Dispatcher"]), 6000)
+    && new URL(page.url()).searchParams.get("task") === "T-0008" && await page.textContent("#hchips .hchip") === "Task T-0008", `${JSON.stringify(await rows(page))} | ${page.url()}`);
+  await page.click("#hchips .hchip");
+  await until(async () => (await rows(page)).length >= 5, 6000);
+  await page.click('#results .msg:has-text("say where its task stands")');
+  await page.click('#results .msg.open .mfind button:text-is("This session")');
+  check("AC-151 Show only this session: its pane's messages, the chip naming it", await until(async () => (await rows(page)).length === 4 && new URL(page.url()).searchParams.get("pane") === key && await page.textContent("#hchips .hchip") === "Session: histagent", 6000),
+    `${JSON.stringify(await rows(page))} | ${page.url()} | ${await page.textContent("#hchips")}`);
+  await page.click('#fsender .frow:has(.pname:text-is("Manager"))');
+  check("AC-151 two filters: a chip each and Clear all, which lets both go", await until(async () => (await rows(page)).length === 1 && (await page.$$("#hchips .hchip")).length === 2, 6000));
+  await page.click('#hchips button:text-is("Clear all")');
+  check("AC-151 Clear all shows every message again", await until(async () => (await rows(page)).length >= 5 && !new URL(page.url()).search, 6000), page.url());
+  await page.click('#fkind .frow:has(.pname:text-is("Commands"))');
   const shellsOnly = () => page.$$eval("#results .msg", (r) => r.length > 0 && r.every((x) => x.querySelector(".mtext.shell")));
-  check("AC-151 Where: shells only", await until(async () => (await rows(page)).includes("echo history probe words") && await shellsOnly(), 6000), JSON.stringify(await rows(page)));
+  check("AC-151 Type: commands only", await until(async () => (await rows(page)).includes("echo history probe words") && await shellsOnly(), 6000), JSON.stringify(await rows(page)));
   if (shots) await page.screenshot({ path: path.join(shots, "history.png") });
 
   // Open in session: the pane, the message brought into view (AC-90's Jump)
@@ -265,17 +312,37 @@ export async function liveHistory(page, opts) {
       for (let k = 0; k < 20 + ((d * 37) % 60); k++) {
         const at = `(CAST(strftime('%s', date('now', 'localtime', '-${d} days'), '+${8 + (k * 7) % 12} hours', '+${(k * 13) % 60} minutes', 'utc') AS INTEGER) * 1000)`;
         const project = ["pa", "pb", "pc", null][k % 4];
-        seed.push(`(${at}, 'human', 'hook', ${k % 3 ? "'claude'" : "NULL"}, 'k${k % 5}', 'local', '${work}', ${project ? `'${project}', 'Project ${project}'` : "NULL, NULL"}, 'seeded message ${d} ${k}')`);
+        const words = k % 4 ? `seeded message ${d} ${k}` : `seeded message ${d} ${k}: ${"make the board wait for its selector, then say what is left of the task and what a human must decide. ".repeat(4)}`;
+        seed.push(`(${at}, '${k % 9 ? "human" : "dispatcher"}', 'hook', ${k % 3 ? (k % 5 ? "'claude'" : "'codex'") : "NULL"}, 'k${k % 5}', 'local', '${work}', 'session ${k % 5}', ${k % 2 ? `'T-00${k % 7}'` : "NULL"}, ${project ? `'${project}', 'Project ${project}'` : "NULL, NULL"}, '${words}')`);
       }
     }
-    intoStore(app, `INSERT INTO messages (at, sender, via, agent, pane, host, cwd, project, project_name, text) VALUES ${seed.join(",")}`);
+    intoStore(app, `INSERT INTO messages (at, sender, via, agent, pane, host, cwd, title, tasks, project, project_name, text) VALUES ${seed.join(",")}`);
     await page.goto(`${base}/dashboard/`);
     await page.waitForSelector("#tiles .tile");
     await nap(500);
     await page.screenshot({ path: path.join(shots, "dashboard.png"), fullPage: true });
-    await page.goto(`${base}/history/?q=seeded`);
-    await page.waitForSelector("#results .msg");
-    await page.screenshot({ path: path.join(shots, "history-seeded.png") });
+    for (const [name, query, width] of [["seeded", "?q=seeded", 0], ["wide", "", 2250], ["narrow", "", 1000]]) {
+      const size = page.viewportSize();
+      if (width) await page.setViewportSize({ width, height: 925 });
+      await page.goto(`${base}/history/${query}`);
+      await page.waitForSelector("#results .msg");
+      await nap(300);
+      await page.screenshot({ path: path.join(shots, `history-${name}.png`) });
+      if (name === "wide") {
+        // a light theme: the words in who's hue, the chips and the chosen row must still read
+        await page.route("**/api/messages/meta", async (r) => { const got = await r.fetch(), meta = await got.json(); await r.fulfill({ response: got, json: { ...meta, theme: { ...meta.theme, bg: "#ffffff", fg: "#1f2328", cursor: "#0969da", dark: false } } }); }, { times: 1 });
+        await page.reload();
+        await page.waitForSelector("#results .msg");
+        await nap(300);
+        await page.screenshot({ path: path.join(shots, "history-light.png") });
+        await page.reload();
+        await page.waitForSelector("#results .msg");
+        await page.click('#fsender .frow:has(.pname:text-is("Dispatcher"))');
+        await page.click('#results .msg:has-text("make the board wait for its selector")');
+        await page.screenshot({ path: path.join(shots, "history-open.png") });
+      }
+      await page.setViewportSize(size);
+    }
   }
   endPanes();
 }
@@ -292,5 +359,13 @@ export async function liveHistoryPhone(page, { base, shots }) {
       keys.map((k) => k[0]).join() === (p === "history" ? ",,,Messages" : ",,Dashboard,") && keys.every((k) => k[1] >= 44 && k[2] >= 40), JSON.stringify(keys));
     if (shots) await page.screenshot({ path: path.join(shots, `${p}-phone.png`), fullPage: true });
   }
-  check("AC-151 the phone's filters stand behind one key", await page.goto(`${base}/history/`).then(() => page.isVisible("#hfilters")) && !(await page.isVisible("#fsender")));
+  await page.goto(`${base}/history/`);
+  check("AC-151 the phone's filters stand behind one key", await page.isVisible("#hfilters") && !(await page.isVisible("#fsender")));
+  await page.click("#hfilters");
+  const rail = await page.evaluate(() => [...document.querySelectorAll("#hrail .frow")].map((r) => Math.round(r.getBoundingClientRect().height)));
+  check("AC-151 Filters shows the quick filters, each row a finger's size, with no sideways scroll", await page.isVisible("#fsender") && rail.length >= 6 && rail.every((h) => h >= 44)
+    && await page.evaluate(() => document.documentElement.scrollWidth - innerWidth) <= 0, JSON.stringify(rail));
+  if (shots) await page.screenshot({ path: path.join(shots, "history-phone-filters.png") });
+  await page.click("#hfilters");
+  if (shots) await page.screenshot({ path: path.join(shots, "history-phone-top.png") });
 }
