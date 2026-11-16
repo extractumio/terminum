@@ -36,9 +36,10 @@ pub(super) fn place(store: &Store, home: &Path, project: &str) -> Result<Place, 
 /// The target as fetched now.
 fn target_now(p: &Place) -> Result<String, String> {
     let (remote, branch) = integration::target_of(&p.s.target)?;
-    let fetch = || git::run(&p.repo, &["fetch", "--quiet", remote]);
+    // a fetch beside it (an After's, a Prepare's) holding a ref is waited for, as worktree.py's fetched() waits
+    let fetch = || git::run(&p.repo, &["-c", "core.filesRefLockTimeout=5000", "-c", "core.packedRefsTimeout=5000", "fetch", "--quiet", remote]);
     let mut fetched = fetch();
-    // a fetch beside it (an After's, a Prepare's) holding the same ref: tried once more after a second
+    // one that moved the ref meanwhile ("is at X but expected Y"): tried once more after a second
     if matches!(&fetched, Err(e) if e.contains("cannot lock ref")) {
         std::thread::sleep(std::time::Duration::from_secs(1));
         fetched = fetch();
