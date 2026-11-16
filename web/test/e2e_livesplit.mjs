@@ -117,10 +117,11 @@ export async function liveSplit(page, { tmux, work, socket, widths }) {
   }
   // a quick switch away and back: Files shows the pane's folder again (WebKit stayed blank)
   for (const id of [mate, pane, mate, pane]) { await page.click(`#sessions .item[data-id$=":${id}"]`); await page.waitForTimeout(250); }
-  const files = () => page.evaluate(() => { const f = document.getElementById("files");
-    return { moving: f.classList.contains("moving"), href: f.contentWindow?.location.href, text: f.contentDocument?.body?.innerText.slice(0, 120) ?? null }; });
+  // `has` reads the whole listing: a later browser's run finds the folders an earlier one left before alpha.txt
+  const files = () => page.evaluate(() => { const f = document.getElementById("files"), text = f.contentDocument?.body?.innerText ?? null;
+    return { moving: f.classList.contains("moving"), href: f.contentWindow?.location.href, has: !!text?.includes("alpha.txt"), text: text?.slice(0, 120) ?? null }; });
   await within("AC-70 Files follows the pane back to its folder after quick switches", async () => {
-    for (let t = 0; t < 8000; t += 200) { const f = await files(); if (f.text?.includes("alpha.txt") && !f.moving) return; await page.waitForTimeout(200); }
+    for (let t = 0; t < 8000; t += 200) { const f = await files(); if (f.has && !f.moving) return; await page.waitForTimeout(200); }
     throw new Error(JSON.stringify(await files()));
   });
   for (const [id, w] of panes()) if (w === win && id !== pane) tmux("kill-pane", "-t", id);

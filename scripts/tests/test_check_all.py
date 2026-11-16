@@ -30,8 +30,10 @@ class Start(unittest.TestCase):
         subprocess.run(["git", "init", "-q", tmp.name], check=True)
 
     def check(self, *args, **env):
+        # a release's own run sets TM_GATE_PASSED for the checks it starts: each case here sets its own
+        mine = {k: v for k, v in os.environ.items() if k != "TM_GATE_PASSED"}
         return subprocess.run(["bash", "scripts/check_all.sh", *args], cwd=self.root, capture_output=True, text=True,
-                              env={**os.environ, "GATE_EXIT": "0", **env})
+                              env={**mine, "GATE_EXIT": "0", **env})
 
     def read(self, name):
         path = self.root / name
