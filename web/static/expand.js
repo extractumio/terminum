@@ -9,11 +9,12 @@ import { icon } from "./icons.js";
 const BACK = "Back to its window (Esc)", FULL = "Full window";
 let shown = null;                                // the box over the window: one at a time (a redraw may drop it)
 
-/** Wraps `field`, in the page or not yet, in a box with the key; answers the box. */
-export function expandable(field) {
+/** Wraps `field`, in the page or not yet, and the parts shown in its place (a preview), in a box with the key;
+ *  answers the box. */
+export function expandable(field, ...parts) {
   const box = el("div", "xbox");
   field.replaceWith(box);
-  box.append(field);
+  box.append(field, ...parts);
   addKey(box);
   return box;
 }

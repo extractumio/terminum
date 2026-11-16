@@ -92,7 +92,7 @@ export function taskForm({ getMeta, getFilter, onMade, onRun, slots }) {
     canCreate();
   }
 
-  const view = writePreview("new", $("newtext"), $("newshown"));
+  const view = writePreview($("newtabs"), $("newtext"), $("newshown"));
 
   /** Its Details as chosen so far: each change is the draft's, sent with Create. */
   function showAttrs() {
