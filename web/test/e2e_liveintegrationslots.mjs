@@ -8,7 +8,7 @@ import { check, until } from "./check.mjs";
 const FAKE = fileURLToPath(new URL("../../scripts/fake_agent.py", import.meta.url));
 
 export async function liveIntegrationSlots(page, live) {
-  const { j, cli, open } = boardKit(page, live);
+  const { j, cli, open, hook } = boardKit(page, live);
   const size = page.viewportSize().width < 860 ? "phone" : "wide";
   const project = (await j("/api/task-projects", "POST", { name: `Integration slots ${size}`, dir: live.work })).id;
   const given = { project, name: "Codex slots", kind: "codex", command: `python3 -I ${FAKE} ${cli} --kind codex` };
@@ -49,11 +49,26 @@ export async function liveIntegrationSlots(page, live) {
     check("AC-169 four integration waits free room for the queued Verify prerequisite", await started(blocker), JSON.stringify(await slots()));
     for (const id of queued) {
       const t = await j(`/api/tasks/${id}`);
+      hook(t.session.key.split(":").pop(), "Stop", { session_id: t.agent.conversation }, "codex");
       check("AC-169 an integration wait keeps its live session", t.status === "INTEGRATION" && t.session?.closed === false);
     }
     await open(`?project=${project}`);
     const card = `#agentbar .agentcard[data-agent="${agent}"]`;
     check("AC-169 integration waits leave two free slot rings", await until(async () => await page.locator(`${card} .agfree`).count() === 2));
+    const showPool = async () => { if (!await page.isVisible(card)) await page.click("#poolline"); };
+    await showPool();
+    check("AC-138 all retained sessions keep their dots", await until(async () => await page.locator(`${card} .agdot`).count() === 5));
+    await page.click(`${card} .agedit`);
+    await page.waitForSelector("#agentbox[open]");
+    check("AC-138 integration sessions remain openable in the agent window", await page.locator("#agentbox .agsession").count() === 5
+      && await page.locator("#agentbox").getByRole("button", { name: "Open session", exact: true }).count() === 5);
+    check("AC-169 quiet integration sessions say what they wait for", await until(async () => await page.locator("#agentbox .agsessname").filter({ hasText: "waiting for integration" }).count() === 4));
+    await page.keyboard.press("Escape");
+    const retained = (await j(`/api/tasks/${queued[0]}`)).session.key;
+    await showPool();
+    await page.click(`${card} .agdot[data-key="${retained}"]`);
+    check("AC-138 a retained integration dot opens its terminal", await until(() => page.url().includes("/sessions/") && decodeURIComponent(page.url()).includes(retained)));
+    await open(`?project=${project}`);
 
     for (let i = 0; i < 2; i++) {
       const id = await task(`Fill released slot ${i}`);
@@ -65,7 +80,7 @@ export async function liveIntegrationSlots(page, live) {
     const next = await task("Must wait after return");
     const full = await j(`/api/tasks/${next}/run`, "POST", { agent });
     check("AC-169 a returned run counts again and later starts wait", full.full?.words?.includes(queued[0]) && await status(next) === "TODO"
-      && (await slots()).agents[agent].length === 4, JSON.stringify(full));
+      && (await slots()).agents[agent].filter((r) => !r.integration && !r.round && !r.kept).length === 4, JSON.stringify(full));
   } finally {
     for (const id of tasks) {
       const key = (await j(`/api/tasks/${id}`).catch(() => ({}))).session?.key;
