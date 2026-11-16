@@ -72,7 +72,7 @@ export function scheduleWindow({ getMeta, chosen, changed }) {
   for (const k of ["title", "text", "every", "agent", "project"]) f[k].addEventListener("change", changedWhen);
   f.kind.addEventListener("change", () => { shownParts(); changedWhen(); });
 
-  const view = writePreview("sched", f.text, $("schedshown"));
+  const view = writePreview($("schedtabs"), f.text, $("schedshown"));
 
   /** The agents of the project chosen: a schedule runs on one of its own project's (terminum-dispatcher.md AC-137). */
   function fillAgentsOf(wanted = f.agent.value) {

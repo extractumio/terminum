@@ -47,11 +47,11 @@ export async function liveBoard(page, { base, tmux, work, shots }) {
   fs.writeFileSync(shot, PNG);
   await page.setInputFiles("#newpick", shot);
   await within("AC-106 a file kept links at the cursor", () => page.waitForFunction(() => document.getElementById("newtext").value.includes("/api/task-files/"), null, { timeout: 5000 }));
-  await page.click("#newpreview");
+  await page.click("#newtabs button:has-text(\"Preview\")");
   await within("AC-106 Preview renders the Markdown", () => page.waitForSelector("#newshown strong", { timeout: 5000 }));
   check("AC-106 raw HTML stays off in Preview", await page.evaluate(() => !document.querySelector("#newshown img:not([data-raw])") && !window.ranit));
   await within("AC-109 a task's own picture shows, fetched with the sign-in", () => page.waitForFunction(() => document.querySelector("#newshown img")?.naturalWidth > 0, null, { timeout: 5000 }));
-  await page.click("#newwrite");
+  await page.click("#newtabs button:has-text(\"Write\")");
   // a draft survives a reload
   await page.click("#newclose");
   await page.reload();
@@ -146,7 +146,10 @@ export async function liveBoard(page, { base, tmux, work, shots }) {
   await page.selectOption("#taskbody .fieldgrid label:has-text(\"Severity\") select", "P3");
   await page.waitForTimeout(500);
   check("AC-107 a field changed keeps a text being typed", await page.inputValue(".tasktext textarea") === "typed and not saved");
-  await page.fill(".tasktext textarea", "new text");
+  await page.fill(".tasktext textarea", "new **text**");
+  await page.click('.tasktext button:has-text("Preview")');   // Write and Preview as a new task's (AC-106)
+  await within("AC-106 an open task's text being edited shows its Markdown in Preview", () => page.waitForSelector(".tasktext .xbox > .markdown:not([hidden]) strong", { timeout: 5000 }));
+  await page.click('.tasktext button:has-text("Write")');
   await page.click('.tasktext button:has-text("Save")');
   check("AC-107 a text changed says so", await until(async () => /changed its text/.test(await page.textContent("#taskbody .history"))));
   // a comment deleted and a purge go through terminumd's write checks
