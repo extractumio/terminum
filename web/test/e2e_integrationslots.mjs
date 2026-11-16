@@ -47,8 +47,8 @@ export async function webIntegrationSlots(browser, name) {
         && await page.locator("#agentbox").getByRole("button", { name: "Open session", exact: true }).count() === 5);
       check("AC-169 the window names each integration wait", await page.locator("#agentbox .agsessname").filter({ hasText: "waiting for integration" }).count() === 4);
       await page.evaluate(() => document.activeElement?.blur());
-      await page.locator("#agentbox form").evaluate((form) => { form.scrollTop = 0; });
-      await page.waitForFunction(() => document.querySelector("#agentbox form").scrollTop === 0);
+      await page.locator("#agentbox").evaluate((box) => { box.scrollTop = 0; box.querySelector("form").scrollTop = 0; });
+      await page.waitForFunction(() => document.querySelector("#agentbox").scrollTop === 0 && document.querySelector("#agentbox form").scrollTop === 0);
       check("AC-138 the retained-session view fits the viewport", await page.evaluate(() => {
         const box = document.querySelector("#agentbox");
         return box.scrollWidth <= box.clientWidth + 1 && document.documentElement.scrollWidth <= innerWidth + 1;
