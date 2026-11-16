@@ -3,7 +3,7 @@
 // (e2e_live.mjs; terminum-kanban.md AC-134, AC-135): the list's own row, following the session with no
 // task read; a press opens the session at its own address; the project chosen in the head, remembered.
 import path from "node:path";
-import { boardKit, nap } from "./boardkit.mjs";
+import { boardKit, nap, showColumnOf } from "./boardkit.mjs";
 import { check, until } from "./check.mjs";
 
 /** A session's address on its page: `:` stays readable (AC-134). */
@@ -49,13 +49,14 @@ export async function liveBoardSessions(page, opts) {
   check("AC-134 it goes with the task to IN PROGRESS", await until(() => page.isVisible(`.col[data-status="IN PROGRESS"] ${row}`), 4000));
   await j(`/api/tasks/${made}`, "PATCH", { status: "DONE" });
   await until(() => page.$(`.col[data-status="DONE"] ${card(made)}`), 4000);
+  await showColumnOf(page, made);                  // wider than a phone the panel shows one column (terminum-kanban.md AC-105)
   await page.click(`.col[data-status="DONE"] ${card(made)} .ctitle`);   // folded in DONE: shown whole (terminum-kanban.md AC-159)
   check("AC-134 and to DONE", await until(() => page.isVisible(`.col[data-status="DONE"] ${row}`), 4000));
   await j(`/api/tasks/${made}`, "PATCH", { status: "IN PROGRESS" });
-  await until(() => page.isVisible(`.col[data-status="IN PROGRESS"] ${row}`), 4000);
+  await until(async () => { await showColumnOf(page, made); return page.isVisible(`.col[data-status="IN PROGRESS"] ${row}`); }, 4000);
 
   // a drag by its row to another column moves nothing and opens nothing (AC-138)
-  await page.dragAndDrop(row, '.col[data-status="FAILED"]', { force: true });
+  await page.dragAndDrop(row, await page.isVisible(".colpanel") ? ".colpanel" : '.col[data-status="FAILED"]', { force: true });   // the panel beside TODO, a phone's column (AC-105)
   await nap(300);
   check("AC-134 a drag by the row moves no card", await page.isVisible(`.col[data-status="IN PROGRESS"] ${row}`) && (await j(`/api/tasks/${made}`)).status === "IN PROGRESS");
   check("AC-134 and opens no session", new URL(page.url()).pathname === "/kanban/", page.url());
@@ -99,7 +100,7 @@ export async function liveBoardSessions(page, opts) {
   check("AC-135 a name chooses that project, in the URL", await until(() => new URL(page.url()).searchParams.get("project") === project), page.url());
   check("AC-135 the key says it", /Billing/.test(await page.textContent("#fproject summary")) && await page.isVisible("#fproject summary .pdot"));
   check("AC-135 its menu closes", !(await page.evaluate(() => document.querySelector("#fproject").open)));
-  check("AC-135 the columns hold its tasks", await until(() => page.isVisible(card(made))));
+  check("AC-135 the columns hold its tasks", await until(async () => { await showColumnOf(page, made); return page.isVisible(card(made)); }));
   check("AC-135 and the session list stands first", await page.evaluate(() => { const s = document.querySelector("#nav").getBoundingClientRect(), t = document.querySelector('.col[data-status="TODO"]').getBoundingClientRect(); return s.right <= t.left && s.width >= 240; }));
   const listed = () => page.evaluate(() => [...document.querySelectorAll("#sessions .item")].map((e) => e.dataset.id));
   check("AC-135 Billing's session stands beside Billing", await until(async () => (await listed()).includes(key)), (await listed()).join());

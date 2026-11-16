@@ -26,6 +26,18 @@ export function startOf(app, slug = null) {
     return r?.said ?? null;
   } finally { store.close(); }
 }
+/** A card's column in sight: wider than a phone the panel shows one column at a time, by its tab (terminum-kanban.md AC-105). */
+export async function showColumnOf(page, id) {
+  const status = await page.$eval(`.card[data-id="${id}"]`, (c) => { const col = c.closest(".col"); return col.offsetWidth ? "" : col.dataset.status; }).catch(() => "");
+  if (status) await page.click(`#colswitch button[data-status="${status}"]`);
+}
+/** A card in sight: drawn, then its column shown, then visible (`timeout` each wait). */
+export async function cardInSight(page, id, timeout) {
+  const sel = `.card[data-id="${id}"]`;
+  await page.waitForSelector(sel, { state: "attached", timeout });
+  await showColumnOf(page, id);
+  await page.waitForSelector(sel, { timeout });
+}
 /** A press that opens a task's window: a folded card's first press shows it whole (terminum-kanban.md AC-159). What a
  *  press did is read from the page: its window's address, or the card shown whole, pressed once more; a press on a
  *  card the board drew anew meanwhile (its task left TODO) did neither and is made again; any other is an error. */
@@ -34,6 +46,7 @@ export async function pressCard(page, id) {
   const took = ({ id, sel, card }) => location.pathname.endsWith(`/${id}`) ? "window"
     : document.querySelector(`${sel}.compact.open`) ? "whole" : card && !card.isConnected ? "redrawn" : null;
   for (let press = 0; press < 3; press++) {
+    await showColumnOf(page, id);
     const card = await page.$(sel);
     await page.click(sel);
     const did = await page.waitForFunction(took, { id, sel, card }, { timeout: 5000 }).then((h) => h.jsonValue(), () => null);
@@ -63,6 +76,7 @@ export async function pressRun(page, id) {
 /** A card's Run key shown: a folded card with no agent is shown whole first. */
 export async function showRun(page, id) {
   const sel = `.card[data-id="${id}"]`;
+  await showColumnOf(page, id);
   if (await page.$(`${sel}.compact:not(.open, .onagent)`)) await page.click(`${sel} .ctitle`);
 }
 /** A key's focus ring as the page draws it (docs/UI-GUIDELINES.md "Focus"): lit, focused, matching :focus-visible. */

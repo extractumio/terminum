@@ -4,7 +4,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { check, until, within } from "./check.mjs";
-import { pressCard } from "./boardkit.mjs";
+import { pressCard, showColumnOf } from "./boardkit.mjs";
 
 const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==", "base64");
 
@@ -108,7 +108,7 @@ export async function liveBoard(page, { base, tmux, work, shots }) {
 
   // a human moves a task by running it: a drag across columns moves nothing (AC-138); the test places it by the route
   await page.waitForTimeout(300);   // the order's own read is in: a drag begun on a column being rebuilt is lost
-  await page.dragAndDrop(card(urgent), '.col[data-status="DONE"]');
+  await page.dragAndDrop(card(urgent), await page.isVisible(".colpanel") ? ".colpanel" : '.col[data-status="DONE"]');   // the panel beside TODO, a phone's column (AC-105)
   await page.waitForTimeout(300);
   check("AC-138 a drag across columns moves nothing", (await inColumn("TODO")).includes(urgent) && !(await inColumn("DONE")).includes(urgent));
   check("AC-138 a card has no key to move it, its play key opens the run window", !(await page.$(".cmove")) && !(await page.$("#movebox")) && !!(await page.$(`${card(second)} .crun`)));
@@ -212,6 +212,7 @@ export async function liveBoard(page, { base, tmux, work, shots }) {
   check("AC-106 New Task in a row's menu fills in its session", await page.inputValue("#newsession") === key, await page.inputValue("#newsession"));
   check("AC-106 and leaves the address clean", new URL(page.url()).search === "", page.url());
   await page.click("#newdiscard");
+  await showColumnOf(page, first);
   await page.click(`.col[data-status="IN PROGRESS"] .card[data-id="${first}"] .ctitle`);
   await page.waitForSelector("#taskbox[open]");
   await page.click("#taskclose");

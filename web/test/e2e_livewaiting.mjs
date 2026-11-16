@@ -3,7 +3,7 @@
 // the accelerated clock can close it while the browser opens RUN, testing a different path.
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { boardKit, nap, pressCard } from "./boardkit.mjs";
+import { boardKit, cardInSight, nap, pressCard } from "./boardkit.mjs";
 import { check, until } from "./check.mjs";
 
 const FAKE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../scripts/fake_agent.py");
@@ -23,7 +23,7 @@ export async function liveWaitingRun(page, opts) {
     check("AC-157 the agent asks the human and ends its turn", await until(async () => (await j(`/api/tasks/${id}`)).status === "WAIT FOR HUMAN", 15000));
     const running = await j(`/api/tasks/${id}`), conversation = running.agent?.conversation, key = running.session?.key;
     await open(`?project=${project}`);
-    await page.waitForSelector(card(id));
+    await cardInSight(page, id);
     await pressCard(page, id);
     await page.waitForSelector("#taskbox[open]");
     const waiting = await j(`/api/tasks/${id}`);

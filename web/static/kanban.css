@@ -14,10 +14,15 @@ body.board-page { margin: 0; overflow: hidden; background: var(--surface-0); col
 #filters .search { flex: 1 1 110px; min-width: 110px; max-width: 220px; height: var(--key-h); }   /* the field gives way first: a line breaks only past its least */
 #filters > :not(.search), #boardacts { flex: none; }
 #picks { display: flex; align-items: center; gap: var(--sp-2); }
-/* its room is what the session list leaves: with too little, the filters stand behind one key */
+/* its room is what the session list leaves: with too little, or on a touch screen, the filters stand behind one key */
 .board-page #main { container: board / inline-size; }
 #bar #filtersbtn { display: none; }
 @container board (max-width: 800px) {
+  #bar #filtersbtn { display: inline-flex; }
+  #picks { flex-basis: 100%; }
+  #picks:not(.open) { display: none; }
+}
+@media (pointer: coarse) {                         /* a tablet: the same, the head one row over the board */
   #bar #filtersbtn { display: inline-flex; }
   #picks { flex-basis: 100%; }
   #picks:not(.open) { display: none; }
@@ -36,8 +41,8 @@ body.board-page { margin: 0; overflow: hidden; background: var(--surface-0); col
 #fproject .projrow .projname { flex: 1 1 auto; width: auto; min-width: 0; }
 #fproject .projrow :is(.projedit, .projsession) { flex: none; width: var(--icon-key-list); height: var(--icon-key-list); padding: 0; justify-content: center; color: var(--muted); }
 
-/* the columns: a surface each, their cards a step over it */
-#board { display: grid; grid-template-columns: repeat(var(--cols, 5), minmax(200px, 1fr)); gap: var(--sp-2); flex: 1 1 0; min-height: 0; padding: var(--sp-2) var(--gutter) var(--gutter); overflow-x: auto; }
+/* the columns: a surface each, their cards a step over it; where they stand: boardpanel.css */
+#board { flex: 1 1 0; min-height: 0; padding: var(--sp-2) var(--gutter) var(--gutter); }
 .col { display: flex; flex-direction: column; min-height: 0; min-width: 0; border-radius: var(--r-lg); background: var(--surface-1); }
 /* a head as tall as a list key and its inset round it, as a group header (style.css): TODO's [+] stays inside on a touch screen */
 .colhead { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1); min-height: calc(var(--icon-key-list) + 2 * var(--row-inset)); flex: none; margin: 0; padding: var(--sp-1) var(--sp-2); font-size: var(--fs-label); font-weight: var(--fw-head); }
@@ -45,12 +50,15 @@ body.board-page { margin: 0; overflow: hidden; background: var(--surface-0); col
 .colhead .count { color: var(--muted); }
 /* Display order's keys immediately before the count (AC-105); TODO's own New task before them. */
 .colsort { display: inline-flex; flex: none; margin-left: auto; gap: 0; }
-.colhead :is(.new, .colsort .icon) { --ik: var(--icon-key-list); }
+.colhead .colsort .icon { --ik: var(--icon-key-list); }
+.colhead .new { --key-h: var(--icon-key-list); --key-px: var(--sp-2); gap: var(--sp-1); margin-left: auto; font-size: var(--fs-label); }   /* TODO's + New task: as tall as the sort keys (AC-106) */
+.colhead .new + .colsort { margin-left: 0; }   /* the free room before + New task, not between it and its keys */
 .cards { display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-1) var(--sp-2) var(--sp-2); overflow-y: auto; flex: 1 1 auto; min-height: 0; }
 /* a project's agents, over the columns: what RUN can start (terminum-dispatcher.md AC-137) */
 #agentbar { flex: none; padding: var(--sp-2) var(--gutter) 0; min-width: 0; }
-/* the columns' own tracks (#board): an agent a column wide, four a row, the fifth track for its keys (AC-138) */
-.tracks { display: grid; grid-template-columns: repeat(var(--cols, 5), minmax(200px, 1fr)); gap: var(--sp-2); overflow-x: auto; scrollbar-width: none; }
+/* the board's six tracks (boardpanel.css): an agent a track wide, four a row, the fifth track for its keys (AC-138); with
+   less room a row that scrolls, an agent 240 px wide */
+.tracks { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: var(--sp-2); overflow-x: auto; scrollbar-width: none; }
 /* many agents or schedules scroll in their own bar: the columns keep the room (AC-138, terminum-schedules.md AC-163) */
 #agentbar .tracks, .schedtracks { max-height: 30dvh; overflow-y: auto; scrollbar-width: thin; }
 /* whatever stands over them (waiting agents, the pool, the section), the columns keep at least this: the rest gives way and scrolls */
@@ -61,6 +69,12 @@ body.board-page { margin: 0; overflow: hidden; background: var(--surface-0); col
 .trackitems > .colempty { grid-column: 1 / -1; }
 .tracks > .trackside { grid-column: 5; display: flex; align-items: center; align-self: start; gap: var(--sp-2); min-width: 0; }
 .agentlist .colempty { margin: 0; align-self: center; white-space: nowrap; }
+@container board (width < 1500px) {
+  .tracks { display: flex; align-items: stretch; }
+  .tracks > :is(.trackitems, .trackside) { display: flex; flex: none; gap: var(--sp-2); }
+  .agentlist .item { flex: none; width: 240px; }
+  .pickhint { white-space: nowrap; }
+}
 /* the Scheduled section, between the pool and the columns: folded to its head, its cards on the same tracks (terminum-schedules.md AC-163) */
 #schedbar { flex: none; padding: var(--sp-2) var(--gutter) 0; min-width: 0; }
 .schedhead { display: flex; align-items: center; gap: var(--sp-2); }
@@ -257,40 +271,36 @@ body.board-page { margin: 0; overflow: hidden; background: var(--surface-0); col
 #archivedlist li { align-items: center; }
 #archivedlist .linklike { flex: 1; min-width: 0; overflow: hidden; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
 
-/* a phone or a narrow window: one column, a swipe away from the next; the head gives the cards the room */
-#colswitch { display: none; }
-@media (max-width: 860px) {
-  .tracks { display: flex; align-items: stretch; }
-  .tracks > :is(.trackitems, .trackside) { display: flex; flex: none; gap: var(--sp-2); }
-  .agentlist .item { flex: none; width: 240px; }
-  .schedtracks { display: flex; flex-direction: column; }
-  .schedtracks > .trackitems { flex-direction: column; }
-  .schedlist .item { width: auto; }
-  .pickhint { white-space: nowrap; }
-  #filters { order: 3; flex: 1 1 100%; }
-  #filters .search { flex: 1 1 0; min-width: 80px; max-width: none; }
-  #picks { flex-wrap: wrap; }
-  .pick > .box { position: fixed; top: auto; left: var(--gutter); right: var(--gutter); max-height: 60dvh; }
-  #colswitch { display: flex; flex: none; overflow-x: auto; scrollbar-width: none; margin: var(--sp-2) var(--gutter) 0; }
-  #colswitch::-webkit-scrollbar { display: none; }
-  #colswitch button { white-space: nowrap; flex: none; }
-  #board { display: flex; gap: 0; padding: var(--sp-2) 0 0; overflow: auto hidden; scroll-snap-type: x mandatory; scrollbar-width: none; overscroll-behavior-x: contain; }
-  #board::-webkit-scrollbar { display: none; }
-  .col { flex: 0 0 100%; box-sizing: border-box; scroll-snap-align: start; scroll-snap-stop: always; background: none; border-radius: 0; }
-  .colhead { justify-content: flex-end; padding-inline: var(--gutter); }
-  .colhead .colname { display: none; }   /* the selected tab names it; sort controls stay reachable */
+/* a phone, a tablet or a narrow window: every target a finger's (AC-105); the columns' place: boardpanel.css, a phone's below */
+@media (max-width: 860px), (pointer: coarse) {
   .csession .item { min-height: var(--key-h-touch); box-sizing: border-box; align-items: center; }
-  #fproject summary { max-width: 104px; }
-  #autoswitch .word { display: none; }
-  .cards { padding: 0 var(--gutter) var(--gutter); }
   .card { padding: var(--sp-3); }
   .chead { min-height: var(--icon-key-list); }
   .crun { margin: calc(var(--sp-1) * -1) calc(var(--sp-1) * -1) calc(var(--sp-1) * -1) auto; }
   .ctitle { font-size: var(--fs-title); }
   .cfoot { font-size: var(--fs-label); }
+  :is(.cboxes, .cneeds) .stbox { min-height: 34px; min-width: 34px; justify-content: center; }   /* a subtask's box takes a finger (AC-112) */
 }
-/* a phone: a subtask's box takes a finger (AC-105, AC-112) */
-@media (max-width: 860px) { :is(.cboxes, .cneeds) .stbox { min-height: 34px; min-width: 34px; justify-content: center; } }
+/* a narrow window: the head's keys smaller, on one row while they fit (a phone's: boardphone.css) */
+@media (max-width: 860px) {
+  #filters .search { flex: 1 1 0; min-width: 80px; max-width: none; }
+  #picks { flex-wrap: wrap; }
+  .pick > .box { position: fixed; top: auto; left: var(--gutter); right: var(--gutter); max-height: 60dvh; }
+  #fproject summary { max-width: 140px; }
+  #autoswitch .word { display: none; }
+}
+/* a phone, upright or on its side: one column, a swipe away from the next, the six tabs over them naming it (kanbanpanel.js) */
+@media (max-width: 600px), (pointer: coarse) and (max-height: 500px) {
+  #colswitch { display: flex; flex: none; overflow-x: auto; scrollbar-width: none; margin: var(--sp-2) var(--gutter) 0; }
+  #colswitch::-webkit-scrollbar { display: none; }
+  #board { display: flex; gap: 0; padding: var(--sp-2) 0 0; overflow: auto hidden; scroll-snap-type: x mandatory; scrollbar-width: none; overscroll-behavior-x: contain; }
+  #board::-webkit-scrollbar { display: none; }
+  .colpanel { display: contents; }
+  .col { flex: 0 0 100%; box-sizing: border-box; scroll-snap-align: start; scroll-snap-stop: always; background: none; border-radius: 0; }
+  .colhead { justify-content: flex-end; padding-inline: var(--gutter); }
+  .colhead .colname { display: none; }   /* the selected tab names it; sort controls stay reachable */
+  .cards { padding: 0 var(--gutter) var(--gutter); }
+}
 /* what an agent's command must carry: it runs with no one watching (terminum-dispatcher.md AC-156) */
 #agentbox .hint { margin: 0; font-size: var(--fs-small); color: var(--muted-text); overflow-wrap: anywhere; }
 /* a project's integration (terminum-integration.md AC-186): what happens to a red batch, one group of fields */

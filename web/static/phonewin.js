@@ -10,6 +10,8 @@ import { el } from "./listparts.js";
 
 /** Where a window covers the screen: the page's one query of it (phone.css's own is the same). */
 export const PHONE = "(max-width: 600px)";
+/** Where the board is a phone's: a phone upright, or on its side (a touch screen 500 px high or less; terminum-kanban.md AC-105). */
+export const BOARD_PHONE = `${PHONE}, (pointer: coarse) and (max-height: 500px)`;
 const WINDOWS = 'dialog.dlg[data-size]:not([data-size="ask"]), form.footform';
 const CANCEL = '[value="cancel"], [id$="cancel"]';   // ×'s on a phone
 const phone = matchMedia(PHONE);

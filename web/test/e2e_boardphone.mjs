@@ -4,9 +4,8 @@
 // the board is narrowed; Auto-Dispatch, the agents and the schedules behind one line that opens them as a sheet; a
 // column's keys scrolling with its cards; the lines of tasks that need the human folded into the head's counters,
 // a fresh one pulsing; a wider window keeps its two rows.
-import fs from "node:fs";
 import { check, runningIn, until } from "./check.mjs";
-import { drawn, openPage, ORIGIN, pause, PHONE, shot, THEME } from "./fake.mjs";
+import { drawn, fakeBoard, openPage, ORIGIN, pause, PHONE, shot, THEME } from "./fake.mjs";
 
 const tasks = Array.from({ length: 30 }, (_, i) => ({ id: `API-${i + 1}`, title: `Task ${i + 1} with a title long enough to be cut`, project: "api", status: "TODO",
   severity: i ? "P2" : "P0", owner: "human", owner_name: "Alex", updated_at: i, parent: null }));
@@ -29,11 +28,7 @@ async function board(browser, device, motion = "reduce") {
   const f = await openPage(browser, { device: { ...device, reducedMotion: motion }, secret: "a".repeat(64), stored: "a".repeat(64) });
   const { page } = f;
   await drawn(page);
-  const json = (r, data) => r.fulfill({ contentType: "application/json", body: JSON.stringify(data) });
-  await page.route(`${ORIGIN}/kanban/**`, (r) => r.fulfill({ contentType: "text/html", body: fs.readFileSync(new URL("../static/kanban.html", import.meta.url), "utf8").replace("__BUILD__", "test") }));
-  await page.route("**/api/tasks/meta", (r) => json(r, META));
-  await page.route("**/api/schedules", (r) => json(r, { schedules: [] }));
-  await page.route("**/api/tasks?*", (r) => json(r, { tasks: new URL(r.request().url()).searchParams.get("status") === "TODO" ? tasks : [], counts, slots: { agents: {}, full: [], full_projects: [] } }));
+  await fakeBoard(page, { meta: () => META, tasks: (status) => (status === "TODO" ? tasks : []), counts });
   const go = async (query = "?project=api") => {
     await page.goto(`${ORIGIN}/kanban/${query}`);
     await page.waitForSelector(".col .card");

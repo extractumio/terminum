@@ -19,13 +19,13 @@ export async function liveFolded(page, live) {
 
   // AC-159: a line a card in TODO, its ID, severity and title only
   const lineH = (await box(card(a))).h;
-  // one line: ID, severity and title on one row, the title cut, nothing under them
+  // one line: ID, severity and title on one row, the title cut where it does not fit, nothing under them
   const row = await page.evaluate((s) => {
     const mid = (q) => { const r = document.querySelector(`${s} ${q}`).getBoundingClientRect(); return r.top + r.height / 2; };
     const t = document.querySelector(`${s} .ctitle`);
-    return { spread: Math.max(mid(".cid"), mid(".csev"), mid(".ctitle")) - Math.min(mid(".cid"), mid(".csev"), mid(".ctitle")), cut: getComputedStyle(t).whiteSpace === "nowrap" && t.scrollWidth > t.clientWidth };
+    return { spread: Math.max(mid(".cid"), mid(".csev"), mid(".ctitle")) - Math.min(mid(".cid"), mid(".csev"), mid(".ctitle")), nowrap: getComputedStyle(t).whiteSpace === "nowrap", ellipsis: getComputedStyle(t).textOverflow === "ellipsis" };
   }, card(a));
-  check("AC-159 a TODO card is one line: ID, severity, title", row.spread < 4 && row.cut && !(await shown(`${card(a)} .cfoot`)), JSON.stringify(row));
+  check("AC-159 a TODO card is one line: ID, severity, title", row.spread < 4 && row.nowrap && row.ellipsis && !(await shown(`${card(a)} .cfoot`)), JSON.stringify(row));
   check("AC-159 it says collapsed", await page.getAttribute(card(a), "aria-expanded") === "false");
   await shot("folded");
   await page.click(`${card(a)} .ctitle`);
@@ -48,17 +48,19 @@ export async function liveFolded(page, live) {
   await j(`/api/tasks/${a}`, "PATCH", { title: "Folded first, renamed again" });
   check("AC-159 shown whole stays so as the columns are read again", await until(async () => (await page.textContent(`${card(a)} .ctitle`)) === "Folded first, renamed again") && await shown(`${card(a)} .cfoot`));
 
-  // AC-138: an agent a column wide, four a row, + Agent in the fifth track
-  const cols = await page.evaluate(() => [...document.querySelectorAll("#board .col:not([hidden])")].map((c) => { const r = c.getBoundingClientRect(); return [Math.round(r.x), Math.round(r.width)]; }));
+  // AC-138: from 1500 px of board an agent a track wide (six tracks), four a row, + Agent in the fifth track; under it
+  // one row that scrolls, an agent 240 px wide (terminum-kanban.md AC-105's tracks)
+  const { tracks, left } = await page.evaluate(() => { const b = document.getElementById("board"), cs = getComputedStyle(b), w = b.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+    return { tracks: b.clientWidth >= 1500 ? (w - 5 * 8) / 6 : 0, left: Math.round(b.getBoundingClientRect().x + parseFloat(cs.paddingLeft)) }; });
   const agents = await page.evaluate(() => [...document.querySelectorAll(".agents .agentcard")].map((c) => { const r = c.getBoundingClientRect(); return [Math.round(r.x), Math.round(r.width), Math.round(r.y)]; }));
   const add = await box("#addagent");
-  const wide = page.viewportSize().width >= 860;
-  if (wide) {
-    const aligned = agents.slice(0, 4).every(([x, w], i) => Math.abs(x - cols[i][0]) <= 1 && Math.abs(w - cols[i][1]) <= 1);
-    check("AC-138 agents stand a column wide on the columns' tracks, four a row", aligned && agents[4][2] > agents[0][2] && Math.abs(agents[4][0] - cols[0][0]) <= 1, JSON.stringify({ cols, agents }));
-    check("AC-138 + Agent stands in the fifth track", add.x >= cols[4][0] - 1 && add.x < cols[4][0] + cols[4][1], JSON.stringify(add));
+  if (tracks) {
+    const aligned = agents.slice(0, 4).every(([x, w], i) => Math.abs(x - (left + i * (tracks + 8))) <= 1 && Math.abs(w - tracks) <= 1);
+    check("AC-138 agents stand a track wide, four a row", aligned && agents[4][2] > agents[0][2] && Math.abs(agents[4][0] - left) <= 1, JSON.stringify({ tracks, left, agents }));
+    check("AC-138 + Agent stands in the fifth track", add.x >= left + 4 * (tracks + 8) - 1 && add.x < left + 5 * (tracks + 8), JSON.stringify(add));
   } else {
-    check("AC-138 a phone keeps one row of agents that scrolls", agents.every(([, , y]) => y === agents[0][2]), JSON.stringify(agents));
+    check("AC-138 under 1500 px of board one row of agents that scrolls, each 240 px, from the board's edge",
+      agents.every(([, w, y]) => y === agents[0][2] && w === 240) && Math.abs(agents[0][0] - left) <= 1, JSON.stringify({ left, agents }));
   }
   await shot("agents");
 
@@ -236,9 +238,9 @@ export async function liveSchedules(page, live) {
   r = await ring(page, "#newschedule");
   check("AC-163 Tab still reaches + Schedule and rings it", r.focused && r.lit, JSON.stringify(r));
   await page.evaluate(() => document.activeElement?.blur());
-  const cols =await page.evaluate(() => [...document.querySelectorAll("#board .col:not([hidden])")].map((c) => Math.round(c.getBoundingClientRect().width)));
   const w = await page.evaluate((s) => Math.round(document.querySelector(s).getBoundingClientRect().width), sched);
-  if (page.viewportSize().width >= 860) check("AC-163 a card a column wide", Math.abs(w - cols[0]) <= 1, `${w} ${cols}`);
+  const agentW = await page.evaluate(() => Math.round(document.querySelector("#agentbar .agentcard").getBoundingClientRect().width));
+  if (page.viewportSize().width > 600) check("AC-163 a card as wide as an agent: a track, or 240 px under 1500 px of board", Math.abs(w - agentW) <= 1, `${w} ${agentW}`);
   const owl = `#agentbar .agentcard[data-agent="${agent}"]`;
   check("AC-161 its agent shows the kept slot", await until(async () => (await page.$$(`${owl} .agkept`)).length === 1 && /1\/2/.test(await page.textContent(owl))), await page.textContent(owl));
   // more agents than a few rows: the bars scroll, the columns stay
@@ -247,7 +249,7 @@ export async function liveSchedules(page, live) {
   await page.reload();
   await page.waitForSelector("#board .col", { state: "attached" });
   check("AC-163 this browser remembers it open", await until(() => page.isVisible(sched)));
-  const room = await page.evaluate(() => Math.round(document.querySelector("#board .col").getBoundingClientRect().height));
+  const room = await page.evaluate(() => Math.round(document.getElementById("board").getBoundingClientRect().height));
   check("AC-163 the columns keep their room under the pool and the section, however many agents", room > 200, String(room));
   await shot("schedules");
   for (const id of crowd) await j(`/api/task-agents/${id}`, "DELETE");

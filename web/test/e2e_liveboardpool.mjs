@@ -3,7 +3,7 @@
 // AC-142; terminum-kanban.md AC-106): assignment, running, slots and task windows.
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { boardKit, pressCard, pressRun, startOf } from "./boardkit.mjs";
+import { boardKit, cardInSight, pressCard, pressRun, showColumnOf, startOf } from "./boardkit.mjs";
 import { check, until } from "./check.mjs";
 import { subscriptionStripes } from "./e2e_liveboardsubs.mjs";
 
@@ -27,7 +27,7 @@ export async function agentPool(page, opts, pressAt) {
   const shown = async () => {
     await page.waitForURL((u) => !/^\/kanban\/[A-Z]/.test(u.pathname), { timeout: 8000 });
     await page.goto(`${base}/kanban/?project=${project}`);
-    await page.waitForSelector(card(a));
+    await cardInSight(page, a);
   };
   const pool = `#agentbar .agentcard[data-agent="${fixer}"]`;
   const dots = () => page.$$eval(`${pool} .agdot`, (l) => l.map((d) => `${d.className} ${d.title}`));
@@ -183,7 +183,7 @@ export async function agentPool(page, opts, pressAt) {
 
   // Archive hides it, Archived shows it, Bring back returns it
   const shelved = await task("not needed");
-  await page.waitForSelector(card(shelved), { timeout: 5000 });
+  await cardInSight(page, shelved, 5000);
   await pressCard(page, shelved);
   await page.waitForSelector("#taskbox[open]");
   await page.click('#taskacts button:has-text("Archive")');
@@ -191,7 +191,7 @@ export async function agentPool(page, opts, pressAt) {
   await page.click("#taskclose");
   check("AC-118 an archived task leaves the board", await until(async () => !(await page.$(card(shelved)))));
   await page.click("#farchived");
-  check("AC-118 Archived shows it, in the address", await until(() => page.isVisible(card(shelved))) && new URL(page.url()).searchParams.get("archived") === "1", page.url());
+  check("AC-118 Archived shows it, in the address", await until(async () => { await showColumnOf(page, shelved); return page.isVisible(card(shelved)); }) && new URL(page.url()).searchParams.get("archived") === "1", page.url());
   await pressCard(page, shelved);
   await page.waitForSelector("#taskbox[open]");
   const back = await until(() => page.isVisible('#taskacts button:has-text("Bring back")'), 2000);
@@ -207,7 +207,7 @@ export async function agentPool(page, opts, pressAt) {
 
   // Give up: a run that holds its tasks lets go, they fail, its window stays
   const held = await task("given up one"), held2 = await task("given up two");
-  await page.waitForSelector(card(held), { timeout: 5000 });
+  await cardInSight(page, held, 5000);
   const ran = await j(`/api/tasks/${held}/run`, "POST", { agent: fixer, comment: "WORKS", also: [held2] });
   check("AC-138 a press of several by the route starts", !!ran.run, JSON.stringify(ran));
   await hasStatus(held, "IN PROGRESS");
@@ -300,7 +300,7 @@ export async function agentPool(page, opts, pressAt) {
   const line = (await j("/api/tasks/meta")).agents.find((x) => x.id === fixer);
   await j(`/api/task-agents/${fixer}`, "PATCH", { name: line.name, kind: line.kind, command: line.command, effort: line.effort, at_once: 2 });
   const one = await task("first at once"), two = await task("second at once"), three = await task("third at once");
-  await page.waitForSelector(card(three), { timeout: 8000 });
+  await cardInSight(page, three, 8000);
   await j(`/api/tasks/${one}/run`, "POST", { agent: fixer });
   await j(`/api/tasks/${two}/run`, "POST", { agent: fixer });
   check("AC-141 two at once start", await hasStatus(one, "IN PROGRESS") && await hasStatus(two, "IN PROGRESS"), `${await status(one)} ${await status(two)}`);

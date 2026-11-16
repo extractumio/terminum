@@ -254,7 +254,9 @@ page says how; how the sign-in is kept is in [SECURITY.md](../SECURITY.md). `tmu
   writing on the board" (empty: English), used for its tasks and comments on the board too.
   TODO and DONE show each card as one line, its ID, severity and title: a press shows one whole
   (and folds the one before), a press on it then opens its window, Esc folds it. Agents stand a
-  column wide over the columns, four a row.
+  track wide over the columns, four a row. TODO stands as a column of its own; the other columns
+  share the rest of the board one at a time, under tabs that show each one's count (WAIT FOR
+  HUMAN's and FAILED's pulse while they hold tasks); on a phone one column shows at a time.
   **Scheduled tasks**: the line Scheduled N between the agents and the columns opens (and stays
   open in that browser) to the schedules of the projects shown; + Schedule opens a schedule's
   window: title, text, project, severity, the agent that runs it, When (every 1–45 minutes, every

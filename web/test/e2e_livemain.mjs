@@ -5,7 +5,7 @@
 // `node web/test/e2e_live.mjs main chromium`.
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { boardKit, pressRun } from "./boardkit.mjs";
+import { boardKit, cardInSight, pressRun } from "./boardkit.mjs";
 import { check, until } from "./check.mjs";
 
 const FAKE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../scripts/fake_agent.py");
@@ -21,7 +21,7 @@ export async function liveMain(page, live) {
   const [a, b, done] = [await made("first subtask", { parent: main }), await made("second subtask", { parent: main }), await made("done before", { parent: main })];
   await j(`/api/tasks/${done}`, "PATCH", { status: "DONE" });
   await open(`?project=${project}`);
-  await page.waitForSelector(card(main));
+  await cardInSight(page, main);
 
   const run = async (words) => {
     await pressRun(page, main);
@@ -43,6 +43,7 @@ export async function liveMain(page, live) {
   check("AC-185 one session ran them all", (await runs(main)).length === 1 && JSON.stringify(await runs(a)) === JSON.stringify(await runs(main)) && JSON.stringify(await runs(b)) === JSON.stringify(await runs(main)), JSON.stringify([await runs(main), await runs(a)]));
   check("AC-185 the agent's reason stands on the failed subtask", (await task(b)).history.some((e) => /It cannot be done/.test(e.text ?? "")));
 
+  await cardInSight(page, main);                   // its column in sight: the panel shows one at a time (terminum-kanban.md AC-105)
   await page.waitForSelector(`${card(main)} .crun`);
   const offer = await j(`/api/tasks/${main}/run?agent=${agent}`);
   check("AC-185 run again on the same agent, its run's tasks go on in its conversation", offer.first === false && JSON.stringify(offer.ids) === JSON.stringify([main, b]), JSON.stringify({ first: offer.first, ids: offer.ids }));
