@@ -344,14 +344,12 @@ pub fn import_state(ctx: &Ctx) -> Result<(), String> {
 }
 
 pub fn logs(ctx: &Ctx, lines: u64, follow: bool) -> Result<(), String> {
-    use std::os::unix::process::CommandExt;
-    if !ctx.log().is_file() {
-        return Err(format!("No log yet: {}", ctx.shown(&ctx.log())));
-    }
-    let mut cmd = std::process::Command::new("/usr/bin/tail");
-    cmd.arg("-n").arg(lines.to_string());
+    let path = ctx.log();
     if follow {
-        cmd.arg("-f");
+        return crate::logs::follow(&path, crate::logs::DAEMON, lines as usize).map_err(|e| format!("logs: {e}"));
     }
-    Err(format!("tail: {}", cmd.arg(ctx.log()).exec()))
+    let text = crate::logs::recent(&path, crate::logs::DAEMON, lines as usize, None)
+        .map_err(|e| format!("No log yet: {}: {e}", ctx.shown(&path)))?;
+    use std::io::Write;
+    std::io::stdout().lock().write_all(&text).map_err(|e| format!("logs: {e}"))
 }

@@ -246,7 +246,7 @@ class Run(unittest.TestCase):
 
         def fake(guard, command, stdout, **_):
             ran.append(command[-1])
-            stdout.write(f"run {len(ran)}\n")
+            stdout.write(f"run {len(ran)}\n".encode())
             return next(answers)
         with mock.patch.object(check_changed, "run_guard", fake), mock.patch("sys.stdout") as out:
             failed = check_changed.run(steps, root=self.root, gate=False, **kw)

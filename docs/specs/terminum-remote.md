@@ -142,7 +142,7 @@ Scenario: AC-82 security — the agent
 Scenario: AC-83 happy path — set up by itself
   Given the user added devbox (Add host, "terminum hosts add"), or devbox's record says nothing of its files
   When devbox attaches
-  Then, with no question, terminumd reads the platform over the host's ssh recipe, copies the agent the package carries for it to "~/.terminum/bin/terminumd-agent-<agent id>", links "~/.terminum/bin/terminumd-agent" to it, checks it through a trial tunnel, records "files": "enabled" in settings.json, and Files shows the host's folder within seconds; the agent logs to "~/.terminum/logs/agent.log" on the host (1 MB, one older kept)
+  Then, with no question, terminumd reads the platform over the host's ssh recipe, copies the agent the package carries for it to "~/.terminum/bin/terminumd-agent-<agent id>", links "~/.terminum/bin/terminumd-agent" to it, checks it through a trial tunnel, records "files": "enabled" in settings.json, and Files shows the host's folder within seconds; the agent logs to "~/.terminum/logs/agent.log" on the host (retention: terminum-lifecycle.md AC-196)
   And meanwhile Files says "devbox is a remote host. Setting up its files: a 6 MB helper in ~/.terminum/bin on devbox; it runs only while you use it." with [Setting up…] and [Not now] disabled
   And Add host has no tick: it says its files and its coding agents' progress are set up on the host by themselves; "terminum hosts add" takes an older script's "--files" and does the same without it
   And then its coding agents' progress is turned on the same way (AC-99)

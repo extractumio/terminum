@@ -22,6 +22,7 @@ use serde_json::{json, Value};
 pub const KEEP: usize = 2000;
 const TRIM: usize = 2500;
 const BYTES: usize = 4 << 20;
+const KEEP_DAYS: u64 = 180;
 /// The most characters of one entry.
 pub const TEXT: usize = 20000;
 const AGAIN: Duration = Duration::from_secs(10);
@@ -193,7 +194,8 @@ fn read_object(file: &Path) -> Value {
 /// The `most` newest entries of `text` (a .jsonl file's) of pane `key` with a line: (text, line,
 /// whether a coding agent's prompt).
 fn of_key(text: &str, key: &str, most: usize) -> Vec<(String, i64, bool)> {
-    text.lines().rev().filter_map(|l| serde_json::from_str::<Value>(l).ok())
+    let oldest = oldest_end();
+    text.lines().rev().filter_map(|l| serde_json::from_str::<Value>(l).ok()).filter(|v| fresh_value(v, oldest))
         .filter(|v| v["key"] == key)
         .filter_map(|v| Some((v["text"].as_str()?.to_string(), v["line"].as_i64()?, v["agent"].as_str().is_some_and(|a| !a.is_empty()))))
         .take(most)
@@ -239,10 +241,19 @@ fn append(file: &Path, line: &str) -> std::io::Result<()> {
 
 /// Cuts the file back to its KEEP newest entries once it holds TRIM, and to its newest half of
 /// BYTES once larger (a page reads it whole for each one it shows).
+fn oldest_end() -> u64 {
+    crate::auth::store::unix_now().saturating_sub(KEEP_DAYS * 86_400)
+}
+
+fn fresh_value(value: &Value, oldest: u64) -> bool {
+    value["at"].as_u64().is_some_and(|at| at >= oldest)
+}
+
 fn trim(file: &Path) -> std::io::Result<()> {
     let text = std::fs::read_to_string(file)?;
-    let lines: Vec<&str> = text.lines().collect();
-    if lines.len() < TRIM && text.len() <= BYTES {
+    let oldest = oldest_end();
+    let lines: Vec<&str> = text.lines().filter(|l| serde_json::from_str::<Value>(l).is_ok_and(|v| fresh_value(&v, oldest))).collect();
+    if lines.len() == text.lines().count() && lines.len() < TRIM && text.len() <= BYTES {
         return Ok(());
     }
     let mut first = lines.len().saturating_sub(KEEP);
@@ -358,6 +369,20 @@ mod tests {
         s.add_end("local", "/p", "k1", 300, "The essay is written.").unwrap();
         assert_eq!(s.ends_of_pane("local", "/p", "k1", 10), [("The essay is written.".to_string(), 300, false), ("All 42 pass.".to_string(), 120, false)]);
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// AC-196: answer ends stay a bounded record index, with an age limit too.
+    #[test]
+    fn ac196_expired_answer_ends_are_hidden_and_trimmed() {
+        let (s, dir) = store();
+        s.add_end("local", "/p", "k1", 10, "recent").unwrap();
+        let file = s.ends_file("local", "/p");
+        let old = json!({"at": 1, "key": "k1", "line": 1, "text": "old"}).to_string() + "\n";
+        append(&file, &old).unwrap();
+        assert_eq!(s.ends_of_pane("local", "/p", "k1", 10).len(), 1);
+        trim(&file).unwrap();
+        assert!(!std::fs::read_to_string(file).unwrap().contains("old"));
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]

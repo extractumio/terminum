@@ -76,7 +76,7 @@ class Run(unittest.TestCase):
 
         def guard(*_, stdout, **kw):
             self.assertTrue(self.held())
-            stdout.write("a real-program check\n")
+            stdout.write(b"a real-program check\n")
             return next(answers)
 
         with mock.patch.object(check_changed.live_slots, "slot", wraps=real_slot) as slots, \

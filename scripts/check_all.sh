@@ -19,8 +19,8 @@ failed=()
 step() {   # step <name> <command…>: its output to the log, one line here; what it leaves fails it (check_step.py)
   local name=$1; shift
   local log=".checks/$id.$name.log" t0=$SECONDS
-  if python3 -I scripts/check_step.py "$@" >"$log" 2>&1; then echo "ok   $name ($((SECONDS - t0)) s)"
-  else echo "FAIL $name ($((SECONDS - t0)) s): $log"; tail -n 15 "$log" | sed 's/^/     /'; failed+=("$name"); fi
+  if python3 -I scripts/check_logs.py "$log" "$@"; then echo "ok   $name ($((SECONDS - t0)) s)"
+  else echo "FAIL $name ($((SECONDS - t0)) s): $log"; python3 -I scripts/check_logs.py --tail "$log"; failed+=("$name"); fi
 }
 if [ "${1:-}" = --passed ]; then   # as below: a pass without Docker counts while Docker still cannot run
   [ -f ".checks/$id.ok" ] && { [ ! -f ".checks/$id.docker-skip" ] || ! python3 scripts/check_docker.py --can-run; }; exit
@@ -36,7 +36,7 @@ if [ "${1:-}" != --force ] && [ -f ".checks/$id.ok" ]; then
   echo "check: passed already on $id at $(cat ".checks/$id.ok") (--force runs it again)"; exit 0
 fi
 [ -n "${TM_GATE_PASSED:-}" ] || python3 -I scripts/load_gate.py || exit   # 75: the machine stayed busy
-find .checks -name '*.log' ! -name "$id.*" -delete   # earlier trees' logs; their passes stay
+find .checks \( -name '*.log' -o -name '*.log.[12]' -o -name '.*.log.since' \) ! -name "$id.*" ! -name ".$id.*" -delete   # earlier trees' logs; their passes stay
 # the commit-time scan (CLAUDE.md §2) only knows other machines' names from the patterns file
 [ -n "$(git config core.hooksPath)" ] || echo "WARN no git hooks: make hooks (security_check before each commit)"
 [ -n "${TM_PRIVATE_PATTERNS:-}" ] || [ -f "${XDG_CONFIG_HOME:-$HOME/.config}/terminum/private-patterns" ] \

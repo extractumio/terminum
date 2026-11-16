@@ -87,7 +87,7 @@ fn the_plist() {
     assert_eq!(p["Label"], "io.terminum.terminumd");
     assert_eq!(p["ProgramArguments"], json!([root.join("daemon/terminumd").display().to_string(), "serve"]));
     assert_eq!((p["RunAtLoad"].clone(), p["KeepAlive"].clone(), p["ThrottleInterval"].clone()), (json!(true), json!(true), json!(1)));
-    assert_eq!(p["StandardOutPath"], root.join("logs/terminumd.log").display().to_string());
+    assert_eq!(p["StandardOutPath"], "/dev/null");
     assert_eq!(p["StandardErrorPath"], p["StandardOutPath"]);
     assert_eq!(p["Sockets"]["Listeners"], json!({"SockNodeName": "127.0.0.1", "SockServiceName": "48080", "SockFamily": "IPv4", "SockType": "stream"}));
     let path: Vec<&str> = p["EnvironmentVariables"]["PATH"].as_str().unwrap().split(':').collect();
@@ -195,14 +195,14 @@ fn the_agent_of_the_old_name_is_unloaded_before_this_one_is_loaded() {
 }
 
 #[test]
-fn the_old_names_log_goes_in_front_of_the_new_one() {
+fn ac196_the_old_names_log_is_adopted_by_rename() {
     let home = Home::new();
     let (ctx, _dir) = stubbed(&home, &[]);
     std::fs::create_dir_all(ctx.log_dir()).unwrap();
     std::fs::write(ctx.log_dir().join("terminusd.log"), "old 1\nold 2\n").unwrap();
     std::fs::write(ctx.log(), "new 1\n").unwrap();
     launch::migrate_legacy(&ctx).unwrap();
-    assert_eq!(std::fs::read_to_string(ctx.log()).unwrap(), "old 1\nold 2\nnew 1\n");
+    assert_eq!(crate::logs::recent(&ctx.log(), crate::logs::DAEMON, 100, None).unwrap(), b"old 1\nold 2\nnew 1\n");
     assert!(!ctx.log_dir().join("terminusd.log").exists());
     assert_eq!(mode(&ctx.log()), 0o600);
 }
@@ -378,4 +378,17 @@ fn restart_without_an_install_says_so() {
     let (ctx, dir) = stubbed(&home, &[]);
     assert!(crate::cli::install::restart(&ctx).unwrap_err().contains("not installed"));
     assert!(!dir.join("calls").exists(), "launchd was not asked");
+}
+
+/// AC-196: a startup marker follows its inode after the daemon rotates at startup.
+#[test]
+fn ac196_startup_failure_after_rotation_is_still_reported() {
+    let home = Home::new();
+    let (ctx, _dir) = stubbed(&home, &[]);
+    std::fs::create_dir_all(ctx.log_dir()).unwrap();
+    std::fs::write(ctx.log(), "old log\n").unwrap();
+    let mark = launch::log_mark(&ctx);
+    std::fs::rename(ctx.log(), crate::logs::segment(&ctx.log(), 1)).unwrap();
+    std::fs::write(ctx.log(), "error: new startup refused\n").unwrap();
+    assert_eq!(launch::log_reason(&ctx, Some(mark)).as_deref(), Some("error: new startup refused"));
 }

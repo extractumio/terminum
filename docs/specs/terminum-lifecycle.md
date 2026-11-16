@@ -68,6 +68,7 @@ Open questions: none open. Which clients exist (AC-11's drop) is terminum.md OQ-
 | AC-103 | [SHOULD / P1] | The docs keep their shape on every `make test`, and a review of what changed since the last release removes duplicates and superseded requirements before a minor release. |
 | AC-104 | [SHOULD / P1] | A finished worktree lands by itself: its targeted checks green on its own work, then a short smoke set of the basics on one platform, with no timed check, on its merge with what others landed; pushed, the primary checkout brought up to it and the tree deleted; the full test run is the release's gate, and only failing tests block a release. |
 | AC-146 | [SHOULD / P1] | A release's full run starts only on a quiet machine: it queues behind another full run, waits for the load to stay low for 3 minutes, says each minute that it waits, and after 15 minutes ends the release with "the build server is not available"; a task's timed checks wait the same way and then run, saying so. |
+| AC-196 | [SHOULD / P1] | Every diagnostic log has a bounded size and period under one rotation mechanism; active writers follow rotations without losing records. |
 | AC-197 | [SHOULD / P1] | A worktree's step that runs real programs (panel, page, critical, smoke, an e2e script) and fails runs once more, unchanged, while the run is otherwise green: passing then, the targeted checks or the smoke set count it, say the first run's last lines and say it in red last; red again, or a leftover, it is red; other steps, and the release's full run, have no retry. |
 
 ## 5. BDD scenarios
@@ -86,8 +87,8 @@ Scenario: AC-08 happy path — on a Linux server
   Given Ubuntu or Debian (x86_64 or aarch64) with systemd, tmux, curl and openssh-client
   When the user runs the same line
   Then install.sh picks "agents/linux-<arch>/terminumd" by "uname -m" ("sha256sum" for the checksum) from the same package and runs it as "terminumd install"; a missing curl, ssh-keygen or tar is said with "sudo apt install curl openssh-client tar"
-  And it writes "~/.config/systemd/user/io.terminum.terminumd.service" (ExecStart "~/.terminum/daemon/terminumd" serve with absolute, quoted paths, a "%" in a path written "%%", Restart=always, RestartSec=1, StartLimitIntervalSec=0, KillMode=process, the log appended to ~/.terminum/logs/terminumd.log, WantedBy=default.target), daemon-reloads when it changed, reset-failed, enable and restart: terminumd runs now and at every login; terminumd binds 127.0.0.1:<port> itself (no socket unit: during a restart connections are refused for a moment and the page reconnects)
-  And a log path with a space fails the install with "<log>: systemd cannot append to a path with spaces; set TM_HOME to another folder"
+  And it writes "~/.config/systemd/user/io.terminum.terminumd.service" (ExecStart "~/.terminum/daemon/terminumd" serve with absolute, quoted paths, a "%" in a path written "%%", Restart=always, RestartSec=1, StartLimitIntervalSec=0, KillMode=process, StandardOutput=null and StandardError=null, diagnostics written and rotated by terminumd (AC-196), WantedBy=default.target), daemon-reloads when it changed, reset-failed, enable and restart: terminumd runs now and at every login; terminumd binds 127.0.0.1:<port> itself (no socket unit: during a restart connections are refused for a moment and the page reconnects)
+  And a root with spaces is accepted: the quoted ExecStart and Environment paths preserve them, and terminumd opens its log itself (AC-196)
   And a stop (an upgrade, a rollback, "terminum restart", "terminum uninstall") ends terminumd alone: KillMode=process keeps the tmux server it started, in the service's cgroup, and every terminal with it
   And while "loginctl show-user" says Linger=no, the install and "terminum status" say "linger is off: terminumd and its terminals end when you log out; to keep them from boot and after logout: sudo loginctl enable-linger <user>" (never run by terminum)
   And with no desktop (no DISPLAY nor WAYLAND_DISPLAY) nothing is opened: install and "terminum open" say "From your computer: ssh -L 48080:127.0.0.1:48080 <this server>, then open http://127.0.0.1:48080/", then how tailscale serve publishes it
@@ -927,6 +928,64 @@ Scenario: AC-197 edge — what is said is this run's
   But a landing's smoke set adds its retries to its targeted run's, and make land says both
 ```
 
+### AC-196 — Bounded diagnostic logs [SHOULD / P1]
+
+```gherkin
+Scenario: A running daemon or host agent reaches a segment limit
+  Given terminumd or a host's agent is writing its own diagnostic log
+  When its next record would exceed the size limit, or the segment is a day old
+  Then the shared log mechanism renames that segment and opens the active path for subsequent records
+  And the oldest archives beyond the count or retention period are deleted
+  And every record within the retained history occurs once, including records written during rotation
+  And two agents on the same host serialize rotation and reopen the active path before writing
+
+Scenario: A log stays under its limits
+  Given the active segment is younger and smaller than its limits
+  When a record is written or the maintenance minute arrives
+  Then that segment is appended to without a rename or a rewrite
+
+Scenario: A removed log folder stays removed
+  Given a writer has initialized its log folder
+  When the owning host is removed and the folder is deleted
+  Then late records and maintenance fail without recreating that folder
+  And unlinked active logs and clock files are not recreated by ordinary appends
+  And completed-log cleanup advances past a deleted project and continues with other projects
+  And opening a new writer explicitly initializes its folder
+
+Scenario: Clock metadata is missing, corrupt, or temporarily unwritable
+  Given the active log exists
+  When maintenance finds that its clock cannot be read
+  Then the normal bounded rotation repairs the clock
+  And a failed repair keeps records in an appendable active file and retries after a minute
+  And after the obstruction is removed the same writer resumes its size and period limits
+
+Scenario: Rotation does not hold an async worker
+  When logs are written and maintained
+  Then diagnostic records go through a bounded queue to one blocking writer thread
+  And size is checked at writes and time and expiry at most once a minute
+  And rotation uses renames and deletes, with no copying or compression of existing files
+  And only one log maintenance operation runs at once per process, with a cross-process directory lock
+
+Scenario: A bounded trace restarts within the same second
+  Given a recording reached its byte limit
+  When the user starts more recordings immediately
+  Then each recording opens a fresh file with its own byte count
+  And every trace file stays within its limit and only the newest ten remain
+
+Scenario: Recent diagnostics cross a rotation
+  Given terminumd's active log has rotated
+  When the user runs "terminum logs -n 100" or "terminum logs -f"
+  Then the newest requested lines include retained segments in order
+  And following continues through replacement of the active path
+  And an install or restart still reports a startup error after its log rotates
+
+Scenario: Completed integration steps expire without another batch
+  Given integration step logs exist for an idle or disabled project
+  When the maintenance minute arrives
+  Then logs older than 30 days and the oldest beyond 100 files per project are removed
+  And each newly saved step log contains at most the newest 2 MiB of captured output
+```
+
 ## 6. Flow and sequence diagrams
 
 ### Install, run and restart (AC-08, AC-14, AC-16)
@@ -1027,7 +1086,7 @@ Last lines `state/lastlines/local@terminum/6db00afe9596fc57_3.json` (AC-96; `…
 | One binary | `terminumd` is the server and the command: run by the name `terminum` (`~/.terminum/bin/terminum`) or with a command as its first argument (`terminumd install`) it is the CLI; with no argument or `serve` it is the server; also `--agent`, `--version`, `--agent-id` |
 | Package | `terminum.tar.gz`, one for every OS (each install carries the agents of every remote OS), also published as `terminum-macos.tar.gz` (for installs from before Linux servers; the same bytes, how long: `docs/RELEASING.md`); both in the signed SHA256SUMS; `terminum upgrade` takes `terminum.tar.gz`, else on a Mac `terminum-macos.tar.gz`, and on Linux refuses a release with only that name: "that release is from before terminum ran as a Linux server: nothing installed". Inside `terminum/`: `BUILD`, `AGENT_ID`, `agents/<platform>/terminumd` (macOS arm64 and x86_64, Linux x86_64 and arm64), `release-signers`, licenses, README |
 | macOS identity | terminumd's macOS builds embed `terminumd/macos/Info.plist` as the `__TEXT,__info_plist` section (build.rs, Apple targets only). package.py signs each staged macOS terminumd `codesign --force -s <identity> -i io.terminum.terminumd` with `$TM_CODESIGN_IDENTITY` (set in the uncommitted `local.mk`; a keychain identity is never picked by itself: it may be another team's, and its key may ask in a dialog); a release adds `--timestamp` (Apple's secure timestamp, online) and checks each binary's Team ID; the Linux builds are not signed. `daemon/` holds the copy of the live build's terminumd and the links `agents` and `soundfonts` to that build's, so a build finds its files beside itself there as in its own folder, an older build rolled back to too |
-| Install | umask 077; `install.lock` (flock, AC-16); `<pkg>/agents/<platform>/terminumd --version` must equal `BUILD`; copied to `builds/.<build>.tmp` then renamed; `current`, `previous`, `bin/terminum` switched by one rename each; before every start the live build's terminumd is copied to `daemon/.terminumd.new` (0755) and renamed over `daemon/terminumd`; the root is 0700, the log made 0600 before launchd opens it; builds pruned only after success |
+| Install | umask 077; `install.lock` (flock, AC-16); `<pkg>/agents/<platform>/terminumd --version` must equal `BUILD`; copied to `builds/.<build>.tmp` then renamed; `current`, `previous`, `bin/terminum` switched by one rename each; before every start the live build's terminumd is copied to `daemon/.terminumd.new` (0755) and renamed over `daemon/terminumd`; the root is 0700, the log made 0600 before terminumd opens it; builds pruned only after success |
 | launchd | plist `io.terminum.terminumd`: ProgramArguments `[<root>/daemon/terminumd, serve]`, RunAtLoad, KeepAlive, ThrottleInterval 1, EnvironmentVariables (PATH: Homebrew's, the system's, then the installing shell's absolute folders outside the home folder; `TM_HOME`, `TM_APP_DIR` when moved), log paths, `Sockets` → `Listeners` = {SockNodeName `127.0.0.1`, SockServiceName `"<port>"` (settings.json `port`), SockFamily `IPv4`, SockType `stream`}; written with one rename and only when its content changes; bootstrap retried for 5 s; `launchctl` is called for the live label only when the install's folders are the real home's (`getpwuid`, not `$HOME`) |
 | Socket activation | terminumd calls `launch_activate_socket("Listeners")`: `ESRCH` (not run by launchd) → it binds the port itself; another error or not exactly one fd → exits with the error; the fd gets `O_NONBLOCK` and `FD_CLOEXEC`; a socket not bound to `127.0.0.1:<port>` (launchd hands `0.0.0.0:0`) → the "held by another program" case of AC-08; `/health` reports the listener's real port; Linux builds have no activation |
 | Upgrade | `/usr/bin/curl -q -fsSL --max-time 300` for the tarball, `SHA256SUMS` and its signature; `/usr/bin/ssh-keygen -Y verify` (namespace `terminum-release`) with the installed build's `release-signers`; the `# release` line (the tag asked for; not older than this build unless asked by name, terminum-remote.md AC-86); SHA-256 of the tarball; `/usr/bin/tar` into an empty 0700 folder, then every entry must be a folder or a regular file of one link, its mode set to 0755 or 0644; then the package's own `terminumd install` |
@@ -1056,9 +1115,24 @@ Other commands: `terminum help` lists them; usage is in `docs/USAGE.md`.
 
 ### Logging and observability
 
-terminumd logs to `~/.terminum/logs/terminumd.log` (0600); `terminum logs` shows it. Events of these cases: `tmux.timeout`, `tmux.started`, `tmux.restored`, `lastlines.unsaved`, `start.failed`.
+terminumd writes `~/.terminum/logs/terminumd.log` (0600); launchd and systemd send their standard streams to `/dev/null`. `terminum logs` reads retained segments and follows the active path through replacement (AC-196). Events of these cases: `tmux.timeout`, `tmux.started`, `tmux.restored`, `lastlines.unsaved`, `start.failed`.
 
 `/health` on the socket (its fields: `terminum.md` §9 Logging and observability) gives what `terminum status` prints and the upgrade waits for.
+
+### Log retention (AC-196)
+
+All sizes are bytes (MiB = 1,048,576 bytes). `logs.rs` owns rotation and completed-file retention; diagnostics use its blocking writer. Numbered segments are `.1` (newest) through `.K`; their retention age is time since their last write. Segment start time persists across restarts and concurrent host agents. An existing oversized log is archived once without copying; subsequent segments obey the size limit. The old `terminusd.log` is adopted as a retained daemon segment by rename, never concatenated in memory. New log files and metadata are 0600, folders 0700. A failed rotation is recorded in the appendable active log and retried after a minute; records continue there even if it temporarily exceeds the bound. A wholly unwritable log reports its failure on stderr. The queue holds at most 256 records and applies backpressure rather than dropping records. Exit and panic flush the queue with a bounded wait.
+
+| Log or store | Size / count limit | Period | Retention and mechanism |
+|---|---|---|---|
+| Daemon `logs/terminumd.log`, adopted `terminusd.log` | 10 MiB per segment; 7 older segments | Rotate at 24 h or size | Shared rotation; archives expire after 7 days; `terminum logs` spans retained files. |
+| Host `logs/agent.log` | 1 MiB per segment; 3 older segments | Rotate at 24 h or size, while running | Same writer and rotation; archives expire after 3 days; agents share the directory lock. |
+| `integration/<project>/batch-<n>.<round>.<step>.log` and `verify-<n>.log` | Newest 2 MiB per file; newest 100 files per project together | 30 days | Shared incremental completed-file sweep each minute, including idle or disabled projects; at most 500 entries and 16 deletes per minute across projects (a legacy backlog converges over later passes); snapshots are saved only after their step ends. |
+| `logs/trace-*.jsonl` (AC-38) | 20 MiB per file; newest 10 files | Each recording ends after 15 min | Bounded recording exception: one diagnostic run must stay one file; the stop and newest-ten rule stays; every restart creates a fresh file, with fractional seconds in its name so the byte counter cannot reset on an existing file. |
+| `sessions/<id>/ends.jsonl` (AC-90) | Trim at 2,500 entries to newest 2,000; over 4 MiB to newest 2 MiB | 180 days, trimmed at writes and filtered on reads | Record-index exception: bounded answer-location data is compacted as records, preserving its single-file readers. |
+| SQLite `inputs` and `messages` (AC-147) | 500,000 rows each | 180 days | Store exception: transactional `trim_rows`, hourly on the input writer; no file rotation of SQLite. |
+| SQLite `user_interaction` (AC-175) | 1,000,000 rows | 180 days | Same transactional hourly trim. |
+| Worktree `.checks/*.log` and script-module `.checks/tm-scripts-*/<module>.log` (AC-104) | 10 MiB per segment; 2 older segments per check or module | Rotate at 24 h or size; archives expire after 7 days while checks run | The same Rust rotation core, compiled into a small local sink by the already-required Rust compiler; no Cargo bootstrap or remote dependency. A retry preserves the first attempt's retained segments and starts a new active path. Removed with the worktree. |
 
 ## 10. Delivery stages
 
@@ -1077,3 +1151,4 @@ All cases are shipped; nothing is staged.
 - [x] AC-146 — `scripts/tests/test_load_gate.py`, `scripts/tests/test_release_turn.py`, `scripts/tests/test_check_changed.py`, `scripts/tests/test_check_live_slots.py`, `scripts/tests/test_access.py`, `scripts/e2e_access.py`
 - [x] AC-197 — `scripts/tests/test_check_changed.py` (`test_ac197_*`), `cargo test integrate::retry_notes`, `cargo test integrate::stages::tests::ac197` (Verify and Check histories, cleanup, a reused tree), `cargo test integrate::retry_live_tests` (real retry commands through private tmux, Verify and Check)
 - [x] AC-103 — `scripts/tests/test_check_docs.py`; `python3 scripts/check_docs.py`
+- [x] AC-196 — `cargo test logs::`, `cargo test cli::tests`, `cargo test sent::`, `scripts/tests/test_check_logs.py`, `scripts/e2e_logs.py`

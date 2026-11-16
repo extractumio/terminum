@@ -32,6 +32,7 @@ pub struct Setup {
     pub dir: PathBuf,
     pub token: String,
     pub listener: UnixListener,
+    pub writer: crate::logs::writer::Writer,
 }
 
 /// `--agent --socket <path>`: the socket path, or None when not in agent mode.
@@ -59,6 +60,7 @@ fn link_args() -> Option<(PathBuf, String)> {
 
 fn fail(msg: &str) -> ! {
     eprintln!("terminumd-agent: {msg}");
+    cleanup();
     std::process::exit(2);
 }
 
@@ -91,28 +93,23 @@ pub fn start(socket: &Path) -> Setup {
     let _ = std::fs::set_permissions(socket, std::fs::Permissions::from_mode(0o600));
     std_listener.set_nonblocking(true).unwrap_or_else(|e| fail(&e.to_string()));
     let listener = UnixListener::from_std(std_listener).unwrap_or_else(|e| fail(&e.to_string()));
+    let args: Vec<String> = std::env::args().collect();
+    let path = args.iter().position(|a| a == "--log").and_then(|i| args.get(i + 1)).map(PathBuf::from)
+        .unwrap_or_else(|| crate::config::tm_home().join("logs/agent.log"));
+    let writer = crate::logs::writer::Writer::start(path, crate::logs::AGENT, None)
+        .unwrap_or_else(|e| fail(&format!("cannot open diagnostic log: {e}")));
     println!("terminumd-agent ready {AGENT_ID} {} {} {}-{}", hostname(), user(), std::env::consts::OS, std::env::consts::ARCH);
     let _ = std::io::stdout().flush();
     quiet();
-    Setup { dir: dir.to_path_buf(), token, listener }
+    Setup { dir: dir.to_path_buf(), token, listener, writer }
 }
 
-/// After "ready" nobody reads stdout or stderr, and ssh closes them when the Mac goes away
-/// (a log line written then would fail and panic the exit path, leaving the agent running):
-/// from here on they go to `--log <file>` (AC-83: ~/.terminum/logs/agent.log on
-/// the host; at 1 MB the file becomes <file>.1), else to /dev/null.
+/// After "ready" nobody reads the ssh streams. Tracing owns the rotating log (AC-196);
+/// standard streams go to /dev/null so a closed ssh pipe cannot panic the exit path.
 fn quiet() {
-    let args: Vec<String> = std::env::args().collect();
-    let log = args.iter().position(|a| a == "--log").and_then(|i| args.get(i + 1)).map(PathBuf::from);
-    let file = log.and_then(|p| {
-        if std::fs::metadata(&p).is_ok_and(|m| m.len() > 1 << 20) {
-            let _ = std::fs::rename(&p, p.with_extension("log.1"));
-        }
-        std::fs::OpenOptions::new().create(true).append(true).open(&p).ok()
-    });
-    let Some(out) = file.or_else(|| std::fs::OpenOptions::new().write(true).open("/dev/null").ok()) else { return };
+    let Ok(out) = std::fs::OpenOptions::new().write(true).open("/dev/null") else { return };
     use std::os::fd::AsRawFd;
-    // SAFETY: dup2 onto the standard descriptors with a valid open descriptor
+    // SAFETY: dup2 onto the standard descriptors with a valid open descriptor.
     unsafe {
         libc::dup2(out.as_raw_fd(), 1);
         libc::dup2(out.as_raw_fd(), 2);
