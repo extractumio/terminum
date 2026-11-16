@@ -7,7 +7,9 @@ import { el } from "./listparts.js";
 import { api, button, row, showError } from "./kanbanutil.js";
 import { sessionUrl } from "./tasklink.js";
 
-const WORDS = { "check-again": "Check again", "publish-again": "Publish again", "return-all": "Return all", close: "Close…" };
+export const BATCH_WORDS = { "check-again": "Check again", "publish-again": "Publish again", "return-all": "Return all", close: "Close…" };
+/** A human's key on batch `id` (its store ID); answers terminumd's words for what it did, or throws its refusal. */
+export const pressBatch = async (id, key, body) => (await api(`/api/integration/batch/${id}/${key}`, { method: "POST", body: body ?? {} })).said;
 
 /** A task of a project whose integration is on: Integrate while it is in work, Take out while it is queued (AC-193);
  *  terminumd says what it refuses, here. */
@@ -38,7 +40,7 @@ export function batchPart(t, refresh, meta) {
   error.hidden = true;
   wrap.append(line, keys, error);
   const send = async (b, key, body) => {
-    await api(`/api/integration/batch/${b.batch}/${key}`, { method: "POST", body: body ?? {} });
+    await pressBatch(b.batch, key, body);
     showError(error, "");
     refresh();
   };
@@ -53,11 +55,11 @@ export function batchPart(t, refresh, meta) {
       if (key === "return") {
         for (const x of b.tasks) keys.append(button("textkey", `Return ${x.id}…`, why(b, "return", `Why does ${x.id} go back? Its agent reads it.`, "Return", { task: x.id })));
       } else if (key === "return-all") {
-        keys.append(button("textkey", WORDS[key], async () => { if (await askConfirm(`Return batch ${b.number}'s ${b.tasks.length} tasks to their agents?`, "Return all")) press(b, key)(); }));
+        keys.append(button("textkey", BATCH_WORDS[key], async () => { if (await askConfirm(`Return batch ${b.number}'s ${b.tasks.length} tasks to their agents?`, "Return all")) press(b, key)(); }));
       } else if (key === "close") {
-        keys.append(button("textkey", WORDS[key], why(b, key, `Close batch ${b.number}: why?`, "Close")));
+        keys.append(button("textkey", BATCH_WORDS[key], why(b, key, `Close batch ${b.number}: why?`, "Close")));
       } else {
-        keys.append(button("textkey", WORDS[key], press(b, key)));
+        keys.append(button("textkey", BATCH_WORDS[key], press(b, key)));
       }
     }
   }).catch((e) => showError(error, e.message));
