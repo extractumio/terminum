@@ -5,7 +5,7 @@
 // at the narrow pane's width re-flows to the view's width at the chosen text size, with no sideways
 // scrolling. Docked Files follows quick switches, which move the zoom, back to the pane's folder (AC-70).
 import { spawn } from "node:child_process";
-import { check, fills, until, within } from "./check.mjs";
+import { check, fills, slack, until, within } from "./check.mjs";
 
 const LINE = Array.from({ length: 41 }, (_, i) => 1000 + i).join(" ");   // 204 characters: wider than any pane here
 
@@ -61,12 +61,24 @@ export async function liveSplit(page, { tmux, work, socket, widths }) {
     return { reflow: t.classList.contains("reflow"), banner: !!document.getElementById("splitnote"), viewPx: t.clientWidth,
       size: getComputedStyle(t).fontSize, fonts: document.fonts?.status };
   });
-  // The quick shell's old width may still be on its way to tmux. Wait for the latest request
-  // AND its frame, rather than a quiet width or a frame from before that request.
-  const started = Date.now();
-  const sized = await until(async () => Number(of("#{window_width}")) === widths.get(pane) && !(await looks()).reflow, 15000);
+  // The quick shell's old width may still be on its way to tmux. Wait for the latest request AND its
+  // frame, unchanged for longer than the page takes to send a new view's width (300 ms, sizing.js) and
+  // terminumd to apply it (once a second, sizing.rs): a first look can come before the closed quick
+  // shell reaches the page's layout, or before a resize terminumd still holds for its second (the page
+  // shows no sign of that one). Each change is kept for the failure.
+  const started = Date.now(), trail = [];
+  let since = null;
+  const sized = await until(async () => {
+    const s = { window: Number(of("#{window_width}")), requested: widths.get(pane) ?? null,
+      reflow: await page.evaluate(() => document.getElementById("term").classList.contains("reflow")) };
+    const last = trail.at(-1);
+    if (!last || JSON.stringify({ ...last, ms: 0 }) !== JSON.stringify({ ms: 0, ...s })) trail.push({ ms: Date.now() - started, ...s });
+    if (s.window !== s.requested || s.reflow) { since = null; return false; }
+    since ??= Date.now();
+    return Date.now() - since >= slack(1500);
+  }, 15000);
   const before = of("#{window_width}");
-  const pre = { ...(await looks()), id: pane, requested: widths.get(pane) ?? null, pane: of("#{pane_width}"), window: before, waitedMs: Date.now() - started };
+  const pre = { ...(await looks()), id: pane, requested: widths.get(pane) ?? null, pane: of("#{pane_width}"), window: before, waitedMs: Date.now() - started, trail };
   const waiting = pre.requested === null ? "the page to request its width"
     : Number(before) !== pre.requested ? "tmux to reach the requested width" : "the page's reflow to clear";
   check("AC-13 before the split the pane has the view's width", sized && Number(before) === pre.requested && !pre.reflow,

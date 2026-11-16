@@ -57,7 +57,7 @@ import { liveIntegrationSlots } from "./e2e_liveintegrationslots.mjs";
 import { liveAuto } from "./e2e_liveauto.mjs";
 import { liveIconKeys } from "./e2e_liveiconkeys.mjs";
 import { SORT_ALONE, BOARD_ALONE, TASKS_ALONE, WAITING_ALONE, POOL_ALONE, SMOKE, LINKS_ALONE, HISTORY_ALONE,
-  AUTO_ALONE, SCHEDULES_ALONE, NOTES_ALONE, ICONS_ALONE, REQUESTS_ALONE, SIGNIN_ALONE, QUEUE_ALONE, INTEGRATION_SLOTS_ALONE, MAIN_ALONE, BACKGROUND_ALONE, ARCHIVED_ALONE, FOLDS_ALONE, FOLDED_ALONE } from "./e2e_livemodes.mjs";
+  AUTO_ALONE, SCHEDULES_ALONE, NOTES_ALONE, ICONS_ALONE, REQUESTS_ALONE, SIGNIN_ALONE, QUEUE_ALONE, INTEGRATION_SLOTS_ALONE, MAIN_ALONE, BACKGROUND_ALONE, ARCHIVED_ALONE, FOLDS_ALONE, FOLDED_ALONE, SPLIT_ALONE } from "./e2e_livemodes.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const SHORT = SMOKE || LINKS_ALONE || FOLDS_ALONE || FOLDED_ALONE;   // a few checks, the wide size only
@@ -254,15 +254,18 @@ async function wide(browser, name) {
   // its own name per browser: the tmux server is both runs' (the first run's window and its marks stay)
   const byhandName = `byhand-${name}`;
   if (!SHORT) {
-    await livePaste(page, { home: HOME, name });
-    // a drop's own paths come from Finder's drag pasteboard (dragged.rs): macOS only, elsewhere terminumd says so
-    if (process.platform === "darwin") await liveDrop(page, { home: HOME, work: WORK, drag: DRAG });
-    else console.log("SKIP AC-36 files dropped from Finder: their own paths are found on macOS only (dragged.rs)");
+    if (!SPLIT_ALONE) {
+      await livePaste(page, { home: HOME, name });
+      // a drop's own paths come from Finder's drag pasteboard (dragged.rs): macOS only, elsewhere terminumd says so
+      if (process.platform === "darwin") await liveDrop(page, { home: HOME, work: WORK, drag: DRAG });
+      else console.log("SKIP AC-36 files dropped from Finder: their own paths are found on macOS only (dragged.rs)");
+    }
     // the shown pane's window: without -t tmux answers for its current session, maybe another browser's or Dispatcher's
     const size = tmux("display", "-p", "-t", await shownPane(page, { tmux, work: WORK }), "#{window_width}x#{window_height} #{window-size}");
     check("AC-13 the pane is sized for this view (window-size manual)", /^\d+x\d+ manual/.test(size) && Number(size.split("x")[0]) > 80, size);
     await liveQuick(page, { tmux, work: WORK });
     await liveSplit(page, { tmux, work: WORK, socket: SOCKET, widths });
+    if (SPLIT_ALONE) return ctx;
     tmux("new-window", "-d", "-n", byhandName);
     await within("AC-01 a window made by hand shows in the list", () => page.waitForFunction((n) => document.getElementById("sessions").innerText.includes(n), byhandName, { timeout: 3000 }));
   }
@@ -473,7 +476,7 @@ try {
     const browser = await pw[name].launch(NO_SIGNALS);
     try {
       const ctx = await wide(browser, name);
-      if (!SHORT && !SIGNIN_ALONE && !BACKGROUND_ALONE) await phone(browser, name);
+      if (!SHORT && !SIGNIN_ALONE && !BACKGROUND_ALONE && !SPLIT_ALONE) await phone(browser, name);
       await ctx.close();
     } catch (e) {
       ranToItsEnd(e);

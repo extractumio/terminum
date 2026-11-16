@@ -9,6 +9,7 @@ export const SMOKE = process.argv.includes("smoke");
 export const LINKS_ALONE = process.argv.includes("links");       // while working on addresses and paths in the output
 export const FOLDED_ALONE = process.argv.includes("folded");     // AC-138 keyboard Run and folded cards
 export const FOLDS_ALONE = process.argv.includes("folds");       // AC-32 output synchronization and history folding
+export const SPLIT_ALONE = process.argv.includes("split");       // AC-13 and AC-88: the quick shell, then a split under the pane
 export const HISTORY_ALONE = process.argv.includes("history");   // while working on the Message history and the Dashboard
 export const AUTO_ALONE = process.argv.includes("auto");             // while working on Auto-Dispatcher
 export const SCHEDULES_ALONE = process.argv.includes("schedules");   // while working on schedules and folded cards
