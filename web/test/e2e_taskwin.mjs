@@ -44,7 +44,7 @@ const measure = (page) => page.evaluate(async (meta) => {
   const body = document.getElementById("taskbody"), own = body.querySelector(".taskown"), q = (s) => own.querySelector(s);
   const frame = own.getBoundingClientRect(), pad = getComputedStyle(own), pre = body.querySelector(".evscreen");
   return {
-    fields: [...own.querySelectorAll(".fieldgrid > .fieldrow")].map((f) => ({ name: f.firstChild.textContent.trim(), row: box(f), field: box(f.querySelector(".field")) })),
+    fields: [...own.querySelectorAll(":scope > .fieldgrid > .fieldrow")].map((f) => ({ name: f.firstChild.textContent.trim(), row: box(f), field: box(f.querySelector(".field")) })),
     lines: [...own.children].map((e) => ({ cls: e.className, box: box(e) })),
     inner: [frame.left + parseFloat(pad.paddingLeft), frame.right - parseFloat(pad.paddingRight)].map(Math.round),
     status: { box: box(q(".stbox")), agent: box(q(".cagent")), conv: q(".cconv").getClientRects().length, value: box(q(".fieldvalue")), words: q(".stbox").textContent },
@@ -97,7 +97,7 @@ export async function webTaskWin(browser, name) {
     check("AC-149 the task's lines stand on one left edge, its fields and Text's keys on one right edge",
       m.lines.every((l) => l.box[0] === m.inner[0]) && m.fields.filter((_, i) => i % per === per - 1).every((x) => x.field[2] === m.inner[1]) && m.keys[2] === m.inner[1], said);
     const gaps = m.lines.slice(1).map((l, i) => [l.cls, l.box[1] - m.lines[i].box[3]]);
-    check("AC-149 its groups stand 12 px apart", gaps.length === 4 && gaps.every(([, gap]) => gap === 12), JSON.stringify(gaps));
+    check("AC-149 its groups stand 12 px apart, folded Details last (AC-199)", gaps.length === 5 && m.lines.at(-1).cls.includes("taskattrs") && gaps.every(([, gap]) => gap === 12), JSON.stringify(gaps));
     const mid = (b) => (b[1] + b[3]) / 2;
     check("AC-149 its status is whole on a line with its agent, its conversation's ID unbroken where it fits",
       m.status.words === "WAIT FOR HUMAN" && m.status.box[3] - m.status.box[1] <= 24 && Math.abs(mid(m.status.box) - mid(m.status.agent)) <= 1 && (phone || m.status.conv === 1), said);

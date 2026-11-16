@@ -392,7 +392,8 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
       set: (field, value) => patch(t.id, { [field]: value }),
       link: (list, task, reason) => patch(t.id, { link: { list, task, reason } }),
       unlink: (list, task) => patch(t.id, { unlink: { list, task } }) });
-    wrap.append(...[when, standing(t), batchPart(t, refresh, getMeta()), fields(t), details, text(t), filesOf(t)].filter(Boolean));   // a batch's keys (terminum-integration.md AC-194)
+    // Details folded last: the text stays right under the fields (AC-149)
+    wrap.append(...[when, standing(t), batchPart(t, refresh, getMeta()), fields(t), text(t), filesOf(t), details].filter(Boolean));   // a batch's keys (terminum-integration.md AC-194)
     return wrap;
   }
 
