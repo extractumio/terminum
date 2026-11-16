@@ -1318,6 +1318,30 @@ Scenario: AC-169 happy path — the queue in the agent's window
   When the queue is empty
   Then the window says "No task waits for this agent. A task run while it is at its limit can be added here."
 
+Scenario: AC-169 happy path — a manager promotes an urgent wait
+  Given API-13 and API-15 at P2, then API-16 at P0, queued on the same agent in api
+  Then they wait in that arrival order; severity, including a later severity edit, does not change it
+  When api's manager calls promote_queued_task {id: "API-16"}
+  Then its queue is API-16, API-13, API-15, kept across a restart and shown in that order by list_runs and every page
+  And API-16's history names the manager and the move; promoting the first again succeeds without another move or history entry
+  And the next eligible slot starts API-16 on its chosen agent with its saved message, answers and conversation
+  And no running session is interrupted, no new run is made by the move, and agent and project limits still apply
+  And new waits append; each repeated promotion deliberately bypasses older work, with no automatic aging
+
+Scenario: AC-169 edge — a manager promotes a grouped press
+  Given API-16's queued press also carries API-17 and its unfinished subtask API-18
+  When the manager promotes API-16, the primary task shown by list_runs
+  Then the whole press moves once, its tasks and saved press unchanged, and every member shows its new place
+  And the remaining waits of that agent keep their relative order; another agent's numeric places in the shared line stay unchanged
+
+Scenario: AC-169 failure — a promotion outside its wait
+  When the manager names a task outside its project, or a wait still belonging to its former project
+  Then it is refused and no queue changes (terminum-agents.md AC-179)
+  When the named primary press already started or its wait was called off, or the ID names only a secondary member
+  Then it says "<task> has no waiting run of its own: use a queued primary task from list_runs.", and no run starts or changes
+  And a worker or a manager's subagent cannot promote a wait (terminum-agents.md AC-174, AC-178)
+  And promotion and admission are serialized: if the start won, its run stays; if the move won, admission reads that order
+
 Scenario: AC-169 edge — a phone
   Given the board on a phone
   Then the queue's rows fit the window with no sideways scroll, the project's name left out, and each key is a finger wide
@@ -1984,7 +2008,7 @@ Depends on `terminum-kanban.md`'s Stage 1. All three stages belong to terminum's
 - [ ] AC-156 — `cargo test tasks::agents`, `cargo test dispatcher::press`, `web/test/e2e_liveboardagents.mjs`, `web/test/e2e_livedispatcher.mjs` (the inline words), `SECURITY.md` carries the operator's command
 - [ ] AC-157 — `cargo test dispatcher::plan`, `cargo test dispatcher::press`, `cargo test dispatcher::hooks` (held initial event, early tools and mixed outcomes), `cargo test dispatcher::start` (stale start watcher), `cargo test tasks::tools`, `cargo test tasks::integration_queue` (early integration), `cargo test cli::mcp`, `web/test/e2e_livedispatcher.mjs`
 - [ ] AC-158 — `cargo test dispatcher::waits`, `web/test/e2e_liveboardagents.mjs`
-- [x] AC-169 — `cargo test dispatcher::pool` (four integration waits free agent and project room while every retained session stays visible, startup reservations, a live return above the limit, mixed tasks and restart), `cargo test dispatcher::waits`, `cargo test ac169` (filtered counts, queued members and unanswered subtasks), `web/test/e2e_integrationslots.mjs` (retained dots and Open session in both themes and sizes), `node web/test/e2e_live.mjs chromium webkit integration-slots` (a queued blocker starts; retained sessions open; a return blocks later starts), `web/test/e2e_livequeue.mjs`, `web/test/e2e_livequeuewait.mjs` (a wide and a phone size: answered WAIT FOR HUMAN, positions, counts, reordering, cancellation), `web/test/e2e_liveboardagents.mjs`
+- [x] AC-169 — `cargo test dispatcher::pool` (four integration waits free agent and project room while every retained session stays visible, startup reservations, a live return above the limit, mixed tasks and restart), `cargo test dispatcher::waits`, `cargo test roles::tests::queue_tests` (manager promotion, saved press, grouped positions, persistence and refusals), `scripts/e2e_roles.py` (P2/P2/P0 promotion and the same agent conversation), `cargo test ac169` (filtered counts, queued members and unanswered subtasks), `web/test/e2e_integrationslots.mjs` (retained dots and Open session in both themes and sizes), `node web/test/e2e_live.mjs chromium webkit integration-slots` (a queued blocker starts; retained sessions open; a return blocks later starts), `web/test/e2e_livequeue.mjs`, `web/test/e2e_livequeuewait.mjs` (a wide and a phone size: answered WAIT FOR HUMAN, positions, counts, reordering, cancellation), `web/test/e2e_liveboardagents.mjs`
 - [x] AC-170 — `cargo test dispatcher::auto`, `cargo test tasks::auto`, `cargo test tasks::tools` (a round's pane), `web/test/e2e_liveauto.mjs` on `scripts/fake_agent.py`; no test of its own: two dispatch_task calls at once through the socket, a new place among the cards leaving the wait as it was, a candidate with an earlier conversation started anew; not run on a real model: whether a real agent follows the round's words
 - [x] AC-185 — `cargo test ac185` (dispatcher::press, tasks::tools), `cargo test dispatcher::auto` (a main task as a candidate, its agent's words), `web/test/e2e_livemain.mjs` on `scripts/fake_agent.py` (a human's RUN, a subtask failed, run again); no test of its own: Auto-Dispatcher's start of a main task through the page, the ask and its answers through the page, a manager's run_task; not run on a real model: whether a real agent follows the words
 - [x] AC-183 — `cargo test dispatcher::runs`, `cargo test dashboard::`, `web/test/e2e_liveboardagents.mjs` (a drop, a page's press, the new-task window, + Session), `web/test/e2e_liveschedules.mjs` (a firing), `web/test/e2e_liveauto.mjs` (Auto-Dispatcher's start); no test of its own: a wait's press started later

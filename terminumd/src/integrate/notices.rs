@@ -149,7 +149,7 @@ fn head_of(t: &Tree, repo: &Path, common: &str, target: &str) -> Option<Head> {
 
 /// The files `head` changed since it left `target`.
 fn changed(repo: &Path, target: &str, head: &str) -> Option<HashSet<String>> {
-    Some(git::run(repo, &["diff", "--name-only", &format!("{target}...{head}")]).ok()?.lines().map(str::to_string).collect())
+    Some(git::changed(repo, target, head).ok()?.into_iter().collect())
 }
 
 /// `a`'s agent told, once for that pair of commits, that `b`'s commits do not merge with its own; a queued task learns

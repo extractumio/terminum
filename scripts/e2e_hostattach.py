@@ -19,7 +19,7 @@ import time
 from functools import partial
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from e2e_ws import Terminumd, check, summary, tmux_on, unix_request, wait_layout  # noqa: E402
+from e2e_ws import Terminumd, check, summary, tmux_on, unix_request, wait_for, wait_layout  # noqa: E402
 from testrun import free_port, own  # noqa: E402
 
 PORT, LOCAL, REMOTE = free_port(), own("tm-test-hal"), own("tm-test-hrem")
@@ -170,14 +170,25 @@ def main():
         phone = t.page()
         phone.send({"t": "sub", "id": pane})
         phone.until(lambda m: m["t"] == "screen", 5)
-        phone.send({"t": "pause"})
-        ws.send({"t": "sub", "id": own(groups)["items"][0]["id"]})
+        # the two pages' messages are handled apart: each order of "hidden" and "another pane" is checked
+        other = own(groups)["items"][0]["id"]
+        own_size = partial(wait_for, partial(size_of, "work:"), lambda s: "manual" not in s, 3, last=True)
+        ws.send({"t": "sub", "id": other})
         ws.until(lambda m: m["t"] == "screen", 5)
-        for _ in range(30):
-            if "manual" not in size_of("work:"):
-                break
-            time.sleep(0.1)
-        check("AC-89 another pane opened while only a hidden page still shows it: its own size back", "manual" not in size_of("work:"), size_of("work:"))
+        time.sleep(0.5)          # a wrong release would show by then
+        kept = size_of("work:")
+        check("AC-89 another pane opened while another page in sight still shows it: the window keeps its size", kept == "100x32 manual 1", kept)
+        phone.send({"t": "pause"})
+        back = own_size()
+        check("AC-89 then that last page in sight hidden, though it never sized it: its own size back", "manual" not in back, back)
+        ws.send({"t": "sub", "id": pane})
+        ws.until(lambda m: m["t"] == "sized", 5)
+        phone.send({"t": "resume"})
+        phone.send({"t": "pause"})       # raced by the other page's pane switch: either order releases
+        ws.send({"t": "sub", "id": other})
+        ws.until(lambda m: m["t"] == "screen", 5)
+        back = own_size()
+        check("AC-89 another pane opened while only a hidden page still shows it: its own size back", "manual" not in back, back)
         phone.close()
         ws.send({"t": "sub", "id": pane})
         ws.until(lambda m: m["t"] == "sized", 5)

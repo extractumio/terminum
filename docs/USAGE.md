@@ -222,7 +222,9 @@ page says how; how the sign-in is kept is in [SECURITY.md](../SECURITY.md). `tmu
   its queue: Add to queue, and the task starts by itself when a slot frees; the agent's card shows a pale dot for
   each queued task, and its "queued" key opens the queue, where you drag tasks (on a phone: rest a finger on one
   first) or use the arrows to change their order and the cross to take one out; Stop waiting in the task's window
-  does the same. Sessions waiting in INTEGRATION stay visible but stop counting toward the at-once limits; kept slots stay kept, and a returned run counts again.
+  does the same. New waits join last regardless of severity; your project's manager can move a waiting run to
+  its agent's front with `promote_queued_task {id}` (the primary task shown by `list_runs`). It keeps the same agent and conversation, and slot limits
+  still apply. Repeated promotions can delay older work. Sessions waiting in INTEGRATION stay visible but stop counting toward the at-once limits; kept slots stay kept, and a returned run counts again.
   Auto-Dispatch, a switch and a cog in the board's bar (off by default), starts a
   project's TODO tasks by itself: the cog's window holds the agent that picks, a default agent to run them, the
   severities it takes (as made: P0 and P1), the minutes a task stands in TODO before it is taken (10) and the

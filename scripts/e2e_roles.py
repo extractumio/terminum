@@ -22,6 +22,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from e2e_ws import BIN, Terminumd, check, summary, tmux_on, wait_for, wait_layout  # noqa: E402
 from e2e_remote import api  # noqa: E402
 from testrun import free_port, own, short_tmp  # noqa: E402
+from role_queue_checks import queue_promotion  # noqa: E402
 
 FAKE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fake_agent.py")
 PORT, SOCKET = free_port(), own("tm-test-rol")
@@ -29,7 +30,7 @@ tmux = partial(tmux_on, SOCKET)
 
 
 def main():
-    t = Terminumd(PORT, SOCKET, env={"TM_TEST_HOOKS": "1"})
+    t = Terminumd(PORT, SOCKET, env={"TM_TEST_HOOKS": "1", "TM_TEST_CLOCK_SCALE": "60", "TM_TEST_CLOSE_AFTER": "7200"})
     work = tempfile.mkdtemp(prefix="tmr-", dir=short_tmp())
     outside = {k: v for k, v in t.env.items() if k not in ("TMUX", "TMUX_PANE", "TERMINUM_TOKEN")}
     n = [0]
@@ -61,6 +62,19 @@ def main():
     def tool(called, **args):
         return f"{shlex.quote(BIN)} tool {called} {shlex.quote(json.dumps(args))}"
 
+    def accept_manager(key, number):
+        """The shell stand-in takes its first prompt, as an agent does, before the scaled startup deadline."""
+        wait_layout(ws, lambda gs: any(it["id"] == key for g in gs for it in g["items"]), 10)
+        event = json.dumps({"hook_event_name": "UserPromptSubmit", "session_id": f"roles-manager-{number}", "cwd": work, "prompt": "Manage this test project."})
+        command = f"printf '%s' {shlex.quote(event)} | {shlex.quote(BIN)} hook claude"
+        out, rc = typed(key.rsplit(":", 1)[1], f"sh -c {shlex.quote(command)}")
+
+        def state():
+            with sqlite3.connect(f"file:{os.path.join(t.app, 'kanban.sqlite')}?mode=ro", uri=True) as db:
+                return db.execute("SELECT state FROM runs WHERE pane_key = ?", [key]).fetchone()
+
+        check("setup: the manager's shell stand-in acknowledges startup", rc == "0" and wait_for(state, lambda s: s == ("working",), 10, 0.2), out)
+
     try:
         t.start()
         ws = t.page()
@@ -78,9 +92,11 @@ def main():
         check("setup: + Session opens the manager's session", st == 200 and said.get("key"), said)
         boss_key = said["key"]
         boss = boss_key.rsplit(":", 1)[1]
+        accept_manager(boss_key, 1)
         st, said = call(f"/api/task-projects/{project}/session", "POST", {"agent": shell})
         other_key = said["key"]
         other = other_key.rsplit(":", 1)[1]
+        accept_manager(other_key, 2)
 
         marked = lambda gs: all(it.get("manager") for g in gs for it in g["items"] if it["id"] in (boss_key, other_key)) and any(it["id"] == other_key for g in gs for it in g["items"])  # noqa: E731
         rows = {it["id"]: it for g in wait_layout(ws, marked, 10) for it in g["items"]}
@@ -152,6 +168,9 @@ def main():
         check("AC-179 its message is kept on the task under the manager's name", "keep it short" in history and "Shell · manager" in history, [e for e in call(f"/api/tasks/{task}")[1]["history"] if e["kind"] == "comment"])
         out, rc = typed(boss, tool("list_runs"))
         check("AC-179 list_runs shows the project's runs", rc == "0" and '"kind":"session"' in out, out)
+
+        # AC-169: explicit queue promotion, through the manager's real pane, preserves a P0 conversation.
+        queue_promotion(t, call, typed, tool, boss, plain, project, FAKE)
 
         # the project's sessions: read, typed into, closed; never its own, another manager's, another project's
         out, rc = typed(boss, tool("list_sessions"))

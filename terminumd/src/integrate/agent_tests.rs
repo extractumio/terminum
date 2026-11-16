@@ -95,6 +95,7 @@ fn ac194_red_wants_its_agent_in_a_worktree_of_its_own_at_the_candidate() {
     for fact in [i.as_str(), "exit 3", &tree.display().to_string(), &a, "never call finish_task", "45 minutes"] {
         assert!(prompt.contains(fact), "{fact} in {prompt}");
     }
+    assert!(prompt.contains(&format!("{a} at {} (b.txt)", short(&queued_commit(&w, &a)))), "each task with its commit and files: {prompt}");
     assert!(!prompt.contains("of the task's own"), "no task's title or words in its prompt: {prompt}");
     assert!(w.s.with(|tx| finish_refused(tx, b.task.as_deref().unwrap())).unwrap().unwrap().contains("ends when its batch 1 does"));
     assert_eq!(w.s.with(|tx| take_wanted(tx, 200)).unwrap(), vec![(b.id, i.clone(), "a1".to_string())]);
@@ -172,7 +173,7 @@ fn ac194_a_fix_of_its_own_joins_first_outlives_a_red_round_and_is_published() {
     assert!(fixing(&w, "abcdef1234").unwrap_err().contains("is no commit in your worktree"));
     fixing(&w, &fix).unwrap();
     assert_eq!(sh(&tree, &["rev-parse", "HEAD"]), fix, "its worktree stands where it stood");
-    assert!(!PathBuf::from(format!("{}-fix", tree.display())).exists(), "the pick's worktree is gone");
+    assert!(!PathBuf::from(format!("{}-fix-{}", tree.display(), short(&fix))).exists(), "the pick's worktree is gone");
     call(&w, recheck, json!({})).unwrap();
     go(&w, &Sh::default(), 3);
     assert_eq!((batch(&w).state.as_str(), batch(&w).round, batch(&w).fixes.len()), ("red", 2, 1), "red again, its fix kept");
@@ -215,4 +216,104 @@ fn ac194_each_integration_agent_keeps_a_slot_of_its_own() {
         Ok(())
     }).unwrap();
     assert_eq!(status(&w, &i), "IN PROGRESS");
+}
+
+fn queued_commit(w: &World, id: &str) -> String {
+    w.s.with(|tx| {
+        let key = ops::key_of(tx, id)?;
+        tx.query_row("SELECT commit_sha FROM integration_entries WHERE task = ?1", [&key], |r| r.get(0)).map_err(sql)
+    }).unwrap()
+}
+
+/// The target moved: `file` committed on origin's main, holding `text`; the new target.
+fn target_moves(w: &World, file: &str, text: &str) -> String {
+    sh(&w.api, &["checkout", "-q", "--detach", "origin/main"]);
+    std::fs::write(w.api.join(file), text).unwrap();
+    sh(&w.api, &["add", file]);
+    sh(&w.api, &["commit", "-qm", "the target moves"]);
+    sh(&w.api, &["push", "-q", "origin", "HEAD:main"]);
+    sh(&w.api, &["checkout", "-q", "main"]);
+    sh(&w.api, &["fetch", "-q", "origin"]);
+    sh(&w.origin, &["rev-parse", "main"])
+}
+
+#[test]
+fn ac194_red_again_the_same_session_hears_the_round_s_own_words() {
+    let (w, a, b, i) = red_with_agent("ia-redagain", "exit 3", 3);
+    let key = batch(&w).task.unwrap();
+    pressed(&w);
+    call(&w, recheck, json!({"why": "a port was held"})).unwrap();
+    go(&w, &Sh::default(), 2);
+    assert_eq!((batch(&w).state.as_str(), batch(&w).round), ("red", 2));
+    let home = w.root.join("home");
+    let log = integration::log_in(&home, "api", 1, 2, "check");
+    assert!(log.exists(), "round 2's log kept");
+    let (b2, ids) = (batch(&w), format!("{a}, {b}"));
+    let words = format!("[terminum Dispatcher] {i}: batch 1's round 2 ended red: The check ended with status 3. Its log: {}. It checked {} with {ids}; your worktree is at it now. Decide as before.",
+                        log.display(), short(b2.candidate.as_deref().unwrap()));
+    assert_eq!(w.s.with(|tx| red_again(tx, &key, &home, None)).unwrap().unwrap(), words);
+    assert_eq!(w.s.with(|tx| red_again(tx, &key, &home, Some(&[]))).unwrap().unwrap(), words, "asked, no answer yet: the round's words alone");
+    let answered = w.s.with(|tx| red_again(tx, &key, &home, Some(&["keep API-14".to_string()]))).unwrap().unwrap();
+    assert!(answered.starts_with(&words) && answered.ends_with("The human answered your questions, in the comments below. Take them into account.\n\nkeep API-14"), "{answered}");
+    w.s.with(|tx| tx.execute("UPDATE integration_batches SET why = 'The check ran over 90 minutes.'", []).map(drop).map_err(sql)).unwrap();
+    assert!(w.s.with(|tx| red_again(tx, &key, &home, None)).unwrap().unwrap().contains(&format!("round 2 ended red: The check ran over 90 minutes. Its log: {}. It checked", log.display())),
+            "why it was red, and its log beside it");
+    assert_eq!(w.s.with(|tx| red_again(tx, "no-such-key", &home, None)).unwrap(), None, "no batch's task: RUN's words");
+}
+
+#[test]
+fn ac194_a_fix_is_picked_onto_the_target_as_it_is_when_its_round_is_built() {
+    let (w, a, b, i) = red_with_agent("ia-fixmoved", "test -f fix.txt && test ! -f c.txt", 3);
+    pressed(&w);
+    let fix = commit_in(&agent_tree(&w), "fix.txt");
+    fixing(&w, &fix).unwrap();
+    assert_eq!(batch(&w).fixes, vec![fix.clone()], "the agent's own commit is kept, picked anew for each round");
+    let moved = target_moves(&w, "z.txt", "z\n");
+    call(&w, give_back, json!({"task": b, "analysis": ANALYSED})).unwrap();
+    call(&w, recheck, json!({})).unwrap();
+    go(&w, &Sh::default(), 6);
+    assert_eq!((status(&w, &a), status(&w, &i)), ("DONE".into(), "DONE".into()));
+    assert_eq!(on_origin(&w), "a.txt\nb.txt\nfix.txt\nz.txt");
+    let log = sh(&w.origin, &["log", "--format=%P %s", "main"]);
+    assert!(log.lines().any(|l| l == format!("{moved} the agent's fix")), "its change alone, on the moved target: {log}");
+    assert!(log.contains(&format!("Integrate {i}")), "joined as the integration task's merge: {log}");
+}
+
+#[test]
+fn ac194_a_fix_that_no_longer_applies_to_the_moved_target_is_left_out_and_said() {
+    let (w, _, b, i) = red_with_agent("ia-fixgone", "exit 3", 3);
+    pressed(&w);
+    let fix = commit_in(&agent_tree(&w), "fix.txt");
+    fixing(&w, &fix).unwrap();
+    target_moves(&w, "fix.txt", "the target's own\n");
+    call(&w, give_back, json!({"task": b, "analysis": ANALYSED})).unwrap();
+    call(&w, recheck, json!({})).unwrap();
+    go(&w, &Sh::default(), 1);
+    let again = batch(&w);
+    assert_eq!((again.round, again.fixes.len(), again.tasks.len()), (2, 0, 1), "built without its fix");
+    assert!(w.s.with(|tx| ops::history(tx, &i)).unwrap().to_string().contains(&format!("its fix {} is left out on origin/main", short(&fix))));
+}
+
+#[test]
+fn ac194_a_fix_must_be_its_own_on_the_candidate_and_change_something() {
+    let (w, a, _, _) = red_with_agent("ia-fixown", "exit 3", 3);
+    pressed(&w);
+    let tree = agent_tree(&w);
+    let task_commit = queued_commit(&w, &a);
+    assert!(fixing(&w, &task_commit).unwrap_err().contains("is no commit of yours on the candidate"), "a queued task's commit is no fix");
+    assert!(fixing(&w, batch(&w).candidate.as_deref().unwrap()).unwrap_err().contains("is no commit of yours"), "the candidate itself is no fix");
+    target_moves(&w, "fix.txt", "fixed\n");
+    std::fs::write(tree.join("fix.txt"), "fixed\n").unwrap();
+    sh(&tree, &["add", "fix.txt"]);
+    sh(&tree, &["commit", "-qm", "the agent's fix"]);
+    // the round's target has not moved for it: it applies; once the target holds the same change, a rebuild says so
+    let fix = sh(&tree, &["rev-parse", "HEAD"]);
+    fixing(&w, &fix).unwrap();
+    let b = batch(&w);
+    let i = i_of(&w);
+    call(&w, recheck, json!({})).unwrap();
+    go(&w, &Sh::default(), 1);
+    assert_eq!(batch(&w).fixes.len(), 0, "left out of round {}", b.round + 1);
+    assert!(w.s.with(|tx| ops::history(tx, &i)).unwrap().to_string().contains(&format!("its fix {} is left out on origin/main at", short(&fix))));
+    assert!(w.s.with(|tx| ops::history(tx, &i)).unwrap().to_string().contains("its change is already there"));
 }

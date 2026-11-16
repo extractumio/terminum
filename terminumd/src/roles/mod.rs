@@ -20,7 +20,7 @@ mod tasks;
 pub mod tokens;
 
 /// The manager's tools, in the catalog's order (cli/mcp_manager.rs).
-pub const MANAGER_TOOLS: [&str; 17] = ["list_runs", "run_task", "stop_task", "list_agents", "create_agent", "update_agent", "delete_agent",
+pub const MANAGER_TOOLS: [&str; 18] = ["list_runs", "run_task", "promote_queued_task", "stop_task", "list_agents", "create_agent", "update_agent", "delete_agent",
     "list_schedules", "create_schedule", "update_schedule", "delete_schedule", "run_schedule", "list_sessions", "get_session", "send_to_session", "close_session", "get_dashboard"];
 /// What a worker is told of a manager's tool: as of a name that is no tool.
 pub fn not_yours(tool: &str) -> String {
@@ -185,6 +185,7 @@ pub async fn run(app: &Shared, boss: &Boss, tool: &str, args: &Value) -> Result<
     let done = match tool {
         "list_runs" => tasks::list_runs(app, boss).await,
         "run_task" => tasks::run_task(app, boss, args).await,
+        "promote_queued_task" => tasks::promote_queued_task(app, boss, args).await,
         "stop_task" => tasks::stop_task(app, boss, args).await,
         "get_dashboard" => tasks::dashboard(app, boss, args).await,
         "list_agents" => agents::list(app, boss).await,
