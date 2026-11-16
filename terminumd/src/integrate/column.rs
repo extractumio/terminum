@@ -2,7 +2,7 @@
 //! The board's INTEGRATION column (`terminum-integration.md` AC-193): what terminumd says on each card (the batch in
 //! work on its integration task's card, "in batch 7", a place in the queue or what it waits for, a return on a card
 //! in IN PROGRESS), each project's queue paused or waiting, and the keys: Pause and Resume, a human's Integrate and
-//! Take out, Batches…. The column's order is the queue's (`tasks::query`); terminumd says each state in words.
+//! Take out, Batches…, and on a deciding batch's cards its keys (`keys.rs`). The column's order is the queue's (`tasks::query`); terminumd says each state in words.
 
 use std::collections::{HashMap, HashSet};
 
@@ -14,12 +14,14 @@ use rusqlite::Transaction;
 use serde_json::{json, Value};
 
 use super::git::short;
+use super::keys::keys_of;
 use super::store::{self as bs, Batch};
 use crate::app::Shared;
 use crate::tasks::api::{answer, store};
 use crate::tasks::integration;
 use crate::tasks::integration_queue::ordinal;
 use crate::tasks::ops::{self, sql, Task, INTEGRATION};
+use crate::tasks::slugs::is_integration;
 use crate::tasks::store::HUMAN;
 
 /// Past batches a page reads at a time.
@@ -60,18 +62,26 @@ pub fn state_words(tx: &Transaction, b: &Batch) -> Result<String, String> {
 
 /// What a card says of the queue, by task key: the batch's line on its integration task's card ("batch 7 ·
 /// checking · 12 min"), "in batch 7", a place, "verifying", "waits for API-12"; a task back in work, "returned: …".
-/// With the batch's number, so the page draws a batch's cards as one group; a task in work, the tasks it overlaps.
+/// With the batch's number, so the page draws a batch's cards as one group; a task in work, the tasks it overlaps;
+/// and the human's keys on the card (AC-193): "integrate" on a task in work of a project that integrates, "take-out" on
+/// a queued one, a deciding batch's own.
 pub fn marks(tx: &Transaction, tasks: &[Task], now: i64) -> Result<HashMap<String, Value>, String> {
-    let mut out = HashMap::new();
-    let projects: HashSet<&str> = tasks.iter().filter(|t| t.status == INTEGRATION).map(|t| t.project.as_str()).collect();
+    let mut out: HashMap<String, Value> = HashMap::new();
+    // a batch's integration task keeps its head's line where it waits for its agent or the human
+    let projects: HashSet<&str> = tasks.iter()
+        .filter(|t| t.status == INTEGRATION || (is_integration(&t.id) && ["IN PROGRESS", "WAIT FOR HUMAN"].contains(&t.status.as_str())))
+        .map(|t| t.project.as_str()).collect();
     for project in projects {
         for b in bs::of_project(tx, project, i64::MAX, 5)?.iter().filter(|b| !["ended", "given up"].contains(&b.state.as_str())) {
+            let keys = keys_of(b);
             if let Some(task) = &b.task {
                 let minutes = (now - b.step_started.unwrap_or(b.created_at)).max(0) / 60;
-                out.insert(task.clone(), json!({"mark": format!("batch {} · {} · {minutes} min", b.number, state_words(tx, b)?), "batch": b.number, "head": true}));
+                out.insert(task.clone(), json!({"mark": format!("batch {} · {} · {minutes} min", b.number, state_words(tx, b)?), "batch": b.number, "head": true,
+                                                "batch_id": b.id, "keys": keys}));
             }
+            // each card of the group holds the batch's keys for the human: the same as its integration task's window
             for k in &b.tasks {
-                out.insert(k.clone(), json!({"mark": format!("in batch {}", b.number), "batch": b.number}));
+                out.insert(k.clone(), json!({"mark": format!("in batch {}", b.number), "batch": b.number, "batch_id": b.id, "keys": keys}));
             }
         }
         let waiting = ops::rows(tx, "SELECT e.task, e.stage, e.waits_for FROM integration_entries e JOIN tasks t ON t.id = e.task
@@ -104,6 +114,19 @@ pub fn marks(tx: &Transaction, tasks: &[Task], now: i64) -> Result<HashMap<Strin
         if !ids.is_empty() {
             out.entry(key.to_string()).or_insert_with(|| json!({}))["overlaps"] = json!(ids);
         }
+    }
+    // Integrate and Take out, where terminumd would take them: never a batch's own task, which ends with its batch
+    let on: HashSet<String> = ops::rows(tx, "SELECT project FROM project_integration WHERE is_on = 1", [], |r| r.get(0))?.into_iter().collect();
+    for t in tasks.iter().filter(|t| !is_integration(&t.id)) {
+        let key = match t.status.as_str() {
+            "IN PROGRESS" if on.contains(&t.project) => "integrate",
+            INTEGRATION => "take-out",
+            _ => continue,
+        };
+        let mark = out.entry(t.key.clone()).or_insert_with(|| json!({}));
+        let mut keys = vec![json!(key)];
+        keys.extend(mark["keys"].as_array().cloned().unwrap_or_default());
+        mark["keys"] = Value::Array(keys);
     }
     Ok(out)
 }

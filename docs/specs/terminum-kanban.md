@@ -270,7 +270,7 @@ Scenario: AC-106 failure — refused
 Scenario: AC-107 happy path — a task moves by running
   When the user runs API-12 (terminum-dispatcher.md AC-121, AC-138)
   Then Dispatcher moves it as its agent goes, every page shows it within 2 s and its history adds "Dispatcher moved it from TODO to IN PROGRESS" with the time
-  And a drag to another column does nothing: the column does not light and the card stays
+  And a drag to another column does nothing: the column does not light and the card stays; the integration queue's two drops are not moves of a column but its keys: on INTEGRATION a task is queued, from it to IN PROGRESS it is taken out (terminum-integration.md AC-193)
   And the human's way to take a task off the board is Archive (AC-118); its display order follows the column's sort (AC-105)
 
 Scenario: AC-107 failure — a route with a column

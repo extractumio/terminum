@@ -29,6 +29,7 @@ import { taskLines } from "./tasklines.js";
 import { liveSession } from "./cardstate.js";
 import { el, iconButton, plural, projectInk, textKey } from "./listparts.js";
 import { integrationColumn } from "./kanbanqueuecol.js";
+import { cardKeys } from "./kanbancardkeys.js";
 import { boardColumns } from "./kanbancols.js";
 import { columnPanel } from "./kanbanpanel.js";
 import { $, COLUMNS, agentChip, api, button, guardQueuedRun, hasFiles, placeChildren, say, sessionLine, showError, signInElsewhere, statusBox, needBoxes, underParents } from "./kanbanutil.js";
@@ -182,6 +183,7 @@ function card(t, under = "") {
   c.classList.toggle("onagent", !!t.agent);        // a folded card keeps its Run key only with an agent to run on (AC-159)
   // RUN stays in every column; terminumd decides whether its session can take it (AC-122).
   head.append(guardQueuedRun(iconButton("icon crun", "play", `Run ${t.id}`, "Run: choose the agent that does it", () => runThem([t])), t.waits));
+  queueKeys.onCard(c, t, head);                    // Integrate, Take out, a deciding batch's keys (terminum-integration.md AC-193)
   const foot = el("div", "cfoot"), one = filters().project.length === 1;
   const p = projectOf(t.project);
   if (!one) {                                      // its project is said once: by the head when one is shown
@@ -251,6 +253,8 @@ const queueColumn = integrationColumn({ openTask: (id) => openTask(id), reload: 
 /** The columns stand once; a draw fills them, each keeping its scroll. */
 const columns = boardColumns({ sorting, showColumn: (c) => panel.show(c), newTask: () => form.open(), queueKeys: queueColumn.keys });
 const panel = columnPanel(columns, still);
+const queueKeys = cardKeys({ dragging: () => dragging, reload: () => readSoon() });
+queueKeys.drops(columns);
 let socket = null;
 /** A press in the session list: as the session page's, over the one socket. */
 function send(m) {

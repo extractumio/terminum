@@ -68,6 +68,19 @@ export async function hold(page, url, method) {
   await page.route(url, handler);
   return { sent: () => sent, release, end: () => page.unroute(url, handler) };
 }
+/** Card `from` dragged and dropped on `on` by the drag's own events (Playwright's WebKit carries no drag through the
+ *  mouse alone): whether `on` lit and took it. */
+export const dropCard = (page, from, on) => page.evaluate(([from, on]) => {
+  const dt = new DataTransfer(), held = document.querySelector(from), zone = document.querySelector(on), r = zone.getBoundingClientRect();
+  const at = { bubbles: true, cancelable: true, dataTransfer: dt, clientX: r.left + 4, clientY: r.top + 4 };
+  held.dispatchEvent(new DragEvent("dragstart", { bubbles: true, dataTransfer: dt }));
+  const over = new DragEvent("dragover", at);
+  zone.dispatchEvent(over);
+  const lit = zone.classList.contains("over");
+  if (over.defaultPrevented) zone.dispatchEvent(new DragEvent("drop", at));
+  held.dispatchEvent(new DragEvent("dragend", { bubbles: true, dataTransfer: dt }));
+  return { taken: over.defaultPrevented, lit };
+}, [from, on]);
 /** A press on a card's Run key: a folded card no agent ran shows the key only when whole (terminum-kanban.md AC-159). */
 export async function pressRun(page, id) {
   await showRun(page, id);

@@ -8,7 +8,7 @@ export async function liveBoardSignin(page, opts) {
   const { j } = boardKit(page, opts);
   let release, requested = false, posts = [];
   const gate = new Promise((r) => { release = r; });
-  const hold = async (route) => { requested = true; await gate; await route.continue(); };
+  const hold = async (route) => { requested = true; await gate; await route.continue().catch(() => {}); };   // a route already handled (the page left) never ends the run past its teardown
   const record = (r) => {
     if (new URL(r.url()).pathname === "/api/tasks" && r.method() === "POST") posts.push(!!r.headers()["x-tm-session"]);
   };

@@ -6,7 +6,7 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { check, until } from "./check.mjs";
-import { cardInSight, intoStore } from "./boardkit.mjs";
+import { cardInSight, dropCard, intoStore } from "./boardkit.mjs";
 
 const git = (dir, ...args) => execFileSync("git", ["-C", dir, "-c", "user.name=t", "-c", "user.email=t@example.com", ...args], { stdio: "pipe" });
 
@@ -102,7 +102,8 @@ export async function integrationChecks(page, { j, fresh, work, pressAt, shots }
 }
 
 /** AC-193: the INTEGRATION column where a shown project integrates: its head's keys, Pause and Resume said where
- *  pressed, Batches…, and a human's Integrate refused in its words in the task's window; the board comes back after. */
+ *  pressed, Batches…, a human's Integrate refused in its words in the task's window, overlaps (overlapChecks), then the
+ *  card's keys and drops (cardKeyChecks); the board comes back after. */
 export async function columnChecks(page, { j, gitty, repo, newPane, keyOf, app, shots }) {
   const back = page.url(), col = '.col[data-status="INTEGRATION"]';
   await j(`/api/task-projects/${gitty}/integration`, "PUT", { on: true });   // no Check: nothing runs while it is looked at
@@ -133,7 +134,84 @@ export async function columnChecks(page, { j, gitty, repo, newPane, keyOf, app, 
   check("AC-193 Integrate on a task with no session's folder is refused in integrate's words, in its window",
     await until(async () => (await page.textContent("#taskbox[open] .queuekeys .error")) === "This session has no folder on this Mac: name the commit."));
   await overlapChecks(page, { j, gitty, ids: overlapping, back, shots });
+  await cardKeyChecks(page, { j, gitty, t, base: back, repo, newPane, keyOf });
   await page.goto(back);
+}
+
+/** AC-193: IN PROGRESS task `t` of `gitty` (integration on, no Check) queued and taken out by its card's menu and by
+ *  drops on the columns' tabs, on the real page: refused with no session's folder, in a toast; with its session in
+ *  the project's checkout at a commit not in origin/main, queued. The queue stays paused: no batch starts. */
+async function cardKeyChecks(page, { j, gitty, t, base, repo, newPane, keyOf }) {
+  const card = `.card[data-id="${t}"]`, tab = (s) => `#colswitch button[data-status="${s}"]`;
+  const status = async () => (await j(`/api/tasks/${t}`)).status;
+  await j(`/api/integration/project/${gitty}/pause`, "POST", { paused: true });
+  await page.goto(new URL(`/kanban/?project=${gitty}`, base).href);
+  await page.waitForFunction(() => document.body.dataset.socket === "open");
+  /** Its card's menu opened, its column shown first; answers its items. */
+  const openMenu = async () => {
+    // its card in a column (a redraw may stand between a read and the next)
+    const col = await (await page.waitForFunction((sel) => document.querySelector(sel)?.closest(".col")?.dataset.status, card, { timeout: 8000 })).jsonValue();
+    if (await page.isVisible(tab(col))) await page.click(tab(col));
+    await page.hover(card);
+    await page.click(`${card} .cmenu`);
+    return page.$$eval("#cardmenu[open] [role=menuitem]", (bs) => bs.map((b) => b.textContent.trim()));
+  };
+  const menu = async (item) => { await openMenu(); await page.click(`#cardmenu[open] [role=menuitem]:has-text("${item}")`); };
+  const drop = async (on) => (await dropCard(page, card, on)).taken;
+  const toast = (words) => until(async () => (await page.textContent("#toast").catch(() => "")) === words);
+
+  await menu("Integrate");
+  check("AC-193 a card's Integrate with no session's folder is refused in a toast, in integrate's words",
+    await toast("This session has no folder on this Mac: name the commit.") && await status() === "IN PROGRESS");
+  await until(async () => !(await page.isVisible("#toast")));   // the next toast is the drop's own
+  check("AC-193 a drop on INTEGRATION's tab is refused the same, and moves nothing",
+    await drop(tab("INTEGRATION")) && await toast("This session has no folder on this Mac: name the commit.") && await status() === "IN PROGRESS");
+
+  // its session in the project's checkout, one commit past origin/main
+  fs.writeFileSync(path.join(repo, "card.txt"), "card\n");
+  git(repo, "add", "card.txt");
+  git(repo, "commit", "-q", "-m", "card");
+  const key = await keyOf(newPane("card-keys", repo));
+  await j(`/api/tasks/${t}`, "PATCH", { session: key });
+  await until(async () => (await j(`/api/tasks/${t}`)).session?.key === key);
+  await menu("Integrate");
+  check("AC-193 a card's Integrate queues its session's HEAD, its place said in a toast",
+    await until(async () => await status() === "INTEGRATION") && await until(async () => /queued 1st/.test(await page.textContent("#toast").catch(() => ""))));
+  await menu("Take out");
+  check("AC-193 a card's Take out puts it back IN PROGRESS", await until(async () => await status() === "IN PROGRESS"));
+  await page.waitForFunction(([sel]) => document.querySelector(sel)?.closest(".col")?.dataset.status === "IN PROGRESS", [card]);
+  check("AC-193 an IN PROGRESS card dropped on INTEGRATION's tab is queued", await drop(tab("INTEGRATION")) && await until(async () => await status() === "INTEGRATION"));
+  await page.waitForFunction(([sel]) => document.querySelector(sel)?.closest(".col")?.dataset.status === "INTEGRATION", [card]);
+  check("AC-107 a queued card takes no drop on DONE", !(await drop(tab("DONE"))) && await status() === "INTEGRATION");
+  check("AC-193 a queued card dropped on IN PROGRESS's tab is taken out", await drop(tab("IN PROGRESS")) && await until(async () => await status() === "IN PROGRESS"));
+
+  // a red batch: its card holds the batch's keys; its integration task keeps its head's line where it waits
+  // the target fetched from an origin of the test's own, as a batch's build fetches it first
+  const origin = path.join(path.dirname(repo), "integration-origin.git");
+  execFileSync("git", ["init", "-q", "--bare", origin]);
+  git(repo, "remote", "add", "origin", origin);
+  git(repo, "push", "-q", "origin", "refs/remotes/origin/main:refs/heads/main");
+  await j(`/api/task-projects/${gitty}/integration`, "PUT", { on: true, check: "false" });
+  await page.waitForFunction(([sel]) => document.querySelector(sel)?.closest(".col")?.dataset.status === "IN PROGRESS", [card]);
+  await menu("Integrate");
+  await until(async () => await status() === "INTEGRATION");
+  await j(`/api/integration/project/${gitty}/pause`, "POST", { paused: false });
+  const red = async () => (await j(`/api/tasks?project=${gitty}&status=INTEGRATION`)).tasks.find((x) => x.id === t)?.queue?.keys?.includes("check-again");
+  check("AC-193 a red check leaves the batch red, its card holding its keys", await until(red, 90000),
+    JSON.stringify({ cards: (await j(`/api/tasks?project=${gitty}&status=INTEGRATION`)).tasks.map((x) => x.queue), queue: (await j("/api/tasks/meta")).projects.find((p) => p.id === gitty)?.queue }));
+  const head = (await j(`/api/tasks?project=${gitty}&status=WAIT FOR HUMAN`)).tasks.find((x) => x.id.startsWith("I_"));
+  check("AC-193 its integration task waiting for the human keeps the group's head line", /^batch \d+ · red: waits for you/.test(head?.queue?.mark ?? ""), JSON.stringify(head?.queue));
+  await page.waitForFunction(([sel]) => document.querySelector(sel)?.closest(".col")?.dataset.status === "INTEGRATION" && document.querySelector(`${sel} .qmark`)?.textContent.startsWith("in batch"), [card]);
+  let items = [];   // the board reads the batch's red at its next news: a menu opened before shows the queue's keys alone
+  await until(async () => { items = await openMenu(); if (items.length > 1) return true; await page.keyboard.press("Escape"); return false; }, 30000);
+  check("AC-193 a red batch's card's menu holds Take out, Check again, Return… and Return all",
+    JSON.stringify(items) === JSON.stringify(["Take out", "Check again", `Return ${t}…`, "Return all"]), JSON.stringify(items));
+  await page.click('#cardmenu[open] [role=menuitem]:has-text("Return all")');
+  await page.waitForSelector("#confirmbox[open]");
+  await page.click("#confirmok");
+  check("AC-193 Return all from the card sends its task back to work, said in a toast",
+    await until(async () => await status() === "IN PROGRESS") && await until(async () => /went back to their agents/.test(await page.textContent("#toast").catch(() => ""))));
+  await j(`/api/task-projects/${gitty}/integration`, "PUT", { on: true });
 }
 
 /** Two tasks IN PROGRESS of `gitty`, each with a session in a worktree of `repo` whose commit changes retry.txt its
