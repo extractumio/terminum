@@ -9,7 +9,7 @@
 #pool { display: contents; }
 
 @media (max-width: 600px), (pointer: coarse) and (max-height: 500px) {             /* a phone, upright or on its side (kanbanpanel.js BOARD_PHONE) */
-  /* one row: the list's key, the project (it gives way first), the counters, Find, + Task as an icon key */
+  /* one row: the list's key, the project (it gives way first), the counters, Find, the project's cog */
   .board-page #bar { flex-wrap: wrap; align-items: center; }
   #filters { display: contents; }
   #bar #fproject { order: 1; flex: 1 1 0; min-width: var(--h-touch); }
@@ -18,8 +18,6 @@
   #findkey { order: 3; display: inline-grid; flex: none; }
   #findkey.lit { color: var(--accent); background: color-mix(in srgb, var(--accent) 22%, var(--chrome-2)); box-shadow: var(--m-well); }
   #boardacts { order: 4; margin-left: 0; }
-  #newtask { width: var(--h-touch); padding: 0; justify-content: center; }
-  #newtask span { display: none; }
   /* the smallest phone: every key whole on the one row, the project's a dot and an arrow */
   @media (max-width: 360px) { .board-page #bar { column-gap: var(--sp-1); } .board-page #askcount { gap: var(--sp-1); } #fproject summary { padding-inline: var(--sp-2); } }
   /* Find and the filters: rows under the head while the Find key is pressed */

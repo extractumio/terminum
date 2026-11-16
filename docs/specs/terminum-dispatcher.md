@@ -1384,13 +1384,13 @@ Scenario: AC-169 edge — a press for several tasks
 ```gherkin
 Scenario: AC-170 happy path — the switch and its settings
   Given the board, whatever projects it shows
-  Then its bar holds "Auto-Dispatch", a switch with its state, and a cog; a window under 860 px too, without the words; on a phone (600 px or narrower) the three stand first in the sheet its line opens, the line saying the state (terminum-kanban.md AC-105); the project's window holds no key of it
+  Then its bar holds "Auto-Dispatch" and a switch with its state; a window under 860 px too, without the words; on a phone (600 px or narrower) the two stand first in the sheet its line opens, the line saying the state (terminum-kanban.md AC-105); its settings are the Auto-Dispatch tab of the project's window (terminum-kanban.md AC-139), never a window of their own
   When project api is shown alone, an agent that picks chosen for it, and the user presses the switch
   Then it is on for api, "ON", on every page; a press again turns it off, "OFF", its agents and filters kept
   When no agent picks for api yet, or it turned itself off, and the user presses the switch
-  Then its window opens with On switched on, saying why it turned itself off: nothing is on until Save
-  When the user presses the cog
-  Then the window holds, for the project: On; the agent that picks; the default agent; the severities it takes, a tick each; the minutes a task stands in TODO before it is taken, 0 to 1440; the tasks it starts in 24 hours at most, 1 to 1000, with how many it started in the last 24
+  Then api's window opens on its Auto-Dispatch tab with On switched on, saying why it turned itself off: nothing is on until Save
+  When the user opens api's window (the bar's cog, terminum-kanban.md AC-139) and its Auto-Dispatch tab
+  Then the tab holds, for the project: On; the agent that picks; the default agent; the severities it takes, a tick each; the minutes a task stands in TODO before it is taken, 0 to 1440; the tasks it starts in 24 hours at most, 1 to 1000, with how many it started in the last 24
   And it says in fixed words what it takes, in what order, when it waits and when it stops; tasks start with no one pressing Run, an agent's text too
   And a project is made off, taking P0 and P1 after 10 minutes, 10 tasks in 24 hours at most
   When On is saved with no agent that picks, or with no severity ticked
@@ -1404,7 +1404,7 @@ Scenario: AC-170 happy path — several projects shown
   When the user presses it
   Then it is off for api: one press turns off, for every project shown
   When none is on and the user presses it
-  Then the window opens with a Project choice and On switched on: turning on is one project's Save, never one press for several
+  Then no window opens and the page says "Multiple projects are selected: select only one to turn Auto-Dispatch on.": turning on is one project's Save, never one press for several
 
 Scenario: AC-170 happy path — priority and saved order, no agent
   Given api's window, "How tasks are picked" set from "An agent scores them by RICE" to "By priority and saved order, no agent", saved
@@ -2009,7 +2009,7 @@ Depends on `terminum-kanban.md`'s Stage 1. All three stages belong to terminum's
 - [ ] AC-157 — `cargo test dispatcher::plan`, `cargo test dispatcher::press`, `cargo test dispatcher::hooks` (held initial event, early tools and mixed outcomes), `cargo test dispatcher::start` (stale start watcher), `cargo test tasks::tools`, `cargo test tasks::integration_queue` (early integration), `cargo test cli::mcp`, `web/test/e2e_livedispatcher.mjs`
 - [ ] AC-158 — `cargo test dispatcher::waits`, `web/test/e2e_liveboardagents.mjs`
 - [x] AC-169 — `cargo test dispatcher::pool` (four integration waits free agent and project room while every retained session stays visible, startup reservations, a live return above the limit, mixed tasks and restart), `cargo test dispatcher::waits`, `cargo test roles::tests::queue_tests` (manager promotion, saved press, grouped positions, persistence and refusals), `scripts/e2e_roles.py` (P2/P2/P0 promotion and the same agent conversation), `cargo test ac169` (filtered counts, queued members and unanswered subtasks), `web/test/e2e_integrationslots.mjs` (retained dots and Open session in both themes and sizes), `node web/test/e2e_live.mjs chromium webkit integration-slots` (a queued blocker starts; retained sessions open; a return blocks later starts), `web/test/e2e_livequeue.mjs`, `web/test/e2e_livequeuewait.mjs` (a wide and a phone size: answered WAIT FOR HUMAN, positions, counts, reordering, cancellation), `web/test/e2e_liveboardagents.mjs`
-- [x] AC-170 — `cargo test dispatcher::auto`, `cargo test tasks::auto`, `cargo test tasks::tools` (a round's pane), `web/test/e2e_liveauto.mjs` on `scripts/fake_agent.py`; no test of its own: two dispatch_task calls at once through the socket, a new place among the cards leaving the wait as it was, a candidate with an earlier conversation started anew; not run on a real model: whether a real agent follows the round's words
+- [x] AC-170 — `cargo test dispatcher::auto`, `cargo test tasks::auto`, `cargo test tasks::tools` (a round's pane), `web/test/e2e_liveauto.mjs` on `scripts/fake_agent.py` (its tab in the project's window, the cog, several projects shown); no test of its own: two dispatch_task calls at once through the socket, a new place among the cards leaving the wait as it was, a candidate with an earlier conversation started anew; not run on a real model: whether a real agent follows the round's words
 - [x] AC-185 — `cargo test ac185` (dispatcher::press, tasks::tools), `cargo test dispatcher::auto` (a main task as a candidate, its agent's words), `web/test/e2e_livemain.mjs` on `scripts/fake_agent.py` (a human's RUN, a subtask failed, run again); no test of its own: Auto-Dispatcher's start of a main task through the page, the ask and its answers through the page, a manager's run_task; not run on a real model: whether a real agent follows the words
 - [x] AC-183 — `cargo test dispatcher::runs`, `cargo test dashboard::`, `web/test/e2e_liveboardagents.mjs` (a drop, a page's press, the new-task window, + Session), `web/test/e2e_liveschedules.mjs` (a firing), `web/test/e2e_liveauto.mjs` (Auto-Dispatcher's start); no test of its own: a wait's press started later
 - [x] AC-166 — `cargo test tasks::closeout`, `cargo test tasks::tools`, `cargo test dispatcher::press`, `cargo test cli::mcp`, `web/test/e2e_livedispatcher.mjs`, `web/test/e2e_liveboardids.mjs`

@@ -21,7 +21,7 @@ const look = (page) => page.evaluate(() => {
   const q = (s) => document.querySelector(s), all = (s) => [...document.querySelectorAll(s)];
   const tabs = all("#colswitch button").filter((b) => b.offsetWidth).map((b) => ({ s: b.dataset.status, words: b.textContent, alarm: b.classList.contains("alarm"), on: b.getAttribute("aria-selected") === "true",
     pulse: getComputedStyle(b.querySelector(".tabn"), "::after").animationName, ...box(b) }));
-  const head = all("#navbtn, #bar > .sections, #fproject summary, #filters .search, #filtersbtn, .askn, #autoswitch, #autocog, #newtask").map((e) => ({ id: e.id || e.className, ...box(e) })).filter((b) => b.w);
+  const head = all("#navbtn, #bar > .sections, #fproject summary, #filters .search, #filtersbtn, .askn, #autoswitch, #projectcog").map((e) => ({ id: e.id || e.className, ...box(e) })).filter((b) => b.w);
   return { win: innerWidth, docW: document.documentElement.scrollWidth, bar: box(q("#bar")), board: box(q("#board")), todo: box(q('.col[data-status="TODO"]')), panel: box(q(".colpanel")),
     todoHead: box(q('.col[data-status="TODO"] .colhead')), tabRow: box(q("#colswitch")), tabs, keys: box(q(".colpanel .colhead")),
     todoCard: box(q('.col[data-status="TODO"] .card')), panelCards: all(".colpanel .col.shown .card").map(box), shown: q(".colpanel .col.shown")?.dataset.status,
