@@ -20,7 +20,7 @@ function finding(on) {
   find.setAttribute("aria-expanded", String(on));
   if (on) $("find").focus();
 }
-pointerKey(find).addEventListener("click", () => finding(!bar.classList.contains("finding")));   // an icon key: no focus from a press
+pointerKey(find).addEventListener("click", () => finding(!bar.classList.contains("finding")));
 
 /** The Find key says a narrowed board: kanbanfilters.js shows Clear filters exactly then. */
 function lit() {
