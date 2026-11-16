@@ -1,68 +1,118 @@
 /* SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial */
-/* The Message history (terminum.md AC-151): its tools, the day strip, the rows. A row is the session list's kind:
-   its project's bar, the agent's mark, the session's title; what was sent under it in the terminal's font. */
-#mpage { --strip-ink: color-mix(in srgb, var(--t-fg) 30%, var(--t-bg)); }
-#htools .search { flex: 1 1 260px; max-width: 560px; height: var(--key-h); }
+/* The Message history (terminum.md AC-151): the quick filters' rail beside a reading column no wider than a prompt
+   reads (--read-w), the day strip, the rows. A row says who sent it to what, in which session, project and task,
+   on one line that starts with its time, right over what was sent in the terminal's font. */
+#hpage { --rail-w: 232px; --read-w: 900px; }   /* the rail; the widest a list of prose reads: about 100 characters of the terminal's font */
+#mpage { --strip-ink: color-mix(in srgb, var(--t-fg) 30%, var(--t-bg)); --row-on: color-mix(in srgb, var(--accent) 16%, var(--chrome)); }
+#hpage { display: grid; grid-template-columns: var(--rail-w) minmax(0, var(--read-w)); grid-template-areas: "pages tools" "rail main";
+  column-gap: var(--sp-6); row-gap: var(--sp-3); align-items: start; padding: var(--sp-2) var(--gutter) 0; }
+#hpage > .mpages { grid-area: pages; justify-self: start; }
+#htools { grid-area: tools; padding: 0; }   /* the tools' line (msgpage.css .mtools), in the list's column */
+#htools .search { flex: 1 1 260px; height: var(--key-h); }
 #htools .search input { font-size: var(--fs-body); }
-#hpicks { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); }
 #htools #hfilters { display: none; }   /* over the keys' display (controls.css) */
 #hsort { flex: none; }
 #hsort button:disabled { opacity: .45; }
-#fproject summary { max-width: 220px; }
-#fproject .box { min-width: min(300px, calc(100vw - var(--sp-6) * 2)); }
-.hrange { display: flex; flex-wrap: wrap; align-items: end; gap: var(--sp-2); padding: var(--sp-2) 10px var(--sp-1); }
-.hrange label { display: flex; flex-direction: column; gap: 2px; font-size: var(--fs-label); color: var(--muted-text); height: auto; padding: 0; }
-.hrange input { height: 30px; padding: 0 var(--sp-1); font: inherit; font-size: var(--fs-small); }
-#hhelpbox { margin: var(--sp-2) var(--gutter) 0; padding: var(--sp-2) var(--sp-3); max-width: 560px; border-radius: var(--r-lg); background: var(--surface-1); box-shadow: var(--m-edge); font-size: var(--fs-small); }
+#hmain { grid-area: main; min-width: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
+#hhelpbox { padding: var(--sp-2) var(--sp-3); border-radius: var(--r-lg); background: var(--surface-1); box-shadow: var(--m-edge); font-size: var(--fs-small); }
 #hhelpbox p { margin: 2px 0; }
 #hhelpbox code { font-family: var(--term-font, ui-monospace); }
 
+/* the rail: a group a filter, a row a choice with how many it would show; a chosen row pressed again lets go */
+#hrail { grid-area: rail; position: sticky; top: calc(var(--h-bar) + var(--sp-2)); max-height: calc(100dvh - var(--h-bar) - var(--sp-4)); overflow-y: auto;
+  display: flex; flex-direction: column; gap: var(--sp-4); }
+.fgroup h2 { margin: 0 0 var(--sp-1); padding: 0 var(--sp-2); font-size: var(--fs-label); font-weight: var(--fw-head); color: var(--muted-text); }
+.frows { display: flex; flex-direction: column; gap: 1px; }
+.frow { display: flex; align-items: center; gap: var(--sp-2); width: 100%; min-height: 28px; padding: 0 var(--sp-2); border-radius: var(--r-sm); text-align: left;
+  font-family: var(--ui); font-size: var(--fs-small); color: var(--t-fg); cursor: pointer; }
+.frow.sub { padding-left: var(--sp-5); }
+.frow .pname { flex: 1 1 auto; }
+.frow .fnum { flex: none; font-size: var(--fs-meta); color: var(--muted-text); font-variant-numeric: tabular-nums; }
+.frow.none:not([aria-pressed="true"]) { color: var(--muted-text); }
+.frow[aria-pressed="true"] { background: var(--row-on); font-weight: var(--fw-ctl); }
+@media (hover: hover) { .frow:not([aria-pressed="true"]):hover { background: var(--surface-2); } }
+#fproject { max-height: 40dvh; overflow-y: auto; }
+.hrange { display: flex; flex-wrap: wrap; align-items: end; gap: var(--sp-2); padding: var(--sp-2) var(--sp-2) 0; }
+.hrange label { display: flex; flex-direction: column; gap: 2px; flex: 1 1 96px; min-width: 0; font-size: var(--fs-label); color: var(--muted-text); }
+.hrange input { height: 30px; padding: 0 var(--sp-1); font: inherit; font-size: var(--fs-small); min-width: 0; }
+
+/* the filters in force: a chip each, pressed to let it go */
+#hchips { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); }
+.hchip { display: inline-flex; align-items: center; gap: var(--sp-1); max-width: 100%; min-height: 26px; padding: 0 var(--sp-2); border-radius: var(--r-pill);
+  background: var(--row-on); font-family: var(--ui); font-size: var(--fs-label); color: var(--t-fg); cursor: pointer; }
+.hchip svg { flex: none; color: var(--muted-text); }
+@media (hover: hover) { .hchip:hover svg { color: var(--t-fg); } }
+
 /* the day strip: when, at a glance; a day pressed shows it */
-.strip { margin: var(--sp-2) var(--gutter) 0; padding: var(--sp-2) var(--sp-3) var(--sp-1); border-radius: var(--r-lg); background: var(--surface-1); box-shadow: var(--m-edge); }
-.striphead { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); min-height: 24px; font-size: var(--fs-meta); color: var(--muted-text); font-variant-numeric: tabular-nums; }
+.strip { margin: 0; padding: var(--sp-2) var(--sp-3) var(--sp-1); border-radius: var(--r-lg); background: var(--surface-1); box-shadow: var(--m-edge); }
+.striphead { display: flex; align-items: center; min-height: 20px; font-size: var(--fs-meta); color: var(--muted-text); font-variant-numeric: tabular-nums; }
 #stripsay { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .stripplot { margin-top: var(--sp-1); }
-#hsum, #herr { padding: var(--sp-2) var(--gutter) 0; }
 
 /* the rows */
-#results { display: flex; flex-direction: column; gap: 2px; padding: var(--sp-1) var(--gutter) var(--sp-2); }
+#results { --time-w: 38px; display: flex; flex-direction: column; gap: 2px; padding-bottom: var(--sp-2); }
+#results.dated { --time-w: 84px; }      /* no day heads over the best matches: each row says its day */
 #results.stale { opacity: .5; }
-.dayhead { position: sticky; top: var(--h-bar); z-index: 2; padding: var(--sp-2) 0 var(--sp-1); font-size: var(--fs-label); font-weight: 600; color: var(--muted-text); background: var(--surface-0); font-variant-numeric: tabular-nums; }
-.msg { position: relative; display: flex; flex-direction: column; gap: 3px; padding: var(--sp-2) var(--sp-3) var(--sp-2) calc(var(--sp-3) + 8px); border-radius: var(--r-md); cursor: pointer; content-visibility: auto; contain-intrinsic-size: auto 84px; }
+.dayhead { position: sticky; top: var(--h-bar); z-index: 2; padding: var(--sp-2) 0 var(--sp-1); font-size: var(--fs-label); font-weight: var(--fw-head); color: var(--muted-text); background: var(--surface-0); font-variant-numeric: tabular-nums; }
+.msg { --in: calc(var(--time-w) + var(--sp-2)); position: relative; display: flex; flex-direction: column; gap: 3px; padding: var(--sp-2) var(--sp-3) var(--sp-2) calc(var(--sp-3) + 8px);
+  border-radius: var(--r-md); cursor: pointer; content-visibility: auto; contain-intrinsic-size: auto 96px; }
 .msg::before { content: ""; position: absolute; left: 6px; top: 8px; bottom: 8px; width: 4px; border-radius: 2px; background: var(--dot, var(--faint)); opacity: .6; }   /* the list's .pbar */
 @media (hover: hover) { .msg:hover { background: color-mix(in srgb, var(--t-fg) 6%, transparent); } }
-.msg[aria-selected="true"] { background: color-mix(in srgb, var(--accent) 14%, var(--chrome)); }
+.msg[aria-selected="true"] { background: var(--row-on); }
 .msg.open { background: var(--surface-1); box-shadow: var(--m-edge); cursor: auto; }
-.mhead { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; font-size: var(--fs-row); }
-.mtitle2 { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
-.mproj { display: inline-flex; align-items: center; gap: 5px; flex: none; max-width: 40%; padding: 1px 8px; border-radius: var(--r-pill); background: var(--surface-2); font-size: var(--fs-label); color: var(--muted-text); }
-.mbot { display: inline-flex; align-items: center; gap: 4px; flex: none; padding: 1px 6px; border-radius: var(--r-xs); background: var(--surface-3); clip-path: var(--chamfer); font-size: var(--fs-micro); font-weight: 600; color: var(--t-fg); }
-.mtime { margin-left: auto; flex: none; font-size: var(--fs-meta); color: var(--muted-text); font-variant-numeric: tabular-nums; }
-.mtext { font-family: var(--term-font, ui-monospace, Menlo, monospace); font-size: var(--fs-small); line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere;
+.mhead { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; font-size: var(--fs-small); line-height: var(--lh-ui); }
+.mhead > * { flex: none; }
+.mtime { width: var(--time-w); font-size: var(--fs-meta); color: var(--muted-text); font-variant-numeric: tabular-nums; white-space: nowrap; }
+/* who sent it: the hues of who wrote a task's comment (tokens.css --said-*), the word in them */
+.mwho { display: inline-flex; align-items: center; gap: var(--sp-1); font-weight: var(--fw-head); color: color-mix(in srgb, var(--who, var(--muted)) 55%, var(--t-fg)); }
+.mwho.by-human { --who: var(--said-human); }
+.mwho.by-agent { --who: var(--said-agent); }
+.mwho.by-system { --who: var(--said-system); }
+.marrow { color: var(--muted-text); }
+.mto { display: inline-flex; align-items: center; gap: 5px; color: var(--muted-text); }
+.mhead > .msess { flex: 0 1 auto; min-width: 6ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: var(--fw-ctl); }
+.msess::before { content: "· "; color: var(--muted-text); font-weight: var(--fw-body); }
+.mtags { display: inline-flex; align-items: center; gap: var(--sp-1); min-width: 0; }
+.mproj { display: inline-flex; align-items: center; gap: 5px; max-width: 22ch; padding: 1px var(--sp-2); border-radius: var(--r-pill); background: var(--surface-2); font-size: var(--fs-label); color: var(--muted-text); }
+.mtask { padding: 1px 6px; border-radius: var(--r-xs); background: var(--surface-3); font-size: var(--fs-micro); font-weight: var(--fw-head); color: var(--t-fg); font-variant-numeric: tabular-nums; white-space: nowrap; }
+:is(.mtext, .mmeta, .macts, .mfind, .ctx) { margin-left: var(--in); }
+.mtext { font-family: var(--term-font, ui-monospace, Menlo, monospace); font-size: var(--fs-small); line-height: var(--lh-prose); white-space: pre-wrap; overflow-wrap: anywhere;
   display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; }
 .mtext.shell::before { content: "$ "; color: var(--muted-text); }
-.msg.open .mtext { display: block; max-height: 40vh; overflow: auto; -webkit-line-clamp: unset; }
+.msg.open .mtext { display: block; max-height: 50vh; overflow: auto; -webkit-line-clamp: unset; }
 .mtext mark.hit { color: var(--t-fg); background: color-mix(in srgb, var(--accent) 32%, transparent); border-radius: var(--r-xs); padding: 0 1px; }
 .mmeta { font-size: var(--fs-meta); color: var(--muted-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; }
 .mmeta.gone { opacity: .8; }
-.macts { display: flex; flex-wrap: wrap; gap: var(--sp-2); padding-top: var(--sp-1); }
-.macts a { text-decoration: none; display: inline-flex; align-items: center; }
+:is(.macts, .mfind) { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); padding-top: var(--sp-1); }
+.mfind > span { font-size: var(--fs-label); color: var(--muted-text); }
+.macts a { text-decoration: none; }
 .macts a[aria-disabled="true"] { opacity: .45; cursor: not-allowed; }
 .ctx { display: flex; flex-direction: column; gap: 2px; margin-top: var(--sp-1); padding: var(--sp-1) var(--sp-2); border-radius: var(--r-sm); background: var(--surface-2); }
 .ctxrow { display: flex; gap: var(--sp-2); font-size: var(--fs-small); color: var(--muted-text); min-width: 0; }
-.ctxrow.self { color: var(--t-fg); font-weight: 500; }
+.ctxrow.self { color: var(--t-fg); font-weight: var(--fw-ctl); }
 .ctxtime { flex: none; font-variant-numeric: tabular-nums; }
 .ctxtext { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--term-font, ui-monospace); }
 #hfoot { display: flex; justify-content: center; padding: var(--sp-2) 0 var(--sp-6); }
 
-@media (max-width: 860px), (pointer: coarse) {
-  #htools .search { flex-basis: 100%; max-width: none; }
+/* a narrow window, a touch screen: one column; the rail behind Filters, its groups side by side while they fit; a
+   row's project and tasks on a line of their own, nothing indented under the time */
+@media (max-width: 1100px), (pointer: coarse) {
+  #hpage { grid-template-columns: minmax(0, var(--read-w)); grid-template-areas: "pages" "tools" "rail" "main"; }
+  #htools .search { flex-basis: 100%; }
   #htools .search input { font-size: 16px; }        /* iOS does not zoom */
   #htools #hfilters { display: inline-flex; }
-  #hpicks { flex-basis: 100%; }
-  #hpicks:not(.open) { display: none; }
-  .msg { min-height: 60px; }
-  .macts :is(a, button) { min-height: 44px; }
-  .dayhead { top: 0; position: static; }
-  .mproj { max-width: 35%; }
+  #hrail { position: static; max-height: none; flex-flow: row wrap; padding: var(--sp-3); border-radius: var(--r-lg); background: var(--surface-1); box-shadow: var(--m-edge); }
+  #hrail:not(.open) { display: none; }
+  .fgroup { flex: 1 1 200px; min-width: 0; }
+  .dayhead { position: static; }
+}
+@media (max-width: 860px), (pointer: coarse) {
+  :is(.frow, .hchip) { min-height: var(--h-touch); }
+  .hrange input { height: var(--h-touch); font-size: 16px; }        /* a finger's size; iOS does not zoom */
+  #results, #results.dated { --time-w: auto; }
+  .msg { --in: 0px; min-height: 60px; }
+  .mhead { flex-wrap: wrap; row-gap: 2px; }
+  .mhead > .msess { flex: 1 1 0; }
+  .mtags { flex: 1 0 100%; flex-wrap: wrap; }
+  :is(.macts, .mfind) :is(a, button) { min-height: var(--h-touch); }
 }

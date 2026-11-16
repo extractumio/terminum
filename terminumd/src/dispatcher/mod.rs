@@ -61,8 +61,8 @@ pub use walk::run as walking;
 /// The walk's beat; a gap over GAP adds nothing to a clock (AC-131).
 const BEAT: Duration = Duration::from_secs(30);
 const GAP: i64 = 120;
-/// What terminum typed is known for this long: the hook's prompt is matched to it (§9).
-const TYPED_FOR: Duration = Duration::from_secs(300);
+/// What terminum typed is known for this long, in seconds: the hook's prompt is matched to it (§9).
+const TYPED_FOR: u64 = 300;
 
 #[derive(Default)]
 pub struct Dispatcher {
@@ -78,7 +78,7 @@ pub struct Dispatcher {
     /// hooks' events, in the order they came (AC-131)
     events: hooks::Events,
     /// what terminum typed, by pane
-    typed: Mutex<Vec<(String, String, Instant)>>,
+    typed: Typed<TYPED_FOR>,
     /// runs whose start is being watched
     starting: Mutex<HashSet<String>>,
     /// runs whose End is under way (acts.rs)
@@ -246,33 +246,45 @@ impl Dispatcher {
     }
 
     fn remember_typed(&self, key: &str, text: &str) {
-        let mut t = self.typed.lock();
-        t.retain(|(_, _, at)| at.elapsed() < TYPED_FOR);
-        t.push((key.to_string(), text.to_string(), Instant::now()));
+        self.typed.remember(key, text);
     }
 
-    /// Whether `prompt` in pane `key` is what terminum typed there, on its first 20,000 characters (§9): once.
+    /// Whether `prompt` in pane `key` is what terminum typed there (§9): once.
     fn was_typed(&self, key: &str, prompt: &str) -> bool {
-        let mut t = self.typed.lock();
-        match typed_at(&mut t, key, prompt) {
-            Some(at) => { t.remove(at); true }
-            None => false,
-        }
+        self.typed.has(key, prompt, true)
     }
 
     /// Whether Dispatcher typed `prompt` into pane `key` (its message's sender, AC-147), leaving
     /// it for `was_typed`.
     pub fn typed_it(&self, key: &str, prompt: &str) -> bool {
-        typed_at(&mut self.typed.lock(), key, prompt).is_some()
+        self.typed.has(key, prompt, false)
     }
 }
 
-/// Where in `t` (what Dispatcher typed lately) `prompt` of pane `key` is.
-fn typed_at(t: &mut Vec<(String, String, Instant)>, key: &str, prompt: &str) -> Option<usize> {
-    t.retain(|(_, _, at)| at.elapsed() < TYPED_FOR);
-    t.iter().position(|(k, text, _)| k == key && same_prompt(text, prompt))
+/// What terminum typed into panes and no hook has said yet as a prompt, each known for SECS seconds: (pane, text, when).
+#[derive(Default)]
+pub(crate) struct Typed<const SECS: u64>(Mutex<Vec<(String, String, Instant)>>);
+
+impl<const SECS: u64> Typed<SECS> {
+    pub(crate) fn remember(&self, key: &str, text: &str) {
+        let mut all = self.0.lock();
+        all.retain(|(_, _, at)| at.elapsed().as_secs() < SECS);
+        all.push((key.to_string(), text.to_string(), Instant::now()));
+    }
+
+    /// Whether a hook's `prompt` in pane `key` is what was typed there (`same_prompt`, §9); `take`: once.
+    pub(crate) fn has(&self, key: &str, prompt: &str, take: bool) -> bool {
+        let mut all = self.0.lock();
+        all.retain(|(_, _, at)| at.elapsed().as_secs() < SECS);
+        let found = all.iter().position(|(k, text, _)| k == key && same_prompt(text, prompt));
+        if let (Some(at), true) = (found, take) {
+            all.remove(at);
+        }
+        found.is_some()
+    }
 }
 
+/// Whether a hook's prompt `b` is the text `a` typed into its pane: their first 20,000 characters, blanks aside.
 fn same_prompt(a: &str, b: &str) -> bool {
     a.chars().filter(|c| !c.is_whitespace()).take(20_000).eq(b.chars().filter(|c| !c.is_whitespace()).take(20_000))
 }

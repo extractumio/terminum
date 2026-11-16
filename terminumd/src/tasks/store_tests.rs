@@ -357,6 +357,22 @@ fn integration_ac187_an_older_store_takes_the_integration_status_and_keeps_every
 }
 
 #[test]
+fn ac147_an_older_store_s_dispatcher_messages_take_their_tasks_from_the_input_log() {
+    let path = crate::testutil::fresh_dir("store-schema31").join("kanban.sqlite");
+    let mut conn = Connection::open(&path).unwrap();
+    conn.pragma_update(None, "foreign_keys", "ON").unwrap();
+    upgrade(&mut conn, &path, &MIGRATIONS[..30]).unwrap();
+    let input = |at: i64, pane: &str, sender: &str, tasks: &str| format!("INSERT INTO inputs (at, ended, sender, component, kind, text, bytes, pane, tasks, version)
+        VALUES ({at}, {at}, '{sender}', 'dispatcher.gate', 'prompt', 'T-1: do it<Enter>', 9, '{pane}', '{tasks}', '1');");
+    let message = |at: i64, pane: &str, sender: &str| format!("INSERT INTO messages (at, sender, via, pane, host, cwd, text) VALUES ({at}, '{sender}', 'hook', '{pane}', 'local', '/w', 'T-1: do it');");
+    conn.execute_batch(&[input(1_000, "k1", "dispatcher", "T-1,T-2"), input(900_000, "k1", "dispatcher", "T-9"), input(1_000, "k2", "dispatcher", "T-3"),
+        message(3_000, "k1", "dispatcher"), message(4_000, "k1", "human"), message(400_000, "k2", "dispatcher"), message(901_000, "k1", "dispatcher")].concat()).unwrap();
+    upgrade(&mut conn, &path, &MIGRATIONS).unwrap();
+    let tasks: Vec<Option<String>> = conn.prepare("SELECT tasks FROM messages ORDER BY at").unwrap().query_map([], |r| r.get(0)).unwrap().map(Result::unwrap).collect();
+    assert_eq!(tasks, [Some("T-1,T-2".into()), None, None, Some("T-9".into())], "its pane's prompt of the 5 minutes before; a human's and a later one's left without");
+}
+
+#[test]
 fn ac195_a_write_that_waited_for_its_turn_names_its_caller_and_is_kept() {
     let s = std::sync::Arc::new(Store::open(fresh("store-slow")));
     let (held, go) = std::sync::mpsc::channel();
