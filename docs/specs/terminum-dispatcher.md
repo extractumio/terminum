@@ -769,6 +769,20 @@ Scenario: AC-138 happy path — its dots
   When the user presses one
   Then the agent's window closes and that task's window opens
 
+Scenario: AC-138 happy path — keyboard Run
+  Given a task's card shown whole, with its Run key visible
+  When the user focuses the card and presses Tab (Option+Tab in Safari)
+  Then its Run key has keyboard focus and a visible focus ring
+  When another task's change refreshes the board, or this card is replaced by its own updated task
+  Then the same task's Run key keeps keyboard focus and its ring
+  When the user presses Enter
+  Then RUN's window opens for that task
+
+Scenario: AC-138 edge — a refresh hides the focused Run key
+  Given an unassigned task's card shown whole with Run focused
+  When a custom stylesheet hides Run and the card is replaced by its updated task
+  Then keyboard focus returns to that card
+
 Scenario: AC-138 happy path — one task dropped
   When the user drags API-12 onto Opus reviewer
   Then a window "Run API-12 on Opus reviewer" opens with the message first; what runs and what goes are folded, a press away
@@ -1913,7 +1927,7 @@ Depends on `terminum-kanban.md`'s Stage 1. All three stages belong to terminum's
 ## 11. Checklist with Definition of Done
 
 - [x] AC-121 — `web/test/e2e_taskrun.mjs` (Run in the task's window: at once, or the dialog for an agent's words, subtasks, no agent, no room, a refusal), `cargo test dispatcher::screen`, `cargo test tmux::control` (the gate's guarded paste and Enter get their own answers), `web/test/e2e_livedispatcher.mjs` on `scripts/fake_agent.py`; on the real programs, outside every gate as it spends model calls: `TM_TEST_REAL_AGENTS=1 TM_TEST_CLOCK_SCALE=1 node web/test/e2e_live.mjs board` (`TM_TEST_REAL_CODEX=1` too); `SECURITY.md` carries Dispatcher's typing
-- [x] AC-138 — `cargo test dispatcher::runs`, `cargo test dispatcher::press`, `cargo test tasks::agents`, `web/test/e2e_liveboardagents.mjs`, `web/test/cardstate.test.mjs` (a dot at work)
+- [x] AC-138 — `cargo test dispatcher::runs`, `cargo test dispatcher::press`, `cargo test tasks::agents`, `web/test/e2e_liveboardagents.mjs`, `web/test/e2e_liveschedules.mjs` (`node web/test/e2e_live.mjs folded`: keyboard Run through a held board refresh), `web/test/cardstate.test.mjs` (a dot at work)
 - [x] AC-137 — `cargo test tasks::agents`, `cargo test tasks::store` (`ac137_one_pool_s_agents_each_go_to_a_project`), `cargo test tasks::auto` (`ac137_a_task_names_an_agent_of_its_own_project_alone`), `cargo test roles`, `cargo test cli::mcp`, `cargo test auth::checks`, `web/test/e2e_liveboardagents.mjs`, `web/test/astyped.test.mjs`, `SECURITY.md` carries a project agent's command
 - [x] AC-122 — `cargo test dispatcher::hooks`, `cargo test dispatcher::acts` (RUN cancels a waiting close already decided), `web/test/e2e_taskrun.mjs` (all columns, held sessions, queue and refusals; one press in the task's window, Run from scratch), `web/test/e2e_livewaiting.mjs` (answer before closing, `e2e_live.mjs waiting`), `web/test/e2e_livedispatcher.mjs` (answer after closing), `web/test/e2e_livearchived.mjs` (a human's prompt restores archived DONE and IN PROGRESS cards), its real run as AC-121's
 - [x] AC-123 — `cargo test dispatcher::plan` (idle time stopped in INTEGRATION), `cargo test dispatcher::hooks` (a request's turn and its Stop), `cargo test dispatcher::walk` (every footer kind; a red Verify after two hours, its return and fresh request and hour after a store reload), `cargo test dispatcher::start`, `cargo test tasks::tools`, `web/test/e2e_livedispatcher.mjs` with the test clock, `web/test/e2e_livebackground.mjs` (a monitor-only run past the idle hour; `node web/test/e2e_live.mjs background`), `scripts/e2e_remote_tasks.py`
