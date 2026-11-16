@@ -334,6 +334,7 @@ async function sameKinds(page, base, phone) {
   const theirs = { search: await look(".search"), key: await look(".icon"), track: await look(".seg"), plus: await look(".grp h2 .new") };
   await page.goto(`${base}/kanban/`);
   await page.waitForSelector(".card");
+  if (phone) await page.click("#findkey");   // a phone's Find and filters stand under the head when its key is pressed (AC-105)
   await page.waitForTimeout(500);
   const ours = { search: await look("#filters .search"), key: await look("#filters .pick summary, #filtersbtn"), track: await look("#colswitch"), plus: await look(".colhead .new") };
   // matched on a computer, whose session list shows a group's [+] (AC-106)
@@ -361,7 +362,7 @@ export async function liveBoardPhone(page, { base, shots }) {
   await page.goto(`${base}/kanban/`);
   await page.waitForSelector("#colswitch button");
   const shown = () => page.evaluate(() => [...document.querySelectorAll(".col[data-status]")].filter((c) => { const r = c.getBoundingClientRect(); return r.left > -5 && r.right < innerWidth + 5; }).map((c) => c.dataset.status));
-  check("AC-105 a phone shows one column", (await shown()).join() === "TODO", (await shown()).join());
+  check("AC-105 a phone shows one column", await until(async () => (await shown()).join() === "TODO"), (await shown()).join());   // once the board settles on TODO
   // TODO's + New task takes a finger: "AC-105 touch targets" below
   check("AC-106 a phone keeps TODO's [+] in its head, on screen", await page.evaluate(() => { const r = document.querySelector('.col[data-status="TODO"] .colhead .new').getBoundingClientRect(); return r.width > 0 && r.left >= 0 && r.right <= innerWidth; }));
   await page.click('#colswitch button:has-text("DONE")');

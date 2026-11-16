@@ -189,9 +189,11 @@ export async function liveBoardSessions(page, opts) {
 export async function liveBoardSessionsPhone(page, { base }) {
   await page.goto(`${base}/kanban/`);
   await page.waitForSelector("#colswitch button");
-  const tabs = await page.evaluate(() => [...document.querySelectorAll("#colswitch button:not([hidden])")].map((t) => t.dataset.status));
-  check("AC-135 a phone's switch has the five columns, no Sessions", tabs.join() === "TODO,IN PROGRESS,WAIT FOR HUMAN,FAILED,DONE", tabs.join());
-  check("AC-135 the project key stands left of Find", await page.evaluate(() => { const p = document.querySelector("#fproject").getBoundingClientRect(), f = document.querySelector("#filters .search").getBoundingClientRect(); return p.right <= f.left && Math.abs(p.top - f.top) < 8; }));
+  // the switch names the board's own columns: INTEGRATION among them where a shown project integrates (its rule: e2e_boardpanel.mjs, AC-193)
+  const { tabs, cols } = await page.evaluate(() => ({ tabs: [...document.querySelectorAll("#colswitch button:not([hidden])")].map((t) => t.dataset.status), cols: [...document.querySelectorAll("#board .col:not([hidden])")].map((c) => c.dataset.status) }));
+  check("AC-135 a phone's switch has the columns, no Sessions", tabs.join() === cols.join() && tabs.filter((t) => t !== "INTEGRATION").join() === "TODO,IN PROGRESS,WAIT FOR HUMAN,FAILED,DONE", tabs.join());
+  // a phone's one-row head: the project, then Find's key (terminum-kanban.md AC-105)
+  check("AC-135 the project key stands left of Find", await page.evaluate(() => { const p = document.querySelector("#fproject").getBoundingClientRect(), f = document.querySelector("#findkey").getBoundingClientRect(); return p.right <= f.left && Math.abs((p.top + p.bottom) - (f.top + f.bottom)) < 16; }));
   const onScreen = () => page.evaluate(() => { const r = document.querySelector("#nav").getBoundingClientRect(); return r.left > -5 && r.right < innerWidth + 5; });
   check("AC-135 the list is closed at first", !(await onScreen()));
   await page.click("#navbtn");
@@ -201,11 +203,17 @@ export async function liveBoardSessionsPhone(page, { base }) {
   check("AC-135 no sideways scroll on a phone", wide <= 0, String(wide));
   await page.click("#drawerclose");
   check("AC-135 its key closes it", await until(async () => !(await onScreen())));
-  check("AC-137 a phone holds the agents over the columns", await page.isVisible("#agentbar .agents"));
-  check("AC-137 its add key can be reached", await page.evaluate(() => { const r = document.querySelector("#addagent").getBoundingClientRect(); return r.width > 0 && r.height > 0; }));
-  await page.evaluate(() => document.querySelector("#addagent").click());
+  // a phone keeps the agents in the sheet the line under the columns' switch opens (AC-105 "a phone's one-row head")
+  check("AC-137 a phone holds the agents off the columns", !(await page.isVisible("#agentbar .agents")));
+  await page.click("#poolline");
+  check("AC-137 the line under the switch opens the agents' sheet", await until(() => page.isVisible("#pool[data-sheet] #agentbar .agents")));
+  await page.locator("#addagent").scrollIntoViewIfNeeded();   // the sheet scrolls (sheets.css), as a finger would
+  check("AC-137 its add key can be reached", await page.evaluate(() => { const r = document.querySelector("#addagent").getBoundingClientRect(); return r.width > 0 && r.height > 0 && r.top >= 0 && r.bottom <= innerHeight; }));
+  await page.click("#addagent");
   await page.waitForSelector("#agentbox[open]", { timeout: 5000 });
-  const fits = await page.evaluate(() => { const r = document.querySelector("#agentbox").getBoundingClientRect(); return r.left >= 0 && r.right <= innerWidth && document.querySelector("#agentok").getBoundingClientRect().bottom <= innerHeight; });
+  const fits = await page.evaluate(() => { const r = document.querySelector("#agentbox").getBoundingClientRect(), ok = document.querySelector("#agentok").getBoundingClientRect(); return r.left >= 0 && r.right <= innerWidth && ok.height > 0 && ok.bottom <= innerHeight; });
   check("AC-137 its window fits a phone, its keys in reach", fits);
-  await page.click('#agentbox button[value="cancel"]');
+  // a phone's window shows no Cancel in its row: its × presses it (terminum.md AC-173)
+  await page.click("#agentbox .dhead .x");
+  check("AC-137 its × closes it", await until(async () => !(await page.$("#agentbox[open]"))));
 }
