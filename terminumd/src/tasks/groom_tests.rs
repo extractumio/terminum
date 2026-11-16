@@ -69,7 +69,9 @@ fn ac154_a_bug_is_never_left_below_p2() {
     assert_eq!(task(&s, &bug).severity, "P2", "nothing changed");
     call(&s, &dir, json!({"id": debt, "severity": "P3"})).unwrap();
     assert_eq!(call(&s, &dir, json!({"id": debt, "title": "Bug: b"})).unwrap_err(), BUG_FLOOR, "a P3 task does not become a bug");
-    assert_eq!(call(&s, &dir, json!({"id": debt, "title": "b", "severity": "P3"})).unwrap_err(), "Start the title with Bug:, Feat: or Debt:.", "its own fault only");
+    assert_eq!(call(&s, &dir, json!({"id": debt, "type": "Bug"})).unwrap_err(), BUG_FLOOR, "nor by its type (AC-199)");
+    call(&s, &dir, json!({"id": debt, "title": "b", "severity": "P3"})).unwrap();
+    assert_eq!(task(&s, &debt).title, "Debt: b", "a title without its type's word keeps the type");
     call(&s, &dir, json!({"id": debt, "title": "Bug: b", "severity": "P1"})).unwrap();
     assert_eq!((task(&s, &debt).title.as_str(), task(&s, &debt).severity.as_str()), ("Bug: b", "P1"));
     // a human's bug at P3 is the human's: an agent still regroups it
@@ -98,7 +100,8 @@ fn ac154_words_change_only_on_an_agents_task_no_human_reworded_and_no_run_elsewh
     let a = agents_task(&s, &dir, "Bug: first words");
     call(&s, &dir, json!({"id": a, "title": "Bug: better words", "text": SECTIONS.replace("\nx\n", "\nthe cause\n")})).unwrap();
     assert_eq!(task(&s, &a).title, "Bug: better words");
-    assert_eq!(call(&s, &dir, json!({"id": a, "title": "better"})).unwrap_err(), "Start the title with Bug:, Feat: or Debt:.");
+    call(&s, &dir, json!({"id": a, "title": "better"})).unwrap();
+    assert_eq!(task(&s, &a).title, "Bug: better", "its type stays (AC-199)");
     assert!(call(&s, &dir, json!({"id": a, "text": "no sections"})).unwrap_err().starts_with("Not kept: the text lacks the sections"));
     s.with(|tx| ops::edit(tx, HUMAN, &a, ops::Edit { title: Some("Bug: the human's words".into()), ..Default::default() }, 2)).unwrap();
     assert!(call(&s, &dir, json!({"id": a, "title": "Bug: back"})).unwrap_err().contains("holds a human's words"));
@@ -149,5 +152,29 @@ fn ac154_a_humans_task_or_another_project_never_leaves_the_board_by_an_agent() {
     let idle = agents_task(&s, &dir, "Bug: held by a session with no run");
     s.with(|tx| ops::link(tx, HUMAN, &idle, Some(OTHER), 4)).unwrap();
     assert!(call(&s, &dir, json!({"id": idle, "archive": "yes", "reason": "a duplicate"})).is_ok(), "another session's agents' task of the project");
-    assert_eq!(call(&s, &dir, json!({"id": h})).unwrap_err(), "Give severity, parent, title, text or archive.");
+    assert_eq!(call(&s, &dir, json!({"id": h})).unwrap_err(), "Give severity, parent, title, text, type, external_link, target or archive.");
+}
+
+#[test]
+fn ac199_an_agent_sets_a_task_s_type_link_and_target_and_its_lists() {
+    let (s, dir) = fresh("gr-attrs");
+    let (a, b) = (agents_task(&s, &dir, "Feat: a"), agents_task(&s, &dir, "Debt: b"));
+    call(&s, &dir, json!({"id": a, "type": "Story", "external_link": "https://tracker.example/API-7", "target": "v1.2"})).unwrap();
+    let t = task(&s, &a);
+    assert_eq!((t.title.as_str(), t.external_link.as_deref(), t.target.as_deref()), ("Story: a", Some("https://tracker.example/API-7"), Some("v1.2")));
+    // a human's change of its type is no rewording: its title and text stay the agents' (AC-154)
+    s.with(|tx| ops::edit(tx, HUMAN, &a, ops::Edit { kind: Some("Feature".into()), ..Default::default() }, 2)).unwrap();
+    call(&s, &dir, json!({"id": a, "title": "a, clearer"})).unwrap();
+    assert_eq!(task(&s, &a).title, "Feat: a, clearer");
+    let h = humans_task(&s, "api");
+    assert_eq!(call(&s, &dir, json!({"id": h, "type": "Bug"})).unwrap_err(), format!("{h} is a human's: give the reason for the change."));
+    let link = |args: Value| run(&s, &dir, &who(), "link_task", &args);
+    assert_eq!(link(json!({"id": a, "list": "blocked_by", "task": b, "reason": "b's column first"})).unwrap().0, format!("{b} is in {a}'s Blocked by."));
+    assert_eq!(link(json!({"id": h, "list": "follow_ups", "task": a})).unwrap().0, format!("{a} is in {h}'s Follow-ups."), "a human's task's lists too, said in its history");
+    let web = humans_task(&s, "web");
+    assert!(link(json!({"id": a, "list": "blocked_by", "task": web})).unwrap_err().contains("outside this session's project"));
+    let read = run(&s, &dir, &who(), "get_task", &json!({"id": a})).unwrap().0;
+    let v: Value = serde_json::from_str(read.lines().last().unwrap()).unwrap();
+    assert_eq!((v["type"].as_str(), v["name"].as_str(), v["lists"]["blocked_by"][0]["reason"].as_str()), (Some("Feature"), Some("a, clearer"), Some("b's column first")));
+    assert_eq!(link(json!({"id": a, "list": "blocked_by", "task": b, "remove": "yes"})).unwrap().0, format!("{b} is out of {a}'s Blocked by."));
 }

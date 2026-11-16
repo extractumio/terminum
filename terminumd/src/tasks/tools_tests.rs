@@ -256,7 +256,7 @@ fn ac109_an_agent_s_file_stays_inside_its_folder_or_comes_as_text() {
 #[test]
 fn ac145_what_is_left_to_do_says_its_kind_and_severity() {
     let ((s, dir), w) = (fresh("tools-left"), who(Some("api")));
-    assert_eq!(call(&s, &dir, &w, "create_task", json!({"title": "a gap", "severity": "P2"})).unwrap_err(), "Start the title with Bug:, Feat: or Debt:.");
+    assert_eq!(call(&s, &dir, &w, "create_task", json!({"title": "a gap", "severity": "P2"})).unwrap_err(), "Give it a type: Feature, Bug, Debt or Story, by type or the title's first word (Feat:, Bug:, Debt:, Story:).");
     assert_eq!(call(&s, &dir, &w, "create_task", json!({"title": "Feat: a gap"})).unwrap_err(), "Give it a severity: P0, P1, P2 or P3.");
     assert_eq!(call(&s, &dir, &w, "create_task", json!({"title": "Bug: a small gap", "severity": "P3"})).unwrap_err(), BUG_FLOOR);
     for title in ["Bug: drops a BOM", "Feat: paging", "Debt: two copies of a rule"] {
@@ -323,14 +323,14 @@ fn ac145_an_agent_s_text_follows_its_project_s_template() {
     assert!(run(&s, &dir, &w, "create_task", &json!({"title": "Bug: own", "severity": "P2", "text": "## Why\na\n## Done when\nb"})).is_ok());
     // a title without its kind and a text without the sections: both said in one refusal
     let both = run(&s, &dir, &w, "create_task", &json!({"title": "a gap", "severity": "P2", "text": "it breaks"})).unwrap_err();
-    assert!(both.starts_with("Start the title with Bug:, Feat: or Debt:.\nNot kept: the text lacks the sections") && both.ends_with("## Done when"), "{both}");
+    assert!(both.starts_with("Give it a type: Feature, Bug, Debt or Story, by type or the title's first word (Feat:, Bug:, Debt:, Story:).\nNot kept: the text lacks the sections") && both.ends_with("## Done when"), "{both}");
     let all = run(&s, &dir, &w, "create_task", &json!({"title": "a gap", "text": "it breaks"})).unwrap_err();
-    assert!(all.starts_with("Give it a severity: P0, P1, P2 or P3.\nStart the title with Bug:, Feat: or Debt:.\nNot kept:"), "{all}");
+    assert!(all.starts_with("Give it a severity: P0, P1, P2 or P3.\nGive it a type: Feature, Bug, Debt or Story, by type or the title's first word (Feat:, Bug:, Debt:, Story:).\nNot kept:"), "{all}");
     // update_task by the same rules, every fault at once
     let id = run(&s, &dir, &w, "create_task", &json!({"title": "Bug: mine", "severity": "P2", "text": "## Why\na\n## Done when\nb"})).unwrap().0;
     let id = id.split_whitespace().find(|x| x.starts_with("API-")).unwrap().trim_end_matches(['.', ':', ',']).to_string();
-    let upd = run(&s, &dir, &w, "update_task", &json!({"id": id, "title": "mine", "text": "it breaks"})).unwrap_err();
-    assert!(upd.starts_with("Start the title with Bug:, Feat: or Debt:.\nNot kept: the text lacks the sections"), "{upd}");
+    let upd = run(&s, &dir, &w, "update_task", &json!({"id": id, "title": "mine", "type": "Epic", "text": "it breaks"})).unwrap_err();
+    assert!(upd.starts_with("Not kept: the text lacks the sections") && upd.ends_with("\nType: one of Feature, Bug, Debt, Story"), "{upd}");
 }
 
 #[test]

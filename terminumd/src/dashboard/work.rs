@@ -53,7 +53,7 @@ fn read(tx: &Transaction, ask: &Ask) -> Result<Read, String> {
     let mut seen: HashMap<String, usize> = HashMap::new();
     let mut row_of = |slug: String, title: String| *seen.entry(slug.clone()).or_insert_with(|| { tasks.push((slug, title)); tasks.len() - 1 });
     let mut ops = Vec::new();
-    let done: Vec<(i64, String, String, String, String)> = rows(tx, &format!("SELECT {}, e.kind, u.kind, coalesce(t.slug, t.id), t.title
+    let done: Vec<(i64, String, String, String, String)> = rows(tx, &format!("SELECT {}, e.kind, u.kind, coalesce(t.slug, t.id), t.shown
         FROM events e JOIN tasks t ON t.id = e.task JOIN users u ON u.id = e.author
         WHERE e.at >= ?1 / 1000 AND e.kind IN ('made', 'edit', 'move', 'comment', 'parent', 'archive') AND (u.kind != 'system' OR e.kind = 'made') AND {mine}", local("e.at * 1000")), args,
         |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)))?;
@@ -67,7 +67,7 @@ fn read(tx: &Transaction, ask: &Ask) -> Result<Read, String> {
         LEFT JOIN runs r ON r.id = i.run LEFT JOIN users u ON u.id = r.started_by
         WHERE i.at >= ?1 AND i.component = 'dispatcher.start' AND i.kind = 'launch' AND i.tasks IS NOT NULL", local("i.at")), [ask.since], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?;
     // the three looks of the older rule only for a run that does not say
-    let mut task = tx.prepare_cached(&format!("SELECT t.title, CASE WHEN ?4 THEN 0 ELSE EXISTS (SELECT 1 FROM schedule_fires f WHERE f.task = t.id) OR EXISTS (SELECT 1 FROM auto_rounds a WHERE a.task = t.id)
+    let mut task = tx.prepare_cached(&format!("SELECT t.shown, CASE WHEN ?4 THEN 0 ELSE EXISTS (SELECT 1 FROM schedule_fires f WHERE f.task = t.id) OR EXISTS (SELECT 1 FROM auto_rounds a WHERE a.task = t.id)
         OR EXISTS (SELECT 1 FROM auto_starts s WHERE s.task = t.id AND s.at BETWEEN ?3 - {CHOSEN_WITHIN} AND ?3) END
         FROM tasks t WHERE t.slug = ?1 AND {mine}")).map_err(crate::tasks::ops::sql)?;
     for (t, at, slugs, by) in starts {

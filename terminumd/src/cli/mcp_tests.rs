@@ -116,7 +116,7 @@ fn a_line_too_long_is_dropped_to_its_newline() {
 /// terminum-dispatcher.md AC-137: the pool is not an agent's to read or change.
 #[test]
 fn ac137_no_tool_reaches_a_projects_agents() {
-    assert_eq!(tool_names(), ["update_session_plan", "get_session_plan", "list_tasks", "get_task", "create_task", "update_task", "take_task", "move_task", "ask_human", "add_comment", "attach_file", "get_file", "finish_task", "integrate", "withdraw_integration", "integration_status", "integration_return", "integration_recheck", "integration_add_fix", "dispatch_task"],
+    assert_eq!(tool_names(), ["update_session_plan", "get_session_plan", "list_tasks", "get_task", "create_task", "update_task", "link_task", "take_task", "move_task", "ask_human", "add_comment", "attach_file", "get_file", "finish_task", "integrate", "withdraw_integration", "integration_status", "integration_return", "integration_recheck", "integration_add_fix", "dispatch_task"],
                "the last starts a task on an agent of the pool (AC-170), and changes none; the integration queue's reach no agent");
 }
 
@@ -195,6 +195,7 @@ fn outside_a_pane_each_tool_says_so_and_nothing_is_sent() {
                 "integration_return" => json!({"task": "T-1", "analysis": "a"}),
                 "integration_recheck" => json!({}),
                 "integration_add_fix" => json!({"commit": "abc"}),
+                "link_task" => json!({"id": "T-1", "list": "blocked_by", "task": "T-2"}),
                 _ => json!({"id": "T-1"}),
             };
             let (r, sent) = tool(t, args, env, Err(()));
@@ -418,7 +419,7 @@ fn ac174_a_session_that_becomes_known_as_manager_later_finds_its_tools_then() {
 fn ac155_a_tools_first_refusal_carries_its_card_once() {
     let no = |text: &str| Ok((200, Some(json!({"text": text, "error": true}))));
     let card = mcp_meta::card_text("create_task").unwrap();
-    assert!(card.starts_with("How to call it: create_task(") && card.contains("Bug:, Feat: or Debt:") && card.contains("\nExample: execute_tool({"), "{card}");
+    assert!(card.starts_with("How to call it: create_task(") && card.contains("Bug:, Feat:, Debt:, Story:") && card.contains("\nExample: execute_tool({"), "{card}");
     let text = |r: &Value| r["content"][0]["text"].as_str().unwrap().to_string();
     let args = json!({"name": "create_task", "arguments": {"title": "a gap", "text": "x", "severity": "P2"}});
     let e = in_pane();

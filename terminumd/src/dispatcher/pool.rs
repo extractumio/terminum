@@ -210,7 +210,7 @@ fn in_runs(tx: &Transaction, ids: &[&str]) -> Result<HashMap<String, Vec<Value>>
     if ids.is_empty() {
         return Ok(HashMap::new());
     }
-    let found: Vec<(String, Value)> = rows(tx, "SELECT m.run, x.slug, x.title, x.status FROM run_tasks m JOIN tasks x ON x.id = m.task
+    let found: Vec<(String, Value)> = rows(tx, "SELECT m.run, x.slug, x.shown, x.status FROM run_tasks m JOIN tasks x ON x.id = m.task
                  WHERE m.run IN (SELECT value FROM json_each(?1)) ORDER BY x.number",
             [runs::listed_keys(ids)], |r| Ok((r.get(0)?, json!({"id": r.get::<_, String>(1)?, "title": r.get::<_, String>(2)?, "status": r.get::<_, String>(3)?}))))?;
     let mut out: HashMap<String, Vec<Value>> = HashMap::new();

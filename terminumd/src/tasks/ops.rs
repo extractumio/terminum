@@ -44,7 +44,16 @@ pub struct Task {
     pub id: String,
     pub project: String,
     pub parent: Option<String>,
+    /// as shown: its type's word, then its title (AC-199)
     pub title: String,
+    /// its title as kept, without its type's word
+    pub name: String,
+    #[serde(rename = "type")]
+    pub kind: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub external_link: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target: Option<String>,
     pub status: String,
     pub severity: String,
     pub owner: String,
@@ -70,11 +79,12 @@ pub struct Task {
     rank: f64,
 }
 
-pub(super) const TASK: &str = "SELECT t.slug, t.project, (SELECT p.slug FROM tasks p WHERE p.id = t.parent), t.title, t.status, t.severity,
+pub(super) const TASK: &str = "SELECT t.slug, t.project, (SELECT p.slug FROM tasks p WHERE p.id = t.parent), t.shown, t.status, t.severity,
     t.owner, u.name, u.kind, t.by_agent, t.session_key,
     (SELECT count(*) FROM files f WHERE f.task = t.id),
     (SELECT count(*) FROM tasks s WHERE s.parent = t.id AND s.status = 'DONE' AND s.archived_at IS NULL),
-    (SELECT count(*) FROM tasks s WHERE s.parent = t.id AND s.archived_at IS NULL), t.id, t.rank, t.budget_seconds, t.archived_at, t.created_at, t.updated_at
+    (SELECT count(*) FROM tasks s WHERE s.parent = t.id AND s.archived_at IS NULL), t.id, t.rank, t.budget_seconds, t.archived_at, t.created_at, t.updated_at,
+    t.title, t.type, t.external_link, t.target
     FROM tasks t JOIN users u ON u.id = t.owner";
 
 pub(super) fn task_of(r: &Row) -> rusqlite::Result<Task> {
@@ -83,6 +93,10 @@ pub(super) fn task_of(r: &Row) -> rusqlite::Result<Task> {
         project: r.get(1)?,
         parent: r.get(2)?,
         title: r.get(3)?,
+        name: r.get(20)?,
+        kind: r.get(21)?,
+        external_link: r.get(22)?,
+        target: r.get(23)?,
         status: r.get(4)?,
         severity: r.get(5)?,
         owner: r.get(6)?,
@@ -191,7 +205,11 @@ pub(crate) fn check_project(tx: &Transaction, project: &str) -> Result<(), Strin
 /// What makes a task.
 #[derive(Default, Clone)]
 pub struct NewTask {
+    /// a type's word before it sets the type (AC-199)
     pub title: String,
+    /// its type by name; empty: none
+    pub kind: Option<String>,
+    pub attrs: super::attrs::Attrs,
     pub text: String,
     pub project: Option<String>,
     pub parent: Option<String>,
@@ -220,7 +238,8 @@ pub fn chosen_project(named: Option<&str>, refusal: &str) -> Result<String, Stri
 }
 
 pub fn create(tx: &Transaction, author: &str, new: NewTask, at: i64) -> Result<Task, String> {
-    let title = check_title(&new.title)?;
+    let (title, kind) = super::attrs::titled(new.title.trim(), new.kind.as_deref())?;
+    let title = check_title(&title)?;
     check_text(&new.text)?;
     let severity = new.severity.unwrap_or_else(|| "P2".into());
     check_severity(&severity)?;
@@ -251,11 +270,12 @@ pub fn create(tx: &Transaction, author: &str, new: NewTask, at: i64) -> Result<T
     let rank = top_rank(tx, status, &severity)?;
     let number: i64 = tx.query_row("SELECT coalesce(max(number), 0) + 1 FROM tasks", [], |r| r.get(0)).map_err(sql)?;
     let key = crate::auth::crypto::random_hex::<16>();
-    tx.execute("INSERT INTO tasks (id, number, project, parent, title, body, status, severity, rank, owner, by_agent, session_key, made_in, updated_at, created_at)
-                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?14, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?13)",
-               rusqlite::params![key, number, project, parent.as_ref().map(|(k, _)| k), title, new.text, severity, rank, owner, new.by_agent as i64, new.session, new.made_in, at, status]).map_err(sql)?;
+    tx.execute("INSERT INTO tasks (id, number, project, parent, title, body, status, severity, rank, owner, by_agent, session_key, made_in, updated_at, created_at, type)
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?14, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?13, ?15)",
+               rusqlite::params![key, number, project, parent.as_ref().map(|(k, _)| k), title, new.text, severity, rank, owner, new.by_agent as i64, new.session, new.made_in, at, status, kind.flatten()]).map_err(sql)?;
     let slug = super::slugs::assign(tx, &key, &project, if new.scheduled { "S_" } else if new.integration { "I_" } else { "" })?;
     log(tx, &key, author, "made", &format!("{} made it", user_name(tx, author)?), None, at)?;
+    super::attrs::apply(tx, author, &key, &new.attrs, at)?;
     get(tx, &slug)
 }
 
@@ -315,7 +335,11 @@ pub(crate) fn set_owner(tx: &Transaction, key: &str, owner: &str, at: i64) -> Re
 /// What a human may change in a task's window; absent keeps.
 #[derive(Default)]
 pub struct Edit {
+    /// a type's word before it sets the type too (AC-199)
     pub title: Option<String>,
+    /// its type by name; empty: none
+    pub kind: Option<String>,
+    pub attrs: super::attrs::Attrs,
     pub text: Option<String>,
     pub severity: Option<String>,
     pub owner: Option<String>,
@@ -330,16 +354,28 @@ pub fn worded_by_human(tx: &Transaction, key: &str) -> Result<bool, String> {
 }
 
 pub fn edit(tx: &Transaction, author: &str, id: &str, change: Edit, at: i64) -> Result<(), String> {
-    if change.title.is_none() && change.text.is_none() && change.severity.is_none() && change.owner.is_none() {
+    if change.title.is_none() && change.text.is_none() && change.severity.is_none() && change.owner.is_none() && change.kind.is_none() && change.attrs.is_empty() {
         return Ok(());
     }
     let key = key_of(tx, id)?;
     let who = user_name(tx, author)?;
-    if let Some(t) = change.title {
-        let t = check_title(&t)?;
-        tx.execute("UPDATE tasks SET title = ?1 WHERE id = ?2", (&t, &key)).map_err(sql)?;
-        log(tx, &key, author, "edit", &format!("{who} renamed it"), Some(&json!({"words": true})), at)?;
+    let kind = match change.title {
+        Some(t) => {
+            let (t, kind) = super::attrs::titled(t.trim(), change.kind.as_deref())?;
+            let t = check_title(&t)?;
+            let was: String = tx.query_row("SELECT title FROM tasks WHERE id = ?1", [&key], |r| r.get(0)).map_err(sql)?;
+            if was != t {
+                tx.execute("UPDATE tasks SET title = ?1 WHERE id = ?2", (&t, &key)).map_err(sql)?;
+                log(tx, &key, author, "edit", &format!("{who} renamed it"), Some(&json!({"words": true})), at)?;
+            }
+            kind
+        }
+        None => change.kind.as_deref().map(super::attrs::check_type).transpose()?,
+    };
+    if let Some(k) = kind {
+        super::attrs::set_type(tx, author, &key, k, at)?;
     }
+    super::attrs::apply(tx, author, &key, &change.attrs, at)?;
     if let Some(text) = change.text {
         check_text(&text)?;
         tx.execute("UPDATE tasks SET body = ?1 WHERE id = ?2", (&text, &key)).map_err(sql)?;
@@ -440,6 +476,7 @@ fn set_project(tx: &Transaction, author: &str, id: &str, project: &str, at: i64)
         // it takes the project's next ID; the one it had still finds it (AC-148)
         let slug = super::slugs::assign(tx, k, project, "")?;
         log(tx, k, author, "project", &format!("{who} moved it to {name}, as {slug}"), None, at)?;
+        super::attrs::moved(tx, author, k, at)?;
     }
     Ok(())
 }

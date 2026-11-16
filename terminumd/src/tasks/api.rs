@@ -36,7 +36,7 @@ pub fn routes() -> Router<Shared> {
         .merge(super::folder::routes())
         .merge(super::schedulesapi::routes())
         .merge(crate::dispatcher::api::routes())
-        .route("/api/tasks/{id}", get(window).patch(change))
+        .route("/api/tasks/{id}", get(super::windowapi::window).patch(change))
         .route("/api/tasks/{id}/comments", post(add_comment))
         .route("/api/tasks/{id}/comments/{event}", patch(edit_comment).delete(drop_comment))
         .route("/api/tasks/{id}/purge", post(purge))
@@ -111,13 +111,13 @@ fn with_session(t: &Task, row: Option<&Value>) -> Value {
     v
 }
 
-fn card(app: &Shared, t: &Task) -> Value {
+pub(super) fn card(app: &Shared, t: &Task) -> Value {
     let row = t.session.as_deref().and_then(|key| crate::page::marks::find_item(&app.layout.read(), key).cloned());
     with_session(t, row.as_ref())
 }
 
 /// What a text is compared by: a save says which it began from (AC-133).
-fn text_rev(text: &str) -> String {
+pub(super) fn text_rev(text: &str) -> String {
     crate::auth::crypto::sha256_hex(text.as_bytes())
 }
 
@@ -272,8 +272,14 @@ async fn make(State(app): State<Shared>, Json(body): Json<Value>) -> Response {
     let _converting = match crate::page::marks::claim(&app, body["record"].as_str()).await {
         Ok(held) => held, Err(why) => return refuse(StatusCode::CONFLICT, why),     // held until the record goes
     };
+    let attrs = match super::attrs::Attrs::of_json(&body) {
+        Ok(a) => a,
+        Err(e) => return refuse(StatusCode::BAD_REQUEST, e),
+    };
     let new = NewTask {
         title: text(&body, "title").unwrap_or_default(),
+        kind: text(&body, "type"),
+        attrs,
         text: text(&body, "text").unwrap_or_default(),
         project: text(&body, "project"),
         parent: text(&body, "parent"),
@@ -305,36 +311,6 @@ async fn make(State(app): State<Shared>, Json(body): Json<Value>) -> Response {
     answer(done.map(|t| card(&app, &t)))
 }
 
-/// A task's window: its fields, text, comments and history, files.
-async fn window(State(app): State<Shared>, Path(id): Path<String>) -> Response {
-    let done = store(&app, move |tx| {
-        let t = ops::get(tx, &id)?;
-        let held = runs::holding(tx, &t.key)?.map(|r| r.names());
-        let agent = runs::card_agents(tx, &[&t.key])?.remove(&t.key);
-        let waits = crate::dispatcher::waits::on_cards(tx, &[&t.key])?.remove(&t.key);
-        let kids = query::subtasks(tx, &t.key)?;
-        let from = super::schedules::of_task(tx, &t.key)?.map(|s| json!({"key": s.key, "title": s.title}));
-        let runs_on = super::auto::agent_of(tx, &t.key)?;
-        Ok((ops::text_of(tx, &id)?, ops::history(tx, &id)?, files::of_task(tx, &id)?, (held, waits, from, runs_on), agent, kids, t))
-    }).await;
-    answer(done.map(|(body, history, attached, (held, waits, from, runs_on), agent, kids, t)| {
-        let mut v = card(&app, &t);
-        v["children"] = json!(kids);
-        v["text_rev"] = json!(text_rev(&body));
-        v["text"] = json!(body);
-        v["history"] = history;
-        v["files"] = json!(attached);
-        v["run_holds"] = json!(held);
-        if let Some(wait) = waits { wait.mark(&mut v); }
-        v["schedule"] = json!(from);
-        v["runs_on"] = json!(runs_on);                // the agent a human chose to run it (terminum-dispatcher.md AC-170)
-        if let Some(agent) = agent {
-            v["agent"] = agent;
-        }
-        v
-    }))
-}
-
 /// What a human changes on a card.
 async fn change(State(app): State<Shared>, Path(id): Path<String>, Json(body): Json<Value>) -> Response {
     if session_gone(&app, &body) {
@@ -348,7 +324,10 @@ async fn change(State(app): State<Shared>, Path(id): Path<String>, Json(body): J
     }
     let to_project = text(&body, "project");
     let choice = text(&body, "session_choice");
-    let edit = Edit { title: text(&body, "title"), text: text(&body, "text"), severity: text(&body, "severity"), owner: text(&body, "owner") };
+    let attrs = super::attrs::Attrs { external_link: text(&body, "external_link"), target: text(&body, "target"), ..Default::default() };
+    let edit = Edit { title: text(&body, "title"), text: text(&body, "text"), severity: text(&body, "severity"), owner: text(&body, "owner"), kind: text(&body, "type"), attrs };
+    // a task into or out of one of its lists, one at a time: a window's list never overwrites another's (AC-199)
+    let linked = ["link", "unlink"].into_iter().find_map(|k| body.get(k).map(|v| (v.clone(), k == "unlink")));
     let dropped = crate::config::strings(&body["files"]);
     let before = body.get("before").filter(|b| !b.is_null());
     let reorder = before.is_some() || body.get("order_end").is_some();
@@ -392,6 +371,9 @@ async fn change(State(app): State<Shared>, Path(id): Path<String>, Json(body): J
             super::family::set_parent(tx, HUMAN, &id, up.as_str(), at)?;
         }
         ops::edit(tx, HUMAN, &id, edit, at)?;
+        if let Some((l, remove)) = &linked {
+            super::attrs::link(tx, HUMAN, &was.key, l["list"].as_str().unwrap_or_default(), l["task"].as_str().unwrap_or_default(), l["reason"].as_str(), *remove, at)?;
+        }
         files::attach(tx, &dropped, &id, None)?;   // what was dropped in its text as it was edited (AC-109)
         if let Some(minutes) = budget {
             ops::set_budget(tx, HUMAN, &id, minutes, at)?;

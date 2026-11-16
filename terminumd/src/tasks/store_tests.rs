@@ -380,3 +380,23 @@ fn ac195_a_write_that_waited_for_its_turn_names_its_caller_and_is_kept() {
     said_slow(&throttle, Location::caller(), Duration::ZERO, Duration::from_millis(100));
     assert!(quiet.text().contains("hold_ms=100"), "a hold alone is said: {}", quiet.text());
 }
+
+#[test]
+fn ac199_a_store_s_titles_give_their_type_s_word_to_their_type_once() {
+    let path = crate::testutil::fresh_dir("store-schema31").join("kanban.sqlite");
+    let mut conn = Connection::open(&path).unwrap();
+    upgrade(&mut conn, &path, &MIGRATIONS[..30]).unwrap();
+    let titles = ["Bug: lost scroll", "feat:faster", "Debt:  old code", "Story: a user", "Note: kept", "Bug:", "Fix: kept too", "Feature: named"];
+    for (n, title) in titles.iter().enumerate() {
+        conn.execute("INSERT INTO tasks (id, number, project, status, severity, rank, owner, updated_at, title, body) VALUES (?1, ?2, 'default', 'TODO', 'P2', 1, 'human', 77, ?3, '')", (format!("k{n}"), n as i64 + 1, title)).unwrap();
+    }
+    upgrade(&mut conn, &path, &MIGRATIONS).unwrap();
+    let rows: Vec<(Option<String>, String, String, i64)> = conn.prepare("SELECT type, title, shown, updated_at FROM tasks ORDER BY number").unwrap()
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))).unwrap().collect::<Result<_, _>>().unwrap();
+    let got: Vec<(Option<&str>, &str, &str)> = rows.iter().map(|(k, t, s, _)| (k.as_deref(), t.as_str(), s.as_str())).collect();
+    assert_eq!(got, [(Some("Bug"), "lost scroll", "Bug: lost scroll"), (Some("Feature"), "faster", "Feat: faster"), (Some("Debt"), "old code", "Debt: old code"), (Some("Story"), "a user", "Story: a user"),
+        (None, "Note: kept", "Note: kept"), (None, "Bug:", "Bug:"), (None, "Fix: kept too", "Fix: kept too"), (Some("Feature"), "named", "Feat: named")]);
+    assert!(rows.iter().all(|r| r.3 == 77), "no task is said to have changed");
+    let events: i64 = conn.query_row("SELECT count(*) FROM events", [], |r| r.get(0)).unwrap();
+    assert_eq!(events, 0, "nothing in their history: a human's words stay a human's, an agent's an agent's (AC-154)");
+}
