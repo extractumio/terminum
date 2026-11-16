@@ -179,10 +179,7 @@
     <div class="dhead"><h2 id="newhead">New task</h2><button id="newclose" class="icon x" type="button" title="Close (Esc)" aria-label="Close"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
     <label class="fieldrow">Title <input id="newtitle" class="field" type="text" maxlength="200" autocomplete="off"></label>
     <div class="edithead"><span>Text</span>
-      <div id="newtabs" class="seg" role="tablist" aria-label="Text view">
-        <button type="button" role="tab" aria-selected="true">Write</button>
-        <button type="button" role="tab" aria-selected="false">Preview</button>
-      </div>
+      <div id="newtabs"></div>
     </div>
     <div class="xbox" data-grow><textarea id="newtext" class="field taskmd droparea" rows="16" aria-label="Text, Markdown" placeholder="Markdown. Drop or paste files here."></textarea>
       <div id="newshown" class="markdown" data-grow hidden></div></div>
@@ -214,10 +211,7 @@
     <div class="dhead"><h2 id="schedhead">New schedule</h2><button class="icon x" type="button" title="Close (Esc)" aria-label="Close"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
     <label class="fieldrow">Title <input id="schedtitle" class="field" type="text" maxlength="200" autocomplete="off"></label>
     <div class="edithead"><span>Text</span>
-      <div id="schedtabs" class="seg" role="tablist" aria-label="Text view">
-        <button type="button" role="tab" aria-selected="true">Write</button>
-        <button type="button" role="tab" aria-selected="false">Preview</button>
-      </div>
+      <div id="schedtabs"></div>
     </div>
     <div class="xbox" data-grow><textarea id="schedtext" class="field taskmd" rows="16" aria-label="Text, Markdown" placeholder="Markdown: what the agent does each time."></textarea>
       <div id="schedshown" class="markdown" data-grow hidden></div></div>

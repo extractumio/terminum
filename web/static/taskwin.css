@@ -41,8 +41,7 @@ section.droparea { border-radius: var(--r-sm); }
 #taskbody textarea.field, .taskmd { width: 100%; box-sizing: border-box; }
 /* a task's text typed: a new task's, a schedule's, an open task's editor, alike (terminum-kanban.md AC-106): 16 lines
    in sight at least, however many fields share its window, its preview as tall (both in the dialog's type size) */
-.xbox:has(> textarea.taskmd) { --grow-min: calc(16em * var(--field-lh) + 2 * var(--sp-2)); }
-.xbox:has(> textarea.taskmd) > :is(textarea, .markdown) { min-height: var(--grow-min); }
+textarea.taskmd, textarea.taskmd ~ .markdown { --grow-min: calc(16em * var(--field-lh) + 2 * var(--sp-2)); min-height: var(--grow-min); }
 dialog .markdown { font-family: var(--ui); font-size: var(--fs-body); line-height: var(--lh-prose); overflow-wrap: anywhere; min-width: 0; }
 dialog .markdown img { max-width: 100%; }
 .subtasks { display: flex; flex-direction: column; gap: var(--sp-1); }
@@ -95,8 +94,8 @@ dialog .markdown img { max-width: 100%; }
 .tasktext { --tk: var(--icon-key-sm); }
 .tasktext .edithead:has(.seckeys) { min-height: var(--tk); }
 /* the text read (not its editor's preview): its key beside Edit on Text's line */
-.tasktext .edithead .icon, .tasktext .xbox:has(> .markdown):not(:has(> textarea)) > .xkey { --ik: var(--tk); }
-.tasktext .xbox:not(.full):has(> .markdown):not(:has(> textarea)) > .xkey { bottom: auto; top: calc(-1 * (var(--tk) + var(--sp-1))); right: calc(var(--tk) + var(--icon-gap)); }
+.tasktext .edithead .icon, .tasktext .xbox:not(.editbox):has(> .markdown) > .xkey { --ik: var(--tk); }
+.tasktext .xbox:not(.full, .editbox):has(> .markdown) > .xkey { bottom: auto; top: calc(-1 * (var(--tk) + var(--sp-1))); right: calc(var(--tk) + var(--icon-gap)); }
 @media (max-width: 860px), (pointer: coarse) { .tasktext { --tk: var(--icon-key); } }
 .sechead { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--sp-2); padding-bottom: var(--sp-1); border-bottom: 1px solid var(--line); }
 .sechead h3 { margin: 0; font-size: var(--fs-label); font-weight: var(--fw-head); text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }

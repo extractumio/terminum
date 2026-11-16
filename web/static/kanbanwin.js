@@ -7,7 +7,7 @@
 import { askConfirm, choose, oneAtATime } from "./dialogs.js";
 import { batchPart } from "./kanbanbatch.js";
 import { el, iconButton, read, write } from "./listparts.js";
-import { $, SEVERITIES, agentChip, agentsOf, api, button, download, fillSelect, guardQueuedRun, knownAgent, onFiles, onSend, madeChanged, renderInto, row, say, sessionOptions, statusTag, upload, withFileLink, withoutFileLinks, goneFiles, goneSaid, FILE_GONE, writePreview, writeTabs } from "./kanbanutil.js";
+import { $, SEVERITIES, agentChip, agentsOf, api, button, download, fillSelect, guardQueuedRun, knownAgent, onFiles, onSend, madeChanged, renderInto, row, say, sessionOptions, statusTag, upload, withFileLink, withoutFileLinks, goneFiles, goneSaid, FILE_GONE, writePreview } from "./kanbanutil.js";
 import { taskBoxes } from "./taskboxes.js";
 import { activity, editor } from "./kanbanactivity.js";
 import { family } from "./kanbansubs.js";
@@ -204,13 +204,11 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
       const purge = t.text ? button("danger", "Purge text", () => confirmed(`Purge the text of ${t.id}? It leaves the store for good. Use this for a secret pasted by mistake.`, "Purge",
         () => api(`/api/tasks/${t.id}/purge`, { method: "POST" }).then(() => refresh(wrap)))) : null;
       // Write and Preview over it, as a new task's and a schedule's (AC-106)
-      const tabs = writeTabs(), shown = el("div", "markdown");
-      shown.hidden = true;
-      shown.tabIndex = 0;
+      const tabs = el("div"), shown = el("div", "markdown");
       writePreview(tabs, area, shown);
       keys.replaceWith(tabs);
-      const box = expandable(area);
-      box.insertBefore(shown, box.lastElementChild);
+      const box = expandable(area, shown);
+      box.classList.add("editbox");
       wrap.replaceChildren(head, box, row(purge, button("fromright", "Cancel", () => refresh(wrap)), save));
       area.focus();
       addFiles(files, area, kept);

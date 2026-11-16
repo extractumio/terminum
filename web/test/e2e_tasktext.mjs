@@ -16,10 +16,6 @@ const LONG = "a line of what the agent gets, long enough to wrap where the box i
 
 /** Each window's text field: its lines in sight, its type, its Write and Preview keys. */
 const measure = (page) => page.evaluate(async ([meta, long]) => {
-  const html = new DOMParser().parseFromString(await (await fetch("/kanban.html")).text(), "text/html");
-  for (const id of ["newbox", "schedbox"]) if (!document.getElementById(id)) document.body.append(html.getElementById(id));
-  const { expandKeys } = await import("/expand.js");
-  expandKeys();
   const of = (area) => { const s = getComputedStyle(area), lh = parseFloat(s.lineHeight) || parseFloat(s.fontSize) * 1.2;
     const seg = area.closest(".xbox")?.previousElementSibling?.querySelector('[role="tablist"]');
     return { lines: Math.round((area.clientHeight - parseFloat(s.paddingTop) - parseFloat(s.paddingBottom)) / lh * 10) / 10, font: s.fontFamily,
@@ -43,7 +39,6 @@ const measure = (page) => page.evaluate(async ([meta, long]) => {
   tabs[1].click();
   const shown = area.parentElement.querySelector(".markdown");
   // the fake serves no Panel renderer: the preview holds the words as they stand (drawn Markdown: e2e_liveboard.mjs)
-  await new Promise((r) => setTimeout(r, 100));
   out.preview = { words: shown.textContent.includes("once"), field: area.hidden };
   out.preview.taller = shown.getBoundingClientRect().height >= parseFloat(getComputedStyle(area).minHeight) - 1;
   tabs[0].click();

@@ -301,10 +301,19 @@ export function countOf(n) {
   return n >= 1e6 ? `${(n / 1e6).toFixed(1).replace(/\.0$/, "")}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1).replace(/\.0$/, "")}k` : String(n);
 }
 
-/** A task's text typed (a new task's, a schedule's, an open task's editor: terminum-kanban.md AC-106): `tabs`, the
- *  row of its Write and Preview keys, over its area and its rendered Markdown; the view. */
+/** A task's text typed (a new task's, a schedule's, an open task's editor: terminum-kanban.md AC-106): fills `tabs`
+ *  with its Write and Preview keys over its area and its rendered Markdown; the view. */
 export function writePreview(tabs, area, shown) {
-  const [write, preview] = tabs.querySelectorAll('[role="tab"]');
+  tabs.className = "seg";
+  tabs.setAttribute("role", "tablist");
+  tabs.setAttribute("aria-label", "Text view");
+  const [write, preview] = ["Write", "Preview"].map((word) => {
+    const b = el("button", null, word);
+    b.type = "button";
+    b.setAttribute("role", "tab");
+    return b;
+  });
+  tabs.replaceChildren(write, preview);
   const view = (on) => {
     write.setAttribute("aria-selected", String(!on));
     preview.setAttribute("aria-selected", String(on));
@@ -314,22 +323,8 @@ export function writePreview(tabs, area, shown) {
   };
   write.addEventListener("click", () => view(false));
   preview.addEventListener("click", () => view(true));
+  view(false);
   return view;
-}
-
-/** The row of Write and Preview keys, as the board's windows write it, for an editor a script makes. */
-export function writeTabs() {
-  const tabs = el("div", "seg");
-  tabs.setAttribute("role", "tablist");
-  tabs.setAttribute("aria-label", "Text view");
-  for (const [word, on] of [["Write", true], ["Preview", false]]) {
-    const b = el("button", null, word);
-    b.type = "button";
-    b.setAttribute("role", "tab");
-    b.setAttribute("aria-selected", String(on));
-    tabs.append(b);
-  }
-  return tabs;
 }
 
 /** What was typed is not lost by a slip of Esc or ×: with a change, the window asks first (terminum-kanban.md AC-133). */
