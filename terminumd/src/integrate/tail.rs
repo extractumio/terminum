@@ -17,9 +17,10 @@ use crate::tasks::store::Store;
 
 /// After's status that says it cannot run now (`EX_TEMPFAIL`): its last rows say why (AC-191).
 pub(super) const LATER: i32 = 75;
-/// Between an After's tries while it cannot run now, and how long it may wait before it fails (AC-191, §9 Limits).
+/// Between an After's tries while it cannot run now, and how long it may wait before it fails (AC-191, §9 Limits):
+/// longer than one release run holds the primary checkout (its gate 15 minutes, its checks, the Mac runner's hour).
 const PAUSE_S: i64 = 300;
-const WAIT_MOST_S: i64 = 24 * 3600;
+const WAIT_MOST_S: i64 = 6 * 3600;
 
 /// One step of the tail: the running After or Cleanup followed, else the published batch that waited longest takes
 /// the turn: its project's folder brought up to the target, then its After or Cleanup, or it ends with neither; a
@@ -43,10 +44,8 @@ pub fn step(store: &Store, runner: &dyn Runner, home: &Path, now: i64) -> Result
         return engine::follow(store, runner, &p, b, now);
     }
     // its folder moved at its first try: a try again moves nothing under what made it wait
-    if b.state == bs::AFTER_WAITS {
-        return store.with(|tx| bs::set_state(tx, b.id, "after", None, now));
-    }
-    match folder_follows(&p) {
+    let moved = if b.state == bs::AFTER_WAITS { Ok(()) } else { folder_follows(&p) };
+    match moved {
         Err(w) => not_run(store, &b, &format!("{}'s folder stays where it is: {w}", p.name), after_after(&p.s), now),
         Ok(()) => store.with(|tx| bs::set_state(tx, b.id, if p.s.after.is_empty() { after_after(&p.s) } else { "after" }, None, now)),
     }
@@ -61,35 +60,50 @@ fn not_run(store: &Store, b: &bs::Batch, why: &str, next: &str, now: i64) -> Res
     })
 }
 
-/// After's last rows, from its log: cleaned and redacted, for its row and its integration task (AC-191).
+/// After's last rows, from the last 4 KiB of its log: cleaned and redacted, for its row and its task (AC-191).
 fn last_rows(log: &Path) -> String {
-    let bytes = std::fs::read(log).unwrap_or_default();
-    let text = crate::plans::rules::clean(&String::from_utf8_lossy(&bytes[bytes.len().saturating_sub(4096)..]));
-    let rows: Vec<&str> = text.lines().map(str::trim).filter(|l| !l.is_empty()).collect();
-    let last: String = rows[rows.len().saturating_sub(3)..].join(" / ").chars().take(400).collect();
-    crate::sent::redact(&last)
-}
-
-/// After ended LATER: the batch waits, told once on its integration task; past its cap it fails as any After does.
-pub(super) fn waits(store: &Store, p: &Place, b: &bs::Batch, log: &Path, now: i64) -> Result<(), String> {
-    let rows = last_rows(log);
-    if b.waits_since.is_some_and(|since| now - since >= WAIT_MOST_S) {
-        return failed(store, p, b, &format!("After waited {} hours for batch {}", WAIT_MOST_S / 3600, b.number), &format!("waited {} hours", WAIT_MOST_S / 3600), log, now);
+    use std::io::{Read, Seek, SeekFrom};
+    let mut tail = Vec::new();
+    if let Ok(mut f) = std::fs::File::open(log) {
+        let from = f.metadata().map(|m| m.len().saturating_sub(4096)).unwrap_or(0);
+        let _ = f.seek(SeekFrom::Start(from)).and_then(|_| f.read_to_end(&mut tail));
     }
-    let why = if rows.is_empty() { format!("status {LATER}") } else { rows.clone() };
-    store.with(|tx| {
-        if b.waits_since.is_none() {
-            bs::tell_task(tx, b, &format!("After waits for batch {}: {why}. It runs again by itself; nothing waits for you.", b.number), now)?;
-        }
-        bs::after_waits(tx, b, &why, now)
-    })
+    let text = crate::plans::rules::clean(&String::from_utf8_lossy(&tail));
+    let rows: Vec<&str> = text.lines().map(str::trim).filter(|l| !l.is_empty()).collect();
+    rows[rows.len().saturating_sub(3)..].join(" / ").chars().take(400).collect()
 }
 
-/// After failed: the batch stands "after failed" with its cause and last rows, its integration task waits for a
-/// human told what is held and what Close does (AC-191, AC-194).
-pub(super) fn failed(store: &Store, p: &Place, b: &bs::Batch, head: &str, how: &str, log: &Path, now: i64) -> Result<(), String> {
+/// A published batch's After ended with `code` (AC-191): 0 its Cleanup follows; LATER it waits; else it failed.
+pub(super) fn ended(store: &Store, p: &Place, b: &bs::Batch, code: i32, log: &Path, now: i64) -> Result<(), String> {
+    match code {
+        0 => store.with(|tx| { bs::set_pane(tx, b.id, None, now)?; bs::set_state(tx, b.id, after_after(&p.s), None, now)?; bs::after_passed(tx, b, now) }),
+        LATER if b.waits_since.is_some_and(|since| now - since >= WAIT_MOST_S) => failed(store, p, b, None, log, now),
+        LATER => {
+            let rows = last_rows(log);
+            let why = if rows.is_empty() { format!("status {LATER}") } else { rows };
+            store.with(|tx| {
+                if b.waits_since.is_none() {
+                    bs::tell_task(tx, b, &format!("After waits for batch {}: {why}. It runs again by itself; nothing waits for you.", b.number), now)?;
+                }
+                bs::after_waits(tx, b, &why, now)
+            })
+        }
+        engine::OVER => failed(store, p, b, Some(&format!("it ran over {} minutes", p.s.check_minutes)), log, now),
+        code => failed(store, p, b, Some(&format!("status {code}")), log, now),
+    }
+}
+
+/// After failed `how`, or (None) waited past its cap: the batch stands "after failed" with its cause and last rows,
+/// its integration task waits for a human told what is held and what Close does (AC-191, AC-194).
+fn failed(store: &Store, p: &Place, b: &bs::Batch, how: Option<&str>, log: &Path, now: i64) -> Result<(), String> {
+    let waited = format!("waited {} hours", WAIT_MOST_S / 3600);
+    let head = match how {
+        Some(how) => format!("After failed for batch {} with {how}", b.number),
+        None => format!("After {waited} for batch {}", b.number),
+    };
     let rows = last_rows(log);
-    let (why, said) = if rows.is_empty() { (how.to_string(), String::new()) } else { (format!("{how}: {rows}"), format!(": {rows}")) };
+    let said = if rows.is_empty() { String::new() } else { format!(": {rows}") };
+    let why = format!("{}{said}", how.unwrap_or(&waited));
     let name = &p.name;
     let words = format!("{head}{said}. The batch stays published and its tasks DONE. Held until this task ends: {name}'s next batches are not built, \
                          and the After of every batch published after it waits. Mend the cause, then press After again to run After once more, or do \

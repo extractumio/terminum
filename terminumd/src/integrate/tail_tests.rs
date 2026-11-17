@@ -263,17 +263,17 @@ fn ac191_an_after_that_cannot_run_now_waits_without_a_human_and_runs_again_by_it
 }
 
 #[test]
-fn ac191_an_after_still_waiting_after_24_hours_fails_for_a_human() {
+fn ac191_an_after_still_waiting_after_6_hours_fails_for_a_human() {
     let (w, r) = (waiting("it-cap"), Sh::default());
     queued(&w, 1, "b.txt", "b\n");
     let since = until(&w, &r, 1, bs::AFTER_WAITS, false).waits_since.unwrap();
-    at(&w, &r, since + 86_399);
+    at(&w, &r, since + 21_599);
     assert_eq!(nth(&w, 1).state, bs::AFTER_WAITS, "under its cap it waits");
-    at(&w, &r, since + 86_700);
+    at(&w, &r, since + 21_900);
     let first = nth(&w, 1);
-    assert_eq!((first.state.as_str(), first.why.as_deref()), ("after failed", Some(format!("waited 24 hours: {WAIT_WORDS}").as_str())));
+    assert_eq!((first.state.as_str(), first.why.as_deref()), ("after failed", Some(format!("waited 6 hours: {WAIT_WORDS}").as_str())));
     assert_eq!(status(&w, &i_of(&w, &first)), "WAIT FOR HUMAN");
-    assert!(said(&w, &first).contains(&format!("After waited 24 hours for batch 1: {WAIT_WORDS}. The batch stays published")), "{}", said(&w, &first));
+    assert!(said(&w, &first).contains(&format!("After waited 6 hours for batch 1: {WAIT_WORDS}. The batch stays published")), "{}", said(&w, &first));
 }
 
 #[test]
@@ -382,4 +382,19 @@ fn ac191_after_again_is_refused_for_a_red_batch() {
     queued(&w, 1, "b.txt", "b\n");
     let red = until(&w, &Sh::default(), 1, "red", false);
     assert_eq!(again(&w, &red).unwrap_err(), "Batch 1 is red: After again is for a batch whose After failed.");
+}
+
+#[test]
+fn ac191_a_waiting_after_ends_without_after_once_integration_is_off_or_its_line_emptied() {
+    for (name, off) in [("it-wait-off", true), ("it-wait-empty", false)] {
+        let (w, r) = (waiting(name), Sh::default());
+        queued(&w, 1, "b.txt", "b\n");
+        let since = until(&w, &r, 1, bs::AFTER_WAITS, false).waits_since.unwrap();
+        w.s.with(|tx| { let s = integration::read(tx, "api")?; integration::keep(tx, "api", &if off { Settings { on: false, ..s } } else { Settings { after: String::new(), ..s } }) }).unwrap();
+        at(&w, &r, since + 300);
+        let first = nth(&w, 1);
+        let why = off.then_some("After did not run for batch 1: integration was turned off for api");
+        assert_eq!((first.state.as_str(), first.why.as_deref()), ("ended", why), "an emptied line: nothing runs after, as for any batch");
+        assert_eq!(afters(&r).len(), 1, "not run again");
+    }
 }

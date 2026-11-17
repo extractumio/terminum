@@ -77,7 +77,7 @@ pub fn marks(tx: &Transaction, tasks: &[Task], now: i64) -> Result<HashMap<Strin
         for b in bs::of_project(tx, project, i64::MAX, 5)?.iter().filter(|b| !["ended", "given up"].contains(&b.state.as_str())) {
             let keys = keys_of(b);
             if let Some(task) = &b.task {
-                let minutes = (now - b.step_started.unwrap_or(b.created_at)).max(0) / 60;
+                let minutes = minutes_since(b.step_started.unwrap_or(b.created_at), now);
                 out.insert(task.clone(), json!({"mark": format!("batch {} · {} · {minutes} min", b.number, state_words(tx, b)?), "batch": b.number, "head": true,
                                                 "batch_id": b.id, "keys": keys}));
             }
@@ -140,14 +140,21 @@ pub fn notes(tx: &Transaction) -> Result<HashMap<String, Value>, String> {
     let rows = ops::rows(tx, "SELECT project, paused, waits_why FROM project_integration WHERE is_on = 1", [],
         |r| Ok((r.get::<_, String>(0)?, r.get::<_, bool>(1)?, r.get::<_, Option<String>>(2)?)))?;
     let human = ops::user_name(tx, HUMAN)?;
-    let now = ops::now();
     rows.into_iter().map(|(p, paused, waits)| {
-        // a batch whose After waits says so, with the minutes since its first wait (AC-191)
-        let after = || bs::after_waiting(tx, &p).map(|b| b.map(|b| format!("Batch {}: After waits {} min: {}", b.number,
-            (now - b.waits_since.unwrap_or(now)).max(0) / 60, b.why.as_deref().unwrap_or(""))));
-        let note = if paused { Some(format!("Paused by {human}")) } else if waits.is_some() { waits } else { after()? };
+        let note = if paused { Some(format!("Paused by {human}")) } else if waits.is_some() { waits } else { after_note(tx, &p)? };
         Ok((p, json!({"paused": paused, "note": note})))
     }).collect()
+}
+
+/// A batch whose After waits, with the minutes since its first wait (AC-191).
+fn after_note(tx: &Transaction, project: &str) -> Result<Option<String>, String> {
+    let Some(b) = bs::after_waiting(tx, project)? else { return Ok(None) };
+    let minutes = minutes_since(b.waits_since.unwrap_or(b.created_at), ops::now());
+    Ok(Some(format!("Batch {}: After waits {minutes} min: {}", b.number, b.why.as_deref().unwrap_or(""))))
+}
+
+fn minutes_since(since: i64, now: i64) -> i64 {
+    (now - since).max(0) / 60
 }
 
 /// Pause or Resume (AC-193): a paused queue starts no batch; the one in work goes on.

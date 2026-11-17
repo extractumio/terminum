@@ -314,48 +314,46 @@ def make(primary, target):
     return subprocess.run(["make", target], cwd=primary, capture_output=True, text=True)
 
 
-def install_pending(primary, run=make, say=print, held=False):
-    """After a landing, landed or not: one install for all code landed since the last, by the landing that finds
-    the turn free; one that finds another landing in it leaves the install to it, which comes here after. `held`: the
-    caller holds the install turn (land_stages.after). Returns why it cannot run now (a landing's turn, a release),
-    else None."""
-    mark = install_mark(primary)
-    if not mark.exists():
-        return None
+def landing_holder(primary):
+    """Who holds the landing turn, by a look that leaves it free; None when nobody does."""
     with TreeTurn(primary, LAND_TURN) as turn:
-        if not turn.take():
-            say(f"install: left to {turn.holder()}'s landing, which has the turn")
-            return "a landing holds its turn"
-    if releasing(primary):
-        say("install: waits for a landing after the release: the primary checkout stays where it is")
-        return "a release is running"
+        return None if turn.take() else turn.holder()
+
+
+def install_pending(primary, run=make, say=print):
+    """After a landing, landed or not: one install for all code landed since the last, by the landing that finds
+    the turn free; one that finds another landing in it leaves the install to it, which comes here after."""
+    if not install_mark(primary).exists():
+        return
+    if holder := landing_holder(primary):
+        say(f"install: left to {holder}'s landing, which has the turn")
+        return
     with TreeTurn(primary, INSTALL_TURN) as turn:
-        if not held:
-            turn.take(wait=True)   # a landing that ended meanwhile may install too: one after the other
-        try:
-            wanted = mark.read_text()
-        except FileNotFoundError:
-            return None   # installed by that one
-        # the primary checkout is moved only in the turn (after_push), never beside another landing's merge
-        if git("merge-base", "--is-ancestor", wanted.strip(), "HEAD", cwd=primary, check=False).returncode:
-            say("install: none, the primary checkout is not on what landed: the next landing tries again")
-            return None
-        with heavy_slots.slot(primary, "install", say=say):   # the release build: the heaviest of all
-            installed = install_steps(primary, run, say)
-        if not installed:
-            say("install: the next landing tries again")
-        elif mark.read_text() == wanted:
-            mark.unlink()   # a later landing's mark stays for it
-    return None
+        turn.take(wait=True)   # a landing that ended meanwhile may install too: one after the other
+        if releasing(primary):   # a release starting holds this turn, and writes its mark in it
+            say("install: waits for a landing after the release: the primary checkout stays where it is")
+            return
+        install_now(primary, run, say)
 
 
-def install_wanted(primary, env=os.environ):
-    """Whether this machine's landings install (TM_LAND_INSTALL=1, the maintainer's local.mk): from the environment
-    make gives, else asked of make, for a line that runs without it so its status 75 reaches terminumd (AC-191)."""
-    if "TM_LAND_INSTALL" in env:
-        return env["TM_LAND_INSTALL"] == "1"
-    done = subprocess.run(["make", "-s", "--no-print-directory", "land-install-wanted"], cwd=primary, capture_output=True, text=True)
-    return done.returncode == 0 and done.stdout.strip() == "1"
+def install_now(primary, run=make, say=print):
+    """The install of what the mark names, its caller holding the install turn: in the heavy-build slot, only when the
+    primary checkout is on it; the mark removed once installed, unless a later landing wrote its own meanwhile."""
+    mark = install_mark(primary)
+    try:
+        wanted = mark.read_text()
+    except FileNotFoundError:
+        return   # installed by another
+    # the primary checkout is moved only in the turn (after_push), never beside another landing's merge
+    if git("merge-base", "--is-ancestor", wanted.strip(), "HEAD", cwd=primary, check=False).returncode:
+        say("install: none, the primary checkout is not on what landed: the next landing tries again")
+        return
+    with heavy_slots.slot(primary, "install", say=say):   # the release build: the heaviest of all
+        installed = install_steps(primary, run, say)
+    if not installed:
+        say("install: the next landing tries again")
+    elif mark.read_text() == wanted:
+        mark.unlink()   # a later landing's mark stays for it
 
 
 def install_steps(primary, run, say):

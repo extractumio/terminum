@@ -113,22 +113,19 @@ def after(primary, run=land.make, env=os.environ, say=print):
             raise Stop(LATER, "after: an install runs in the primary checkout: waits for its end")
         if land.releasing(primary):
             raise Stop(LATER, "after: a release is running: waits for its end")
-        with Turn(primary, land.LAND_TURN) as landing:   # a look: the install looks again
-            if not landing.take():
-                raise Stop(LATER, "after: a landing holds its turn: waits for its end")
+        if land.landing_holder(primary):
+            raise Stop(LATER, "after: a landing holds its turn: waits for its end")
         stuck = land.update_primary(primary)
         if stuck:
             raise Stop(1, f"after: the primary checkout stays where it is: {stuck}")
-        if not land.install_wanted(primary, env):
+        if env.get("TM_LAND_INSTALL") != "1":
             say("after: the primary checkout follows; no install here (TM_LAND_INSTALL is not 1)")
             return
         if run(primary, "installed").returncode == 0:
             say("after: this build is installed already")
             return
         land.install_mark(primary).write_text(land.head(primary))
-        busy = land.install_pending(primary, run=run, say=say, held=True)
-        if busy:
-            raise Stop(LATER, f"after: {busy}: waits for its end")
+        land.install_now(primary, run=run, say=say)
         if land.install_mark(primary).exists():
             raise Stop(1, "after: the install did not run: see above")
 
