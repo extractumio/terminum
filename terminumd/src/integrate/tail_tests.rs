@@ -207,3 +207,131 @@ fn ac191_both_windows_lost_the_check_runs_again_and_after_does_not() {
     assert!(lines.iter().any(|l| l.starts_with("batch-2.1.check")) && !lines.iter().any(|l| l.starts_with("batch-1.1.after")), "{lines:?}");
     assert_eq!((status(&w, &a), status(&w, &b)), ("DONE".into(), "DONE".into()));
 }
+
+/// An After that ends 75 with a reason while `../wait` stands in the project's folder's parent: a release, say.
+const WAITS: &str = "if [ -f ../wait ]; then echo 'after: a release is running: waits for its end'; exit 75; fi";
+const WAIT_WORDS: &str = "after: a release is running: waits for its end";
+
+fn waiting(name: &str) -> World {
+    let w = world(name, Settings { after: WAITS.into(), ..settings() });
+    std::fs::write(w.root.join("wait"), "").unwrap();
+    w
+}
+
+/// A try's three steps at `now`: its turn taken, its window started, its status read.
+fn at(w: &World, r: &Sh, now: i64) {
+    for _ in 0..3 {
+        step(&w.s, r, &w.root.join("home"), now).unwrap();
+    }
+}
+
+fn afters(r: &Sh) -> Vec<String> {
+    r.lines.lock().unwrap().iter().filter(|l| l.contains(".after:")).map(|l| l.split(':').next().unwrap().to_string()).collect()
+}
+
+#[test]
+fn ac191_an_after_that_cannot_run_now_waits_without_a_human_and_runs_again_by_itself() {
+    let (w, r) = (waiting("it-wait"), Sh::default());
+    let a = queued(&w, 1, "b.txt", "b\n");
+    let first = until(&w, &r, 1, bs::AFTER_WAITS, false);
+    let i = i_of(&w, &first);
+    assert_eq!(first.why.as_deref(), Some(WAIT_WORDS));
+    assert_eq!((status(&w, &a), status(&w, &i)), ("DONE".into(), "DONE".into()), "nothing waits for a human");
+    let told = format!("After waits for batch 1: {WAIT_WORDS}. It runs again by itself; nothing waits for you.");
+    assert!(said(&w, &first).contains(&told), "{}", said(&w, &first));
+    let since = first.waits_since.expect("its first wait");
+    // a push from outside meanwhile: a try again does not move the folder under what made it wait
+    let other = w.root.join("other");
+    sh(&w.root, &["clone", "-q", w.origin.to_str().unwrap(), other.to_str().unwrap()]);
+    std::fs::write(other.join("z.txt"), "z\n").unwrap();
+    sh(&other, &["add", "z.txt"]);
+    sh(&other, &["commit", "-qm", "z"]);
+    sh(&other, &["push", "-q", "origin", "HEAD:main"]);
+    sh(&w.api, &["fetch", "-q", "origin"]);
+    at(&w, &r, since + 299);
+    assert_eq!(afters(&r).len(), 1, "not within its pause");
+    at(&w, &r, since + 300);
+    let again = nth(&w, 1);
+    assert_eq!((again.state.as_str(), again.waits_since), (bs::AFTER_WAITS, Some(since)), "its first wait kept");
+    assert_eq!(said(&w, &again).matches("After waits for batch 1").count(), 1, "told once");
+    assert_eq!(files(&w), "a.txt\nb.txt", "the folder stays where its first try put it");
+    std::fs::remove_file(w.root.join("wait")).unwrap();
+    at(&w, &r, since + 600);
+    assert_eq!(nth(&w, 1).state, "ended", "green: the wait ends");
+    assert_eq!(status(&w, &i), "DONE");
+    assert_eq!(afters(&r), ["batch-1.1.after"; 3]);
+}
+
+#[test]
+fn ac191_an_after_still_waiting_after_6_hours_fails_for_a_human() {
+    let (w, r) = (waiting("it-cap"), Sh::default());
+    queued(&w, 1, "b.txt", "b\n");
+    let since = until(&w, &r, 1, bs::AFTER_WAITS, false).waits_since.unwrap();
+    at(&w, &r, since + 21_599);
+    assert_eq!(nth(&w, 1).state, bs::AFTER_WAITS, "under its cap it waits");
+    at(&w, &r, since + 21_900);
+    let first = nth(&w, 1);
+    assert_eq!((first.state.as_str(), first.why.as_deref()), ("after failed", Some(format!("waited 6 hours: {WAIT_WORDS}").as_str())));
+    assert_eq!(status(&w, &i_of(&w, &first)), "WAIT FOR HUMAN");
+    assert!(said(&w, &first).contains(&format!("After waited 6 hours for batch 1: {WAIT_WORDS}. The batch stays published")), "{}", said(&w, &first));
+}
+
+#[test]
+fn ac191_the_next_batch_is_published_while_an_after_waits_and_its_after_runs_behind_it() {
+    let (w, r) = (waiting("it-wait-next"), Sh::default());
+    queued(&w, 1, "b.txt", "b\n");
+    let since = until(&w, &r, 1, bs::AFTER_WAITS, false).waits_since.unwrap();
+    let b = queued(&w, 2, "c.txt", "c\n");
+    until(&w, &r, 2, bs::PUBLISHED, false);
+    assert_eq!(status(&w, &b), "DONE", "built, checked and published while batch 1 waits");
+    go(&w, &r, 3);
+    assert_eq!(nth(&w, 2).state, bs::PUBLISHED, "its After waits behind batch 1's");
+    std::fs::remove_file(w.root.join("wait")).unwrap();
+    at(&w, &r, since + 300);
+    go(&w, &r, 3);
+    assert_eq!((nth(&w, 1).state.as_str(), nth(&w, 2).state.as_str()), ("ended", "ended"));
+    assert_eq!(afters(&r), ["batch-1.1.after", "batch-1.1.after", "batch-2.1.after"]);
+}
+
+#[test]
+fn ac191_a_waiting_after_holds_its_project_s_later_afters_and_no_other_project_s() {
+    let w = world("it-wait-other", settings());
+    w.s.with(|tx| {
+        tx.execute("INSERT INTO projects (id, name, color, dir, place) VALUES ('web', 'web', 2, '/nowhere', 1)", []).map_err(sql)?;
+        for (project, number, state) in [("api", 7, bs::AFTER_WAITS), ("api", 8, bs::PUBLISHED), ("web", 3, bs::PUBLISHED)] {
+            tx.execute("INSERT INTO integration_batches (project, number, tasks, base_sha, state, created_at, step_started) VALUES (?1, ?2, '[]', 'x', ?3, 0, 1000)",
+                       rusqlite::params![project, number, state]).map_err(sql)?;
+        }
+        Ok(())
+    }).unwrap();
+    let next = |now| w.s.with(|tx| bs::next_after(tx, now, 300)).unwrap().map(|b| (b.project, b.number));
+    assert_eq!(next(1100), Some(("web".into(), 3)), "within api's pause: its batch 8 waits behind 7, web's runs");
+    assert_eq!(next(1300), Some(("api".into(), 7)), "its pause passed: the oldest is tried again");
+}
+
+#[test]
+fn ac191_a_failed_after_asks_with_its_last_rows_what_is_held_and_what_close_does() {
+    let w = world("it-ask", Settings { after: "echo 'make: *** [install] Error 1'; exit 2".into(), ..settings() });
+    queued(&w, 1, "b.txt", "b\n");
+    let first = until(&w, &Sh::default(), 1, "after failed", false);
+    assert_eq!(first.why.as_deref(), Some("status 2: make: *** [install] Error 1"));
+    let asked = said(&w, &first);
+    assert!(asked.contains("After failed for batch 1 with status 2: make: *** [install] Error 1. The batch stays published and its tasks DONE. \
+                            Held until this task ends: api's next batches are not built, and the After of every batch published after it waits. \
+                            Mend the cause, do After's work by hand where it is needed, then press Close… on this task: api's batches and later Afters go on. Its log: "), "{asked}");
+}
+
+#[test]
+fn ac191_a_waiting_after_ends_without_after_once_integration_is_off_or_its_line_emptied() {
+    for (name, off) in [("it-wait-off", true), ("it-wait-empty", false)] {
+        let (w, r) = (waiting(name), Sh::default());
+        queued(&w, 1, "b.txt", "b\n");
+        let since = until(&w, &r, 1, bs::AFTER_WAITS, false).waits_since.unwrap();
+        w.s.with(|tx| { let s = integration::read(tx, "api")?; integration::keep(tx, "api", &if off { Settings { on: false, ..s } } else { Settings { after: String::new(), ..s } }) }).unwrap();
+        at(&w, &r, since + 300);
+        let first = nth(&w, 1);
+        let why = off.then_some("After did not run for batch 1: integration was turned off for api");
+        assert_eq!((first.state.as_str(), first.why.as_deref()), ("ended", why), "an emptied line: nothing runs after, as for any batch");
+        assert_eq!(afters(&r).len(), 1, "not run again");
+    }
+}

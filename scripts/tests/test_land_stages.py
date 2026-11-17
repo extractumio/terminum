@@ -1,17 +1,20 @@
 # SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 """The seven stages of a landing (spec AC-198), each alone and run again, on real repositories in a temporary
 folder; no remote is contacted, no terminum is called."""
+import os
 from pathlib import Path
 import subprocess
 import sys
 import threading
 import unittest
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import test_land  # noqa: E402
 from test_land import git  # noqa: E402
 import land_stages as stages  # noqa: E402
+from worktree import mark_path  # noqa: E402
 L = stages.land
 
 QUIET = dict(say=lambda _: None)
@@ -179,6 +182,51 @@ class After(test_land.Repos, unittest.TestCase):
         stages.after(self.primary, run=run, env={"TM_LAND_INSTALL": "1"}, say=said.append)
         self.assertEqual(made, ["installed", "build", "install", "installed"], "installed, by the landings' own install")
         self.assertFalse(L.install_mark(self.primary).exists())
+
+    def later(self):
+        made = []
+        with self.assertRaises(stages.Stop) as stop:
+            stages.after(self.primary, run=lambda p, target: made.append(target), env={"TM_LAND_INSTALL": "1"}, **QUIET)
+        self.assertEqual((stop.exception.code, made), (stages.LATER, []), "nothing built, nothing installed")
+        return str(stop.exception)
+
+    def test_after_cannot_run_now_under_a_release_or_a_held_turn_ends_75_moving_nothing(self):  # AC-191, AC-198
+        self.push_from_outside("later.txt", "w\n")
+        L.git("fetch", "-q", "origin", cwd=self.primary)
+        before = L.head(self.primary)
+        mark = mark_path(self.primary)
+        mark.write_text(f"{os.getpid()}\n")   # a live release
+        self.assertEqual(self.later(), "after: a release is running: waits for its end")
+        mark.unlink()
+        for name, words in ((stages.INSTALL_TURN, "after: an install runs in the primary checkout: waits for its end"),
+                            (L.LAND_TURN, "after: a landing holds its turn: waits for its end")):
+            with stages.Turn(self.primary, name) as held:
+                self.assertTrue(held.take())
+                self.assertEqual(self.later(), words)
+        self.assertEqual(L.head(self.primary), before, "the primary checkout stays where it is")
+        stages.after(self.primary, run=lambda *_: subprocess.CompletedProcess([], 0), env={"TM_LAND_INSTALL": "1"}, **QUIET)
+        self.assertNotEqual(L.head(self.primary), before, "free again: it follows")
+
+    def test_after_holds_the_install_turn_while_it_installs(self):  # AC-191, AC-104
+        seen = []
+        def run(primary, target):
+            with stages.Turn(primary, stages.INSTALL_TURN) as other:
+                seen.append(other.take())
+            return subprocess.CompletedProcess([], 1 if target == "installed" and len(seen) == 1 else 0, stdout="ok\n")
+        stages.after(self.primary, run=run, env={"TM_LAND_INSTALL": "1"}, **QUIET)
+        self.assertEqual(seen, [False] * 4, "a release finds it held from the first look to the install's end")
+
+    def test_an_install_that_waited_for_a_starting_release_installs_nothing(self):  # AC-104, AC-191
+        L.install_mark(self.primary).write_text(L.head(self.primary))
+        made, said = [], []
+        def released_meanwhile(self_, wait=False):   # the release held the turn and wrote its mark in it
+            mark_path(self.primary).write_text(f"{os.getpid()}\n")
+            return True
+        with mock.patch.object(stages.Turn, "take", released_meanwhile):
+            L.install_pending(self.primary, run=lambda p, t: made.append(t), say=said.append)
+        self.assertEqual(made, [])
+        self.assertEqual(said, ["install: waits for a landing after the release: the primary checkout stays where it is"])
+        self.assertTrue(L.install_mark(self.primary).exists(), "kept for a landing after the release")
 
 
 if __name__ == "__main__":
