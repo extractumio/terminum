@@ -27,7 +27,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from check_changed import is_doc, late_notes, red, tree_id  # noqa: E402
 import heavy_slots  # noqa: E402
-from worktree import common_dir, primary_of, Refused, releasing, Turn as TreeTurn  # noqa: E402
+from worktree import common_dir, fetched, primary_of, Refused, releasing, Turn as TreeTurn  # noqa: E402
 
 BASE = "origin/main"
 LAND_TURN = "terminum-land.turn"
@@ -35,6 +35,7 @@ TRIES = 8
 # a smoke set takes about 25 minutes on a busy Mac; one running this long is stuck, and under a held turn
 # every other landing would wait for it
 SMOKE_MOST_MINUTES = 90
+FETCH_MOST_S = 120
 
 
 class Stop(Exception):
@@ -191,8 +192,9 @@ def prepare(tree, fetch=True, say=print):
     done when the target is in HEAD."""
     if git("status", "--porcelain", cwd=tree).stdout.strip():
         raise Stop(1, f"{tree} has uncommitted changes: commit them first")
-    if fetch:
-        git("fetch", "--quiet", "origin", cwd=tree)
+    # trees of one repository fetch at once (the queue's Verifies, the engine, agents): a held ref is waited for
+    if fetch and (failed := fetched(tree, FETCH_MOST_S)):
+        raise Stop(1, f"git fetch origin: {failed}")
     if has_base(tree):
         return False
     base_now = git("rev-parse", BASE, cwd=tree).stdout.strip()

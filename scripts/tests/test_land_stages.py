@@ -4,6 +4,7 @@ folder; no remote is contacted, no terminum is called."""
 from pathlib import Path
 import subprocess
 import sys
+import threading
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -34,6 +35,23 @@ class Stages(test_land.Repos, unittest.TestCase):
         with self.assertRaises(stages.Stop) as stop:
             L.prepare(tree, **QUIET)
         self.assertIn("uncommitted", str(stop.exception))
+
+    def test_prepare_waits_for_a_ref_another_fetch_holds_and_fails_red_when_it_stays_held(self):  # AC-198
+        tree = self.ready()
+        lock = Path(git("rev-parse", "--path-format=absolute", "--git-common-dir", cwd=tree)) / "refs/remotes/origin/main.lock"
+        lock.write_text("")   # another tree's fetch holds it for a second
+        threading.Timer(1, lock.unlink).start()
+        self.assertTrue(L.prepare(tree, **QUIET), "waited for it, then merged")
+        self.push_from_outside("more.txt", "z\n")
+        lock.write_text("")   # held for good: a stale lock of a killed fetch
+        before = git("rev-parse", "HEAD", cwd=tree)
+        with self.assertRaises(stages.Stop) as stop:
+            L.prepare(tree, **QUIET)
+        lock.unlink()
+        self.assertEqual(stop.exception.code, 1, "red, never a conflict")
+        self.assertIn("git fetch origin:", str(stop.exception))
+        self.assertIn("lock", str(stop.exception))
+        self.assertEqual(git("rev-parse", "HEAD", cwd=tree), before, "nothing merged")
 
     def test_prepare_leaves_a_conflict_in_the_tree_exit_2(self):  # AC-198
         tree = self.tree("one")

@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-//! AC-197 retry evidence crosses the stage/tree boundary as quoted check output, never instructions.
+//! AC-197 retry evidence, and AC-146's timed checks skipped for a busy machine, cross the stage/tree boundary as
+//! quoted check output, never instructions.
+use std::ffi::CStr;
 use std::fs::{File, OpenOptions};
 use std::io::{self, Read};
 use std::os::fd::{AsRawFd, FromRawFd};
@@ -18,32 +20,38 @@ fn directory(tree: &Path) -> io::Result<Option<File>> {
     }
 }
 
-/// Each integration stage starts without the prior candidate/round's note; standalone landing still adds its
+/// The notes a check leaves in `.checks`, by file name, with what they are called where said.
+const RETRIED: (&CStr, &str) = (c"retried", "Retry diagnostics");
+const SKIPPED: (&CStr, &str) = (c"skipped", "Skipped checks");
+
+/// Each integration stage starts without the prior candidate/round's notes; standalone landing still adds its
 /// smoke retries to its targeted ones. unlinkat removes a link itself, never its target.
 pub(super) fn clear(tree: &Path) -> Result<(), String> {
     let clear = || -> io::Result<()> {
         let Some(dir) = directory(tree)? else { return Ok(()) };
-        // SAFETY: dir owns an open directory fd and the fixed name is NUL-terminated.
-        if unsafe { libc::unlinkat(dir.as_raw_fd(), c"retried".as_ptr(), 0) } != 0 {
-            let e = io::Error::last_os_error();
-            if e.kind() != io::ErrorKind::NotFound { return Err(e) }
+        for (name, _) in [RETRIED, SKIPPED] {
+            // SAFETY: dir owns an open directory fd and the fixed name is NUL-terminated.
+            if unsafe { libc::unlinkat(dir.as_raw_fd(), name.as_ptr(), 0) } != 0 {
+                let e = io::Error::last_os_error();
+                if e.kind() != io::ErrorKind::NotFound { return Err(e) }
+            }
         }
         Ok(())
     };
-    clear().map_err(|e| format!("Retry diagnostics could not be cleared: {e}"))
+    clear().map_err(|e| format!("Retry diagnostics or skipped checks could not be cleared: {e}"))
 }
 
-fn read_file(tree: &Path) -> io::Result<Option<String>> {
+fn read_file(tree: &Path, (name, what): (&CStr, &str)) -> io::Result<Option<String>> {
     let Some(dir) = directory(tree)? else { return Ok(None) };
     // SAFETY: as above; NONBLOCK avoids waiting on a FIFO before metadata rejects non-regular files.
-    let fd = unsafe { libc::openat(dir.as_raw_fd(), c"retried".as_ptr(), libc::O_RDONLY | libc::O_CLOEXEC | libc::O_NOFOLLOW | libc::O_NONBLOCK) };
+    let fd = unsafe { libc::openat(dir.as_raw_fd(), name.as_ptr(), libc::O_RDONLY | libc::O_CLOEXEC | libc::O_NOFOLLOW | libc::O_NONBLOCK) };
     if fd < 0 {
         let e = io::Error::last_os_error();
         return if e.kind() == io::ErrorKind::NotFound { Ok(None) } else { Err(e) };
     }
     // SAFETY: openat returned a new owned fd, transferred once to File.
     let file = unsafe { File::from_raw_fd(fd) };
-    if !file.metadata()?.is_file() { return Err(io::Error::other(".checks/retried is not a regular file")) }
+    if !file.metadata()?.is_file() { return Err(io::Error::other(format!(".checks/{} is not a regular file", name.to_string_lossy()))) }
     let mut bytes = Vec::new();
     file.take((MOST + 1) as u64).read_to_end(&mut bytes)?;
     let truncated = bytes.len() > MOST;
@@ -53,16 +61,26 @@ fn read_file(tree: &Path) -> io::Result<Option<String>> {
     let bounded: String = text.chars().take(MOST / 4).collect();
     if bounded.is_empty() { return Ok(None) }
     let mut quoted = bounded.lines().map(|line| format!("> {line}\n")).collect::<String>();
-    if truncated || bounded.len() < text.len() { quoted.push_str("> [retry diagnostics truncated]\n"); }
+    if truncated || bounded.len() < text.len() { quoted.push_str(&format!("> [{} truncated]\n", what.to_lowercase())); }
     Ok(Some(quoted))
 }
 
 /// A missing/empty note needs no record; an unreadable one is said where its evidence would have been.
-pub(super) fn read(tree: &Path) -> Option<String> {
-    match read_file(tree) {
+fn note(tree: &Path, kind: (&CStr, &str)) -> Option<String> {
+    match read_file(tree, kind) {
         Ok(note) => note,
-        Err(e) => Some(format!("Retry diagnostics could not be read: {e}")),
+        Err(e) => Some(format!("{} could not be read: {e}", kind.1)),
     }
+}
+
+/// The checks that passed only on their retry (AC-197).
+pub(super) fn read(tree: &Path) -> Option<String> {
+    note(tree, RETRIED)
+}
+
+/// The timed checks a busy machine skipped (AC-146): a pass without them.
+pub(super) fn skipped(tree: &Path) -> Option<String> {
+    note(tree, SKIPPED)
 }
 
 #[cfg(test)]
@@ -71,7 +89,7 @@ mod tests {
     use std::os::unix::fs::symlink;
 
     #[test]
-    fn ac197_notes_are_bounded_cleaned_redacted_and_cleared() {
+    fn ac197_ac146_notes_are_bounded_cleaned_redacted_and_cleared() {
         let tree = crate::testutil::fresh_dir("retry-note");
         assert!(read(&tree).is_none());
         clear(&tree).unwrap();
@@ -82,8 +100,10 @@ mod tests {
         assert!(note.starts_with("> critical\n> PASSWORD=[redacted]\n"), "{note}");
         assert!(!note.contains("fixture-value") && !note.contains('\u{7}') && !note.contains('\u{202e}'));
         assert!(note.ends_with("> [retry diagnostics truncated]\n") && note.len() < MOST);
+        std::fs::write(checks.join("skipped"), "targeted: SKIPPED timed checks, the machine busy for 15 minutes: critical\n").unwrap();
+        assert_eq!(skipped(&tree).as_deref(), Some("> targeted: SKIPPED timed checks, the machine busy for 15 minutes: critical\n"));
         clear(&tree).unwrap();
-        assert!(read(&tree).is_none());
+        assert!(read(&tree).is_none() && skipped(&tree).is_none(), "each stage starts without either note");
     }
 
     #[test]
