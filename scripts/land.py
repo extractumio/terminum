@@ -332,6 +332,9 @@ def install_pending(primary, run=make, say=print, held=False):
     with TreeTurn(primary, INSTALL_TURN) as turn:
         if not held:
             turn.take(wait=True)   # a landing that ended meanwhile may install too: one after the other
+            if releasing(primary):   # a release starting holds this turn, and writes its mark in it
+                say("install: waits for a landing after the release: the primary checkout stays where it is")
+                return "a release is running"
         try:
             wanted = mark.read_text()
         except FileNotFoundError:
@@ -355,7 +358,9 @@ def install_wanted(primary, env=os.environ):
     if "TM_LAND_INSTALL" in env:
         return env["TM_LAND_INSTALL"] == "1"
     done = subprocess.run(["make", "-s", "--no-print-directory", "land-install-wanted"], cwd=primary, capture_output=True, text=True)
-    return done.returncode == 0 and done.stdout.strip() == "1"
+    if done.returncode:
+        raise Stop(1, f"after: whether to install is not known: make land-install-wanted: {(done.stderr or done.stdout).strip()[-300:]}")
+    return done.stdout.strip() == "1"
 
 
 def install_steps(primary, run, say):

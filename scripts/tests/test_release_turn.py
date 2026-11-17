@@ -56,13 +56,16 @@ class Chain(unittest.TestCase):
     def setUp(self):
         # never the real repository's turn, fetch or main: every test here, even one that calls main() itself
         self.turn_log, self.install_held, self.fresh = [], False, ["fast-forwarded main by 2 commits: 4f2a91c..9b7e0d3"]
-        self.freshened = []
+        self.freshened, self.heads, self.tag_there, self.execs = [], ["a1", "a1"], False, []
         def freshen(repo):
             self.freshened.append(self.mark.exists())
             if isinstance(self.fresh, Exception):
                 raise self.fresh
             return self.fresh
-        for target, value in ((release_turn, {"Turn": InstallTurn(self)}), (release_turn.worktree_fresh, {"freshen": freshen})):
+        heads = lambda repo: self.heads.pop(0) if len(self.heads) > 1 else self.heads[0]
+        for target, value in ((release_turn, {"Turn": InstallTurn(self), "head_of": heads}), (release_turn.worktree_fresh, {"freshen": freshen}),
+                              (release_turn.release, {"tag_exists": lambda tag: self.tag_there}),
+                              (release_turn.os, {"execvpe": self.exec})):
             patch = mock.patch.multiple(target, **value)
             patch.start()
             self.addCleanup(patch.stop)
@@ -76,6 +79,10 @@ class Chain(unittest.TestCase):
         self.released = []
         self.passed_before = False
         self.busy = None
+
+    def exec(self, *argv):
+        self.execs.append(argv)
+        raise SystemExit("exec")   # it never returns
 
     def fake_release(self, tag, gate_head, said="", rehearsing=False):
         self.released.append((tag, gate_head, said, rehearsing))
@@ -127,6 +134,24 @@ class Chain(unittest.TestCase):
             self.run_chain(["v1.0.0"])
         self.assertEqual((self.calls, self.released), ([], []))
         self.assertFalse(self.mark.exists())
+
+    def test_a_main_that_moved_starts_make_release_again_once(self):  # AC-104
+        self.heads = ["a1", "b2"]
+        with mock.patch("builtins.print"), self.assertRaisesRegex(SystemExit, "exec"):
+            self.run_chain(["v1.0.0"])
+        self.assertEqual(len(self.execs), 1)
+        file, argv, env = self.execs[0]
+        self.assertEqual((file, argv, env["TM_RELEASE_AGAIN"]), ("make", ["make", "--no-print-directory", "release", "TAG=v1.0.0"], "1"))
+        self.assertEqual(self.turn_log[-1], "free", "the turn is free for the new make")
+        self.assertEqual(self.released, [])
+        self.heads = ["b2", "c3"]
+        with mock.patch.dict(os.environ, {"TM_RELEASE_AGAIN": "1"}), self.assertRaisesRegex(SystemExit, "main moved again"):
+            self.run_chain(["v1.0.0"])
+
+    def test_a_tag_that_exists_is_released_where_it_stands(self):  # AC-104
+        self.tag_there = True
+        self.assertEqual(self.run_chain(["v1.0.0"]), 0)
+        self.assertEqual(self.freshened, [], "main not moved past it")
 
     def test_a_rehearsal_takes_no_install_turn_and_moves_no_main(self):  # AC-104
         self.assertEqual(self.run_chain(["--rehearse", "v1.0.0"]), 0)

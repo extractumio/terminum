@@ -7,6 +7,7 @@ import subprocess
 import sys
 import threading
 import unittest
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -175,7 +176,7 @@ class After(test_land.Repos, unittest.TestCase):
     def test_after_moves_the_checkout_and_installs_only_where_the_maintainer_asked(self):  # AC-198
         made, said = [], []
         run = lambda primary, target: made.append(target) or subprocess.CompletedProcess([], 1 if target == "installed" and len(made) == 1 else 0, stdout="ok\n")
-        stages.after(self.primary, run=run, env={}, say=said.append)
+        stages.after(self.primary, run=run, env={"TM_LAND_INSTALL": ""}, say=said.append)
         self.assertEqual(made, [], "no TM_LAND_INSTALL: no install")
         self.assertIn("no install here", said[-1])
         stages.after(self.primary, run=run, env={"TM_LAND_INSTALL": "1"}, say=said.append)
@@ -221,6 +222,20 @@ class After(test_land.Repos, unittest.TestCase):
         self.assertFalse(L.install_wanted(self.primary, env={"TM_LAND_INSTALL": ""}), "the value make gave the line wins")
         (self.primary / "Makefile").write_text("land-install-wanted:\n\t@echo\n")
         self.assertFalse(L.install_wanted(self.primary, env={}))
+        (self.primary / "Makefile").unlink()
+        with self.assertRaisesRegex(stages.Stop, "after: whether to install is not known: make land-install-wanted: "):
+            L.install_wanted(self.primary, env={})   # never a silent "no install"
+
+    def test_an_install_that_waited_for_a_starting_release_installs_nothing(self):  # AC-104, AC-191
+        L.install_mark(self.primary).write_text(L.head(self.primary))
+        made, said = [], []
+        def released_meanwhile(self_, wait=False):   # the release held the turn and wrote its mark in it
+            mark_path(self.primary).write_text(f"{os.getpid()}\n")
+            return True
+        with mock.patch.object(stages.Turn, "take", released_meanwhile), mock.patch.object(L, "releasing", side_effect=[False, True]):
+            self.assertEqual(L.install_pending(self.primary, run=lambda p, t: made.append(t), say=said.append), "a release is running")
+        self.assertEqual(made, [])
+        self.assertTrue(L.install_mark(self.primary).exists(), "kept for a landing after the release")
 
 
 if __name__ == "__main__":

@@ -77,23 +77,42 @@ def say_now(words):
     print(words, flush=True)   # make's log is a file: a wait is seen while it waits
 
 
-def start(repo, tag, say=say_now):
-    """The mark written, in the install turn, once an After or install there ended and a clean main is on
-    origin/main as make install brings it; a main that cannot move refuses the release before any check."""
+def head_of(repo):
+    return release.run("git", "rev-parse", "HEAD", cwd=repo)
+
+
+def freshened(repo, tag, say):
+    """Whether main moved: a clean main brought up to origin/main as make install does; a main that cannot move
+    refuses the release. A tag that exists already is released where it stands: main is not moved."""
+    if release.tag_exists(tag):
+        return False
+    before = head_of(repo)
+    try:
+        for line in worktree_fresh.freshen(repo):
+            say(f"release: {line}")
+    except Refused as refused:
+        sys.exit(f"release: main cannot be brought up to origin/main: {refused}")
+    return head_of(repo) != before
+
+
+def start(repo, tag, say=say_now, env=os.environ):
+    """The mark written, in the install turn, once an After or install there ended and main is on origin/main. A
+    main that moved starts make release again, once: this process and make's variables were read from the old one."""
     with Turn(repo, INSTALL_TURN) as turn:
         if not turn.take():
             say("release: an install runs in the primary checkout: waiting for its end")
             turn.take(wait=True)
-        try:
-            for line in worktree_fresh.freshen(repo):
-                say(f"release: {line}")
-        except Refused as refused:
-            sys.exit(f"release: main cannot be brought up to origin/main: {refused}")
-        release.check_source(tag)
-        release.release_notes(tag)
-        mark = mark_path(repo)
-        mark.write_text(f"{os.getpid()}\n")
-    return mark
+        if not freshened(repo, tag, say):
+            release.check_source(tag)
+            release.release_notes(tag)
+            mark = mark_path(repo)
+            mark.write_text(f"{os.getpid()}\n")
+            return mark
+    if env.get("TM_RELEASE_AGAIN"):
+        sys.exit("release: main moved again as the release started: run make release again")
+    say("release: main moved: make release starts again on it")
+    # the turn is free again: the new make takes it, finds main fresh and goes on
+    os.execvpe("make", ["make", "--no-print-directory", "release", f"TAG={tag}"], {**env, "TM_RELEASE_AGAIN": "1"})
 
 
 def main(argv):

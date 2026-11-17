@@ -17,9 +17,10 @@ use crate::tasks::store::Store;
 
 /// After's status that says it cannot run now (`EX_TEMPFAIL`): its last rows say why (AC-191).
 pub(super) const LATER: i32 = 75;
-/// Between an After's tries while it cannot run now, and how long it may wait before it fails (AC-191, §9 Limits).
+/// Between an After's tries while it cannot run now, and how long it may wait before it fails (AC-191, §9 Limits):
+/// longer than one release run holds the primary checkout (its gate 15 minutes, its checks, the Mac runner's hour).
 const PAUSE_S: i64 = 300;
-const WAIT_MOST_S: i64 = 24 * 3600;
+const WAIT_MOST_S: i64 = 6 * 3600;
 
 /// One step of the tail: the running After or Cleanup followed, else the published batch that waited longest takes
 /// the turn: its project's folder brought up to the target, then its After or Cleanup, or it ends with neither; a
@@ -44,6 +45,9 @@ pub fn step(store: &Store, runner: &dyn Runner, home: &Path, now: i64) -> Result
     }
     // its folder moved at its first try: a try again moves nothing under what made it wait
     if b.state == bs::AFTER_WAITS {
+        if p.s.after.is_empty() {
+            return not_run(store, &b, "its After line was emptied while it waited", after_after(&p.s), now);
+        }
         return store.with(|tx| bs::set_state(tx, b.id, "after", None, now));
     }
     match folder_follows(&p) {

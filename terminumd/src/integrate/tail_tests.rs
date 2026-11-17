@@ -263,17 +263,17 @@ fn ac191_an_after_that_cannot_run_now_waits_without_a_human_and_runs_again_by_it
 }
 
 #[test]
-fn ac191_an_after_still_waiting_after_24_hours_fails_for_a_human() {
+fn ac191_an_after_still_waiting_after_6_hours_fails_for_a_human() {
     let (w, r) = (waiting("it-cap"), Sh::default());
     queued(&w, 1, "b.txt", "b\n");
     let since = until(&w, &r, 1, bs::AFTER_WAITS, false).waits_since.unwrap();
-    at(&w, &r, since + 86_399);
+    at(&w, &r, since + 21_599);
     assert_eq!(nth(&w, 1).state, bs::AFTER_WAITS, "under its cap it waits");
-    at(&w, &r, since + 86_700);
+    at(&w, &r, since + 21_900);
     let first = nth(&w, 1);
-    assert_eq!((first.state.as_str(), first.why.as_deref()), ("after failed", Some(format!("waited 24 hours: {WAIT_WORDS}").as_str())));
+    assert_eq!((first.state.as_str(), first.why.as_deref()), ("after failed", Some(format!("waited 6 hours: {WAIT_WORDS}").as_str())));
     assert_eq!(status(&w, &i_of(&w, &first)), "WAIT FOR HUMAN");
-    assert!(said(&w, &first).contains(&format!("After waited 24 hours for batch 1: {WAIT_WORDS}. The batch stays published")), "{}", said(&w, &first));
+    assert!(said(&w, &first).contains(&format!("After waited 6 hours for batch 1: {WAIT_WORDS}. The batch stays published")), "{}", said(&w, &first));
 }
 
 #[test]
@@ -319,4 +319,19 @@ fn ac191_a_failed_after_asks_with_its_last_rows_what_is_held_and_what_close_does
     assert!(asked.contains("After failed for batch 1 with status 2: make: *** [install] Error 1. The batch stays published and its tasks DONE. \
                             Held until this task ends: api's next batches are not built, and the After of every batch published after it waits. \
                             Mend the cause, do After's work by hand where it is needed, then press Close… on this task: api's batches and later Afters go on. Its log: "), "{asked}");
+}
+
+#[test]
+fn ac191_a_waiting_after_ends_without_after_once_integration_is_off_or_its_line_emptied() {
+    for (name, off) in [("it-wait-off", true), ("it-wait-empty", false)] {
+        let (w, r) = (waiting(name), Sh::default());
+        queued(&w, 1, "b.txt", "b\n");
+        let since = until(&w, &r, 1, bs::AFTER_WAITS, false).waits_since.unwrap();
+        w.s.with(|tx| { let s = integration::read(tx, "api")?; integration::keep(tx, "api", &if off { Settings { on: false, ..s } } else { Settings { after: String::new(), ..s } }) }).unwrap();
+        at(&w, &r, since + 300);
+        let first = nth(&w, 1);
+        let why = if off { "integration was turned off for api" } else { "its After line was emptied while it waited" };
+        assert_eq!((first.state.as_str(), first.why.as_deref()), ("ended", Some(format!("After did not run for batch 1: {why}").as_str())));
+        assert_eq!(afters(&r).len(), 1, "not run again");
+    }
 }
