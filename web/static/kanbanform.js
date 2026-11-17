@@ -3,7 +3,7 @@
 // text, in TODO unless said. A draft survives closing and a reload on this browser.
 import { askConfirm, oneAtATime } from "./dialogs.js";
 import { el, iconButton, read, write } from "./listparts.js";
-import { detailsPane, LISTS } from "./taskattrs.js";
+import { detailsPane, LISTS, typeSelect } from "./taskattrs.js";
 import { $, AT_LIMIT, agentsOf, api, fileMarkdown, FILE_GONE, fillAgents, fillSelect, goneFiles, goneSaid, onFiles, onSend, onlyProject, projectOptions, sessionOptions, showError, upload, withFileLink, withoutFileLinks, writePreview } from "./kanbanutil.js";
 
 const DRAFT = "tm.taskdraft";
@@ -13,7 +13,8 @@ const DRAFT = "tm.taskdraft";
 export function taskForm({ getMeta, getFilter, onMade, onRun, slots }) {
   const box = $("newbox");
   let files = [], offered = "", parent = null, chose = "";   // chose: the agent the user picked in this window, "" for none
-  /** Its Details (AC-199): kept with the draft; folded until opened, open once opened in this window. */
+  /** Its Details (AC-199): kept with the draft; folded until opened, open once opened in this window. Its type is
+   *  not among them: Type stands beside Severity, none chosen until picked. */
   let attrs = {}, attrsOpen = false;
   /** Each its own draft: a subtask's never takes a new task's. */
   const draftKey = () => (parent ? `${DRAFT}.${parent}` : DRAFT);
@@ -28,7 +29,7 @@ export function taskForm({ getMeta, getFilter, onMade, onRun, slots }) {
   const error = (text) => showError($("newerror"), text);
   /** Said as the window opens with no project chosen, terminumd's words for it (tasks/ops.rs TASK_NEEDS_PROJECT). */
   let unchosen = false;
-  const draft = () => ({ title: $("newtitle").value, text: $("newtext").value, project: $("newproj").value, severity: $("newsev").value, owner: $("newowner").value, session: $("newsession").value, files, attrs });
+  const draft = () => ({ title: $("newtitle").value, text: $("newtext").value, project: $("newproj").value, severity: $("newsev").value, type: $("newtype").value, owner: $("newowner").value, session: $("newsession").value, files, attrs });
   const keep = () => write(draftKey(), draft());
 
   function showFiles() {
@@ -100,7 +101,7 @@ export function taskForm({ getMeta, getFilter, onMade, onRun, slots }) {
     const change = (next) => { attrs = next; keep(); showAttrs(); return true; };
     const without = (list, id) => (attrs[list] ?? []).filter((x) => x.id !== id);
     $("newattrs").replaceChildren(detailsPane({
-      v: attrs, project: () => $("newproj").value, open: attrsOpen, onToggle: (o) => { attrsOpen = o; },
+      v: attrs, project: () => $("newproj").value, open: attrsOpen, onToggle: (o) => { attrsOpen = o; }, typed: false,
       set: async (field, value) => change({ ...attrs, [field]: value }),
       link: async (list, id, reason, t) => {
         const was = (attrs[list] ?? []).find((x) => x.id === id);
@@ -134,7 +135,9 @@ export function taskForm({ getMeta, getFilter, onMade, onRun, slots }) {
     fillSelect($("newowner"), meta.users.map((u) => [u.id, u.name]), saved.owner ?? "human");
     $("newtitle").value = given.title ?? saved.title ?? "";
     $("newtext").value = given.text ? `${saved.text ? `${saved.text}\n\n` : ""}${given.text}` : saved.text ?? "";
-    attrs = saved.attrs ?? {};
+    const { type, ...kept } = saved.attrs ?? {};   // a draft kept before Type stood beside Severity held it here
+    attrs = kept;
+    $("newtype").value = saved.type ?? type ?? "";
     $("newattrs").replaceChildren();
     attrsOpen = false;
     showAttrs();
@@ -156,7 +159,7 @@ export function taskForm({ getMeta, getFilter, onMade, onRun, slots }) {
     try {
       const lists = Object.fromEntries(LISTS.map(([l]) => [l, (d.attrs[l] ?? []).map(({ id, reason }) => ({ id, reason }))]));
       const made = await api("/api/tasks", { method: "POST", body: { title: d.title, text: d.text, project: d.project, severity: d.severity, owner: d.owner || undefined, agent: agent || undefined, session: d.session || undefined, parent: parent ?? undefined, files: d.files.map((f) => f.id),
-        type: d.attrs.type || undefined, external_link: d.attrs.external_link || undefined, target: d.attrs.target || undefined, ...lists } });
+        type: d.type || undefined, external_link: d.attrs.external_link || undefined, target: d.attrs.target || undefined, ...lists } });
       end();
       box.close();
       if (run) onRun(made, agent); else onMade(made);
@@ -168,6 +171,7 @@ export function taskForm({ getMeta, getFilter, onMade, onRun, slots }) {
     return send(run);
   }
 
+  typeSelect($("newtype"));
   $("newcreate").addEventListener("click", () => create());
   $("newrun").addEventListener("click", () => create(true));
   // Enter in the title is Create; what is typed never goes by a slip: Discard asks
