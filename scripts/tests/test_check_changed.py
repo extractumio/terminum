@@ -219,7 +219,7 @@ class Run(unittest.TestCase):
                          "targeted: SKIPPED timed checks, the machine busy for 15 minutes: page e2e_hooks")
 
     def test_a_full_run_holding_the_machine_skips_the_timed_steps_at_once_and_says_so_last(self):  # AC-146
-        self.run_steps([("cargo", "true"), ("page", "true")], busy=("a full run holds the machine (a release's or a rehearsal's)", "a full run held the machine"))
+        self.run_steps([("cargo", "true"), ("page", "true")], busy=("a full run holds the machine", "a full run held the machine"))
         self.assertEqual(check_changed.note(self.root, "skipped"), "targeted: SKIPPED timed checks, a full run held the machine: page")
 
     def test_timed_steps_that_ran_clear_an_earlier_skip(self):  # AC-146

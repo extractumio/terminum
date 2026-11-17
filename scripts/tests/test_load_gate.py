@@ -88,8 +88,8 @@ class Gate(unittest.TestCase):
         m = Machine(1)
         with mock.patch.object(gate, "full_run_held", return_value=True):
             why = gate.for_task(load=m.load, say=m.said.append, clock=lambda: m.now, sleep=m.sleep)
-        self.assertEqual(why, ("a full run holds the machine (a release's or a rehearsal's)", "a full run held the machine"))
-        self.assertEqual(m.said, ["gate: a full run holds the machine (a release's or a rehearsal's): the timed checks are skipped"])
+        self.assertEqual(why, ("a full run holds the machine", "a full run held the machine"))
+        self.assertEqual(m.said, ["gate: a full run holds the machine: the timed checks are skipped"])
         self.assertEqual(m.now, 0, "no wait")
 
     def test_a_release_past_its_full_run_is_a_quiet_machine_to_the_gate(self):  # AC-146
