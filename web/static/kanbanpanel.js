@@ -2,6 +2,7 @@
 // Where the columns stand (terminum-kanban.md AC-105; boardpanel.css): wider than a phone, TODO is a column of its own
 // and the others share the rest of the board, one at a time under their tabs, the one chosen remembered in this
 // browser; on a phone (BOARD_PHONE) one column shows at a time, a swipe away from the next, the six tabs over them.
+// Find stands in TODO's head, a phone's in its head's row.
 import { el, read, write } from "./listparts.js";
 import { $ } from "./kanbanutil.js";
 import { BOARD_PHONE } from "./phonewin.js";
@@ -54,10 +55,20 @@ export function columnPanel(columns, still) {
     if (now && now !== swiped) { swiped = now; mark(); }
   }, { passive: true });
 
-  /** The tabs: over the phone's columns, under its head's line; else the panel's own head. */
+  /** The tabs: over the phone's columns, under its head's line; else the panel's own head. Find: on a phone behind
+   *  the head's Find key; else in TODO's head, by the cards it narrows, every column's (AC-111). */
+  const find = $("find"), field = find.closest(".search");
   function arrange() {
-    if (phone.matches) $("poolline").before(tabs);
-    else panel.prepend(tabs);
+    if (phone.matches) {
+      $("poolline").before(tabs);
+      $("filtersbtn").before(field);
+      find.placeholder = "Find tasks";
+    } else {
+      panel.prepend(tabs);
+      todo.col.querySelector(".colname").after(field);
+      find.placeholder = "Filter all columns";
+    }
+    find.setAttribute("aria-label", find.placeholder);
     mark();
   }
   phone.addEventListener("change", arrange);

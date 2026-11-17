@@ -21,8 +21,8 @@ export async function liveIconKeys(page, live, phone = false) {
     const r = await pressed(page, sel);
     check(`${name}, pressed, then Esc and a key, draws no focus ring`, !r.lit && !r.focused, JSON.stringify(r));
   }
-  if (!phone) {                                    // Tab from the column's name, the key before it (a phone's columns are tabs)
-    await page.evaluate(() => { const n = document.querySelector('.col[data-status="TODO"] .colname'); n.tabIndex = -1; n.focus(); });
+  if (!phone) {                                    // Tab from Find, the field before it in TODO's head (terminum-kanban.md AC-111)
+    await page.focus("#find");
     await tabKey(page);
     const r = await ring(page, newTask);
     check("AC-106 Tab still reaches + New task and rings it", r.focused && r.lit, JSON.stringify(r));
