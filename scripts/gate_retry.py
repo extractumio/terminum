@@ -50,6 +50,11 @@ def red_checks(step, said):
     return [step]
 
 
+def named(step, check):
+    """A retried check's name in the record, the notes and its task: the step, and the check when it is one of the step's."""
+    return step if check == step else f"{step} {check}"
+
+
 def crash(began, said, reports=CRASH_REPORTS):
     """What crashed while the step ran, by file names only, or None."""
     names = []
@@ -97,7 +102,7 @@ class Retry:
     def why_not(self, step, check, said):
         if self.runs is None:
             self.runs = gate_record.read(self.root, "gate")
-        if gate_record.retried_lately(self.runs, f"{step} {check}"):
+        if gate_record.retried_lately(self.runs, named(step, check)):
             return f"retried in {gate_record.LOST_AFTER} of the last {gate_record.OF_LAST} runs"
         if self.changes is None:
             self.changes = Changes(self.root)
@@ -124,8 +129,8 @@ class Retry:
 
     def passed_on_retry(self, step, checks, first):
         for check in checks:
-            self.passed.append((f"{step} {check}", f"TASK for this run's agent: create_task, or add_comment on the open "
-                                f"task titled \"Bug: flaky in the full run: {step} {check}\" (P2), with the first run's "
+            self.passed.append((named(step, check), f"TASK for this run's agent: create_task, or add_comment on the open "
+                                f"task titled \"Bug: flaky in the full run: {named(step, check)}\" (P2), with the first run's "
                                 f"last lines:\n{tail(first)}"))
 
     def say_last(self):
