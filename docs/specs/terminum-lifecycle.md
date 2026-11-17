@@ -25,7 +25,7 @@ A snapshot of what terminum must do, not a record of how it came to be: git hold
 In scope:
 - One-line install, launchd and systemd, signed packages, the upgrade, rollback, restart and uninstall commands, `terminum status`, `terminum folders`.
 - What survives: terminumd's restart (AC-14), a reboot or a killed tmux (AC-15, AC-96), an upgrade or rollback (AC-16).
-- The update notice (AC-17). Tidying before a release (AC-102, AC-103). Landing a worktree (AC-104); a release's full run on a quiet machine (AC-146).
+- The update notice (AC-17). Tidying before a release (AC-102, AC-103). Landing a worktree (AC-104); a release's full run on a quiet machine (AC-146); a release of a pinned commit in its own tree (AC-200); the full run's passes, retry, environment and record (AC-201); the nightly full run and the weekly review (AC-202).
 
 Out of scope (explicit):
 - A native app (AC-11 dropped; terminum.md OQ-04). No notarization and no hardened runtime (`docs/RELEASING.md`).
@@ -69,7 +69,10 @@ Open questions: none open. Which clients exist (AC-11's drop) is terminum.md OQ-
 | AC-104 | [SHOULD / P1] | A finished worktree lands by itself: its targeted checks green on its own work, then a short smoke set of the basics on one platform, with no timed check, on its merge with what others landed; pushed, the primary checkout brought up to it and the tree deleted; the full test run is the release's gate, and only failing tests block a release. |
 | AC-146 | [SHOULD / P1] | A release's full run starts only on a quiet machine: it queues behind another full run, waits for the load to stay low for 3 minutes, says each minute that it waits, and after 15 minutes ends the release with "the build server is not available"; a task's timed checks wait the same way, and after 15 minutes, or at once while a full run holds its turn, are skipped and said in red, never run under the load. |
 | AC-196 | [SHOULD / P1] | Every diagnostic log has a bounded size and period under one rotation mechanism; active writers follow rotations without losing records. |
-| AC-197 | [SHOULD / P1] | A worktree's step that runs real programs (panel, page, critical, smoke, an e2e script) and fails runs once more, unchanged, while the run is otherwise green: passing then, the targeted checks or the smoke set count it, say the first run's last lines and say it in red last; red again, or a leftover, it is red; other steps, and the release's full run, have no retry. |
+| AC-197 | [SHOULD / P1] | A worktree's step that runs real programs (panel, page, critical, smoke, an e2e script) and fails runs once more, unchanged, while the run is otherwise green: passing then, the targeted checks or the smoke set count it, say the first run's last lines and say it in red last; red again, or a leftover, it is red; other steps have no retry, and the full run retries by AC-201. |
+| AC-200 | [SHOULD / P1] | A release promotes a commit: `make release` pins the newest commit of origin/main that passed the full run in 48 hours, or differs from one only in docs, else origin/main, or `PIN=`, and runs its full run, the Mac test runner's checks, the build and the tag in a tree of its own detached at it, by that commit's own code, while landings, Afters and installs go on; a fix for a red release lands first and is pinned. |
+| AC-201 | [SHOULD / P1] | The full run keeps a pass per step and content, shared by every tree, and runs only the steps without one, or the scan alone after a docs-only change; its steps see only an allow-listed environment; a budget over under its own load is said and judged on a quiet machine; a red step of real programs runs its red checks once more, never for a check of code changed since the last full pass or one retried in 3 of the last 7 runs, said in red, in a task and in the release notes; each run and each release leaves a line in a record. |
+| AC-202 | [SHOULD / P1] | A nightly schedule rehearses origin/main with every step run and judges the budgets on the quiet machine after it, a red step making a task that names the commits since the last full pass; a weekly schedule runs /simplify and /docs-review over what landed since its last run, their findings ordinary tasks; a release asks neither. |
 
 ## 5. BDD scenarios
 
@@ -666,18 +669,12 @@ Scenario: AC-104 edge — a refused push
   When make land pushes
   Then it exits 1 at once, with the refusal's own words
 
-Scenario: AC-104 edge — a release is running
-  Given make release is running its long checks
-  When a tree lands
-  Then it pushes, the primary checkout stays where it is and it prints "primary checkout stays where it is: a release is running"
-  And the release goes on with the commit it checked, on origin/main though no longer its end
-
 Scenario: AC-104 edge — installing, on the maintainer's machine
   Given TM_LAND_INSTALL=1 in the uncommitted local.mk
   When a change with code lands
   Then the landing marks an install in the turn, and once it ends, landed or not, and finds the turn free, make build, make install and make installed run in the primary checkout, with their three results printed: once for all code landed since the last install
   And a landing that ends while another holds the turn says "install: left to two's landing, which has the turn", and two installs after its own push or failure
-  And a change with only docs installs nothing, and while a release runs the install waits for a landing after it
+  And a change with only docs installs nothing; a release, in a tree of its own (AC-200), holds no install back
   And an install that fails, or finds the primary checkout not on what landed, says "install: the next landing tries again" and the next landing's end, landed or not, tries again; the install never moves the primary checkout: only a landing in its turn does
 
 Scenario: AC-104 failure — a conflict
@@ -704,8 +701,8 @@ Scenario Outline: AC-104 — what a change is checked with
 
 Scenario: AC-104 happy path — the full run is the release's gate
   When the maintainer runs make release TAG=v0.32.0
-  Then on a quiet machine (AC-146) the full check runs, once per tree: make test, clippy, the Panel, the live page, every e2e script, Docker's, the install, the page's browser checks, the security scan
-  And then the Mac test runner's checks, when TM_MAC_RUNNER is set
+  Then in the tree it pinned (AC-200), on a quiet machine (AC-146), the full check runs on that content, a pass per step (AC-201): make test, clippy, the Panel, the live page, every e2e script, Docker's, the install, the page's browser checks, the security scan
+  And then the Mac test runner's checks, when TM_MAC_RUNNER is set, kept as a pass of that content too
   And a failing test in any of them stops the release
 
 Scenario: AC-104 failure — failing tests on the Mac test runner are never read as a runner that could not run them
@@ -749,28 +746,16 @@ Scenario Outline: AC-104 edge — the Mac test runner could not run them
     | it runs for over an hour (it gets SIGTERM)           | it took over 60 minutes                 |
     | no TM_MAC_RUNNER                                     | no TM_MAC_RUNNER                        |
 
-Scenario: AC-104 edge — a release starts while an After installs
-  Given the integration queue's After builds and installs in the primary checkout, holding the install turn
-  When make release starts
-  Then it says "release: an install runs in the primary checkout: waiting for its end" and waits for it
-  And then, in that turn, it brings a clean main behind origin/main up to it as make install does, saying "release: fast-forwarded main by 2 commits: 4f2a91c..9b7e0d3"; the rest runs in a make of its own, which reads what landed, takes the turn again and writes its mark in it: from then on an After ends 75 until the release ends (`terminum-integration.md` AC-191)
-  And when an After moved main between the two, the release ends before any check: "release: main moved as the release started (an After installed): run make release again"
-  And an install that waited for that turn finds the mark and installs nothing: "install: waits for a landing after the release"
-  And a main it cannot move, behind with uncommitted changes or diverged, refuses the release with the reason before any check runs; a tag that exists already is released where it stands, main not moved
-
 Scenario: AC-104 failure — a commit the checks did not see
   Given make release's checks ran on 4f2a91c07
   When HEAD is another commit as it starts to build
   Then it exits saying "HEAD moved since the full checks": nothing is public
-  And another session's make install during a release leaves main where it is, saying "a release is running"
 
 Scenario: AC-104 happy path — the rehearsal
-  When anyone runs make rehearse TAG=v0.32.0 in a tree at origin/main
-  Then it runs make release's chain: leftovers, the full check, the Mac test runner's, the build of the package
+  When anyone runs make rehearse TAG=v0.32.0, from any checkout
+  Then it pins origin/main as fetched, or PIN=, in .worktrees/rehearse (AC-200), and runs make release's chain there: leftovers, the full check with every step run (--force), the Mac test runner's, the build of the package
   And it prints "v0.32.0: rehearsal passed on 4f2a91c07: no release signature, not tagged, not pushed, not published"
-  And its macOS builds are codesigned with the Developer ID, as for real; it reads no release key, runs neither gh nor git tag nor git push, needs no release notes and holds no release mark
-  And in the primary checkout, whose ui/dist and dist/package it would replace, it refuses: "make rehearse runs in a worktree"
-  And while a release runs it refuses: "a release is running: rehearse after it"
+  And its macOS builds are codesigned with the Developer ID, as for real; it reads no release key, runs neither gh nor git tag nor git push, and needs no release notes
 
 Scenario Outline: AC-104 edge — Docker's step cannot run
   Given <what>
@@ -848,7 +833,7 @@ Scenario: AC-146 edge — one full run at a time
   Given a rehearsal's full run is running in another tree
   When make release reaches its full run
   Then it waits in line, saying so each minute, and that wait counts in its 15 minutes
-  And a rehearsal started during a release is refused at once (AC-104)
+  But a release finding a rehearsal's full run in the turn says "release: rehearse 4f2a91c07's full run holds the turn: waiting for its end, its passes reused" and waits for its end, however long, then reuses the passes it kept (AC-201)
 
 Scenario: AC-146 edge — a tree that passed already
   Given the tree's full run passed on its content
@@ -876,7 +861,7 @@ Scenario: AC-146 edge — a task's timed checks beside a full run
   Then they wait for nothing: each timed step prints "SKIP page: a full run holds the machine (a release's or a rehearsal's)" and the last line, red, is "targeted: SKIPPED timed checks, a full run held the machine: page e2e_hooks", said again as above
   And their other steps run, a cargo step under nice while a release runs (AC-104)
   When that release has ended its full run and runs the Mac test runner's checks or its build, holding no full run's turn
-  Then a task's timed checks wait for a quiet machine as above: the release's mark alone holds nothing back
+  Then a task's timed checks wait for a quiet machine as above: a release past its full run holds nothing back
 
 Scenario: AC-146 edge — the access check waits for a login answer under load
   Given scripts/e2e_access.py sends a login request while the load average is 60 on 16 cores
@@ -939,10 +924,10 @@ Scenario Outline: AC-197 failure — no retry, or red on it
     | another step of the run has failed already                         |
     | the step runs no real program (the scan, a build, clippy, cargo tests, unit tests) |
 
-Scenario: AC-197 edge — the release's full run never retries
+Scenario: AC-197 edge — the full run retries by its own rules
   Given make check runs, by hand, from make release or from make rehearse
-  When a test fails
-  Then the full run is red and the release stops (AC-104)
+  When a step of real programs fails
+  Then it is retried as AC-201 says, not as here: after every step's first run, even beside another red step
 
 Scenario: AC-197 edge — what is said is this run's
   Given an earlier targeted run passed a step only on its retry
@@ -1007,6 +992,176 @@ Scenario: Completed integration steps expire without another batch
   When the maintenance minute arrives
   Then logs older than 30 days and the oldest beyond 100 files per project are removed
   And each newly saved step log contains at most the newest 2 MiB of captured output
+```
+
+### AC-200 — A release promotes a pinned commit, in a tree of its own [SHOULD / P1]
+
+```gherkin
+Scenario: AC-200 happy path — the commit the nightly passed
+  Given the nightly full run passed on 4f2a91c07 at 03:12 today (AC-202), and since then only docs/releases/v0.33.0.md landed, in 9b7e0d3c1
+  When the maintainer runs make release TAG=v0.33.0, from any checkout
+  Then it fetches and prints "release: pinned 9b7e0d3c1: docs only since 4f2a91c07's full pass (2026-11-18 03:12); 1 commits since 4f2a91c07's full pass"
+  And it makes, or takes, .worktrees/release detached at 9b7e0d3c1 and runs the rest there by that commit's own code (make release-here): leftovers, the full run, the Mac test runner's checks, the build, the signature, the tag on 9b7e0d3c1, the publication
+  And the full run runs the security scan alone and says "skip <step>: a docs-only change since 4f2a91c07's full pass" for every other step (AC-201)
+
+Scenario Outline: AC-200 — what is pinned
+  Given <state>
+  When make release TAG=v0.33.0 runs
+  Then it pins <pin>
+
+  Examples:
+    | state                                                                     | pin                                                        |
+    | no commit of origin/main's last 200 passed the full run in 48 hours        | origin/main, saying the full run runs whole                |
+    | a full pass on 4f2a91c07, then a landing with code                         | 4f2a91c07, "1 commits behind origin/main"                  |
+    | a full pass on 4f2a91c07, then README.md changed                           | 4f2a91c07: a file the package carries is no docs here      |
+    | PIN=8c1d2e3f4 on origin/main                                              | 8c1d2e3f4                                                  |
+    | the tag v0.33.0 exists                                                     | its commit: a release is completed where it stands         |
+    | make rehearse, no PIN                                                      | origin/main as fetched                                     |
+
+Scenario: AC-200 happy path — landings go on beside a release
+  Given make release runs its full run in .worktrees/release
+  When a task lands through the integration queue, its After fast-forwards the primary checkout and installs
+  Then nothing of the queue, the After or the install waits for the release or says it runs
+  And the release's tree, commit and checks are as they were, and it tags the commit it pinned
+
+Scenario: AC-200 happy path — a fix for a red release
+  Given make release pinned 4f2a91c07 and a check is red twice (AC-201): nothing is public
+  When the fix is made in a tree from the pin (scripts/worktree.py add fix-x --from 4f2a91c07), landed through the queue, its commit 6a7b8c9d0 merged by its own merge commit (terminum-integration.md AC-188)
+  And the maintainer runs make release TAG=v0.33.0 PIN=6a7b8c9d0
+  Then the release tree holds 4f2a91c07 and the fix alone, nothing else that landed meanwhile, and the full run runs on that content
+  And a second fix starts from 6a7b8c9d0, not from the first pin
+
+Scenario Outline: AC-200 failure — a pin it refuses before any check
+  Given <what>
+  When make release runs
+  Then it exits 1 with "<said>" and nothing runs in the tree
+
+  Examples:
+    | what                                                     | said                                                                                     |
+    | PIN= names a commit not on origin/main                   | release: 6a7b8c9d0 is not on origin/main: land it first                                  |
+    | PIN= names no commit                                     | release: PIN=nope is no commit here                                                     |
+    | the pin predates releases in a tree of their own          | release: 1a2b3c4d5 predates releases in a tree of their own (it has no scripts/check_all.py): pin a newer commit |
+    | .worktrees/release holds an uncommitted file             | release: …/.worktrees/release holds uncommitted changes, nothing of a release's own      |
+    | another make release runs in .worktrees/release           | release: another release runs in .worktrees/release: release v0.33.0 at 4f2a91c07, pid 4242 |
+    | the pinned commit has no docs/releases/v0.33.0.md         | no release notes: write docs/releases/v0.33.0.md first                                  |
+
+Scenario: AC-200 edge — the kept trees
+  Given .worktrees/release and .worktrees/rehearse stay between runs, detached
+  Then scripts/worktree.py sweep never takes them, which takes branches only, and worktree.py list shows them "(detached)"
+  And a run moves its tree to its pin, keeping ui/node_modules and terminumd/target, which make and cargo rebuild for the pinned content, and its .checks with the passes kept there
+  And make release and make rehearse each have their own tree, so a rehearsal and a release never share one; their full runs take turns (AC-146)
+
+Scenario: AC-200 edge — the pinned commit's own code runs
+  When make release runs in .worktrees/release
+  Then make release-here there reads the tree's Makefile, scripts and local.mk (linked from the primary checkout: TM_CODESIGN_IDENTITY, TM_MAC_RUNNER)
+  And scripts/ci_mac.sh sends that tree's files to the Mac test runner, so its checks test the pin
+  And make release-here in the primary checkout refuses: "release: the chain runs in its pinned tree: make release (or make rehearse) pins one"
+```
+
+### AC-201 — The full run: a pass per step, one honest retry, a clean environment, a record [SHOULD / P1]
+
+```gherkin
+Scenario: AC-201 happy path — a second run runs the red step only
+  Given make check on content 3f9a21c40b7d5e11 passed every step but live
+  When make check runs again on the same content
+  Then it says "skip test: passed on 2026-11-18 10:02" for each step that passed and runs the build first, then live alone
+  And live green, it says "check: PASS on 3f9a21c40b7d5e11" and keeps the whole run's pass
+  And make check --force (CHECK_ARGS=--force) runs every step
+
+Scenario: AC-201 happy path — a pass is the repository's, not the tree's
+  Given the nightly passed every step on content 3f9a21c40b7d5e11 in .worktrees/rehearse
+  When make release's full run runs in .worktrees/release on the same content
+  Then it runs nothing and says "check: passed already on 3f9a21c40b7d5e11"
+  And a pass older than 48 hours counts for make check by hand, never for a release
+
+Scenario: AC-201 edge — the build no pass covers
+  Given a step to run, after others were skipped on their passes
+  Then the run first builds the UI and terminumd's debug build, as a step of its own with no pass, so no step reads what an earlier content built
+  And a red build is a red run
+
+Scenario Outline: AC-201 edge — what counts as docs
+  Given the newest commit with a full pass is 4f2a91c07 and the content differs from it in <files>
+  When the full run runs
+  Then <steps>
+
+  Examples:
+    | files                                   | steps                                         |
+    | docs/RELEASING.md, docs/releases/v0.33.0.md | the security scan alone                   |
+    | README.md (the package carries it)       | every step                                    |
+    | .claude/skills/x/SKILL.md                | every step                                    |
+    | scripts/land.py                          | every step                                    |
+
+Scenario: AC-201 security — a step sees only the allow-list
+  Given make release runs from a Claude Code session with CLAUDECODE, TM_APP_DIR, TM_PORT, SSH_AUTH_SOCK, TM_TEST_NO_CLAUDE and TM_GATE_PASSED set
+  When the full run starts a step
+  Then the step's environment holds only PATH, HOME, USER, LOGNAME, SHELL, TMPDIR, LANG, LC_ALL, LC_CTYPE, TERM, XDG_CONFIG_HOME, TM_PRIVATE_PATTERNS, TM_HEAVY_SLOTS, TM_LIVE_SLOTS, CARGO_HOME, RUSTUP_HOME, PLAYWRIGHT_BROWSERS_PATH, DOCKER_HOST, DOCKER_CONTEXT and DOCKER_CONFIG as the caller had them, and TM_TIMING=report
+  And no test reaches the user's hosts with the user's ssh agent
+
+Scenario: AC-201 edge — a budget under the full run's own load
+  Given a check with a wall-clock budget (§9 "Budgets in the full run"), such as AC-39's hook median under 50 ms
+  When it measures 62 ms in the full run
+  Then it prints "TIMING over budget (judged on a quiet machine): AC-39 a hook (median): 62 ms, budget 50 ms" and passes
+  And it is red at 5 times its budget or more, a hang and no load
+  And the line is kept with the step's record, and make check --timing, the nightly's last step (AC-202), runs those checks alone after a quiet-machine wait (AC-146) and fails on any budget over
+  And outside the full run, by hand or in a task's targeted checks, the budget fails as before
+
+Scenario: AC-201 happy path — a flaky check passes on its retry
+  Given the full run's live step fails, and the page step fails in webBoardPanel
+  When every step had its first run
+  Then each runs once more, unchanged and one after the other: live's whole suite, and node web/test/e2e_all.mjs webBoardPanel alone (e2e_all.mjs says its red checks last: "red checks: webBoardPanel"); e2e's red scripts alone
+  And each prints "note page failed (webBoardPanel), run once more unchanged; the first run's last lines:" with them, the first run's log kept as .checks/<id>.page.first.log
+  And when both pass, the steps count as passed, "ok page (412 s) on its retry", and the run's last lines say, red, "PASSED ONLY ON RETRY, the first run red: live live, page webBoardPanel: name each with its open task, here and in the release notes"
+  And for each it prints the task for the run's agent to make, or to comment on when one is open: "Bug: flaky in the full run: page webBoardPanel", P2, with the first run's last lines
+  And the step's pass keeps the retried checks, so a release on that content, by this run or reusing its pass, names them in its notes under "Passed only on retry, the first run red"
+
+Scenario Outline: AC-201 failure — no retry
+  Given <what>
+  Then the step is red, saying "note page: no retry: <check>: <why>" where it names a check, and the release stops
+
+  Examples:
+    | what                                                                                          | why                                                   |
+    | the change since the newest full pass changed web/test/e2e_boardpanel.mjs, which webBoardPanel runs | its code changed since 4f2a91c07's full pass      |
+    | a red line names AC-111, and a change since the newest full pass touched AC-111                | AC-111 changed since 4f2a91c07's full pass            |
+    | e2e scripts/e2e_hooks.py was retried in 3 of the last 7 recorded full runs                     | retried in 3 of the last 7 runs                       |
+    | the step passed but left a process or a file (exit 3, AC-102)                                  | (no note: a leftover is red)                          |
+    | the step runs no real program: test, clippy, install, security, the build                     | (no note)                                             |
+    | the check fails again on its retry                                                             | (it is red twice)                                     |
+
+Scenario: AC-201 edge — a crash of a program the checks drive
+  Given tmux's server ends with SIGSEGV while live runs, writing a crash report, or the log says "server exited unexpectedly"
+  When live is red
+  Then it prints, red, "crash: tmux's server gone, tmux-2026-11-18-031244.ips, while live ran: an external program, said as such", names only, never a report's content
+  And the record keeps it as the step's crash; the retry rules stay as above
+
+Scenario: AC-201 happy path — the record
+  When a full run ends, passed or not
+  Then git's common folder's terminum-gate.jsonl gets one line: the time, who ran it (check, rehearse, release), the content, the commit when the tree is clean, the result, the steps run, the wall time, and each step's result, seconds, retried checks, cause, crash and TIMING lines, never a log's content
+  And each make release or make rehearse adds one line of its own: tag, commit, content, red steps by cause, retried checks, the Mac test runner's outcome, how it ended (published, rehearsed, red, stopped, busy), its wall time
+  And python3 scripts/gate_record.py 20 prints the last 20 lines, where the next post-mortem reads them (docs/RELEASING.md)
+```
+
+### AC-202 — A nightly full run, a weekly review [SHOULD / P1]
+
+```gherkin
+Scenario: AC-202 happy path — the nightly
+  Given the project's schedule "Nightly full run", daily at 02:30 on an agent of its pool (terminum-schedules.md AC-160)
+  When it fires
+  Then its agent runs make rehearse TAG=<the next patch version>, which pins origin/main and runs every step (AC-200, AC-104), then make check CHECK_ARGS=--timing in .worktrees/rehearse
+  And green, the content's passes are what make release reuses the next day, and the result says the commit
+  And red, it makes one task per red step, or comments on an open one of that title, "Bug: the nightly full run is red at <step> on <commit>", P1, naming the cause, the first run's last lines and the commits since the last full pass (git log --oneline <its commit>..<pin>); a red --timing makes one for each budget over
+  And a check passed only on its retry is a task as AC-201 says
+
+Scenario: AC-202 — what a nightly red teaches the landing
+  Given a nightly red step the landing's checks could have caught (its code changed by one landing, its check outside that landing's targeted checks and smoke set)
+  When the task that fixes it lands
+  Then it also adds a landing check, or an entry of check_changed.py's mapping, that would have caught it (CLAUDE.md §8)
+
+Scenario: AC-202 happy path — the weekly review
+  Given the project's schedule "Weekly review", Mondays at 06:00
+  When it fires
+  Then its agent reads the commit last reviewed from git's common folder's terminum-reviewed, runs /simplify and /docs-review over what origin/main changed since, lands their fixes as ordinary tasks, and writes origin/main's commit there
+  And with nothing changed since, it ends at once saying so
+  And make release asks for neither: a release ships what main has (CLAUDE.md §10)
 ```
 
 ## 6. Flow and sequence diagrams
@@ -1142,6 +1297,37 @@ terminumd writes `~/.terminum/logs/terminumd.log` (0600); launchd and systemd se
 
 `/health` on the socket (its fields: `terminum.md` §9 Logging and observability) gives what `terminum status` prints and the upgrade waits for.
 
+### The full run's budgets (AC-201)
+
+Every wall-clock assertion a step of the full run makes, and its side. "Quiet": it goes through `in_budget`
+(`scripts/e2e_ws.py`): in the full run (`TM_TIMING=report`) a time over its budget is said and passes, red at 5 times
+it; `make check CHECK_ARGS=--timing` (the nightly, AC-202) judges it alone on a quiet machine. "Gate": it stays a
+verdict of the full run: a hang guard, a CPU-time guard, a lower bound, or already scaled by the load.
+
+| Check | Budget | Side |
+|---|---|---|
+| `scripts/e2e_hooks.py` AC-39 a hook's median | 50 ms | quiet |
+| `scripts/e2e_hooks.py` AC-168 the status line | 300 ms | quiet |
+| `scripts/e2e_isolation.py` AC-132 local panes, keys, windows beside a hanging host | 1 s (2 s for an action) | quiet |
+| `web/test/e2e_live.mjs board` AC-105 first page, AC-111 Find, AC-107 a move (`e2e_liveboardedge.mjs`) | p95 300 ms, 300 ms; 500 ms, by `slack` | quiet: never in the full run, run by `--timing` |
+| `scripts/e2e_hooks.py` AC-39 without terminumd | 0.5 s | gate: a hang guard |
+| `scripts/e2e_remote.py` AC-81 the host in the list | 5 s | gate: a hang guard |
+| `ui/test/e2e_panel.mjs` AC-53 `/dev/zero` refused | 1 s | gate: a hang guard |
+| `web/test/e2e_livejitter.mjs` AC-02 frames, `web/test/e2e_hold.mjs` AC-14 the banner | 60 frames in 3 s; 10 s | gate: a sample size; a hang guard |
+| `web/test/e2e_clip.mjs` AC-52 key repeat, `web/test/e2e_edit.mjs` held delete | 12–25 in 1 s; 3–9 words | gate: behavior of a timer |
+| cargo tests' `elapsed()` deadlines (`cli/sockhttp.rs`, `cli/sinks.rs`, `inputs/tests.rs`, `hosts/agentsinstall_tests.rs`, `links_tests.rs`, `page/reads_tests.rs`, `page/bookmarks_tests.rs` and the hang guards of 4 s to 120 s) | 50 ms to 120 s | gate: each asserts a deadline's or a guard's behavior, not a speed |
+| `web/test/seltext.test.mjs` AC-146, `web/test/outparse.test.mjs` | 1 s, 500 ms of CPU | gate: CPU time, no scheduling |
+| `scripts/e2e_access.py`, `web/test/check.mjs` `slack`, `cli/tests` `slack()` | scaled by load per core, 1–4 | gate |
+
+### The full run's record (AC-201)
+
+`terminum-gate.jsonl` in git's common folder, one JSON object a line, never pushed: `kind` `gate` (a full run: `by`,
+`content`, `commit` when clean, `result` pass, fail or changed, `ran`, `seconds`, `steps` {name: `result`, `seconds`,
+`retried`, `cause`, `crash`, `timing`}) or `release` and `rehearse` (`tag`, `commit`, `content`, `red` {step: cause},
+`retried`, `mac`, `result`, `seconds`). Passes: `.checks/<id>.<step>.ok` and `.checks/<id>.ok` in the tree, the same
+in git's common folder as `terminum-checks/full-<id>[.<step>].ok`, each a JSON object: `at`, and `retried`, `timing`,
+`skip` (Docker's) when there were any.
+
 ### Log retention (AC-196)
 
 All sizes are bytes (MiB = 1,048,576 bytes). `logs.rs` owns rotation and completed-file retention; diagnostics use its blocking writer. Numbered segments are `.1` (newest) through `.K`; their retention age is time since their last write. Segment start time persists across restarts and concurrent host agents. An existing oversized log is archived once without copying; subsequent segments obey the size limit. The old `terminusd.log` is adopted as a retained daemon segment by rename, never concatenated in memory. New log files and metadata are 0600, folders 0700. A failed rotation is recorded in the appendable active log and retried after a minute; records continue there even if it temporarily exceeds the bound. A wholly unwritable log reports its failure on stderr. The queue holds at most 256 records and applies backpressure rather than dropping records. Exit and panic flush the queue with a bounded wait.
@@ -1169,9 +1355,12 @@ All cases are shipped; nothing is staged.
 - [x] AC-16 — `scripts/e2e_install.sh`; `ui/test/e2e_panel.mjs` (a Files panel's held reload); `cargo test cli::tests` (`install_tests`, `upgrade_tests`, `refresh_tests`, `import_tests`)
 - [x] AC-17 — `cargo test update::`; `web/test/e2e_tmux.mjs`
 - [x] AC-96 — `scripts/e2e_lastlines.py`; `cargo test lastlines` (a failed write tried again); `web/test/e2e_lastlines.mjs`
-- [x] AC-102 — `scripts/check_step.py` guards each step of `scripts/check_all.sh` and `scripts/check_changed.py`; `scripts/tests/test_check_step.py`; `scripts/tests/test_check_cancel.py` (outer cancellation and guard recovery); `scripts/tests/test_child_status.py` (macOS non-reaping wait without the Python wrapper); `scripts/tests/test_process_ownership.py` (metadata only, directory boundaries and query failures on both platforms); `scripts/tests/test_leftovers.py`; `cargo test cli::tests::the_fake_terminumd_ends_when_its_home_goes`; `scripts/tests/test_testrun.py` (`WithItsFolder`)
+- [x] AC-102 — `scripts/check_step.py` guards each step of `scripts/check_all.py` and `scripts/check_changed.py`; `scripts/tests/test_check_step.py`; `scripts/tests/test_check_cancel.py` (outer cancellation and guard recovery); `scripts/tests/test_child_status.py` (macOS non-reaping wait without the Python wrapper); `scripts/tests/test_process_ownership.py` (metadata only, directory boundaries and query failures on both platforms); `scripts/tests/test_leftovers.py`; `cargo test cli::tests::the_fake_terminumd_ends_when_its_home_goes`; `scripts/tests/test_testrun.py` (`WithItsFolder`)
 - [x] AC-104 — `scripts/tests/test_land.py`, `scripts/tests/test_land_install.py`, `scripts/tests/test_land_said.py`, `scripts/tests/test_heavy_slots.py`, `scripts/tests/test_test_scripts.py`, `scripts/tests/test_live_slots.py`, `scripts/tests/test_check_live_slots.py`, `scripts/tests/test_check_changed.py`, `scripts/tests/test_package.py`, `scripts/tests/test_release_turn.py`, `scripts/tests/test_release.py`, `scripts/tests/test_ci_mac.py`, `scripts/tests/test_ci_mac_node.py`, `scripts/tests/test_check_docker.py`, `scripts/tests/test_worktree_fresh.py`
 - [x] AC-146 — `scripts/tests/test_load_gate.py`, `scripts/tests/test_release_turn.py`, `scripts/tests/test_check_changed.py`, `scripts/tests/test_check_live_slots.py`, `scripts/tests/test_access.py`, `scripts/e2e_access.py`
+- [ ] AC-200 — `scripts/tests/test_release_turn.py`, `scripts/tests/test_release_tree.py`, `scripts/tests/test_land_stages.py`, `scripts/tests/test_release.py`
+- [ ] AC-201 — `scripts/tests/test_check_all.py`, `scripts/tests/test_gate_retry.py`, `scripts/tests/test_gate_record.py`, `scripts/tests/test_e2e_ws.py`
+- [ ] AC-202 — the project's schedules "Nightly full run" and "Weekly review" (terminum's board), `scripts/tests/test_gate_record.py`
 - [x] AC-197 — `scripts/tests/test_check_changed.py` (`test_ac197_*`), `cargo test integrate::retry_notes`, `cargo test integrate::stages::tests::ac197` (Verify and Check histories, cleanup, a reused tree), `cargo test integrate::retry_live_tests` (real retry commands through private tmux, Verify and Check)
 - [x] AC-103 — `scripts/tests/test_check_docs.py`; `python3 scripts/check_docs.py`
 - [x] AC-196 — `cargo test logs::`, `cargo test cli::tests`, `cargo test sent::`, `scripts/tests/test_check_logs.py`, `scripts/e2e_logs.py`
