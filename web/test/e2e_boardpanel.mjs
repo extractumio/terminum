@@ -11,9 +11,22 @@ const task = (status, i, extra = {}) => ({ id: `API-${status.length}${i}`, title
   severity: ["P1", "P2", "P0"][i % 3], owner: "human", owner_name: "Alex", updated_at: NOW - i, parent: null, ...extra });
 const CARDS = { TODO: 9, "IN PROGRESS": 4, "WAIT FOR HUMAN": 2, INTEGRATION: 1, FAILED: 1, DONE: 12 };
 const tasks = Object.fromEntries(Object.entries(CARDS).map(([s, n]) => [s, Array.from({ length: n }, (_, i) => task(s, i))]));
+tasks["IN PROGRESS"][1].title = "Short";            // a row's cards as tall as its tallest (AC-105)
 const counts = { ...CARDS };
 const agents = ["Opus", "Sonnet", "Fable", "Codex"].map((name, i) => ({ id: `a${i}`, project: "api", name, kind: i === 3 ? "codex" : "claude", at_once: 2 }));
 const meta = (integration) => ({ projects: [{ id: "api", name: "API", color: 0, integration }], users: [], sessions: [], hosts: [], theme: THEME, agents });
+
+/** Find's place, the tabs' counts against their names' baselines, a card's date against its ID (AC-105, AC-111). */
+const details = (page) => page.evaluate(() => {
+  const mark = (e) => { const m = document.createElement("span"); m.style.cssText = "display:inline-block;width:0;height:0"; e.append(m); const y = m.getBoundingClientRect().top; m.remove(); return Math.round(y * 10) / 10; };
+  const find = document.getElementById("find"), head = document.querySelector('.col[data-status="TODO"] .colhead'), card = document.querySelector('.col[data-status="TODO"] .card');
+  const type = (e) => { const s = getComputedStyle(e); return `${s.fontSize} ${s.color}`; };
+  return { findIn: find.closest(".colhead") === head && find.closest(".search").previousElementSibling?.classList.contains("colname"), words: find.placeholder,
+    baselines: [...document.querySelectorAll("#colswitch button")].filter((b) => b.offsetWidth).map((b) => [mark(b.querySelector(".tabname")), mark(b.querySelector(".tabn"))]),
+    when: card.querySelector(".cwhen")?.textContent ?? "", whenType: card.querySelector(".cwhen") && type(card.querySelector(".cwhen")), idType: type(card.querySelector(".cid")),
+    run: [...document.querySelectorAll(".card")].filter((c) => c.querySelector(".crun")).map((c) => c.closest(".col").dataset.status),
+    foldedRun: card.matches(".compact:not(.open, .onagent)") && getComputedStyle(card.querySelector(".crun")).display };
+});
 
 /** Where the board's parts stand. */
 const look = (page) => page.evaluate(() => {
@@ -26,7 +39,7 @@ const look = (page) => page.evaluate(() => {
     todoHead: box(q('.col[data-status="TODO"] .colhead')), tabRow: box(q("#colswitch")), tabs, keys: box(q(".colpanel .colhead")),
     todoCard: box(q('.col[data-status="TODO"] .card')), panelCards: all(".colpanel .col.shown .card").map(box), shown: q(".colpanel .col.shown")?.dataset.status,
     agent: box(q("#agentbar .agentcard")), newKey: box(q('.col[data-status="TODO"] .colhead .new')), newWords: q('.col[data-status="TODO"] .colhead .new')?.textContent,
-    sortKeys: all('.col[data-status="TODO"] .colsort .icon').map(box), todoTitle: box(q('.col[data-status="TODO"] .card .ctitle')), gutter: parseFloat(getComputedStyle(q("#board")).paddingLeft),
+    sortKeys: all('.col[data-status="TODO"] .colsort button').map(box), todoTitle: box(q('.col[data-status="TODO"] .card .ctitle')), gutter: parseFloat(getComputedStyle(q("#board")).paddingLeft),
     head };
 });
 
@@ -67,6 +80,20 @@ async function computer(browser, name) {
         new Set(g.panelCards.map((c) => c.l)).size === (tracks === 6 ? 4 : 2) && g.panelCards.every((c) => near(c.w, g.panelCards[0].w)), JSON.stringify(g.panelCards));
       check(`AC-105 ${w} px: TODO's head and the tabs' row stand on one line, their first cards on one line`,
         near(g.todoHead.t, g.panel.t) && near(g.todoCard.t, g.panelCards[0].t, 2) && g.keys.t >= g.panel.t && g.keys.b <= g.tabRow.b + 12, JSON.stringify({ head: g.todoHead, tabs: g.tabRow, keys: g.keys, card: g.todoCard, first: g.panelCards[0] }));
+      const rows = new Map();
+      for (const c of g.panelCards) rows.set(c.t, [...(rows.get(c.t) ?? []), c.h]);
+      check(`AC-105 ${w} px: a row's cards are as tall as its tallest`, g.panelCards.length > 2 && [...rows.values()].every((hs) => hs.every((h) => near(h, hs[0]))), JSON.stringify(g.panelCards));
+      const d = await details(page);
+      check(`AC-105 ${w} px: each tab's count stands on its name's baseline`, d.baselines.length >= 5 && d.baselines.every(([a, b]) => near(a, b)), JSON.stringify(d.baselines));
+      check(`AC-105 ${w} px: a card says when it last changed, in its ID's type`, /\d/.test(d.when) && d.whenType === d.idType, JSON.stringify(d));
+      check(`AC-122 ${w} px: only TODO's cards have a Run key`, d.run.length > 0 && d.run.every((s) => s === "TODO"), JSON.stringify(d.run));
+      check(`AC-159 ${w} px: a folded TODO card no agent ran shows no Run key`, d.foldedRun === "none", JSON.stringify(d.foldedRun));
+      check(`AC-111 ${w} px: Find stands in TODO's head after its name, saying it filters every column; the head one line`,
+        d.findIn && d.words === "Filter all columns" && g.todoHead.h <= 40, JSON.stringify({ d, head: g.todoHead }));
+      await page.fill("#find", "retry");
+      check(`AC-111 ${w} px: typing in it narrows the board by the URL's text`, await until(() => page.evaluate(() => new URLSearchParams(location.search).get("q") === "retry")));
+      await page.fill("#find", "");
+      await until(() => page.evaluate(() => !new URLSearchParams(location.search).has("q")));
       if (tracks === 6) check("AC-138 an agent is a track wide, the first on TODO's left edge", near(g.agent.l, g.todo.l) && near(g.agent.w, track, 2), JSON.stringify({ agent: g.agent, track }));
       check(`AC-106 ${w} px: TODO's + New task is a text key as tall as the sort keys, on their line, before them`,
         g.newWords === "New task" && g.sortKeys.every((k) => near(k.h, g.newKey.h) && near(k.t, g.newKey.t)) && g.newKey.r <= g.sortKeys[0].l, JSON.stringify({ key: g.newKey, sort: g.sortKeys }));

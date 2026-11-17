@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-// RUN remains visible in every column and while WAIT FOR HUMAN holds its session (AC-122, AC-157); in a task's
-// window it starts at once with the comment, RUN's window opening only for what is left to choose (AC-121, AC-169).
+// RUN remains visible in every column's task window and while WAIT FOR HUMAN holds its session, a card's only in TODO
+// (AC-122, AC-157); in a task's window it starts at once with the comment, RUN's window opening only for what is left
+// to choose (AC-121, AC-169).
 import fs from "node:fs";
 import path from "node:path";
 import { check, runningIn, until } from "./check.mjs";
@@ -9,12 +10,12 @@ import { pressCard } from "./boardkit.mjs";
 
 const META = { projects: [{ id: "api", name: "API", color: 0 }], users: [], sessions: [{ key: "k1", title: "API conversation" }], hosts: [], agents: [{ id: "a1", project: "api", name: "Claude", kind: "claude", color: 0, line: "claude" }] };
 const COLUMNS = ["TODO", "IN PROGRESS", "WAIT FOR HUMAN", "FAILED", "DONE"];
-const tasks = () => [...COLUMNS, "WAIT FOR HUMAN", "WAIT FOR HUMAN", "WAIT FOR HUMAN"].map((status, i) => ({
+const tasks = () => [...COLUMNS, "WAIT FOR HUMAN", "WAIT FOR HUMAN", "WAIT FOR HUMAN", "TODO"].map((status, i) => ({
   id: `API-${i + 1}`, uid: "abcd1234", title: `Continue task ${i + 1}`, project: "api", severity: "P1", status, text: "Choose an API.",
   created_at: 1794435000, updated_at: 1794435000, files: [], history: [], children: [], parent: null,
   agent: { name: "Claude", color: 0, conversation: "fake-1" },
   session: i === 6 ? null : { key: "k1", closed: i === 5 }, run_holds: i < 5 ? `API-${i + 1}` : null,
-  waits: i === 7 ? "Claude" : null,
+  waits: i >= 7 ? "Claude" : null,                  // API-8 waiting for a human, API-9 in TODO: both queued
 }));
 
 export async function webTaskRun(browser, name) {
@@ -26,6 +27,7 @@ export async function webTaskRun(browser, name) {
     const boardReads = [];
     const slots = () => ({ agents: {}, full: [], full_projects: [], queue: { a1: queue.map((id) => ({ id, title: id, project: "api", also: [] })) } });
     all[7].wait_position = 2;
+    all[8].wait_position = 3;
     let refused = false, refusedPress = null, releaseUpload = null, holdPreview = false, releasePreview = null, previews = 0;
     let offer = {}, full = null;                   // what terminumd offers for the next read, and answers a press with no room
     const comments = [];
@@ -71,8 +73,9 @@ export async function webTaskRun(browser, name) {
     try {
       await page.goto(`${ORIGIN}/kanban/?project=api`);
       await page.waitForSelector(".card");
-      check("AC-122 each column keeps its card's RUN, including an open IN PROGRESS session", await page.locator(".card .crun").count() === all.length);
-      check("AC-122 a queued card's RUN is visible and disabled with why", await page.isDisabled('.card[data-id="API-8"] .crun') && /Stop waiting/.test(await page.getAttribute('.card[data-id="API-8"] .crun', "title")));
+      const keyed = await page.$$eval(".card", (cs) => cs.filter((c) => c.querySelector(".crun")).map((c) => c.dataset.id));
+      check("AC-122 only TODO's cards have RUN; the other columns run again from the task's window", keyed.join() === "API-1,API-9", keyed.join());
+      check("AC-122 a queued TODO card's RUN is visible and disabled with why", await page.isDisabled('.card[data-id="API-9"] .crun') && /Stop waiting/.test(await page.getAttribute('.card[data-id="API-9"] .crun', "title")));
       for (const t of all) {
         await open(t.id);
         check(`AC-122 ${t.status} ${t.id} keeps RUN with session ${t.session?.closed ? "closed" : t.session ? "open" : "absent"}`, await run().count() === 1 && await run().isDisabled() === !!t.waits);

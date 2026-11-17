@@ -5,7 +5,7 @@
 // agent's questions, its result, why it failed) is set apart to stand first, the rest then newest first; with
 // nothing to react to, all of it reads oldest first.
 import { el, iconButton } from "./listparts.js";
-import { api, button, renderInto, row, say, shortStamp, stamp } from "./kanbanutil.js";
+import { api, button, renderInto, row, say, shortStamp, timeOf } from "./kanbanutil.js";
 import { expandable } from "./expand.js";
 
 const OPENS = "\n\n```\n", CLOSES = "\n```";   // round a screen quoted in a line of history
@@ -57,9 +57,7 @@ export function activity(t, { refresh, confirmed, leads = true }) {
 
   function eventRow(e) {
     const li = el("li", `ev ev-${e.kind} by-${e.author_kind}${e.questions ? " ev-questions" : ""}`);
-    const head = el("div", "evhead"), at = el("time", null, shortStamp(e.at));
-    at.title = stamp(e.at);
-    at.dateTime = new Date(e.at * 1000).toISOString();
+    const head = el("div", "evhead"), at = timeOf(e.at, shortStamp(e.at));
     // a line of history says who did it in its own words ("alex made it"): its time alone before it
     const who = el("strong", null, e.author_name);
     if (e.kind === "comment") head.append(who, at);

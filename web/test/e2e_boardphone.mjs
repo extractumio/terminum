@@ -70,6 +70,8 @@ export async function webBoardPhone(browser, name) {
       check("AC-105 phone: the Find key shows Find and the filters on rows under the head, the field taking the keys",
         g.find && g.picks && g.find.t >= g.keys[0].b && g.picks.t >= g.find.b && g.find.r <= g.win && await page.evaluate(() => document.activeElement.id === "find" && document.getElementById("findkey").getAttribute("aria-expanded") === "true"), JSON.stringify(g));
       check("AC-105 phone: with nothing narrowed the Find key is not lit", !await page.$("#findkey.lit"));
+      check("AC-111 phone: Find is the head's, saying it finds tasks", await page.evaluate(() => !document.getElementById("find").closest(".colhead") && document.getElementById("find").placeholder === "Find tasks"));
+      check("AC-159 phone: a folded TODO card no agent ran shows no Run key", await page.$eval('.card[data-id="API-1"]', (c) => c.matches(".compact:not(.open, .onagent)") && getComputedStyle(c.querySelector(".crun")).display === "none"));
       await page.fill("#find", "Task 1");
       check("AC-105 phone: a search lights the Find key", await until(() => page.$("#findkey.lit")));
       await page.click("#findkey");

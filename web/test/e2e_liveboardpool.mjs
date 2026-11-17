@@ -74,7 +74,7 @@ export async function agentPool(page, opts, pressAt) {
   check("AC-138 in one session", !!key && (await j(`/api/tasks/${b}`)).session?.key === key, key);
   check("AC-138 what was chosen is let go", await until(async () => await page.locator(".card.picked").count() === 0));
   check("AC-138 one dot blinks for the session, saying both", await dotted((d) => d.length === 1 && /agdot on/.test(d[0]) && d[0].includes(a) && d[0].includes(b)), JSON.stringify(await dots()));
-  check("AC-122 a task in progress keeps its play key and names the agent", await until(async () => !!(await page.$(`${card(a)} .crun`)) && (await page.textContent(`${card(a)} .cagent`).catch(() => "")) === "Fast fixer"));
+  check("AC-122 a task in progress has no play key and names the agent", await until(async () => (await page.textContent(`${card(a)} .cagent`).catch(() => "")) === "Fast fixer" && !(await page.$(`${card(a)} .crun`))));
   check("AC-138 and hides the owner", !(await page.$(`${card(a)} .cowner`)));
 
   // busy: a third is offered the queue (AC-169) and, agreed, waits for its room (AC-158), said in RUN's window and by terminumd
