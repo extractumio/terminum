@@ -4,16 +4,16 @@
 // by + and a search over the project's tasks, and lets one go by ×; nothing is typed as a list of IDs. terminumd
 // decides what stands: a refusal is said and the pane shows what is kept.
 import { el, iconButton } from "./listparts.js";
-import { api, button, statusTag } from "./kanbanutil.js";
+import { api, button, fillSelect, statusTag } from "./kanbanutil.js";
 
 const TYPES = ["Feature", "Bug", "Debt", "Story"];
 export const LISTS = [["blocked_by", "Blocked by", "Why it waits for it"], ["follow_ups", "Follow-ups", "Why it follows"]];
 /** Found tasks a search shows at most. */
 const FOUND_MOST = 12;
 
-/** What the summary says of a folded pane: what is set; the type only when the pane holds it. */
-function summaryOf(v, typed) {
-  const said = [typed && v.type, v.target && `target ${v.target}`, v.external_link && "link",
+/** What the summary says of a folded pane: what is set. */
+function summaryOf(v) {
+  const said = [v.type, v.target && `target ${v.target}`, v.external_link && "link",
     ...LISTS.map(([list, name]) => (v[list]?.length ? `${name.toLowerCase()} ${v[list].length}` : ""))].filter(Boolean);
   return said.length ? `Details: ${said.join(", ")}` : "Details";
 }
@@ -41,16 +41,11 @@ function saves(node, send, was, after = () => {}) {
 export function detailsPane({ v, self = null, project, open = false, onToggle = () => {}, typed = true, set, link, unlink, openTask = null }) {
   const pane = el("details", "more taskattrs");
   pane.open = open;
-  const summary = el("summary", null, summaryOf(v, typed));
+  const summary = el("summary", null, summaryOf(v));
   pane.append(summary);
   pane.addEventListener("toggle", () => onToggle(pane.open));
 
   const grid = el("div", typed ? "fieldgrid three" : "fieldgrid");
-  const typeRow = el("label", "fieldrow", "Type");
-  const type = typeSelect(el("select", "field"), v.type);
-  saves(type, (value) => set("type", value), v.type ?? "");
-  typeRow.append(type);
-
   const linkRow = el("label", "fieldrow", "External link");
   const linkLine = el("span", "attrline");
   const address = el("input", "field");
@@ -71,7 +66,13 @@ export function detailsPane({ v, self = null, project, open = false, onToggle = 
   Object.assign(target, { type: "text", value: v.target ?? "", maxLength: 64, placeholder: "A release, such as v1.4", autocomplete: "off" });
   saves(target, (value) => set("target", value), v.target ?? "");
   targetRow.append(target);
-  grid.append(...(typed ? [typeRow] : []), linkRow, targetRow);
+  if (typed) {
+    const typeRow = el("label", "fieldrow", "Type"), type = typeSelect(el("select", "field"), v.type);
+    saves(type, (value) => set("type", value), v.type ?? "");
+    typeRow.append(type);
+    grid.append(typeRow);
+  }
+  grid.append(linkRow, targetRow);
   pane.append(grid);
 
   for (const [list, name, why] of LISTS) pane.append(listPart({ list, name, why, items: v[list] ?? [], self, project, link, unlink, openTask }));
@@ -80,8 +81,7 @@ export function detailsPane({ v, self = null, project, open = false, onToggle = 
 
 /** `select` offering the types, none chosen until one is set: a task has a type only when a human or agent gives it. */
 export function typeSelect(select, type) {
-  select.replaceChildren(new Option("None", ""), ...TYPES.map((t) => new Option(t, t)));
-  select.value = type ?? "";
+  fillSelect(select, [["", "None"], ...TYPES.map((t) => [t, t])], type ?? "");
   return select;
 }
 
