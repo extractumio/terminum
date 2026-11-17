@@ -101,12 +101,28 @@ pub fn close(tx: &Transaction, id: i64, why: &str, at: i64) -> Result<String, St
     Ok(format!("Batch {} is closed.", b.number))
 }
 
+/// A batch whose After failed: After run once more in the tail's turn, before its project's later Afters, its folder
+/// not moved; its integration task back in INTEGRATION until After passes or fails again (AC-191). A human's key only.
+pub fn after_again(tx: &Transaction, id: i64, at: i64) -> Result<String, String> {
+    let b = deciding(tx, id)?;
+    if b.state != bs::AFTER_FAILED {
+        return Err(format!("Batch {} is {}: After again is for a batch whose After failed.", b.number, b.state));
+    }
+    let who = ops::user_name(tx, HUMAN)?;
+    bs::after_again(tx, &b, &format!("After runs again, by {who}"))?;
+    if let Some(task) = bs::task_of(tx, &b)? {
+        ops::comment(tx, HUMAN, &task, &format!("After runs again for batch {}, by {who}.", b.number), at)?;
+    }
+    bs::back_to_work(tx, &b, at)?;
+    Ok(format!("Batch {}'s After runs again.", b.number))
+}
+
 /// The keys a human has on batch `b` in its state, as its integration task's window and its group's cards show them (AC-193).
 pub fn keys_of(b: &Batch) -> &'static [&'static str] {
     match b.state.as_str() {
         "red" => &["check-again", "return", "return-all"],
         "not published" => &["publish-again", "return", "return-all"],
-        "after failed" => &["close"],
+        "after failed" => &["after-again", "close"],
         _ => &[],
     }
 }
@@ -141,6 +157,7 @@ async fn pressed(State(app): State<Shared>, Path((id, key)): Path<(i64, String)>
         "return" => return_one(tx, id, body["task"].as_str().unwrap_or_default(), body["why"].as_str().unwrap_or_default(), at),
         "check-again" => check_again(tx, id, at),
         "publish-again" => publish_again(tx, id, at),
+        "after-again" => after_again(tx, id, at),
         "close" => close(tx, id, body["why"].as_str().unwrap_or_default(), at),
         other => Err(format!("No key {other}.")),
     }).await;

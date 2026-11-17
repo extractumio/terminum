@@ -318,7 +318,70 @@ fn ac191_a_failed_after_asks_with_its_last_rows_what_is_held_and_what_close_does
     let asked = said(&w, &first);
     assert!(asked.contains("After failed for batch 1 with status 2: make: *** [install] Error 1. The batch stays published and its tasks DONE. \
                             Held until this task ends: api's next batches are not built, and the After of every batch published after it waits. \
-                            Mend the cause, do After's work by hand where it is needed, then press Close… on this task: api's batches and later Afters go on. Its log: "), "{asked}");
+                            Mend the cause, then press After again to run After once more, or do its work by hand and press Close…: api's batches and later Afters go on. Its log: "), "{asked}");
+}
+
+/// Batch 1 published with an After that fails while `../broken` stands, ends 75 while `../wait` stands.
+fn after_failed(name: &str) -> (World, Sh, Batch) {
+    let line = format!("if [ -f ../broken ]; then echo 'disk full'; exit 2; fi; {WAITS}");
+    let w = world(name, Settings { after: line, ..settings() });
+    std::fs::write(w.root.join("broken"), "").unwrap();
+    let r = Sh::default();
+    queued(&w, 1, "b.txt", "b\n");
+    let first = until(&w, &r, 1, "after failed", false);
+    std::fs::remove_file(w.root.join("broken")).unwrap();
+    (w, r, first)
+}
+
+fn again(w: &World, b: &Batch) -> Result<String, String> {
+    w.s.with(|tx| crate::integrate::keys::after_again(tx, b.id, 200))
+}
+
+#[test]
+fn ac191_after_again_green_ends_the_batch_s_task_without_a_close() {
+    let (w, r, first) = after_failed("it-again");
+    let i = i_of(&w, &first);
+    assert_eq!(crate::integrate::keys::keys_of(&first), ["after-again", "close"]);
+    assert_eq!(again(&w, &first).unwrap(), "Batch 1's After runs again.");
+    assert_eq!(status(&w, &i), "INTEGRATION", "terminumd's work again");
+    let b = queued(&w, 2, "c.txt", "c\n");
+    go(&w, &r, 3);
+    assert_eq!(nth(&w, 1).state, "ended", "run once more at the tail's next turn, no pause");
+    assert_eq!(status(&w, &i), "DONE");
+    until(&w, &r, 2, "ended", false);
+    assert_eq!(status(&w, &b), "DONE", "the project's queue goes on");
+    assert_eq!(afters(&r), ["batch-1.1.after", "batch-1.1.after", "batch-2.1.after"]);
+    let words = said(&w, &first);
+    assert!(words.contains("After runs again for batch 1, by ") && words.contains("After passed for batch 1 when run again."), "{words}");
+}
+
+#[test]
+fn ac191_after_again_red_asks_again_and_waiting_stays_in_integration() {
+    let (w, r, first) = after_failed("it-again-red");
+    let i = i_of(&w, &first);
+    std::fs::write(w.root.join("broken"), "").unwrap();
+    again(&w, &first).unwrap();
+    let red = until(&w, &r, 1, "after failed", false);
+    assert_eq!((red.why.as_deref(), status(&w, &i)), (Some("status 2: disk full"), "WAIT FOR HUMAN".to_string()));
+    assert_eq!(said(&w, &red).matches("After failed for batch 1 with status 2: disk full.").count(), 2, "each failure kept");
+    std::fs::remove_file(w.root.join("broken")).unwrap();
+    std::fs::write(w.root.join("wait"), "").unwrap();
+    again(&w, &red).unwrap();
+    go(&w, &r, 3);
+    let waits = nth(&w, 1);
+    assert_eq!((waits.why.as_deref(), status(&w, &i)), (Some(WAIT_WORDS), "INTEGRATION".to_string()));
+    assert_eq!(again(&w, &waits).unwrap_err(), "Batch 1 is after waits: nothing to decide now.");
+    std::fs::remove_file(w.root.join("wait")).unwrap();
+    at(&w, &r, waits.step_started.unwrap() + 300);
+    assert_eq!((nth(&w, 1).state.as_str(), status(&w, &i)), ("ended", "DONE".to_string()));
+}
+
+#[test]
+fn ac191_after_again_is_refused_for_a_red_batch() {
+    let w = world("it-again-refused", Settings { check: "exit 3".into(), ..settings() });
+    queued(&w, 1, "b.txt", "b\n");
+    let red = until(&w, &Sh::default(), 1, "red", false);
+    assert_eq!(again(&w, &red).unwrap_err(), "Batch 1 is red: After again is for a batch whose After failed.");
 }
 
 #[test]

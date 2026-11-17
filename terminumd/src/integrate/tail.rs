@@ -76,7 +76,11 @@ fn last_rows(log: &Path) -> String {
 /// A published batch's After ended with `code` (AC-191): 0 its Cleanup follows; LATER it waits; else it failed.
 pub(super) fn ended(store: &Store, p: &Place, b: &bs::Batch, code: i32, log: &Path, now: i64) -> Result<(), String> {
     match code {
-        0 => store.with(|tx| { bs::set_pane(tx, b.id, None, now)?; bs::set_state(tx, b.id, after_after(&p.s), None, now) }),
+        0 => store.with(|tx| {
+            bs::set_pane(tx, b.id, None, now)?;
+            bs::set_state(tx, b.id, after_after(&p.s), None, now)?;
+            bs::after_passed(tx, b, now)
+        }),
         LATER if b.waits_since.is_some_and(|since| now - since >= WAIT_MOST_S) => failed(store, p, b, None, log, now),
         LATER => {
             let rows = last_rows(log);
@@ -106,8 +110,8 @@ fn failed(store: &Store, p: &Place, b: &bs::Batch, how: Option<&str>, log: &Path
     let why = format!("{}{said}", how.unwrap_or(&waited));
     let name = &p.name;
     let words = format!("{head}{said}. The batch stays published and its tasks DONE. Held until this task ends: {name}'s next batches are not built, \
-                         and the After of every batch published after it waits. Mend the cause, do After's work by hand where it is needed, then press \
-                         Close… on this task: {name}'s batches and later Afters go on. Its log: {}", log.display());
+                         and the After of every batch published after it waits. Mend the cause, then press After again to run After once more, or do \
+                         its work by hand and press Close…: {name}'s batches and later Afters go on. Its log: {}", log.display());
     store.with(|tx| {
         bs::set_pane(tx, b.id, None, now)?;
         bs::set_state(tx, b.id, bs::AFTER_FAILED, Some(&why), now)?;

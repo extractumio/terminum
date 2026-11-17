@@ -7,7 +7,7 @@ import { el } from "./listparts.js";
 import { api, button, row, showError } from "./kanbanutil.js";
 import { sessionUrl } from "./tasklink.js";
 
-const BATCH_WORDS = { "check-again": "Check again", "publish-again": "Publish again", "return-all": "Return all", close: "Close…" };
+const BATCH_WORDS = { "check-again": "Check again", "publish-again": "Publish again", "after-again": "After again", "return-all": "Return all", close: "Close…" };
 /** A human's key on batch `id` (its store ID); answers terminumd's words for what it did, or throws its refusal. */
 export const pressBatch = async (id, key, body) => (await api(`/api/integration/batch/${id}/${key}`, { method: "POST", body: body ?? {} })).said;
 
