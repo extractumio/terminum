@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 //! RUN's routes (`terminum-dispatcher.md` AC-121, AC-122): what its dialog offers, and the press.
 
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use axum::extract::{Path, State};
@@ -38,8 +39,9 @@ pub fn routes() -> Router<Shared> {
 /// What RUN's dialog shows (AC-121, AC-138): the tasks' project's pool, each saying what keeps it busy; an agent named that cannot
 /// take them is refused here, so the window never offers another under its name. `no_folder`: nothing can start (AC-140).
 async fn offer(State(app): State<Shared>, Path(id): Path<String>, axum::extract::Query(asked): axum::extract::Query<Asked>) -> Response {
+    let open = open_panes(&app);
     answer(store(&app, move |tx| {
-        let (tasks, w, moved_from) = ways(tx, &id, &also_of(&asked.also), asked.agent.as_deref(), false)?;
+        let (tasks, w, moved_from) = ways(tx, &id, &also_of(&asked.also), asked.agent.as_deref(), false, &open)?;
         let w = w?;
         let t = &tasks[0];
         let (name, host, dir) = ops::project_place(tx, &t.project)?;
@@ -242,6 +244,11 @@ pub(crate) async fn press_by_manager(app: &Shared, id: &str, user: &str, agent: 
     pressed(app, id, Press { agent, comment, fresh, queue, manager: Some(user.to_string()), ..Default::default() }).await
 }
 
+/// The panes the session list shows: a task's session gone from it reads "session closed" (AC-113).
+fn open_panes(app: &Shared) -> HashSet<String> {
+    crate::page::marks::layout_rows(&app.layout.read()).filter_map(|r| r["id"].as_str().map(str::to_string)).collect()
+}
+
 /// Where a run's pane is.
 fn pane_of(app: &Shared, r: &Run) -> Result<(Arc<Server>, String), String> {
     r.place(app).ok_or_else(|| "Its session is gone.".to_string())
@@ -253,9 +260,9 @@ async fn pressed(app: &Shared, id: &str, body: Press) -> Result<Value, String> {
         return Err("The message has control or invisible characters.".to_string());
     }
     let (wanted, said, attached, fresh, also, agent) = (id.to_string(), comment.clone(), body.files.clone(), body.fresh, body.also.clone(), body.agent.clone());
-    let (kept, by) = (body.clone(), body.clone());
+    let (kept, by, open) = (body.clone(), body.clone(), open_panes(app));
     let (tasks, w, again) = store(app, move |tx| {
-        let (tasks, w, _) = ways(tx, &wanted, &also, agent.as_deref(), fresh)?;
+        let (tasks, w, _) = ways(tx, &wanted, &also, agent.as_deref(), fresh, &open)?;
         // a run that starts keeps its comment with it, in the transaction that adds it; going on, or refused, it stays, once
         if !matches!(w, Ok(Way::First)) && let Some(c) = &said {
             by.keep_on(tx, &tasks, c, &attached)?;
@@ -356,11 +363,11 @@ async fn first_run(app: &Shared, tasks: &[Task], body: Press, kept: Press, comme
     if let Some(holder) = &body.close {
         close_idle(app, holder, &tasks.iter().map(|t| t.id.as_str()).collect::<Vec<_>>().join(", ")).await?;
     }
-    let (ag, f, project) = (a.clone(), dir.clone(), t.project.clone());
+    let (ag, f, project, open) = (a.clone(), dir.clone(), t.project.clone(), open_panes(app));
     let next = store(app, move |tx| {
         let now: Vec<Task> = all.iter().map(|t| ops::get(tx, &t.id)).collect::<Result<_, _>>()?;
         for t in &now {
-            way(t, runs::last_of(tx, &t.key)?, true)?;
+            way(t, runs::last_of(tx, &t.key)?, true, &open)?;
         }
         let goes = kept.first_words(tx, &now)?;
         // the one check that counts: in the transaction that takes the slots; a press that closed a holder

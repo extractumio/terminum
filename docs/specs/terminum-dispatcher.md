@@ -134,7 +134,7 @@ Scenario: AC-121 edge — where it opens
   And where is the project's alone (AC-140)
 
 Scenario: AC-121 edge — a linked session
-  Given API-12 linked to a session Dispatcher did not start
+  Given API-12 linked to a live session Dispatcher did not start (a closed one holds nothing: terminum-kanban.md AC-113)
   When the user presses Run
   Then Dispatcher starts nothing and RUN says "Unlink the session to run it"
 
@@ -1597,7 +1597,7 @@ Scenario: AC-185 edge — what runs alone
   Then it runs alone, in its schedule's words (terminum-schedules.md AC-162)
 
 Scenario: AC-185 failure — a subtask held elsewhere
-  Given API-14, a subtask of API-12, IN PROGRESS in another run, or linked to a session Dispatcher did not start
+  Given API-14, a subtask of API-12, IN PROGRESS in another run, or linked to a live session Dispatcher did not start
   When the user presses Run on API-12
   Then nothing starts and RUN says "API-14, a subtask of API-12: API-14 is in progress by Dispatcher." or "API-14, a subtask of API-12: Unlink the session to run it"
 ```
