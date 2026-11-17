@@ -871,9 +871,9 @@ Scenario Outline: AC-146 edge — a task's timed checks
     | the load average is over the limit      |
 
 Scenario: AC-146 edge — a task's timed checks beside a full run
-  Given a release's or a rehearsal's full run holds its turn (about 70 minutes)
+  Given a full run (a release's, a rehearsal's or a hand-run `make check`) holds its turn (about 70 minutes)
   When a task's targeted checks, or a queued task's Verify, reach their first timed step
-  Then they wait for nothing: each timed step prints "SKIP page: a full run holds the machine (a release's or a rehearsal's)" and the last line, red, is "targeted: SKIPPED timed checks, a full run held the machine: page e2e_hooks", said again as above
+  Then they wait for nothing: each timed step prints "SKIP page: a full run holds the machine" and the last line, red, is "targeted: SKIPPED timed checks, a full run held the machine: page e2e_hooks", said again as above
   And their other steps run, a cargo step under nice while a release runs (AC-104)
   When that release has ended its full run and runs the Mac test runner's checks or its build, holding no full run's turn
   Then a task's timed checks wait for a quiet machine as above: the release's mark alone holds nothing back
