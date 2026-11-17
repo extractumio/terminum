@@ -256,7 +256,8 @@ def main():
         own = subprocess.run([e2e_ws.BIN, "--agent-id"], capture_output=True, text=True).stdout.strip()
         th = on_host("readlink $HOME/.terminum/bin/terminum-host").strip()
         check(f"[{v}] AC-99 ~/.terminum/bin/terminum-host is the helper", th.endswith(f"terminumd-agent-{own}") or th == "terminumd-agent", th)
-        links = run_links()
+        # the host's socket and its link come a moment after the state says up, later on a slow container
+        links = wait_for(run_links, lambda v: any(line.startswith("mac-") for line in v.splitlines()[1:]), seconds=15, every=0.5, last=True)
         rows = dict(line.split(" ", 1) for line in links.splitlines()[1:] if " " in line)
         mac = [k for k in rows if k.startswith("mac-")]
         check(f"[{v}] AC-99 ~/.terminum/run is 0700 with mac-<id>.sock → its m-<id>-*.sock", links.splitlines()[:1] == ["700"] and len(mac) == 1

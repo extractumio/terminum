@@ -45,6 +45,7 @@ fn ac193_each_state_in_words() {
     assert_eq!(words("checking", 2, None), "checking again, round 2");
     assert_eq!(words("rebuild", 1, None), "building");
     assert_eq!(words("publishing", 1, None), "publishing");
+    assert_eq!(words("published", 1, None), "published: After waits for its turn");
     assert_eq!(words("after", 1, None), "After runs");
     assert_eq!(words("not published", 1, Some("push refused")), "not published: push refused");
 }

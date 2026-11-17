@@ -48,7 +48,13 @@ def main():
     key = lambda pane: f"tmux:local:{SOCKET}:{pane}"   # noqa: E731
     try:
         t.start()
-        wait(lambda: "main" in tmux("ls", "-F", "#S").split(), 5)
+        # the server terminumd keeps: a first one can end as it starts (its shell gone at once, on a busy machine),
+        # and terminumd starts another; windows made on the first would name panes that never come back
+        def settled():
+            first = wait(lambda: "main" in tmux("ls", "-F", "#S").split() and tmux("show", "-sqv", "@terminum-id").strip(), 10)
+            time.sleep(2)
+            return first if first == tmux("show", "-sqv", "@terminum-id").strip() else None
+        check("AC-96 terminumd's tmux server stands", wait(settled, 20))
         api = tmux("new-window", "-t", "main:", "-n", "api", "-c", f"{work}/api", "-P", "-F", "#{pane_id}").strip()
         tmux("send-keys", "-t", api, "seq -f 'ended-%g' 1 400", "Enter")
         prog = tmux("new-window", "-t", "main:", "-n", "prog", "-P", "-F", "#{pane_id}").strip()

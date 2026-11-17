@@ -6,7 +6,7 @@
 // only where Files can show it.
 import fs from "node:fs";
 import path from "node:path";
-import { check } from "./check.mjs";
+import { check, slack } from "./check.mjs";
 
 const MR = "https://git.example/a/-/merge_requests/318";
 const LONG = Array.from({ length: 40 }, (_, i) => `part${i}`).join(" ");   // wider than the pane: tmux wraps it
@@ -103,7 +103,7 @@ async function liveFolderLink(page, { work, mod }) {
       const names = [...document.querySelectorAll("#tree .row")].map((e) => e.querySelector(".name")?.textContent ?? e.textContent);
       const sel = document.querySelector("#tree .row.sel");
       return sel && /ipad/.test(sel.textContent) && names.some((n) => /coach\.png/.test(n)) ? names : null;
-    }, null, { timeout: 1500 }).then((h) => h.jsonValue(), () => null);
+    }, null, { timeout: slack(8000) }).then((h) => h.jsonValue(), () => null);   // the listing comes late on a busy machine
     let shown = null;
     for (let i = 0; i < 15 && !shown; i++) {
       if (i) await page.waitForTimeout(400);       // the listing that makes it a link is on its way
