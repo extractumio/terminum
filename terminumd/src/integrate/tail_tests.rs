@@ -330,8 +330,8 @@ fn ac191_a_waiting_after_ends_without_after_once_integration_is_off_or_its_line_
         w.s.with(|tx| { let s = integration::read(tx, "api")?; integration::keep(tx, "api", &if off { Settings { on: false, ..s } } else { Settings { after: String::new(), ..s } }) }).unwrap();
         at(&w, &r, since + 300);
         let first = nth(&w, 1);
-        let why = if off { "integration was turned off for api" } else { "its After line was emptied while it waited" };
-        assert_eq!((first.state.as_str(), first.why.as_deref()), ("ended", Some(format!("After did not run for batch 1: {why}").as_str())));
+        let why = off.then_some("After did not run for batch 1: integration was turned off for api");
+        assert_eq!((first.state.as_str(), first.why.as_deref()), ("ended", why), "an emptied line: nothing runs after, as for any batch");
         assert_eq!(afters(&r).len(), 1, "not run again");
     }
 }

@@ -883,7 +883,7 @@ Retry diagnostics (AC-197) are read from the stage tree's `.checks/retried` befo
 | Verify | `python3 scripts/worktree.py link . && python3 scripts/land.py verify` |
 | Check | `python3 scripts/worktree.py link . && python3 scripts/land.py check` |
 | Publish | empty: terminum's push |
-| After | `python3 scripts/land.py after` (the install on the maintainer's machine, by `TM_LAND_INSTALL := 1` in `local.mk`, which it reads through `make land-install-wanted`; not `make land-after`: make turns its status 75 into 2) |
+| After | `python3 scripts/land.py after`; on the maintainer's machine `TM_LAND_INSTALL=1 python3 scripts/land.py after`, which installs; not `make land-after`: make turns its status 75 into 2 |
 | Cleanup | `make land-clean` (`worktree.py sweep`) |
 | Tasks in a batch, at most | 8 |
 | Check ends after, minutes | 90 |

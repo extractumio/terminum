@@ -753,7 +753,8 @@ Scenario: AC-104 edge — a release starts while an After installs
   Given the integration queue's After builds and installs in the primary checkout, holding the install turn
   When make release starts
   Then it says "release: an install runs in the primary checkout: waiting for its end" and waits for it
-  And then, in that turn, it brings a clean main behind origin/main up to it as make install does, saying "release: fast-forwarded main by 2 commits: 4f2a91c..9b7e0d3"; main moved, it says "release: main moved: make release starts again on it" and starts again, once, so no step runs code read before the move; on a main that did not move it writes its mark in that turn: from then on an After ends 75 until the release ends (`terminum-integration.md` AC-191)
+  And then, in that turn, it brings a clean main behind origin/main up to it as make install does, saying "release: fast-forwarded main by 2 commits: 4f2a91c..9b7e0d3"; the rest runs in a make of its own, which reads what landed, takes the turn again and writes its mark in it: from then on an After ends 75 until the release ends (`terminum-integration.md` AC-191)
+  And when an After moved main between the two, the release ends before any check: "release: main moved as the release started (an After installed): run make release again"
   And an install that waited for that turn finds the mark and installs nothing: "install: waits for a landing after the release"
   And a main it cannot move, behind with uncommitted changes or diverged, refuses the release with the reason before any check runs; a tag that exists already is released where it stands, main not moved
 

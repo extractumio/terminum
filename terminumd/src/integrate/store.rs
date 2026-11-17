@@ -92,14 +92,19 @@ fn first_in(tx: &Transaction, states: &[&str]) -> Result<Option<Batch>, String> 
     tx.query_row(&format!("{SELECT} WHERE state IN ({states}) ORDER BY id LIMIT 1"), [], of_row).optional().map_err(sql)
 }
 
+/// The project's oldest batch in `state`, if one.
+fn first_of(tx: &Transaction, project: &str, state: &str) -> Result<Option<Batch>, String> {
+    tx.query_row(&format!("{SELECT} WHERE project = ?1 AND state = ?2 ORDER BY id LIMIT 1"), [project, state], of_row).optional().map_err(sql)
+}
+
 /// The project's batch whose After waits, if one (AC-191).
 pub fn after_waiting(tx: &Transaction, project: &str) -> Result<Option<Batch>, String> {
-    tx.query_row(&format!("{SELECT} WHERE project = ?1 AND state = '{AFTER_WAITS}' ORDER BY id LIMIT 1"), [project], of_row).optional().map_err(sql)
+    first_of(tx, project, AFTER_WAITS)
 }
 
 /// The project's batch whose After failed, while a human has not closed it.
 pub fn after_failed(tx: &Transaction, project: &str) -> Result<Option<Batch>, String> {
-    tx.query_row(&format!("{SELECT} WHERE project = ?1 AND state = '{AFTER_FAILED}' ORDER BY id LIMIT 1"), [project], of_row).optional().map_err(sql)
+    first_of(tx, project, AFTER_FAILED)
 }
 
 /// The batch whose After's turn comes: the oldest published or waiting one of each project, whose later ones wait
@@ -119,7 +124,8 @@ pub fn next_after(tx: &Transaction, now: i64, pause: i64) -> Result<Option<Batch
     Ok(None)
 }
 
-/// Its After cannot run now: it waits with `why`, its last try ended `at` (`step_started`), its first wait kept.
+/// Its After cannot run now: it waits with `why`, its last try ended `at` (`step_started`), its first wait kept; by
+/// hand, not set_state and set_pane, which clear `step_started`.
 pub fn after_waits(tx: &Transaction, b: &Batch, why: &str, at: i64) -> Result<(), String> {
     tx.execute("UPDATE integration_batches SET state = ?2, why = ?3, pane = NULL, step_started = ?4, waits_since = coalesce(waits_since, ?4) WHERE id = ?1",
                rusqlite::params![b.id, AFTER_WAITS, why, at]).map(drop).map_err(sql)

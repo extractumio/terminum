@@ -42,7 +42,7 @@ export TM_BUILD_DATE := $(shell date +%Y-%m-%d)
 # which terminumd sources: an agent on a remote host works with this terminumd when the ids match
 export TM_AGENT_ID := $(shell python3 scripts/agents.py id)
 
-.PHONY: all build ui terminumd test check test-mac primary-checkout install install-stage installed hooks upgrade rollback uninstall package agents toolchain land leftovers release rehearse signing-key $(addprefix land-,$(LAND_STAGES))
+.PHONY: all build ui terminumd test check test-mac primary-checkout install install-stage installed hooks upgrade rollback uninstall package agents toolchain land leftovers release release-stage rehearse signing-key $(addprefix land-,$(LAND_STAGES))
 
 # this machine's platform (a Mac's own architecture, right under Rosetta too; or Linux's), the
 # package's terminumd for it
@@ -138,15 +138,16 @@ $(addprefix land-,$(LAND_STAGES)):
 # Cleanup's short name, as terminum's Integration tab calls it
 land-clean: land-cleanup
 
-# what land.py after reads when terminumd runs it without make, whose exit 2 would hide its 75 (AC-191)
-.PHONY: land-install-wanted
-land-install-wanted:
-	@echo "$(TM_LAND_INSTALL)"
-
 leftovers:
 	python3 scripts/leftovers.py $(if $(END),--end)
 
+# main brought up to origin/main first, the rest in a make of its own: this one's variables were read before it moved
 release:
+	@test -n "$(TAG)" || { echo "usage: make release TAG=v0.3.0"; exit 2; }
+	python3 scripts/release_turn.py --freshen "$(TAG)"
+	$(MAKE) --no-print-directory release-stage TAG="$(TAG)"
+
+release-stage:
 	@test -n "$(TAG)" || { echo "usage: make release TAG=v0.3.0"; exit 2; }
 	python3 scripts/release_turn.py "$(TAG)"
 
