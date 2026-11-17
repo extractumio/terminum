@@ -27,7 +27,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from check_changed import is_doc, late_notes, red, tree_id  # noqa: E402
 import heavy_slots  # noqa: E402
-from worktree import common_dir, fetched, primary_of, Refused, releasing, Turn as TreeTurn  # noqa: E402
+from worktree import common_dir, fetched, INSTALL_TURN, primary_of, Refused, releasing, Turn as TreeTurn  # noqa: E402
 
 BASE = "origin/main"
 LAND_TURN = "terminum-land.turn"
@@ -314,35 +314,48 @@ def make(primary, target):
     return subprocess.run(["make", target], cwd=primary, capture_output=True, text=True)
 
 
-def install_pending(primary, run=make, say=print):
+def install_pending(primary, run=make, say=print, held=False):
     """After a landing, landed or not: one install for all code landed since the last, by the landing that finds
-    the turn free; one that finds another landing in it leaves the install to it, which comes here after."""
+    the turn free; one that finds another landing in it leaves the install to it, which comes here after. `held`: the
+    caller holds the install turn (land_stages.after). Returns why it cannot run now (a landing's turn, a release),
+    else None."""
     mark = install_mark(primary)
     if not mark.exists():
-        return
+        return None
     with TreeTurn(primary, LAND_TURN) as turn:
         if not turn.take():
             say(f"install: left to {turn.holder()}'s landing, which has the turn")
-            return
+            return "a landing holds its turn"
     if releasing(primary):
         say("install: waits for a landing after the release: the primary checkout stays where it is")
-        return
-    with TreeTurn(primary, "terminum-install.turn") as turn:
-        turn.take(wait=True)   # a landing that ended meanwhile may install too: one after the other
+        return "a release is running"
+    with TreeTurn(primary, INSTALL_TURN) as turn:
+        if not held:
+            turn.take(wait=True)   # a landing that ended meanwhile may install too: one after the other
         try:
             wanted = mark.read_text()
         except FileNotFoundError:
-            return   # installed by that one
+            return None   # installed by that one
         # the primary checkout is moved only in the turn (after_push), never beside another landing's merge
         if git("merge-base", "--is-ancestor", wanted.strip(), "HEAD", cwd=primary, check=False).returncode:
             say("install: none, the primary checkout is not on what landed: the next landing tries again")
-            return
+            return None
         with heavy_slots.slot(primary, "install", say=say):   # the release build: the heaviest of all
             installed = install_steps(primary, run, say)
         if not installed:
             say("install: the next landing tries again")
         elif mark.read_text() == wanted:
             mark.unlink()   # a later landing's mark stays for it
+    return None
+
+
+def install_wanted(primary, env=os.environ):
+    """Whether this machine's landings install (TM_LAND_INSTALL=1, the maintainer's local.mk): from the environment
+    make gives, else asked of make, for a line that runs without it so its status 75 reaches terminumd (AC-191)."""
+    if "TM_LAND_INSTALL" in env:
+        return env["TM_LAND_INSTALL"] == "1"
+    done = subprocess.run(["make", "-s", "--no-print-directory", "land-install-wanted"], cwd=primary, capture_output=True, text=True)
+    return done.returncode == 0 and done.stdout.strip() == "1"
 
 
 def install_steps(primary, run, say):

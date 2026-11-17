@@ -749,6 +749,13 @@ Scenario Outline: AC-104 edge — the Mac test runner could not run them
     | it runs for over an hour (it gets SIGTERM)           | it took over 60 minutes                 |
     | no TM_MAC_RUNNER                                     | no TM_MAC_RUNNER                        |
 
+Scenario: AC-104 edge — a release starts while an After installs
+  Given the integration queue's After builds and installs in the primary checkout, holding the install turn
+  When make release starts
+  Then it says "release: an install runs in the primary checkout: waiting for its end" and waits for it
+  And then, in that turn, it brings a clean main behind origin/main up to it as make install does, saying "release: fast-forwarded main by 2 commits: 4f2a91c..9b7e0d3", and writes its mark: from then on an After ends 75 until the release ends (`terminum-integration.md` AC-191)
+  And a main it cannot move, behind with uncommitted changes or diverged, refuses the release with the reason before any check runs
+
 Scenario: AC-104 failure — a commit the checks did not see
   Given make release's checks ran on 4f2a91c07
   When HEAD is another commit as it starts to build

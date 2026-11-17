@@ -32,8 +32,40 @@ class Turn:
         pass
 
 
+class InstallTurn:
+    """The install turn (scripts/tests/test_land_stages.py has the real one): held by another until waited for."""
+    def __init__(self, test):
+        self.test = test
+
+    def __call__(self, repo, name):
+        self.test.assertEqual(name, release_turn.INSTALL_TURN)
+        return self
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        self.test.turn_log.append("free")
+
+    def take(self, wait=False):
+        self.test.turn_log.append(f"take wait={wait}")
+        return wait or not self.test.install_held
+
+
 class Chain(unittest.TestCase):
     def setUp(self):
+        # never the real repository's turn, fetch or main: every test here, even one that calls main() itself
+        self.turn_log, self.install_held, self.fresh = [], False, ["fast-forwarded main by 2 commits: 4f2a91c..9b7e0d3"]
+        self.freshened = []
+        def freshen(repo):
+            self.freshened.append(self.mark.exists())
+            if isinstance(self.fresh, Exception):
+                raise self.fresh
+            return self.fresh
+        for target, value in ((release_turn, {"Turn": InstallTurn(self)}), (release_turn.worktree_fresh, {"freshen": freshen})):
+            patch = mock.patch.multiple(target, **value)
+            patch.start()
+            self.addCleanup(patch.stop)
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         self.mark = Path(tmp.name) / "mark"
@@ -77,6 +109,28 @@ class Chain(unittest.TestCase):
         self.assertTrue(self.marked_during)
         self.assertFalse(self.mark.exists())
         self.notes.assert_called_once()
+
+    def test_a_release_waits_for_an_install_then_brings_main_up_and_marks_in_that_turn(self):  # AC-104
+        self.install_held = True
+        with mock.patch("builtins.print") as said:
+            self.assertEqual(self.run_chain(["v1.0.0"]), 0)
+        lines = [c.args[0] for c in said.call_args_list]
+        self.assertEqual(lines[:2], ["release: an install runs in the primary checkout: waiting for its end",
+                                     "release: fast-forwarded main by 2 commits: 4f2a91c..9b7e0d3"])
+        self.assertEqual(self.turn_log, ["take wait=False", "take wait=True", "free"])
+        self.assertEqual(self.freshened, [False], "main brought up before the mark")
+        self.assertTrue(self.marked_during)
+
+    def test_a_main_that_cannot_move_refuses_the_release_before_any_check(self):  # AC-104
+        self.fresh = release_turn.Refused("make install: main and origin/main have diverged (1 and 2 commits)")
+        with self.assertRaisesRegex(SystemExit, "release: main cannot be brought up to origin/main: .*diverged"):
+            self.run_chain(["v1.0.0"])
+        self.assertEqual((self.calls, self.released), ([], []))
+        self.assertFalse(self.mark.exists())
+
+    def test_a_rehearsal_takes_no_install_turn_and_moves_no_main(self):  # AC-104
+        self.assertEqual(self.run_chain(["--rehearse", "v1.0.0"]), 0)
+        self.assertEqual((self.turn_log, self.freshened), ([], []))
 
     def test_a_busy_build_server_ends_the_release_before_any_test(self):  # AC-146
         self.busy = "load 31 over 8"

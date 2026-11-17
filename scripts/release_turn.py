@@ -6,7 +6,9 @@ a tree changing under it. Failing tests, here or on the Mac test runner, are wha
 problem clearing leftovers, or a runner that could not run them, is said. The full run starts on a quiet
 machine, one at a time (scripts/load_gate.py, AC-146); still busy after 15 minutes, the release ends
 before any test. `--rehearse` (`make rehearse`) runs the same chain with no mark and stops before
-anything is signed or public."""
+anything is signed or public. A release starts on what landed: an After or install in the primary checkout ends
+first, a clean main is brought up to origin/main, then the mark is written in the install turn, so the integration
+queue's Afters wait from there on (spec AC-104, terminum-integration.md AC-191)."""
 import os
 from pathlib import Path
 import re
@@ -18,7 +20,8 @@ import time
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import load_gate  # noqa: E402
 import release  # noqa: E402
-from worktree import mark_path, primary_of, releasing  # noqa: E402
+from worktree import INSTALL_TURN, mark_path, primary_of, Refused, releasing, Turn  # noqa: E402
+import worktree_fresh  # noqa: E402
 
 MAC_CAP_S = 3600   # a runner gone quiet must not hold a release
 BUSY_WAIT_S, BUSY_RETRY_S = 1800, 60
@@ -70,6 +73,29 @@ def chain(repo, tag, rehearsing):
     return 0
 
 
+def say_now(words):
+    print(words, flush=True)   # make's log is a file: a wait is seen while it waits
+
+
+def start(repo, tag, say=say_now):
+    """The mark written, in the install turn, once an After or install there ended and a clean main is on
+    origin/main as make install brings it; a main that cannot move refuses the release before any check."""
+    with Turn(repo, INSTALL_TURN) as turn:
+        if not turn.take():
+            say("release: an install runs in the primary checkout: waiting for its end")
+            turn.take(wait=True)
+        try:
+            for line in worktree_fresh.freshen(repo):
+                say(f"release: {line}")
+        except Refused as refused:
+            sys.exit(f"release: main cannot be brought up to origin/main: {refused}")
+        release.check_source(tag)
+        release.release_notes(tag)
+        mark = mark_path(repo)
+        mark.write_text(f"{os.getpid()}\n")
+    return mark
+
+
 def main(argv):
     rehearsing = argv[:1] == ["--rehearse"]
     if len(argv) != 1 + rehearsing or not re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+", argv[-1]):
@@ -82,12 +108,10 @@ def main(argv):
         if releasing(repo):
             sys.exit("a release is running: rehearse after it")
     release.check_settings()   # before the long run: none of these is any test's fault
-    release.check_source(tag)
     if rehearsing:
+        release.check_source(tag)
         return chain(repo, tag, True)
-    release.release_notes(tag)
-    mark = mark_path(repo)
-    mark.write_text(f"{os.getpid()}\n")
+    mark = start(repo, tag)
     try:
         return chain(repo, tag, False)
     finally:

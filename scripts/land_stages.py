@@ -15,7 +15,7 @@ holds Prepare, Check and Publish in the landing turn.
   land.py cleanup            landed trees removed by worktree.py sweep, never one with work or a process in it
 
 With no <slug> a stage runs in the folder it is started in (terminumd's own trees). Exit: 0 done; 1 failed or
-refused; 2 a conflict left in the tree."""
+refused; 2 a conflict left in the tree; 75 (After) it cannot run now, terminumd's queue runs it again (AC-191)."""
 import json
 import os
 from pathlib import Path
@@ -26,6 +26,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import land  # noqa: E402
 from land import Stop, git  # noqa: E402
+from worktree import INSTALL_TURN, Turn  # noqa: E402
 
 STAGES = ("prepare", "verify", "queue", "check", "publish", "after", "cleanup")
 
@@ -97,25 +98,39 @@ def queue(tree, task=None, result=None, on=integration_on, run=None, say=print):
     return (run or subprocess.run)(argv, cwd=tree).returncode
 
 
+# EX_TEMPFAIL: the stage cannot run now; terminumd's queue runs it again after a pause (AC-191)
+LATER = 75
+
+
 def after(primary, run=land.make, env=os.environ, say=print):
     """Stage 6: the primary checkout on the fresh target; on the maintainer's machine (TM_LAND_INSTALL=1) this build
-    installed, by the landings' own install (its turn, its heavy-build slot, its guard that the checkout is on what
-    landed). Done when the checkout follows and `make installed` says this build runs."""
-    if land.releasing(primary):
-        raise Stop(1, "after: a release is running: the primary checkout stays where it is")
-    stuck = land.update_primary(primary)
-    if stuck:
-        raise Stop(1, f"after: the primary checkout stays where it is: {stuck}")
-    if env.get("TM_LAND_INSTALL") != "1":
-        say("after: the primary checkout follows; no install here (TM_LAND_INSTALL is not 1)")
-        return
-    if run(primary, "installed").returncode == 0:
-        say("after: this build is installed already")
-        return
-    land.install_mark(primary).write_text(land.head(primary))
-    land.install_pending(primary, run=run, say=say)
-    if land.install_mark(primary).exists():
-        raise Stop(1, "after: the install did not run: see above")
+    installed, by the landings' own install (its heavy-build slot, its guard that the checkout is on what landed).
+    Done when the checkout follows and `make installed` says this build runs. It cannot run now, and moves nothing,
+    while a release runs or another install or a landing holds its turn: LATER. It holds the install turn throughout,
+    so a release starts only between two Afters (release_turn.py)."""
+    with Turn(primary, INSTALL_TURN) as turn:
+        if not turn.take():
+            raise Stop(LATER, "after: an install runs in the primary checkout: waits for its end")
+        if land.releasing(primary):
+            raise Stop(LATER, "after: a release is running: waits for its end")
+        with Turn(primary, land.LAND_TURN) as landing:   # a look: the install looks again
+            if not landing.take():
+                raise Stop(LATER, "after: a landing holds its turn: waits for its end")
+        stuck = land.update_primary(primary)
+        if stuck:
+            raise Stop(1, f"after: the primary checkout stays where it is: {stuck}")
+        if not land.install_wanted(primary, env):
+            say("after: the primary checkout follows; no install here (TM_LAND_INSTALL is not 1)")
+            return
+        if run(primary, "installed").returncode == 0:
+            say("after: this build is installed already")
+            return
+        land.install_mark(primary).write_text(land.head(primary))
+        busy = land.install_pending(primary, run=run, say=say, held=True)
+        if busy:
+            raise Stop(LATER, f"after: {busy}: waits for its end")
+        if land.install_mark(primary).exists():
+            raise Stop(1, "after: the install did not run: see above")
 
 
 def cleanup(primary, run=None):

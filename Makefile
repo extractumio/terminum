@@ -138,6 +138,11 @@ $(addprefix land-,$(LAND_STAGES)):
 # Cleanup's short name, as terminum's Integration tab calls it
 land-clean: land-cleanup
 
+# what land.py after reads when terminumd runs it without make, whose exit 2 would hide its 75 (AC-191)
+.PHONY: land-install-wanted
+land-install-wanted:
+	@echo "$(TM_LAND_INSTALL)"
+
 leftovers:
 	python3 scripts/leftovers.py $(if $(END),--end)
 
