@@ -119,23 +119,9 @@ class Turn:
             return unknown
 
 
-# held by an install in the primary checkout (land.py install_pending), by a queue's After from its first look to
-# its install's end, and by a release while it writes its mark (release_turn.py)
+# held by an install in the primary checkout (land.py install_pending) and by a queue's After from its first look to
+# its install's end
 INSTALL_TURN = "terminum-install.turn"
-
-
-def mark_path(cwd):
-    """The file a running release holds (scripts/release_turn.py): landings and installs leave main alone."""
-    return common_dir(cwd) / "terminum-release"
-
-
-def releasing(cwd):
-    """True while a release of this repository runs: its mark names a live process."""
-    try:
-        os.kill(int(mark_path(cwd).read_text().strip()), 0)
-    except (OSError, ValueError):
-        return False
-    return True
 
 
 def ours(cwd):

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 """Runs one check with its own short TMPDIR and TMUX_TMPDIR and fails if it leaves anything there
-(spec AC-102): check_all.sh's guard, so a test's leftover fails the run with no false alarm from
+(spec AC-102): check_all.py's guard, so a test's leftover fails the run with no false alarm from
 another session's. A leftover is a file in the folder, or a process of the check's process group
 or working in that folder. Process environments are never queried.
 Whatever is left is named, and goes: by its pid, the folder on every exit.

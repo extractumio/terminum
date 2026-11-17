@@ -10,14 +10,17 @@
 #   make toolchain  the pinned cross toolchain (zig, cargo-zigbuild) for the Linux builds
 #   make agents     terminumd for the four platforms (AC-86)
 #   make package    the release package in dist/package (tarball, install.sh, SHA256SUMS)
-#   make release TAG=vX.Y.Z   tag HEAD, build, sign (key via ssh-agent and the Keychain) and
-#                   publish; only when the maintainer asks for it (CLAUDE.md §10)
-#   make rehearse TAG=vX.Y.Z  what make release does up to the built package: no release key, nothing public
+#   make release TAG=vX.Y.Z [PIN=<commit>]   in .worktrees/release, detached at the pinned commit (default: the newest
+#                   that passed the full run, or differs from it in docs only): its full run, build, sign (key via
+#                   ssh-agent and the Keychain), tag and publish; only when the maintainer asks for it (CLAUDE.md §10)
+#   make rehearse TAG=vX.Y.Z [PIN=<commit>]  the same in .worktrees/rehearse (default pin: origin/main) up to the
+#                   built package: no release key, nothing public; the nightly full run
 #   make land SLUG=x  a worktree merged, its smoke set (and its targeted checks if not passed), pushed, the checkout updated, the tree deleted
 #   make leftovers  what old test runs left (AC-102); END=1 removes it, as make release does first
 #   make signing-key       the maintainer's release key (once)
 #   make test       unit tests (Rust, scripts, UI, page)
-#   make check      the full run, the release's gate, once per tree, on a quiet machine (scripts/check_all.sh; --force: CHECK_ARGS=--force)
+#   make check      the full run, the release's gate, a pass per step and content, on a quiet machine
+#                   (scripts/check_all.py; CHECK_ARGS=--force runs every step, CHECK_ARGS=--timing judges the budgets)
 #   make test-mac   the macOS checks on the LAN's Mac test runner over ssh (scripts/ci_mac.sh)
 #   make installed  whether the running terminumd is this tree's build (exit 1 if another)
 #   make hooks      the git hooks of scripts/hooks (security_check before a commit and on its message)
@@ -42,7 +45,7 @@ export TM_BUILD_DATE := $(shell date +%Y-%m-%d)
 # which terminumd sources: an agent on a remote host works with this terminumd when the ids match
 export TM_AGENT_ID := $(shell python3 scripts/agents.py id)
 
-.PHONY: all build ui terminumd test check test-mac primary-checkout install install-stage installed hooks upgrade rollback uninstall package agents toolchain land leftovers release release-stage rehearse signing-key $(addprefix land-,$(LAND_STAGES))
+.PHONY: all build ui terminumd test check test-mac primary-checkout install install-stage installed hooks upgrade rollback uninstall package agents toolchain land leftovers release rehearse release-here rehearse-here signing-key $(addprefix land-,$(LAND_STAGES))
 
 # this machine's platform (a Mac's own architecture, right under Rosetta too; or Linux's), the
 # package's terminumd for it
@@ -73,7 +76,7 @@ test: ui
 	node --test web/test/*.test.mjs
 
 check:
-	bash scripts/check_all.sh $(CHECK_ARGS)
+	python3 scripts/check_all.py $(CHECK_ARGS)
 
 test-mac:
 	bash scripts/ci_mac.sh
@@ -141,20 +144,22 @@ land-clean: land-cleanup
 leftovers:
 	python3 scripts/leftovers.py $(if $(END),--end)
 
-# main brought up to origin/main first, the rest in a make of its own: this one's variables were read before it moved
+# from any checkout: a commit pinned and a tree of its own at it, where the pinned code runs the rest (release-here)
 release:
-	@test -n "$(TAG)" || { echo "usage: make release TAG=v0.3.0"; exit 2; }
-	python3 scripts/release_turn.py --freshen "$(TAG)"
-	$(MAKE) --no-print-directory release-stage TAG="$(TAG)"
-
-release-stage:
-	@test -n "$(TAG)" || { echo "usage: make release TAG=v0.3.0"; exit 2; }
-	python3 scripts/release_turn.py "$(TAG)"
+	@test -n "$(TAG)" || { echo "usage: make release TAG=v0.3.0 [PIN=<commit>]"; exit 2; }
+	python3 scripts/release_turn.py $(if $(PIN),--pin "$(PIN)") "$(TAG)"
 
 # its own target, no variable of release's: a mistyped variable would publish
 rehearse:
-	@test -n "$(TAG)" || { echo "usage: make rehearse TAG=v0.3.0"; exit 2; }
-	python3 scripts/release_turn.py --rehearse "$(TAG)"
+	@test -n "$(TAG)" || { echo "usage: make rehearse TAG=v0.3.0 [PIN=<commit>]"; exit 2; }
+	python3 scripts/release_turn.py --rehearse $(if $(PIN),--pin "$(PIN)") "$(TAG)"
+
+# in the pinned tree only (release_turn.py refuses elsewhere): this tree's local.mk gives the signing identity
+release-here:
+	python3 scripts/release_turn.py --here "$(TAG)"
+
+rehearse-here:
+	python3 scripts/release_turn.py --here --rehearse "$(TAG)"
 
 # the maintainer's release key, once (run it in your own terminal: it asks for a passphrase)
 signing-key:

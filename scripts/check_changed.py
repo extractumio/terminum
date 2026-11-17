@@ -14,7 +14,7 @@ basics on one platform, no timed check. The full run is the release's gate, not 
 
   check_changed.py [--print] [--force] [--base <ref>]   default origin/main; --print only says the plan
   check_changed.py --land | --passed | --tree-id        the smoke set; 0 if this content passed; its id
-Each step's output goes to .checks/changed.<step>.log, one line here, as scripts/check_all.sh does."""
+Each step's output goes to .checks/changed.<step>.log, one line here, as scripts/check_all.py does."""
 import argparse
 import ast
 from contextlib import nullcontext
@@ -34,8 +34,8 @@ import live_slots  # noqa: E402
 from check_logs import bounded_log, preserve_attempt, tail as log_tail
 from check_cancel import run_guard  # noqa: E402
 from check_step import LEFT  # noqa: E402
-from load_gate import for_task  # noqa: E402
-from worktree import common_dir, Refused, releasing  # noqa: E402
+from load_gate import for_task, full_run_held  # noqa: E402
+from worktree import common_dir, Refused  # noqa: E402
 from worktree_fresh import PIPELINE  # noqa: E402
 
 REPO = Path(__file__).resolve().parent.parent
@@ -333,7 +333,7 @@ def attempt(root, name, command, log, nice, landing):
 
 def run(steps, root=REPO, gate=True, nice=False, landing=False):
     """Returns the steps failed. gate: a quiet machine is waited for before the first timed step, and the timed
-    steps are skipped when it stays busy (AC-146); nice: every step yields (a release runs); a cargo step holds
+    steps are skipped when it stays busy (AC-146); nice: every step yields (a full run holds its turn); a cargo step holds
     a heavy-build slot, and each real-program step a live-check slot through its retry; the landing has its own
     slot in each pool when `landing`."""
     logs = root / ".checks"
@@ -404,7 +404,7 @@ def main(argv):
         return 0 if has_passed(ident) else 1
     files, merge_base = changed_files(args.base)
     if args.land:
-        failed = run(land_plan(files), gate=False, nice=releasing(REPO), landing=True)
+        failed = run(land_plan(files), gate=False, nice=full_run_held(REPO), landing=True)
         print(f"smoke: FAIL {' '.join(failed)}" if failed else "smoke: PASS")
         return 1 if failed else 0
     steps = plan(files, touched_cases(files, merge_base))

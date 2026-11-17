@@ -28,7 +28,7 @@ agents working in the Maintainer's checkout, carry no such line (plain `git comm
 ## Worktrees
 
 Who needs a worktree and how to stay on a fresh `origin/main` is in [CLAUDE.md](CLAUDE.md) §9.
-Read-only work (a question, a review) and the `make release` command itself (the primary checkout's `main`) need none; a release's edits (`/simplify`'s fixes, its notes) land from a tree like any other.
+Read-only work (a question, a review) and the `make release` command itself need none (it makes its own tree, `.worktrees/release`, detached at the commit it pins: `docs/RELEASING.md`); a release's notes land from a tree like any other.
 
 | Step | How |
 | --- | --- |

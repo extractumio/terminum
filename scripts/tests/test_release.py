@@ -153,15 +153,29 @@ class ReleaseTest(unittest.TestCase):
         self.assertEqual(paths[0], paths[1], "one file is shared by create and final edit")
         self.assertTrue(all(not path.exists() for path in paths), "temporary files are removed")
 
-    def test_missing_unreadable_or_empty_notes_abort_before_build(self):
-        self.assertIn("no release notes", self.refused(release.release_notes, "v1.0.0"))
-        path = self.work / "docs/releases/v1.0.0.md"
-        path.parent.mkdir(parents=True)
-        path.write_text("# Changes\n\nText.\n", encoding="utf-8")
+    def land(self, name, data=None, link=None):
+        path = self.work / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if link:
+            path.symlink_to(link)
+        else:
+            path.write_bytes(data)
+        git(self.work, "add", name)
+        git(self.work, "commit", "-qm", name)
+        git(self.work, "push", "-q", "origin", "main")
+        return path
+
+    def test_missing_unreadable_or_empty_notes_abort_before_build(self):  # AC-200
+        self.assertIn("no release notes: write docs/releases/v1.0.0.md first, landed on origin/main",
+                      self.refused(release.release_notes, "v1.0.0"))
+        path = self.land("docs/releases/v1.0.0.md", "# Changes\n\nText.\n".encode())
         self.assertEqual(release.release_notes("v1.0.0"), "# Changes\n\nText.\n")
-        path.write_text(" \n", encoding="utf-8")
+        path.write_text("unlanded words\n")
+        self.assertEqual(release.release_notes("v1.0.0"), "# Changes\n\nText.\n", "what landed, not the tree's file")
+        git(self.work, "checkout", "-q", "--", ".")
+        self.land("docs/releases/v1.0.0.md", b" \n")
         self.assertIn("are empty", self.refused(release.release_notes, "v1.0.0"))
-        path.write_bytes(b"\xff\xfe")
+        self.land("docs/releases/v1.0.0.md", b"\xff\xfe")
         with mock.patch.object(release, "check_source", return_value="abc"), mock.patch.object(release, "check_unpublished") as unpublished, \
                 mock.patch.object(release.package, "main") as build, mock.patch.object(release, "sign") as sign, \
                 mock.patch.object(release, "publish") as publish:
@@ -170,15 +184,12 @@ class ReleaseTest(unittest.TestCase):
             build.assert_not_called()
             sign.assert_not_called()
             publish.assert_not_called()
-        path.unlink()
-        path.mkdir()
-        self.assertIn("cannot read release notes", self.refused(release.release_notes, "v1.0.0"))
-        path.rmdir()
-        path.symlink_to(self.work / "absent.md")
-        self.assertIn("cannot read release notes", self.refused(release.release_notes, "v1.0.0"))
-        path.unlink()
-        with mock.patch.object(Path, "read_text", side_effect=PermissionError("denied")):
-            self.assertIn("denied", self.refused(release.release_notes, "v1.0.0"))
+
+    def test_notes_landed_after_the_pin_are_read(self):  # AC-200
+        pin = git(self.work, "rev-parse", "HEAD")
+        self.land("docs/releases/v1.0.0.md", b"# Changes\n")
+        git(self.work, "checkout", "-q", "--detach", pin)
+        self.assertEqual(release.release_notes("v1.0.0"), "# Changes\n")
 
     def test_failed_upload_keeps_the_release_unpublished_and_cleans_notes(self):
         real_gh, paths = release.gh, []
@@ -195,25 +206,16 @@ class ReleaseTest(unittest.TestCase):
         self.assertFalse(any(call.startswith("release edit") for call in self.calls()))
         self.assertTrue(paths and all(not path.exists() for path in paths))
 
-    def test_notes_never_follow_file_or_ancestor_links_outside_reviewed_source(self):
+    def test_notes_never_follow_file_or_ancestor_links_outside_reviewed_source(self):  # AC-200
         external = self.tmp / "external"
         (external / "releases").mkdir(parents=True)
-        target = external / "releases/v1.0.0.md"
-        target.write_text("# Unreviewed text", encoding="utf-8")
-        docs = self.work / "docs"
-        docs.mkdir()
-        path = docs / "releases"
-        path.mkdir()
-        note = path / "v1.0.0.md"
-        note.symlink_to(target)
-        with mock.patch.object(Path, "read_text", side_effect=AssertionError("must not read target")):
-            self.assertIn("symlink", self.refused(release.release_notes, "v1.0.0"))
-        note.unlink()
-        path.rmdir()
-        docs.rmdir()
-        docs.symlink_to(external, target_is_directory=True)
-        with mock.patch.object(Path, "read_text", side_effect=AssertionError("must not read target")):
-            self.assertIn("inside the repository", self.refused(release.release_notes, "v1.0.0"))
+        (external / "releases/v1.0.0.md").write_text("# Unreviewed text", encoding="utf-8")
+        self.land("docs/releases/v1.0.0.md", link=external / "releases/v1.0.0.md")
+        self.assertIn("symlink", self.refused(release.release_notes, "v1.0.0"))
+        git(self.work, "rm", "-q", "-r", "docs")
+        git(self.work, "commit", "-qm", "no docs")
+        self.land("docs", link=external)
+        self.assertIn("no release notes", self.refused(release.release_notes, "v1.0.0"), "a linked folder holds no landed notes")
 
     def test_a_release_needs_the_developer_id(self):
         os.environ["TM_CODESIGN_IDENTITY"] = " "
@@ -263,7 +265,7 @@ class ReleaseTest(unittest.TestCase):
         build.assert_called_once_with(["--build", "v1.0.0", "--release"])
         self.assertEqual([c.args[:2] for c in run.call_args_list], [("npm", "ci"), ("npm", "run")])
 
-    def test_what_the_gate_could_not_run_goes_into_the_notes(self):  # AC-104
+    def test_what_the_gate_could_not_run_or_passed_only_on_retry_goes_into_the_notes(self):  # AC-104, AC-201
         for platform in ("linux-x86_64", "linux-aarch64"):
             binary = self.out / release.package.NAME / "agents" / platform / "terminumd"
             binary.parent.mkdir(parents=True)
@@ -272,8 +274,10 @@ class ReleaseTest(unittest.TestCase):
                 mock.patch.object(release, "check_unpublished", return_value=False), mock.patch.object(release, "release_notes", return_value="# Changes\n"), \
                 mock.patch.object(release, "run", return_value=""), mock.patch.object(release.package, "main"), mock.patch.object(release, "sign"), \
                 mock.patch.object(release, "check_unmoved"), mock.patch.object(release, "publish", return_value="url") as publish:
-            release.main("v1.0.0", "abc", "the Mac test runner's checks did not run: x")
-        self.assertIn("**Not verified:** the Mac test runner's checks did not run: x", publish.call_args.args[2])
+            release.main("v1.0.0", "abc", "the Mac test runner's checks did not run: x", retried=["page webBoardPanel", "live live"])
+        notes = publish.call_args.args[2]
+        self.assertIn("**Not verified:** the Mac test runner's checks did not run: x", notes)
+        self.assertIn("**Passed only on retry, the first run red:** page webBoardPanel, live live", notes)
 
     def test_a_commit_the_checks_did_not_see_is_refused(self):  # AC-104
         self.assertIn("HEAD moved since the full checks", self.refused(release.check_gate, "bbbb", "aaaa"))

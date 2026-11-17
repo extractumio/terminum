@@ -4,7 +4,7 @@
 for macOS and Linux and holds the release key; only on the maintainer's request (CLAUDE.md
 §10). In this order, so that a failure leaves nothing public:
 
-  1. checks: release notes in docs/releases/<tag>.md; a clean tree; a new version is above every v* tag and made at origin/main's
+  1. checks: release notes in docs/releases/<tag>.md as origin/main holds them; a clean tree; a new version is above every v* tag and made at origin/main's
      HEAD, an existing tag must be HEAD; its release must not be published yet
   2. build with dependencies exactly as locked (npm ci, cargo --locked); each macOS terminumd
      signed with the maintainer's Developer ID (TM_CODESIGN_IDENTITY, local.mk) as
@@ -15,7 +15,8 @@ for macOS and Linux and holds the release key; only on the maintainer's request 
   4. tag HEAD and push the tag; a draft release gets the package, install.sh, SHA256SUMS
      and SHA256SUMS.sig, and is published only then
 
-Only through scripts/release_turn.py (`make release`, `make rehearse`), which hands it the commit the full checks saw.
+Only through scripts/release_turn.py (`make release`, `make rehearse`), in the tree it pinned (spec AC-200), which hands it
+the commit the full checks saw and the checks that passed only on their retry (AC-201).
 """
 import os
 import re
@@ -88,10 +89,9 @@ def check_source(tag):
 
 
 def check_unmoved(head):
-    """The tag goes on HEAD and must be what was built: another session's `make install` fast-forwards
-    a clean main (scripts/worktree.py freshen)."""
+    """The tag goes on HEAD and must be what was built: the pinned tree is the release's alone (AC-200)."""
     if run("git", "rev-parse", "HEAD") != head:
-        sys.exit("HEAD moved during the build (another session's make install?): nothing is public; release again")
+        sys.exit("HEAD moved during the build: nothing is public; release again")
 
 
 def check_unpublished(tag):
@@ -125,24 +125,28 @@ def sign(sums):
         sys.exit("the signature does not match release-signers: commit the key's public half (make signing-key)")
 
 
-def release_notes(tag):
-    """The release's notes, read before anything is built; refused when missing, empty,
-    unreadable or a link out of the tree."""
-    path = package.REPO / "docs/releases" / f"{tag}.md"
-    if path.is_symlink():
-        sys.exit(f"cannot read release notes {path.relative_to(package.REPO)}: symlink notes are not allowed")
+def release_notes(tag, ref="origin/main"):
+    """The release's notes as `ref` holds them, read before anything is built: landed, reviewed text, which a pin
+    older than them lacks (AC-200: code may land after the nightly's pass, the notes after it); refused when missing,
+    empty, unreadable or a link."""
+    rel = f"docs/releases/{tag}.md"
+    entry = subprocess.run(["git", "ls-tree", ref, "--", rel], cwd=package.REPO, capture_output=True, text=True)
+    if entry.returncode or not entry.stdout.strip():
+        sys.exit(f"no release notes: write {rel} first, landed on {ref}")
+    mode, kind = entry.stdout.split()[:2]
+    if mode == "120000":
+        sys.exit(f"cannot read release notes {rel}: symlink notes are not allowed")
+    if kind != "blob":
+        sys.exit(f"cannot read release notes {rel}: not a file")
+    shown = subprocess.run(["git", "show", f"{ref}:{rel}"], cwd=package.REPO, capture_output=True)
+    if shown.returncode:
+        sys.exit(f"cannot read release notes {rel}: {shown.stderr.decode(errors='replace').strip()}")
     try:
-        path.resolve().relative_to(package.REPO.resolve())
-    except (OSError, RuntimeError, ValueError):
-        sys.exit(f"cannot read release notes {path.relative_to(package.REPO)}: path must stay inside the repository")
-    try:
-        notes = path.read_text(encoding="utf-8")
-    except FileNotFoundError:
-        sys.exit(f"no release notes: write {path.relative_to(package.REPO)} first")
-    except (OSError, UnicodeError) as e:
-        sys.exit(f"cannot read release notes {path.relative_to(package.REPO)}: {e}")
+        notes = shown.stdout.decode("utf-8")
+    except UnicodeError as e:
+        sys.exit(f"cannot read release notes {rel}: {e}")
     if not notes.strip():
-        sys.exit(f"release notes {path.relative_to(package.REPO)} are empty")
+        sys.exit(f"release notes {rel} are empty")
     return notes
 
 
@@ -177,7 +181,7 @@ def check_settings():
 def check_gate(head, gate_head):
     """The commit is the one the full checks saw (release_turn.py), however long they took."""
     if gate_head != head:
-        sys.exit("HEAD moved since the full checks (another session's make install?): nothing is public; release again")
+        sys.exit("HEAD moved since the full checks: nothing is public; release again")
 
 
 def build(tag):
@@ -189,9 +193,10 @@ def build(tag):
             sys.exit(f"the package has no {platform} terminumd (run make toolchain): not released")
 
 
-def main(tag, gate_head, said="", rehearsing=False):
-    """`gate_head`: the commit the full checks saw; `said`: what they could not run. The source is looked
-    at again: tags, origin/main and the tree may have moved during those checks."""
+def main(tag, gate_head, said="", rehearsing=False, retried=()):
+    """`gate_head`: the commit the full checks saw; `said`: what they could not run; `retried`: the checks that passed
+    only on their retry, which the notes name (AC-201). The source is looked at again: tags and origin/main may have
+    moved during those checks."""
     head = check_source(tag)
     check_gate(head, gate_head)
     if rehearsing:   # as far as nothing is public: no release key, no gh, no tag, no push
@@ -200,6 +205,8 @@ def main(tag, gate_head, said="", rehearsing=False):
         print(f"{tag}: rehearsal passed on {head[:9]}: no release signature, not tagged, not pushed, not published")
         return
     notes = release_notes(tag)
+    if retried:
+        notes = f"{notes.rstrip()}\n\n**Passed only on retry, the first run red:** {', '.join(retried)}\n"
     if said:
         notes = f"{notes.rstrip()}\n\n**Not verified:** {said}\n"
     draft = check_unpublished(tag)
