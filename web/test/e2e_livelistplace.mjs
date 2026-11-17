@@ -104,8 +104,10 @@ export async function liveRaise(page, opts) {
   await page.waitForTimeout(1500);
   check("AC-92 the agent's own turn moves no window of its group", inTmux().indexOf(b) > inTmux().indexOf(a), JSON.stringify(inTmux()));
   hook(b, "UserPromptSubmit", { prompt: "fix the tests" });
-  const risen = await until(() => inTmux()[0] === b, 5000);
-  check("AC-92 a session in no project that takes a message: its window goes first in tmux", risen, JSON.stringify(inTmux()));
+  // before every window its group shows (a project's session left by an earlier check keeps its place)
+  const first = async () => { const rows = await inGroup(b), order = inTmux(); return rows.every((r) => r === b || order.indexOf(b) < order.indexOf(r)); };
+  const risen = await until(first, 5000);
+  check("AC-92 a session in no project that takes a message: its window goes before its group's others in tmux", risen, JSON.stringify(inTmux()));
   const shown = await until(async () => (await inGroup(b))[0] === b, 5000);
   check("AC-92 and its row first in its tmux group on the page within 2 s of the list's read", shown, JSON.stringify(await inGroup(b)));
   endPanes();
