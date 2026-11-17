@@ -109,12 +109,13 @@ class Record(Repo, unittest.TestCase):
             self.run_with(steps)
         for _ in range(6):
             self.run_with({"live": {"result": "pass"}})   # runs without page do not dilute it
-        self.assertFalse(gate_record.retried_lately(self.repo, "page webBoardPanel"))
+        lately = lambda: gate_record.retried_lately(gate_record.read(self.repo, "gate"), "page webBoardPanel")  # noqa: E731
+        self.assertFalse(lately())
         self.run_with(retried)
-        self.assertTrue(gate_record.retried_lately(self.repo, "page webBoardPanel"))
+        self.assertTrue(lately())
         for _ in range(5):
             self.run_with({"page": {"result": "pass"}})
-        self.assertFalse(gate_record.retried_lately(self.repo, "page webBoardPanel"), "two of the last seven")
+        self.assertFalse(lately(), "two of the last seven")
 
     def test_the_nightly_report_names_each_red_step_and_the_commits_since_the_last_pass(self):  # AC-202
         self.assertEqual(gate_record.nightly(self.repo), ["nightly: no rehearsal's full run in the record"])

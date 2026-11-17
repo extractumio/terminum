@@ -7,14 +7,15 @@ post-mortem reads (docs/RELEASING.md).
 
   gate_record.py [N]      the last N lines (default 10), one a line, for a person
   gate_record.py --nightly   the last rehearsal's red steps, budgets over and retries, as tasks to make (AC-202)"""
+import functools
 import json
 from pathlib import Path
-import subprocess
 import sys
 import time
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from worktree import common_dir, Refused  # noqa: E402
+from check_changed import content_id  # noqa: E402
+from worktree import common_dir, git, Refused  # noqa: E402
 
 RECORD = "terminum-gate.jsonl"
 SCAN_DEPTH = 200   # commits of origin/main looked at for the newest full pass
@@ -25,12 +26,19 @@ def now():
     return time.strftime("%Y-%m-%d %H:%M")
 
 
-def shared(root, name):
-    """A file of git's common folder: terminum-checks/<name>; None outside a git checkout."""
+@functools.lru_cache(maxsize=None)
+def common(root):
+    """git's common folder of `root`, asked once; None outside a git checkout."""
     try:
-        return common_dir(root) / "terminum-checks" / name
+        return common_dir(root)
     except Refused:
         return None
+
+
+def shared(root, name):
+    """A file of git's common folder: terminum-checks/<name>; None outside a git checkout."""
+    folder = common(Path(root))
+    return folder / "terminum-checks" / name if folder else None
 
 
 def marks(root, ident, step=None):
@@ -65,14 +73,16 @@ def forget(root, ident, step=None):
         mark.unlink(missing_ok=True)
 
 
-def git(root, *args):
-    run = subprocess.run(["git", *args], cwd=root, capture_output=True, text=True)
-    return run.stdout.strip() if run.returncode == 0 else ""
-
-
 def content_of(root, commit):
-    """A clean commit's content id: the start of its tree's hash, as check_changed.tree_id gives a clean tree."""
-    return git(root, "rev-parse", f"{commit}^{{tree}}")[:16]
+    """A clean commit's content id, as check_changed.tree_id gives a clean tree; "" for no commit."""
+    run = git("rev-parse", "-q", "--verify", f"{commit}^{{tree}}", cwd=root, check=False)
+    return content_id(run.stdout.strip()) if run.returncode == 0 else ""
+
+
+def first_parents(root, ref):
+    """[(commit, its content id)] of `ref`'s first-parent line, newest first, SCAN_DEPTH at most: one git call."""
+    run = git("log", "--first-parent", "-n", str(SCAN_DEPTH), "--format=%H %T", ref, "--", cwd=root, check=False)
+    return [(c, content_id(t)) for c, t in (line.split() for line in run.stdout.splitlines())] if run.returncode == 0 else []
 
 
 def young(notes, hours):
@@ -86,18 +96,16 @@ def young(notes, hours):
 def newest_full_pass(root, ref="origin/main", fresh_h=None):
     """(commit, its pass's notes) of the newest commit on `ref`'s first-parent line with a full pass (younger than
     `fresh_h` hours when given), or None."""
-    for commit in git(root, "rev-list", "--first-parent", "-n", str(SCAN_DEPTH), ref).split():
-        notes = passed(root, content_of(root, commit))
+    for commit, ident in first_parents(root, ref):
+        notes = passed(root, ident)
         if notes is not None and (fresh_h is None or young(notes, fresh_h)):
             return commit, notes
     return None
 
 
 def path(root):
-    try:
-        return common_dir(root) / RECORD
-    except Refused:
-        return None
+    folder = common(Path(root))
+    return folder / RECORD if folder else None
 
 
 def append(root, entry):
@@ -130,11 +138,11 @@ def read(root, kind=None):
     return entries
 
 
-def retried_lately(root, check):
-    """Whether `check` ("e2e scripts/e2e_hooks.py", "page webBoardPanel", "live live") was retried in LOST_AFTER of the
-    last OF_LAST recorded full runs that ran its step."""
+def retried_lately(runs, check):
+    """Whether `check` ("e2e_hooks e2e_hooks", "page webBoardPanel", "live live") was retried in LOST_AFTER of the
+    last OF_LAST of the recorded full runs `runs` (read(root, "gate")) that ran its step."""
     step = check.split(" ", 1)[0]
-    runs = [run for run in read(root, "gate") if step in run.get("steps", {})][-OF_LAST:]
+    runs = [run for run in runs if step in run.get("steps", {})][-OF_LAST:]
     return sum(check in run["steps"][step].get("retried", []) for run in runs) >= LOST_AFTER
 
 
@@ -145,9 +153,10 @@ def nightly(root):
     if not runs:
         return ["nightly: no rehearsal's full run in the record"]
     run = runs[-1]
-    commit = run.get("commit") or "HEAD"
-    before = newest_full_pass(root, f"{commit}~1") if run.get("commit") else None
-    since = git(root, "log", "--oneline", f"{before[0]}..{commit}") if before else "(no full pass before it in the record)"
+    commit = run.get("commit")
+    before = newest_full_pass(root, f"{commit}~1") if commit else None
+    since = git("log", "--oneline", f"{before[0]}..{commit}", cwd=root) if before else "(no full pass before it in the record)"
+    commit = commit or "HEAD"
     red = {k: s for k, s in run.get("steps", {}).items() if s.get("result") != "pass"}
     lines = [f"nightly: {run.get('result')} on {commit[:9]} at {run.get('at')}, {len(run.get('steps', {}))} steps run"]
     for name, step in red.items():

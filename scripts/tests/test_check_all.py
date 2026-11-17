@@ -26,9 +26,9 @@ class Gate(Repo, unittest.TestCase):
         self.head = self.commit("a.txt")
         self.red, self.again, self.ran, self.envs = set(), set(), [], []
         self.lines = {}
-        self.busy = 0
+        self.busy = None
         patches = [mock.patch.object(check_all, "REPO", self.repo), mock.patch.object(check_all, "attempt", self.attempt),
-                   mock.patch.object(check_all.load_gate, "main", lambda argv: self.busy),
+                   mock.patch.object(check_all.load_gate, "wait", lambda busy: busy() or self.busy),
                    mock.patch.object(gate_retry, "CRASH_REPORTS", self.root / "none"), mock.patch("builtins.print", self.say)]
         for patch in patches:
             patch.start()
@@ -82,11 +82,36 @@ class Gate(Repo, unittest.TestCase):
         self.assertEqual(self.envs[0], {"PATH": os.environ["PATH"], "HOME": "/Users/alex", "DOCKER_CONTEXT": "colima", "TM_TIMING": "report"})
         self.assertTrue(all(env == self.envs[0] for env in self.envs))
 
-    def test_a_busy_machine_ends_a_run_by_hand_before_any_step(self):  # AC-146
-        self.busy = load_gate.BUSY
-        self.assertEqual(self.check(), load_gate.BUSY)
-        self.assertEqual(self.ran, [])
-        self.assertEqual(self.check("--by", "release"), 0, "a release waited at its own gate")
+    def test_a_busy_machine_ends_a_run_before_any_step(self):  # AC-146
+        self.busy = "load 31 over 16"
+        for by in ("check", "release", "rehearse"):
+            self.assertEqual(self.check("--by", by), load_gate.BUSY)
+            self.assertEqual(self.ran, [])
+        self.assertIn("check: the machine is busy: load 31 over 16 for 15 minutes: nothing ran", self.said)
+
+    def test_a_release_waits_for_a_rehearsals_full_run_and_reuses_its_passes(self):  # AC-146, AC-200
+        with load_gate.Turn(self.repo) as nightly:
+            self.assertTrue(nightly.take())
+            nightly.hold_as("rehearse 4f2a91c07")
+            ended = []
+
+            def take(turn, wait=False):
+                if wait and not ended:   # the nightly ends, its passes kept
+                    ident = check_all.tree_id(self.repo)
+                    for step in [None, *STEPS]:
+                        gate_record.keep(self.repo, ident, {}, step)
+                    ended.append(True)
+                return bool(ended)
+            with mock.patch.object(load_gate.Turn, "take", take):
+                self.assertEqual(check_all.main(["--by", "release"]), 0)
+        self.assertIn("release: rehearse 4f2a91c07's full run holds the turn: waiting for its end, its passes reused", self.said)
+        self.assertEqual(self.ran, [], "every step passed in the nightly's run")
+
+    def test_a_red_build_runs_no_step(self):  # AC-201
+        self.red = {"build"}
+        self.assertEqual(self.check(), 1)
+        self.assertEqual(self.ran, ["build"])
+        self.assertEqual(gate_record.read(self.repo, "gate")[-1]["steps"], {"build": {"result": "fail", "seconds": 3}})
 
     def test_passed_and_dockers_skip(self):  # AC-146, AC-201
         self.assertEqual(self.check("--passed"), 1)
@@ -128,10 +153,12 @@ class Gate(Repo, unittest.TestCase):
         self.assertEqual(gate_record.passed(self.repo, ident)["retried"], ["page webBoardPanel"], "the release names it")
 
     def test_a_timing_line_is_kept_with_the_step(self):  # AC-201
-        self.lines["e2e"] = ["TIMING over budget (judged on a quiet machine): AC-39 a hook (median): 62 ms, budget 50 ms"]
+        self.commit("scripts/e2e_hooks.py")
+        self.lines["e2e_hooks"] = ["TIMING over budget (judged on a quiet machine): AC-39 a hook (median): 62 ms, budget 50 ms"]
         self.check()
         ident = check_all.tree_id(self.repo)
-        self.assertEqual(len(gate_record.passed(self.repo, ident, "e2e")["timing"]), 1)
+        self.assertEqual(len(gate_record.passed(self.repo, ident, "e2e_hooks")["timing"]), 1)
+        self.assertEqual(len(gate_record.passed(self.repo, ident)["timing"]), 1, "the whole run's pass says it too")
 
     def test_each_run_leaves_a_line_in_the_record(self):  # AC-201
         self.red = {"live"}

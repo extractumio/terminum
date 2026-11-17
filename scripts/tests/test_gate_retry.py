@@ -28,19 +28,19 @@ class Reading(unittest.TestCase):
         self.addCleanup(tmp.cleanup)
         self.dir = Path(tmp.name)
 
-    def test_red_checks_are_named_where_the_step_can_name_them(self):  # AC-201
-        e2e = log(self.dir, "PASS AC-1 x", "FAIL AC-39 a hook", "FAIL scripts/e2e_hooks.py", "FAIL scripts/e2e_core.py")
-        self.assertEqual(gate_retry.red_checks("e2e", e2e), ["scripts/e2e_hooks.py", "scripts/e2e_core.py"])
-        page = log(self.dir, "FAIL [webkit] x", "red checks: webBoardPanel webTerm", "FAIL (2 of 90)")
-        self.assertEqual(gate_retry.red_checks("page", page), ["webBoardPanel", "webTerm"])
-        self.assertEqual(gate_retry.red_checks("live", page), ["live"], "a suite")
-        self.assertEqual(gate_retry.red_checks("page", log(self.dir, "thrown")), ["page"], "none named: the suite")
+    def test_page_names_its_red_checks_the_others_are_their_suite(self):  # AC-201
+        said = ["FAIL [webkit] x", "red checks: webBoardPanel webTerm", "FAIL (2 of 90)"]
+        self.assertEqual(gate_retry.red_checks("page", said), ["webBoardPanel", "webTerm"])
+        self.assertEqual(gate_retry.red_checks("live", said), ["live"])
+        self.assertEqual(gate_retry.red_checks("page", ["thrown"]), ["page"], "none named: the suite")
+        self.assertEqual([gate_retry.retried(s) for s in ("e2e_hooks", "live", "panel", "docker", "page", "test", "install")],
+                         [True] * 5 + [False] * 2)
 
-    def test_the_retry_runs_only_the_red_checks(self):  # AC-201
-        self.assertEqual(gate_retry.again("page", "node web/test/e2e_all.mjs", ["webTerm"]), "node web/test/e2e_all.mjs webTerm")
-        self.assertIn("'scripts/e2e_hooks.py'", gate_retry.again("e2e", "all of them", ["scripts/e2e_hooks.py"]))
-        self.assertNotIn("e2e_core", gate_retry.again("e2e", "all of them", ["scripts/e2e_hooks.py"]))
-        self.assertEqual(gate_retry.again("live", "node web/test/e2e_live.mjs", ["live"]), "node web/test/e2e_live.mjs")
+    def test_the_whole_log_is_read_every_segment(self):  # AC-201
+        path = log(self.dir, *[f"line {n}" for n in range(1000)], "red checks: webTerm")
+        Path(f"{path}.1").write_text("FAIL [chromium] AC-111 early\n")
+        said = gate_retry.lines(path)
+        self.assertEqual((said[0], said[-1], len(said)), ("FAIL [chromium] AC-111 early", "red checks: webTerm", 1002))
 
     def test_a_crash_is_named_by_file_names_alone(self):  # AC-201
         reports = self.dir / "reports"
@@ -51,11 +51,9 @@ class Reading(unittest.TestCase):
         old.write_text("x")
         os.utime(old, (began - 100, began - 100))
         (reports / "Finder-x.ips").write_text("x")
-        quiet = log(self.dir, "FAIL x")
-        self.assertEqual(gate_retry.crash(began, quiet, reports), "tmux-2026-11-18-031244.ips")
-        self.assertIsNone(gate_retry.crash(time.time() + 10, quiet, reports))
-        gone = log(self.dir, "server exited unexpectedly")
-        self.assertEqual(gate_retry.crash(began, gone, self.dir / "none"), "tmux's server gone")
+        self.assertEqual(gate_retry.crash(began, ["FAIL x"], reports), "tmux-2026-11-18-031244.ips")
+        self.assertIsNone(gate_retry.crash(time.time() + 10, ["FAIL x"], reports))
+        self.assertEqual(gate_retry.crash(began, ["server exited unexpectedly"], self.dir / "none"), "tmux's server gone")
 
 
 class Deciding(Repo, unittest.TestCase):
@@ -65,7 +63,7 @@ class Deciding(Repo, unittest.TestCase):
         self.commit("web/test/e2e_all.mjs", 'import { webBoardPanel } from "./e2e_boardpanel.mjs";\n')
         self.passed = self.commit("web/test/e2e_boardpanel.mjs", "// AC-111\n")
         self.pass_whole(self.passed)
-        self.retry = gate_retry.Retry(self.repo, "c")
+        self.retry = gate_retry.Retry(self.repo)
         self.reports = mock.patch.object(gate_retry, "CRASH_REPORTS", self.root / "none")
         self.reports.start()
         self.addCleanup(self.reports.stop)
@@ -94,10 +92,20 @@ class Deciding(Repo, unittest.TestCase):
 
     def test_no_retry_for_a_check_retried_in_3_of_the_last_7_runs(self):  # AC-201
         for _ in range(3):
-            gate_record.append(self.repo, {"kind": "gate", "steps": {"e2e": {"retried": ["e2e scripts/e2e_hooks.py"]}}})
-        command, _, entry = self.decide("e2e", "FAIL scripts/e2e_hooks.py")
+            gate_record.append(self.repo, {"kind": "gate", "steps": {"e2e_core": {"retried": ["e2e_core e2e_core"]}}})
+        command, _, entry = self.decide("e2e_core", "FAIL AC-14 x")
         self.assertIsNone(command)
         self.assertIn("retried in 3 of the last 7 runs", entry["cause"])
+
+    def test_an_e2e_script_of_changed_code_gets_no_retry(self):  # AC-201
+        self.commit("scripts/e2e_hooks.py", "# AC-39 changed\nif __name__ == \"__main__\":\n    pass\n")
+        command, _, entry = self.decide("e2e_hooks", "FAIL x")
+        self.assertIsNone(command)
+        self.assertIn("e2e_hooks: its code changed since", entry["cause"])
+
+    def test_a_whole_suite_runs_again_as_it_ran(self):  # AC-201
+        self.commit("docs/x.md")
+        self.assertEqual(self.decide("live", "FAIL [webkit] x")[:2], ("node web/test/e2e_all.mjs", ["live"]))
 
     def test_steps_of_no_real_program_never_retry(self):  # AC-201
         for step in ("test", "clippy", "install", "security", "build"):
@@ -112,13 +120,6 @@ class Deciding(Repo, unittest.TestCase):
         self.assertIn('"Bug: flaky in the full run: page webBoardPanel" (P2)', words)
         self.assertIn("the first run's line", words)
         self.assertIn("PASSED ONLY ON RETRY, the first run red: page webBoardPanel", words)
-
-    def test_the_whole_pass_keeps_what_its_steps_kept(self):  # AC-201
-        gate_record.keep(self.repo, "c", {"retried": ["page webBoardPanel"]}, "page")
-        gate_record.keep(self.repo, "c", {"skip": "Docker does not answer"}, "docker")
-        gate_record.keep(self.repo, "c", {}, "live")
-        self.assertEqual(gate_retry.whole_notes(self.repo, "c", ["live", "page", "docker"]),
-                         {"retried": ["page webBoardPanel"], "skip": "Docker does not answer"})
 
 
 if __name__ == "__main__":

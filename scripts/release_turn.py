@@ -11,6 +11,7 @@ stops before anything is signed or public. Every run leaves a line in the record
 import argparse
 import os
 from pathlib import Path
+import re
 import signal
 import subprocess
 import sys
@@ -48,20 +49,6 @@ def mac_checks(repo):
         time.sleep(BUSY_RETRY_S)
 
 
-def full_run(repo, by, head, say=print):
-    """The full run in the turn of full runs: 0 green, 1 red, 75 a machine that stayed busy."""
-    if by == "release" and subprocess.run([sys.executable, "scripts/check_all.py", "--passed", "--by", by], cwd=repo).returncode == 0:
-        return subprocess.run([sys.executable, "scripts/check_all.py", "--by", by], cwd=repo).returncode   # says so, runs nothing
-    with load_gate.Turn(repo) as turn:
-        if not turn.take() and turn.holder().startswith("rehearse") and by == "release":
-            say(f"release: {turn.holder()}'s full run holds the turn: waiting for its end, its passes reused")
-            turn.take(wait=True)
-        if load_gate.wait(busy=turn.busy):
-            return load_gate.BUSY
-        turn.hold_as(f"{by} {head[:9]}")
-        return subprocess.run([sys.executable, "scripts/check_all.py", "--by", by], cwd=repo).returncode
-
-
 def chain(repo, tag, rehearsing, say=print):
     """In the pinned tree: leftovers, a quiet machine, the full run, the Mac test runner's, then scripts/release.py."""
     by, began = ("rehearse" if rehearsing else "release"), time.monotonic()
@@ -77,7 +64,8 @@ def chain(repo, tag, rehearsing, say=print):
         return code
 
     subprocess.run([sys.executable, "scripts/leftovers.py", "--end"], cwd=repo)
-    status = full_run(repo, by, head, say)
+    # its turn, a quiet machine, the passes it can reuse: the full run's own (AC-146, AC-201)
+    status = subprocess.run([sys.executable, "scripts/check_all.py", "--by", by], cwd=repo).returncode
     if status == load_gate.BUSY:
         say(f"release: the build server is not available for a release: {load_gate.MINUTES}: nothing is public", file=sys.stderr)
         return ended("busy", 1)
@@ -132,7 +120,7 @@ def main(argv):
     parser.add_argument("--pin")
     parser.add_argument("tag")
     args = parser.parse_args(argv)
-    if not release.version(args.tag) or args.tag.count(".") != 2:
+    if not re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+", args.tag):
         sys.exit("usage: release_turn.py [--rehearse] [--pin <commit>] vX.Y.Z")
     if args.here:
         return here(args.tag, args.rehearse)

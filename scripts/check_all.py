@@ -2,16 +2,18 @@
 # SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 """The full run of CLAUDE.md §8, the release's gate (spec AC-104, AC-146, AC-201), on a content: <id> names the
 content of every tracked and new file (check_changed.tree_id), so committing a checked tree keeps its passes.
-- A pass per step: a step passed on this content, in this tree or any of the repository (gate_record), is skipped and
-  said; --force, and a rehearsal, run every step; --by release counts only passes younger than 48 hours. Content that differs only in
-  docs (no file the package carries) from a commit whose content passed whole runs the scan alone.
-- Before any step it builds what the steps read and no pass covers (the UI, terminumd's debug build).
+- A pass per step (each e2e script is one): a step passed on this content, in this tree or any of the repository
+  (gate_record), is skipped and said; --force, and a rehearsal, run every step; a release counts only passes younger
+  than 48 hours. Content that differs only in docs (no file the package carries) from a commit whose content passed
+  whole runs the scan alone.
+- Before any step it builds what the steps read and no pass covers (the UI, terminumd's debug build); red, nothing runs.
 - Each step runs under check_step.py's guard (AC-102), its output in .checks/<id>.<step>.log, with the environment
   ALLOWED alone and TM_TIMING=report: nothing of its caller's reaches a test, and a measured budget a check exceeds
   under this run's own load is said ("TIMING over budget"), judged by --timing on a quiet machine.
-- Once every step had its first run, a red step of real programs runs its red checks once more (gate_retry.py).
-- It starts on a quiet machine (scripts/load_gate.py, AC-146): exit 75 when the load stays high for 15 minutes; a
-  release or a rehearsal waited already and says so with --by. Every run leaves a line in the record (gate_record).
+- Once every step had its first run, a red step of real programs runs once more (gate_retry.py).
+- One full run at a time across trees, on a quiet machine (scripts/load_gate.py, AC-146): exit 75 when the load stays
+  high for 15 minutes; a release finding a rehearsal's run in the turn waits for its end and reuses its passes.
+  Every run leaves a line in the record (gate_record).
 
   make check   or   python3 scripts/check_all.py [--force | --passed | --timing] [--by check|release|rehearse]
   --passed: 0 if this content passed whole; --timing: the checks with budgets alone, judged, after a quiet-machine wait"""
@@ -25,13 +27,14 @@ import time
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from check_cancel import run_guard  # noqa: E402
-from check_changed import changed_files, is_doc, red, tree_id  # noqa: E402
-from check_logs import bounded_log, preserve_attempt, tail  # noqa: E402
+from check_changed import changed_files, is_doc, red, tail, tree_id  # noqa: E402
+from check_logs import bounded_log, preserve_attempt  # noqa: E402
 from check_step import LEFT  # noqa: E402
 import gate_record  # noqa: E402
 import gate_retry  # noqa: E402
 import load_gate  # noqa: E402
 from package import COPY  # noqa: E402
+from worktree import git  # noqa: E402
 
 REPO = Path(__file__).resolve().parent.parent
 # what a step may see of its caller's environment: the machine's, never a session's, a run's or an ssh agent's (AC-201)
@@ -47,12 +50,12 @@ TIMED = [("e2e_hooks", "python3 scripts/e2e_hooks.py"), ("e2e_isolation", "pytho
 
 def steps(root, ident):
     """[(name, shell command)] in order."""
-    e2e = sorted(str(p.relative_to(root)) for p in root.glob("scripts/e2e_*.py") if "remote_sshd" not in p.name)
+    e2e = sorted(p for p in root.glob("scripts/e2e_*.py") if "remote_sshd" not in p.name)   # Docker's: their own step
     found = [("test", "make test"),
              ("clippy", "cd terminumd && cargo clippy --locked --all-targets -- -D warnings"),
              ("panel", "cd ui && node test/e2e_panel.mjs"),
              ("live", "node web/test/e2e_live.mjs"),
-             ("e2e", gate_retry.e2e_command(e2e)),   # but Docker's, which take built binaries: their own step
+             *((p.stem, f"python3 scripts/{p.name}") for p in e2e),
              ("docker", f"python3 scripts/check_docker.py {ident}"),
              ("install", "TERMINUMD_BIN=terminumd/target/debug/terminumd bash scripts/e2e_install.sh")]
     if platform.system() == "Darwin":   # e2e_all.mjs measures a Mac's browsers
@@ -69,6 +72,10 @@ def is_gate_doc(path):
     return is_doc(path) and path not in COPY and not path.startswith((".claude/", "skills/"))
 
 
+def docker_can_run():
+    return subprocess.run([sys.executable, "scripts/check_docker.py", "--can-run"], cwd=REPO, capture_output=True).returncode == 0
+
+
 def counts(notes, fresh_h=None):
     """Whether a kept pass still counts: young enough, and a Docker step that skipped only while Docker still cannot run."""
     if notes is None or fresh_h is not None and not gate_record.young(notes, fresh_h):
@@ -76,17 +83,10 @@ def counts(notes, fresh_h=None):
     return not notes.get("skip") or not docker_can_run()
 
 
-def docker_can_run():
-    return subprocess.run([sys.executable, "scripts/check_docker.py", "--can-run"], cwd=REPO, capture_output=True).returncode == 0
-
-
 def docs_only_since(root, fresh_h=None):
     """The commit with a full pass from which this content differs only in docs, or None."""
     found = gate_record.newest_full_pass(root, "HEAD", fresh_h)
-    if not found:
-        return None
-    files, _ = changed_files(found[0], cwd=root)
-    return found[0] if all(is_gate_doc(f) for f in files) else None
+    return found[0] if found and all(is_gate_doc(f) for f in changed_files(found[0], cwd=root)[0]) else None
 
 
 def attempt(root, log, command, env):
@@ -102,44 +102,39 @@ def said(name, entry, log):
     if entry["result"] == "pass":
         print(f"ok   {name} ({entry['seconds']} s)" + (" on its retry" if entry.get("retried") else ""), flush=True)
     else:
-        print(f"FAIL {name} ({entry['seconds']} s): {log}", flush=True)
-        print("".join(f"     {line}\n" for line in tail(log)), end="", flush=True)
+        print(f"FAIL {name} ({entry['seconds']} s): {log}\n{tail(log)}", end="", flush=True)
 
 
 def plan(root, ident, force, fresh_h):
-    """[(name, command)] to run; what is skipped is said."""
-    docs = None if force else docs_only_since(root, fresh_h)
-    todo = []
+    """([(name, command)] to run, {name: notes} of the passes kept, the docs-only base or None); skips said."""
+    todo, kept, docs = [], {}, None if force else docs_only_since(root, fresh_h)
     for name, command in steps(root, ident):
         notes = None if force else gate_record.passed(root, ident, name)
         if counts(notes, fresh_h):
             print(f"skip {name}: passed on {notes.get('at', '?')}" + (f" (SKIP docker: {notes['skip']})" if notes.get("skip") else ""))
+            kept[name] = notes
         elif docs and name != "security":
             print(f"skip {name}: a docs-only change since {docs[:9]}'s full pass")
+            kept[name] = {}
         else:
             todo.append((name, command))
-    return todo, docs
+    return todo, kept, docs
 
 
-def first_runs(root, ident, todo, env):
-    """Each step once, in order: {name: (entry, command, its log, when it began)}."""
-    runs = {}
+def run_steps(root, ident, todo, env, retry):
+    """Each step once, in order, then each red step of real programs once more: {name: its record entry}."""
+    runs, again = {}, {}
     for name, command in todo:
         log, began = root / ".checks" / f"{ident}.{name}.log", time.time()
         code, seconds = attempt(root, log, command, env)
-        entry = {"result": "pass" if code == 0 else "fail", "seconds": seconds}
+        runs[name] = {"result": "pass" if code == 0 else "fail", "seconds": seconds}
         if code == LEFT:
-            entry["cause"] = "a leftover (AC-102)"
-        said(name, entry, log)
-        runs[name] = (entry, command, log, began, code)
-    return runs
-
-
-def retries(root, ident, runs, env, retry):
-    """The red steps of real programs, once more each, after every first run."""
-    for name, (entry, command, log, began, code) in runs.items():
-        if code in (0, LEFT):
-            continue
+            runs[name]["cause"] = "a leftover (AC-102)"
+        elif code:
+            again[name] = (command, began)
+        said(name, runs[name], log)
+    for name, (command, began) in again.items():
+        entry, log = runs[name], root / ".checks" / f"{ident}.{name}.log"
         first = log.with_name(f"{ident}.{name}.first.log")
         preserve_attempt(log, first)
         command, checks, notes = retry.decide(name, command, first, began)
@@ -154,49 +149,79 @@ def retries(root, ident, runs, env, retry):
             entry.pop("cause", None)
             retry.passed_on_retry(name, checks, first)
         said(name, entry, log)
-
-
-def keep(root, ident, runs):
-    for name, (entry, *_rest) in runs.items():
-        timing = [line.strip() for line in tail(root / ".checks" / f"{ident}.{name}.log", 400) if line.startswith("TIMING over budget")]
-        if timing:
+    for name, entry in runs.items():
+        log = root / ".checks" / f"{ident}.{name}.log"
+        if timing := [line.strip() for line in gate_retry.lines(log) if line.startswith("TIMING over budget")]:
             entry["timing"] = timing
+    return runs
+
+
+def keep(root, ident, runs, kept):
+    """Each green step's pass; the whole run's notes, its steps': what was retried, a budget over, Docker's skip."""
+    for name, entry in runs.items():
         if entry["result"] != "pass":
             gate_record.forget(root, ident, name)
             continue
-        notes = {k: entry[k] for k in ("retried", "timing") if k in entry}
+        kept[name] = {k: entry[k] for k in ("retried", "timing") if k in entry}
         skip = root / ".checks" / f"{ident}.docker-skip"
         if name == "docker" and skip.exists():
-            notes["skip"] = skip.read_text().strip()
-        gate_record.keep(root, ident, notes, name)
+            kept[name]["skip"] = skip.read_text().strip()
+        gate_record.keep(root, ident, kept[name], name)
+    whole = {"retried": [r for n in kept.values() for r in n.get("retried", [])],
+             "timing": [t for n in kept.values() for t in n.get("timing", [])],
+             "skip": next((n["skip"] for n in kept.values() if n.get("skip")), None)}
+    return {k: v for k, v in whole.items() if v}
 
 
-def gate(root, ident, args):
-    fresh_h = FRESH_H if args.by == "release" else None
-    todo, docs = plan(root, ident, args.force or args.by == "rehearse", fresh_h)   # a rehearsal tests the machine too
-    if todo and args.by == "check" and load_gate.main([]) == load_gate.BUSY:
-        return load_gate.BUSY
-    began = time.monotonic()
-    for log in (root / ".checks").glob("*.log*"):   # earlier contents' logs; their passes stay
-        if not log.name.startswith((f"{ident}.", f".{ident}.", "changed", "timing.")):
-            log.unlink(missing_ok=True)
-    warn_setup(root)
-    env, retry = allowed_env(), gate_retry.Retry(root, ident)
-    if any(name != "security" for name, _ in todo):   # what the steps read, which no pass covers
-        todo = [("build", BUILD)] + todo
-    runs = first_runs(root, ident, todo, env)
-    retries(root, ident, runs, env, retry)
-    keep(root, ident, {k: v for k, v in runs.items() if k != "build"})
-    failed = [name for name, (entry, *_rest) in runs.items() if entry["result"] != "pass"]
+def wait_turn(turn, root, by):
+    """The full run's turn and a quiet machine (AC-146): None to go on, else why not."""
+    if by == "release" and not turn.take() and turn.holder().split(" ", 1)[0] == "rehearse":
+        print(f"release: {turn.holder()}'s full run holds the turn: waiting for its end, its passes reused", flush=True)
+        turn.take(wait=True)
+    if why := load_gate.wait(busy=turn.busy):
+        print(f"check: the machine is busy: {why} {load_gate.MINUTES}: nothing ran", file=sys.stderr)
+        return why
+    turn.hold_as(f"{by} {git('rev-parse', '--short=9', 'HEAD', cwd=root)}")
+    return None
+
+
+def gate(root, ident, by, force, fresh_h):
+    todo, kept, docs = plan(root, ident, force, fresh_h)
+    retry, runs, began = gate_retry.Retry(root), {}, time.monotonic()
+    if todo:
+        with load_gate.Turn(root) as turn:
+            if wait_turn(turn, root, by):
+                return load_gate.BUSY
+            if by == "release":   # what the wait may have brought: a rehearsal's passes
+                todo, kept, docs = plan(root, ident, force, fresh_h)
+            began, env = time.monotonic(), allowed_env()
+            for log in (root / ".checks").glob("*.log*"):   # earlier contents' logs; their passes stay
+                if not log.name.startswith((f"{ident}.", f".{ident}.", "changed", "timing.")):
+                    log.unlink(missing_ok=True)
+            warn_setup(root)
+            if any(name != "security" for name, _ in todo):   # what the steps read, which no pass covers
+                log = root / ".checks" / f"{ident}.build.log"
+                code, seconds = attempt(root, log, BUILD, env)
+                built = {"result": "pass" if code == 0 else "fail", "seconds": seconds}
+                said("build", built, log)
+                if code:
+                    runs["build"] = built
+            if not runs:
+                runs = run_steps(root, ident, todo, env, retry)
+    return finish(root, ident, by, runs, kept, docs, round(time.monotonic() - began), retry)
+
+
+def finish(root, ident, by, runs, kept, docs, seconds, retry):
+    whole = keep(root, ident, runs, kept)
+    failed = [name for name, entry in runs.items() if entry["result"] != "pass"]
     changed = not failed and tree_id(root) != ident
     if not failed and not changed:
-        notes = gate_retry.whole_notes(root, ident, [name for name, _ in steps(root, ident)])
-        gate_record.keep(root, ident, {**notes, **({"docs_only_since": docs} if docs else {})})
-    head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=root, capture_output=True, text=True).stdout.strip()
-    clean = not subprocess.run(["git", "status", "--porcelain"], cwd=root, capture_output=True, text=True).stdout.strip()
-    gate_record.append(root, {"kind": "gate", "by": args.by, "content": ident, "commit": head if clean else None,
+        gate_record.keep(root, ident, {**whole, **({"docs_only_since": docs} if docs else {})})
+    head = git("rev-parse", "HEAD", cwd=root)
+    gate_record.append(root, {"kind": "gate", "by": by, "content": ident,
+                              "commit": head if ident == gate_record.content_of(root, head) else None,
                               "result": "fail" if failed else "changed" if changed else "pass", "ran": len(runs),
-                              "seconds": round(time.monotonic() - began), "steps": {k: v[0] for k, v in runs.items()}})
+                              "seconds": seconds, "steps": runs})
     retry.say_last()
     if failed:
         print(f"check: FAIL on {ident}: {' '.join(failed)}")
@@ -211,7 +236,7 @@ def gate(root, ident, args):
 
 def warn_setup(root):
     """The commit-time scan (CLAUDE.md §2) only knows other machines' names from the patterns file."""
-    if not subprocess.run(["git", "config", "core.hooksPath"], cwd=root, capture_output=True, text=True).stdout.strip():
+    if not git("config", "core.hooksPath", cwd=root, check=False).stdout.strip():
         print("WARN no git hooks: make hooks (security_check before each commit)")
     config = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config")
     if not os.environ.get("TM_PRIVATE_PATTERNS") and not (config / "terminum" / "private-patterns").is_file():
@@ -249,15 +274,15 @@ def main(argv):
         return timing(root)
     ident = tree_id(root)
     whole = gate_record.passed(root, ident)
-    fresh_h = FRESH_H if args.by == "release" else None
+    force, fresh_h = args.force or args.by == "rehearse", FRESH_H if args.by == "release" else None   # a rehearsal tests the machine too
     if args.passed:   # a pass without Docker counts while Docker still cannot run
         return 0 if counts(whole, fresh_h) else 1
-    if not args.force and args.by != "rehearse" and counts(whole, fresh_h):
+    if not force and counts(whole, fresh_h):
         if whole.get("skip"):
             print(f"SKIP docker: {whole['skip']}")
         print(f"check: passed already on {ident} at {whole.get('at', '?')} (--force runs it again)")
         return 0
-    return gate(root, ident, args)
+    return gate(root, ident, args.by, force, fresh_h)
 
 
 if __name__ == "__main__":

@@ -830,8 +830,8 @@ Scenario: AC-146 failure — the machine stays busy
   Then it ends with "release: the build server is not available for a release: load 31.0 over 16 for 15 minutes: nothing is public", having run no test
 
 Scenario: AC-146 edge — one full run at a time
-  Given a rehearsal's full run is running in another tree
-  When make release reaches its full run
+  Given a full run is running in another tree: make check by hand, a release's or a rehearsal's
+  When another full run has a step to run
   Then it waits in line, saying so each minute, and that wait counts in its 15 minutes
   But a release finding a rehearsal's full run in the turn says "release: rehearse 4f2a91c07's full run holds the turn: waiting for its end, its passes reused" and waits for its end, however long, then reuses the passes it kept (AC-201)
 
@@ -1065,7 +1065,7 @@ Scenario: AC-200 edge — the pinned commit's own code runs
 Scenario: AC-201 happy path — a second run runs the red step only
   Given make check on content 3f9a21c40b7d5e11 passed every step but live
   When make check runs again on the same content
-  Then it says "skip test: passed on 2026-11-18 10:02" for each step that passed and runs the build first, then live alone
+  Then it says "skip test: passed on 2026-11-18 10:02" for each step that passed (each e2e script is one) and runs the build first, then live alone
   And live green, it says "check: PASS on 3f9a21c40b7d5e11" and keeps the whole run's pass
   And make check --force (CHECK_ARGS=--force) runs every step
 
@@ -1077,8 +1077,8 @@ Scenario: AC-201 happy path — a pass is the repository's, not the tree's
 
 Scenario: AC-201 edge — the build no pass covers
   Given a step to run, after others were skipped on their passes
-  Then the run first builds the UI and terminumd's debug build, as a step of its own with no pass, so no step reads what an earlier content built
-  And a red build is a red run
+  Then the run first builds the UI and terminumd's debug build, with no pass of its own, so no step reads what an earlier content built
+  And a red build runs no step: the run is red at "build"
 
 Scenario Outline: AC-201 edge — what counts as docs
   Given the newest commit with a full pass is 4f2a91c07 and the content differs from it in <files>
@@ -1109,7 +1109,7 @@ Scenario: AC-201 edge — a budget under the full run's own load
 Scenario: AC-201 happy path — a flaky check passes on its retry
   Given the full run's live step fails, and the page step fails in webBoardPanel
   When every step had its first run
-  Then each runs once more, unchanged and one after the other: live's whole suite, and node web/test/e2e_all.mjs webBoardPanel alone (e2e_all.mjs says its red checks last: "red checks: webBoardPanel"); e2e's red scripts alone
+  Then each runs once more, unchanged and one after the other: live's whole suite, and node web/test/e2e_all.mjs webBoardPanel alone (e2e_all.mjs says its red checks last: "red checks: webBoardPanel"); each e2e script is a step of its own, retried alone
   And each prints "note page failed (webBoardPanel), run once more unchanged; the first run's last lines:" with them, the first run's log kept as .checks/<id>.page.first.log
   And when both pass, the steps count as passed, "ok page (412 s) on its retry", and the run's last lines say, red, "PASSED ONLY ON RETRY, the first run red: live live, page webBoardPanel: name each with its open task, here and in the release notes"
   And for each it prints the task for the run's agent to make, or to comment on when one is open: "Bug: flaky in the full run: page webBoardPanel", P2, with the first run's last lines
@@ -1123,7 +1123,7 @@ Scenario Outline: AC-201 failure — no retry
     | what                                                                                          | why                                                   |
     | the change since the newest full pass changed web/test/e2e_boardpanel.mjs, which webBoardPanel runs | its code changed since 4f2a91c07's full pass      |
     | a red line names AC-111, and a change since the newest full pass touched AC-111                | AC-111 changed since 4f2a91c07's full pass            |
-    | e2e scripts/e2e_hooks.py was retried in 3 of the last 7 recorded full runs                     | retried in 3 of the last 7 runs                       |
+    | e2e_hooks was retried in 3 of the last 7 recorded full runs that ran it                         | retried in 3 of the last 7 runs                       |
     | the step passed but left a process or a file (exit 3, AC-102)                                  | (no note: a leftover is red)                          |
     | the step runs no real program: test, clippy, install, security, the build                     | (no note)                                             |
     | the check fails again on its retry                                                             | (it is red twice)                                     |

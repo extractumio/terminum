@@ -18,44 +18,13 @@ from test_gate_record import Repo  # noqa: E402
 REAL_RUN = subprocess.run   # git and the rest go through; the scripts of the chain are stood in for
 
 
-class Turn:
-    """The one-full-run turn (scripts/tests/test_load_gate.py has the real one), held by `holder` until waited for."""
-    def __init__(self, test):
-        self.test = test
-
-    def __call__(self, repo):
-        return self
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *_):
-        pass
-
-    def take(self, wait=False):
-        self.test.turn_log.append(f"take wait={wait}")
-        return wait or not self.test.holder
-
-    def holder(self):
-        return self.test.holder or "another tree"
-
-    def busy(self):
-        return None
-
-    def hold_as(self, name):
-        self.test.turn_log.append(f"held as {name}")
-
-
 class Chain(Repo, unittest.TestCase):
     def setUp(self):
         self.make_repo()
         self.head = self.commit("a.txt")
-        self.calls, self.released, self.turn_log, self.said = [], [], [], []
-        self.gate, self.mac, self.busy, self.holder = 0, (False, ""), None, None
-        self.mac_runs = 0
+        self.calls, self.released, self.said = [], [], []
+        self.gate, self.mac, self.mac_runs = 0, (False, ""), 0
         patches = [mock.patch.object(release_turn.subprocess, "run", self.fake_run),
-                   mock.patch.object(release_turn.load_gate, "Turn", Turn(self)),
-                   mock.patch.object(release_turn.load_gate, "wait", lambda **_: self.busy),
                    mock.patch.object(release_turn, "mac_checks", self.mac_checks),
                    mock.patch.object(release_turn.release, "main", self.release)]
         for patch in patches:
@@ -66,9 +35,9 @@ class Chain(Repo, unittest.TestCase):
         if cmd[0] != sys.executable:
             return REAL_RUN(cmd, **kwargs)
         self.calls.append(cmd[1:])
-        if cmd[1:3] == ["scripts/check_all.py", "--passed"]:
-            return subprocess.CompletedProcess(cmd, 0 if gate_record.passed(self.repo, self.ident()) else 1)
-        if cmd[1:2] == ["scripts/check_all.py"]:
+        if cmd[1:2] == ["scripts/check_all.py"]:   # its own tests: test_check_all.py
+            if self.gate == 75:
+                return subprocess.CompletedProcess(cmd, 75)
             if self.gate == 0:
                 gate_record.keep(self.repo, self.ident(), {"retried": ["page webBoardPanel"]})
             gate_record.append(self.repo, {"kind": "gate", "content": self.ident(),
@@ -95,28 +64,15 @@ class Chain(Repo, unittest.TestCase):
     def test_a_release_hands_the_pinned_commit_and_its_retried_checks_on(self):  # AC-200, AC-201
         self.assertEqual(self.chain(), 0)
         self.assertEqual(self.released, [("v1.0.0", self.head, "", False, ["page webBoardPanel"])])
-        self.assertIn(["scripts/leftovers.py", "--end"], self.calls)
-        self.assertIn("held as release " + self.head[:9], self.turn_log)
+        self.assertEqual(self.calls, [["scripts/leftovers.py", "--end"], ["scripts/check_all.py", "--by", "release"]])
         entry = self.last()
         self.assertEqual((entry["kind"], entry["commit"], entry["result"], entry["mac"]), ("release", self.head, "published", "pass"))
 
-    def test_a_content_that_passed_runs_no_full_run_and_waits_for_nothing(self):  # AC-146, AC-201
-        gate_record.keep(self.repo, self.ident(), {})
-        self.busy = "load 31 over 8"
-        self.assertEqual(self.chain(), 0)
-        self.assertEqual(self.turn_log, [], "no turn, no wait")
-
     def test_a_busy_build_server_ends_the_release_before_any_test(self):  # AC-146
-        self.busy = "load 31 over 8"
+        self.gate = 75
         self.assertEqual(self.chain(), 1)
         self.assertIn("release: the build server is not available for a release: for 15 minutes: nothing is public", self.said)
         self.assertEqual((self.released, self.last()["result"]), ([], "busy"))
-
-    def test_a_release_waits_for_a_rehearsals_full_run_and_reuses_its_passes(self):  # AC-146, AC-200
-        self.holder = "rehearse 4f2a91c07"
-        self.assertEqual(self.chain(), 0)
-        self.assertIn("release: rehearse 4f2a91c07's full run holds the turn: waiting for its end, its passes reused", self.said)
-        self.assertIn("take wait=True", self.turn_log)
 
     def test_failing_tests_here_or_on_the_mac_stop_it_and_are_recorded(self):  # AC-104, AC-201
         self.gate = 1
@@ -141,10 +97,8 @@ class Chain(Repo, unittest.TestCase):
         self.chain()
         self.assertEqual(self.mac_runs, 2, "no pass kept for checks that did not run")
 
-    def test_a_rehearsal_runs_its_full_run_whatever_passed(self):  # AC-202
-        gate_record.keep(self.repo, self.ident(), {})
+    def test_a_rehearsal_runs_its_full_run_by_its_own_rules(self):  # AC-202
         self.assertEqual(self.chain(rehearsing=True), 0)
-        self.assertNotIn(["scripts/check_all.py", "--passed", "--by", "rehearse"], self.calls)
         self.assertIn(["scripts/check_all.py", "--by", "rehearse"], self.calls)
         self.assertEqual(self.released[0][3], True)
         self.assertEqual(self.last()["result"], "rehearsed")
