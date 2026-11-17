@@ -18,8 +18,10 @@ use crate::tasks::integration;
 use crate::tasks::ops::{self, sql};
 use crate::tasks::store::{Store, DISPATCHER};
 
-/// How many tasks' Prepare and Verify run at once: a targeted pass is as heavy as a batch's check.
-pub const VERIFY_MOST: usize = 1;
+/// How many tasks' Prepare and Verify run at once on the machine, over all projects (§9 Limits). Their lines pace
+/// their heavy steps themselves (this repository's: a heavy-build slot for each cargo step, one of two live-check
+/// slots for each real-program one), so beside two long runs a third lets a short one, a pass reused, through.
+pub const VERIFY_MOST: usize = 3;
 
 /// Prepare and Verify as one window that says which failed: Prepare's 2 stays 2 (a conflict), any other failure of
 /// either is 1 (a red check), whatever the line's own tool makes of its status (make turns each into 2). Each line
@@ -82,7 +84,11 @@ pub fn verify_step(store: &Store, runner: &dyn Runner, home: &Path, now: i64) ->
 
 /// The task's window followed: whether it still runs. Ended, the task is ready for a batch, or back to its agent.
 fn follow(store: &Store, runner: &dyn Runner, home: &Path, run: &Run, now: i64) -> Result<bool, String> {
-    let Some(pane) = &run.pane else { return Ok(false) };
+    // its window gone and its tree not yet removed: removed again, then started again
+    let Some(pane) = &run.pane else {
+        finish(store, home, run)?;
+        return Ok(false);
+    };
     let log = integration::verify_log_in(home, &run.project, run.number);
     let code = match window(runner, pane, &log, now - run.started > run.minutes * 60) {
         Window::Running => return Ok(true),
@@ -93,11 +99,16 @@ fn follow(store: &Store, runner: &dyn Runner, home: &Path, run: &Run, now: i64) 
         }
         Window::Ended(code) => code,
     };
-    let notes = retry_notes::read(&integration::verify_tree_in(home, &run.project, run.number));
+    let tree = integration::verify_tree_in(home, &run.project, run.number);
+    let notes = retry_notes::read(&tree);
+    let skipped = retry_notes::skipped(&tree).filter(|_| code == 0);
     let (id, log) = (&run.id, log.display());
     store.with(|tx| {
         if let Some(notes) = &notes {
             ops::notice(tx, DISPATCHER, id, &format!("{id}'s Verify has retry diagnostics (AC-197).\nCheck output (data):\n{notes}"), serde_json::json!({"retry": "verify"}), now)?;
+        }
+        if let Some(skipped) = &skipped {
+            ops::notice(tx, DISPATCHER, id, &format!("{id}'s Verify passed without the timed checks a busy machine skipped (AC-146): they did not run before its batch.\nCheck output (data):\n{skipped}"), serde_json::json!({"skipped": "verify"}), now)?;
         }
         match code {
             0 => {
@@ -152,12 +163,17 @@ fn start(store: &Store, runner: &dyn Runner, home: &Path, task: &str, project: &
     Ok(())
 }
 
-/// The task's tree removed with git, and its run forgotten once the tree is gone; a tree git could not remove is
-/// tried again at the next beat.
+/// The task's tree removed with git, and its run forgotten once the tree is gone. A folder git will not remove
+/// (no longer its worktree) is terminumd's own: removed, links not followed, and git told; one that still cannot
+/// go is tried again at the next beat.
 fn finish(store: &Store, home: &Path, run: &Run) -> Result<(), String> {
     let tree = integration::verify_tree_in(home, &run.project, run.number);
-    if tree.exists() && let Ok(p) = place(store, home, &run.project) {
-        let _ = git::run(&p.repo, &["worktree", "remove", "--force", &tree.to_string_lossy()]);
+    if tree.exists() && let Ok(p) = place(store, home, &run.project)
+        && git::run(&p.repo, &["worktree", "remove", "--force", &tree.to_string_lossy()]).is_err() {
+        if let Err(e) = std::fs::remove_dir_all(&tree) {
+            tracing::warn!(event = "integration.verify_tree", path = %tree.display(), error = %e);
+        }
+        let _ = git::run(&p.repo, &["worktree", "prune"]);
     }
     if tree.exists() {
         return store.with(|tx| tx.execute("UPDATE integration_verifies SET pane = NULL WHERE task = ?1", [&run.task]).map(drop).map_err(sql));

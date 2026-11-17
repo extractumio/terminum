@@ -140,3 +140,12 @@ fn ac193_integrate_where_the_project_integrates_and_never_on_a_batchs_task() {
     w.s.with(|tx| tx.execute("UPDATE project_integration SET is_on = 0 WHERE project = 'api'", []).map(drop).map_err(sql)).unwrap();
     assert_eq!(keys(), Value::Null, "integration off: no key");
 }
+
+#[test]
+fn ac198_a_queued_card_says_whether_its_verify_runs_or_waits() {
+    let w = world("ic-verify", Settings { verify: "true".into(), ..Settings::default() });
+    let a = crate::integrate::engine::tests::queued_with(&w, 1, "b.txt", "b\n", true);
+    assert_eq!(column(&w, INTEGRATION), [(a.clone(), "waits for Verify".to_string())]);
+    go(&w, &Sh { hang: true, ..Default::default() }, 1);
+    assert_eq!(column(&w, INTEGRATION), [(a, "verifying".to_string())]);
+}
