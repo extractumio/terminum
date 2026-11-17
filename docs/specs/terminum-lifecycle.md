@@ -1115,7 +1115,7 @@ Scenario: AC-201 happy path — a flaky check passes on its retry
   When every step had its first run
   Then each runs once more, unchanged and one after the other: live's whole suite, and node web/test/e2e_all.mjs webBoardPanel alone (e2e_all.mjs says its red checks last: "red checks: webBoardPanel"); each e2e script is a step of its own, retried alone
   And each prints "note page failed (webBoardPanel), run once more unchanged; the first run's last lines:" with them, the first run's log kept as .checks/<id>.page.first.log
-  And when both pass, the steps count as passed, "ok page (412 s) on its retry", and the run's last lines say, red, "PASSED ONLY ON RETRY, the first run red: live live, page webBoardPanel: name each with its open task, here and in the release notes"
+  And when both pass, the steps count as passed, "ok page (412 s) on its retry", and the run's last lines say, red, "PASSED ONLY ON RETRY, the first run red: live, page webBoardPanel: name each with its open task, here and in the release notes"
   And for each it prints the task for the run's agent to make, or to comment on when one is open: "Bug: flaky in the full run: page webBoardPanel", P2, with the first run's last lines
   And the step's pass keeps the retried checks, so a release on that content, by this run or reusing its pass, names them in its notes under "Passed only on retry, the first run red"
 
