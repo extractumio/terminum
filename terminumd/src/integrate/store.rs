@@ -280,22 +280,11 @@ pub fn set_pane(tx: &Transaction, id: i64, pane: Option<&str>, at: i64) -> Resul
     tx.execute("UPDATE integration_batches SET pane = ?2, step_started = ?3 WHERE id = ?1", rusqlite::params![id, pane, pane.map(|_| at)]).map(drop).map_err(sql)
 }
 
+/// The batch's round ends `result`; a red round (its check red, over its time or not started) is final: building the
+/// batch anew keeps its result, words and end time, so its checked time holds no analysis (AC-190).
 pub fn round_ends(tx: &Transaction, b: &Batch, result: &str, why: Option<&str>, at: i64) -> Result<(), String> {
-    tx.execute("UPDATE integration_rounds SET result = ?3, why = ?4, ended = ?5, started = coalesce(started, ?6) WHERE batch = ?1 AND round = ?2",
+    tx.execute("UPDATE integration_rounds SET result = ?3, why = ?4, ended = ?5, started = coalesce(started, ?6) WHERE batch = ?1 AND round = ?2 AND result <> 'red'",
                rusqlite::params![b.id, b.round, result, why, at, b.step_started]).map(drop).map_err(sql)
-}
-
-/// The round left by the target's move or a task leaving, written "moved"; a red round (its check red, over its
-/// time or not started) keeps its result, words and end time, so the batch's checked time holds no analysis (AC-190).
-pub fn round_moved(tx: &Transaction, b: &Batch, why: &str, at: i64) -> Result<(), String> {
-    if round_result(tx, b)?.as_deref() == Some(RED) {
-        return Ok(());
-    }
-    round_ends(tx, b, "moved", Some(why), at)
-}
-
-fn round_result(tx: &Transaction, b: &Batch) -> Result<Option<String>, String> {
-    tx.query_row("SELECT result FROM integration_rounds WHERE batch = ?1 AND round = ?2", (b.id, b.round), |r| r.get(0)).optional().map_err(sql)
 }
 
 /// The batch's integration task's ID, while it has one.

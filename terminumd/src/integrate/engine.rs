@@ -345,7 +345,7 @@ fn again(store: &Store, p: &Place, b: &Batch, target: &str, now: i64) -> Result<
         for (q, why) in &c.returned {
             bs::give_back(tx, &q.task, &bs::conflict_words(q, why, &p.s, target), bs::Left::Conflict, now)?;
         }
-        bs::round_moved(tx, b, &format!("{} moved to {} or a task left: built anew", p.s.target, short(target)), now)?;
+        bs::round_ends(tx, b, "moved", Some(&format!("{} moved to {} or a task left: built anew", p.s.target, short(target))), now)?;
         if c.chosen.is_empty() {
             return bs::give_up(tx, b, "every task returned", now);
         }
