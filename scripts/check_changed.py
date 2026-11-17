@@ -34,7 +34,7 @@ import live_slots  # noqa: E402
 from check_logs import bounded_log, preserve_attempt, tail as log_tail
 from check_cancel import run_guard  # noqa: E402
 from check_step import LEFT  # noqa: E402
-from load_gate import for_task, MINUTES  # noqa: E402
+from load_gate import for_task, FULL_RUN, MINUTES  # noqa: E402
 from worktree import common_dir, Refused, releasing  # noqa: E402
 from worktree_fresh import PIPELINE  # noqa: E402
 
@@ -349,7 +349,7 @@ def run(steps, root=REPO, gate=True, nice=False, landing=False):
             if gate and timed(name):
                 busy, asked, gate = for_task(root), True, False
             if busy and timed(name):
-                print(red(f"SKIP {name}: {busy} {MINUTES}"), flush=True)
+                print(red(f"SKIP {name}: {busy}"), flush=True)
                 skipped.append(name)
                 continue
             optional = command.startswith("-")
@@ -381,7 +381,8 @@ def run(steps, root=REPO, gate=True, nice=False, landing=False):
         said.unlink(missing_ok=True)   # a targeted run says only its own retries
     note = logs / "skipped"
     if skipped:
-        note.write_text(f"targeted: SKIPPED timed checks, the machine busy {MINUTES}: {' '.join(skipped)}\n")
+        how = "a full run held the machine" if busy == FULL_RUN else f"the machine busy {MINUTES}"
+        note.write_text(f"targeted: SKIPPED timed checks, {how}: {' '.join(skipped)}\n")
     elif asked:
         note.unlink(missing_ok=True)   # this run's timed checks ran on a quiet machine
     return failed

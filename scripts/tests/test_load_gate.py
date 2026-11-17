@@ -74,22 +74,29 @@ class Gate(unittest.TestCase):
 
     def test_a_tasks_timed_checks_are_skipped_after_15_minutes_saying_so(self):  # AC-146
         m = Machine(31)
-        with mock.patch.object(gate, "releasing", return_value=False):
-            why = gate.for_task(load=m.load, say=m.said.append, clock=lambda: m.now, sleep=m.sleep)
-        self.assertEqual(why, "load 31 over 8")
+        why = gate.for_task(held=lambda _: False, load=m.load, say=m.said.append, clock=lambda: m.now, sleep=m.sleep)
+        self.assertEqual(why, "load 31 over 8 for 15 minutes")
         self.assertEqual(m.said[-1], "gate: load 31 over 8 for 15 minutes: the timed checks are skipped")
 
     def test_a_tasks_timed_checks_run_once_it_is_quiet(self):  # AC-146
         m = Machine(31, 1)
-        with mock.patch.object(gate, "releasing", return_value=False):
-            self.assertIsNone(gate.for_task(load=m.load, say=m.said.append, clock=lambda: m.now, sleep=m.sleep))
+        self.assertIsNone(gate.for_task(held=lambda _: False, load=m.load, say=m.said.append, clock=lambda: m.now, sleep=m.sleep))
 
-    def test_a_tasks_checks_wait_while_a_release_runs(self):  # AC-146
+    def test_a_tasks_timed_checks_are_skipped_at_once_while_a_full_run_holds_its_turn(self):  # AC-146
         m = Machine(1)
-        with mock.patch.object(gate, "releasing", return_value=True):
-            gate.for_task(load=m.load, say=m.said.append, clock=lambda: m.now, sleep=m.sleep)
-        self.assertIn("a release is running: waiting", m.said[0])
-        self.assertEqual(m.said[-1], "gate: a release is running for 15 minutes: the timed checks are skipped")
+        self.assertEqual(gate.for_task(held=lambda _: True, load=m.load, say=m.said.append, clock=lambda: m.now, sleep=m.sleep), gate.FULL_RUN)
+        self.assertEqual(m.said, ["gate: a full run holds the machine (a release's or a rehearsal's): the timed checks are skipped"])
+        self.assertEqual(m.now, 0, "no wait")
+
+    def test_a_release_past_its_full_run_is_a_quiet_machine_to_the_gate(self):  # AC-146
+        m = Machine(1)
+        with tempfile.TemporaryDirectory() as home:
+            subprocess.run(["git", "init", "-q", home], check=True)
+            (Path(home) / ".git" / "terminum-release").write_text(f"{os.getpid()}\n")   # its mark, on the Mac runner's step
+            self.assertIsNone(gate.for_task(home, load=m.load, say=m.said.append, clock=lambda: m.now, sleep=m.sleep))
+            with gate.Turn(home) as full:
+                self.assertIsNone(full.busy())   # its full run
+                self.assertEqual(gate.for_task(home, load=m.load, say=m.said.append), gate.FULL_RUN)
 
     def test_make_check_by_hand_ends_75_when_still_busy(self):  # AC-146
         with mock.patch.object(gate, "wait", return_value="load 31 over 8"), \
