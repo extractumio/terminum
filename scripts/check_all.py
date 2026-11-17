@@ -27,7 +27,7 @@ import time
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from check_cancel import run_guard  # noqa: E402
-from check_changed import changed_files, is_doc, red, tail, tree_id  # noqa: E402
+from check_changed import changed_files, is_doc, red, runnable_e2e, tail, tree_id  # noqa: E402
 from check_logs import bounded_log, preserve_attempt  # noqa: E402
 from check_step import LEFT  # noqa: E402
 import gate_record  # noqa: E402
@@ -50,7 +50,8 @@ TIMED = [("e2e_hooks", "python3 scripts/e2e_hooks.py"), ("e2e_isolation", "pytho
 
 def steps(root, ident):
     """[(name, shell command)] in order."""
-    e2e = sorted(p for p in root.glob("scripts/e2e_*.py") if "remote_sshd" not in p.name)   # Docker's: their own step
+    # Docker's take built binaries: their own step; an imported helper (e2e_ws.py) is no check
+    e2e = sorted(p for p in root.glob("scripts/e2e_*.py") if "remote_sshd" not in p.name and runnable_e2e(p))
     found = [("test", "make test"),
              ("clippy", "cd terminumd && cargo clippy --locked --all-targets -- -D warnings"),
              ("panel", "cd ui && node test/e2e_panel.mjs"),

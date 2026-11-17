@@ -152,8 +152,17 @@ class Gate(Repo, unittest.TestCase):
         self.check()
         self.assertEqual(gate_record.passed(self.repo, ident)["retried"], ["page webBoardPanel"], "the release names it")
 
+    def test_each_e2e_script_is_a_step_and_a_helper_is_none(self):  # AC-201, AC-104
+        self.commit("scripts/e2e_core.py", 'if __name__ == "__main__":\n    pass\n')
+        self.commit("scripts/e2e_ws.py", "def check():\n    pass\n")
+        self.commit("scripts/e2e_remote_sshd.py", 'if __name__ == "__main__":\n    pass\n')
+        names = [name for name, _ in check_all.steps(self.repo, "x")]
+        self.assertIn("e2e_core", names)
+        self.assertNotIn("e2e_ws", names)
+        self.assertNotIn("e2e_remote_sshd", names, "Docker's own step runs it")
+
     def test_a_timing_line_is_kept_with_the_step(self):  # AC-201
-        self.commit("scripts/e2e_hooks.py")
+        self.commit("scripts/e2e_hooks.py", 'if __name__ == "__main__":\n    pass\n')
         self.lines["e2e_hooks"] = ["TIMING over budget (judged on a quiet machine): AC-39 a hook (median): 62 ms, budget 50 ms"]
         self.check()
         ident = check_all.tree_id(self.repo)
