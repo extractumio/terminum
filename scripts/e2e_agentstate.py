@@ -145,7 +145,9 @@ def main():
                 rows.append((round(time.time() - start, 1), r["state"], bool(r.get("unread"))))
                 if r.get("unread") and unread_at is None:
                     unread_at = time.time() - start
-        during = [x for x in rows if x[0] < SHELL_FOR - 1]
+        # from its first read on: a loaded machine reads the new pane a second or two late
+        read_from = next((i for i, x in enumerate(rows) if x[1] is not None), len(rows))
+        during = [x for x in rows[read_from:] if x[0] < SHELL_FOR - 1]
         check("AC-93 Claude Code done with a shell still running in the background (its footer's \"1 shell\") is working, not unread",
               during and all(x[1] == "working" and not x[2] for x in during), rows)
         check("AC-93 once the shell ended, the turn ends: unread SETTLE later",
