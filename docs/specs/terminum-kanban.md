@@ -1388,14 +1388,14 @@ Depends on: nothing more.
 ## 11. Checklist with Definition of Done
 
 - [x] AC-105 — `cargo test tasks::query`, `web/test/e2e_kanbansort.mjs` (`node web/test/e2e_all.mjs webKanbanSort`), `web/test/e2e_liveboardsort.mjs` (`node web/test/e2e_live.mjs boardsort`), `web/test/e2e_liveboard.mjs` (`node web/test/e2e_live.mjs board`), a phone's in `liveBoardPhone`, its projects and filters not read in `web/test/e2e_liveboardedge.mjs`, a phone's one-row head in `web/test/e2e_boardphone.mjs` (`node web/test/e2e_all.mjs webBoardPhone`: 390 and 320 px), TODO and the panel and a tablet in `web/test/e2e_boardpanel.mjs` (`node web/test/e2e_all.mjs webBoardPanel`: a computer at 1900 and 1400 px, an iPad at 1180×820, 1366×1024, 820×1180 and 744×1133, a phone on its side at 844×390), one type size in `web/test/e2e_boardtype.mjs` (`node web/test/e2e_all.mjs webBoardType`: 1400 px and a phone)
-- [x] AC-159 — `web/test/e2e_liveschedules.mjs` (`liveFolded`: one line, shown whole, the next folds it, a window on the second press, Esc, kept as the columns are read; wide and phone), `web/test/e2e_liveboardpool.mjs` (a folded card's waiting dot, its words on hover)
+- [x] AC-159 — `web/test/e2e_liveschedules.mjs` (`liveFolded`: one line, shown whole, the next folds it, a window on the second press, Esc, kept as the columns are read; wide and phone), no Run key on a folded TODO card no agent ran in `web/test/e2e_boardpanel.mjs` and `web/test/e2e_boardphone.mjs`, `web/test/e2e_liveboardpool.mjs` (a folded card's waiting dot, its words on hover)
 - [x] AC-199 — `cargo test tasks::attrs`, `tasks::groom` (agents' fields and link_task), `tasks::store` (the titles' words moved once), `cli::mcp`, `web/test/e2e_liveattrs.mjs` (`node web/test/e2e_live.mjs boardtasks`: Details in a task's and New task's window, the search, a ring refused)
 - [x] AC-106 — `web/test/e2e_liveboard.mjs`, `web/test/e2e_tasktext.mjs` (one text editor), `web/test/e2e_liveboardpool.mjs`, `web/test/e2e_newtask.mjs` (unspecified agent, explicit choice, removal and refusal), `web/test/e2e_livenotes.mjs` (New task from selection), `cargo test tasks::ops`
 - [x] AC-107 — `cargo test tasks::ops`, `web/test/e2e_liveboard.mjs`
 - [x] AC-108 — `cargo test tasks::ops`, `web/test/e2e_liveboard.mjs`
 - [x] AC-109 — `cargo test tasks::files` (a failed purge, a stop's leftovers), `cargo test tasks::tools`, `web/test/e2e_liveboard.mjs`
 - [x] AC-110 — `cargo test page::projects`, `scripts/e2e_core.py`, `web/test/e2e_projects.mjs`, `web/test/e2e_livelistplace.mjs`, `web/test/e2e_liveboard.mjs`
-- [x] AC-111 — `cargo test tasks::ops`, `web/test/e2e_liveboard.mjs`
+- [x] AC-111 — `cargo test tasks::ops`, `web/test/e2e_liveboard.mjs`, Find in TODO's head in `web/test/e2e_boardpanel.mjs`, a phone's in its head in `web/test/e2e_boardphone.mjs`
 - [x] AC-112 — `cargo test tasks::ops`, `cargo test tasks::family`, `web/test/e2e_liveboardtasks.mjs`, `web/test/e2e_liveboardids.mjs`
 - [x] AC-113 — `cargo test tasks::ops` (a task whose session could not follow goes back), `web/test/e2e_liveboard.mjs`
 - [x] AC-115 — `cargo test tasks::tools`, `cargo test cli::mcp`, `web/test/e2e_livenotes.mjs`, `web/test/e2e_livearchived.mjs` (archived moves and results refused; unchanged history)
