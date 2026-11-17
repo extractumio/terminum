@@ -27,6 +27,140 @@ fn said(w: &World, id: &str) -> Vec<String> {
         [id], |r| r.get(0))).unwrap()
 }
 
+fn commit(dir: &Path, file: &str, text: &str) {
+    std::fs::write(dir.join(file), text).unwrap();
+    sh(dir, &["add", file]);
+    sh(dir, &["commit", "-qm", file]);
+}
+
+/// A restart loses the walk's in-memory answers, but not the notice events.
+fn forget_git(w: &World) {
+    if let Some(asked) = ASKED.lock().as_mut() {
+        let prefix = format!("{}:", w.api.display());
+        asked.retain(|k, _| !k.starts_with(&prefix));
+    }
+    if let Some(told) = TOLD.lock().as_mut() {
+        told.retain(|k| !k.contains(w.root.to_str().unwrap()));
+    }
+}
+
+#[test]
+fn ac192_only_successfully_checked_advice_is_cached_in_its_own_store() {
+    let root = crate::testutil::fresh_dir("in-told");
+    let scope = root.to_str().unwrap();
+    let mut calls = 0;
+    let mut say = || {
+        calls += 1;
+        if calls == 1 { Err("store unavailable".into()) } else { Ok(()) }
+    };
+    assert!(told(scope, json!(["task", "files"]), &mut say).is_err());
+    told(scope, json!(["task", "files"]), &mut say).unwrap();
+    told(scope, json!(["task", "files"]), &mut say).unwrap();
+    assert_eq!(calls, 2, "a failed store turn is retried; success is cached");
+    let mut other = false;
+    told(&format!("{scope}/other"), json!(["task", "files"]), || { other = true; Ok(()) }).unwrap();
+    assert!(other, "a different store cannot inherit the cache hit");
+}
+
+#[test]
+fn ac192_overlap_changes_are_said_but_commit_and_queue_place_changes_are_not() {
+    let w = world("in-meaning", Settings::default());
+    let (a, mut b) = (working(&w, 1, "a.txt", "ours\n"), working(&w, 2, "a.txt", "theirs\n"));
+    let home = w.root.join("home");
+    let walk_at = |b: &Tree, at| walk(&w.s, &home, &[a.clone(), b.clone()], &[], at).unwrap();
+    walk_at(&b, 10);
+    commit(&a.dir, "a.txt", "ours again\n");
+    walk_at(&b, 11);
+    commit(&b.dir, "a.txt", "theirs again\n");
+    walk_at(&b, 12);
+    assert_eq!(said(&w, &a.id).len(), 1, "neither side's new commit repeats the same overlap");
+    assert_eq!(said(&w, &b.id).len(), 1);
+    commit(&a.dir, "b.txt", "ours\n");
+    commit(&b.dir, "b.txt", "theirs\n");
+    walk_at(&b, 13);
+    assert_eq!(said(&w, &a.id).len(), 2, "a new conflicting file is new information");
+    assert!(said(&w, &a.id)[1].contains("a.txt, b.txt"));
+    let head = sh(&b.dir, &["rev-parse", "HEAD"]);
+    w.s.with(|tx| {
+        let task = ops::get(tx, &b.id)?;
+        ops::place(tx, HUMAN, &task, ops::INTEGRATION, 14)?;
+        tx.execute("INSERT INTO integration_entries (task, project, commit_sha, result, author, queued_at) VALUES (?1, 'api', ?2, 'Outcome: Done', 'human', 14)",
+                   (&b.task, &head)).map_err(sql).map(drop)
+    }).unwrap();
+    b.working = false;
+    walk_at(&b, 15);
+    let to_a = said(&w, &a.id);
+    assert_eq!(to_a.len(), 3, "queuing the same HEAD changes what the other task needs to know");
+    assert!(to_a[2].contains(&format!("{} is queued for integration (1st)", b.id)));
+    assert_eq!(said(&w, &b.id).len(), 2, "the queued task gets no overlap notice");
+    queued(&w, 3, "elsewhere.txt", "queued before it\n");
+    w.s.with(|tx| tx.execute("UPDATE integration_entries SET queued_at = 0 WHERE task != ?1", [&b.task]).map_err(sql).map(drop)).unwrap();
+    walk_at(&b, 16);
+    assert_eq!(said(&w, &a.id).len(), 3, "a different queue place adds no overlap information");
+    let reopened = Store::open(w.root.join("kanban.sqlite"));
+    forget_git(&w);
+    walk(&reopened, &home, &[a.clone(), b], &[], 17).unwrap();
+    assert_eq!(said(&w, &a.id).len(), 3, "remembered in the store");
+    assert_eq!(overlaps_of(&a.task, 17).len(), 1, "AC-193's mark remains even when no notice is new");
+}
+
+#[test]
+fn ac192_loose_tree_identity_outlives_its_commits_and_display_name() {
+    let w = world("in-loose-key", Settings::default());
+    let a = working(&w, 1, "a.txt", "ours\n");
+    let home = w.root.join("home");
+    let dir = w.root.join("loose");
+    loose(&w, &dir, None, "a.txt", "theirs\n");
+    walk(&w.s, &home, std::slice::from_ref(&a), &[], 10).unwrap();
+    commit(&dir, "a.txt", "theirs again\n");
+    walk(&w.s, &home, std::slice::from_ref(&a), &[], 11).unwrap();
+    assert_eq!(said(&w, &a.id).len(), 1, "the detached commit in the display name is not the tree's identity");
+    let second = w.root.join("second");
+    let head = sh(&dir, &["rev-parse", "HEAD"]);
+    sh(&w.api, &["worktree", "add", "-q", "--detach", second.to_str().unwrap(), &head]);
+    let sessions = [(dir, "same".into()), (second, "same".into())];
+    walk(&w.s, &home, std::slice::from_ref(&a), &sessions, 12).unwrap();
+    assert_eq!(said(&w, &a.id).len(), 2, "distinct trees with matching display names each count");
+}
+
+#[test]
+fn ac192_moved_notices_follow_new_files_and_relevant_target_changes() {
+    let w = world("in-move-key", Settings::default());
+    let a = working(&w, 1, "a.txt", "ours\n");
+    let home = w.root.join("home");
+    let target_commit = |file, text| {
+        commit(&w.api, file, text);
+        sh(&w.api, &["push", "-q", "origin", "HEAD:main"]);
+        sh(&w.api, &["fetch", "-q", "origin"]);
+    };
+    let walk_at = |at| walk(&w.s, &home, std::slice::from_ref(&a), &[], at).unwrap();
+    target_commit("a.txt", "target\n");
+    walk_at(10);
+    commit(&a.dir, "a.txt", "ours again\n");
+    walk_at(11);
+    assert_eq!(said(&w, &a.id).len(), 1, "task-only commits do not repeat target advice");
+    target_commit("b.txt", "elsewhere\n");
+    walk_at(12);
+    assert_eq!(said(&w, &a.id).len(), 1, "an unrelated target commit does not repeat target advice");
+    // Git quotes this name; it must remain display data, never a pathspec passed back to Git.
+    let odd = "[new]\tfile.txt";
+    target_commit(odd, "target\n");
+    commit(&a.dir, odd, "ours\n");
+    walk_at(13);
+    assert_eq!(said(&w, &a.id).len(), 2, "a new affected file is new information");
+    target_commit(odd, "target again\n");
+    walk_at(14);
+    assert_eq!(said(&w, &a.id).len(), 3, "a relevant target commit is new information");
+    let reopened = Store::open(w.root.join("kanban.sqlite"));
+    forget_git(&w);
+    walk(&reopened, &home, std::slice::from_ref(&a), &[], 15).unwrap();
+    assert_eq!(said(&w, &a.id).len(), 3, "remembered after reopening the store");
+    sh(&a.dir, &["rm", "-q", "--", odd]);
+    sh(&a.dir, &["commit", "-qm", "drop the added file"]);
+    walk_at(16);
+    assert_eq!(said(&w, &a.id).len(), 3, "dropping an affected file gives no new advice");
+}
+
 #[test]
 fn ac192_two_trees_whose_commits_do_not_merge_are_each_told_once() {
     let w = world("in-overlap", Settings::default());
@@ -35,7 +169,7 @@ fn ac192_two_trees_whose_commits_do_not_merge_are_each_told_once() {
     walk(&w.s, &w.root.join("home"), &[a.clone(), b.clone(), other.clone()], &[], 10).unwrap();
     walk(&w.s, &w.root.join("home"), &[a.clone(), b.clone(), other.clone()], &[], 11).unwrap();
     let to_a = said(&w, &a.id);
-    assert_eq!(to_a.len(), 1, "once for that pair of commits: {to_a:?}");
+    assert_eq!(to_a.len(), 1, "once for that overlap: {to_a:?}");
     assert_eq!(to_a[0], format!("{}: its commits and {}'s (IN PROGRESS) change the same files: a.txt. They cannot be in one batch. Agree with its session who goes first; the other merges origin/main after the first lands, then queues.", a.id, b.id));
     assert_eq!(said(&w, &b.id).len(), 1);
     assert!(said(&w, &other.id).is_empty(), "another file: nothing to tell");
@@ -47,9 +181,7 @@ fn loose(w: &World, dir: &Path, branch: Option<&str>, file: &str, text: &str) {
         Some(b) => sh(&w.api, &["worktree", "add", "-q", "-b", b, dir.to_str().unwrap(), "origin/main"]),
         None => sh(&w.api, &["worktree", "add", "-q", "--detach", dir.to_str().unwrap(), "origin/main"]),
     };
-    std::fs::write(dir.join(file), text).unwrap();
-    sh(dir, &["add", file]);
-    sh(dir, &["commit", "-qm", file]);
+    commit(dir, file, text);
 }
 
 #[test]
@@ -78,7 +210,7 @@ fn ac192_a_tree_with_no_task_is_only_the_other_side_named_by_its_session_or_fold
         format!("{}: its commits and detached {} (folder {}), a tree with no task, change the same files: a.txt. Whichever lands second merges origin/main first: once it lands, merge origin/main before you queue.",
                 a.id, git::short(&sh(&bare, &["rev-parse", "HEAD"])), real.display()),
         format!("{}: its commits and fix/retry (session \"ops\"), a tree with no task, change the same files: a.txt. Whichever lands second merges origin/main first: once it lands, merge origin/main before you queue.", a.id),
-    ], "once per pair of commits; a session named without control characters or quotes; terminum's own tree, a waiting task's and one changing other files said nothing");
+    ], "once per tree and conflict set; a session named without control characters or quotes; terminum's own tree, a waiting task's and one changing other files said nothing");
     assert!(said(&w, &asks.id).is_empty(), "a task not in work is not compared");
     assert!(overlaps_of(&a.task, 11).is_empty(), "a tree with no task has no card to open: no mark");
 }
