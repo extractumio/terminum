@@ -47,7 +47,7 @@ Dependencies:
 
 | ID | Dependency | Owner | Status |
 |---|---|---|---|
-| DEP-81 | tmux ≥ 3.2 on the host (DEP 02); before 3.6 every `capture-pane -p` from a control client leaks its whole buffer, about 1 GB a day on a busy host, so 3.6 or newer is wanted. Only a server restart gives that memory back. | Owner | available |
+| DEP-81 | tmux ≥ 3.2 on the host (DEP 02); before 3.6 every `capture-pane -p` from a control client leaks its whole buffer, about 1 GB a day on a busy host, so 3.6 or newer is wanted. Only a server restart gives that memory back. Before 3.8 the host's server can also crash with terminum attached, ending every terminal in it (DEP-02), so 3.8 is better still. | Owner | available |
 | DEP-82 | zig and cargo-zigbuild pinned by `scripts/agents.py` in `./.toolchain` for Linux musl builds; the owner's self-hosted Linux runner for CI. | Claude | available |
 
 Open questions:

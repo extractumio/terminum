@@ -57,7 +57,7 @@ Dependencies:
 | ID | Dependency | Owner | Status |
 |---|---|---|---|
 | DEP-01 | Rust stable; crates: axum 0.8 (ws), tokio 1, notify 8, rust-embed 8, trash 5, serde_json 1, unicode-width 0.2 (cells of wide characters). The SGR parser is our own (`screen/sgr.rs`). `terminumd/Cargo.toml` lists the rest. | Claude | available |
-| DEP-02 | tmux ≥ 3.2 on PATH on the Mac and on every remote host (`ignore-size`, `window-size manual`, `send-keys -H`). | Owner | available |
+| DEP-02 | tmux ≥ 3.2 on PATH on the Mac and on every remote host (`ignore-size`, `window-size manual`, `send-keys -H`); 3.8 or newer wanted: before it, a server crashes (SIGSEGV in its control-mode notifications) when a session ends while a window change is queued for a control client, as when two windows' programs end at once, ending every terminal in it (tmux commit 035447b0; terminum-lifecycle.md AC-08). | Owner | available |
 | DEP-03 | Node 26 and npm at build time only: esbuild, CodeMirror 6, markdown-it 15, mermaid 11 (`ui/package.json`). | Claude | available |
 | DEP-05 | The page `web/static/` and the panel `ui/`, in this repository. | Claude | available |
 | DEP-06 | crate rustysynth 1 (MIT, pure Rust) renders MIDI with a SoundFont for View (terminum-files.md AC-64): browsers play no MIDI. The package ships GeneralUser GS 2.0.3 (S. Christian Collins, License v2.0: free use in software, its LICENSE.txt beside it), fetched by `scripts/package.py` from github.com/mrbumpy409/GeneralUser-GS at commit 9704918 and checked by SHA-256. | Claude | available |
@@ -1306,7 +1306,7 @@ stateDiagram-v2
 | AC-13 | A window no page in sight shows is not zoomed: an agent working unseen lays out what it prints for its share of the window while a teammate runs, and that stays when its pane is opened. | `terminumd/src/page/stream.rs` (only a shown pane's stream zooms) |
 | AC-13 | Two terminumds on one host's tmux, whose pages show different panes of a split window, take the zoom from each other about ten times a second: who holds it is known per terminumd, and each sees the other's clients as its own kind. | `terminumd/src/page/zoom.rs` `may_take` |
 | AC-88 | A dragged quick shell's floor is 12 % of the view, not 6 rows or 20 columns: a 600 px high view leaves about 4 rows. | `web/static/quick.js:11` |
-| AC-01 | A tmux older than 3.2 gets no message of terminum's: there is no version check, and "tmux 3.2 or newer is needed" is in no code. Only a missing tmux is said. | `terminumd/src/tmux/server.rs:30` |
+| AC-01 | A tmux older than 3.2 gets no message of terminum's: "tmux 3.2 or newer is needed" is in no code. Only a missing tmux is said, and by the install a running server before 3.8 (terminum-lifecycle.md AC-08). | `terminumd/src/tmux/server.rs:30` |
 | AC-20 | `/health` has `pages` and `rss_mb` but not `frames_sent`, `frame_ms_p95`, `tmux_errors`, `client_restarts` or `panes_shown`, so nothing can alert on them. | `terminumd/src/sock.rs:256` |
 | AC-20 | "Open a pane, p95 < 1 s" has no measurement: `e2e_term.mjs` checks what history pages draw and times nothing. | `web/test/e2e_term.mjs:114` |
 | AC-20 | "Page heap under 150 MB" is read by hand from `?trace=2`'s state, and only where the browser has `performance.memory`. | `web/static/tracebuf.js:280` |
@@ -1526,7 +1526,7 @@ curl -s -X POST -H "X-TM-Session: …" -H "Origin: http://evil.example" -H "Cont
 
 ### Compatibility
 
-- tmux 3.2–3.6 (DEP-02). tmux 3.4 (Ubuntu 24.04) writes a `$` in a window name and in `#{pane_current_path}` as `\$`: terminumd shows tmux's name as it is, and the Files panel of a pane in a folder whose name holds `$` says the folder is not found (tmux 3.5+ is exact). tmux 3.8 keeps a `\` of a window name as `\\` (its folder exact): the list shows tmux's name as it is, and a rename typed over it keeps the doubled one.
+- tmux 3.2–3.8 (DEP-02); before 3.8 a server can crash with terminumd attached (DEP-02). tmux 3.4 (Ubuntu 24.04) writes a `$` in a window name and in `#{pane_current_path}` as `\$`: terminumd shows tmux's name as it is, and the Files panel of a pane in a folder whose name holds `$` says the folder is not found (tmux 3.5+ is exact). tmux 3.8 keeps a `\` of a window name as `\\` (its folder exact): the list shows tmux's name as it is, and a rename typed over it keeps the doubled one.
 
 ### Logging and observability
 

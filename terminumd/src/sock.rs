@@ -230,6 +230,13 @@ async fn started_by(app: &Shared) -> Option<String> {
     Some(lines.into_iter().next().unwrap_or_default().trim().to_string())
 }
 
+/// The running tmux server's own version (`#{version}`), which a newer binary on PATH does not
+/// change until it restarts; None when no server answers.
+async fn server_version(app: &Shared) -> Option<String> {
+    let lines = app.tmux.local.run("display-message -p '#{version}'").await.ok()?;
+    lines.into_iter().next().map(|l| l.trim().to_string()).filter(|v| !v.is_empty())
+}
+
 #[derive(Deserialize, Default)]
 struct Wait {
     #[serde(default)]
@@ -275,7 +282,7 @@ async fn health(State(app): State<Shared>) -> Json<Value> {
         "build": crate::config::build_id(), "pid": std::process::id(), "uptime_s": app.started.elapsed().as_secs(),
         "port": app.cfg.port, "password": crate::webaccess::status(&app), "servers": servers,
         "hosts": crate::hosts::list(&app), "pages": app.pages.count(),
-        "tmux": {"ok": problem.is_none(), "message": problem, "started_by": started_by(&app).await},
+        "tmux": {"ok": problem.is_none(), "message": problem, "started_by": started_by(&app).await, "version": server_version(&app).await},
         "service": app.cfg.service,
         "signins": app.signins.count(), "workspaces": app.store.len(),
         "denied_requests": app.denied.load(Ordering::Relaxed), "rss_mb": rss_mb(),

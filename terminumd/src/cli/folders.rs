@@ -40,9 +40,7 @@ pub fn restart_line(ctx: &Ctx, started_by: &Value) -> Option<String> {
         return None;
     }
     let who = if by.is_empty() { "a version before this one, or by hand".to_string() } else { ctx.shown(Path::new(by)) };
-    Some(format!("terminum's tmux was started by {who}: macOS judges its terminals' folders by that, not by terminum; \
-                  restart it once at a quiet moment: tmux -L terminum kill-server (sessions, windows, splits, folders \
-                  and projects come back; running programs do not)"))
+    Some(format!("terminum's tmux was started by {who}: macOS judges its terminals' folders by that, not by terminum; {}", crate::tmux::version::RESTART))
 }
 
 /// What the answers say, decided ones first, then what macOS still asks.

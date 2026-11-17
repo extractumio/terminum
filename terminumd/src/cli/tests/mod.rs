@@ -181,7 +181,7 @@ pub fn fixed(status: u16, answer: Value) -> Route {
 pub fn fake_health(build: &str) -> Value {
     json!({"build": build, "pid": std::process::id(), "uptime_s": 1, "port": 48080,
            "password": {"set": true, "error": null}, "servers": [], "hosts": [], "pages": 0,
-           "tmux": {"ok": true, "message": ""}})
+           "tmux": {"ok": true, "message": "", "version": std::env::var("TM_FAKE_TMUX_VERSION").ok()}})
 }
 
 /// Not a test: this test binary playing terminumd in a fake package (TM_FAKE_TERMINUMD=1),

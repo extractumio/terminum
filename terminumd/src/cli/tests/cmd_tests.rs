@@ -78,6 +78,18 @@ fn status_names_a_missing_password_and_a_missing_tmux() {
 }
 
 #[test]
+fn status_says_a_tmux_server_before_3_8_can_crash() {
+    // AC-08 (TERM-485)
+    let mut h = health();
+    assert!(!commands::status_lines(&h).iter().any(|l| l.contains("fixed in tmux 3.8")), "no version: nothing said");
+    h["tmux"]["version"] = json!("3.6a");
+    let line = format!("tmux:       {}", crate::tmux::version::old_line("3.6a").unwrap());
+    assert!(commands::status_lines(&h).contains(&line), "{:?}", commands::status_lines(&h));
+    h["tmux"]["version"] = json!("3.8");
+    assert!(!commands::status_lines(&h).iter().any(|l| l.contains("fixed in tmux 3.8")));
+}
+
+#[test]
 fn status_when_terminumd_is_down_says_why() {
     let t = T::new();
     std::fs::create_dir_all(t.ctx.log_dir()).unwrap();

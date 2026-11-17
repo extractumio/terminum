@@ -16,11 +16,17 @@ struct T {
 
 impl T {
     fn new() -> T {
+        T::with(&[])
+    }
+    /// A home whose terminumd also gets `env`.
+    fn with(env: &[(&str, &str)]) -> T {
         let home = Home::new();
         let tbin = home.path("tbin");
         write_exec(&tbin.join("tmux"), "#!/bin/sh\n");
         let path = format!("{}:/usr/bin:/bin", tbin.display());
-        let ctx = home.ctx(&[("TM_NO_LAUNCHD", "1"), ("TM_NO_OPEN", "1"), ("PATH", &path)]);
+        let mut vars = vec![("TM_NO_LAUNCHD", "1"), ("TM_NO_OPEN", "1"), ("PATH", path.as_str())];
+        vars.extend_from_slice(env);
+        let ctx = home.ctx(&vars);
         T { home, ctx }
     }
     fn install(&self, build: &str) -> Result<(), String> {
@@ -121,6 +127,24 @@ fn tmux_missing_is_said_and_the_install_goes_through() {
     t.install("a").unwrap();
     assert_eq!(said(&t.ctx).last().map(String::as_str), Some(install::TMUX_HINT));
     assert_eq!(t.running().as_deref(), Some("a"));
+}
+
+#[test]
+fn a_tmux_server_before_3_8_is_said_and_the_install_goes_through() {
+    // AC-08: tmux before 3.8 crashes in its control-mode notifications (TERM-485)
+    let t = T::with(&[("TM_FAKE_TMUX_VERSION", "3.6a")]);
+    t.install("a").unwrap();
+    assert_eq!(said(&t.ctx).last(), crate::tmux::version::old_line("3.6a").as_ref(), "the running server's version is said last");
+    assert_eq!(t.running().as_deref(), Some("a"));
+}
+
+#[test]
+fn a_fixed_or_unread_tmux_server_says_nothing() {
+    for env in [&[("TM_FAKE_TMUX_VERSION", "3.8")][..], &[]] {
+        let t = T::with(env);
+        t.install("a").unwrap();
+        assert!(!said(&t.ctx).iter().any(|l| l.starts_with("tmux ")), "{env:?}: {:?}", said(&t.ctx));
+    }
 }
 
 #[test]

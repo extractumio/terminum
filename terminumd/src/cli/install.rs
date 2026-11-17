@@ -276,7 +276,16 @@ pub fn install(ctx: &Ctx, pkg: &Path) -> Result<(), String> {
     if !tmux_found(ctx) {
         ctx.say(TMUX_HINT);
     }
+    // read anew: the server's version is known once terminumd's control client is attached
+    if let Some(line) = launch::health(ctx).as_ref().and_then(old_tmux) {
+        ctx.say(line);
+    }
     Ok(())
+}
+
+/// What the install and `terminum status` say of `/health`'s running tmux server (AC-08).
+pub fn old_tmux(health: &serde_json::Value) -> Option<String> {
+    health["tmux"]["version"].as_str().and_then(crate::tmux::version::old_line)
 }
 
 /// Is the command reachable already: on this shell's PATH, or set up in a startup file (a

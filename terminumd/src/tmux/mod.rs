@@ -16,6 +16,7 @@ pub mod mouse;
 pub mod orphans;
 pub mod server;
 pub mod titles;
+pub mod version;
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
