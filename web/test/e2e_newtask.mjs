@@ -35,6 +35,11 @@ export async function webNewTask(browser, name) {
         window.newform.open();
       }, META);
       check("AC-106 new task starts unspecified despite a last-used agent", await page.inputValue("#newagent") === "");
+      check("AC-199 Type starts with none chosen", await page.inputValue("#newtype") === "");
+      // Project, Type, Severity, Agent: one line wide, two by two on a phone, nothing wider than the window
+      const tops = await page.$$eval("#newbox .fieldgrid.four > .fieldrow", (rows) => rows.map((r) => Math.round(r.getBoundingClientRect().top)));
+      const lines = new Set(tops).size, fits = await page.$eval("#newbox .fieldgrid.four", (grid) => [...grid.children].every((r) => r.getBoundingClientRect().right <= grid.getBoundingClientRect().right + 0.5));
+      check("AC-199 Type stands in New task's field row, its lines whole", tops.length === 4 && lines === (device === PHONE ? 2 : 1) && fits, JSON.stringify({ tops, fits }));
       await page.selectOption("#newproj", "web");
       check("AC-106 changing project keeps the agent unspecified", await page.inputValue("#newagent") === "");
       const offered = await page.$$eval("#newagent option", (all) => all.map((o) => o.value));
@@ -52,6 +57,7 @@ export async function webNewTask(browser, name) {
       await page.click("#newcreate");
       await page.waitForSelector("#newbox[open]", { state: "detached" });
       check("AC-106 Create submits no removed or default agent", !Object.hasOwn(sent.at(-1), "agent"));
+      check("AC-199 Create sends no type while Type is None", !Object.hasOwn(sent.at(-1), "type"));
       await page.evaluate((agents) => { window.newmeta.agents = agents; window.newform.open(); }, AGENTS);
       check("AC-106 another new task also starts unspecified", await page.inputValue("#newagent") === "");
       if (process.env.TM_TEST_SHOTS) {
@@ -59,10 +65,12 @@ export async function webNewTask(browser, name) {
         await page.screenshot({ path: path.join(process.env.TM_TEST_SHOTS, `newtask-${name}-${device === PHONE ? "phone" : "wide"}-${light ? "light" : "dark"}.png`) });
       }
       await page.selectOption("#newagent", "a2");
+      await page.selectOption("#newtype", "Bug");
       await page.fill("#newtitle", "Use the agent I chose");
       await page.click("#newcreate");
       await page.waitForSelector("#newbox[open]", { state: "detached" });
       check("AC-106 Create keeps an explicit agent", sent.at(-1).agent === "a2");
+      check("AC-199 Create sends the Type chosen", sent.at(-1).type === "Bug");
       await page.evaluate(() => window.newform.open());
       await page.fill("#newtitle", "Choose when Run assigns it");
       await page.click("#newrun");
