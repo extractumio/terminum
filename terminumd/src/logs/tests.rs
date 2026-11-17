@@ -250,6 +250,26 @@ fn ac196_verify_and_batch_snapshots_share_expiry_and_count() {
 }
 
 #[test]
+fn ac198_verify_attempt_logs_expire_only_at_thirty_days_under_the_count_cap() {
+    let dir = Temp::new();
+    let project = dir.0.join("integration/test-project");
+    fs::create_dir_all(&project).unwrap();
+    let expired = project.join("verify-12.11111111111111111111111111111111.log");
+    let young = project.join("verify-12.22222222222222222222222222222222.log");
+    let unrelated = project.join("evidence.txt");
+    let now = SystemTime::now();
+    assert_eq!(INTEGRATION.age, Duration::from_secs(30 * 86_400));
+    for (path, age) in [(&expired, INTEGRATION.age + Duration::from_secs(1)), (&young, INTEGRATION.age - Duration::from_secs(60)), (&unrelated, INTEGRATION.age + Duration::from_secs(1))] {
+        fs::write(path, "evidence\n").unwrap();
+        File::options().write(true).open(path).unwrap().set_modified(now - age).unwrap();
+    }
+    Sweeper::new(dir.0.clone()).tick().unwrap();
+    assert!(!expired.exists());
+    assert_eq!(fs::read_to_string(young).unwrap(), "evidence\n");
+    assert_eq!(fs::read_to_string(unrelated).unwrap(), "evidence\n");
+}
+
+#[test]
 fn ac196_late_records_and_maintenance_do_not_recreate_a_removed_log_folder() {
     let dir = Temp::new();
     let folder = dir.0.join("logs");

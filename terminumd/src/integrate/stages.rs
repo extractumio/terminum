@@ -46,6 +46,7 @@ struct Run {
     commit: String,
     pane: Option<String>,
     started: i64,
+    attempt: String,
     /// still queued with that commit and waiting for its Verify
     wanted: bool,
     minutes: i64,
@@ -56,9 +57,9 @@ pub fn verify_step(store: &Store, runner: &dyn Runner, home: &Path, now: i64) ->
     let (runs, next) = store.with(|tx| {
         let runs = ops::rows(tx, "SELECT v.task, t.slug, t.number, v.project, v.commit_sha, v.pane, v.started,
                 EXISTS (SELECT 1 FROM integration_entries e WHERE e.task = v.task AND e.commit_sha = v.commit_sha AND e.stage = 'verifying'),
-                coalesce(i.check_minutes, 90)
+                coalesce(i.check_minutes, 90), v.attempt
             FROM integration_verifies v JOIN tasks t ON t.id = v.task LEFT JOIN project_integration i ON i.project = v.project ORDER BY v.started", [],
-            |r| Ok(Run { task: r.get(0)?, id: r.get(1)?, number: r.get(2)?, project: r.get(3)?, commit: r.get(4)?, pane: r.get(5)?, started: r.get(6)?, wanted: r.get(7)?, minutes: r.get(8)? }))?;
+            |r| Ok(Run { task: r.get(0)?, id: r.get(1)?, number: r.get(2)?, project: r.get(3)?, commit: r.get(4)?, pane: r.get(5)?, started: r.get(6)?, wanted: r.get(7)?, minutes: r.get(8)?, attempt: r.get(9)? }))?;
         let next: Vec<(String, String, String)> = ops::rows(tx, "SELECT e.task, e.project, e.commit_sha FROM integration_entries e JOIN project_integration i ON i.project = e.project
             WHERE e.stage = 'verifying' AND i.is_on = 1 AND NOT EXISTS (SELECT 1 FROM integration_verifies v WHERE v.task = e.task) ORDER BY e.queued_at LIMIT ?1",
             [VERIFY_MOST as i64], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
@@ -89,7 +90,7 @@ fn follow(store: &Store, runner: &dyn Runner, home: &Path, run: &Run, now: i64) 
         finish(store, home, run)?;
         return Ok(false);
     };
-    let log = integration::verify_log_in(home, &run.project, run.number);
+    let log = integration::verify_log_in(home, &run.project, run.number, &run.attempt);
     let code = match window(runner, pane, &log, now - run.started > run.minutes * 60) {
         Window::Running => return Ok(true),
         // lost with its window: forgotten, so the next beat starts it again
@@ -113,7 +114,7 @@ fn follow(store: &Store, runner: &dyn Runner, home: &Path, run: &Run, now: i64) 
         match code {
             0 => {
                 ready(tx, &run.task)?;
-                ops::comment(tx, DISPATCHER, id, &format!("{id}'s Prepare and Verify passed on {}: it waits for a batch.", git::short(&run.commit)), now).map(drop)
+                ops::comment(tx, DISPATCHER, id, &format!("{id}'s Prepare and Verify passed on {}: it waits for a batch. Its log: {log}", git::short(&run.commit)), now).map(drop)
             }
             // Prepare's 2 is a conflict with the target; any other failure a red check (§9)
             2 => bs::give_back(tx, &run.task, &format!("{id} returned: conflict: its Prepare or Verify ended with status 2. Its log: {log}"), Left::Conflict, now),
@@ -142,6 +143,8 @@ fn start(store: &Store, runner: &dyn Runner, home: &Path, task: &str, project: &
     }
     let (id, number) = store.with(|tx| Ok((bs::slug(tx, task)?, ops::number_of(tx, &bs::slug(tx, task)?)?)))?;
     let tree = integration::verify_tree_in(home, project, number);
+    let attempt = crate::auth::crypto::random_hex::<16>();
+    let log = integration::verify_log_in(home, project, number, &attempt);
     let vars = vec![("TM_INTEGRATION_TASK", id.clone()), ("TM_INTEGRATION_SHA", commit.to_string()), ("TM_INTEGRATION_TARGET", p.s.target.clone()),
                     ("TM_INTEGRATION_TREE", tree.display().to_string()), ("TM_INTEGRATION_PROJECT_DIR", p.repo.display().to_string())];
     let started = worktree(&p, tree.clone(), commit).map_err(|e| format!("its tree could not be made: {e}"))
@@ -151,9 +154,9 @@ fn start(store: &Store, runner: &dyn Runner, home: &Path, task: &str, project: &
         });
     store.with(|tx| match &started {
         Ok(pane) => {
-            tx.execute("INSERT INTO integration_verifies (task, project, commit_sha, pane, tree, started) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-                       rusqlite::params![task, project, commit, pane, tree.display().to_string(), now]).map_err(sql)?;
-            ops::comment(tx, DISPATCHER, &id, &format!("Verifying {}: its Prepare and Verify run in {}.", git::short(commit), tree.display()), now).map(drop)
+            tx.execute("INSERT INTO integration_verifies (task, project, commit_sha, pane, tree, started, attempt) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                       rusqlite::params![task, project, commit, pane, tree.display().to_string(), now, attempt]).map_err(sql)?;
+            ops::comment(tx, DISPATCHER, &id, &format!("Verifying {}: its Prepare and Verify run in {}. Its log: {}", git::short(commit), tree.display(), log.display()), now).map(drop)
         }
         Err(why) => bs::give_back(tx, task, &format!("{id} returned: red check: its Prepare and Verify did not start: {why}"), Left::Red, now),
     })?;
@@ -184,3 +187,7 @@ fn finish(store: &Store, home: &Path, run: &Run) -> Result<(), String> {
 #[cfg(test)]
 #[path = "stages_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "stages_log_tests.rs"]
+mod log_tests;
