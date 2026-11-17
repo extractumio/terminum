@@ -22,7 +22,7 @@ import sys
 import time
 
 from shell_writes import writes
-from worktree import common_dir, count, fetched, finished, git, has_ref, ours, primary_of, Refused, releasing, said_name, trees
+from worktree import common_dir, count, fetched, finished, git, has_ref, ours, primary_of, Refused, said_name, trees
 
 REPO = Path(__file__).resolve().parents[1]
 FETCH_EVERY = 300      # seconds between the hooks' fetches, for the whole repository
@@ -38,9 +38,10 @@ def commits(n):
 
 # how a tree is checked and landed: a session works by them, so it hears when origin/main changed one; a pass
 # taken before origin/main changed one is not reused on the merge (check_changed.own_pass)
-PIPELINE = {"CLAUDE.md", "Makefile", ".claude/settings.json", "scripts/check_all.sh", "scripts/check_changed.py",
+PIPELINE = {"CLAUDE.md", "Makefile", ".claude/settings.json", "scripts/check_all.py", "scripts/check_changed.py",
             "scripts/check_step.py", "scripts/check_cancel.py", "scripts/check_docs.py", "scripts/heavy_slots.py",
-            "scripts/land.py", "scripts/land_stages.py", "scripts/load_gate.py", "scripts/release_turn.py",
+            "scripts/land.py", "scripts/land_stages.py", "scripts/load_gate.py", "scripts/release_turn.py", "scripts/release_tree.py",
+            "scripts/gate_retry.py", "scripts/gate_record.py",
             "scripts/worktree.py", "scripts/worktree_fresh.py", "scripts/process_cwd.py", "scripts/test_scripts.py",
             "scripts/check_logs.py", "scripts/log_sink.rs", "terminumd/src/logs/rotation.rs", "terminumd/src/fslock.rs",
             "scripts/check_slots.py", "scripts/live_slots.py"}
@@ -123,8 +124,6 @@ def freshen(cwd="."):
     behind = count("HEAD..origin/main", cwd)
     if not behind:
         return lines
-    if releasing(cwd):   # it publishes the commit its checks saw
-        return lines + [f"warning: a release is running: main stays {commits(behind)} behind origin/main"]
     if os.environ.get("TM_INSTALL_STALE"):
         return lines + [f"warning: {commits(behind)} behind origin/main, installed without them (TM_INSTALL_STALE)"]
     override = "the maintainer alone may install it as it is: TM_INSTALL_STALE=1 make install"

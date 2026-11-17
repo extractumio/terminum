@@ -44,6 +44,21 @@ def check(name, ok, extra=""):
     print(f"{'PASS' if ok else 'FAIL'} {name}{' — ' + str(extra) if extra else ''}")
 
 
+HANG = 5   # budgets: past this many, a time measured under the full run's load is a hang, red there too
+
+
+def in_budget(name, seconds, budget):
+    """A wall-clock performance budget (spec AC-201): True under it. Over it in the full run, whose own load is no
+    verdict (TM_TIMING=report), it prints "TIMING over budget" and stays True below HANG budgets; a quiet machine
+    judges it (scripts/check_all.py --timing). Anywhere else, or never measured (None), over it is False."""
+    if seconds is not None and seconds < budget:
+        return True
+    if seconds is None or os.environ.get("TM_TIMING") != "report" or seconds >= HANG * budget:
+        return False
+    print(f"TIMING over budget (judged on a quiet machine): {name}: {seconds * 1000:.0f} ms, budget {budget * 1000:.0f} ms")
+    return True
+
+
 def summary():
     """Prints "N/M passed" and exits 0 when there were checks and all passed, else 1."""
     print(f"{sum(results)}/{len(results)} passed")

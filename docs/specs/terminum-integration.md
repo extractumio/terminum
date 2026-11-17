@@ -347,13 +347,13 @@ Scenario: AC-191 happy path — After
   And with the folder left where it was, After does not run: "After did not run for batch 7: Billing's folder stays where it is: <git's words>"
 
 Scenario: AC-191 edge — After cannot run now
-  Given After "python3 scripts/land.py after" and a release running in Billing's folder
-  When batch 7's After ends with status 75, its last row "after: a release is running: waits for its end"
-  Then batch 7 stands "after waits": its row in Batches… says "After waits: after: a release is running: waits for its end" and the column's head "Batch 7: After waits 42 min: after: a release is running: waits for its end", the minutes since its first wait; its integration task stays DONE, told once "After waits for batch 7: <its last rows>"; nothing waits for a human and no toast shows
+  Given After "python3 scripts/land.py after" and an install running in Billing's folder
+  When batch 7's After ends with status 75, its last row "after: an install runs in the primary checkout: waits for its end"
+  Then batch 7 stands "after waits": its row in Batches… says "After waits: after: an install runs in the primary checkout: waits for its end" and the column's head "Batch 7: After waits 42 min: after: an install runs in the primary checkout: waits for its end", the minutes since its first wait; its integration task stays DONE, told once "After waits for batch 7: <its last rows>"; nothing waits for a human and no toast shows
   And 5 minutes after each try terminumd runs After again, in a window of its own with the check's time, its folder not moved again; a try that ends 0 ends the wait and its Cleanup follows
   And Billing's later Afters wait behind it in the order published, another project's After runs meanwhile, and Billing's batches go on being built, checked and published
-  And terminumd knows nothing of releases: the project's command says when it cannot run, by its status
-  When a try still ends 75 6 hours after the first wait (longer than one release run holds the folder)
+  And terminumd knows nothing of what holds it: the project's command says when it cannot run, by its status
+  When a try still ends 75 6 hours after the first wait
   Then batch 7 stands "after failed" as above, with "After waited 6 hours for batch 7: <its last rows>"
 
 Scenario: AC-191 happy path — the next batch is checked while After runs
@@ -708,10 +708,10 @@ Scenario: AC-198 failure — Publish and After by hand while integration is on
   And when the ask fails, times out or its answer cannot be read, it is refused: "whether integration is on is not known …: nothing pushed"; when terminum is not running or not installed, the stages run here, in order, as without integration
 
 Scenario: AC-198 edge — terminum's own After cannot run now
-  Given a release of terminum running in the primary checkout (its mark held), or an install holding the install turn, or a landing holding the landing turn
+  Given an install holding the install turn, or a landing holding the landing turn
   When `python3 scripts/land.py after` runs
-  Then it moves nothing, installs nothing and ends 75 with "after: a release is running: waits for its end" ("after: an install runs in the primary checkout: waits for its end", "after: a landing holds its turn: waits for its end"), which terminumd's queue takes as AC-191's wait
-  And it holds the install turn from its first look to its install's end, so a release starts only between two Afters (`terminum-lifecycle.md` AC-104)
+  Then it moves nothing, installs nothing and ends 75 with "after: an install runs in the primary checkout: waits for its end" ("after: a landing holds its turn: waits for its end"), which terminumd's queue takes as AC-191's wait
+  And it holds the install turn from its first look to its install's end; a release, in a tree of its own, never holds it back (`terminum-lifecycle.md` AC-200)
 
 Scenario: AC-198 edge — a task taken out while it is verified
   When API-12 is taken out (AC-187) while its Verify runs

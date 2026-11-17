@@ -7,8 +7,8 @@ on the merged result when none is recorded or origin/main changed the same files
 time: each holds the landing turn from its merge to its push, so one smoke set runs at a time and none is
 made moot by another landing's push; a push from outside (a human's) is merged and checked again, still
 in the turn (a smoke set ends after SMOKE_MOST_MINUTES). The install runs after the turn, once for all
-that landed since the last: by the landing that ends and finds the turn free. During a release the
-primary checkout stays where it is (scripts/release_turn.py), and the smoke set yields to it (nice).
+that landed since the last: by the landing that ends and finds the turn free. A release runs in a tree of its own
+(scripts/release_tree.py): nothing here waits for it, and the smoke set yields to a full run (nice).
 
   land.py <slug>    from the primary checkout (`make land SLUG=<slug>`), the work committed;
                     TM_LAND_INSTALL=1 (the maintainer's local.mk) also installs a change with code. With the
@@ -27,7 +27,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from check_changed import is_doc, late_notes, red, tree_id  # noqa: E402
 import heavy_slots  # noqa: E402
-from worktree import common_dir, fetched, INSTALL_TURN, primary_of, Refused, releasing, Turn as TreeTurn  # noqa: E402
+from worktree import common_dir, fetched, INSTALL_TURN, primary_of, Refused, Turn as TreeTurn  # noqa: E402
 
 BASE = "origin/main"
 LAND_TURN = "terminum-land.turn"
@@ -301,11 +301,8 @@ def install_mark(primary):
 def after_push(primary, files):
     """In the turn, seconds: the primary checkout on the fresh origin/main; code landed on the maintainer's
     machine (TM_LAND_INSTALL=1) marks an install, run after the turn by install_pending."""
-    if releasing(primary):
-        print("primary checkout stays where it is: a release is running")
-    else:
-        stuck = update_primary(primary)
-        print("main: on the fresh origin/main" if stuck is None else f"primary checkout stays where it is: {stuck}")
+    stuck = update_primary(primary)
+    print("main: on the fresh origin/main" if stuck is None else f"primary checkout stays where it is: {stuck}")
     if os.environ.get("TM_LAND_INSTALL") == "1" and has_code(files):
         install_mark(primary).write_text(git("rev-parse", BASE, cwd=primary).stdout)
 
@@ -330,9 +327,6 @@ def install_pending(primary, run=make, say=print):
         return
     with TreeTurn(primary, INSTALL_TURN) as turn:
         turn.take(wait=True)   # a landing that ended meanwhile may install too: one after the other
-        if releasing(primary):   # a release starting holds this turn, and writes its mark in it
-            say("install: waits for a landing after the release: the primary checkout stays where it is")
-            return
         install_now(primary, run, say)
 
 

@@ -234,17 +234,6 @@ class Fresh(Repo):
         self.assertEqual(worktree_fresh.fresh(cwd=self.tmp.name), [])
 
     # make install: never a stale main
-    def test_a_running_release_keeps_main_at_the_commit_its_checks_saw(self):
-        self.push_from_another_clone()
-        head = sh(self.primary, "git", "rev-parse", "HEAD")
-        mark = self.primary / ".git" / "terminum-release"
-        mark.write_text(f"{os.getpid()}\n")
-        said = worktree_fresh.freshen(self.primary)
-        self.assertIn("a release is running", said[-1])
-        self.assertEqual(sh(self.primary, "git", "rev-parse", "HEAD"), head)
-        mark.unlink()
-        self.assertIn("fast-forwarded", worktree_fresh.freshen(self.primary)[-1])
-
     def test_freshen_fast_forwards_a_clean_main(self):
         self.assertEqual(worktree_fresh.freshen(self.primary), [])
         self.push_from_another_clone()

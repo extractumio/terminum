@@ -112,14 +112,15 @@ def recover(child, started, folder):
         raise
 
 
-def run_guard(guard, command, *, cwd, stdout):
-    """Run one private guard, forward cancellation once, wait for cleanup, and never record a pass."""
+def run_guard(guard, command, *, cwd, stdout, env=None):
+    """Run one private guard, forward cancellation once, wait for cleanup, and never record a pass; `env`: the
+    guard's whole environment (the full run's allow-list, AC-201), else this process's."""
     with Cancellation() as cancelled:
         folder = os.path.realpath(tempfile.mkdtemp(prefix="tmc.", dir="/tmp"))
         child = None
         cleaned = False
         try:
-            child = subprocess.Popen([*guard, "--owned-root", folder, *command], cwd=cwd,
+            child = subprocess.Popen([*guard, "--owned-root", folder, *command], cwd=cwd, env=env,
                                      stdout=stdout, stderr=subprocess.STDOUT, start_new_session=True)
             started = owned_children.identity(child.pid)
             deadline = None

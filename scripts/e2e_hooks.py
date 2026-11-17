@@ -16,7 +16,7 @@ import time
 from functools import partial
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from e2e_ws import BIN, Terminumd, check, summary, tmux_on, wait_layout  # noqa: E402
+from e2e_ws import BIN, Terminumd, check, in_budget, summary, tmux_on, wait_layout  # noqa: E402
 from e2e_agentstate import DONE_CC, PROGRAM, SHELL_CC  # noqa: E402
 from testrun import free_port, own  # noqa: E402
 
@@ -42,7 +42,7 @@ def limits(t, ws, env, pane):
     got = told("claude", [34, 21.5])
     check("AC-168 Claude Code's two windows reach the page at once", got and [w["minutes"] for w in got["windows"]] == [300, 10080] and got["windows"][0]["resets_at"] == 1894350000, got)
     check("AC-168 numbers alone leave the session", got and "secret" not in json.dumps(got) and "opus" not in json.dumps(got), got)
-    check("AC-168 the status line takes under 300 ms", took < 0.3, f"{took * 1000:.0f} ms")
+    check("AC-168 the status line takes under 300 ms", in_budget("AC-168 the status line", took, 0.3), f"{took * 1000:.0f} ms")
     p = run(["statusline"], json.dumps(status))
     check("AC-168 with no command of its own it says the windows", p.stdout.strip() == "5h 34% · week 22%", p.stdout)
     for bad in [{"model": {"id": "x"}}, {"rate_limits": {"five_hour": {"used_percentage": 140}}}]:
@@ -354,7 +354,7 @@ def main():
         p = subprocess.run([BIN, "hook", "claude"], input='{"hook_event_name":"Stop"}', capture_output=True, text=True, env=stopped.env)
         check("AC-39 without terminumd the hook returns at once", p.returncode == 0 and time.monotonic() - start < 0.5, time.monotonic() - start)
         med = statistics.median(took)
-        check("AC-39 a hook takes under 50 ms (median of its runs)", med < 0.05, f"{med * 1000:.1f} ms of {len(took)}")
+        check("AC-39 a hook takes under 50 ms (median of its runs)", in_budget("AC-39 a hook (median)", med, 0.05), f"{med * 1000:.1f} ms of {len(took)}")
     finally:
         t.stop()
         tmux("kill-server")
