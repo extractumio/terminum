@@ -336,7 +336,8 @@ async function sameKinds(page, base, phone) {
   await page.waitForSelector(".card");
   if (phone) await page.click("#findkey");   // a phone's Find and filters stand under the head when its key is pressed (AC-105)
   await page.waitForTimeout(500);
-  const ours = { search: await look("#filters .search"), key: await look("#filters .pick summary, #filtersbtn"), track: await look("#colswitch"), plus: await look(".colhead .new") };
+  // Find stands in TODO's head wider than a phone, under the head on a phone (kanbanpanel.js arrange)
+  const ours = { search: await look(".search:has(#find)"), key: await look("#filters .pick summary, #filtersbtn"), track: await look("#colswitch"), plus: await look(".colhead .new") };
   // matched on a computer, whose session list shows a group's [+] (AC-106)
   if (!phone) check("look: TODO's [+] is the session list's group-header [+]", !!theirs.plus && ["fill", "image", "edge", "radius", "h"].every((k) => ours.plus?.[k] === theirs.plus[k]), JSON.stringify([ours.plus, theirs.plus]));
   check(`look: Find is the session list's field (${phone ? "phone" : "wide"})`, ["fill", "edge", "radius"].every((k) => ours.search?.[k] === theirs.search?.[k]), JSON.stringify([ours.search, theirs.search]));
