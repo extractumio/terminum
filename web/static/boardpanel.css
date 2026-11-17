@@ -26,10 +26,10 @@
 }
 /* a tab, wherever the tabs stand: its name, then its count as a tag; WAIT FOR HUMAN's and FAILED's in their hues while
    they hold tasks, its glow pulsing (the page's one blink, as the head's counters: askfold.css) */
-#colswitch button { display: inline-block; flex: none; padding-inline: var(--sp-2); white-space: nowrap; }   /* one line, the key centring it: the count on its name's baseline */
+#colswitch button { display: block; flex: none; padding-inline: var(--sp-2); white-space: nowrap; }   /* one line, the key centring it: the count on its name's baseline */
 #colswitch button[hidden] { display: none; }
 @container board (max-width: 1099px) { #colswitch button { padding-inline: var(--sp-1); } }   /* at the board's size, five tabs and the keys on one row of an iPad mini */
-.tabn { position: relative; display: inline-block; vertical-align: baseline; margin-left: var(--sp-1); min-width: 1.6em; padding: 0 var(--sp-1); border-radius: var(--r-xs); font-size: var(--fs-micro); font-weight: var(--fw-head);
+.tabn { position: relative; display: inline-block; margin-left: var(--sp-1); min-width: 1.6em; padding: 0 var(--sp-1); border-radius: var(--r-xs); font-size: var(--fs-micro); font-weight: var(--fw-head);
   line-height: 18px; text-align: center; font-variant-numeric: tabular-nums; color: var(--muted-text); background: var(--surface-3); }
 #colswitch .alarm .tabn { background: var(--fill); }   /* its hue: askfold.css, as the head's counters */
 @media (prefers-reduced-motion: no-preference) {

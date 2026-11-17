@@ -48,18 +48,16 @@ body.board-page { margin: 0; overflow: hidden; background: var(--surface-0); col
 #board { flex: 1 1 0; min-height: 0; padding: var(--sp-2) var(--gutter) var(--gutter); }
 .col { display: flex; flex-direction: column; min-height: 0; min-width: 0; border-radius: var(--r-lg); background: var(--surface-1); }
 /* a head as tall as a list key and its inset round it, as a group header (style.css): TODO's [+] stays inside on a touch screen */
-.colhead { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1); min-height: calc(var(--icon-key-list) + 2 * var(--row-inset)); flex: none; margin: 0; padding: var(--sp-1) var(--sp-2); font-size: var(--fs-label); font-weight: var(--fw-head); }
-.colname { flex: 1 1 auto; }
-/* Find in TODO's head, wider than a phone (kanbanpanel.js): after its name, giving way before + New task does */
-.colhead:has(> .search) .colname { flex: none; }
-.colhead > .search { flex: 1 1 0; min-width: 90px; max-width: 240px; height: var(--icon-key-list); box-sizing: border-box; font-weight: var(--fw-body); }
+.colhead { --hk: var(--icon-key-list); display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1); min-height: calc(var(--icon-key-list) + 2 * var(--row-inset)); flex: none; margin: 0; padding: var(--sp-1) var(--sp-2); font-size: var(--fs-label); font-weight: var(--fw-head); }
+/* --hk: the head's keys' and field's one height (a touch screen's: controls.css). Find in TODO's head, wider than a
+   phone (kanbanpanel.js): after its name, giving way before + New task does; the keys after it take the free room */
+.colhead > .search { flex: 1 1 0; min-width: 90px; max-width: 240px; height: var(--hk); box-sizing: border-box; font-weight: var(--fw-body); }
 .colhead .count { color: var(--muted); }
 /* Display order's keys immediately before the count (AC-105); TODO's own New task before them. */
-.colsort { display: inline-flex; flex: none; margin-left: auto; }
 /* a segmented control (controls.css), its keys as tall as + New task, the track round them */
-.colhead .colsort { --ik: var(--icon-key-list); }
+.colsort { flex: none; margin-left: auto; --ik: var(--hk); }
 .colhead .colsort button { width: var(--ik); height: var(--ik); padding: 0; justify-content: center; }
-.colhead .new { --key-h: var(--icon-key-list); --key-px: var(--sp-2); gap: var(--sp-1); margin-left: auto; font-size: var(--fs-label); }   /* TODO's + New task: as tall as the sort keys (AC-106) */
+.colhead .new { --key-h: var(--hk); --key-px: var(--sp-2); gap: var(--sp-1); margin-left: auto; font-size: var(--fs-label); }   /* TODO's + New task: as tall as the sort keys (AC-106) */
 .colhead .new + .colsort { margin-left: 0; }   /* the free room before + New task, not between it and its keys */
 .cards { display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-1) var(--sp-2) var(--sp-2); overflow-y: auto; flex: 1 1 auto; min-height: 0; }
 /* a project's agents, over the columns: what RUN can start (terminum-dispatcher.md AC-137) */

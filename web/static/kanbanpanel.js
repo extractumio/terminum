@@ -59,11 +59,15 @@ export function columnPanel(columns, still) {
    *  the head's Find key; else in TODO's head, by the cards it narrows, every column's (AC-111). */
   const find = $("find"), field = find.closest(".search");
   function arrange() {
-    if (phone.matches) $("poolline").before(tabs);
-    else panel.prepend(tabs);
-    if (phone.matches) $("filtersbtn").before(field);
-    else todo.col.querySelector(".colname").after(field);
-    find.placeholder = phone.matches ? "Find tasks" : "Filter all columns";
+    if (phone.matches) {
+      $("poolline").before(tabs);
+      $("filtersbtn").before(field);
+      find.placeholder = "Find tasks";
+    } else {
+      panel.prepend(tabs);
+      todo.col.querySelector(".colname").after(field);
+      find.placeholder = "Filter all columns";
+    }
     find.setAttribute("aria-label", find.placeholder);
     mark();
   }

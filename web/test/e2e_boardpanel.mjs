@@ -24,7 +24,8 @@ const details = (page) => page.evaluate(() => {
   return { findIn: find.closest(".colhead") === head && find.closest(".search").previousElementSibling?.classList.contains("colname"), words: find.placeholder,
     baselines: [...document.querySelectorAll("#colswitch button")].filter((b) => b.offsetWidth).map((b) => [mark(b.querySelector(".tabname")), mark(b.querySelector(".tabn"))]),
     when: card.querySelector(".cwhen")?.textContent ?? "", whenType: card.querySelector(".cwhen") && type(card.querySelector(".cwhen")), idType: type(card.querySelector(".cid")),
-    run: [...document.querySelectorAll(".card")].filter((c) => c.querySelector(".crun")).map((c) => c.closest(".col").dataset.status) };
+    run: [...document.querySelectorAll(".card")].filter((c) => c.querySelector(".crun")).map((c) => c.closest(".col").dataset.status),
+    foldedRun: card.matches(".compact:not(.open, .onagent)") && getComputedStyle(card.querySelector(".crun")).display };
 });
 
 /** Where the board's parts stand. */
@@ -86,6 +87,7 @@ async function computer(browser, name) {
       check(`AC-105 ${w} px: each tab's count stands on its name's baseline`, d.baselines.length >= 5 && d.baselines.every(([a, b]) => near(a, b)), JSON.stringify(d.baselines));
       check(`AC-105 ${w} px: a card says when it last changed, in its ID's type`, /\d/.test(d.when) && d.whenType === d.idType, JSON.stringify(d));
       check(`AC-122 ${w} px: only TODO's cards have a Run key`, d.run.length > 0 && d.run.every((s) => s === "TODO"), JSON.stringify(d.run));
+      check(`AC-159 ${w} px: a folded TODO card no agent ran shows no Run key`, d.foldedRun === "none", JSON.stringify(d.foldedRun));
       check(`AC-111 ${w} px: Find stands in TODO's head after its name, saying it filters every column; the head one line`,
         d.findIn && d.words === "Filter all columns" && g.todoHead.h <= 40, JSON.stringify({ d, head: g.todoHead }));
       await page.fill("#find", "retry");

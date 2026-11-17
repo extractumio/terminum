@@ -32,7 +32,7 @@ import { integrationColumn } from "./kanbanqueuecol.js";
 import { cardKeys } from "./kanbancardkeys.js";
 import { boardColumns } from "./kanbancols.js";
 import { columnPanel } from "./kanbanpanel.js";
-import { $, COLUMNS, agentChip, api, button, guardQueuedRun, hasFiles, placeChildren, say, sessionLine, showError, signInElsewhere, stamp, statusBox, needBoxes, underParents } from "./kanbanutil.js";
+import { $, COLUMNS, agentChip, api, button, guardQueuedRun, hasFiles, placeChildren, say, sessionLine, showError, signInElsewhere, shortStamp, statusBox, timeOf, needBoxes, underParents } from "./kanbanutil.js";
 
 const signIn = signInElsewhere();                  // with no sign-in the board goes to /sessions/, whose form signs in
 document.querySelectorAll(".textkey").forEach(textKey);   // the page's own text keys; button()'s have it
@@ -160,17 +160,6 @@ function showSession(c, t) {
   if (item) c.append(sessionStrip(item, p));
 }
 
-/** When it last changed, the columns' "Recently updated" order (terminum-kanban.md AC-105). */
-function changed(at) {
-  const d = new Date(at * 1000), now = new Date();
-  const words = d.toDateString() === now.toDateString() ? d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })   // today: its time
-    : d.toLocaleDateString(undefined, { month: "short", day: "numeric", ...(d.getFullYear() === now.getFullYear() ? {} : { year: "numeric" }) });
-  const t = el("time", "cwhen", words);
-  t.dateTime = d.toISOString();
-  t.title = `Changed ${stamp(at)}`;
-  return t;
-}
-
 /** `under`: the parent it is drawn under, shifted right (AC-112). */
 function card(t, under = "") {
   const c = el("article", `card sev-${t.severity}${under ? " sub" : ""}${picked.has(t.id) ? " picked" : ""}`);
@@ -192,7 +181,9 @@ function card(t, under = "") {
   c.classList.toggle("batchhead", !!t.queue?.head);
   if (t.agent) head.append(agentChip(t.agent));
   c.classList.toggle("onagent", !!t.agent);        // a folded card keeps its Run key only with an agent to run on (AC-159)
-  head.append(changed(t.updated_at));
+  const changed = timeOf(t.updated_at, shortStamp(t.updated_at, true), "cwhen");   // the columns' "Recently updated" (AC-105)
+  changed.title = `Changed ${changed.title}`;
+  head.append(changed);
   // a card runs only from TODO; running again takes the human's words, in the task's window (terminum-dispatcher.md AC-122)
   if (t.status === "TODO") head.append(guardQueuedRun(iconButton("icon crun", "play", `Run ${t.id}`, "Run: choose the agent that does it", () => runThem([t])), t.waits));
   queueKeys.onCard(c, t, head);                    // Integrate, Take out, a deciding batch's keys (terminum-integration.md AC-193)
