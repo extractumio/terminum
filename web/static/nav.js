@@ -242,7 +242,8 @@ export function hostState(g) {
 // Projects (AC-92) stand among them in one order, each its sessions with their panes and quick shells,
 // which their tmux groups then leave out; every row has its Clone button (onClone(item)).
 /** Which rows go where: a project's session takes its window's other panes and its quick shells
- *  with it, and they leave their group. {kids(top), topsOf(project), leftOf(group)}. */
+ *  with it, and they leave their group. {kids(top), topsOf(project), leftOf(group)}. terminumd's
+ *  raise (terminumd/src/page/raise.rs `place_of`) holds the same rule. */
 function membership(groups, projects) {
   const all = groups.flatMap((g) => g.items), win = (it) => it.id.slice(0, it.id.lastIndexOf(":") + 1) + it.window;
   const byId = new Map(all.map((it) => [it.id, it]));

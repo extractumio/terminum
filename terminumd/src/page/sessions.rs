@@ -15,6 +15,10 @@ use crate::app::Shared;
 use crate::tmux::server::HOST_SESSION;
 use crate::tmux::{args, Server};
 
+/// One change to a session's window order at a time (a drag's, a raise's: AC-07, AC-92), so each
+/// moves from the order the other left.
+static ORDERING: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 /// One new window, session or split a second per page (AC-07).
 const NEW_EVERY: Duration = Duration::from_secs(1);
 
@@ -274,6 +278,7 @@ async fn rename_group(app: &Shared, wid: &str, name: &str) -> Result<(), String>
 /// are never moved).
 async fn reorder(app: &Shared, wid: &str, ids: Vec<Value>) -> Result<(), String> {
     let (server, session) = group(app, wid).ok_or("That session is gone.")?;
+    let _turn = ORDERING.lock().await;
     let current = windows(&server, &session).await?;
     let mut want: Vec<String> = Vec::new();
     for id in ids.iter().filter_map(Value::as_str) {
@@ -292,6 +297,7 @@ async fn reorder(app: &Shared, wid: &str, ids: Vec<Value>) -> Result<(), String>
 /// Window `top` of `session` goes before the other windows `free` names, which keep their order
 /// as tmux has it now; the rest keep their places (AC-92). True when something moved.
 pub(super) async fn to_top(server: &Server, session: &str, top: &str, free: &[String]) -> Result<bool, String> {
+    let _turn = ORDERING.lock().await;
     let current = windows(server, session).await?;
     let mut want = vec![top.to_string()];
     want.extend(current.iter().filter(|w| *w != top && free.contains(w)).cloned());
@@ -309,19 +315,22 @@ async fn windows(server: &Server, session: &str) -> Result<Vec<String>, String> 
 /// the places they hold; the others keep theirs (a project's, listed elsewhere, AC-92). True
 /// when something moved.
 async fn place(server: &Server, mut current: Vec<String>, want: &[String]) -> Result<bool, String> {
-    let want: Vec<&String> = want.iter().filter(|w| current.contains(w)).collect();
-    let mut order = want.iter();
-    let want: Vec<String> = current.iter().map(|w| if want.contains(&w) { order.next().map_or_else(|| w.clone(), |n| (*n).clone()) } else { w.clone() }).collect();
-    let mut moved = false;
+    let named: Vec<String> = want.iter().filter(|w| current.contains(w)).cloned().collect();
+    let mut order = named.iter();
+    let want: Vec<String> = current.iter().map(|w| if named.contains(w) { order.next().cloned().unwrap_or_else(|| w.clone()) } else { w.clone() }).collect();
+    // the swaps worked out here, sent together: one round trip over ssh too
+    let mut swaps = Vec::new();
     for i in 0..current.len() {
         if current[i] != want[i] {
             let j = current.iter().position(|w| *w == want[i]).ok_or("The windows changed meanwhile.")?;
-            server.run(format!("swap-window -d -s {} -t {}", current[j], current[i])).await.map_err(|e| format!("Not moved: {}", said(&e)))?;
+            swaps.push(format!("swap-window -d -s {} -t {}", current[j], current[i]));
             current.swap(i, j);
-            moved = true;
         }
     }
-    Ok(moved)
+    if let Some(e) = server.run_all(swaps.clone()).await.into_iter().find_map(Result::err) {
+        return Err(format!("Not moved: {}", said(&e)));
+    }
+    Ok(!swaps.is_empty())
 }
 
 /// "Move to session…": the window goes to the end of another session of its server.

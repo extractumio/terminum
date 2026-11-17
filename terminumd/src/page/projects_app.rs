@@ -120,24 +120,20 @@ async fn save(app: &Shared) {
     }
 }
 
-/// Row `key`'s agent took a message: a project's session goes to its project's top, every page
-/// told (AC-92). None when it is a project's; else every project's sessions, which its tmux group
-/// does not show.
-pub async fn raise(app: &Shared, key: &str) -> Option<HashSet<String>> {
+/// Row `key`'s agent took a message: true when it is a project's session, which goes to its
+/// project's top, every page told (AC-92).
+pub async fn raise(app: &Shared, key: &str) -> bool {
     ready(app).await;
-    let (a, key) = (app.clone(), key.to_string());
-    let got = crate::http::off(move || {
-        let mut ps = a.projects.lock();
-        if ps.of(&key).is_none() {
-            return Ok(Err(ps.list().iter().flat_map(|p| p.members.iter().cloned()).collect()));
-        }
-        ps.raise(&key).map(Ok)
-    }).await;
-    match got {
-        Ok(Ok(moved)) => { if moved { tell(app); } None }
-        Ok(Err(members)) => Some(members),
-        Err(e) => { tracing::warn!(event = "projects.unsaved", error = %e); None }
+    if app.projects.lock().of(key).is_none() {
+        return false;
     }
+    let (a, key) = (app.clone(), key.to_string());
+    match crate::http::off(move || a.projects.lock().raise(&key)).await {
+        Ok(true) => tell(app),
+        Ok(false) => {}
+        Err(e) => tracing::warn!(event = "projects.unsaved", error = %e),
+    }
+    true
 }
 
 /// `project {action, …}` from the page's session list (AC-92).

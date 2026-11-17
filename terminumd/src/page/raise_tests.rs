@@ -22,21 +22,25 @@ fn layout() -> Value {
 #[test]
 fn ac92_a_panes_row_is_its_windows_first_pane_and_a_quick_shells_its_parent() {
     let l = layout();
-    assert_eq!(row_of(&l, "a").as_deref(), Some("a"));
-    assert_eq!(row_of(&l, "b2").as_deref(), Some("b"), "a split's other pane: its window's row");
-    assert_eq!(row_of(&l, "q").as_deref(), Some("c"), "a quick shell: the row it is under");
-    assert_eq!(row_of(&l, "n").as_deref(), Some("n"), "another group's");
-    assert_eq!(row_of(&l, "gone"), None);
+    let row = |key: &str| place_of(&l, key).map(|p| (p.row, p.wid));
+    assert_eq!(row("a"), Some(("a".into(), "devbox/main".into())));
+    assert_eq!(row("b2"), Some(("b".into(), "devbox/main".into())), "a split's other pane: its window's row");
+    assert_eq!(row("q"), Some(("c".into(), "devbox/main".into())), "a quick shell: the row it is under");
+    assert_eq!(row("n"), Some(("n".into(), "devbox/notes".into())), "another group's");
+    assert_eq!(row("gone"), None);
+    let rows: Vec<String> = place_of(&l, "d").unwrap().rows.into_iter().map(|(id, w)| format!("{id}{w}")).collect();
+    assert_eq!(rows, ["a@1", "b@2", "c@3", "d@4"], "a split's second pane and a quick shell's window are no rows of it");
 }
 
 #[test]
 fn ac92_a_groups_windows_are_its_rows_in_no_project() {
-    let l = layout();
-    let (wid, top, free) = group_windows(&l, "d", |k| k == "b").unwrap();
-    assert_eq!((wid.as_str(), top.as_str()), ("devbox/main", "@4"));
-    assert_eq!(free, ["@1", "@3", "@4"], "a project's window, a split's second pane and a quick shell's window are no rows of it");
-    assert_eq!(group_windows(&l, "b", |k| k == "b"), None, "a project's session is not raised in its group");
-    assert_eq!(group_windows(&l, "gone", |_| false), None);
+    let rows = place_of(&layout(), "d").unwrap().rows;
+    let (top, free) = to_raise(&rows, "d", |k| k == "b").unwrap();
+    assert_eq!(top, "@4");
+    assert_eq!(free, ["@1", "@3", "@4"], "a project's window is no row of its group");
+    assert_eq!(to_raise(&rows, "b", |k| k == "b"), None, "a project's session is not raised in its group");
+    assert_eq!(to_raise(&rows, "b", |k| k == "a"), None, "first of the rows shown already: nothing to move");
+    assert_eq!(to_raise(&rows, "gone", |_| false), None);
 }
 
 /// `p`'s panes in the order of their places in it.
@@ -83,6 +87,10 @@ async fn ac92_a_session_outside_projects_goes_to_its_groups_top() {
 
     raise(&app, &key(&split)).await;
     assert_eq!(panes_in_order(&s), pick(&p, [1, 3, 2, 0]), "a split's other pane raises its window, the others keep their order");
+
+    *server.only.lock() = Some(vec!["main".into()]);
+    raise(&app, &key(&p[0])).await;
+    assert_eq!(panes_in_order(&s), pick(&p, [1, 3, 2, 0]), "a session the user attached by name (AC-89): its windows stay");
     drop(app);
     std::fs::remove_dir_all(root).unwrap();
 }
