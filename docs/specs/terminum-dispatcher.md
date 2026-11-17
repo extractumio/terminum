@@ -293,7 +293,7 @@ Scenario: AC-137 failure — the store down
 Scenario: AC-122 happy path — RUN stays available before the session closes
   Given a task in any column, with its session open, closed or absent
   Then its window keeps RUN beside SAVE, including while WAIT FOR HUMAN still holds its session
-  And its card keeps its Run key under the folding rules of AC-159
+  And its card has a Run key only in TODO, under the folding rules of AC-159: elsewhere running again takes the human's words, in its window
   When the human writes an answer and presses RUN while its agent is idle at an empty box
   Then the same conversation takes that answer through the gate, the task returns to IN PROGRESS and its pending close is called off
   When the session closed before RUN was pressed

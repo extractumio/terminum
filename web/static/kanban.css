@@ -48,13 +48,16 @@ body.board-page { margin: 0; overflow: hidden; background: var(--surface-0); col
 #board { flex: 1 1 0; min-height: 0; padding: var(--sp-2) var(--gutter) var(--gutter); }
 .col { display: flex; flex-direction: column; min-height: 0; min-width: 0; border-radius: var(--r-lg); background: var(--surface-1); }
 /* a head as tall as a list key and its inset round it, as a group header (style.css): TODO's [+] stays inside on a touch screen */
-.colhead { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1); min-height: calc(var(--icon-key-list) + 2 * var(--row-inset)); flex: none; margin: 0; padding: var(--sp-1) var(--sp-2); font-size: var(--fs-label); font-weight: var(--fw-head); }
-.colname { flex: 1 1 auto; }
+.colhead { --hk: var(--icon-key-list); display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1); min-height: calc(var(--icon-key-list) + 2 * var(--row-inset)); flex: none; margin: 0; padding: var(--sp-1) var(--sp-2); font-size: var(--fs-label); font-weight: var(--fw-head); }
+/* --hk: the head's keys' and field's one height (a touch screen's: controls.css). Find in TODO's head, wider than a
+   phone (kanbanpanel.js): after its name, giving way before + New task does; the keys after it take the free room */
+.colhead > .search { flex: 1 1 0; min-width: 90px; max-width: 240px; height: var(--hk); box-sizing: border-box; font-weight: var(--fw-body); }
 .colhead .count { color: var(--muted); }
 /* Display order's keys immediately before the count (AC-105); TODO's own New task before them. */
-.colsort { display: inline-flex; flex: none; margin-left: auto; gap: 0; }
-.colhead .colsort .icon { --ik: var(--icon-key-list); }
-.colhead .new { --key-h: var(--icon-key-list); --key-px: var(--sp-2); gap: var(--sp-1); margin-left: auto; font-size: var(--fs-label); }   /* TODO's + New task: as tall as the sort keys (AC-106) */
+/* a segmented control (controls.css), its keys as tall as + New task, the track round them */
+.colsort { flex: none; margin-left: auto; --ik: var(--hk); }
+.colhead .colsort button { width: var(--ik); height: var(--ik); padding: 0; justify-content: center; }
+.colhead .new { --key-h: var(--hk); --key-px: var(--sp-2); gap: var(--sp-1); margin-left: auto; font-size: var(--fs-label); }   /* TODO's + New task: as tall as the sort keys (AC-106) */
 .colhead .new + .colsort { margin-left: 0; }   /* the free room before + New task, not between it and its keys */
 .cards { display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-1) var(--sp-2) var(--sp-2); overflow-y: auto; flex: 1 1 auto; min-height: 0; }
 /* a project's agents, over the columns: what RUN can start (terminum-dispatcher.md AC-137) */
@@ -211,6 +214,8 @@ body.board-page { margin: 0; overflow: hidden; background: var(--surface-0); col
 @media (hover: hover) { .card:hover { background: var(--surface-4); } }
 .chead { display: flex; align-items: center; gap: var(--sp-2); min-height: var(--icon-key-sm); font-size: var(--fs-meta); color: var(--muted); }
 .cid { font-variant-numeric: tabular-nums; }
+.cwhen { flex: none; margin-left: auto; white-space: nowrap; font-variant-numeric: tabular-nums; }   /* when it last changed, in the ID's type, at the head's end */
+.cwhen + .crun { margin-left: 0; }
 .cparent { font-size: var(--fs-small); color: var(--muted); }
 .projnofolder { flex: none; margin-left: auto; font-size: var(--fs-small); color: var(--danger-text); }
 .csev { padding: 0 var(--sp-1); border-radius: var(--r-xs); font-size: var(--fs-micro); font-weight: var(--fw-head); line-height: 16px; font-variant-numeric: tabular-nums; background: var(--surface-1); }
@@ -221,7 +226,7 @@ body.board-page { margin: 0; overflow: hidden; background: var(--surface-0); col
 @media (hover: hover) { .card:not(:hover, :focus-within) :is(.crun, .cmenu) { opacity: 0; } }
 /* TODO and DONE: a line a card, its ID, severity and title; a press shows one whole, folding the one before (terminum-kanban.md AC-159) */
 .card.compact:not(.open) { flex-direction: row; flex-wrap: wrap; align-items: center; gap: var(--sp-2); }
-.card.compact:not(.open) > :not(.chead, .ctitle, .cneeds, .cfoot), .card.compact:not(.open) .chead > :not(.cid, .csev, .crun), .card.compact:not(.open) .cfoot > :not(.cstate) { display: none; }
+.card.compact:not(.open) > :not(.chead, .ctitle, .cneeds, .cfoot), .card.compact:not(.open) .chead > :not(.cid, .csev, .cwhen, .crun), .card.compact:not(.open) .cfoot > :not(.cstate) { display: none; }
 .card.compact:not(.open) :is(.chead, .cfoot) { display: contents; }
 /* its session's state as its dot alone, the words on hover, as the card shown whole says them (waits for an agent's room) */
 .card.compact:not(.open) .cstate { flex: none; display: inline-flex; font-size: 0; }
@@ -230,8 +235,9 @@ body.board-page { margin: 0; overflow: hidden; background: var(--surface-0); col
 .card.compact:not(.open) .csev { flex: none; }
 .card.compact:not(.open) .cneeds { order: 2; flex-basis: 100%; }   /* a line of their own under the card's */
 .card.compact:not(.open) .ctitle { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.card.compact:not(.open) .crun { order: 1; margin: calc(var(--sp-1) * -1) 0; }
-.card.compact:not(.open, .onagent) .crun { display: none; }   /* no agent ran it: Run is on the card shown whole */
+.card.compact:not(.open) :is(.cwhen, .crun) { order: 1; }   /* after the title: its date, then Run */
+.card.compact:not(.open) .crun { margin: calc(var(--sp-1) * -1) 0; }
+#board .card.compact:not(.open, .onagent) .crun { display: none; }   /* no agent ran it: Run is on the card shown whole (#board: over the icon kind's weight, controls.css) */
 .card.picked { box-shadow: var(--m-edge), inset 0 0 0 2px var(--accent); }
 /* INTEGRATION and IN PROGRESS, their column or their tab, under a drag they take (terminum-integration.md AC-193) */
 :is(.col, #colswitch button).over { box-shadow: inset 0 0 0 2px var(--accent); }
