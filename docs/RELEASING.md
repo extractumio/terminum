@@ -54,13 +54,40 @@ again with its one-line installer.
 
 ## Before a release
 
-`make release` runs the full checks first (`make check`, once per tree), on a quiet machine and one full run at a time (`scripts/load_gate.py`; what it waits for and when it gives up: spec AC-146, `TM_GATE_LOAD`); then the Mac test runner's when `TM_MAC_RUNNER` is set: failing tests stop it, and nothing else that is about quality does. A busy runner is tried again for half an hour. One that could not run them (asleep, still busy, a dropped link, over an hour) is said at the end, and the release's notes get a line saying so under Not verified. The commit published is the one the checks saw: another session's `make install` leaves `main` alone during a release, and a moved `HEAD` is refused. It starts on what has landed: it waits for an After or install running in the primary checkout, then brings a clean `main` up to `origin/main` as `make install` does (spec AC-104); while it runs, the integration queue's Afters wait and run by themselves once it ends (`terminum-integration.md` AC-191).
+A release promotes a commit that already passed the full run (spec AC-200, AC-201, AC-202):
 
-`make rehearse TAG=vX.Y.Z` is the same chain, from a tree at `origin/main`, up to the built package (its macOS builds codesigned with the Developer ID, as for real): no release key, nothing tagged, pushed or published, no notes needed, no mark held. Its own target, so a mistyped variable can never publish. The primary checkout refuses it: it replaces `ui/dist` and `dist/package`.
+- **Every night** the project's schedule "Nightly full run" runs `make rehearse` on `origin/main` (every step) and then
+  `make check CHECK_ARGS=--timing` there; a red step is a task. Its passes, a pass per step and content kept in git's
+  common folder, are what a release reuses.
+- **`make release TAG=vX.Y.Z`** fetches and pins the newest commit of `origin/main` whose content passed in the last 48
+  hours, or differs from one only in docs, else `origin/main`; `PIN=<commit>` pins another commit of `origin/main`. It says what it pinned and how many commits
+  since the last full pass. In `.worktrees/release`, detached at the pin and kept between runs, the pinned commit's own
+  code runs the rest: leftovers cleared (`scripts/leftovers.py --end`, spec AC-102), the full run (only the steps
+  without a pass; after a docs-only change the scan alone), the Mac test runner's checks when `TM_MAC_RUNNER` is set
+  (a pass kept per content too), the build, the signature, the tag on the pin, the publication. Landings, Afters and
+  installs go on meanwhile; nothing of a release is in the primary checkout. Its notes are read as `origin/main`
+  holds them, so they may land after the pin.
+- **Only failing tests stop it.** The full run waits for a quiet machine, one at a time (`scripts/load_gate.py`, spec
+  AC-146); a release finding the nightly's run in the turn waits for its end and reuses its passes. A red step of real
+  programs runs its red checks once more (AC-201); one that passes only then is said in red, printed as a task for
+  the run's agent, and named in the release notes. A Mac test runner that could not run its checks (asleep, busy for
+  half an hour, a dropped link, over an hour) is said at the end and in the notes under Not verified.
+- **A red release:** nothing is public. The fix is made in a tree from the pin (`python3 scripts/worktree.py add <slug>
+  --from <pin>`), lands through the queue, and `make release TAG=vX.Y.Z PIN=<the fix's commit>` releases the pin and
+  the fix alone. A fix with code changes the content, so its full run runs every step again, about 70 minutes; a
+  second fix starts from the first fix's commit.
+- **The steps' environment** is an allow-list (`ALLOWED` in `scripts/check_all.py`): the maintainer's `TM_TEST_NO_CLAUDE`
+  does not reach the full run, whose live checks then need `claude` on `PATH`; no ssh agent reaches a test.
+- **The record:** each full run and each release or rehearsal leaves a line in git's common folder,
+  `terminum-gate.jsonl`: `python3 scripts/gate_record.py 20` prints the last 20. A release's post-mortem starts there.
 
-`make release` first runs `scripts/leftovers.py --end`, which removes what old test runs left and never
-stops the release (spec AC-102): `make leftovers` only says what it would remove, `make leftovers END=1`
-removes it. `/docs-review` is in CLAUDE.md §10.
+`make rehearse TAG=vX.Y.Z` is the same chain in `.worktrees/rehearse`, pinned to `origin/main` (or `PIN=`), every step
+run, up to the built package (its macOS builds codesigned with the Developer ID, as for real): no release key, nothing
+tagged, pushed or published, no notes needed. Its own target, so a mistyped variable can never publish.
+
+`/simplify` and `/docs-review` are the project's weekly schedule "Weekly review" (spec AC-202), not a release's: a
+release ships what `main` has. `make leftovers` says what `scripts/leftovers.py` would remove, `make leftovers END=1`
+removes it.
 
 ## Builds for remote hosts
 
