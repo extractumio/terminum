@@ -17,17 +17,19 @@
   .colpanel > .col.shown { display: contents; }
   .colpanel .colhead { grid-row: 1; grid-column: 2; align-self: start; flex-wrap: nowrap; }
   .colpanel .colhead :is(.colname, .count) { display: none; }   /* its tab says them */
-  .colpanel .cards { grid-row: 2; grid-column: 1 / -1; display: grid; grid-template-columns: repeat(var(--cards), minmax(0, 1fr)); align-content: start; align-items: start; }
+  /* a row's cards as tall as its tallest, their foot and session at the bottom */
+  .colpanel .cards { grid-row: 2; grid-column: 1 / -1; display: grid; grid-template-columns: repeat(var(--cards), minmax(0, 1fr)); align-content: start; align-items: stretch; }
+  .colpanel .card > .cfoot { margin-top: auto; }
   .colpanel .cards > :is(.colempty, .colmore) { grid-column: 1 / -1; }
   #colswitch { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1); min-width: 0; margin: 0 var(--sp-2); align-self: center; justify-self: start; }   /* every count in sight; the row as tall as TODO's head */
   #colswitch button[data-status="TODO"] { display: none; }      /* TODO stands beside it */
 }
 /* a tab, wherever the tabs stand: its name, then its count as a tag; WAIT FOR HUMAN's and FAILED's in their hues while
    they hold tasks, its glow pulsing (the page's one blink, as the head's counters: askfold.css) */
-#colswitch button { display: inline-flex; align-items: center; gap: var(--sp-1); flex: none; padding-inline: var(--sp-2); white-space: nowrap; }
+#colswitch button { display: inline-block; flex: none; padding-inline: var(--sp-2); white-space: nowrap; }   /* one line, the key centring it: the count on its name's baseline */
 #colswitch button[hidden] { display: none; }
 @container board (max-width: 1099px) { #colswitch button { padding-inline: var(--sp-1); } }   /* at the board's size, five tabs and the keys on one row of an iPad mini */
-.tabn { position: relative; min-width: 1.6em; padding: 0 var(--sp-1); border-radius: var(--r-xs); font-size: var(--fs-micro); font-weight: var(--fw-head);
+.tabn { position: relative; display: inline-block; vertical-align: baseline; margin-left: var(--sp-1); min-width: 1.6em; padding: 0 var(--sp-1); border-radius: var(--r-xs); font-size: var(--fs-micro); font-weight: var(--fw-head);
   line-height: 18px; text-align: center; font-variant-numeric: tabular-nums; color: var(--muted-text); background: var(--surface-3); }
 #colswitch .alarm .tabn { background: var(--fill); }   /* its hue: askfold.css, as the head's counters */
 @media (prefers-reduced-motion: no-preference) {

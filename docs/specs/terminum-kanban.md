@@ -54,14 +54,14 @@ Open questions: none.
 
 | ID | Priority | Case |
 |---|---|---|
-| AC-105 | [MUST / P0] | `/kanban/` shows TODO as a column of its own and the other columns (IN PROGRESS, WAIT FOR HUMAN, INTEGRATION where a shown project's integration is on: `terminum-integration.md` AC-193, FAILED, DONE) one at a time in a panel beside it under their tabs, each tab with its count, WAIT FOR HUMAN's and FAILED's pulsing while they hold tasks; each column sorted by recent updates or by priority then recent updates, chosen by two icons before its count and remembered per project in this browser; a tablet's head is one row; `/sessions/` is the session list, `/` leads to it; a phone shows one column at a time. |
+| AC-105 | [MUST / P0] | `/kanban/` shows TODO as a column of its own and the other columns (IN PROGRESS, WAIT FOR HUMAN, INTEGRATION where a shown project's integration is on: `terminum-integration.md` AC-193, FAILED, DONE) one at a time in a panel beside it under their tabs, each tab with its count, WAIT FOR HUMAN's and FAILED's pulsing while they hold tasks; each column sorted by recent updates or by priority then recent updates, chosen by a segmented control of two icons before its count and remembered per project in this browser; a tablet's head is one row; `/sessions/` is the session list, `/` leads to it; a phone shows one column at a time. |
 | AC-159 | [MUST / P0] | TODO and DONE show each card as one line, its ID, severity, title and its state's dot; a press shows one whole, folding the one before; the other columns show cards whole. |
 | AC-106 | [MUST / P0] | A window makes a task (title, Markdown with preview, files dropped or pasted, project, severity, owner, parent), in TODO unless said; a draft survives closing; a selection in a terminal can start one. |
 | AC-107 | [MUST / P0] | A human moves a task only by running it (terminum-dispatcher.md AC-138); agents and Dispatcher move it; every change is kept in the task's history with who and when. |
 | AC-108 | [MUST / P0] | A task holds Markdown comments with files, by humans, agents and Dispatcher; a human's comment is kept by SAVE or goes with RUN. |
 | AC-109 | [MUST / P0] | Files up to 100 MB each stay with their task: images shown, other files downloaded, nothing run; a human can purge a file or a text. |
 | AC-110 | [MUST / P0] | The session list and the board share projects; a project needs no session, its last session closing leaves it; Default holds what has no project and is no real project; deleting a project moves its sessions and tasks to Default. |
-| AC-111 | [SHOULD / P1] | Filters by severity, owner and text, and the projects chosen (AC-135), kept in the URL. |
+| AC-111 | [SHOULD / P1] | Filters by severity, owner and text, and the projects chosen (AC-135), kept in the URL; Find, the text's, stands in TODO's head and narrows every column. |
 | AC-112 | [SHOULD / P1] | One level of subtasks, each a full task with a parent: made, put under another task, taken out; the parent's card shows each as a box of its ID in its status's color, and how many FAILED and WAIT FOR HUMAN in a red and a waiting-colored box, folded too. |
 | AC-113 | [MUST / P0] | A task has at most one session, a session one IN PROGRESS task at most; moving a task across projects asks about its session; a closed session is said on the card. |
 | AC-114 | [MUST / P0] | [DROPPED: a human moves a task only by running it, AC-107] |
@@ -98,7 +98,7 @@ Scenario: AC-105 happy path — the two pages
 Scenario: AC-105 happy path — columns and order
   Given P1 tasks API-3 and API-7 in TODO, API-7 updated after API-3, and an older P0 task API-9 in TODO
   Then TODO reads API-9, API-7, API-3: priority then recently updated is the default
-  And every column's head has two icon keys just before its count, labelled "Recently updated first" and "Priority, then recently updated", the chosen one pressed
+  And every column's head has a segmented control of two icon keys just before its count, labelled "Recently updated first" and "Priority, then recently updated", the chosen one a raised key in its track, the other flat
   When the user chooses recently updated first in TODO
   Then TODO reads API-7, API-3, API-9; the other columns keep their choices
   And the server sorts before taking each page of 200; equal update times use the newest task number first
@@ -108,8 +108,8 @@ Scenario: AC-105 happy path — columns and order
 Scenario: AC-105 happy path — TODO and the panel
   Given a board 601 px wide or wider, a computer's or a tablet's
   Then TODO stands as a column of its own; IN PROGRESS, WAIT FOR HUMAN, INTEGRATION (where it stands), FAILED and DONE share the rest of the board as one panel, one at a time under their tabs, IN PROGRESS shown first
-  And each tab names its column and its count; WAIT FOR HUMAN's and FAILED's counts stand in the waiting and the danger hue and pulse slowly while they hold tasks, whichever tab is shown (still with Reduce Motion)
-  And the shown column's sort keys stand at the end of the tabs' row; its cards fill the panel as a grid
+  And each tab names its column and its count, the count's digits on the name's baseline; WAIT FOR HUMAN's and FAILED's counts stand in the waiting and the danger hue and pulse slowly while they hold tasks, whichever tab is shown (still with Reduce Motion)
+  And the shown column's sort keys stand at the end of the tabs' row; its cards fill the panel as a grid, the cards of a row as tall as its tallest, their foot and session at its bottom
   When the user presses DONE's tab
   Then the panel shows DONE's cards, and this browser shows DONE first next time; when INTEGRATION's tab goes, the panel shows IN PROGRESS
   And the board has tracks: six from 1500 px of board, TODO two of them, the panel's cards four columns, an agent a track (terminum-dispatcher.md AC-138); three from 1100 px, TODO one, the cards two; under 1100 px TODO stands over the panel, as tall as its cards up to 40% of the board, the cards two columns
@@ -117,8 +117,8 @@ Scenario: AC-105 happy path — TODO and the panel
 
 Scenario: AC-105 edge — a tablet
   Given a touch screen 601 px wide or wider (an iPad, in either orientation), or a window 601 to 860 px wide
-  Then the head is one row: the list's key, the sections where they fit, the project, Find, Filters (it names how many are on and opens the filters on a row under the head), the counters of tasks that need the human (AC-117), Auto-Dispatch and the project's cog (AC-139); every key 44 px on a touch screen
-  And where the row is short, Auto-Dispatch's word goes first, then the project's name gives way, then Find narrows; only then do the project, Find and Filters take a second row
+  Then the head is one row: the list's key, the sections where they fit, the project, Filters (it names how many are on and opens the filters on a row under the head), the counters of tasks that need the human (AC-117), Auto-Dispatch and the project's cog (AC-139); every key 44 px on a touch screen
+  And where the row is short, Auto-Dispatch's word goes first, then the project's name gives way; only then do the project and Filters take a second row
   And no column, card title or column head is cut to fit: TODO and the panel at least 300 px wide each, a column head on one line
 
 Scenario: AC-105 happy path — a project's sort choices
@@ -145,11 +145,12 @@ Scenario: AC-105 happy path — one type size
 
 Scenario: AC-105 happy path — a card
   Then a card shows its ID, title, severity, owner, project in the project's color, subtask progress and its session (AC-134), or "session closed"
+  And when it last changed, in its ID's type at its head's end: the time for today, else the day ("Nov 14"), the year too for another year; the whole date and time on hover
   And a press on a card opens its window; ⌘ or Ctrl+press chooses it (terminum-dispatcher.md AC-138)
 
 Scenario: AC-105 edge — a phone
   Given a width of 600 px or less, or a touch screen 500 px high or less (a phone on its side)
-  Then one column shows, TODO first, a swipe goes to the next, a switch over it names every column with its count, as the panel's tabs do, and follows; a card runs by its Run key
+  Then one column shows, TODO first, a swipe goes to the next, a switch over it names every column with its count, as the panel's tabs do, and follows; a TODO card runs by its Run key
 
 Scenario: AC-105 edge — a phone's one-row head
   Given a width of 600 px or less, or a touch screen 500 px high or less (a phone on its side)
@@ -177,7 +178,7 @@ Scenario: AC-105 failure — its projects and filters not read
 ```gherkin
 Scenario: AC-159 happy path — a line a card
   Given API-3 and API-7 in TODO, API-1 in DONE and API-9 IN PROGRESS
-  Then API-3, API-7 and API-1 are one line each: the ID, the severity, the title cut to the line; their foot, subtasks, session, agent and parent are not shown
+  Then API-3, API-7 and API-1 are one line each: the ID, the severity, the title cut to the line, when it last changed (AC-105); their foot, subtasks, session, agent and parent are not shown
   And a card whose session or run has a state shows it as its dot after the title, its words on hover, as the card shown whole says them: API-3 waiting for Claude Opus's room the waiting dot, "waits for Claude Opus"
   And API-9's card is whole, as AC-105 says
 
@@ -192,7 +193,7 @@ Scenario: AC-159 happy path — one shown whole
   Then API-7 is a line again
 
 Scenario: AC-159 edge — what stays
-  Then a folded card is dragged, chosen with ⌘ or Ctrl+press, and opened by Enter as a press; one an agent ran, its agent known, is run by its Run key on hover, any other by the key on the card shown whole; its state says "expanded" or "collapsed" to a screen reader
+  Then a folded card is dragged, chosen with ⌘ or Ctrl+press, and opened by Enter as a press; a TODO one an agent ran, its agent known, is run by its Run key on hover, any other TODO one by the key on the card shown whole (DONE's have none: terminum-dispatcher.md AC-122); its state says "expanded" or "collapsed" to a screen reader
   And the card shown whole stays so as the columns are read again, until it leaves TODO and DONE
 ```
 
@@ -397,6 +398,13 @@ Scenario: AC-111 happy path — several at once
 Scenario: AC-111 happy path — text
   When the user types "retry" in Find
   Then tasks with it in the ID, title or text remain, within 300 ms
+
+Scenario: AC-111 happy path — Find by the cards
+  Given a board 601 px wide or wider (AC-105)
+  Then Find stands in TODO's head after its name, saying "Filter all columns", and narrows every column and every count
+  And it gives way before + New task and the sort keys do; the head stays one line
+  When the screen becomes a phone's
+  Then Find stands behind the head's Find key, its words "Find tasks", what was typed kept
 
 Scenario: AC-111 edge — nothing left
   When nothing matches
