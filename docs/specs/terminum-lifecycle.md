@@ -133,6 +133,10 @@ Scenario: AC-08 happy path — launchd holds the port
 Scenario: AC-08 happy path — tmux missing
   Given tmux is not on PATH
   Then the install goes through and prints "tmux is needed for terminals: brew install tmux" ("sudo apt install tmux" on Linux), and the page says the same until tmux appears (terminum.md AC-01)
+Scenario: AC-08 edge — a tmux server before 3.8
+  Given terminum's running tmux server (`#{version}`, which `terminum status`'s `/health` names; a newer binary on PATH changes it only after a restart) is older than 3.8, which can crash and end every terminal in it (terminum.md DEP-02)
+  Then the install goes through and says last "tmux <version> runs terminum's terminals and can crash, ending every one of them (fixed in tmux 3.8): brew upgrade tmux, then restart it once at a quiet moment: tmux -L terminum kill-server (sessions, windows, splits, folders and projects come back; running programs do not)" ("upgrade tmux with your system's package manager" on Linux)
+  And a server from 3.8, a version that is no number ("master", "next-3.9"), or none running says nothing; the install never refuses
 Scenario: AC-08 happy path — status
   When the user runs "terminum status"
   Then it prints the running build, terminumd's pid and uptime, the page's address, whether a password is set, the tmux servers and sessions attached, the hosts and their state, and the pages connected

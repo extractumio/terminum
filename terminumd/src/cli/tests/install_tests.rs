@@ -124,6 +124,38 @@ fn tmux_missing_is_said_and_the_install_goes_through() {
 }
 
 #[test]
+fn a_tmux_server_before_3_8_is_said_and_the_install_goes_through() {
+    // AC-08: tmux before 3.8 crashes in its control-mode notifications (TERM-485)
+    let home = Home::new();
+    let tbin = home.path("tbin");
+    write_exec(&tbin.join("tmux"), "#!/bin/sh\n");
+    let path = format!("{}:/usr/bin:/bin", tbin.display());
+    let ctx = home.ctx(&[("TM_NO_LAUNCHD", "1"), ("TM_NO_OPEN", "1"), ("PATH", &path), ("TM_FAKE_TMUX_VERSION", "3.6a")]);
+    let t = T { home, ctx };
+    t.install("a").unwrap();
+    assert_eq!(said(&t.ctx).last(), install::old_tmux_line("3.6a").as_ref(), "the running server's version is said last");
+    assert_eq!(t.running().as_deref(), Some("a"));
+}
+
+#[test]
+fn a_fixed_or_unread_tmux_server_says_nothing() {
+    let t = T::new();
+    t.install("a").unwrap();
+    assert!(!said(&t.ctx).iter().any(|l| l.contains("fixed in tmux 3.8")), "no version answered: nothing said");
+}
+
+#[test]
+fn only_a_tmux_before_3_8_gets_the_line() {
+    let line = install::old_tmux_line("3.6a").unwrap();
+    assert!(line.starts_with("tmux 3.6a runs terminum's terminals and can crash") && line.contains("fixed in tmux 3.8"), "{line}");
+    assert!(line.ends_with(crate::cli::folders::RESTART), "it says the running server must restart: {line}");
+    assert!(install::old_tmux_line("3.7c").is_some() && install::old_tmux_line("3.2").is_some());
+    for v in ["3.8", "3.8a", "3.10", "4.0", "next-3.9", "master", "openbsd-7.6", ""] {
+        assert_eq!(install::old_tmux_line(v), None, "{v}");
+    }
+}
+
+#[test]
 fn tmux_is_looked_for_on_the_path_terminumd_gets() {
     let home = Home::new();
     let bin = home.path("bin");

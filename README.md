@@ -56,7 +56,7 @@ These come with `terminum hooks install` (see [the guide](docs/USAGE.md)).
 ### On a Mac
 
 ```bash
-brew install tmux        # tmux 3.2+; macOS 14+
+brew install tmux        # tmux 3.8+ (older ones can crash); macOS 14+
 curl -fsSL https://github.com/extractumio/terminum/releases/latest/download/install.sh | sh
 ```
 

@@ -566,7 +566,7 @@ terminum hosts agents devbox on|off                        # coding agents' prog
 terminum hosts off|on|retry|remove|files-remove devbox
 ```
 
-A host whose ssh works but whose tmux does not answer stops being tried after three tries: its group says why and has a **Reconnect** button (`terminum hosts retry devbox`). The usual cause is a new tmux binary with the old server still running: restart that server, or bring the old binary back. Use tmux 3.6 or newer on a host: older ones leak memory with every screen terminum reads.
+A host whose ssh works but whose tmux does not answer stops being tried after three tries: its group says why and has a **Reconnect** button (`terminum hosts retry devbox`). The usual cause is a new tmux binary with the old server still running: restart that server, or bring the old binary back. Use tmux 3.8 or newer, on the Mac and on a host: before 3.6 tmux leaks memory with every screen terminum reads, and before 3.8 its server can crash when a session ends while terminum is attached, ending every terminal in it. The install says so when terminum's own server is older; after `brew upgrade tmux` the running server keeps its version until it restarts (`tmux -L terminum kill-server` at a quiet moment: sessions, windows and folders come back, running programs do not).
 
 Once a host attaches, terminum sets it up by itself, with no question: its helper for Files
 (6 MB in `~/.terminum/bin`), then terminum's hooks and MCP server in Claude Code and Codex there.
