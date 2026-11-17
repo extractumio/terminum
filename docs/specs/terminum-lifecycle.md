@@ -67,7 +67,7 @@ Open questions: none open. Which clients exist (AC-11's drop) is terminum.md OQ-
 | AC-102 | [SHOULD / P1] | A release starts from a machine with no leftovers of old test runs: the one test helper that outlives its test is ended, dead tmux sockets and test folders are removed, and what may be someone's work is only named; a test run itself leaves nothing, and a step of `make check` that leaves something fails. |
 | AC-103 | [SHOULD / P1] | The docs keep their shape on every `make test`, and a review of what changed since the last release removes duplicates and superseded requirements before a minor release. |
 | AC-104 | [SHOULD / P1] | A finished worktree lands by itself: its targeted checks green on its own work, then a short smoke set of the basics on one platform, with no timed check, on its merge with what others landed; pushed, the primary checkout brought up to it and the tree deleted; the full test run is the release's gate, and only failing tests block a release. |
-| AC-146 | [SHOULD / P1] | A release's full run starts only on a quiet machine: it queues behind another full run, waits for the load to stay low for 3 minutes, says each minute that it waits, and after 15 minutes ends the release with "the build server is not available"; a task's timed checks wait the same way, and after 15 minutes are skipped and said in red, never run under the load. |
+| AC-146 | [SHOULD / P1] | A release's full run starts only on a quiet machine: it queues behind another full run, waits for the load to stay low for 3 minutes, says each minute that it waits, and after 15 minutes ends the release with "the build server is not available"; a task's timed checks wait the same way, and after 15 minutes, or at once while a full run holds its turn, are skipped and said in red, never run under the load. |
 | AC-196 | [SHOULD / P1] | Every diagnostic log has a bounded size and period under one rotation mechanism; active writers follow rotations without losing records. |
 | AC-197 | [SHOULD / P1] | A worktree's step that runs real programs (panel, page, critical, smoke, an e2e script) and fails runs once more, unchanged, while the run is otherwise green: passing then, the targeted checks or the smoke set count it, say the first run's last lines and say it in red last; red again, or a leftover, it is red; other steps, and the release's full run, have no retry. |
 
@@ -869,7 +869,14 @@ Scenario Outline: AC-146 edge — a task's timed checks
   Examples:
     | why                                     |
     | the load average is over the limit      |
-    | a release is running (its mark is held) |
+
+Scenario: AC-146 edge — a task's timed checks beside a full run
+  Given a release's or a rehearsal's full run holds its turn (about 70 minutes)
+  When a task's targeted checks, or a queued task's Verify, reach their first timed step
+  Then they wait for nothing: each timed step prints "SKIP page: a full run holds the machine (a release's or a rehearsal's)" and the last line, red, is "targeted: SKIPPED timed checks, a full run held the machine: page e2e_hooks", said again as above
+  And their other steps run, a cargo step under nice while a release runs (AC-104)
+  When that release has ended its full run and runs the Mac test runner's checks or its build, holding no full run's turn
+  Then a task's timed checks wait for a quiet machine as above: the release's mark alone holds nothing back
 
 Scenario: AC-146 edge — the access check waits for a login answer under load
   Given scripts/e2e_access.py sends a login request while the load average is 60 on 16 cores
