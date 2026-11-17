@@ -173,9 +173,9 @@ pub async fn hook_on(app: Shared, server: Option<std::sync::Arc<crate::tmux::ser
         if !typed {
             app.inputs.human(&key);
         }
-        // the session that took a message goes to its project's top (AC-92)
+        // the session that took a message goes to its project's or its tmux group's top (AC-92)
         let (app, key) = (app.clone(), key.clone());
-        tokio::spawn(async move { crate::page::projects::raise(&app, &key).await });
+        tokio::spawn(async move { crate::page::raise::raise(&app, &key).await });
     }
     if let (Some(prompt), Some(cwd)) = (prompt, ev["cwd"].as_str()) {
         let (prompt, cwd, info) = (prompt.to_string(), cwd.to_string(), json!({"agent": ev["agent"], "via": "hook", "sender": sender}));

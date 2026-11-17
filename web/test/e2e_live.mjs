@@ -28,7 +28,7 @@ import { liveJitter } from "./e2e_livejitter.mjs";
 import { liveLinks } from "./e2e_livelinks.mjs";
 import { liveLimit } from "./e2e_livelimit.mjs";
 import { liveFocus } from "./e2e_livefocus.mjs";
-import { liveListPlace } from "./e2e_livelistplace.mjs";
+import { liveListPlace, liveRaise } from "./e2e_livelistplace.mjs";
 import { liveWidgetPng } from "./e2e_livewidgetpng.mjs";
 import { liveWidgetSteady } from "./e2e_livewidgetsteady.mjs";
 import { liveClip } from "./e2e_liveclip.mjs";
@@ -58,7 +58,7 @@ import { liveIntegrationSlots } from "./e2e_liveintegrationslots.mjs";
 import { liveAuto } from "./e2e_liveauto.mjs";
 import { liveIconKeys } from "./e2e_liveiconkeys.mjs";
 import { SORT_ALONE, BOARD_ALONE, TASKS_ALONE, WAITING_ALONE, POOL_ALONE, SMOKE, LINKS_ALONE, HISTORY_ALONE,
-  AUTO_ALONE, SCHEDULES_ALONE, NOTES_ALONE, ICONS_ALONE, REQUESTS_ALONE, SIGNIN_ALONE, QUEUE_ALONE, INTEGRATION_SLOTS_ALONE, MAIN_ALONE, BACKGROUND_ALONE, ARCHIVED_ALONE, FOLDS_ALONE, FOLDED_ALONE, SPLIT_ALONE } from "./e2e_livemodes.mjs";
+  AUTO_ALONE, SCHEDULES_ALONE, NOTES_ALONE, ICONS_ALONE, REQUESTS_ALONE, SIGNIN_ALONE, QUEUE_ALONE, INTEGRATION_SLOTS_ALONE, MAIN_ALONE, BACKGROUND_ALONE, ARCHIVED_ALONE, FOLDS_ALONE, FOLDED_ALONE, SPLIT_ALONE, RAISE_ALONE } from "./e2e_livemodes.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const SHORT = SMOKE || LINKS_ALONE || FOLDS_ALONE || FOLDED_ALONE;   // a few checks, the wide size only
@@ -174,12 +174,13 @@ async function wide(browser, name) {
   const live = { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP, stop, start, shots: process.env.TM_TEST_SHOTS };
   /** The board's suites, each on a page of its own */
   const edge = [0, 1].map((part) => (p, o) => liveBoardEdge(p, { ...o, part }));
-  const boards = async (suites = [liveBoard, liveBoardSort, ...edge, liveBoardSessions, liveBoardAgents, liveBoardBusy, liveBoardSignin, liveBoardTasks, liveBoardIds, liveBoardAttrs, liveDispatcher, liveBackground, liveArchived, liveHistory, liveFolded, liveSchedules, liveQueue, liveAuto, liveMain, liveIconKeys, liveWaitingRun]) => {
+  const boards = async (suites = [liveBoard, liveBoardSort, ...edge, liveBoardSessions, liveBoardAgents, liveBoardBusy, liveBoardSignin, liveBoardTasks, liveBoardIds, liveBoardAttrs, liveDispatcher, liveBackground, liveArchived, liveHistory, liveFolded, liveSchedules, liveQueue, liveAuto, liveMain, liveIconKeys, liveWaitingRun, liveRaise]) => {
     for (const suite of suites) { await renew(); await suite(page, live); }
   };
   await renew();
   if (INTEGRATION_SLOTS_ALONE) { await boards([liveIntegrationSlots]); return ctx; }
   if (FOLDS_ALONE) { await liveFolds(page, live); return ctx; }
+  if (RAISE_ALONE) { await boards([liveRaise]); return ctx; }
   if (FOLDED_ALONE) { await liveFolded(page, live); return ctx; }
   if (BACKGROUND_ALONE) {
     await boards([liveBackground]);

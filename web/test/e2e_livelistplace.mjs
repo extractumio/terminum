@@ -2,9 +2,12 @@
 // AC-92 against a real private terminumd and tmux (e2e_live.mjs): real panes closed in tmux, with
 // terminumd's own order of messages. The shown session's close shows its project's first session, and
 // its row never stands in its tmux group on the way; its project's only session closed, the project
-// goes and the top of the list is shown.
+// goes and the top of the list is shown. A session in no project whose agent takes a message (a real
+// `terminum hook` UserPromptSubmit) goes to the top of its tmux group: its window first in tmux, its
+// row first in the group on the page; the agent's own turn moves nothing.
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { boardKit } from "./boardkit.mjs";
 import { check, shownPane, until, within } from "./check.mjs";
 
 export async function liveListPlace(page, { tmux, work, app }) {
@@ -80,4 +83,32 @@ export async function liveListPlace(page, { tmux, work, app }) {
 
   await page.click(row(shown));
   await page.waitForTimeout(500);
+}
+
+export async function liveRaise(page, opts) {
+  const { tmux } = opts;
+  const { newPane, keyOf, hook, endPanes, backToSessions } = boardKit(page, opts);
+  await backToSessions();
+  const a = newPane("raise-a"), b = newPane("raise-b");
+  await keyOf(b);
+  await page.waitForSelector(`#sessions .item[data-id$=":${b}"]`, { timeout: 5000 });
+  const session = tmux("display", "-p", "-t", b, "#{session_name}");
+  const inTmux = () => tmux("list-windows", "-t", `=${session}`, "-F", "#{pane_id}").split("\n").map((l) => l.trim()).filter(Boolean);
+  /** The rows of the tmux group that shows `pane`, top to bottom, by pane id. */
+  const inGroup = (pane) => page.evaluate((pane) => {
+    const ul = document.querySelector(`#sessions section[data-wid] > ul:has(> li > .item[data-id$=":${pane}"])`);
+    return [...(ul?.children ?? [])].map((li) => li.firstElementChild?.dataset.id?.split(":").pop());
+  }, pane);
+  hook(b, "SessionStart", { source: "startup" });
+  hook(b, "UserPromptSubmit", { prompt: "<task-notification>\n<task-id>r1</task-id>" });
+  await page.waitForTimeout(1500);
+  check("AC-92 the agent's own turn moves no window of its group", inTmux().indexOf(b) > inTmux().indexOf(a), JSON.stringify(inTmux()));
+  hook(b, "UserPromptSubmit", { prompt: "fix the tests" });
+  // before every window its group shows (a project's session left by an earlier check keeps its place)
+  const first = async () => { const rows = await inGroup(b), order = inTmux(); return rows.every((r) => r === b || order.indexOf(b) < order.indexOf(r)); };
+  const risen = await until(first, 5000);
+  check("AC-92 a session in no project that takes a message: its window goes before its group's others in tmux", risen, JSON.stringify(inTmux()));
+  const shown = await until(async () => (await inGroup(b))[0] === b, 5000);
+  check("AC-92 and its row first in its tmux group on the page within 2 s of the list's read", shown, JSON.stringify(await inGroup(b)));
+  endPanes();
 }
