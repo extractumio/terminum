@@ -75,26 +75,23 @@ class Turn(TreeTurn):
         return None if self.take() else "another full run holds the turn (a release or a rehearsal in another tree)"
 
 
-# why a task's timed checks are skipped at once (AC-146)
-FULL_RUN = "a full run holds the machine (a release's or a rehearsal's)"
-
-
 def full_run_held(cwd):
     """Whether a full run holds its turn, by a look that leaves it free."""
     with Turn(cwd) as turn:
-        return turn.busy() is not None
+        return not turn.take()
 
 
-def for_task(cwd=".", say=print, held=full_run_held, **kw):
+def for_task(cwd=".", say=print, **kw):
     """A task's timed checks: skipped at once while a full run holds its turn, else waited for as a release's full
-    run waits for a quiet machine. None to run them, else why they are skipped, as said on each skipped step."""
-    if held(cwd):
-        say(f"gate: {FULL_RUN}: the timed checks are skipped")
-        return FULL_RUN
+    run waits for a quiet machine. None to run them, else why they are skipped: (on each skipped step, in the note)."""
+    if full_run_held(cwd):
+        why = "a full run holds the machine (a release's or a rehearsal's)"
+        say(f"gate: {why}: the timed checks are skipped")
+        return why, "a full run held the machine"
     why = wait(say=say, **kw)
     if why:
         say(f"gate: {why} {MINUTES}: the timed checks are skipped")
-        return f"{why} {MINUTES}"
+        return f"{why} {MINUTES}", f"the machine busy {MINUTES}"
     return None
 
 
