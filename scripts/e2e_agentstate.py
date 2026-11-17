@@ -12,6 +12,7 @@ import shutil
 import sys
 import tempfile
 from functools import partial
+from itertools import dropwhile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from e2e_ws import Terminumd, check, summary, tmux_on, wait_layout  # noqa: E402
@@ -146,8 +147,7 @@ def main():
                 if r.get("unread") and unread_at is None:
                     unread_at = time.time() - start
         # from its first read on: a loaded machine reads the new pane a second or two late
-        read_from = next((i for i, x in enumerate(rows) if x[1] is not None), len(rows))
-        during = [x for x in rows[read_from:] if x[0] < SHELL_FOR - 1]
+        during = [x for x in dropwhile(lambda x: x[1] is None, rows) if x[0] < SHELL_FOR - 1]
         check("AC-93 Claude Code done with a shell still running in the background (its footer's \"1 shell\") is working, not unread",
               during and all(x[1] == "working" and not x[2] for x in during), rows)
         check("AC-93 once the shell ended, the turn ends: unread SETTLE later",

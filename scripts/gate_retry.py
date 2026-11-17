@@ -128,9 +128,9 @@ class Retry:
         return command if checks == [step] else "node web/test/e2e_all.mjs " + " ".join(checks), checks, entry
 
     def passed_on_retry(self, step, checks, first):
-        for check in checks:
-            self.passed.append((named(step, check), f"TASK for this run's agent: create_task, or add_comment on the open "
-                                f"task titled \"Bug: flaky in the full run: {named(step, check)}\" (P2), with the first run's "
+        for name in (named(step, check) for check in checks):
+            self.passed.append((name, f"TASK for this run's agent: create_task, or add_comment on the open "
+                                f"task titled \"Bug: flaky in the full run: {name}\" (P2), with the first run's "
                                 f"last lines:\n{tail(first)}"))
 
     def say_last(self):

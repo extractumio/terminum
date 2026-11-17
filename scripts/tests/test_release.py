@@ -277,7 +277,7 @@ class ReleaseTest(unittest.TestCase):
             release.main("v1.0.0", "abc", "the Mac test runner's checks did not run: x", retried=["page webBoardPanel", "live"])
         notes = publish.call_args.args[2]
         self.assertIn("**Not verified:** the Mac test runner's checks did not run: x", notes)
-        self.assertIn("**Passed only on retry, the first run red:** page webBoardPanel, live live", notes)
+        self.assertIn("**Passed only on retry, the first run red:** page webBoardPanel, live", notes)
 
     def test_a_commit_the_checks_did_not_see_is_refused(self):  # AC-104
         self.assertIn("HEAD moved since the full checks", self.refused(release.check_gate, "bbbb", "aaaa"))

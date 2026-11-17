@@ -139,7 +139,7 @@ def read(root, kind=None):
 
 
 def retried_lately(runs, check):
-    """Whether `check` ("e2e_hooks e2e_hooks", "page webBoardPanel", "live live") was retried in LOST_AFTER of the
+    """Whether `check` ("e2e_hooks", "page webBoardPanel", "live") was retried in LOST_AFTER of the
     last OF_LAST of the recorded full runs `runs` (read(root, "gate")) that ran its step."""
     step = check.split(" ", 1)[0]
     runs = [run for run in runs if step in run.get("steps", {})][-OF_LAST:]
