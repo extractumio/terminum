@@ -235,12 +235,12 @@ pub(super) fn follow(store: &Store, runner: &dyn Runner, p: &Place, b: Batch, no
             bs::set_state(tx, b.id, "ended", b.why.as_deref(), now)
         }),
         (_, 0) => store.with(|tx| { bs::set_pane(tx, b.id, None, now)?; bs::set_state(tx, b.id, after_after(&p.s), None, now) }),
-        (_, code) => store.with(|tx| {
+        // it cannot run now: it waits and runs again by itself (AC-191)
+        (_, super::tail::LATER) => super::tail::waits(store, p, &b, &log, now),
+        (_, code) => {
             let how = if code == OVER { format!("it ran over {} minutes", p.s.check_minutes) } else { format!("status {code}") };
-            bs::set_pane(tx, b.id, None, now)?;
-            bs::set_state(tx, b.id, bs::AFTER_FAILED, Some(&how), now)?;
-            bs::wait_for_human(tx, &b, &format!("After failed for batch {} with {how}: the batch stays published and its tasks DONE. Its log: {}", b.number, log.display()), now)
-        }),
+            super::tail::failed(store, p, &b, &format!("After failed for batch {} with {how}", b.number), &how, &log, now)
+        }
     }
 }
 

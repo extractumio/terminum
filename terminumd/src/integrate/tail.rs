@@ -3,7 +3,8 @@
 //! machine, in the order they were published, beside the batch in work, so the next batch is built and checked while
 //! they run. A project's folder is brought up to the target only when its batch's After's turn comes, never while
 //! another After builds in it. A batch whose After failed holds its project's later Afters until a human closes it
-//! (AC-194).
+//! (AC-194); one whose After said it cannot run now (status 75) is run again after a pause, holding only its
+//! project's later Afters, until a cap.
 
 use std::path::Path;
 
@@ -14,12 +15,19 @@ use super::store as bs;
 use crate::tasks::integration;
 use crate::tasks::store::Store;
 
+/// After's status that says it cannot run now (`EX_TEMPFAIL`): its last rows say why (AC-191).
+pub(super) const LATER: i32 = 75;
+/// Between an After's tries while it cannot run now, and how long it may wait before it fails (AC-191, §9 Limits).
+const PAUSE_S: i64 = 300;
+const WAIT_MOST_S: i64 = 24 * 3600;
+
 /// One step of the tail: the running After or Cleanup followed, else the published batch that waited longest takes
-/// the turn: its project's folder brought up to the target, then its After or Cleanup, or it ends with neither.
+/// the turn: its project's folder brought up to the target, then its After or Cleanup, or it ends with neither; a
+/// batch whose After waits runs it again once its pause passed.
 pub fn step(store: &Store, runner: &dyn Runner, home: &Path, now: i64) -> Result<(), String> {
     let next = store.with(|tx| match bs::in_tail(tx)? {
         Some(b) => Ok(Some((b, true))),
-        None => Ok(bs::next_published(tx)?.map(|b| (b, false))),
+        None => Ok(bs::next_after(tx, now, PAUSE_S)?.map(|b| (b, false))),
     })?;
     let Some((b, running)) = next else { return Ok(()) };
     // turned off before its turn, or its project unreadable: it ends without its After and holds no other project's
@@ -34,6 +42,10 @@ pub fn step(store: &Store, runner: &dyn Runner, home: &Path, now: i64) -> Result
     if running {
         return engine::follow(store, runner, &p, b, now);
     }
+    // its folder moved at its first try: a try again moves nothing under what made it wait
+    if b.state == bs::AFTER_WAITS {
+        return store.with(|tx| bs::set_state(tx, b.id, "after", None, now));
+    }
     match folder_follows(&p) {
         Err(w) => not_run(store, &b, &format!("{}'s folder stays where it is: {w}", p.name), after_after(&p.s), now),
         Ok(()) => store.with(|tx| bs::set_state(tx, b.id, if p.s.after.is_empty() { after_after(&p.s) } else { "after" }, None, now)),
@@ -46,6 +58,46 @@ fn not_run(store: &Store, b: &bs::Batch, why: &str, next: &str, now: i64) -> Res
     store.with(|tx| {
         bs::tell_task(tx, b, &words, now)?;
         bs::set_state(tx, b.id, next, Some(&words), now)
+    })
+}
+
+/// After's last rows, from its log: cleaned and redacted, for its row and its integration task (AC-191).
+fn last_rows(log: &Path) -> String {
+    let bytes = std::fs::read(log).unwrap_or_default();
+    let text = crate::plans::rules::clean(&String::from_utf8_lossy(&bytes[bytes.len().saturating_sub(4096)..]));
+    let rows: Vec<&str> = text.lines().map(str::trim).filter(|l| !l.is_empty()).collect();
+    let last: String = rows[rows.len().saturating_sub(3)..].join(" / ").chars().take(400).collect();
+    crate::sent::redact(&last)
+}
+
+/// After ended LATER: the batch waits, told once on its integration task; past its cap it fails as any After does.
+pub(super) fn waits(store: &Store, p: &Place, b: &bs::Batch, log: &Path, now: i64) -> Result<(), String> {
+    let rows = last_rows(log);
+    if b.waits_since.is_some_and(|since| now - since >= WAIT_MOST_S) {
+        return failed(store, p, b, &format!("After waited {} hours for batch {}", WAIT_MOST_S / 3600, b.number), &format!("waited {} hours", WAIT_MOST_S / 3600), log, now);
+    }
+    let why = if rows.is_empty() { format!("status {LATER}") } else { rows.clone() };
+    store.with(|tx| {
+        if b.waits_since.is_none() {
+            bs::tell_task(tx, b, &format!("After waits for batch {}: {why}. It runs again by itself; nothing waits for you.", b.number), now)?;
+        }
+        bs::after_waits(tx, b, &why, now)
+    })
+}
+
+/// After failed: the batch stands "after failed" with its cause and last rows, its integration task waits for a
+/// human told what is held and what Close does (AC-191, AC-194).
+pub(super) fn failed(store: &Store, p: &Place, b: &bs::Batch, head: &str, how: &str, log: &Path, now: i64) -> Result<(), String> {
+    let rows = last_rows(log);
+    let (why, said) = if rows.is_empty() { (how.to_string(), String::new()) } else { (format!("{how}: {rows}"), format!(": {rows}")) };
+    let name = &p.name;
+    let words = format!("{head}{said}. The batch stays published and its tasks DONE. Held until this task ends: {name}'s next batches are not built, \
+                         and the After of every batch published after it waits. Mend the cause, do After's work by hand where it is needed, then press \
+                         Close… on this task: {name}'s batches and later Afters go on. Its log: {}", log.display());
+    store.with(|tx| {
+        bs::set_pane(tx, b.id, None, now)?;
+        bs::set_state(tx, b.id, bs::AFTER_FAILED, Some(&why), now)?;
+        bs::wait_for_human(tx, b, &words, now)
     })
 }
 

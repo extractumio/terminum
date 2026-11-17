@@ -35,6 +35,16 @@ fn ac193_a_paused_queue_or_one_waiting_says_so_in_its_head() {
 }
 
 #[test]
+fn ac191_a_waiting_after_says_so_in_its_project_s_head_with_its_minutes() {
+    let w = world("ic-after-waits", Settings::default());
+    let since = ops::now() - 42 * 60;
+    w.s.with(|tx| tx.execute("INSERT INTO integration_batches (project, number, tasks, base_sha, state, why, created_at, waits_since) VALUES ('api', 7, '[]', 'x', 'after waits', 'after: a release is running: waits for its end', 0, ?1)", [since]).map(drop).map_err(sql)).unwrap();
+    assert_eq!(w.s.with(notes).unwrap()["api"]["note"], json!("Batch 7: After waits 42 min: after: a release is running: waits for its end"));
+    w.s.with(|tx| tx.execute("UPDATE project_integration SET paused = 1 WHERE project = 'api'", []).map(drop).map_err(sql)).unwrap();
+    assert!(w.s.with(notes).unwrap()["api"]["note"].as_str().unwrap().starts_with("Paused by "), "a pause says itself first");
+}
+
+#[test]
 fn ac193_each_state_in_words() {
     let w = world("ic-words", Settings { check: "exit 3".into(), ..Settings::default() });
     queued(&w, 1, "b.txt", "b\n");
@@ -47,6 +57,7 @@ fn ac193_each_state_in_words() {
     assert_eq!(words("publishing", 1, None), "publishing");
     assert_eq!(words("published", 1, None), "published: After waits for its turn");
     assert_eq!(words("after", 1, None), "After runs");
+    assert_eq!(words("after waits", 1, Some("after: a release is running: waits for its end")), "After waits: after: a release is running: waits for its end");
     assert_eq!(words("not published", 1, Some("push refused")), "not published: push refused");
 }
 

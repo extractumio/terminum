@@ -349,7 +349,7 @@ Scenario: AC-191 happy path — After
 Scenario: AC-191 edge — After cannot run now
   Given After "python3 scripts/land.py after" and a release running in Billing's folder
   When batch 7's After ends with status 75, its last row "after: a release is running: waits for its end"
-  Then batch 7 stands "after waits": its row and the column's head say "After waits: after: a release is running: waits for its end", the head with the minutes since its first wait; its integration task stays DONE, told once "After waits for batch 7: <its last rows>"; nothing waits for a human and no toast shows
+  Then batch 7 stands "after waits": its row in Batches… says "After waits: after: a release is running: waits for its end" and the column's head "Batch 7: After waits 42 min: after: a release is running: waits for its end", the minutes since its first wait; its integration task stays DONE, told once "After waits for batch 7: <its last rows>"; nothing waits for a human and no toast shows
   And 5 minutes after each try terminumd runs After again, in a window of its own with the check's time, its folder not moved again; a try that ends 0 ends the wait and its Cleanup follows
   And Billing's later Afters wait behind it in the order published, another project's After runs meanwhile, and Billing's batches go on being built, checked and published
   And terminumd knows nothing of releases: the project's command says when it cannot run, by its status

@@ -19,6 +19,9 @@ pub const TAIL: [&str; 2] = ["after", "cleanup"];
 pub const PUBLISHED: &str = "published";
 /// A published batch whose After failed: a human closes it, and it holds its project's queue and later Afters.
 pub const AFTER_FAILED: &str = "after failed";
+/// A published batch whose After said it cannot run now (status 75): run again after a pause, holding only its
+/// project's later Afters (AC-191).
+pub const AFTER_WAITS: &str = "after waits";
 /// A batch that waits for its agent or a human: it holds only its own project's queue.
 pub const RED: &str = "red";
 
@@ -46,15 +49,17 @@ pub struct Batch {
     /// why it stands as it does: its red round's, its refusal's
     pub why: Option<String>,
     pub created_at: i64,
+    /// when its After first said it cannot run now (AC-191)
+    pub waits_since: Option<i64>,
 }
 
-const SELECT: &str = "SELECT id, project, number, task, tasks, base_sha, candidate_sha, state, pane, round, red_rounds, step_started, fixes, agent_tree, unchanged_rechecks, why, created_at FROM integration_batches";
+const SELECT: &str = "SELECT id, project, number, task, tasks, base_sha, candidate_sha, state, pane, round, red_rounds, step_started, fixes, agent_tree, unchanged_rechecks, why, created_at, waits_since FROM integration_batches";
 
 fn of_row(r: &rusqlite::Row) -> rusqlite::Result<Batch> {
     let list = |i: usize| r.get::<_, String>(i).map(|t| serde_json::from_str(&t).unwrap_or_default());
     Ok(Batch { id: r.get(0)?, project: r.get(1)?, number: r.get(2)?, task: r.get(3)?, tasks: list(4)?,
         base: r.get(5)?, candidate: r.get(6)?, state: r.get(7)?, pane: r.get(8)?, round: r.get(9)?, red_rounds: r.get(10)?, step_started: r.get(11)?,
-        fixes: list(12)?, agent_tree: r.get(13)?, unchanged_rechecks: r.get(14)?, why: r.get(15)?, created_at: r.get(16)? })
+        fixes: list(12)?, agent_tree: r.get(13)?, unchanged_rechecks: r.get(14)?, why: r.get(15)?, created_at: r.get(16)?, waits_since: r.get(17)? })
 }
 
 /// A project's batches, newest first, `most` of those numbered under `before`.
@@ -87,20 +92,37 @@ fn first_in(tx: &Transaction, states: &[&str]) -> Result<Option<Batch>, String> 
     tx.query_row(&format!("{SELECT} WHERE state IN ({states}) ORDER BY id LIMIT 1"), [], of_row).optional().map_err(sql)
 }
 
+/// The project's batch whose After waits, if one (AC-191).
+pub fn after_waiting(tx: &Transaction, project: &str) -> Result<Option<Batch>, String> {
+    tx.query_row(&format!("{SELECT} WHERE project = ?1 AND state = '{AFTER_WAITS}' ORDER BY id LIMIT 1"), [project], of_row).optional().map_err(sql)
+}
+
 /// The project's batch whose After failed, while a human has not closed it.
 pub fn after_failed(tx: &Transaction, project: &str) -> Result<Option<Batch>, String> {
     tx.query_row(&format!("{SELECT} WHERE project = ?1 AND state = '{AFTER_FAILED}' ORDER BY id LIMIT 1"), [project], of_row).optional().map_err(sql)
 }
 
-/// The published batch that waited longest for its After, of a project with no batch whose After failed: a human
-/// decides that one first, and no newer batch's outcome replaces it.
-pub fn next_published(tx: &Transaction) -> Result<Option<Batch>, String> {
-    for b in ops::rows(tx, &format!("{SELECT} WHERE state = '{PUBLISHED}' ORDER BY id"), [], of_row)? {
-        if after_failed(tx, &b.project)?.is_none() {
-            return Ok(Some(b));
+/// The batch whose After's turn comes: the oldest published or waiting one of each project, whose later ones wait
+/// behind it, of a project with no batch whose After failed (a human decides that one first, and no newer batch's
+/// outcome replaces it); one that waits only once `pause` seconds passed since its last try (AC-191).
+pub fn next_after(tx: &Transaction, now: i64, pause: i64) -> Result<Option<Batch>, String> {
+    let mut seen = std::collections::HashSet::new();
+    for b in ops::rows(tx, &format!("{SELECT} WHERE state IN ('{PUBLISHED}', '{AFTER_WAITS}') ORDER BY id"), [], of_row)? {
+        if !seen.insert(b.project.clone()) || after_failed(tx, &b.project)?.is_some() {
+            continue;
         }
+        if b.state == AFTER_WAITS && now - b.step_started.unwrap_or(0) < pause {
+            continue;
+        }
+        return Ok(Some(b));
     }
     Ok(None)
+}
+
+/// Its After cannot run now: it waits with `why`, its last try ended `at` (`step_started`), its first wait kept.
+pub fn after_waits(tx: &Transaction, b: &Batch, why: &str, at: i64) -> Result<(), String> {
+    tx.execute("UPDATE integration_batches SET state = ?2, why = ?3, pane = NULL, step_started = ?4, waits_since = coalesce(waits_since, ?4) WHERE id = ?1",
+               rusqlite::params![b.id, AFTER_WAITS, why, at]).map(drop).map_err(sql)
 }
 
 pub fn by_id(tx: &Transaction, id: i64) -> Result<Batch, String> {
