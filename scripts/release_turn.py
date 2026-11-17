@@ -75,10 +75,6 @@ def chain(repo, tag, rehearsing):
     return 0
 
 
-def say_now(words):
-    print(words, flush=True)   # make's log is a file: a wait is seen while it waits
-
-
 def head_of(repo):
     return release.run("git", "rev-parse", "HEAD", cwd=repo)
 
@@ -93,7 +89,7 @@ def in_install_turn(repo, say):
         yield
 
 
-def freshen(repo, tag, say=say_now):
+def freshen(repo, tag, say=print):
     """make release's first step, in the install turn: a clean main brought up to origin/main as make install does,
     so the second step (a make of its own) reads what landed; a main that cannot move refuses the release. A tag that
     exists already is released where it stands."""
@@ -108,7 +104,7 @@ def freshen(repo, tag, say=say_now):
     return 0
 
 
-def start(repo, tag, head, say=say_now):
+def start(repo, tag, head, say=print):
     """The mark written in the install turn, so the queue's Afters wait from here on; refused when an After moved main
     since this process read `head`, as its code and make's variables would be older than the files it runs."""
     with in_install_turn(repo, say):
@@ -148,4 +144,5 @@ def main(argv):
 
 
 if __name__ == "__main__":
+    sys.stdout.reconfigure(line_buffering=True)   # make's log is often a file: a gate's wait is seen while it waits
     sys.exit(main(sys.argv[1:]))
