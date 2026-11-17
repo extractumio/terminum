@@ -191,7 +191,6 @@ input[type="radio"] { appearance: none; -webkit-appearance: none; flex: none; di
   border-radius: var(--key-r); background: var(--field-fill); box-shadow: var(--m-groove); }
 .choice { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: var(--sp-1) var(--sp-2); padding: var(--sp-2) var(--sp-3);
   border-radius: var(--r-xs); color: var(--muted); cursor: pointer;
-  & > input { grid-row: 1; }
   & > .choicetitle { color: var(--t-fg); }
   & > .choicetext { grid-column: 2; font-size: var(--fs-small); }
   &:has(input:checked) { background-color: var(--key-fill-hover); background-image: var(--m-matte); box-shadow: var(--m-edge-ctl); }
