@@ -149,9 +149,14 @@ async function cardKeyChecks(page, { j, gitty, t, base, repo, newPane, keyOf }) 
   await page.waitForFunction(() => document.body.dataset.socket === "open");
   /** Its card's menu opened, its column shown first; answers its items. */
   const openMenu = async () => {
-    // its card in a column (a redraw may stand between a read and the next)
-    const col = await (await page.waitForFunction((sel) => document.querySelector(sel)?.closest(".col")?.dataset.status, card, { timeout: 8000 })).jsonValue();
-    if (await page.isVisible(tab(col))) await page.click(tab(col));
+    // its card's column shown until the card is in view: a redraw may move it to another column after a read
+    const inView = await until(async () => {
+      const col = await page.evaluate((sel) => document.querySelector(sel)?.closest(".col")?.dataset.status, card);
+      if (!col) return false;
+      if (await page.isVisible(tab(col))) await page.click(tab(col));
+      return page.isVisible(card);
+    });
+    if (!inView) throw new Error(`${card} is not in view in its column`);
     await page.hover(card);
     await page.click(`${card} .cmenu`);
     return page.$$eval("#cardmenu[open] [role=menuitem]", (bs) => bs.map((b) => b.textContent.trim()));

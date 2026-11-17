@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 //! The integration queue's engine (`terminum-integration.md`): batches built, checked and published by terminumd,
-//! one batch in work on the machine at a time, a step each beat off the async workers.
+//! one batch in work on the machine at a time and one published batch's After or Cleanup beside it, a step each beat
+//! off the async workers.
 
 pub mod agent;
 pub mod batch;
@@ -13,6 +14,7 @@ mod retry_notes;
 pub mod runner;
 pub mod stages;
 pub mod store;
+pub mod tail;
 
 #[cfg(test)]
 mod retry_live_tests;

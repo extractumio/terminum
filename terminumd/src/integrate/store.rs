@@ -11,7 +11,14 @@ use crate::tasks::ops::{self, sql, NewTask, INTEGRATION};
 use crate::tasks::store::DISPATCHER;
 
 /// The states of a batch the machine works on: one at a time over all projects (AC-188).
-pub const BUSY: [&str; 6] = ["checking", "green", "publishing", "after", "cleanup", "rebuild"];
+pub const BUSY: [&str; 4] = ["checking", "green", "publishing", "rebuild"];
+/// The states of a published batch whose After or Cleanup runs: one at a time over all projects, beside the batch
+/// in work (AC-191).
+pub const TAIL: [&str; 2] = ["after", "cleanup"];
+/// A batch whose tasks are DONE and whose After waits for its turn (AC-191).
+pub const PUBLISHED: &str = "published";
+/// A published batch whose After failed: a human closes it, and it holds its project's queue and later Afters.
+pub const AFTER_FAILED: &str = "after failed";
 /// A batch that waits for its agent or a human: it holds only its own project's queue.
 pub const RED: &str = "red";
 
@@ -67,8 +74,33 @@ pub fn live_by_task(tx: &Transaction, key: &str) -> Result<Option<i64>, String> 
 
 /// The batch the machine works on, if any.
 pub fn busy(tx: &Transaction) -> Result<Option<Batch>, String> {
-    let states = BUSY.iter().map(|s| format!("'{s}'")).collect::<Vec<_>>().join(", ");
+    first_in(tx, &BUSY)
+}
+
+/// The batch whose After or Cleanup runs, if any.
+pub fn in_tail(tx: &Transaction) -> Result<Option<Batch>, String> {
+    first_in(tx, &TAIL)
+}
+
+fn first_in(tx: &Transaction, states: &[&str]) -> Result<Option<Batch>, String> {
+    let states = states.iter().map(|s| format!("'{s}'")).collect::<Vec<_>>().join(", ");
     tx.query_row(&format!("{SELECT} WHERE state IN ({states}) ORDER BY id LIMIT 1"), [], of_row).optional().map_err(sql)
+}
+
+/// The project's batch whose After failed, while a human has not closed it.
+pub fn after_failed(tx: &Transaction, project: &str) -> Result<Option<Batch>, String> {
+    tx.query_row(&format!("{SELECT} WHERE project = ?1 AND state = '{AFTER_FAILED}' ORDER BY id LIMIT 1"), [project], of_row).optional().map_err(sql)
+}
+
+/// The published batch that waited longest for its After, of a project with no batch whose After failed: a human
+/// decides that one first, and no newer batch's outcome replaces it.
+pub fn next_published(tx: &Transaction) -> Result<Option<Batch>, String> {
+    for b in ops::rows(tx, &format!("{SELECT} WHERE state = '{PUBLISHED}' ORDER BY id"), [], of_row)? {
+        if after_failed(tx, &b.project)?.is_none() {
+            return Ok(Some(b));
+        }
+    }
+    Ok(None)
 }
 
 pub fn by_id(tx: &Transaction, id: i64) -> Result<Batch, String> {
@@ -327,6 +359,8 @@ pub fn red_round(tx: &Transaction, b: &Batch) -> Result<(), String> {
 
 /// Each task of a published batch DONE with its kept result, said where it landed; a task gone meanwhile skipped.
 pub fn done_all(tx: &Transaction, b: &Batch, target: &str, candidate: &str, at: i64) -> Result<Vec<String>, String> {
+    // landed, not left: its tasks' DONE takes them out of the queue without taking them out of the batch (left)
+    tx.execute("UPDATE integration_entries SET batch = NULL WHERE batch = ?1", [b.id]).map_err(sql)?;
     let pairs: Vec<(&String, String)> = b.tasks.iter().filter_map(|k| slug(tx, k).ok().map(|id| (k, id))).collect();
     let ids: Vec<String> = pairs.iter().map(|(_, id)| id.clone()).collect();
     for (k, id) in pairs.iter().map(|(k, id)| (*k, id.clone())) {

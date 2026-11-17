@@ -88,7 +88,7 @@ export async function liveHistory(page, opts) {
   const railCounts = () => page.evaluate(() => Object.fromEntries([...document.querySelectorAll("#hrail .frow")].filter((r) => r.querySelector(".fnum")).map((r) => [r.querySelector(".pname").textContent, Number(r.querySelector(".fnum").textContent.replaceAll(",", ""))])));
   const all = await railCounts(), total = Number((await page.textContent("#hsum")).replace(/\D/g, ""));
   check("AC-151 the rail counts what each choice would show: prompts and commands, each agent, each sender", all.Prompts + all.Commands === total && all["Claude Code"] + all.Codex === all.Prompts && all.You + all.Dispatcher + all.Manager === total
-    && all.Dispatcher >= 1 && all.Manager === 1 && all.Codex >= 1 && all.Today === total && all["Last 7 days"] === total, JSON.stringify([all, total]));
+    && all.Dispatcher >= 1 && all.Manager === 1 && all.Codex >= 1 && all.Today >= 1 && all.Today <= total && all["Last 7 days"] === total, JSON.stringify([all, total]));   // a run past midnight leaves some on yesterday
   // by the keys: a row pressed stays in focus though its group is drawn anew, and lets go on the next press
   await page.focus(railRow("sender", "Dispatcher"));
   await page.keyboard.press("Enter");

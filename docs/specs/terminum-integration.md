@@ -65,10 +65,10 @@ Open questions: none.
 |---|---|---|
 | AC-186 | [MUST / P0] | A project's window holds an Integration tab: a switch, the target branch, a command for each stage of AC-198, the most tasks in a batch, the check's time limit, and the agent that analyses a red batch with its time budget, its prompt and the most red rounds; Check is a command run on this machine (which may itself drive a CI and wait for it) or empty for no check; the window shows what will run and where; off by default, and off nothing is merged or pushed. |
 | AC-187 | [MUST / P0] | An agent queues its task's commit with its result by `integrate`: the task stands in INTEGRATION, its budget and idle clocks stopped, its session kept; queued again it replaces its commit; taken out it is IN PROGRESS again. |
-| AC-188 | [MUST / P0] | terminumd alone builds a batch: from the fresh target, the queued commits in queue order that merge cleanly together, each its own merge commit named by its task's ID, at most the batch's size, which starts at 4, doubles after a green batch up to the project's most (8) and halves after a red one; each batch is an integration task, I_<ID>, made by Dispatcher, and one batch is in work on the machine at a time. |
+| AC-188 | [MUST / P0] | terminumd alone builds a batch: from the fresh target, the queued commits in queue order that merge cleanly together, each its own merge commit named by its task's ID, at most the batch's size, which starts at 4, doubles after a green batch up to the project's most (8) and halves after a red one; each batch is an integration task, I_<ID>, made by Dispatcher, and one batch is in work on the machine at a time: built, checked or published; a published batch's After and Cleanup run beside the next one (AC-191, §9 Limits). |
 | AC-189 | [MUST / P0] | A commit that conflicts with the target returns to its agent at once with the target's commit and the files; one that conflicts only with a task of the batch stays queued, told once which task it waits for, and is judged again when that one's batch ends. |
 | AC-190 | [MUST / P0] | The project's Check runs on each candidate in a window the human can read; green is published; red, over its time or not started, the batch's integration task gets its agent (AC-194); nothing is published but a candidate whose own check was green; a check outlives terminumd's restart. |
-| AC-191 | [MUST / P0] | A green candidate is published only if the target has not moved: by terminum's own push, never forced, or by the project's Publish; then its tasks are DONE with their results, the project's folder is brought up to it where it can be, and After runs once for the batch; a failure there undoes nothing and waits for a human on the batch's integration task (AC-194). |
+| AC-191 | [MUST / P0] | A green candidate is published only if the target has not moved: by terminum's own push, never forced, or by the project's Publish; then its tasks are DONE with their results and the next batch may start; when its turn comes, one batch's at a time on the machine, the oldest batch first, the project's folder is brought up to the target where it can be and After runs once for the batch, then Cleanup; a failure there undoes nothing, waits for a human on the batch's integration task (AC-194) and holds the project's later Afters until that task ends. |
 | AC-192 | [MUST / P0] | Agents are told early and in detail, in fixed words with tasks, sessions, files and what to do: an overlap with another task's commits while both still work, the target moving in files they changed, their place and expected batch, being held back, a return for a conflict or a red check, and landing; each notice is a comment on its task and reaches a working agent by its next hook, a waiting one by the command it waits on, and an idle one of Dispatcher's by the gate. |
 | AC-193 | [MUST / P0] | The board shows INTEGRATION as a column where a shown project has integration on: the batch under check on top as one group with its state and time, the queue under it in order, each card saying its place or what it waits for; keys pause the queue, take a task out, queue a task, return a batch's task, check a batch again and list past batches with their results. |
 | AC-198 | [MUST / P0] | A landing is seven stages, each a command of the project's settings in a row of its Integration tab and each idempotent: Prepare and Verify, run by terminumd for each queued task, one task at a time on the machine, in a tree of its own at the task's commit before it joins a batch; Queue, terminum's own; Check and Publish on the candidate; After in the project's folder; Cleanup after a published batch; without terminumd the same stages are commands run in order, `make land` running them all. |
@@ -124,6 +124,7 @@ Scenario: AC-186 edge — turned off, changed
   Given a batch under check and two tasks queued
   When the user turns it off
   Then the window asks "Turn integration off? Batch 7's check is ended and 5 tasks go back to IN PROGRESS."; confirmed, the check is ended, nothing is published, each task is IN PROGRESS and told (AC-192)
+  And an After that runs goes on, and a published batch whose After has not begun ends without it, its row saying "After did not run for batch 6: integration was turned off for Billing." (AC-191)
   When the user changes Check while a batch is under check
   Then that batch ends by the old line and the next runs by the new
 
@@ -206,11 +207,11 @@ Scenario: AC-188 happy path — its size
 Scenario: AC-188 happy path — the queue grows meanwhile
   Given batch 7 under check
   When API-16 is queued
-  Then it waits: the next batch is built when batch 7 has ended, from all that is queued then
+  Then it waits: the next batch is built when batch 7 is published or has ended, from all that is queued then
 
 Scenario: AC-188 edge — one batch at a time on the machine
   Given Billing's batch 7 in work (built, under check, analysed or publishing) and Web's queue not empty
-  Then Web's batch is built after Billing's ended: projects take turns in the order their oldest entry was queued
+  Then Web's batch is built after Billing's is published or ended: projects take turns in the order their oldest entry was queued
   And Web's INTEGRATION says "waits for Billing's batch 7"
   But a batch whose integration task waits for a human, or FAILED, holds only its own project's queue: Web's goes on
 
@@ -333,8 +334,8 @@ Scenario: AC-191 failure — the push is refused
 
 Scenario: AC-191 happy path — the project's folder
   Given Billing's folder on branch main, clean, behind origin/main
-  When batch 7 is published
-  Then terminumd fast-forwards it to origin/main (git merge --ff-only)
+  When batch 7 is published and its After's turn comes
+  Then terminumd fast-forwards it to origin/main as it stands then (git merge --ff-only), which may hold batches published after batch 7
   When it is on another branch, has uncommitted changes that the move would touch, or has commits of its own
   Then it stays as it is and the batch's row says "Billing's folder stays where it is: <git's words>"
 
@@ -342,8 +343,27 @@ Scenario: AC-191 happy path — After
   Given After "make install"
   Then once the batch is published and the folder moved, the line runs in the project's folder, in a window as the check's, once for the batch
   When it ends with another status, or runs over the check's time
-  Then the batch stays published and its tasks DONE; its row and a toast say "After failed for batch 7: <its last rows>", and its integration task waits for a human with them (AC-194): the next batch waits for that task's end
-  And with the folder left where it was, After does not run: "After did not run: Billing's folder is not on batch 7."
+  Then the batch stays published and its tasks DONE; its row and a toast say "After failed for batch 7: <its last rows>", and its integration task waits for a human with them (AC-194): Billing's next batch is built, and a later batch's After of Billing runs, only after that task's end
+  And with the folder left where it was, After does not run: "After did not run for batch 7: Billing's folder stays where it is: <git's words>"
+
+Scenario: AC-191 happy path — the next batch is checked while After runs
+  Given After "make land-after" running for batch 7 in Billing's folder, and API-16's Verify passed
+  Then batch 7 is no longer in work: batch 8 is built with API-16 and its Check runs in the candidate's tree meanwhile
+  When batch 8 is green and origin/main has not moved
+  Then it is published, API-16 DONE, and it stands "published: After waits for its turn": Billing's folder is not moved while batch 7's After builds in it
+  When batch 7's After and Cleanup end
+  Then the folder is brought up to origin/main and batch 8's After runs, then its Cleanup
+  And one batch's After or Cleanup runs on the machine at a time, over all projects, the oldest batch first; each published batch runs its own, an After that finds its build installed already ending at once
+
+Scenario: AC-191 failure — After fails while the next batch is checked
+  Given batch 8 under check while batch 7's After runs
+  When batch 7's After ends with status 2
+  Then batch 7 stands "after failed" and its integration task waits for a human, as above; batch 8's check runs on
+  When batch 8 is green
+  Then it is published and its tasks DONE (a batch waiting for a human holds only its own project, AC-188), and its After waits: batch 7's integration task is told "Batch 8 was published on top of batch 7; its After waits for this task's end."
+  And batch 7's failure stays on its integration task: no later batch's After runs, and no batch of Billing is built, until the human closes batch 7 (AC-194)
+  When the human closes it
+  Then batch 8's After runs
 
 Scenario: AC-191 edge — terminumd stops while publishing
   When terminumd starts with a batch written green or publishing, and no window of its Publish
@@ -352,11 +372,11 @@ Scenario: AC-191 edge — terminumd stops while publishing
   Then it waits for it or reads its status, as a check's (AC-190)
 
 Scenario: AC-191 edge — After restarts terminumd
-  Given After "make install", which installs and restarts terminumd
-  Then the batch was written published and its tasks DONE before After began, and the line runs on in its window
+  Given After "make install", which installs and restarts terminumd, and batch 8's Check running beside it
+  Then the batch was written published and its tasks DONE before After began, and both lines run on in their windows
   When terminumd starts
-  Then it finds After's window by its mark and waits for it or reads its status; the next batch waits for its end
-  And with that window lost, the batch's row says "After's outcome is not known for batch 7" and After is not run again
+  Then it finds each window by its mark and waits for it or reads its status: batch 8's check goes on as AC-190 says, batch 8 is published as above, and its After waits for batch 7's end
+  And with After's window lost, the batch's row says "After's outcome is not known for batch 7: its window was lost. After is not run again." and its Cleanup follows; a lost check runs again (AC-190)
 ```
 
 ### AC-192 — What agents are told [MUST / P0]
@@ -365,16 +385,29 @@ Scenario: AC-191 edge — After restarts terminumd
 Scenario: AC-192 happy path — an overlap while both work
   Given API-12 and API-13 IN PROGRESS in worktrees of Billing's checkout, each with commits not in origin/main
   When a walk finds that their HEADs do not merge cleanly with each other
-  Then each agent is told once for that pair of commits: "[terminum] API-12: its commits and API-13's (IN PROGRESS) change the same files: src/retry.rs. They cannot be in one batch. Agree with its session who goes first; the other merges origin/main after the first lands, then queues."
+  Then each agent is told once for that other task, the conflicting files and lines, and whether the other task works or is queued: "[terminum] API-12: its commits and API-13's (IN PROGRESS) change the same files: src/retry.rs. They cannot be in one batch. Agree with its session who goes first; the other merges origin/main after the first lands, then queues."
   And each card in IN PROGRESS says "overlaps API-13" (AC-193)
   When API-13 is already queued or in a batch
   Then API-12 is told instead "… API-13 is queued for integration (2nd). Go on; merge origin/main once API-13 lands, before you queue."
+
+Scenario: AC-192 edge — new commits with the same advice
+  Given API-12 and API-13 told of their overlap in src/retry.rs
+  When either task commits again with the same conflicting files and lines
+  Then neither is told again, including after terminumd restarts; their cards keep the overlap mark
+  When src/send.rs also conflicts
+  Then each is told the expanded set once
+  When API-13 queues the same commit that was compared while it worked
+  Then API-12 is told the queued words once; a change of queue place alone does not repeat them
 
 Scenario: AC-192 happy path — the target moved in its files
   Given API-12 IN PROGRESS, having changed src/retry.rs
   When a batch is published that changed src/retry.rs
   Then API-12's agent is told "[terminum] API-12: origin/main moved to 3e9b5c2 in files you changed: src/retry.rs. Merge origin/main now, before you queue." and, when its commits no longer merge with it, "It conflicts in: src/retry.rs."
   And a notice reaches a hook as its first line, and an analysis under it by get_task, so no line of it stands as terminum's own; the other session is named by its task, never by a title its pane may set
+  When API-12 commits again with the same affected files, or origin/main changes only other files
+  Then the advice is not repeated, including after terminumd restarts
+  When another of API-12's files is affected, or origin/main changes an affected file again
+  Then its agent is told once with the target's commit and the affected files
 
 Scenario: AC-192 happy path — in the queue
   Then each of these is said once, in the words of §9: queued (place, the batch expected, conflicts foreseen); held back (the task it waits for, the files; "nothing to do until API-12's batch ends"); in a batch (its number, its tasks); returned for a conflict (the target's commit, the files and lines; "merge 77aa210, resolve, commit, integrate again"); returned for a red check (the integration task's analysis, the log, the batch's tasks); returned as carried (AC-189); taken out (by whom); landed (the commit, the batch)
@@ -390,7 +423,8 @@ Scenario: AC-192 edge — what is compared
   Then only commits are compared, each tree's HEAD against the others' and the target: uncommitted work is not seen, and a notice says "commits"
   And a pair is judged again only when one of its commits or the target changed
   When a worktree of the project's checkout has commits of its own and no task (a maintainer's own, a session off the board)
-  Then it is only the other side: a task whose commits do not merge with it is told once for that pair of commits "[terminum] API-12: its commits and fix/retry (session "ops"), a tree with no task, change the same files: src/retry.rs. Whichever lands second merges origin/main first: once it lands, merge origin/main before you queue."
+  Then it is only the other side: a task whose commits do not merge with it is told once for that tree and the conflicting files and lines "[terminum] API-12: its commits and fix/retry (session "ops"), a tree with no task, change the same files: src/retry.rs. Whichever lands second merges origin/main first: once it lands, merge origin/main before you queue."
+  And the tree's resolved folder identifies it: another commit, branch name or session name alone does not repeat the advice, and two trees named alike remain distinct
   And the tree is named by its branch, or "detached" and its commit, and by the session working in it, else "folder" and its path; it is told nothing and no card says it
   And a tree holding the folder of any task's session, whatever its status, is that task's, never one with no task; terminum's own trees are not compared
   And over 30 such trees in a project the newest 30 are compared and the column's head says so
@@ -645,8 +679,8 @@ sequenceDiagram
     loop rounds, until green, all returned, or a human
       T->>C: Check
       alt green and the target has not moved
-        T->>T: push the candidate, never forced; tasks DONE; I_ DONE
-        T->>C: After, once
+        T->>T: push the candidate, never forced; tasks DONE; I_ DONE; the next batch may start
+        T->>C: After, once, in its turn beside the next batch's Check
       else red, did not start, or a step failed
         alt an agent is set and red rounds are left
           T->>I: I_ IN PROGRESS: the prompt, the log
@@ -743,9 +777,11 @@ CREATE TABLE integration_rounds (batch INTEGER NOT NULL REFERENCES integration_b
   candidate_sha TEXT, started INTEGER, ended INTEGER, result TEXT NOT NULL, why TEXT, PRIMARY KEY (batch, round));
 ```
 
-A task's status `INTEGRATION` is the one fact that it is queued; its entry holds with what. `state`: `building`, `checking`, `red` (its task decides), `green`, `publishing`, `published`, `after`, `not published`, `given up`. `told` holds the notices given, so each is said once. The notice of a task leaving the queue carries `{"left": "landed" | "red" | "conflict" | "out"}` in its event's data: what `terminum integration wait` exits by; a task moved out with no such notice since it was last queued is out.
+A task's status `INTEGRATION` is the one fact that it is queued; its entry holds with what. `state`: `building`, `checking`, `red` (its task decides), `green`, `publishing`, `published` (its tasks DONE, out of work, its After waiting for its turn), `after`, `cleanup`, `after failed`, `not published`, `given up`, `ended`. `told` holds the notices given, so each is said once. The notice of a task leaving the queue carries `{"left": "landed" | "red" | "conflict" | "out"}` in its event's data: what `terminum integration wait` exits by; a task moved out with no such notice since it was last queued is out.
 
 **Notices.** Fixed words with names filled in; a file's lines are those git's conflict names in the merge's written tree.
+
+Overlap notices remember the other task's key or the other tree's resolved folder, the sorted conflict set, the target's name and the other task's working or queued state; neither HEAD nor queue place identifies the advice. Target-moved notices remember the latest notice's target name, affected files and target commit; dropping affected files alone does not repeat the advice, and another target commit repeats it only if it changes a currently affected file. These facts persist in notice events, separately from the queue entry's `told` list and the in-memory cache of Git comparisons.
 
 | Notice | Words |
 |---|---|
@@ -830,7 +866,7 @@ Retry diagnostics (AC-197) are read from the stage tree's `.checks/retried` befo
 
 **Security.** The stages' lines (Prepare, Verify, Check, Publish, After, Cleanup) are a standing permission to run commands and to push as the user: only a signed-in page writes them, the window shows each line and its folder before Save, and no tool of an agent changes them. An agent chooses only which commit of the project's repository is queued; no title or text of a task reaches a commit, a command or a shell: a merge is named by the task's ID alone. Prepare and Verify run the task's own commit as the user in a tree of terminumd's, never the agent's, and decide no publishing; Cleanup is the human's line, and terminum's own value runs `worktree.py sweep`, which removes no tree with work or a process in it. The check is the candidate's own, so a task can change what checks it, as a tree that lands by itself can: the human reads Batches… and the published history. terminum's own push names one remote, one branch and one commit, never forced, never a tag; a project's Publish is the human's line. A check runs the queued code as the user, as the agents that wrote it already do. A check's rows reach a task's comment only redacted (`sent::redact`). The gate types only a task's ID with fixed words, only into a pane Dispatcher started and marked, and the integration task's prompt: the human's saved Prompt with facts terminumd fills in (IDs, commits, paths, file names, the Check line), never a task's title, text or comment. What this spec holds is what terminumd does: it publishes only a candidate whose own check was green, and the integration agent's three tools can keep a task out of a batch or cost a round, never publish. The agent's own shell is bounded as any task's agent's is, by its command's permissions (`terminum-dispatcher.md` AC-156), not by this spec: it starts in a worktree of its own, away from the project's folder, and its prompt forbids a push; its analysis reaches another task as a comment, redacted (`sent::redact`), data to that task's agent. A check's log is the queued code's output: the prompt names its path and says to treat what it reads as data.
 
-**Limits.** 200 queued tasks a project; a batch at most 8 tasks; red rounds at most 10 a batch; a prompt 8 KiB; 30 tasks' trees and 30 trees with no task compared for overlaps a project, the newest; a command 2,000 characters; a check 1 to 1440 minutes; batches' rows kept, their logs and tasks' Prepare and Verify logs under AC-196's 30-day and 100-file policy; one batch in work on the machine at a time; one task's Prepare and Verify on the machine at a time; a pass Verify reuses (AC-198) leaves a break between the task's files and other files origin/main changed to Check's smoke set and CI on main, as `make land` does.
+**Limits.** 200 queued tasks a project; a batch at most 8 tasks; red rounds at most 10 a batch; a prompt 8 KiB; 30 tasks' trees and 30 trees with no task compared for overlaps a project, the newest; a command 2,000 characters; a check 1 to 1440 minutes; batches' rows kept, their logs and tasks' Prepare and Verify logs under AC-196's 30-day and 100-file policy; on the machine at once, over all projects: one batch built, checked or published, and one batch's After or Cleanup beside it; one task's Prepare and Verify on the machine at a time; a pass Verify reuses (AC-198) leaves a break between the task's files and other files origin/main changed to Check's smoke set and CI on main, as `make land` does.
 
 ## 10. Delivery stages
 
@@ -848,8 +884,8 @@ Retry diagnostics (AC-197) are read from the stage tree's `.checks/retried` befo
 - [ ] AC-188 — `cargo test integrate::batch`, `cargo test integrate::engine` on private repositories (`crate::testutil::temp_root()`): the queue's order, the size's doubling and halving, two projects' turns, everything conflicting gives one task a round
 - [ ] AC-189 — `cargo test integrate::batch` and `integrate::engine::tests::ac189_…` (with the target, with a batch-mate, judged again after that batch, a foreseen one)
 - [ ] AC-190 — `cargo test integrate::engine` (green, red, over its time), `cargo test integrate::runner`; to come: `cargo test integrate::runner` with stand-in lines (green, red, over its time, not started, nothing published but a green candidate), `scripts/e2e_integration.py` (a check outlives a restart of a private terminumd, private tmux)
-- [ ] AC-191 — `cargo test integrate::engine` against a private bare remote (pushed never forced, the target moved, a refused push and Publish again, a publish terminumd did not see end, the folder fast-forwarded); to come (the project's Publish that does not land, the folder left where it is, After's failure undoes nothing)
-- [ ] AC-192 — `cargo test integrate::notices` (two trees whose commits do not merge told once each, a tree beside a queued task told its place, the target moving in a task's files told once with its conflict, which notices are new, the gate's fixed words for a return alone, a tree with no task the other side only, named by its branch and session or folder, terminum's own tree and a waiting task's not counted as one), `cargo test integrate::agent` and `tasks::integration_queue` (the queue's own notices); to come: `scripts/e2e_integration.py` (a hook's context, the gate only in Dispatcher's pane), `web/test/e2e_liveintegration.mjs` (the comment on the card)
+- [ ] AC-191 — `cargo test integrate::engine` against a private bare remote (pushed never forced, the target moved, a refused push and Publish again, a publish terminumd did not see end, the folder fast-forwarded), `cargo test integrate::tail` (the next batch checked and published while After runs, the folder moved only in its turn, Afters one at a time, the oldest batch first, After failed while the next batch is checked holding the later After until a human closes it, After over its time, a published batch ending without its After once integration is off or its folder is off its branch, said on its row, the step's side of a restart finding both windows, a lost After not run again beside a lost check run again); to come: `scripts/e2e_integration.py` (After restarting a private terminumd beside a running check); to come (the project's Publish that does not land, the folder left where it is, After's failure undoes nothing)
+- [ ] AC-192 — `cargo test integrate::notices` (two trees whose commits do not merge told once each, a tree beside a queued task told its place, the target moving in a task's files told once with its conflict, commit churn and queue-place changes kept quiet, new conflicts and working-to-queued changes said, affected files shrinking kept quiet, relevant target changes said and unrelated ones kept quiet, persistence after losing the Git cache, which notices are new, the gate's fixed words for a return alone, a tree with no task the other side only, named by its branch and session or folder, terminum's own tree and a waiting task's not counted as one), `cargo test integrate::agent` and `tasks::integration_queue` (the queue's own notices); to come: `scripts/e2e_integration.py` (a hook's context, the gate only in Dispatcher's pane), `web/test/e2e_liveintegration.mjs` (the comment on the card)
 - [ ] AC-193 — `cargo test integrate::column` (the batch heading the queue in its order, each state in words, a returned task said until queued again, a human's Integrate and Take out and their refusals, Batches newest first with the greens of the last 20, a red batch's cards and head holding its keys and none while checked, Integrate only where the project integrates), `cargo test integrate::notices` (`ac193_a_card_says_which_tasks_it_overlaps_until_it_no_longer_does`: the mark in `/api/tasks`, gone once they merge), `web/test/e2e_liveintegration.mjs` (the column's keys, Pause and Resume with who paused, Batches…, Integrate refused in its words, two tasks' sessions in worktrees whose commits do not merge: "overlaps <ID>" on each card from the real walk, a press opening that task; a card's Integrate and Take out, drops on INTEGRATION's and IN PROGRESS's tabs and none on DONE, a refusal in a toast, a red batch's card holding its keys and Return all from it, its integration task's head line in WAIT FOR HUMAN), `web/test/e2e_cardkeys.mjs` (the card's menu, drops and refusals in Chromium and WebKit, wide and phone); to come: the batch's group and places on the page with a batch in work, at a phone's size
 - [ ] AC-194 — `cargo test integrate::agent` (wanted in its own worktree at the candidate, its prompt without a task's words and with each task's files, red again the round's own words, each tool and its refusals, several returned for one round, the unchanged round once, red rounds spent, no agent, everything returned, a fix picked onto the target that outlives a red round and is published, a fix picked onto the moved target, one the moved target no longer takes or already holds left out, a fix not its own, a fix that needs the batch, each agent's own kept slot), `cargo test integrate::engine` (made with its batch, DONE on green with no agent, the human's keys), `cargo test dispatcher` (its budget counts the analysis alone), `scripts/e2e_integration.py` with `scripts/fake_agent.py` (a red round, a return with its analysis, round 2 green and published), `TM_TEST_REAL_INTEGRATION=1` (a Sonnet agent names the task whose change broke a stand-in check, three short runs)
 - [ ] AC-198 — `python3 scripts/tests/test_check_changed.py` (a clean commit's id is its tree, an edit under assume-unchanged is content, the merged commit's clean pass reused when origin/main changed none of its files; its file or a check changed, no pass, a retried pass elsewhere, an edit after the merge, no merge: run again), `python3 scripts/tests/test_land_stages.py` (each stage's done-check run again, Prepare's conflict exit 2, Publish refusing an unchecked commit or a moved target, Queue on and off, Cleanup as the sweep), `cargo test integrate::stages` (Prepare and Verify in a tree of its own before a batch, a red Verify through make, Prepare's conflict, a lost window run again, a task taken out while verified, distinct logs for red and requeued runs through a real tmux runner, persisted attempt after a restart, Cleanup after After), `cargo test tasks::store::tests::ac198` (upgrading running Verifies assigns distinct attempt IDs without changing their panes), `cargo test logs::tests::ac198` (attempt logs expire at 30 days, younger and unrelated files kept), `cargo test dispatcher::walk` (a red Verify after two hours returns with fresh idle/request clocks, used budget kept), `web/test/e2e_liveintegration.mjs` (the seven rows, saved, What runs)
