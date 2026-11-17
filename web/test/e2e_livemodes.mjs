@@ -22,3 +22,4 @@ export const INTEGRATION_SLOTS_ALONE = process.argv.includes("integration-slots"
 export const MAIN_ALONE = process.argv.includes("main");             // while working on a main task's run with its subtasks
 export const BACKGROUND_ALONE = process.argv.includes("background");
 export const ARCHIVED_ALONE = process.argv.includes("archived");     // archived tasks, their hooks and tools
+export const RAISE_ALONE = process.argv.includes("raise");           // AC-92: a session in no project raised in its tmux group
