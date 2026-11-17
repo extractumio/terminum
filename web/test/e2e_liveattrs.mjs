@@ -78,8 +78,12 @@ export async function liveBoardAttrs(page, opts) {
   await page.fill("#newtitle", "the next step");
   const fresh = "#newattrs .taskattrs";
   check("AC-199 New task's Details are folded", !(await page.$eval(fresh, (d) => d.open)));
+  const offered = await page.$$eval("#newtype option", (o) => o.map((x) => x.textContent));
+  check("AC-199 New task's Type stands beside Severity, none chosen, offering every type", await page.isVisible("#newtype") && (await page.inputValue("#newtype")) === ""
+    && JSON.stringify(offered) === JSON.stringify(["None", "Feature", "Bug", "Debt", "Story"]), JSON.stringify(offered));
+  await page.selectOption("#newtype", "Debt");
   await page.click(`${fresh} > summary`);
-  await page.selectOption(`${fresh} select`, "Debt");
+  check("AC-199 New task's Details hold no second Type", !(await page.$(`${fresh} select`)) && (await page.textContent(`${fresh} > summary`)) === "Details");
   await page.click(`${fresh} button[aria-label="Add a task to Blocked by"]`);
   await page.fill(`${fresh} input[type=search]`, "drops");
   await page.waitForSelector(`${fresh} .attrfind`);
@@ -91,4 +95,8 @@ export async function liveBoardAttrs(page, opts) {
   const made = (await j(`/api/tasks?project=${project}&q=next`)).tasks[0];
   const kept = made && await j(`/api/tasks/${made.id}`);
   check("AC-199 Create keeps the type and the lists chosen", kept?.title === "Debt: the next step" && kept.lists.blocked_by[0]?.id === a.id, JSON.stringify(kept?.lists));
+  await page.click("#newtask");
+  await page.waitForSelector("#newbox[open]");
+  check("AC-199 the next new task's Type is none chosen again", (await page.inputValue("#newtype")) === "");
+  await page.click("#newclose");
 }

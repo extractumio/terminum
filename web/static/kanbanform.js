@@ -3,7 +3,7 @@
 // text, in TODO unless said. A draft survives closing and a reload on this browser.
 import { askConfirm, oneAtATime } from "./dialogs.js";
 import { el, iconButton, read, write } from "./listparts.js";
-import { detailsPane, LISTS } from "./taskattrs.js";
+import { detailsPane, LISTS, typeSelect } from "./taskattrs.js";
 import { $, AT_LIMIT, agentsOf, api, fileMarkdown, FILE_GONE, fillAgents, fillSelect, goneFiles, goneSaid, onFiles, onSend, onlyProject, projectOptions, sessionOptions, showError, upload, withFileLink, withoutFileLinks, writePreview } from "./kanbanutil.js";
 
 const DRAFT = "tm.taskdraft";
@@ -13,7 +13,8 @@ const DRAFT = "tm.taskdraft";
 export function taskForm({ getMeta, getFilter, onMade, onRun, slots }) {
   const box = $("newbox");
   let files = [], offered = "", parent = null, chose = "";   // chose: the agent the user picked in this window, "" for none
-  /** Its Details (AC-199): kept with the draft; folded until opened, open once opened in this window. */
+  /** Its Details (AC-199): kept with the draft; folded until opened, open once opened in this window. Its type is
+   *  among them, chosen by Type beside Severity (none until chosen), never in the folded part. */
   let attrs = {}, attrsOpen = false;
   /** Each its own draft: a subtask's never takes a new task's. */
   const draftKey = () => (parent ? `${DRAFT}.${parent}` : DRAFT);
@@ -100,7 +101,7 @@ export function taskForm({ getMeta, getFilter, onMade, onRun, slots }) {
     const change = (next) => { attrs = next; keep(); showAttrs(); return true; };
     const without = (list, id) => (attrs[list] ?? []).filter((x) => x.id !== id);
     $("newattrs").replaceChildren(detailsPane({
-      v: attrs, project: () => $("newproj").value, open: attrsOpen, onToggle: (o) => { attrsOpen = o; },
+      v: attrs, project: () => $("newproj").value, open: attrsOpen, onToggle: (o) => { attrsOpen = o; }, typed: false,
       set: async (field, value) => change({ ...attrs, [field]: value }),
       link: async (list, id, reason, t) => {
         const was = (attrs[list] ?? []).find((x) => x.id === id);
@@ -135,6 +136,7 @@ export function taskForm({ getMeta, getFilter, onMade, onRun, slots }) {
     $("newtitle").value = given.title ?? saved.title ?? "";
     $("newtext").value = given.text ? `${saved.text ? `${saved.text}\n\n` : ""}${given.text}` : saved.text ?? "";
     attrs = saved.attrs ?? {};
+    typeSelect($("newtype"), attrs.type);
     $("newattrs").replaceChildren();
     attrsOpen = false;
     showAttrs();
@@ -186,6 +188,7 @@ export function taskForm({ getMeta, getFilter, onMade, onRun, slots }) {
   box.querySelector("form").addEventListener("input", keep);
   $("newproj").addEventListener("change", () => { if (unchosen && $("newproj").value) { unchosen = false; error(null); } showAgents(); });
   $("newagent").addEventListener("change", () => { chose = $("newagent").value; });
+  $("newtype").addEventListener("change", () => { attrs = { ...attrs, type: $("newtype").value }; keep(); });
   $("newadd").addEventListener("click", () => $("newpick").click());
   $("newpick").addEventListener("change", (e) => { add([...e.target.files]); e.target.value = ""; });
   onFiles($("newtext"), box, add, (on) => $("newtext").classList.toggle("dropping", on));

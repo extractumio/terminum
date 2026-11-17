@@ -22,6 +22,8 @@
 .more[open] summary { margin-bottom: var(--sp-2); }
 details.more > :not(summary, [hidden]) ~ :not([hidden]) { margin-top: var(--sp-2); }   /* its lines 8px apart */
 .fieldgrid.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+/* New task's: Type and Severity are short words, Project and Agent take the room */
+.fieldgrid.four { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr) minmax(0, 2fr) minmax(0, 3fr); }
 
 /* its windows */
 /* its body scrolls inside the dialog's own padding: the scrollbar stands at the dialog's edge, beside what it scrolls
@@ -137,7 +139,7 @@ button.stbox { cursor: pointer; border: 0; }
 @media (hover: hover) { button.stbox:hover { filter: brightness(1.12); } }
 
 @media (max-width: 860px) {
-  .fieldgrid, .fieldgrid.three { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .fieldgrid, .fieldgrid.three, .fieldgrid.four { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .fieldgrid > :first-child:nth-last-child(odd) { grid-column: 1 / -1; }
   .taskown { padding: var(--sp-3); }   /* a narrow window: the frame takes less of it */
   .ev { font-size: var(--fs-small); }

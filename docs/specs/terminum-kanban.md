@@ -68,7 +68,7 @@ Open questions: none.
 | AC-115 | [MUST / P0] | `terminum mcp` lists, reads, makes, moves, comments and finishes tasks of the agent's project, whatever session made or holds them, but one a human's RUN holds in another session; a free task can be taken. |
 | AC-145 | [MUST / P0] | What an agent leaves undone reaches its project's board by `create_task`: only what must be done, its type said (AC-199: by `type` or its title's first word Bug:, Feat:, Debt:, Story:), with its severity, a bug's never below P2, its text in the sections of its project's template (a setting of the project; by default problem or goal, context, expected result, prerequisites). |
 | AC-154 | [SHOULD / P1] | An agent grooms its project's board with `update_task`: the severity, parent and AC-199's details of any task it reaches, a human's with its reason; the title and text of an agents' task; such a task archived with its reason; an agent's change of title, type or severity never sets a bug below P2. |
-| AC-199 | [SHOULD / P1] | A task has a type (Feature, Bug, Debt, Story) shown as its title's first word, an external link, a target, and the tasks of its project that block it and that follow it, each with its reason: set in a folded Details part of the new-task and task windows (lists by + with a search and ×, never typed IDs) and by `create_task`, `update_task` and `link_task`. |
+| AC-199 | [SHOULD / P1] | A task has a type (Feature, Bug, Debt, Story) shown as its title's first word, an external link, a target, and the tasks of its project that block it and that follow it, each with its reason: set in a folded Details part of the new-task and task windows, the new-task window's Type beside its Severity, none chosen until picked (lists by + with a search and ×, never typed IDs) and by `create_task`, `update_task` and `link_task`. |
 | AC-116 | [SHOULD / P1] | A bookmark or reminder becomes a TODO task in one small window (severity, project, session), its text linking its session, the board not opened; the record goes once the task is kept. |
 | AC-117 | [MUST / P0] | WAIT FOR HUMAN and FAILED raise the banner of waiting agents and counts of cards on the Kanban tab, yellow and red, the same in every browser: terminumd keeps which lines a human closed or saw; so does a task returned from integration with no live agent (`terminum-integration.md` AC-192). |
 | AC-118 | [SHOULD / P1] | Archive hides a task from the board and can return it; DONE archives itself after 2 days; each project has an Archived list. |
@@ -202,7 +202,7 @@ Scenario: AC-159 edge — what stays
 ```gherkin
 Scenario: AC-106 happy path — the window
   When the user presses + New task in TODO's head
-  Then a window opens with Title, the text (Markdown editor with Preview, raw HTML off), Files, Project (the filter's only project, else the only project there is, else none chosen), Severity P2, Agent "Choose when it runs" (none specified, even with a last-used agent), Owner the user, Session none, Parent none, Budget none
+  Then a window opens with Title, the text (Markdown editor with Preview, raw HTML off), Files, Project (the filter's only project, else the only project there is, else none chosen), Type none chosen (AC-199), Severity P2, Agent "Choose when it runs" (none specified, even with a last-used agent), Owner the user, Session none, Parent none, Budget none
   When the user types "Fix the retry loop", drops shot.png and presses Create
   Then API-12 stands in TODO with shot.png, every page shows it within 2 s and the window closes
   And a file dropped or pasted into the text puts a link to it at the cursor, an image as an image
@@ -680,8 +680,11 @@ Scenario: AC-199 edge — Enter before the search answers
   And with nothing found Enter picks nothing
 
 Scenario: AC-199 happy path — New task
-  When the human opens Details in the new-task window, chooses Debt, a target and tasks for Blocked by and Follow-ups, and presses Create
+  Given the new-task window
+  Then Type stands beside Project and Severity, outside Details, offering None, Feature, Bug, Debt, Story with none chosen; its Details hold External link, Target and the lists
+  When the human chooses Debt in Type, opens Details, chooses a target and tasks for Blocked by and Follow-ups, and presses Create
   Then the task is made with all of them, said in its history; the draft keeps them until then (AC-106)
+  And left at None, the task has no type unless its title's word gives one
 
 Scenario: AC-199 happy path — agents
   When an agent calls create_task or update_task with type, external_link or target, or link_task {id: "API-40", list: "blocked_by", task: "API-12", reason: "needs its column"}
@@ -1194,7 +1197,7 @@ Scenario: AC-148 failure — a name of nothing
 ```gherkin
 Scenario: AC-149 happy path — three parts
   When the user opens API-12's window
-  Then the task itself stands first in a framed part: "abfed14f · made Nov 7, 2026, 4:39 PM · changed Nov 8, 2026, 9:01 PM", then Status on a line of its own (read only: the status in its color, the agent on it, what it waits for or "session closed", its conversation's ID, unbroken where it fits; at its end Run from scratch, terminum-dispatcher.md AC-122), then its fields in the new-task window's order (Project, Severity, Agent, Owner, Session, Budget), then Text, then Files
+  Then the task itself stands first in a framed part: "abfed14f · made Nov 7, 2026, 4:39 PM · changed Nov 8, 2026, 9:01 PM", then Status on a line of its own (read only: the status in its color, the agent on it, what it waits for or "session closed", its conversation's ID, unbroken where it fits; at its end Run from scratch, terminum-dispatcher.md AC-122), then its fields in the new-task window's order (Project, Severity, Agent, Owner, Session, Budget; its Type in its Details), then Text, then Files
   And Text's keys are icons in its top right corner, on the line of the word: the key to the whole window (terminum.md AC-184), then Edit; Purge text stands by the text being edited (AC-109)
   And its groups (when, status, fields, text, files) stand on one left edge, 12 px apart, each label 4 px over what it names; its fields are alike in width and height, three to a line, two on a phone; the window's parts and the comment field stand a section break (24 px) apart
   And under it SUBTASKS (AC-112): a + key for a new one, Add existing and Make it a subtask as words to press; then CONVERSATION with its own heading, the comment field, and the window's keys at its foot (terminum.md AC-173)
