@@ -3,7 +3,8 @@
 """A full run on a quiet machine (spec AC-146). Before a release's full run, and before a task's first
 timed check, the load average is looked at: over the limit it waits, a look each minute, and once the
 load is low it starts 3 minutes later, those minutes looked at too. After 15 minutes a release gives up;
-a task skips its timed checks, saying so at the end in red. TM_GATE_LOAD sets the limit (the cores' count: above a working day's load, below a build's).
+a task skips its timed checks, saying so at the end in red. While a full run (a release's, a rehearsal's or `make check`'s, about
+70 minutes) holds its turn, a task skips them at once: a 15-minute wait would seldom see it end. TM_GATE_LOAD sets the limit (the cores' count: above a working day's load, below a build's).
 
   load_gate.py    make check by hand: exit 0 to go, 75 when still busy after 15 minutes"""
 import os
@@ -12,7 +13,7 @@ import sys
 import time
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from worktree import releasing, Turn as TreeTurn  # noqa: E402
+from worktree import Turn as TreeTurn  # noqa: E402
 
 LOOK_S = 60
 HOLD_S = 180
@@ -71,15 +72,27 @@ class Turn(TreeTurn):
 
     def busy(self):
         """None once this run holds the turn, else why it waits: wait()'s busy."""
-        return None if self.take() else "another full run holds the turn (a release or a rehearsal in another tree)"
+        return None if self.take() else "another full run holds the turn (a release, a rehearsal or make check in another tree)"
+
+
+def full_run_held(cwd):
+    """Whether a full run holds its turn, by a look that leaves it free."""
+    with Turn(cwd) as turn:
+        return not turn.take()
 
 
 def for_task(cwd=".", say=print, **kw):
-    """A task's timed checks: wait as a release would, also while one runs. None to run them, else why they are skipped."""
-    why = wait(busy=lambda: "a release is running" if releasing(cwd) else None, say=say, **kw)
+    """A task's timed checks: skipped at once while a full run holds its turn, else waited for as a release's full
+    run waits for a quiet machine. None to run them, else why they are skipped: (on each skipped step, in the note)."""
+    if full_run_held(cwd):
+        why = "a full run holds the machine"
+        say(f"gate: {why}: the timed checks are skipped")
+        return why, "a full run held the machine"
+    why = wait(say=say, **kw)
     if why:
         say(f"gate: {why} {MINUTES}: the timed checks are skipped")
-    return why
+        return f"{why} {MINUTES}", f"the machine busy {MINUTES}"
+    return None
 
 
 def main(argv):

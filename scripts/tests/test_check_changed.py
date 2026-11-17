@@ -213,13 +213,17 @@ class Run(unittest.TestCase):
             return check_changed.run(steps, root=self.root, **kw)
 
     def test_a_machine_still_busy_skips_the_timed_steps_and_says_so_last(self):  # AC-146
-        self.assertEqual(self.run_steps([("cargo", "true"), ("page", "true"), ("e2e_hooks", "true")], busy="load 31 over 16"), [])
+        self.assertEqual(self.run_steps([("cargo", "true"), ("page", "true"), ("e2e_hooks", "true")], busy=("load 31 over 16 for 15 minutes", "the machine busy for 15 minutes")), [])
         self.assertEqual([e if e == "gate" else e[-1] for e in self.events], ["true", "gate"])
         self.assertEqual(check_changed.note(self.root, "skipped"),
                          "targeted: SKIPPED timed checks, the machine busy for 15 minutes: page e2e_hooks")
 
+    def test_a_full_run_holding_the_machine_skips_the_timed_steps_at_once_and_says_so_last(self):  # AC-146
+        self.run_steps([("cargo", "true"), ("page", "true")], busy=("a full run holds the machine", "a full run held the machine"))
+        self.assertEqual(check_changed.note(self.root, "skipped"), "targeted: SKIPPED timed checks, a full run held the machine: page")
+
     def test_timed_steps_that_ran_clear_an_earlier_skip(self):  # AC-146
-        self.run_steps([("page", "true")], busy="load 31 over 16")
+        self.run_steps([("page", "true")], busy=("load 31 over 16 for 15 minutes", "the machine busy for 15 minutes"))
         self.run_steps([("cargo", "true")])
         self.assertIsNotNone(check_changed.note(self.root, "skipped"))   # nothing timed ran: the skip stands
         self.run_steps([("e2e_core", "true")], gate=False)   # a landing's smoke set asks no gate
