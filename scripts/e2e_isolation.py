@@ -14,11 +14,11 @@ import sys
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from e2e_ws import Terminumd, check, host_group, summary, tmux_on as tmux, unix_request, wait_host, wait_layout  # noqa: E402
+from e2e_ws import Terminumd, check, host_group, in_budget, summary, tmux_on as tmux, unix_request, wait_host, wait_layout  # noqa: E402
 from testrun import free_port, own  # noqa: E402
 
 LOCAL, REMOTE = own("tm-test-ilocal"), own("tm-test-iremote")
-FAST = 1.0                              # seconds: the targets of §9 Performance
+FAST = 1.0                              # seconds: the targets of §9 Performance, budgets of AC-201 (in_budget)
 
 
 def local_ids(groups):
@@ -53,15 +53,15 @@ def late_window(t, ws, frozen, groups, local_pane, session, host_pane):
         t0 = time.time()
         ws.send({"t": "sub", "id": local_pane, "cols": 90, "rows": 25})
         opened = ws.until(lambda m: m["t"] == "screen" and m.get("sid") == local_pane, 5)
-        check("AC-132 a local pane opens with a host's keys and window waiting", opened is not None and time.time() - t0 < FAST, f"{time.time() - t0:.2f} s")
+        check("AC-132 a local pane opens with a host's keys and window waiting", opened is not None and in_budget("AC-132 a local pane opens", time.time() - t0, FAST), f"{time.time() - t0:.2f} s")
         ws.send({"t": "rename", "id": local_pane, "name": "renamed-meanwhile"})
         named = wait_layout(ws, lambda g: any(i["id"] == local_pane and i["title"] == "renamed-meanwhile" for x in g for i in x["items"]), 5)
-        check("AC-132 an action on this Mac finishes with the host's waiting", named is not None and time.time() - t0 < 2 * FAST, f"{time.time() - t0:.2f} s")
+        check("AC-132 an action on this Mac finishes with the host's waiting", named is not None and in_budget("AC-132 an action on this Mac", time.time() - t0, 2 * FAST), f"{time.time() - t0:.2f} s")
         time.sleep(1.1)                 # one new window a second (AC-07)
         t0 = time.time()
         ws.send({"t": "new", "group": next(g for g in groups if not g.get("host"))["wid"]})
         made = ws.until(lambda m: m["t"] == "created" and m["id"].startswith("tmux:local:"), 5)
-        check("AC-132 a window asked on this Mac comes at once, and shows", bool(made) and not made.get("stay") and time.time() - t0 < FAST, made)
+        check("AC-132 a window asked on this Mac comes at once, and shows", bool(made) and not made.get("stay") and in_budget("AC-132 a window asked on this Mac", time.time() - t0, FAST), made)
         ws.send({"t": "sub", "id": local_pane, "cols": 90, "rows": 25})
     finally:
         os.kill(frozen, signal.SIGCONT)
@@ -93,7 +93,7 @@ def main():
         local_pane = sorted(known)[0]
 
         took, known = new_local_window(ws, session, known)
-        check("AC-132 a local window reaches the list, the host answering", took is not None and took < FAST, f"{took} s")
+        check("AC-132 a local window reaches the list, the host answering", in_budget("AC-132 a local window, the host answering", took, FAST), f"{took} s")
 
         ws.send({"t": "sub", "id": host_pane, "cols": 90, "rows": 25})
         check("AC-81 the host's pane shows", ws.until(lambda m: m["t"] == "screen", 10) is not None)
@@ -108,12 +108,12 @@ def main():
         t0 = time.time()
         ws.send({"t": "sub", "id": local_pane, "cols": 90, "rows": 25})
         opened = ws.until(lambda m: m["t"] == "screen" and m.get("sid") == local_pane, 15)
-        check("AC-132 a local pane opens while the host hangs", opened is not None and time.time() - t0 < FAST, f"{time.time() - t0:.2f} s")
+        check("AC-132 a local pane opens while the host hangs", opened is not None and in_budget("AC-132 a local pane, the host hanging", time.time() - t0, FAST), f"{time.time() - t0:.2f} s")
         echo = typed_echo(ws, "local")
-        check("AC-132 a key on a local pane echoes while the host hangs", echo is not None and echo < FAST, f"{echo} s")
+        check("AC-132 a key on a local pane echoes while the host hangs", in_budget("AC-132 an echo, the host hanging", echo, FAST), f"{echo} s")
         for at in range(3):                 # at once, and on through the watchdog's 10 s
             took, known = new_local_window(ws, session, known)
-            check(f"AC-132 a local window reaches the list while the host hangs ({at})", took is not None and took < FAST, f"{took} s")
+            check(f"AC-132 a local window reaches the list while the host hangs ({at})", in_budget(f"AC-132 a local window, the host hanging ({at})", took, FAST), f"{took} s")
             time.sleep(6)
 
         dim = wait_host(ws, lambda h: h["items"] and all(i.get("offline") for i in h["items"]), 40)
@@ -122,7 +122,7 @@ def main():
         panes = next((s["panes"] for s in unix_request(t.sock, "GET", "/health")[1]["servers"] if s["name"] == "devbox"), None)
         check("AC-132 `terminum status` does not count rows it cannot read", panes == 0, panes)
         took, known = new_local_window(ws, session, known)
-        check("AC-132 a local window reaches the list after all that", took is not None and took < FAST, f"{took} s")
+        check("AC-132 a local window reaches the list after all that", in_budget("AC-132 a local window after all that", took, FAST), f"{took} s")
 
         os.kill(frozen, signal.SIGCONT)
         frozen = None
@@ -142,14 +142,14 @@ def main():
         check("AC-81 the link cut: its rows stay, offline, with no agent state", bool(h.get("items")) and [i["id"] for i in h["items"]] == ids
               and all(i.get("offline") is True and i.get("state") is None for i in h["items"]), h.get("items"))
         took, known = new_local_window(ws, session, known)
-        check("AC-132 a local window reaches the list with the link cut", took is not None and took < FAST, f"{took} s")
+        check("AC-132 a local window reaches the list with the link cut", in_budget("AC-132 a local window, the link cut", took, FAST), f"{took} s")
         again = wait_host(ws, lambda h: h.get("state") == "attached" and h["items"]
                             and not any(i.get("offline") for i in h["items"]), 40)
         check("AC-81 the link back: its rows are live, the same panes", again is not None and [i["id"] for i in host_group(again)["items"]] == ids)
         ws.send({"t": "sub", "id": local_pane, "cols": 90, "rows": 25})
         ws.until(lambda m: m["t"] == "screen", 15)
         echo = typed_echo(ws, "after")
-        check("AC-132 keys echo on a local pane afterwards", echo is not None and echo < FAST, f"{echo} s")
+        check("AC-132 keys echo on a local pane afterwards", in_budget("AC-132 an echo afterwards", echo, FAST), f"{echo} s")
         check("AC-14 a silent client is ended by the watchdog", "tmux.timeout" in open(t.log_path).read(), t.log()[-200:])
     finally:
         if frozen:

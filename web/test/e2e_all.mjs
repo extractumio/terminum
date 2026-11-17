@@ -104,6 +104,7 @@ if (unknown.length) {
   process.exit(2);
 }
 const pw = await playwright();
+const red = new Set();   // the checks with a failure, said last: the full run retries them by name (AC-201)
 for (const name of browsers.length ? browsers : BROWSERS) {
   const browser = await pw[name].launch();
   try {
@@ -112,7 +113,9 @@ for (const name of browsers.length ? browsers : BROWSERS) {
       if (name === "firefox" && !FIREFOX_TOO.includes(which)) continue;
       if (name !== "chromium" && CHROMIUM_ONLY[which]) { console.log(`SKIP [${name}] ${which}: needs ${CHROMIUM_ONLY[which]}`); continue; }
       runningIn(name);
+      const before = results.filter((r) => !r.ok).length;
       try { await run(browser, name); } catch (e) { ranToItsEnd(e, `${which} ran to its end`); }
+      if (results.filter((r) => !r.ok).length > before) red.add(which);
       for (const ctx of browser.contexts()) await ctx.close();   // a page a failed check left open
     }
   } finally { await browser.close(); }
@@ -126,6 +129,7 @@ for (const r of results) {
   by.set(k, n);
 }
 for (const [k, n] of by) console.log(`${k}: ${n.pass} passed, ${n.fail} failed`);
+if (red.size) console.log(`red checks: ${[...red].join(" ")}`);
 const failed = results.filter((r) => !r.ok).length;
 // A run that checked nothing proves nothing: it fails, never "PASS (0 checks)".
 if (!results.length) { console.log("FAIL (0 checks ran)"); process.exit(1); }
