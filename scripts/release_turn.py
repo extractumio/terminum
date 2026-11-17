@@ -1,29 +1,28 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-"""`make release`: leftovers cleared, the full checks, then scripts/release.py (spec AC-104). While it
-runs, landings still push but leave the primary checkout where it is, so a release is never stopped by
-a tree changing under it. Failing tests, here or on the Mac test runner, are what stops a release; a
-problem clearing leftovers, or a runner that could not run them, is said. The full run starts on a quiet
-machine, one at a time (scripts/load_gate.py, AC-146); still busy after 15 minutes, the release ends
-before any test. `--rehearse` (`make rehearse`) runs the same chain with no mark and stops before
-anything is signed or public. A release starts on what landed: `--freshen`, make release's first step, brings a clean
-main up to origin/main once an After or install in the primary checkout ended; the second step, a make of its own,
-writes the mark in the install turn, so the integration queue's Afters wait from there on (spec AC-104,
-terminum-integration.md AC-191)."""
-import contextlib
+"""`make release` and `make rehearse` (spec AC-200, AC-104): from any checkout, a commit pinned and a tree of its own
+detached at it (scripts/release_tree.py), then in that tree, by its own code (`make release-here`, `rehearse-here`):
+leftovers cleared, the full run (scripts/check_all.py, which reuses the passes kept for that content), the Mac test
+runner's checks (a pass kept per content too), then scripts/release.py, which builds, signs, tags the pin and
+publishes. Failing tests, here or on the Mac test runner, stop a release; a problem clearing leftovers, or a runner
+that could not run them, is said. The full run starts on a quiet machine, one at a time (scripts/load_gate.py,
+AC-146); a release finding a rehearsal's full run in the turn waits for its end and reuses its passes. `--rehearse`
+stops before anything is signed or public. Every run leaves a line in the record (scripts/gate_record.py)."""
+import argparse
 import os
 from pathlib import Path
-import re
 import signal
 import subprocess
 import sys
 import time
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from check_changed import tree_id  # noqa: E402
+import gate_record  # noqa: E402
 import load_gate  # noqa: E402
 import release  # noqa: E402
-from worktree import INSTALL_TURN, mark_path, primary_of, Refused, releasing, Turn  # noqa: E402
-import worktree_fresh  # noqa: E402
+import release_tree  # noqa: E402
+from worktree import primary_of, Refused  # noqa: E402
 
 MAC_CAP_S = 3600   # a runner gone quiet must not hold a release
 BUSY_WAIT_S, BUSY_RETRY_S = 1800, 60
@@ -49,98 +48,108 @@ def mac_checks(repo):
         time.sleep(BUSY_RETRY_S)
 
 
-def chain(repo, tag, rehearsing):
-    """Leftovers, a quiet machine, the full checks, the Mac test runner's, then scripts/release.py."""
-    subprocess.run([sys.executable, "scripts/leftovers.py", "--end"], cwd=repo)
-    head = head_of(repo)
+def full_run(repo, by, head, say=print):
+    """The full run in the turn of full runs: 0 green, 1 red, 75 a machine that stayed busy."""
+    if by == "release" and subprocess.run([sys.executable, "scripts/check_all.py", "--passed", "--by", by], cwd=repo).returncode == 0:
+        return subprocess.run([sys.executable, "scripts/check_all.py", "--by", by], cwd=repo).returncode   # says so, runs nothing
     with load_gate.Turn(repo) as turn:
-        if subprocess.run(["bash", "scripts/check_all.sh", "--passed"], cwd=repo).returncode:   # a pass waits for nothing
-            busy = load_gate.wait(busy=turn.busy)
-            if busy:
-                print(f"release: the build server is not available for a release: {busy} {load_gate.MINUTES}: nothing is public", file=sys.stderr)
-                return 1
-        if subprocess.run(["bash", "scripts/check_all.sh"], cwd=repo, env={**os.environ, "TM_GATE_PASSED": "1"}).returncode:
-            print("release: failing tests stop it: nothing is public", file=sys.stderr)
-            return 1
-    failed, why = mac_checks(repo)
+        if not turn.take() and turn.holder().startswith("rehearse") and by == "release":
+            say(f"release: {turn.holder()}'s full run holds the turn: waiting for its end, its passes reused")
+            turn.take(wait=True)
+        if load_gate.wait(busy=turn.busy):
+            return load_gate.BUSY
+        turn.hold_as(f"{by} {head[:9]}")
+        return subprocess.run([sys.executable, "scripts/check_all.py", "--by", by], cwd=repo).returncode
+
+
+def chain(repo, tag, rehearsing, say=print):
+    """In the pinned tree: leftovers, a quiet machine, the full run, the Mac test runner's, then scripts/release.py."""
+    by, began = ("rehearse" if rehearsing else "release"), time.monotonic()
+    head, ident = release.run("git", "rev-parse", "HEAD", cwd=repo), tree_id(repo)
+    entry = {"kind": by, "tag": tag, "commit": head, "content": ident}
+
+    def ended(result, code):
+        gate = (gate_record.read(repo, "gate") or [{}])[-1]
+        if gate.get("content") == ident:
+            entry["red"] = {k: s.get("cause", "failed") for k, s in gate.get("steps", {}).items() if s.get("result") != "pass"}
+        entry.update(result=result, seconds=round(time.monotonic() - began))
+        gate_record.append(repo, entry)
+        return code
+
+    subprocess.run([sys.executable, "scripts/leftovers.py", "--end"], cwd=repo)
+    status = full_run(repo, by, head, say)
+    if status == load_gate.BUSY:
+        say(f"release: the build server is not available for a release: {load_gate.MINUTES}: nothing is public", file=sys.stderr)
+        return ended("busy", 1)
+    if status:
+        say("release: failing tests stop it: nothing is public", file=sys.stderr)
+        return ended("red: the full run", 1)
+    retried = (gate_record.passed(repo, ident) or {}).get("retried", [])
+    entry["retried"] = retried
+    if gate_record.passed(repo, ident, "mac"):
+        failed, why = False, ""
+        say("release: the Mac test runner's checks passed on this content already")
+    else:
+        failed, why = mac_checks(repo)
+        if not failed and not why:
+            gate_record.keep(repo, ident, {}, "mac")
+    entry["mac"] = "red" if failed else why or "pass"
     if failed:
-        print("release: failing tests on the Mac test runner stop it: nothing is public", file=sys.stderr)
-        return 1
+        say("release: failing tests on the Mac test runner stop it: nothing is public", file=sys.stderr)
+        return ended("red: the Mac test runner", 1)
     said = f"the Mac test runner's checks did not run: {why}" if why else ""
     try:
-        release.main(tag, head, said, rehearsing)
+        release.main(tag, head, said, rehearsing, retried)
+    except SystemExit as stop:
+        ended(f"stopped: {stop.code}", 1)
+        raise
     finally:
         if said:
-            print(f"release: {said}")
-    return 0
+            say(f"release: {said}")
+    return ended("rehearsed" if rehearsing else "published", 0)
 
 
-def head_of(repo):
-    return release.run("git", "rev-parse", "HEAD", cwd=repo)
+def say(*words, file=sys.stdout):
+    print(*words, file=file, flush=True)
 
 
-@contextlib.contextmanager
-def in_install_turn(repo, say):
-    """The install turn, once an After or install in the primary checkout ended."""
-    with Turn(repo, INSTALL_TURN) as turn:
-        if not turn.take():
-            say("release: an install runs in the primary checkout: waiting for its end")
-            turn.take(wait=True)
-        yield
-
-
-def freshen(repo, tag, say=print):
-    """make release's first step, in the install turn: a clean main brought up to origin/main as make install does,
-    so the second step (a make of its own) reads what landed; a main that cannot move refuses the release. A tag that
-    exists already is released where it stands."""
-    if release.tag_exists(tag):
-        return 0
-    with in_install_turn(repo, say):
-        try:
-            for line in worktree_fresh.freshen(repo):
-                say(f"release: {line}")
-        except Refused as refused:
-            sys.exit(f"release: main cannot be brought up to origin/main: {refused}")
-    return 0
-
-
-def start(repo, tag, head, say=print):
-    """The mark written in the install turn, so the queue's Afters wait from here on; refused when an After moved main
-    since this process read `head`, as its code and make's variables would be older than the files it runs."""
-    with in_install_turn(repo, say):
-        if head_of(repo) != head:
-            sys.exit("release: main moved as the release started (an After installed): run make release again")
-        release.check_source(tag)
+def here(tag, rehearsing):
+    """make release-here / rehearse-here: the chain in the pinned tree, by its own code."""
+    repo = Path(__file__).resolve().parent.parent
+    if primary_of(repo) == repo:   # its build replaces ui/dist and dist/package under other sessions
+        sys.exit("release: the chain runs in its pinned tree: make release (or make rehearse) pins one")
+    release.check_settings()   # before the long run: none of these is any test's fault
+    release.check_source(tag)
+    if not rehearsing:
         release.release_notes(tag)
-        mark = mark_path(repo)
-        mark.write_text(f"{os.getpid()}\n")
-        return mark
+    return chain(repo, tag, rehearsing, say)
 
 
 def main(argv):
-    mode = argv[0] if argv[:1] in (["--rehearse"], ["--freshen"]) else None
-    if len(argv) != 1 + bool(mode) or not re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+", argv[-1]):
-        sys.exit("usage: release_turn.py [--rehearse | --freshen] vX.Y.Z")
-    tag = argv[-1]
-    repo = Path(__file__).resolve().parent.parent
-    if mode == "--freshen":
-        return freshen(repo, tag)
-    head = head_of(repo)   # what this process and its make read
-    rehearsing = mode == "--rehearse"
-    if rehearsing:
-        if primary_of(repo) == repo:   # its build replaces ui/dist and dist/package under other sessions
-            sys.exit("make rehearse runs in a worktree: python3 scripts/worktree.py add <slug> --kind chore")
-        if releasing(repo):
-            sys.exit("a release is running: rehearse after it")
-    release.check_settings()   # before the long run: none of these is any test's fault
-    if rehearsing:
-        release.check_source(tag)
-        return chain(repo, tag, True)
-    mark = start(repo, tag, head)
+    parser = argparse.ArgumentParser(prog="release_turn.py")
+    parser.add_argument("--rehearse", action="store_true")
+    parser.add_argument("--here", action="store_true")
+    parser.add_argument("--pin")
+    parser.add_argument("tag")
+    args = parser.parse_args(argv)
+    if not release.version(args.tag) or args.tag.count(".") != 2:
+        sys.exit("usage: release_turn.py [--rehearse] [--pin <commit>] vX.Y.Z")
+    if args.here:
+        return here(args.tag, args.rehearse)
+    primary = primary_of(Path(__file__).resolve().parent)
+    name = "rehearse" if args.rehearse else "release"
     try:
-        return chain(repo, tag, False)
-    finally:
-        mark.unlink(missing_ok=True)
+        wanted = args.pin or (f"refs/tags/{args.tag}" if release.tag_exists(args.tag) else None)   # released where it stands
+        commit = release_tree.pin(primary, wanted, args.rehearse, say)
+        with release_tree.Held(primary, name) as held:
+            if not held.take():
+                raise Refused(f"another {name} runs in .worktrees/{name}: {held.holder()}")
+            held.hold_as(f"{name} {args.tag} at {commit[:9]}, pid {os.getpid()}")
+            tree = release_tree.take(primary, name, commit)
+            say(f"release: in {tree}, detached at {commit[:9]}")
+            return subprocess.run(["make", "--no-print-directory", f"{name}-here", f"TAG={args.tag}"], cwd=tree).returncode
+    except Refused as refused:
+        sys.exit(f"release: {refused}")
 
 
 if __name__ == "__main__":

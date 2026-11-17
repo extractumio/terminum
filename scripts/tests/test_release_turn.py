@@ -1,229 +1,216 @@
 # SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-"""scripts/release_turn.py (spec AC-104): the chain of make release and make rehearse, its steps stubbed: what stops
-it, what is only said, and that a rehearsal holds no mark. The real steps have their own tests."""
+"""scripts/release_turn.py (spec AC-200, AC-104, AC-146): the chain of make release and make rehearse in the pinned
+tree, its steps stood in for: what stops it, what is only said, what it keeps and records; and the outer step that pins
+and takes the tree. The real steps have their own tests (test_check_all.py, test_release_tree.py, test_release.py)."""
 import os
 from pathlib import Path
 import subprocess
 import sys
-import tempfile
 import unittest
 from unittest import mock
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+import gate_record  # noqa: E402
 import release_turn  # noqa: E402
+from test_gate_record import Repo  # noqa: E402
 
-
-def done(code=0, stdout="abc\n"):
-    return subprocess.CompletedProcess([], code, stdout, "")
+REAL_RUN = subprocess.run   # git and the rest go through; the scripts of the chain are stood in for
 
 
 class Turn:
-    """The one-full-run turn, always free here (scripts/tests/test_load_gate.py has the real one)."""
-    def __init__(self, _):
+    """The one-full-run turn (scripts/tests/test_load_gate.py has the real one), held by `holder` until waited for."""
+    def __init__(self, test):
+        self.test = test
+
+    def __call__(self, repo):
+        return self
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
         pass
+
+    def take(self, wait=False):
+        self.test.turn_log.append(f"take wait={wait}")
+        return wait or not self.test.holder
+
+    def holder(self):
+        return self.test.holder or "another tree"
 
     def busy(self):
         return None
 
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *_):
-        pass
+    def hold_as(self, name):
+        self.test.turn_log.append(f"held as {name}")
 
 
-class InstallTurn:
-    """The install turn (scripts/tests/test_land_stages.py has the real one): held by another until waited for."""
-    def __init__(self, test):
-        self.test = test
-
-    def __call__(self, repo, name):
-        self.test.assertEqual(name, release_turn.INSTALL_TURN)
-        return self
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *_):
-        self.test.turn_log.append("free")
-
-    def take(self, wait=False):
-        self.test.turn_log.append(f"take wait={wait}")
-        return wait or not self.test.install_held
-
-
-class Chain(unittest.TestCase):
+class Chain(Repo, unittest.TestCase):
     def setUp(self):
-        # never the real repository's turn, fetch or main: every test here, even one that calls main() itself
-        self.turn_log, self.install_held, self.fresh = [], False, ["fast-forwarded main by 2 commits: 4f2a91c..9b7e0d3"]
-        self.freshened, self.heads, self.tag_there = [], ["a1", "a1"], False
-        def freshen(repo):
-            self.freshened.append(self.mark.exists())
-            if isinstance(self.fresh, Exception):
-                raise self.fresh
-            return self.fresh
-        heads = lambda repo: self.heads.pop(0) if len(self.heads) > 1 else self.heads[0]
-        for target, value in ((release_turn, {"Turn": InstallTurn(self), "head_of": heads}), (release_turn.worktree_fresh, {"freshen": freshen}),
-                              (release_turn.release, {"tag_exists": lambda tag: self.tag_there})):
-            patch = mock.patch.multiple(target, **value)
+        self.make_repo()
+        self.head = self.commit("a.txt")
+        self.calls, self.released, self.turn_log, self.said = [], [], [], []
+        self.gate, self.mac, self.busy, self.holder = 0, (False, ""), None, None
+        self.mac_runs = 0
+        patches = [mock.patch.object(release_turn.subprocess, "run", self.fake_run),
+                   mock.patch.object(release_turn.load_gate, "Turn", Turn(self)),
+                   mock.patch.object(release_turn.load_gate, "wait", lambda **_: self.busy),
+                   mock.patch.object(release_turn, "mac_checks", self.mac_checks),
+                   mock.patch.object(release_turn.release, "main", self.release)]
+        for patch in patches:
             patch.start()
             self.addCleanup(patch.stop)
-        tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(tmp.cleanup)
-        self.mark = Path(tmp.name) / "mark"
-        self.calls = []
-        self.check_status = 0
-        self.mac = (False, "")
-        self.marked_during = None
-        self.released = []
-        self.passed_before = False
-        self.busy = None
 
-    def fake_release(self, tag, gate_head, said="", rehearsing=False):
-        self.released.append((tag, gate_head, said, rehearsing))
-        self.marked_during = self.mark.exists()
+    def fake_run(self, cmd, **kwargs):
+        if cmd[0] != sys.executable:
+            return REAL_RUN(cmd, **kwargs)
+        self.calls.append(cmd[1:])
+        if cmd[1:3] == ["scripts/check_all.py", "--passed"]:
+            return subprocess.CompletedProcess(cmd, 0 if gate_record.passed(self.repo, self.ident()) else 1)
+        if cmd[1:2] == ["scripts/check_all.py"]:
+            if self.gate == 0:
+                gate_record.keep(self.repo, self.ident(), {"retried": ["page webBoardPanel"]})
+            gate_record.append(self.repo, {"kind": "gate", "content": self.ident(),
+                                           "steps": {"live": {"result": "fail" if self.gate else "pass", "cause": "failed twice"}}})
+            return subprocess.CompletedProcess(cmd, self.gate)
+        return subprocess.CompletedProcess(cmd, 0)   # leftovers
 
-    def run_chain(self, argv):
-        def fake_run(cmd, **kwargs):
-            self.calls.append(cmd)
-            if cmd == ["bash", "scripts/check_all.sh", "--passed"]:
-                return done(0 if self.passed_before else 1)
-            if cmd[:2] == ["bash", "scripts/check_all.sh"]:
-                self.gate_skipped = kwargs.get("env", {}).get("TM_GATE_PASSED") == "1"
-                return done(self.check_status)
-            return done()
-        with mock.patch.object(release_turn, "mark_path", return_value=self.mark), \
-                mock.patch.object(release_turn.subprocess, "run", fake_run), \
-                mock.patch.object(release_turn.release, "check_settings"), \
-                mock.patch.object(release_turn.release, "check_source"), \
-                mock.patch.object(release_turn, "primary_of", return_value=Path("/elsewhere")), \
-                mock.patch.object(release_turn.release, "release_notes") as notes, \
-                mock.patch.object(release_turn, "mac_checks", return_value=self.mac), \
-                mock.patch.object(release_turn.load_gate, "Turn", Turn), \
-                mock.patch.object(release_turn.load_gate, "wait", lambda **_: self.busy) as self.waited, \
-                mock.patch.object(release_turn.release, "main", self.fake_release):
-            self.notes = notes
-            return release_turn.main(argv)
+    def ident(self):
+        return gate_record.content_of(self.repo, self.head)
 
-    def test_a_release_passes_the_checked_commit_on_and_holds_its_mark(self):
-        self.assertEqual(self.run_chain(["v1.0.0"]), 0)
-        self.assertEqual(self.released, [("v1.0.0", "a1", "", False)])
-        self.assertTrue(self.marked_during)
-        self.assertFalse(self.mark.exists())
-        self.notes.assert_called_once()
+    def mac_checks(self, repo):
+        self.mac_runs += 1
+        return self.mac
 
-    def test_make_release_first_brings_main_up_once_an_install_ended(self):  # AC-104
-        self.install_held = True
-        said = []
-        self.assertEqual(release_turn.freshen(Path("/repo"), "v1.0.0", say=said.append), 0)
-        self.assertEqual(said, ["release: an install runs in the primary checkout: waiting for its end",
-                                "release: fast-forwarded main by 2 commits: 4f2a91c..9b7e0d3"])
-        self.assertEqual(self.turn_log, ["take wait=False", "take wait=True", "free"])
-        self.assertEqual(self.calls, [], "nothing else runs in the first step")
+    def release(self, tag, head, said="", rehearsing=False, retried=()):
+        self.released.append((tag, head, said, rehearsing, list(retried)))
 
-    def test_then_its_mark_is_written_in_the_install_turn(self):  # AC-104
-        self.assertEqual(self.run_chain(["v1.0.0"]), 0)
-        self.assertEqual(self.turn_log, ["take wait=False", "free"])
-        self.assertTrue(self.marked_during)
-        self.assertEqual(self.freshened, [], "the second step moves nothing")
+    def chain(self, rehearsing=False):
+        return release_turn.chain(self.repo, "v1.0.0", rehearsing, lambda *w, **_: self.said.append(" ".join(w)))
 
-    def test_a_main_that_cannot_move_refuses_the_release_before_any_check(self):  # AC-104
-        self.fresh = release_turn.Refused("make install: main and origin/main have diverged (1 and 2 commits)")
-        with self.assertRaisesRegex(SystemExit, "release: main cannot be brought up to origin/main: .*diverged"):
-            release_turn.main(["--freshen", "v1.0.0"])
+    def last(self):
+        return gate_record.read(self.repo)[-1]
 
-    def test_a_main_an_after_moved_as_the_release_started_refuses_it(self):  # AC-104
-        self.heads = ["a1", "b2"]
-        with self.assertRaisesRegex(SystemExit, "main moved as the release started .*: run make release again"):
-            self.run_chain(["v1.0.0"])
-        self.assertEqual((self.calls, self.released), ([], []))
-        self.assertFalse(self.mark.exists())
+    def test_a_release_hands_the_pinned_commit_and_its_retried_checks_on(self):  # AC-200, AC-201
+        self.assertEqual(self.chain(), 0)
+        self.assertEqual(self.released, [("v1.0.0", self.head, "", False, ["page webBoardPanel"])])
+        self.assertIn(["scripts/leftovers.py", "--end"], self.calls)
+        self.assertIn("held as release " + self.head[:9], self.turn_log)
+        entry = self.last()
+        self.assertEqual((entry["kind"], entry["commit"], entry["result"], entry["mac"]), ("release", self.head, "published", "pass"))
 
-    def test_a_tag_that_exists_is_released_where_it_stands(self):  # AC-104
-        self.tag_there = True
-        self.assertEqual(release_turn.main(["--freshen", "v1.0.0"]), 0)
-        self.assertEqual((self.freshened, self.turn_log), ([], []), "main not moved past it")
-
-    def test_a_rehearsal_takes_no_install_turn_and_moves_no_main(self):  # AC-104
-        self.assertEqual(self.run_chain(["--rehearse", "v1.0.0"]), 0)
-        self.assertEqual((self.turn_log, self.freshened), ([], []))
+    def test_a_content_that_passed_runs_no_full_run_and_waits_for_nothing(self):  # AC-146, AC-201
+        gate_record.keep(self.repo, self.ident(), {})
+        self.busy = "load 31 over 8"
+        self.assertEqual(self.chain(), 0)
+        self.assertEqual(self.turn_log, [], "no turn, no wait")
 
     def test_a_busy_build_server_ends_the_release_before_any_test(self):  # AC-146
         self.busy = "load 31 over 8"
-        with mock.patch("sys.stderr") as err:
-            self.assertEqual(self.run_chain(["v1.0.0"]), 1)
-        self.assertIn("release: the build server is not available for a release: load 31 over 8 for 15 minutes: nothing is public",
-                      "".join(c.args[0] for c in err.write.call_args_list))
-        self.assertNotIn(["bash", "scripts/check_all.sh"], self.calls)
-        self.assertEqual(self.released, [])
-        self.assertFalse(self.mark.exists())
+        self.assertEqual(self.chain(), 1)
+        self.assertIn("release: the build server is not available for a release: for 15 minutes: nothing is public", self.said)
+        self.assertEqual((self.released, self.last()["result"]), ([], "busy"))
 
-    def test_the_full_run_after_the_gate_does_not_wait_again(self):  # AC-146
-        self.assertEqual(self.run_chain(["v1.0.0"]), 0)
-        self.assertTrue(self.gate_skipped)
+    def test_a_release_waits_for_a_rehearsals_full_run_and_reuses_its_passes(self):  # AC-146, AC-200
+        self.holder = "rehearse 4f2a91c07"
+        self.assertEqual(self.chain(), 0)
+        self.assertIn("release: rehearse 4f2a91c07's full run holds the turn: waiting for its end, its passes reused", self.said)
+        self.assertIn("take wait=True", self.turn_log)
 
-    def test_a_tree_that_passed_already_waits_for_nothing(self):  # AC-146
-        self.passed_before, self.busy = True, "load 31 over 8"
-        self.assertEqual(self.run_chain(["v1.0.0"]), 0)
-        self.assertEqual(len(self.released), 1)
+    def test_failing_tests_here_or_on_the_mac_stop_it_and_are_recorded(self):  # AC-104, AC-201
+        self.gate = 1
+        self.assertEqual(self.chain(), 1)
+        self.assertEqual((self.released, self.last()["red"]), ([], {"live": "failed twice"}))
+        self.gate, self.mac = 0, (True, "")
+        self.assertEqual(self.chain(), 1)
+        self.assertEqual((self.released, self.last()["result"]), ([], "red: the Mac test runner"))
 
-    def test_failing_tests_here_or_on_the_mac_stop_it(self):
-        self.check_status = 1
-        self.assertEqual(self.run_chain(["v1.0.0"]), 1)
-        self.assertEqual(self.released, [])
-        self.check_status, self.mac = 0, (True, "")
-        self.assertEqual(self.run_chain(["v1.0.0"]), 1)
-        self.assertEqual(self.released, [])
+    def test_the_mac_runners_pass_is_kept_per_content(self):  # AC-200
+        self.chain()
+        self.chain()
+        self.assertEqual(self.mac_runs, 1)
+        self.assertIn("release: the Mac test runner's checks passed on this content already", self.said)
 
-    def test_a_runner_that_could_not_run_them_is_said_and_stops_nothing(self):
+    def test_a_runner_that_could_not_run_them_is_said_and_stops_nothing(self):  # AC-104
         self.mac = (False, "the runner could not run them")
-        with mock.patch("builtins.print") as said:
-            self.assertEqual(self.run_chain(["v1.0.0"]), 0)
-        self.assertEqual(len(self.released), 1)
-        self.assertIn("did not run: the runner could not run them", said.call_args_list[-1].args[0])
+        self.assertEqual(self.chain(), 0)
         self.assertIn("did not run: the runner could not run them", self.released[0][2], "for the release's notes")
+        self.assertIn("release: the Mac test runner's checks did not run: the runner could not run them", self.said[-1])
+        self.assertEqual(self.mac_runs, 1)
+        self.chain()
+        self.assertEqual(self.mac_runs, 2, "no pass kept for checks that did not run")
 
-    def test_a_rehearsal_holds_no_mark_and_needs_no_notes(self):
-        self.assertEqual(self.run_chain(["--rehearse", "v1.0.0"]), 0)
-        self.assertTrue(self.released[0][3])
-        self.assertFalse(self.marked_during)
-        self.notes.assert_not_called()
+    def test_a_rehearsal_runs_its_full_run_whatever_passed(self):  # AC-202
+        gate_record.keep(self.repo, self.ident(), {})
+        self.assertEqual(self.chain(rehearsing=True), 0)
+        self.assertNotIn(["scripts/check_all.py", "--passed", "--by", "rehearse"], self.calls)
+        self.assertIn(["scripts/check_all.py", "--by", "rehearse"], self.calls)
+        self.assertEqual(self.released[0][3], True)
+        self.assertEqual(self.last()["result"], "rehearsed")
 
-    def test_a_rehearsal_waits_for_a_release(self):
-        with mock.patch.object(release_turn, "primary_of", return_value=Path("/elsewhere")), \
-                mock.patch.object(release_turn, "releasing", return_value=True), self.assertRaisesRegex(SystemExit, "a release is running"):
-            release_turn.main(["--rehearse", "v1.0.0"])
-
-    def test_a_rehearsal_stays_out_of_the_primary_checkout(self):
-        with mock.patch.object(release_turn, "primary_of", return_value=Path(release_turn.__file__).resolve().parent.parent), \
-                self.assertRaisesRegex(SystemExit, "runs in a worktree"):
-            release_turn.main(["--rehearse", "v1.0.0"])
-
-    def test_a_refused_release_still_says_what_did_not_run_and_clears_its_mark(self):
+    def test_a_refused_release_is_recorded_and_still_says_what_did_not_run(self):  # AC-104
         self.mac = (False, "the runner could not run them")
-        self.fake_release = mock.Mock(side_effect=SystemExit("HEAD moved"))
-        with mock.patch("builtins.print") as said, self.assertRaisesRegex(SystemExit, "HEAD moved"):
-            self.run_chain(["v1.0.0"])
-        self.assertIn("did not run", said.call_args_list[-1].args[0])
-        self.assertFalse(self.mark.exists())
+        with mock.patch.object(self, "release", side_effect=SystemExit("HEAD moved")), \
+                mock.patch.object(release_turn.release, "main", side_effect=SystemExit("HEAD moved")), \
+                self.assertRaisesRegex(SystemExit, "HEAD moved"):
+            self.chain()
+        self.assertIn("did not run", self.said[-1])
+        self.assertEqual(self.last()["result"], "stopped: HEAD moved")
 
-    def test_settings_are_looked_at_before_anything_runs(self):
-        with mock.patch.object(release_turn.release, "check_settings", side_effect=SystemExit("no identity")), \
-                mock.patch.object(release_turn.release, "check_source") as source, mock.patch.object(release_turn.subprocess, "run") as run, \
-                self.assertRaisesRegex(SystemExit, "no identity"):
-            release_turn.main(["v1.0.0"])
-        source.assert_not_called()
-        run.assert_not_called()
+
+class Outer(unittest.TestCase):
+    def test_the_chain_runs_only_in_its_pinned_tree(self):  # AC-200
+        with mock.patch.object(release_turn, "primary_of", return_value=Path(release_turn.__file__).resolve().parent.parent), \
+                self.assertRaisesRegex(SystemExit, "the chain runs in its pinned tree"):
+            release_turn.main(["--here", "v1.0.0"])
+
+    def test_settings_and_source_are_looked_at_before_anything_runs(self):  # AC-104
+        with mock.patch.object(release_turn, "primary_of", return_value=Path("/elsewhere")), \
+                mock.patch.object(release_turn.release, "check_settings", side_effect=SystemExit("no identity")), \
+                mock.patch.object(release_turn, "chain") as chain, self.assertRaisesRegex(SystemExit, "no identity"):
+            release_turn.main(["--here", "v1.0.0"])
+        chain.assert_not_called()
+        with mock.patch.object(release_turn, "primary_of", return_value=Path("/elsewhere")), \
+                mock.patch.object(release_turn.release, "check_settings"), \
+                mock.patch.object(release_turn.release, "check_source", side_effect=SystemExit("the tree has changes")), \
+                mock.patch.object(release_turn, "chain") as chain, self.assertRaisesRegex(SystemExit, "the tree has changes"):
+            release_turn.main(["--here", "v1.0.0"])
+        chain.assert_not_called()
 
     def test_a_bad_version_is_refused_at_once(self):
-        with self.assertRaisesRegex(SystemExit, "usage"):
-            release_turn.main(["1.0"])
+        for bad in ("1.0", "v1.0", "v1.0.0.1"):
+            with self.assertRaisesRegex(SystemExit, "usage"):
+                release_turn.main([bad])
 
-    def test_a_tree_that_cannot_release_is_refused_before_the_long_run(self):
-        with mock.patch.object(release_turn.release, "check_settings"), mock.patch.object(release_turn.release, "check_source", side_effect=SystemExit("the tree has changes")), \
-                mock.patch.object(release_turn.subprocess, "run") as run, self.assertRaisesRegex(SystemExit, "the tree has changes"):
+    def test_another_run_in_the_tree_is_refused(self):  # AC-200
+        held = mock.MagicMock()
+        held.__enter__.return_value = held
+        held.take.return_value = False
+        held.holder.return_value = "release v1.0.0 at 4f2a91c07, pid 4242"
+        with mock.patch.object(release_turn.release_tree, "pin", return_value="4f2a91c07aa"), \
+                mock.patch.object(release_turn.release_tree, "Held", return_value=held), \
+                mock.patch.object(release_turn.release, "tag_exists", return_value=False), \
+                mock.patch.object(release_turn.release_tree, "take") as take, \
+                self.assertRaisesRegex(SystemExit, "release: another release runs in .worktrees/release: release v1.0.0 at 4f2a91c07, pid 4242"):
             release_turn.main(["v1.0.0"])
-        run.assert_not_called()
+        take.assert_not_called()
+
+    def test_the_pinned_trees_own_make_runs_the_rest(self):  # AC-200
+        held = mock.MagicMock()
+        held.__enter__.return_value = held
+        held.take.return_value = True
+        with mock.patch.object(release_turn, "primary_of", return_value=Path("/w")), \
+                mock.patch.object(release_turn.release_tree, "pin", return_value="4f2a91c07aa") as pin, \
+                mock.patch.object(release_turn.release_tree, "Held", return_value=held), \
+                mock.patch.object(release_turn.release, "tag_exists", return_value=True), \
+                mock.patch.object(release_turn.release_tree, "take", return_value=Path("/w/.worktrees/rehearse")), \
+                mock.patch.object(release_turn.subprocess, "run", return_value=subprocess.CompletedProcess([], 0)) as run, \
+                mock.patch("builtins.print"):
+            self.assertEqual(release_turn.main(["--rehearse", "v1.0.0"]), 0)
+        self.assertEqual(pin.call_args.args[1:3], ("refs/tags/v1.0.0", True), "a tag that exists is its own pin")
+        self.assertEqual(run.call_args.args[0], ["make", "--no-print-directory", "rehearse-here", "TAG=v1.0.0"])
+        self.assertEqual(run.call_args.kwargs["cwd"], Path("/w/.worktrees/rehearse"))
 
 
 class MacChecks(unittest.TestCase):

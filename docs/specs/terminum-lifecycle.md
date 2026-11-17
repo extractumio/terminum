@@ -1003,6 +1003,7 @@ Scenario: AC-200 happy path — the commit the nightly passed
   Then it fetches and prints "release: pinned 9b7e0d3c1: docs only since 4f2a91c07's full pass (2026-11-18 03:12); 1 commits since 4f2a91c07's full pass"
   And it makes, or takes, .worktrees/release detached at 9b7e0d3c1 and runs the rest there by that commit's own code (make release-here): leftovers, the full run, the Mac test runner's checks, the build, the signature, the tag on 9b7e0d3c1, the publication
   And the full run runs the security scan alone and says "skip <step>: a docs-only change since 4f2a91c07's full pass" for every other step (AC-201)
+  And the release notes are read as origin/main holds them, landed text, so notes that landed after code after the nightly's pass are found though the pin predates them; a link there is refused
 
 Scenario Outline: AC-200 — what is pinned
   Given <state>
@@ -1043,7 +1044,7 @@ Scenario Outline: AC-200 failure — a pin it refuses before any check
     | the pin predates releases in a tree of their own          | release: 1a2b3c4d5 predates releases in a tree of their own (it has no scripts/check_all.py): pin a newer commit |
     | .worktrees/release holds an uncommitted file             | release: …/.worktrees/release holds uncommitted changes, nothing of a release's own      |
     | another make release runs in .worktrees/release           | release: another release runs in .worktrees/release: release v0.33.0 at 4f2a91c07, pid 4242 |
-    | the pinned commit has no docs/releases/v0.33.0.md         | no release notes: write docs/releases/v0.33.0.md first                                  |
+    | origin/main has no docs/releases/v0.33.0.md               | no release notes: write docs/releases/v0.33.0.md first, landed on origin/main           |
 
 Scenario: AC-200 edge — the kept trees
   Given .worktrees/release and .worktrees/rehearse stay between runs, detached
