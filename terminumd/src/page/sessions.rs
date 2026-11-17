@@ -274,9 +274,7 @@ async fn rename_group(app: &Shared, wid: &str, name: &str) -> Result<(), String>
 /// are never moved).
 async fn reorder(app: &Shared, wid: &str, ids: Vec<Value>) -> Result<(), String> {
     let (server, session) = group(app, wid).ok_or("That session is gone.")?;
-    let target = args::quote(&format!("={session}"));
-    let lines = server.run(format!("list-windows -t {target} -F '#{{window_id}}'")).await.map_err(|e| said(&e))?;
-    let mut current: Vec<String> = lines.into_iter().filter(|w| w.starts_with('@')).collect();
+    let current = windows(&server, &session).await?;
     let mut want: Vec<String> = Vec::new();
     for id in ids.iter().filter_map(Value::as_str) {
         let Some((s, pane)) = app.tmux.resolve(id) else { continue };
@@ -288,18 +286,42 @@ async fn reorder(app: &Shared, wid: &str, ids: Vec<Value>) -> Result<(), String>
                 want.push(w);
             }
     }
-    // the windows named take, in their order, the places they hold; the others keep theirs
-    // (a project's, listed elsewhere, AC-92)
+    place(&server, current, &want).await.map(drop)
+}
+
+/// Window `top` of `session` goes before the other windows `free` names, which keep their order
+/// as tmux has it now; the rest keep their places (AC-92). True when something moved.
+pub(super) async fn to_top(server: &Server, session: &str, top: &str, free: &[String]) -> Result<bool, String> {
+    let current = windows(server, session).await?;
+    let mut want = vec![top.to_string()];
+    want.extend(current.iter().filter(|w| *w != top && free.contains(w)).cloned());
+    place(server, current, &want).await
+}
+
+/// A session's windows, in tmux's order.
+async fn windows(server: &Server, session: &str) -> Result<Vec<String>, String> {
+    let target = args::quote(&format!("={session}"));
+    let lines = server.run(format!("list-windows -t {target} -F '#{{window_id}}'")).await.map_err(|e| said(&e))?;
+    Ok(lines.into_iter().filter(|w| w.starts_with('@')).collect())
+}
+
+/// The windows `want` names (of `current`, a session's in tmux's order) take, in their order,
+/// the places they hold; the others keep theirs (a project's, listed elsewhere, AC-92). True
+/// when something moved.
+async fn place(server: &Server, mut current: Vec<String>, want: &[String]) -> Result<bool, String> {
+    let want: Vec<&String> = want.iter().filter(|w| current.contains(w)).collect();
     let mut order = want.iter();
-    let want: Vec<String> = current.iter().map(|w| if want.contains(w) { order.next().cloned().unwrap_or_else(|| w.clone()) } else { w.clone() }).collect();
+    let want: Vec<String> = current.iter().map(|w| if want.contains(&w) { order.next().map_or_else(|| w.clone(), |n| (*n).clone()) } else { w.clone() }).collect();
+    let mut moved = false;
     for i in 0..current.len() {
         if current[i] != want[i] {
             let j = current.iter().position(|w| *w == want[i]).ok_or("The windows changed meanwhile.")?;
             server.run(format!("swap-window -d -s {} -t {}", current[j], current[i])).await.map_err(|e| format!("Not moved: {}", said(&e)))?;
             current.swap(i, j);
+            moved = true;
         }
     }
-    Ok(())
+    Ok(moved)
 }
 
 /// "Move to session…": the window goes to the end of another session of its server.

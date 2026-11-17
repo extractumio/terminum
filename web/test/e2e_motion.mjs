@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // Motion (docs/UI-GUIDELINES.md §2.8) against a fake terminumd (fake.mjs), with motion on: a
 // window (a popover, a dialog) flies out of its button and back, a color changes over a moment; a pressed key sinks, a blob pulses, one under the pointer lifts and nods; the
-// selected row settles once; a project's rows glide to a new order; nothing moves in the terminal; with reduced motion nothing moves.
+// selected row settles once; a project's or a tmux group's rows glide to a new order; nothing moves in the terminal; with reduced motion nothing moves.
 // The other checks run with reduced motion, so they measure boxes at their place.
 
 import { check, runningIn, slack } from "./check.mjs";
-import { drawn, openPage, pause, WIDE, pressFoot } from "./fake.mjs";
+import { drawn, group, item, openPage, pause, WIDE, pressFoot } from "./fake.mjs";
 
 /** The running animations whose target is under `sel`, as "tag#id.class:name". */
 // what moves: running, of some length (one of no length only waits, as the list's foot before it folds), not a loop
@@ -141,6 +141,21 @@ export async function webMotion(browser, name) {
   await pause(page, 500);
   check("motion: a project's session put on top glides there over the others, carried through a redraw; standing still otherwise (AC-92)",
     steady === "%1:0,%2:0,%3:0" && rose === "%3^:1,%1:1,%2:1" && carried === "%3^:1,%1:1,%2:1" && await glides() === "%3:0,%1:0,%2:0", JSON.stringify({ steady, rose, carried }));
+
+  // outside projects, a session put on top of its tmux group (its windows' order) glides there the same way
+  f.say(P([]));
+  const G = (ns) => ({ t: "layout", groups: [group("main", ns.map((n) => item(ID(n), `w${n}`, { window: `@${n}`, index: String(n) })))] });
+  f.say(G([1, 2, 3]));
+  await pause(page, 400);
+  const inGroup = () => page.evaluate(() => [...document.querySelectorAll("#sessions ul[data-wid] > li")]
+    .map((li) => `${li.firstElementChild.dataset.id.split(":").pop()}${li.classList.contains("rising") ? "^" : ""}:${li.getAnimations().filter((a) => a.playState === "running" && a.id === "glide").length}`).join());
+  const steadyG = await inGroup();
+  f.say(G([3, 1, 2]));
+  await pause(page, 60);
+  const risen = await inGroup();
+  await pause(page, 500);
+  check("motion: a tmux group's session put on top glides there over the others, as a project's (AC-92)",
+    steadyG === "%1:0,%2:0,%3:0" && risen === "%3^:1,%1:1,%2:1" && await inGroup() === "%3:0,%1:0,%2:0", JSON.stringify({ steadyG, risen }));
 
   await page.click("#term");
   await page.keyboard.type("ls -la");
