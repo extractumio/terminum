@@ -76,7 +76,11 @@ fn last_rows(log: &Path) -> String {
 /// A published batch's After ended with `code` (AC-191): 0 its Cleanup follows; LATER it waits; else it failed.
 pub(super) fn ended(store: &Store, p: &Place, b: &bs::Batch, code: i32, log: &Path, now: i64) -> Result<(), String> {
     match code {
-        0 => store.with(|tx| { bs::set_pane(tx, b.id, None, now)?; bs::set_state(tx, b.id, after_after(&p.s), None, now)?; bs::after_passed(tx, b, now) }),
+        0 => store.with(|tx| {
+            bs::set_pane(tx, b.id, None, now)?;
+            bs::set_state(tx, b.id, after_after(&p.s), None, now)?;
+            bs::after_passed(tx, b, now)
+        }),
         LATER if b.waits_since.is_some_and(|since| now - since >= WAIT_MOST_S) => failed(store, p, b, None, log, now),
         LATER => {
             let rows = last_rows(log);

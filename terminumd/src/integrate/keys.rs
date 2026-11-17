@@ -13,7 +13,7 @@ use serde_json::{json, Value};
 use super::store::{self as bs, Batch};
 use crate::app::Shared;
 use crate::tasks::api::{answer, store};
-use crate::tasks::ops::{self, INTEGRATION};
+use crate::tasks::ops;
 use crate::tasks::store::{DISPATCHER, HUMAN};
 
 /// The states a human decides in.
@@ -112,9 +112,8 @@ pub fn after_again(tx: &Transaction, id: i64, at: i64) -> Result<String, String>
     bs::after_again(tx, &b, &format!("After runs again, by {who}"))?;
     if let Some(task) = bs::task_of(tx, &b)? {
         ops::comment(tx, HUMAN, &task, &format!("After runs again for batch {}, by {who}.", b.number), at)?;
-        let t = ops::get(tx, &task)?;
-        ops::place(tx, DISPATCHER, &t, INTEGRATION, at)?;
     }
+    bs::back_to_work(tx, &b, at)?;
     Ok(format!("Batch {}'s After runs again.", b.number))
 }
 

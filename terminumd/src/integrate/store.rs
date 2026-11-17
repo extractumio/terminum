@@ -92,19 +92,22 @@ fn first_in(tx: &Transaction, states: &[&str]) -> Result<Option<Batch>, String> 
     tx.query_row(&format!("{SELECT} WHERE state IN ({states}) ORDER BY id LIMIT 1"), [], of_row).optional().map_err(sql)
 }
 
-/// A failed After run again by a human (AC-191): it waits with no pause left, so it takes the tail's next turn among
-/// its project's, a new wait counted from its own first.
+/// A failed After run again by a human (AC-191): it waits with no last try (a failed After has no `step_started`), so
+/// it takes the tail's next turn among its project's, a new wait counted from its own first.
 pub fn after_again(tx: &Transaction, b: &Batch, why: &str) -> Result<(), String> {
-    tx.execute("UPDATE integration_batches SET state = ?2, why = ?3, pane = NULL, step_started = NULL, waits_since = NULL WHERE id = ?1",
+    tx.execute("UPDATE integration_batches SET state = ?2, why = ?3, waits_since = NULL WHERE id = ?1",
                rusqlite::params![b.id, AFTER_WAITS, why]).map(drop).map_err(sql)
 }
 
 /// After passed: an integration task a failed After left waiting is DONE, by Dispatcher (AC-191).
 pub fn after_passed(tx: &Transaction, b: &Batch, at: i64) -> Result<(), String> {
-    match task_of(tx, b)? {
-        Some(id) if ops::get(tx, &id)?.status != "DONE" => close_task(tx, b, &format!("After passed for batch {} when run again.", b.number), at),
-        _ => Ok(()),
+    let Some(id) = task_of(tx, b)? else { return Ok(()) };
+    let t = ops::get(tx, &id)?;
+    if t.status == "DONE" {
+        return Ok(());
     }
+    ops::comment(tx, DISPATCHER, &id, &format!("After passed for batch {} when run again.", b.number), at)?;
+    ops::place(tx, DISPATCHER, &t, "DONE", at)
 }
 
 /// The project's oldest batch in `state`, if one.
