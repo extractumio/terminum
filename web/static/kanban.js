@@ -32,7 +32,7 @@ import { integrationColumn } from "./kanbanqueuecol.js";
 import { cardKeys } from "./kanbancardkeys.js";
 import { boardColumns } from "./kanbancols.js";
 import { columnPanel } from "./kanbanpanel.js";
-import { $, COLUMNS, agentChip, api, button, guardQueuedRun, hasFiles, placeChildren, say, sessionLine, showError, signInElsewhere, statusBox, needBoxes, underParents } from "./kanbanutil.js";
+import { $, COLUMNS, agentChip, api, button, guardQueuedRun, hasFiles, placeChildren, say, sessionLine, showError, signInElsewhere, shortStamp, statusBox, timeOf, needBoxes, underParents } from "./kanbanutil.js";
 
 const signIn = signInElsewhere();                  // with no sign-in the board goes to /sessions/, whose form signs in
 document.querySelectorAll(".textkey").forEach(textKey);   // the page's own text keys; button()'s have it
@@ -181,8 +181,11 @@ function card(t, under = "") {
   c.classList.toggle("batchhead", !!t.queue?.head);
   if (t.agent) head.append(agentChip(t.agent));
   c.classList.toggle("onagent", !!t.agent);        // a folded card keeps its Run key only with an agent to run on (AC-159)
-  // RUN stays in every column; terminumd decides whether its session can take it (AC-122).
-  head.append(guardQueuedRun(iconButton("icon crun", "play", `Run ${t.id}`, "Run: choose the agent that does it", () => runThem([t])), t.waits));
+  const changed = timeOf(t.updated_at, shortStamp(t.updated_at, true), "cwhen");   // the columns' "Recently updated" (AC-105)
+  changed.title = `Changed ${changed.title}`;
+  head.append(changed);
+  // a card runs only from TODO; running again takes the human's words, in the task's window (terminum-dispatcher.md AC-122)
+  if (t.status === "TODO") head.append(guardQueuedRun(iconButton("icon crun", "play", `Run ${t.id}`, "Run: choose the agent that does it", () => runThem([t])), t.waits));
   queueKeys.onCard(c, t, head);                    // Integrate, Take out, a deciding batch's keys (terminum-integration.md AC-193)
   const foot = el("div", "cfoot"), one = filters().project.length === 1;
   const p = projectOf(t.project);

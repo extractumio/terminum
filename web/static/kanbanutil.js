@@ -78,14 +78,28 @@ export async function api(path, { method = "GET", body } = {}) {
   return m;
 }
 
-/** A date and time as the windows say them. */
-export const stamp = (at) => new Date(at * 1000).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+// made once: a format's making is the costly part, and a board says hundreds of times
+const [STAMP, HOUR, DAY, DAY_YEAR] = [{ dateStyle: "medium", timeStyle: "short" }, { hour: "2-digit", minute: "2-digit" },
+  { month: "short", day: "numeric" }, { month: "short", day: "numeric", year: "numeric" }].map((o) => new Intl.DateTimeFormat(undefined, o));
 
-/** A time as a conversation says it: today's by its hour, this year's with its day, an older one whole. */
-export function shortStamp(at) {
-  const d = new Date(at * 1000), now = new Date();
-  if (d.toDateString() === now.toDateString()) return d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
-  return d.getFullYear() === now.getFullYear() ? when(at) : stamp(at);
+/** A date and time as the windows say them. */
+export const stamp = (at) => STAMP.format(new Date(at * 1000));
+
+/** A time as a conversation says it: today's by its hour, this year's with its day, an older one whole; `day`: a
+ *  card's, an earlier day's without its hour (terminum-kanban.md AC-105). */
+export function shortStamp(at, day = false) {
+  const d = new Date(at * 1000), now = new Date(), thisYear = d.getFullYear() === now.getFullYear();
+  if (d.toDateString() === now.toDateString()) return HOUR.format(d);
+  if (day) return (thisYear ? DAY : DAY_YEAR).format(d);
+  return thisYear ? when(at) : stamp(at);
+}
+
+/** `at` said in `words`, its whole date and time on hover. */
+export function timeOf(at, words, cls = null) {
+  const t = el("time", cls, words);
+  t.title = stamp(at);
+  t.dateTime = new Date(at * 1000).toISOString();
+  return t;
 }
 
 /** "made …, changed …": when a task was made and last changed (AC-149). */
