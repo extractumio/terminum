@@ -119,6 +119,11 @@ class Turn:
             return unknown
 
 
+# held by an install in the primary checkout (land.py install_pending), by a queue's After from its first look to
+# its install's end, and by a release while it writes its mark (release_turn.py)
+INSTALL_TURN = "terminum-install.turn"
+
+
 def mark_path(cwd):
     """The file a running release holds (scripts/release_turn.py): landings and installs leave main alone."""
     return common_dir(cwd) / "terminum-release"

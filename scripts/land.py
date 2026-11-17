@@ -27,7 +27,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from check_changed import is_doc, late_notes, red, tree_id  # noqa: E402
 import heavy_slots  # noqa: E402
-from worktree import common_dir, fetched, primary_of, Refused, releasing, Turn as TreeTurn  # noqa: E402
+from worktree import common_dir, fetched, INSTALL_TURN, primary_of, Refused, releasing, Turn as TreeTurn  # noqa: E402
 
 BASE = "origin/main"
 LAND_TURN = "terminum-land.turn"
@@ -314,35 +314,46 @@ def make(primary, target):
     return subprocess.run(["make", target], cwd=primary, capture_output=True, text=True)
 
 
+def landing_holder(primary):
+    """Who holds the landing turn, by a look that leaves it free; None when nobody does."""
+    with TreeTurn(primary, LAND_TURN) as turn:
+        return None if turn.take() else turn.holder()
+
+
 def install_pending(primary, run=make, say=print):
     """After a landing, landed or not: one install for all code landed since the last, by the landing that finds
     the turn free; one that finds another landing in it leaves the install to it, which comes here after."""
-    mark = install_mark(primary)
-    if not mark.exists():
+    if not install_mark(primary).exists():
         return
-    with TreeTurn(primary, LAND_TURN) as turn:
-        if not turn.take():
-            say(f"install: left to {turn.holder()}'s landing, which has the turn")
-            return
-    if releasing(primary):
-        say("install: waits for a landing after the release: the primary checkout stays where it is")
+    if holder := landing_holder(primary):
+        say(f"install: left to {holder}'s landing, which has the turn")
         return
-    with TreeTurn(primary, "terminum-install.turn") as turn:
+    with TreeTurn(primary, INSTALL_TURN) as turn:
         turn.take(wait=True)   # a landing that ended meanwhile may install too: one after the other
-        try:
-            wanted = mark.read_text()
-        except FileNotFoundError:
-            return   # installed by that one
-        # the primary checkout is moved only in the turn (after_push), never beside another landing's merge
-        if git("merge-base", "--is-ancestor", wanted.strip(), "HEAD", cwd=primary, check=False).returncode:
-            say("install: none, the primary checkout is not on what landed: the next landing tries again")
+        if releasing(primary):   # a release starting holds this turn, and writes its mark in it
+            say("install: waits for a landing after the release: the primary checkout stays where it is")
             return
-        with heavy_slots.slot(primary, "install", say=say):   # the release build: the heaviest of all
-            installed = install_steps(primary, run, say)
-        if not installed:
-            say("install: the next landing tries again")
-        elif mark.read_text() == wanted:
-            mark.unlink()   # a later landing's mark stays for it
+        install_now(primary, run, say)
+
+
+def install_now(primary, run=make, say=print):
+    """The install of what the mark names, its caller holding the install turn: in the heavy-build slot, only when the
+    primary checkout is on it; the mark removed once installed, unless a later landing wrote its own meanwhile."""
+    mark = install_mark(primary)
+    try:
+        wanted = mark.read_text()
+    except FileNotFoundError:
+        return   # installed by another
+    # the primary checkout is moved only in the turn (after_push), never beside another landing's merge
+    if git("merge-base", "--is-ancestor", wanted.strip(), "HEAD", cwd=primary, check=False).returncode:
+        say("install: none, the primary checkout is not on what landed: the next landing tries again")
+        return
+    with heavy_slots.slot(primary, "install", say=say):   # the release build: the heaviest of all
+        installed = install_steps(primary, run, say)
+    if not installed:
+        say("install: the next landing tries again")
+    elif mark.read_text() == wanted:
+        mark.unlink()   # a later landing's mark stays for it
 
 
 def install_steps(primary, run, say):

@@ -234,13 +234,8 @@ pub(super) fn follow(store: &Store, runner: &dyn Runner, p: &Place, b: Batch, no
             // what its After's turn said stays on the batch's row
             bs::set_state(tx, b.id, "ended", b.why.as_deref(), now)
         }),
-        (_, 0) => store.with(|tx| { bs::set_pane(tx, b.id, None, now)?; bs::set_state(tx, b.id, after_after(&p.s), None, now) }),
-        (_, code) => store.with(|tx| {
-            let how = if code == OVER { format!("it ran over {} minutes", p.s.check_minutes) } else { format!("status {code}") };
-            bs::set_pane(tx, b.id, None, now)?;
-            bs::set_state(tx, b.id, bs::AFTER_FAILED, Some(&how), now)?;
-            bs::wait_for_human(tx, &b, &format!("After failed for batch {} with {how}: the batch stays published and its tasks DONE. Its log: {}", b.number, log.display()), now)
-        }),
+        // After's outcomes, its wait among them, are the tail's (AC-191)
+        (_, code) => super::tail::ended(store, p, &b, code, &log, now),
     }
 }
 
