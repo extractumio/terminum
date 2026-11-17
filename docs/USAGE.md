@@ -230,7 +230,7 @@ page says how; how the sign-in is kept is in [SECURITY.md](../SECURITY.md). `tmu
   its agent's front with `promote_queued_task {id}` (the primary task shown by `list_runs`). It keeps the same agent and conversation, and slot limits
   still apply. Repeated promotions can delay older work. Sessions waiting in INTEGRATION stay visible but stop counting toward the at-once limits; kept slots stay kept, and a returned run counts again.
   Auto-Dispatch, a switch in the board's bar (off by default), starts a
-  project's TODO tasks by itself: the Auto-Dispatch tab of the project's window (the bar's cog, with one project shown) holds the agent that picks, a default agent to run them, the
+  project's TODO tasks by itself: the Auto-Dispatch tab of the project's window (the bar's cog, with one project shown) holds the agent that picks, an agent for tasks that name none (None: such tasks are not started), the
   severities it takes (as made: P0 and P1), the minutes a task stands in TODO before it is taken (10) and the
   tasks it starts in 24 hours at most (10); the switch
   then turns it on or off in one press (with several projects shown a press turns it off for them, and turning on is

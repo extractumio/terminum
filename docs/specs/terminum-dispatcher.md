@@ -1390,8 +1390,9 @@ Scenario: AC-170 happy path — the switch and its settings
   When no agent picks for api yet, or it turned itself off, and the user presses the switch
   Then api's window opens on its Auto-Dispatch tab with On switched on, saying why it turned itself off: nothing is on until Save
   When the user opens api's window (the bar's cog, terminum-kanban.md AC-139) and its Auto-Dispatch tab
-  Then the tab holds, for the project: On; the agent that picks; the default agent; the severities it takes, a tick each; the minutes a task stands in TODO before it is taken, 0 to 1440; the tasks it starts in 24 hours at most, 1 to 1000, with how many it started in the last 24
+  Then the tab holds, for the project: On; how tasks are picked, "How tasks are picked: choose one", two choices side by side, each a radio with a line saying what it does; the agent that picks; the default agent, "Agent for tasks that name none", its empty choice "None: such tasks are not started"; the severities it takes, a tick each; the minutes a task stands in TODO before it is taken, 0 to 1440; the tasks it starts in 24 hours at most, 1 to 1000, with how many it started in the last 24
   And it says in fixed words what it takes, in what order, when it waits and when it stops; tasks start with no one pressing Run, an agent's text too
+  And fields side by side stand on one line however their labels wrap, each with its line under it; at a phone's size one column
   And a project is made off, taking P0 and P1 after 10 minutes, 10 tasks in 24 hours at most
   When On is saved with no agent that picks, or with no severity ticked
   Then it is refused: "Choose the agent that picks first: its settings.", "Tick a severity it takes first: with none it starts nothing."

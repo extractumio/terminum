@@ -178,6 +178,26 @@ input[type="checkbox"]:not([role="switch"]) { appearance: none; -webkit-appearan
   &:checked::before { content: ""; width: 9px; height: 5px; margin-top: -2px; border: solid var(--surface-0); border-width: 0 0 2px 2px; transform: rotate(-45deg); }
 }
 
+/* a radio, drawn as the tick is: one of several; chosen, the accent with a dot */
+input[type="radio"] { appearance: none; -webkit-appearance: none; flex: none; display: inline-grid; place-content: center; width: 16px; height: 16px; margin: 0; padding: 0;
+  border-radius: 50%; background: var(--field-fill); box-shadow: var(--m-well); cursor: pointer;
+  &:focus-visible { outline: 2px solid var(--ring); outline-offset: 1px; }
+  &:checked { background: var(--accent); box-shadow: var(--m-edge-ctl); }
+  &:checked::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--surface-0); }
+  &:disabled { cursor: default; opacity: var(--key-disabled); }
+}
+/* choices: a segmented control whose segments say what each does, a radio each; the chosen one a key in its track */
+.choices { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr)); gap: var(--sp-0); padding: var(--sp-0);
+  border-radius: var(--key-r); background: var(--field-fill); box-shadow: var(--m-groove); }
+.choice { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: var(--sp-1) var(--sp-2); padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--r-xs); color: var(--muted); cursor: pointer;
+  & > input { grid-row: 1; }
+  & > .choicetitle { color: var(--t-fg); }
+  & > .choicetext { grid-column: 2; font-size: var(--fs-small); }
+  &:has(input:checked) { background-color: var(--key-fill-hover); background-image: var(--m-matte); box-shadow: var(--m-edge-ctl); }
+}
+@media (hover: hover) { .choice:not(:has(input:checked)):hover { background-color: var(--surface-3); } }
+
 /* a list of choices drawn over a select's key (dropdown.js): a plate, the highlighted row, the value it had marked */
 .dropdown { position: fixed; z-index: 70; min-width: 160px; max-width: min(480px, calc(100vw - 16px)); max-height: min(360px, calc(100dvh - 16px)); overflow-y: auto; padding: var(--sp-1);
   background: var(--chrome-2); box-shadow: var(--shadow-far); border-radius: var(--r-lg); font-size: var(--fs-body); color: var(--t-fg); }

@@ -37,9 +37,9 @@ export function autoDispatcher({ getMeta, shownProjects, reload, openProject }) 
     key.title = [...stopped.map((p) => `It turned itself off for ${p.name}: ${p.auto.off_why}`), says].join(" ");
   }
 
-  /** The way of picking the tab shows: by priority and saved order no agent picks, and its words say so. */
-  const modes = [...$("automode").querySelectorAll("button")];
-  const setMode = (mode) => { box.dataset.mode = mode; for (const m of modes) m.setAttribute("aria-pressed", String(m.value === mode)); };
+  /** The way of picking the tab shows, one of two radios: by priority and saved order no agent picks, and its words say so. */
+  const modes = [...$("automode").querySelectorAll("input")];
+  const setMode = (mode) => { box.dataset.mode = mode; for (const m of modes) m.checked = m.value === mode; };
 
   /** The tab's fields as project `p` has them. */
   function fill(p) {
@@ -47,7 +47,7 @@ export function autoDispatcher({ getMeta, shownProjects, reload, openProject }) 
     const agents = agentsOf(getMeta(), p.id).map((a) => [a.id, a.name]), auto = p.auto ?? {};
     $("autoon").checked = !!auto.on;
     fillSelect($("autoagent"), [["", "Choose one"], ...agents], auto.agent ?? "");
-    fillSelect($("autodefault"), [["", "None"], ...agents], auto.default ?? "");
+    fillSelect($("autodefault"), [["", "None: such tasks are not started"], ...agents], auto.default ?? "");
     for (const t of ticks) t.checked = (auto.severities ?? []).includes(t.value);
     setMode(auto.mode ?? "agent");
     $("autowait").value = auto.wait_minutes ?? 0;
@@ -87,7 +87,7 @@ export function autoDispatcher({ getMeta, shownProjects, reload, openProject }) 
     await reload();
   }
 
-  for (const m of modes) m.addEventListener("click", () => setMode(m.value));
+  for (const m of modes) m.addEventListener("change", () => setMode(m.value));
   key.addEventListener("click", oneAtATime(key, press));
   return { draw, fill, save };
 }
