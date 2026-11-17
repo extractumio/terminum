@@ -315,15 +315,19 @@
       <p id="autotext" class="colempty">While it is on, tasks of this project start with no one pressing Run, a text an agent wrote too.</p>
       <p id="autowhy" role="status" hidden></p>
       <label class="fieldrow checkrow">On: it starts this project's tasks <input id="autoon" type="checkbox" role="switch"></label>
-      <div class="fieldrow"><span id="automodelabel">How tasks are picked</span><div id="automode" class="seg" role="group" aria-labelledby="automodelabel"><button type="button" value="agent" aria-pressed="true">An agent scores them by RICE</button><button type="button" value="order" aria-pressed="false">By priority and saved order, no agent</button></div></div>
-      <div class="fieldgrid">
-        <label id="autoagentrow" class="fieldrow">The agent that picks: it scores the tasks by RICE <select id="autoagent" class="field"></select></label>
-        <label class="fieldrow">Default agent: runs a task that names none; with None such tasks stay <select id="autodefault" class="field"></select></label>
+      <fieldset id="automode" class="choicebox"><legend>How tasks are picked: choose one</legend><div class="choices">
+        <label class="choice"><input type="radio" name="automode" value="agent" checked><span class="choicetitle">An agent scores them by RICE</span><span class="choicetext">A session of the agent that picks reads the TODO tasks and starts the best.</span></label>
+        <label class="choice"><input type="radio" name="automode" value="order"><span class="choicetitle">By priority and saved order, no agent</span><span class="choicetext">terminum itself starts them: P0 first, then the board's saved order.</span></label>
+      </div></fieldset>
+      <div class="fieldgrid aligned">
+        <label id="autoagentrow" class="fieldrow">Agent that picks <select id="autoagent" class="field"></select><span class="colempty">It scores the tasks; its session takes no slot.</span></label>
+        <label class="fieldrow">Agent for tasks that name none <select id="autodefault" class="field"></select><span class="colempty">A task runs on the agent set in its window; one that names none runs on this agent.</span></label>
       </div>
-      <fieldset id="autoseverities" class="autoticks"><legend>It takes tasks of severity</legend><label><input type="checkbox" value="P0"> P0</label><label><input type="checkbox" value="P1"> P1</label><label><input type="checkbox" value="P2"> P2</label><label><input type="checkbox" value="P3"> P3</label></fieldset>
-      <label class="fieldrow">Minutes a task stands in TODO before it is taken <input id="autowait" class="field" type="number" min="0" step="1" inputmode="numeric"></label>
-      <label class="fieldrow">Tasks it starts in 24 hours at most <input id="automost" class="field" type="number" min="1" step="1" inputmode="numeric"></label>
-      <p id="autoday" class="colempty"></p>
+      <fieldset id="autoseverities" class="autoticks"><legend>Severities it takes</legend><label><input type="checkbox" value="P0"> P0</label><label><input type="checkbox" value="P1"> P1</label><label><input type="checkbox" value="P2"> P2</label><label><input type="checkbox" value="P3"> P3</label></fieldset>
+      <div class="fieldgrid aligned">
+        <label class="fieldrow">Wait in TODO before it is taken, minutes <input id="autowait" class="field" type="number" min="0" max="1440" step="1" inputmode="numeric"><span class="colempty">0 to 1440.</span></label>
+        <label class="fieldrow">Most tasks it starts in 24 hours <input id="automost" class="field" type="number" min="1" max="1000" step="1" inputmode="numeric"><span id="autoday" class="colempty"></span></label>
+      </div>
       <dl id="autorules">
         <dt>What it takes</dt><dd>TODO tasks of the severities ticked that nobody runs, made, moved or edited no later than the wait ago: one still being written is left; a comment does not start the wait anew. A task it started once it starts again only after you move or edit it. A task with subtasks still to do waits for them.</dd>
         <dt>In what order</dt><dd class="byorder">P0 first, then saved task order, each task while its agent has a free slot. The columns' display sort does not change which task starts. No agent reads the tasks: one whose text does not say what to do starts all the same. A task runs on the agent named in its window, else on the default one.</dd><dd class="byagent">P0 first, then saved task order, independent of the columns' display sort. A round, one more session of the picking agent that takes no slot, is given the first few tasks for each free slot; it reads them, scores them by RICE (reach, impact, confidence, effort) and starts the best; one round at a time over all projects, the project that waited longest first. What it leaves with a slot still free is passed over for a day, unless you move or edit it, and the next round gets the tasks below; after a round that started nothing it rests half an hour, unless a task is made or changed. A task runs on the agent named in its window, else on the default one.</dd>
