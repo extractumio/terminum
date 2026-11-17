@@ -274,10 +274,10 @@ class ReleaseTest(unittest.TestCase):
                 mock.patch.object(release, "check_unpublished", return_value=False), mock.patch.object(release, "release_notes", return_value="# Changes\n"), \
                 mock.patch.object(release, "run", return_value=""), mock.patch.object(release.package, "main"), mock.patch.object(release, "sign"), \
                 mock.patch.object(release, "check_unmoved"), mock.patch.object(release, "publish", return_value="url") as publish:
-            release.main("v1.0.0", "abc", "the Mac test runner's checks did not run: x", retried=["page webBoardPanel", "live live"])
+            release.main("v1.0.0", "abc", "the Mac test runner's checks did not run: x", retried=["page webBoardPanel", "live"])
         notes = publish.call_args.args[2]
         self.assertIn("**Not verified:** the Mac test runner's checks did not run: x", notes)
-        self.assertIn("**Passed only on retry, the first run red:** page webBoardPanel, live live", notes)
+        self.assertIn("**Passed only on retry, the first run red:** page webBoardPanel, live", notes)
 
     def test_a_commit_the_checks_did_not_see_is_refused(self):  # AC-104
         self.assertIn("HEAD moved since the full checks", self.refused(release.check_gate, "bbbb", "aaaa"))

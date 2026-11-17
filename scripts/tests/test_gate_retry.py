@@ -92,7 +92,7 @@ class Deciding(Repo, unittest.TestCase):
 
     def test_no_retry_for_a_check_retried_in_3_of_the_last_7_runs(self):  # AC-201
         for _ in range(3):
-            gate_record.append(self.repo, {"kind": "gate", "steps": {"e2e_core": {"retried": ["e2e_core e2e_core"]}}})
+            gate_record.append(self.repo, {"kind": "gate", "steps": {"e2e_core": {"retried": ["e2e_core"]}}})
         command, _, entry = self.decide("e2e_core", "FAIL AC-14 x")
         self.assertIsNone(command)
         self.assertIn("retried in 3 of the last 7 runs", entry["cause"])
@@ -120,6 +120,11 @@ class Deciding(Repo, unittest.TestCase):
         self.assertIn('"Bug: flaky in the full run: page webBoardPanel" (P2)', words)
         self.assertIn("the first run's line", words)
         self.assertIn("PASSED ONLY ON RETRY, the first run red: page webBoardPanel", words)
+
+    def test_a_step_retried_whole_is_named_once(self):  # AC-201
+        self.retry.passed_on_retry("live", gate_retry.red_checks("live", ["FAIL x"]), log(self.root, "x"))
+        self.assertEqual([name for name, _ in self.retry.passed], ["live"])
+        self.assertIn('"Bug: flaky in the full run: live" (P2)', self.retry.passed[0][1])
 
 
 if __name__ == "__main__":

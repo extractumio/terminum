@@ -146,7 +146,7 @@ def run_steps(root, ident, todo, env, retry):
         code, seconds = attempt(root, log, command, env)
         entry["seconds"] += seconds
         if code == 0:
-            entry.update(result="pass", retried=[f"{name} {c}" for c in checks])
+            entry.update(result="pass", retried=[gate_retry.named(name, c) for c in checks])
             entry.pop("cause", None)
             retry.passed_on_retry(name, checks, first)
         said(name, entry, log)
