@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use serde_json::json;
 
 use super::*;
-use crate::integrate::engine::tests::{batch, go, on_origin, queued, sh, status, world, Sh, World};
+use crate::integrate::engine::tests::{batch, go, on_origin, queued, round_row, sh, status, world, Sh, World};
 use crate::tasks::integration::Settings;
 use crate::tasks::ops::INTEGRATION;
 use crate::tasks::store::HUMAN;
@@ -137,6 +137,22 @@ fn ac194_several_go_back_before_one_recheck_and_the_rest_is_built_anew() {
     let again = batch(&w);
     assert_eq!((again.round, again.tasks.len(), status(&w, &c)), (2, 1, INTEGRATION.to_string()), "one more round, not one a task");
     assert!(call(&w, recheck, json!({})).unwrap_err().contains("nothing to decide now"), "a batch under check is not the agent's");
+}
+
+#[test]
+fn ac194_ac190_a_red_round_built_anew_keeps_its_result_words_and_end() {
+    let (w, a, _, _) = red_with_agent("ia-kept", "exit 3", 3);
+    let red = round_row(&w, 1);
+    assert_eq!(red.0, "red");
+    assert!(red.1.as_deref().unwrap().starts_with("The check ended with status 3."), "{red:?}");
+    pressed(&w);
+    call(&w, give_back, json!({"task": a, "analysis": ANALYSED})).unwrap();
+    call(&w, recheck, json!({})).unwrap();
+    // the engine builds it anew long after the red check ended: the agent's analysis is no check time
+    super::super::engine::step(&w.s, &Sh::default(), &w.root.join("home"), 5000).unwrap();
+    assert_eq!(batch(&w).round, 2, "built anew");
+    assert_eq!(round_row(&w, 1), red, "not rewritten moved: the target never moved");
+    assert_eq!(round_row(&w, 2).0, "built");
 }
 
 #[test]

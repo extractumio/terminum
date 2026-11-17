@@ -285,6 +285,19 @@ pub fn round_ends(tx: &Transaction, b: &Batch, result: &str, why: Option<&str>, 
                rusqlite::params![b.id, b.round, result, why, at, b.step_started]).map(drop).map_err(sql)
 }
 
+/// The round left by the target's move or a task leaving, written "moved"; a red round (its check red, over its
+/// time or not started) keeps its result, words and end time, so the batch's checked time holds no analysis (AC-190).
+pub fn round_moved(tx: &Transaction, b: &Batch, why: &str, at: i64) -> Result<(), String> {
+    if round_result(tx, b)?.as_deref() == Some(RED) {
+        return Ok(());
+    }
+    round_ends(tx, b, "moved", Some(why), at)
+}
+
+fn round_result(tx: &Transaction, b: &Batch) -> Result<Option<String>, String> {
+    tx.query_row("SELECT result FROM integration_rounds WHERE batch = ?1 AND round = ?2", (b.id, b.round), |r| r.get(0)).optional().map_err(sql)
+}
+
 /// The batch's integration task's ID, while it has one.
 pub fn task_of(tx: &Transaction, b: &Batch) -> Result<Option<String>, String> {
     b.task.as_deref().map(|k| slug(tx, k)).transpose()
