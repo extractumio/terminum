@@ -19,11 +19,11 @@ export function columnSort(projects, changed) {
     mode,
     draw,
     keys(column) {
-      const box = el("span", "colsort");
+      const box = el("span", "colsort seg");        // one of two: a segmented control, the chosen mode its key
       box.setAttribute("role", "group");
       box.setAttribute("aria-label", `Sort ${column}`);
       for (const [value, icon, label] of MODES) {
-        const b = iconButton("icon", icon, label, label, () => {
+        const b = iconButton("", icon, label, label, () => {
           if (mode(column) === value) return;
           const saved = Object.fromEntries([...controls.keys()].map((c) => [c, mode(c)]));
           const next = { ...saved, [column]: value };

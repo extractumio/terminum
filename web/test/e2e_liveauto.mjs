@@ -54,6 +54,12 @@ export async function liveAuto(page, live) {
   await page.fill("#autowait", "0");
   const fits = await page.evaluate(() => { const d = document.querySelector("#projectbox"); return d.scrollWidth <= d.clientWidth + 1 && d.getBoundingClientRect().right <= innerWidth; });
   check("AC-170 its window fits the page, no sideways scroll", fits);
+  const tops = await page.evaluate(() => ["#autoagent", "#autodefault", "#autowait", "#automost"].map((q) => Math.round(document.querySelector(q).getBoundingClientRect().top)));
+  check("AC-170 fields side by side stand on one line, however their labels wrap", tops[0] === tops[1] && tops[2] === tops[3], tops.join());
+  check("AC-170 the default agent says which tasks it runs, and what None means", /Agent for tasks that name none/.test(await page.locator("#autodefault").locator("xpath=..").textContent())
+    && (await page.$eval("#autodefault option", (o) => o.textContent)) === "None: Auto-Dispatch leaves them to you");
+  check("AC-170 how tasks are picked is a choice of two, each saying what it does", (await page.$$eval("#automode .choice", (l) => l.map((c) => c.querySelector("input[type=radio]") && c.querySelector(".choicetext")?.textContent.length > 20))).join() === "true,true"
+    && /choose one/.test(await page.textContent("#automode legend")));
   await shot("auto-window");
   await page.selectOption("#autoagent", picker);
   await page.selectOption("#autodefault", runner);
@@ -120,8 +126,8 @@ export async function liveAuto(page, live) {
   check("AC-170 the bar's cog opens the shown project's window on General", await page.textContent("#projecthead") === "Autos" && await page.getAttribute("#projecttabgeneral", "aria-selected") === "true" && await page.isVisible("#projectname"));
   await page.click("#projecttabauto");
   await page.waitForSelector("#projectbox[open] #autopanel:not([hidden])");
-  check("AC-170 its window offers the two ways of picking, an agent's first", (await page.$$eval("#automode button", (l) => l.map((b) => `${b.value}:${b.getAttribute("aria-pressed")}`))).join() === "agent:true,order:false" && await page.locator("#autoagentrow").isVisible());
-  await page.click('#automode button[value="order"]');
+  check("AC-170 its window offers the two ways of picking, an agent's first", (await page.$$eval("#automode input[type=radio]", (l) => l.map((b) => `${b.value}:${b.checked}`))).join() === "agent:true,order:false" && await page.locator("#autoagentrow").isVisible());
+  await page.click('#automode .choice:has(input[value="order"]) .choicetitle');   // the whole choice takes the press, not only its radio
   check("AC-170 by priority and saved order no agent is chosen, and its words say what that means", await page.locator("#autoagentrow").isHidden() && await page.locator("#autorules .byorder").isVisible() && await page.locator("#autorules .byagent").isHidden()
     && /No agent reads the tasks/.test(await page.textContent("#autorules .byorder")));
   await shot("auto-order");
@@ -202,6 +208,8 @@ export async function liveAuto(page, live) {
   await page.click("#projecttabauto");
   await page.waitForSelector("#projectbox[open] #autopanel:not([hidden])");
   const fitsPhone = await page.evaluate(() => { const d = document.querySelector("#projectbox"), r = d.getBoundingClientRect(); return { wide: d.scrollWidth <= d.clientWidth + 1, left: r.left, right: r.right, bottom: r.bottom, w: innerWidth, h: innerHeight }; });
+  const stacked = await page.evaluate(() => ["#autowait", "#automost"].map((q) => document.querySelector(q).getBoundingClientRect().top));
+  check("AC-170 at a phone's size its fields stand in one column", stacked[0] < stacked[1], stacked.join());
   check("AC-170 at a phone's size its window fits", fitsPhone.wide && fitsPhone.left >= 0 && fitsPhone.right <= fitsPhone.w && fitsPhone.bottom <= fitsPhone.h + 1, JSON.stringify(fitsPhone));
   await shot("auto-phone");
   await page.click("#projectbox .dhead .x");   // a phone's window: × is its Cancel (terminum.md AC-173)

@@ -15,7 +15,7 @@ const counts = { TODO: 1, "IN PROGRESS": 0, "WAIT FOR HUMAN": 0, FAILED: 0, DONE
 const sizes = (page, roots) => page.evaluate((roots) => {
   const out = {};
   for (const root of document.querySelectorAll(roots)) for (const e of [root, ...root.querySelectorAll("*")]) {
-    if (!e.getClientRects().length || e.closest(".count, .tabn, .csev, .cid, kbd, h2, .card, [type=checkbox]")) continue;
+    if (!e.getClientRects().length || e.closest(".count, .tabn, .csev, .cid, kbd, h2, .card, [type=checkbox], [type=radio]")) continue;
     const words = [...e.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim()) || ["INPUT", "SELECT", "TEXTAREA"].includes(e.tagName);
     if (words) (out[getComputedStyle(e).fontSize] ??= []).push(e.id || e.className || e.tagName);
   }

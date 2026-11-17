@@ -5,7 +5,7 @@
 // `node web/test/e2e_live.mjs main chromium`.
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { boardKit, cardInSight, pressRun } from "./boardkit.mjs";
+import { boardKit, cardInSight, dropCard, pressRun } from "./boardkit.mjs";
 import { check, until } from "./check.mjs";
 
 const FAKE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../scripts/fake_agent.py");
@@ -23,8 +23,10 @@ export async function liveMain(page, live) {
   await open(`?project=${project}`);
   await cardInSight(page, main);
 
-  const run = async (words) => {
-    await pressRun(page, main);
+  // the first run by its card's Run key; again, FAILED, it has none (terminum-dispatcher.md AC-122): dropped on its agent
+  const run = async (words, again = false) => {
+    if (again) await dropCard(page, card(main), `#agentbar .agentcard[data-agent="${agent}"]`);
+    else await pressRun(page, main);
     await page.waitForSelector("#runbox[open]");
     const [head, prompt, whole] = [await page.textContent("#runhead"), await page.textContent("#runprompt"), await page.evaluate(() => document.querySelector("#runwhat").open)];
     if (await page.isVisible("#runagent")) await page.selectOption("#runagent", agent);   // going on, its agent is its run's
@@ -44,10 +46,10 @@ export async function liveMain(page, live) {
   check("AC-185 the agent's reason stands on the failed subtask", (await task(b)).history.some((e) => /It cannot be done/.test(e.text ?? "")));
 
   await cardInSight(page, main);                   // its column in sight: the panel shows one at a time (terminum-kanban.md AC-105)
-  await page.waitForSelector(`${card(main)} .crun`);
+  check("AC-122 a FAILED card has no Run key", await page.waitForSelector(card(main)) && !(await page.$(`${card(main)} .crun`)));
   const offer = await j(`/api/tasks/${main}/run?agent=${agent}`);
   check("AC-185 run again on the same agent, its run's tasks go on in its conversation", offer.first === false && JSON.stringify(offer.ids) === JSON.stringify([main, b]), JSON.stringify({ first: offer.first, ids: offer.ids }));
-  const again = await run("FINISHES");
+  const again = await run("FINISHES", true);
   check("AC-185 run again, the main task takes what is not DONE", again.head === `Run ${main}, ${b} again`, again.head);
   check("AC-185 and all are DONE, the same conversation gone on", await has(b, "DONE") && await has(main, "DONE") && (await runs(main)).length === 1 && (await runs(a)).length === 1, JSON.stringify(await runs(main)));
   const said = async (id) => (await task(id)).history.filter((e) => e.kind === "comment" && e.text === "FINISHES").length;
