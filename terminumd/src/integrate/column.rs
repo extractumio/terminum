@@ -43,6 +43,7 @@ pub fn state_words(tx: &Transaction, b: &Batch) -> Result<String, String> {
         "checking" if b.round > 1 => format!("checking again{round}"),
         "checking" => "checking".into(),
         "green" | "publishing" => "publishing".into(),
+        bs::PUBLISHED => "published: After waits for its turn".into(),
         "after" => "After runs".into(),
         "cleanup" => "Cleanup runs".into(),
         "red" => {
@@ -180,8 +181,11 @@ fn batches_of(tx: &Transaction, project: &str, before: Option<i64>) -> Result<Va
     for b in &page {
         let checked: Option<i64> = tx.query_row("SELECT sum(ended - started) FROM integration_rounds WHERE batch = ?1 AND ended IS NOT NULL AND started IS NOT NULL", [b.id], |r| r.get(0)).map_err(sql)?;
         let result = match b.state.as_str() {
-            "ended" if b.round > 1 => format!("green in round {}", b.round),
-            "ended" => "green".into(),
+            "ended" => {
+                let green = if b.round > 1 { format!("green in round {}", b.round) } else { "green".into() };
+                // what its After's turn said, or the human's words closing it (AC-191)
+                b.why.as_deref().map_or(green.clone(), |w| format!("{green}; {w}"))
+            }
             "given up" => format!("nothing published: {}", b.why.as_deref().unwrap_or_default()),
             other => other.to_string(),
         };
