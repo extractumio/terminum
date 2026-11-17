@@ -47,7 +47,7 @@ export function autoDispatcher({ getMeta, shownProjects, reload, openProject }) 
     const agents = agentsOf(getMeta(), p.id).map((a) => [a.id, a.name]), auto = p.auto ?? {};
     $("autoon").checked = !!auto.on;
     fillSelect($("autoagent"), [["", "Choose one"], ...agents], auto.agent ?? "");
-    fillSelect($("autodefault"), [["", "None: such tasks are not started"], ...agents], auto.default ?? "");
+    fillSelect($("autodefault"), [["", "None: Auto-Dispatch leaves them to you"], ...agents], auto.default ?? "");
     for (const t of ticks) t.checked = (auto.severities ?? []).includes(t.value);
     setMode(auto.mode ?? "agent");
     $("autowait").value = auto.wait_minutes ?? 0;

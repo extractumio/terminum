@@ -157,7 +157,6 @@ body.board-page { margin: 0; overflow: hidden; background: var(--surface-0); col
 #autoswitch.stopped #autostate { color: var(--danger-text); }
 .autoticks { display: flex; flex-wrap: wrap; gap: var(--sp-2) var(--sp-4); min-width: 0; margin: 0; padding: 0; border: 0; }
 #autopanel .checkrow { align-self: start; }
-#autopanel { gap: var(--sp-3); }   /* its groups apart: the switch, how it picks, its agents, what it takes */
 /* fields side by side, each a label, its field and a line under it: the fields stand on one line however the labels wrap */
 .fieldgrid.aligned { grid-template-columns: repeat(auto-fill, minmax(min(240px, 100%), 1fr)); row-gap: var(--sp-3); }   /* a lone field keeps its column; a phone: one column */
 .fieldgrid.aligned > .fieldrow { display: grid; grid-template-rows: subgrid; grid-row: span 3; row-gap: var(--sp-1); align-content: start; }

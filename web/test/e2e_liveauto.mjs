@@ -57,7 +57,7 @@ export async function liveAuto(page, live) {
   const tops = await page.evaluate(() => ["#autoagent", "#autodefault", "#autowait", "#automost"].map((q) => Math.round(document.querySelector(q).getBoundingClientRect().top)));
   check("AC-170 fields side by side stand on one line, however their labels wrap", tops[0] === tops[1] && tops[2] === tops[3], tops.join());
   check("AC-170 the default agent says which tasks it runs, and what None means", /Agent for tasks that name none/.test(await page.locator("#autodefault").locator("xpath=..").textContent())
-    && (await page.$eval("#autodefault option", (o) => o.textContent)) === "None: such tasks are not started");
+    && (await page.$eval("#autodefault option", (o) => o.textContent)) === "None: Auto-Dispatch leaves them to you");
   check("AC-170 how tasks are picked is a choice of two, each saying what it does", (await page.$$eval("#automode .choice", (l) => l.map((c) => c.querySelector("input[type=radio]") && c.querySelector(".choicetext")?.textContent.length > 20))).join() === "true,true"
     && /choose one/.test(await page.textContent("#automode legend")));
   await shot("auto-window");
@@ -208,6 +208,8 @@ export async function liveAuto(page, live) {
   await page.click("#projecttabauto");
   await page.waitForSelector("#projectbox[open] #autopanel:not([hidden])");
   const fitsPhone = await page.evaluate(() => { const d = document.querySelector("#projectbox"), r = d.getBoundingClientRect(); return { wide: d.scrollWidth <= d.clientWidth + 1, left: r.left, right: r.right, bottom: r.bottom, w: innerWidth, h: innerHeight }; });
+  const stacked = await page.evaluate(() => ["#autowait", "#automost"].map((q) => document.querySelector(q).getBoundingClientRect().top));
+  check("AC-170 at a phone's size its fields stand in one column", stacked[0] < stacked[1], stacked.join());
   check("AC-170 at a phone's size its window fits", fitsPhone.wide && fitsPhone.left >= 0 && fitsPhone.right <= fitsPhone.w && fitsPhone.bottom <= fitsPhone.h + 1, JSON.stringify(fitsPhone));
   await shot("auto-phone");
   await page.click("#projectbox .dhead .x");   // a phone's window: × is its Cancel (terminum.md AC-173)
