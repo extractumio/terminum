@@ -297,8 +297,8 @@ def main():
         check("AC-14 the server is started again with a session main", seen["main"])
         h = t.health()
         check("AC-08 status names the build, port and tmux", h["port"] == PORT and h["tmux"]["ok"] and h["build"], {k: h[k] for k in ("build", "port", "pages")})
-        running = tmux("display-message", "-p", "#{version}").strip()
-        check("AC-08 status names the running tmux server's version (the install's line on one before 3.8)", h["tmux"].get("version") == running, (h["tmux"].get("version"), running))
+        running, said = tmux("display-message", "-p", "#{version}").strip(), h["tmux"].get("version")
+        check("AC-08 /health names the running tmux server's version (the install's line on one before 3.8)", said == running, (said, running))
 
         # AC-93: a mark set just before a stop is on disk after it (the stop writes unread.json)
         mark = first["id"].rsplit(":", 1)[0] + ":" + tmux("list-panes", "-a", "-F", "#{pane_id}").split()[-1]

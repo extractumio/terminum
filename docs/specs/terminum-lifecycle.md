@@ -135,7 +135,7 @@ Scenario: AC-08 happy path — tmux missing
   Then the install goes through and prints "tmux is needed for terminals: brew install tmux" ("sudo apt install tmux" on Linux), and the page says the same until tmux appears (terminum.md AC-01)
 Scenario: AC-08 edge — a tmux server before 3.8
   Given terminum's running tmux server (`#{version}`, which `terminum status`'s `/health` names; a newer binary on PATH changes it only after a restart) is older than 3.8, which can crash and end every terminal in it (terminum.md DEP-02)
-  Then the install goes through and says last "tmux <version> runs terminum's terminals and can crash, ending every one of them (fixed in tmux 3.8): brew upgrade tmux, then restart it once at a quiet moment: tmux -L terminum kill-server (sessions, windows, splits, folders and projects come back; running programs do not)" ("upgrade tmux with your system's package manager" on Linux)
+  Then the install goes through and says last "tmux <version> runs terminum's terminals and can crash, ending every one of them (fixed in tmux 3.8): brew upgrade tmux, then restart it once at a quiet moment: tmux -L terminum kill-server (sessions, windows, splits, folders and projects come back; running programs do not)" ("upgrade tmux with your system's package manager" on Linux), and "terminum status" says the same line after "tmux:"
   And a server from 3.8, a version that is no number ("master", "next-3.9"), or none running says nothing; the install never refuses
 Scenario: AC-08 happy path — status
   When the user runs "terminum status"
@@ -1354,7 +1354,7 @@ All cases are shipped; nothing is staged.
 
 ## 11. Checklist with Definition of Done
 
-- [x] AC-08 — `scripts/e2e_install.sh`; `scripts/e2e_core.py`; `cargo test cli::tests` (`install_tests`, `launch_tests`, `systemd_tests`, `folders_tests`, `upgrade_tests`); `cargo test folders`; `scripts/tests/test_package.py`; `terminumd/tests/launchd.rs` (opt-in, `TM_LAUNCHD_TEST=1`)
+- [x] AC-08 — `scripts/e2e_install.sh`; `scripts/e2e_core.py`; `cargo test cli::tests` (`install_tests`, `cmd_tests`, `launch_tests`, `systemd_tests`, `folders_tests`, `upgrade_tests`); `cargo test folders`; `cargo test tmux::version`; `scripts/tests/test_package.py`; `terminumd/tests/launchd.rs` (opt-in, `TM_LAUNCHD_TEST=1`)
 - [x] AC-14 — `scripts/e2e_core.py`; `web/test/e2e_live.mjs`; `terminumd/tests/launchd.rs` (opt-in); `cargo test tmux::control`
 - [x] AC-15 — `scripts/e2e_restore.py` (Restore again on the user's own tmux, twice at once); `cargo test restore` (a failed restore retried on another link); `web/test/e2e_tmux.mjs`
 - [x] AC-16 — `scripts/e2e_install.sh`; `ui/test/e2e_panel.mjs` (a Files panel's held reload); `cargo test cli::tests` (`install_tests`, `upgrade_tests`, `refresh_tests`, `import_tests`)

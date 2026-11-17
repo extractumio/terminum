@@ -276,27 +276,16 @@ pub fn install(ctx: &Ctx, pkg: &Path) -> Result<(), String> {
     if !tmux_found(ctx) {
         ctx.say(TMUX_HINT);
     }
-    if let Some(line) = launch::health(ctx).and_then(|h| h["tmux"]["version"].as_str().and_then(old_tmux_line)) {
+    // read anew: the server's version is known once terminumd's control client is attached
+    if let Some(line) = launch::health(ctx).as_ref().and_then(old_tmux) {
         ctx.say(line);
     }
     Ok(())
 }
 
-/// The first tmux whose server outlives a session ended while a window change is queued for a
-/// control client (tmux commit 035447b0); older ones crash and end every terminal in them.
-const FIXED_TMUX: (u32, u32) = (3, 8);
-
-/// What the install says about the running tmux server's `version`: None from 3.8, for an
-/// unreadable one ("master"), and for a development build ("next-3.9").
-pub fn old_tmux_line(version: &str) -> Option<String> {
-    let (major, rest) = version.split_once('.')?;
-    let minor: String = rest.chars().take_while(char::is_ascii_digit).collect();
-    if (major.parse().ok()?, minor.parse().ok()?) >= FIXED_TMUX {
-        return None;
-    }
-    let upgrade = if cfg!(target_os = "macos") { "brew upgrade tmux" } else { "upgrade tmux with your system's package manager" };
-    Some(format!("tmux {version} runs terminum's terminals and can crash, ending every one of them (fixed in tmux 3.8): \
-                  {upgrade}, then {}", super::folders::RESTART))
+/// What the install and `terminum status` say of `/health`'s running tmux server (AC-08).
+pub fn old_tmux(health: &serde_json::Value) -> Option<String> {
+    health["tmux"]["version"].as_str().and_then(crate::tmux::version::old_line)
 }
 
 /// Is the command reachable already: on this shell's PATH, or set up in a startup file (a

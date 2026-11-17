@@ -145,6 +145,9 @@ pub fn status_lines(h: &Value) -> Vec<String> {
     if servers.is_empty() && tmux_ok {
         out.push("tmux:       no server yet (a new session starts one)".into());
     }
+    if let Some(line) = super::install::old_tmux(h) {
+        out.push(format!("tmux:       {line}"));
+    }
     for x in h["hosts"].as_array().into_iter().flatten() {
         let files = x["files"].as_str().filter(|f| !f.is_empty()).map(|f| format!(", files {f}")).unwrap_or_default();
         let why = x["why"].as_str().filter(|w| !w.is_empty()).map(|w| format!(" — {w}")).unwrap_or_default();
