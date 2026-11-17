@@ -234,7 +234,7 @@ pub(super) fn follow(store: &Store, runner: &dyn Runner, p: &Place, b: Batch, no
             // what its After's turn said stays on the batch's row
             bs::set_state(tx, b.id, "ended", b.why.as_deref(), now)
         }),
-        (_, 0) => store.with(|tx| { bs::set_pane(tx, b.id, None, now)?; bs::set_state(tx, b.id, after_after(&p.s), None, now) }),
+        (_, 0) => store.with(|tx| { bs::set_pane(tx, b.id, None, now)?; bs::set_state(tx, b.id, after_after(&p.s), None, now)?; bs::after_passed(tx, &b, now) }),
         // it cannot run now: it waits and runs again by itself (AC-191)
         (_, super::tail::LATER) => super::tail::waits(store, p, &b, &log, now),
         (_, code) => {

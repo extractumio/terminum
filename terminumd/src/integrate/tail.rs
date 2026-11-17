@@ -92,8 +92,8 @@ pub(super) fn failed(store: &Store, p: &Place, b: &bs::Batch, head: &str, how: &
     let (why, said) = if rows.is_empty() { (how.to_string(), String::new()) } else { (format!("{how}: {rows}"), format!(": {rows}")) };
     let name = &p.name;
     let words = format!("{head}{said}. The batch stays published and its tasks DONE. Held until this task ends: {name}'s next batches are not built, \
-                         and the After of every batch published after it waits. Mend the cause, do After's work by hand where it is needed, then press \
-                         Close… on this task: {name}'s batches and later Afters go on. Its log: {}", log.display());
+                         and the After of every batch published after it waits. Mend the cause, then press After again to run After once more, or do \
+                         its work by hand and press Close…: {name}'s batches and later Afters go on. Its log: {}", log.display());
     store.with(|tx| {
         bs::set_pane(tx, b.id, None, now)?;
         bs::set_state(tx, b.id, bs::AFTER_FAILED, Some(&why), now)?;

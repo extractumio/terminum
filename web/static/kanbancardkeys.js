@@ -11,7 +11,7 @@ import { dropLit } from "./droplit.js";
 import { menuBox } from "./menubox.js";
 
 const QUEUE = { integrate: "Integrate", "take-out": "Take out" };
-const MARKS = { integrate: "arrow-right-left", "take-out": "undo-2", return: "undo-2", "return-all": "undo-2", "check-again": "history", "publish-again": "history", close: "x" };
+const MARKS = { integrate: "arrow-right-left", "take-out": "undo-2", return: "undo-2", "return-all": "undo-2", "check-again": "history", "publish-again": "history", "after-again": "history", close: "x" };
 /** What a drop on each column presses, by the key a card must hold. */
 const DROPS = { INTEGRATION: "integrate", "IN PROGRESS": "take-out" };
 const keysOf = (t) => t.queue?.keys ?? [];
