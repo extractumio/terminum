@@ -281,6 +281,7 @@ Scenario: AC-190 happy path — red
   When the line ends with another status
   Then nothing is published, the round is written red with its status, its time and its log, and the batch's integration task gets its agent (AC-194)
   And the batch's tasks stay in INTEGRATION, and tasks queued meanwhile wait until the batch ends
+  And when its agent or a human decides and the batch is built anew, the red round keeps its result, its words and its end time: "moved" is written only on a round not red when the target moves or a task leaves, and the batch's checked time holds no time of the analysis
 
 Scenario: AC-190 happy path — only a green candidate
   Then what is published is the very commit a check ended green on: a candidate built again, without a returned task, with a fix, or on a moved target, is checked again first, however long a check takes

@@ -117,6 +117,12 @@ pub(crate) fn status(w: &World, id: &str) -> String {
     w.s.with(|tx| Ok(ops::get(tx, id)?.status)).unwrap()
 }
 
+/// Round `n` of the newest batch as its row says: result, why, ended.
+pub(crate) fn round_row(w: &World, n: i64) -> (String, Option<String>, Option<i64>) {
+    let id = batch(w).id;
+    w.s.with(|tx| tx.query_row("SELECT result, why, ended FROM integration_rounds WHERE batch = ?1 AND round = ?2", (id, n), |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).map_err(sql)).unwrap()
+}
+
 pub(crate) fn batch(w: &World) -> Batch {
     w.s.with(|tx| tx.query_row("SELECT id FROM integration_batches ORDER BY id DESC LIMIT 1", [], |r| r.get::<_, i64>(0)).map_err(sql).and_then(|id| bs::by_id(tx, id))).unwrap()
 }
@@ -204,6 +210,9 @@ fn ac191_the_target_moved_builds_it_anew_and_checks_again() {
     go(&w, &r, 1);
     let bt = batch(&w);
     assert_eq!((bt.state.as_str(), bt.round), ("checking", 2), "built anew on the moved target, checked again");
+    let (result, why, _) = round_row(&w, 1);
+    assert_eq!(result, "moved", "a round not red is written moved");
+    assert!(why.unwrap().starts_with("origin/main moved to "));
     go(&w, &r, 3);
     assert_eq!(status(&w, &a), "DONE");
     assert_eq!(on_origin(&w), "a.txt\nb.txt\nz.txt");
