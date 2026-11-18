@@ -45,7 +45,7 @@ export TM_BUILD_DATE := $(shell date +%Y-%m-%d)
 # which terminumd sources: an agent on a remote host works with this terminumd when the ids match
 export TM_AGENT_ID := $(shell python3 scripts/agents.py id)
 
-.PHONY: all build ui terminumd test check test-mac primary-checkout install install-stage installed hooks upgrade rollback uninstall package agents toolchain land leftovers release rehearse release-here rehearse-here signing-key $(addprefix land-,$(LAND_STAGES))
+.PHONY: all build ui terminumd test check test-mac primary-checkout install install-fresh install-stage installed hooks upgrade rollback uninstall package agents toolchain land leftovers release rehearse release-here rehearse-here signing-key $(addprefix land-,$(LAND_STAGES))
 
 # this machine's platform (a Mac's own architecture, right under Rosetta too; or Linux's), the
 # package's terminumd for it
@@ -89,8 +89,12 @@ primary-checkout:
 	echo "make install: refused in a worktree ($$(git rev-parse --show-toplevel)): the machine has one install;"; \
 	echo "  here make build and the checks; after the merge, make install from the primary checkout"; exit 2; fi
 
+# one install at a time, in the install turn landings and the queue's After hold too (scripts/install_turn.py);
 # freshen first and the rest in a make of its own: this one's TM_BUILD was read before main moved
 install: primary-checkout
+	python3 scripts/install_turn.py $(MAKE) --no-print-directory install-fresh
+
+install-fresh: primary-checkout
 	python3 scripts/worktree_fresh.py freshen
 	$(MAKE) --no-print-directory install-stage
 
