@@ -27,12 +27,22 @@ COUNTS = ("tests", "failures", "errors", "skipped", "expected_failures", "unexpe
 MAX_JOBS = 3
 
 
+def raised(trace):
+    """A traceback's exception line: the first one not indented in its last "Traceback" block (a chained one's own)."""
+    lines = trace.strip().splitlines()
+    start = max((i for i, line in enumerate(lines) if line.startswith("Traceback")), default=0)
+    return next((line for line in lines[start + 1:] if line and not line.startswith(" ")), lines[-1])
+
+
 def worker(start, name, reports):
     suite = unittest.defaultTestLoader.discover(str(start), pattern=name)
     result = unittest.TextTestRunner(verbosity=1).run(suite)
     summary = dict(zip(COUNTS, (result.testsRun, len(result.failures), len(result.errors),
                                len(result.skipped), len(result.expectedFailures), len(result.unexpectedSuccesses))))
     summary["successful"] = result.wasSuccessful() and result.testsRun > 0
+    # each red test by name and its exception's line: the log's tail alone can miss one (TERM-522)
+    summary["red"] = [f"{kind} {test.id()}: {raised(trace)}"
+                      for kind, items in (("ERROR", result.errors), ("FAIL", result.failures)) for test, trace in items]
     (reports / f"{name}.json").write_text(json.dumps(summary) + "\n")
     return 0 if summary["successful"] else 1
 
@@ -66,10 +76,12 @@ def pool(start, reports, jobs):
                 elapsed = time.monotonic() - began_module
                 completed.append((elapsed, name))
                 del active[name]
+                red = []
                 try:
                     summary = json.loads((reports / f"{name}.json").read_text())
                     counts = {key: summary[key] for key in COUNTS}
                     valid = all(type(value) is int and value >= 0 for value in counts.values())
+                    red = summary["red"]
                     passed = valid and counts["tests"] > 0 and summary["successful"] is True and code == 0
                     if valid:
                         for key, value in counts.items():
@@ -80,7 +92,7 @@ def pool(start, reports, jobs):
                 print(f"{'ok  ' if passed else 'FAIL'} {name}: {counts['tests']} tests ({elapsed:.2f} s)", flush=True)
                 if not passed:
                     failed.append(name)
-                    print("\n".join(tail(reports / f"{name}.log")), flush=True)
+                    print("\n".join([*red, *tail(reports / f"{name}.log")]), flush=True)
             if active:
                 time.sleep(0.05)
         if not completed or totals["tests"] == totals["skipped"]:
