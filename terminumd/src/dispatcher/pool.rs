@@ -88,6 +88,9 @@ pub struct Slots {
     rounds: Vec<Run>,
     /// retained sessions whose work is in integration: shown, but no ordinary slot is theirs (AC-169)
     integrating: Vec<Run>,
+    /// sessions of a batch's integration task that ended, only waiting for their close (AC-125): shown, no slot is
+    /// theirs, so the next red batch's agent never waits for one (terminum-integration.md AC-194)
+    closing: Vec<Run>,
 }
 
 impl Slots {
@@ -95,10 +98,12 @@ impl Slots {
         let live: Vec<Run> = runs::live(tx)?.into_iter().filter(Run::holds_slot).collect();
         let of_rounds: HashSet<String> = rows(tx, "SELECT m.run FROM run_tasks m JOIN auto_rounds a ON a.task = m.task", [], |r| r.get(0))?.into_iter().collect();
         let (rounds, ordinary): (Vec<Run>, Vec<Run>) = live.into_iter().partition(|r| of_rounds.contains(&r.id));
+        let of_batches: HashSet<String> = rows(tx, "SELECT m.run FROM run_tasks m JOIN integration_batches b ON b.task = m.task", [], |r| r.get(0))?.into_iter().collect();
+        let (closing, ordinary): (Vec<Run>, Vec<Run>) = ordinary.into_iter().partition(|r| of_batches.contains(&r.id) && !r.is_starting() && plan::finished(&r.status));
         // Integration owns handed-off work until it returns; a new process still reserves room during startup.
         let (integrating, holding): (Vec<Run>, Vec<Run>) = ordinary.into_iter().partition(|r| !r.is_starting() && r.status == ops::INTEGRATION);
         let ids: Vec<&str> = holding.iter().map(|r| r.id.as_str()).collect();
-        Ok(Slots { in_kept: in_kept(tx, &ids)?, kept: schedules::kept_by_agent(tx)?, holding, rounds, integrating })
+        Ok(Slots { in_kept: in_kept(tx, &ids)?, kept: schedules::kept_by_agent(tx)?, holding, rounds, integrating, closing })
     }
 
     /// Whether a process of `agent` (none: one deleted since, its slot no one's) can start in `project`, `but` run
@@ -222,19 +227,20 @@ fn in_runs(tx: &Transaction, ids: &[&str]) -> Result<HashMap<String, Vec<Value>>
 
 /// What the board shows of the slots (AC-138): each agent's sessions, and the agents and projects at their limit.
 pub fn board(tx: &Transaction) -> Result<Value, String> {
-    let Slots { holding, kept, in_kept, rounds, integrating } = Slots::read(tx)?;
-    let mut tasks = in_runs(tx, &holding.iter().chain(&rounds).chain(&integrating).map(|r| r.id.as_str()).collect::<Vec<_>>())?;
+    let Slots { holding, kept, in_kept, rounds, integrating, closing } = Slots::read(tx)?;
+    let mut tasks = in_runs(tx, &holding.iter().chain(&rounds).chain(&integrating).chain(&closing).map(|r| r.id.as_str()).collect::<Vec<_>>())?;
     let mut of_agent: BTreeMap<&str, Vec<Value>> = BTreeMap::new();
     let mut in_project: HashMap<&str, i64> = HashMap::new();
     // a slot its schedules keep counts once, whether its run is live or not (AC-161)
     let mut others: HashMap<&str, usize> = HashMap::new();
-    // rounds and integration waits stay visible on their agent without taking ordinary slots (AC-138, AC-169, AC-170)
-    for (r, round, integration) in holding.iter().map(|r| (r, false, false))
-        .chain(rounds.iter().map(|r| (r, true, false))).chain(integrating.iter().map(|r| (r, false, true))) {
+    // rounds, integration waits and ended integration tasks' sessions stay visible on their agent without taking
+    // ordinary slots (AC-138, AC-169, AC-170, terminum-integration.md AC-194)
+    for (r, round, integration, ended) in holding.iter().map(|r| (r, false, false, false)).chain(rounds.iter().map(|r| (r, true, false, false)))
+        .chain(integrating.iter().map(|r| (r, false, true, false))).chain(closing.iter().map(|r| (r, false, false, true))) {
         let in_slot = in_kept.contains_key(&r.id);
         of_agent.entry(&r.agent_id).or_default().push(json!({"run": r.id, "tasks": r.names(), "state": r.state, "key": r.pane_key, "project": r.project, "idle": !r.busy() && !r.ad_hoc(), "kept": in_slot,
-            "round": round, "integration": integration, "list": tasks.remove(&r.id).unwrap_or_default()}));
-        if round || integration {
+            "round": round, "integration": integration, "closing": ended, "list": tasks.remove(&r.id).unwrap_or_default()}));
+        if round || integration || ended {
             continue;
         }
         if !in_slot {
