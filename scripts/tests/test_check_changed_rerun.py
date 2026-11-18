@@ -84,6 +84,13 @@ class Rerun(unittest.TestCase):
         check_changed.say_failed(self.root, [])
         self.assertFalse((self.root / ".checks" / "failed").exists())
 
+    def test_none_of_the_steps_in_the_plan_here_is_not_known(self):  # AC-198
+        with mock.patch.object(check_changed, "run", lambda *a, **k: self.fail("nothing runs")), redirect_stdout(io.StringIO()) as said:
+            code = check_changed.rerun({"e2e_new"}, self.task, self.root)
+        self.assertEqual(code, 1)
+        self.assertFalse((self.root / ".checks" / "failed").exists(), "names none: never a pass")
+        self.assertIn("not known", said.getvalue())
+
     def test_rerun_needs_its_commit(self):  # AC-198
         with redirect_stdout(io.StringIO()), mock.patch.object(sys, "stderr", io.StringIO()), self.assertRaises(SystemExit):
             check_changed.main(["--rerun", "cargo"])

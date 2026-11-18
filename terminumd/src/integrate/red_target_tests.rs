@@ -143,3 +143,83 @@ fn ac198_a_lost_window_on_the_target_runs_there_again() {
     go(&w, &r, 1);
     assert_eq!(stage(&w, &a).as_deref(), Some(HELD));
 }
+
+/// The existing task `id` queued with a new commit of `file`, as `integrate` does.
+fn queue_again(w: &World, id: &str, n: u32, file: &str, text: &str) {
+    let sh = |args: &[&str]| crate::integrate::engine::tests::sh(&w.api, args);
+    sh(&["checkout", "-q", "--detach", "origin/main"]);
+    std::fs::write(w.api.join(file), text).unwrap();
+    sh(&["add", file]);
+    sh(&["commit", "-qm", &format!("t{n}")]);
+    let commit = sh(&["rev-parse", "HEAD"]);
+    sh(&["checkout", "-q", "main"]);
+    w.s.with(|tx| {
+        let t = ops::get(tx, id)?;
+        ops::place(tx, crate::tasks::store::HUMAN, &t, "INTEGRATION", 2)?;
+        tx.execute("INSERT INTO integration_entries (task, project, commit_sha, result, author, queued_at, stage) VALUES (?1, 'api', ?2, 'Outcome: Done.', 'human', ?3, 'verifying')",
+                   rusqlite::params![t.key, commit, n]).map_err(sql).map(drop)
+    }).unwrap();
+}
+
+#[test]
+fn ac198_the_red_targets_own_task_red_still_returns_and_never_waits_behind_itself() {
+    let (w, a, _) = setup("rt-itself", "critical", "critical");
+    let r = Sh::default();
+    go(&w, &r, 3);
+    let bug = bugs(&w)[0].0.clone();
+    queue_again(&w, &bug, 2, "fix.txt", "not yet\n");
+    go(&w, &r, 3);
+    assert_eq!(left(&w, &bug).as_deref(), Some("red"), "returned, never held behind itself");
+    assert!(said(&w, &bug).contains(&format!("{bug} returned: red check: its Verify failed critical, which fail on origin/main at ")) && said(&w, &bug).contains(&format!("too, and {bug} is the red target's own task: its commit does not mend them yet.")));
+    assert_eq!(stage(&w, &a).as_deref(), Some(HELD), "the others stay held");
+}
+
+#[test]
+fn ac198_a_bug_failed_archived_or_gone_releases_its_held_tasks() {
+    for (name, end) in [("rt-failed", "failed"), ("rt-archived", "archived"), ("rt-gone", "gone")] {
+        let (w, a, _) = setup(name, "critical", "critical");
+        let r = Sh::default();
+        go(&w, &r, 3);
+        let bug = bugs(&w)[0].0.clone();
+        w.s.with(|tx| match end {
+            "failed" => { let t = ops::get(tx, &bug)?; ops::place(tx, crate::tasks::store::HUMAN, &t, "FAILED", 300) }
+            "archived" => ops::archive(tx, crate::tasks::store::HUMAN, &bug, true, 300),
+            _ => tx.execute("UPDATE project_integration SET red_bug = 'no-such-task'", []).map(drop).map_err(sql),
+        }).unwrap();
+        go(&w, &r, 1);
+        assert_eq!(stage(&w, &a).as_deref(), Some("verifying"), "{end}");
+        let words = if end == "gone" { format!("The red target's task is gone: {a}'s Prepare and Verify run again.") } else { format!("{bug} (the red target) ended: {a}'s Prepare and Verify run again.") };
+        assert!(said(&w, &a).contains(&words), "{end}");
+    }
+}
+
+#[test]
+fn ac198_a_task_taken_out_while_its_steps_run_on_the_target_has_that_window_ended() {
+    let (w, a, seen) = setup("rt-out", "critical", "critical");
+    let r = Sh::default();
+    go(&w, &r, 2);
+    assert!(std::fs::read_to_string(&seen).unwrap().lines().last().unwrap().starts_with("critical|"), "the target's run started");
+    w.s.with(|tx| { let t = ops::get(tx, &a)?; ops::place(tx, crate::tasks::store::HUMAN, &t, "IN PROGRESS", 150) }).unwrap();
+    go(&w, &r, 1);
+    assert_eq!(w.s.with(|tx| tx.query_row("SELECT count(*) FROM integration_verifies", [], |r| r.get::<_, i64>(0)).map_err(sql)).unwrap(), 0);
+    assert!(!w.root.join("home/integration/api/verify-1").exists());
+    assert!(bugs(&w).is_empty(), "nothing judged");
+}
+
+#[test]
+fn ac198_a_run_on_the_target_that_cannot_start_returns_the_task() {
+    let (w, a, seen) = setup("rt-nostart", "critical", "critical");
+    let r = Sh::default();
+    go(&w, &r, 1);
+    w.s.with(|tx| {
+        let mut s = crate::tasks::integration::read(tx, "api")?;
+        s.target = "origin/none".into();
+        crate::tasks::integration::keep(tx, "api", &s)
+    }).unwrap();
+    go(&w, &r, 1);
+    assert_eq!(left(&w, &a).as_deref(), Some("red"));
+    let words = said(&w, &a);
+    assert!(words.contains(&format!("{a} returned: red check: its Verify failed critical; its run on the target did not start: ")) && words.contains("so whether the target is red too is not known."), "{words}");
+    assert_eq!(std::fs::read_to_string(&seen).unwrap().lines().count(), 1, "nothing ran on the target");
+    assert!(!w.root.join("home/integration/api/verify-1").exists(), "its tree removed");
+}

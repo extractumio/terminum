@@ -94,8 +94,8 @@ pub fn marks(tx: &Transaction, tasks: &[Task], now: i64) -> Result<HashMap<Strin
         let bug = waiting.iter().any(|w| w.1.as_deref() == Some(super::red_target::HELD)).then(|| super::red_target::open_bug(tx, project)).transpose()?.flatten();
         for (i, (task, stage, waits, verified)) in waiting.into_iter().enumerate() {
             let mark = match (waits.filter(|w| !w.is_empty()), stage) {
+                (_, Some(s)) if s == super::red_target::HELD => bug.as_ref().map_or("waits: the target is red".into(), |b| format!("waits: the target is red ({b})")),
                 (Some(w), _) => format!("waits for {w}"),
-                (None, Some(s)) if s == super::red_target::HELD => bug.as_ref().map_or("waits: the target is red".into(), |b| format!("waits: the target is red ({b})")),
                 (None, Some(_)) if verified => "verifying".to_string(),
                 (None, Some(_)) => "waits for Verify".to_string(),
                 (None, None) => ordinal(i + 1),

@@ -25,33 +25,33 @@ pub const HELD: &str = "red target";
 const OPEN: &str = "b.status NOT IN ('DONE', 'FAILED') AND b.archived_at IS NULL";
 
 /// The task's failed steps started on the target, its Verify alone with what to run again; whether it runs. One
-/// that cannot start returns the task, red, as one that cannot tell. `red_attempt`: the task's own run.
+/// that cannot start, whatever stops it, returns the task, red, as one that cannot tell. `red_attempt`: the task's own run.
 pub(super) fn start(store: &Store, runner: &dyn Runner, home: &Path, run: &Run, steps: &[String], red_attempt: &str, now: i64) -> Result<bool, String> {
-    let p = place(store, home, &run.project)?;
     let tree = integration::verify_tree_in(home, &run.project, run.number);
     let attempt = crate::auth::crypto::random_hex::<16>();
-    let line = line_of("", &p.s.verify);
-    let started = if line.is_empty() { Err("Verify is empty".to_string()) } else { target_now(&p) }.and_then(|target| {
+    let started = place(store, home, &run.project).and_then(|p| {
+        let line = line_of("", &p.s.verify);
+        let target = if line.is_empty() { Err("Verify is empty".to_string()) } else { target_now(&p) }?;
         worktree(&p, tree.clone(), &target).map_err(|e| format!("its tree could not be moved there: {e}"))?;
         retry_notes::clear(&tree)?;
         let mut vars = vars(&run.id, &target, &p, &tree);
         vars.extend([("TM_INTEGRATION_RERUN", steps.join(" ")), ("TM_INTEGRATION_RERUN_OF", run.commit.clone())]);
-        runner.start(&format!("verify-{}", run.number), &tree, &line, &vars).map(|pane| (target, pane))
+        runner.start(&format!("verify-{}", run.number), &tree, &line, &vars).map(|pane| (p.s.target.clone(), target, pane))
     });
     let own = integration::verify_log_in(home, &run.project, run.number, red_attempt);
     let (id, failed) = (&run.id, and_list(&steps.iter().map(String::as_str).collect::<Vec<_>>()));
     store.with(|tx| match &started {
-        Ok((target, pane)) => {
+        Ok((name, target, pane)) => {
             tx.execute("UPDATE integration_verifies SET pane = ?2, started = ?3, attempt = ?4, target_sha = ?5, steps = ?6, red_attempt = ?7 WHERE task = ?1",
                        rusqlite::params![run.task, pane, now, attempt, target, steps.join(" "), red_attempt]).map_err(sql)?;
             let log = integration::verify_log_in(home, &run.project, run.number, &attempt);
             ops::comment(tx, DISPATCHER, id, &format!("{id}'s Verify failed {failed}: they run on {} at {} to tell whether the target is red too. Its log: {}; the target's: {}",
-                                                      p.s.target, git::short(target), own.display(), log.display()), now).map(drop)
+                                                      name, git::short(target), own.display(), log.display()), now).map(drop)
         }
         Err(why) => {
             bs::not_again(tx, &run.task, &run.commit, now)?;
-            bs::give_back(tx, &run.task, &format!("{id} returned: red check: its Verify failed {failed}; its run on {} did not start: {why}, so whether the target is red too is not known. Its log: {}",
-                                                  p.s.target, own.display()), Left::Red, now)
+            bs::give_back(tx, &run.task, &format!("{id} returned: red check: its Verify failed {failed}; its run on the target did not start: {why}, so whether the target is red too is not known. Its log: {}",
+                                                  own.display()), Left::Red, now)
         }
     })?;
     Ok(started.is_ok())
@@ -66,8 +66,12 @@ pub(super) fn judge(tx: &Transaction, home: &Path, run: &Run, target: &str, code
     let steps: Vec<&str> = run.steps.iter().map(String::as_str).collect();
     let (id, failed, at) = (&run.id, and_list(&steps), format!("{} at {}", s.target, git::short(target)));
     let red = match code { 0 => Some(Vec::new()), 1 => red, _ => None };
+    let all = red.as_ref().is_some_and(|red| steps.iter().all(|s| red.iter().any(|r| r == s)));
+    // the red target's own task, red still: its fix does not mend them yet, and it never waits behind itself
+    let itself = all && open_bug(tx, &run.project)?.as_deref() == Some(id.as_str());
     let words = match &red {
-        Some(red) if steps.iter().all(|s| red.iter().any(|r| r == s)) => return hold(tx, run, &s.target, target, &failed, &logs, now),
+        Some(_) if itself => format!("{id} returned: red check: its Verify failed {failed}, which fail on {at} too, and {id} is the red target's own task: its commit does not mend them yet. {logs}"),
+        Some(_) if all => return hold(tx, run, &s.target, target, &failed, &logs, now),
         Some(red) => {
             let passed: Vec<&str> = steps.iter().copied().filter(|s| !red.iter().any(|r| r == s)).collect();
             format!("{id} returned: red check: its Verify failed {failed}; on {at} {} passed, so {id} broke {}. {logs}",

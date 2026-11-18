@@ -315,8 +315,13 @@ def say_failed(root, failed):
 
 def rerun(names, commit, root=REPO):
     """0: the steps pass here; 1 naming the red ones in .checks/failed, or 1 naming none: a step skipped for a busy
-    machine (AC-146) did not run, so nothing is known of it. No pass is kept: this is the target's run."""
+    machine (AC-146), or none of them in the plan here, did not run, so nothing is known of it. No pass is kept:
+    this is the target's run."""
     steps = rerun_plan(names, commit, root)
+    if not steps:   # none of them is in the plan here: nothing known of them, never a pass
+        print(f"rerun: none of {' '.join(sorted(names))} is in {commit[:9]}'s plan here: not known")
+        say_failed(root, [])
+        return 1
     print(f"rerun: {' '.join(s[0] for s in steps if s[0] not in BUILDS) or 'none'} of {commit[:9]} on {git('rev-parse', '--short=9', 'HEAD', cwd=root).strip()}")
     failed = run(steps, root)
     skipped = bool(note(root, "skipped"))
