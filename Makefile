@@ -91,8 +91,10 @@ primary-checkout:
 
 # one install at a time, in the install turn landings and the queue's After hold too (scripts/install_turn.py);
 # freshen first and the rest in a make of its own: this one's TM_BUILD was read before main moved
+# its make named apart: make runs a line that says $(MAKE) even under make -n, and this one takes the turn and fetches
+INSTALL_MAKE = $(MAKE)
 install: primary-checkout
-	python3 scripts/install_turn.py sh -c 'python3 scripts/worktree_fresh.py freshen && $(MAKE) --no-print-directory install-stage'
+	python3 scripts/install_turn.py sh -c 'python3 scripts/worktree_fresh.py freshen && $(INSTALL_MAKE) --no-print-directory install-stage'
 
 install-stage: primary-checkout ui
 	python3 scripts/package.py --stage

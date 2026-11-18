@@ -269,10 +269,13 @@ class Fresh(Repo):
         self.assertIn("warning: git fetch origin", worktree_fresh.freshen(self.primary)[0])
         self.assertEqual(worktree_fresh.freshen(self.tmp.name), [], "not a checkout")
 
-    def test_make_install_freshens_before_it_reads_the_build_id(self):
-        out = subprocess.run(["make", "-n", "--no-print-directory", "install"], cwd=SCRIPTS.parent, capture_output=True, text=True).stdout
+    def test_make_install_freshens_before_it_reads_the_build_id(self):  # AC-104
+        dry = lambda target: subprocess.run(["make", "-n", "--no-print-directory", target], cwd=SCRIPTS.parent, capture_output=True, text=True).stdout
+        out = dry("install")
+        self.assertIn("install_turn.py", out, "in the install turn")
         self.assertLess(out.index("worktree_fresh.py freshen"), out.index("install-stage"), out)
-        self.assertLess(out.index("install-stage"), out.index("package.py --stage"), out)
+        self.assertNotIn("package.py --stage", out, "make -n runs nothing: no turn taken, no fetch, no make of its own")
+        self.assertIn("package.py --stage", dry("install-stage"))
 
     # .claude/settings.json: a hook never stops the agent, whatever is wrong
     def hook_commands(self):
