@@ -213,6 +213,50 @@ class LinuxBuildTest(unittest.TestCase):
             package.binaries("v9.9.9", None, False, release=True)
         self.assertEqual(built.call_args.args, (["linux-x86_64", "linux-aarch64"], "v9.9.9"))
 
+    def test_the_hosts_own_terminumd_is_make_builds_so_install_compiles_once(self):
+        """TERM-227: make build, then make install: the host's terminumd from cargo's plain release
+        folder, the command make build ran (cargo compiles only what changed); other Macs' by --target."""
+        with mock.patch.object(package, "rust_host", return_value="aarch64-apple-darwin"), \
+             mock.patch.object(package.agents, "run") as run:
+            found = package.build_macos("v9", ["macos-aarch64", "macos-x86_64"])
+        cmds = [c.args[0] for c in run.call_args_list]
+        self.assertEqual(cmds, [["cargo", "build", "--locked", "--release"],
+                                ["cargo", "build", "--locked", "--release", "--target", "x86_64-apple-darwin"]])
+        self.assertEqual(found["macos-aarch64"], package.agents.TERMINUMD / "target/release/terminumd")
+        self.assertEqual(found["macos-x86_64"], package.agents.TERMINUMD / "target/x86_64-apple-darwin/release/terminumd")
+        env = run.call_args_list[0].kwargs["env"]
+        self.assertEqual((env["TM_BUILD"], env["TM_AGENT_ID"]), ("v9", package.agents.agent_id()), "the build id compiled in")
+
+    def test_without_a_known_host_every_mac_build_names_its_target(self):
+        with mock.patch.object(package, "rust_host", return_value=None), \
+             mock.patch.object(package.agents, "run") as run:
+            package.build_macos("v9", ["macos-aarch64"])
+        self.assertEqual(run.call_args.args[0][-2:], ["--target", "aarch64-apple-darwin"])
+
+    def test_the_hosts_terminumd_is_packed_only_when_it_answers_this_build(self):
+        """A target/release another cargo run wrote (another build id) fails the package, loudly."""
+        aid = package.agents.agent_id()
+        with tempfile.TemporaryDirectory() as tmp:
+            binary = Path(tmp) / "terminumd"
+            binary.write_text(f'#!/bin/sh\n[ "$1" = --version ] && echo v9 || echo {aid}\n')
+            binary.chmod(0o755)
+            with mock.patch.object(package.agents, "this_platform", return_value="macos-aarch64"), \
+                 mock.patch.object(package, "build_macos", return_value={"macos-aarch64": binary}), \
+                 mock.patch.object(package.agents, "build", return_value={}), \
+                 mock.patch.object(package, "soundfont", return_value=Path(tmp)), \
+                 mock.patch.object(package, "SOUNDFONT", {}):
+                with self.assertRaises(package.agents.Failed) as e:
+                    package.stage("v8", Path(tmp) / "out", only_stage=True)
+                self.assertIn("build v9; expected", str(e.exception))
+                self.assertTrue(package.stage("v9", Path(tmp) / "out", only_stage=True).is_dir())
+
+    def test_rust_host_reads_rustcs_host_line(self):
+        out = "rustc 1.90.0\nbinary: rustc\nhost: aarch64-apple-darwin\nrelease: 1.90.0\n"
+        with mock.patch.object(package.subprocess, "run", return_value=mock.Mock(stdout=out)):
+            self.assertEqual(package.rust_host({}), "aarch64-apple-darwin")
+        with mock.patch.object(package.subprocess, "run", return_value=mock.Mock(stdout="")):
+            self.assertIsNone(package.rust_host({}))
+
 
 if __name__ == "__main__":
     unittest.main()
