@@ -259,7 +259,7 @@ function membership(groups, projects) {
 }
 
 /** The project that holds session `id` as the list places it (a window's other panes and quick shells go with their
- *  session), or null (terminum.md AC-39): one map a layout and projects, however many ask. */
+ *  session), or null (terminum-agents.md AC-39): one map a layout and projects, however many ask. */
 let placed = { groups: null, projects: null, of: new Map() };
 export function projectOfSession(groups, projects, id) {
   if (placed.groups !== groups || placed.projects !== projects) {

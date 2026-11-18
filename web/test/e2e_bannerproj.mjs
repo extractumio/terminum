@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-// terminum.md AC-39 and terminum-kanban.md AC-117 against a fake terminumd (fake.mjs): a waiting line names its
+// terminum-agents.md AC-39 and terminum-kanban.md AC-117 against a fake terminumd (fake.mjs): a waiting line names its
 // project, "<name>:" (32 characters at most, then "…") and a 4 px stripe in its color at its left edge; a session in no
 // project and a task in Default have neither, and every mark stands where the others' do; a rename shows in place.
 import { check, runningIn, until } from "./check.mjs";
