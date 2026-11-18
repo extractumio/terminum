@@ -4,10 +4,11 @@
 // the projects. The plain tmux session keeps its key at the list's foot.
 import { sessionStarter } from "./kanbansession.js";
 import { api, say } from "./kanbanutil.js";
+import { pointerKey } from "./listparts.js";
 
 /** `inView()`: the project in view, or null; `menu(key, pick)`: the projects' menu under the key; `start(p)`. */
 export function navSession({ inView, menu, start }) {
-  const key = document.getElementById("navnew");
+  const key = pointerKey(document.getElementById("navnew"));   // a pointer's press leaves no focus ring
   const titled = () => {
     const p = inView();
     key.title = p ? `A session of an agent in ${p.name}, no task` : "A session of an agent in a project, no task";
