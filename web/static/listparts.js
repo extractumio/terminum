@@ -64,6 +64,7 @@ export function shortName(name, most = 32) {
  *  when it was cut, for the key's title. */
 export function tagProject(line, p) {
   let tag = line.querySelector(".proj");
+  line.classList.toggle("inproject", !!p);
   if (!p) { line.style.removeProperty("--proj"); tag?.remove(); return ""; }
   const cut = shortName(p.name), ink = projectInk(p), words = textForm(`${cut}:`);
   if (line.style.getPropertyValue("--proj") !== ink) line.style.setProperty("--proj", ink);

@@ -15,7 +15,7 @@ export async function liveIconKeys(page, live, phone = false) {
   const keys = {
     "AC-106 + New task": newTask,
     "AC-105 a column's sort": '.col[data-status="TODO"] .colsort button',
-    ...(phone ? {} : { "AC-138 Add agent": 'button[aria-label="Add agent"]', "AC-138 an agent's Edit": 'button[aria-label="Edit Icon agent"]' }),
+    ...(phone ? {} : { "AC-138 Add agent": "#addagent", "AC-138 an agent's Edit": 'button[aria-label="Edit Icon agent"]' }),
   };
   for (const [name, sel] of Object.entries(keys)) {
     const r = await pressed(page, sel);

@@ -56,8 +56,9 @@ export async function webLook(browser, name) {
       const out = {
         heads: boxes.filter((b) => !(b.querySelector(".dhead h2") && b.querySelector(".dhead .x"))).map((b) => b.id),
         fields: [...new Set([...document.querySelectorAll(":is(dialog.dlg, .footform) .field:not(.lead)")].map(st))],
-        // a phone's window holds its ways on in its head's bar (phonewin.js): the primary is the last there
-        order: [...document.querySelectorAll(":is(dialog.dlg, .footform) .actions:not(.barkeys)")].filter((a) => (a.closest("dialog, .footform").querySelector(".barkeys") ?? a).lastElementChild?.classList.contains("primary") === false).map((a) => a.parentElement.closest("[id]").id),
+        // a phone's window holds its ways on in its head's bar (phonewin.js): the primary is the last there; + Session's
+        // agents' window has no primary key: each tile is its choice (terminum-dispatcher.md AC-142)
+        order: [...document.querySelectorAll(":is(dialog.dlg:not(#agentpick), .footform) .actions:not(.barkeys)")].filter((a) => (a.closest("dialog, .footform").querySelector(".barkeys") ?? a).lastElementChild?.classList.contains("primary") === false).map((a) => a.parentElement.closest("[id]").id),
         ask: [getComputedStyle(document.querySelector("#askbox .primary")).backgroundColor, getComputedStyle(document.getElementById("askfab")).backgroundColor],
       };
       boxes.forEach((b, i) => { b.hidden = shown[i]; });

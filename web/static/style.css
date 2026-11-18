@@ -256,8 +256,8 @@ svg.lu.two { width: calc(var(--s, 16px) * 50 / 24); }   /* two icons side by sid
 .taskneed.failed { color: var(--danger-ink); background: var(--danger-fill); }
 .sections a .taskneeds { position: absolute; top: -4px; right: -4px; margin: 0; }   /* on its key's corner (the key: controls.css) */
 #asks .ask { display: flex; align-items: center; min-width: 0; color: var(--t-fg);
-  background: color-mix(in srgb, var(--waiting) 9%, var(--t-bg)); border-bottom: 1px solid color-mix(in srgb, var(--waiting) 24%, var(--t-bg));
-  box-shadow: inset var(--sp-1) 0 0 var(--proj, transparent); }   /* its project's stripe (AC-39), no shift of the mark */
+  background: color-mix(in srgb, var(--waiting) 9%, var(--t-bg)); border-bottom: 1px solid color-mix(in srgb, var(--waiting) 24%, var(--t-bg)); }
+#asks .ask.inproject { box-shadow: inset var(--sp-1) 0 0 var(--proj); }   /* its project's stripe (AC-39), no shift of the mark */
 #asks .proj { flex: 0 0 auto; max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600;
   color: color-mix(in srgb, var(--proj) 75%, var(--t-fg)); }
 #asks .go { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; padding: 4px 4px 4px 16px; text-align: left; font-size: 13px; }   /* #term's 16 px */
