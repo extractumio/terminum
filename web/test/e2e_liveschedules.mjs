@@ -49,8 +49,11 @@ export async function liveFolded(page, live) {
   check("AC-159 shown whole stays so as the columns are read again", await until(async () => (await page.textContent(`${card(a)} .ctitle`)) === "Folded first, renamed again") && await shown(`${card(a)} .cfoot`));
 
   // AC-138: from 1500 px of board an agent a track wide (six tracks), four a row, the add tile after the last; under it
-  // one row that scrolls, an agent 240 px wide (terminum-kanban.md AC-105's tracks)
+  // one row that scrolls, an agent 240 px wide (terminum-kanban.md AC-105's tracks); on a phone one a row in the
+  // sheet #poolline opens (terminum-kanban.md AC-105)
   // the tracks start after Task Management's rail and its gap (terminum-kanban.md AC-203)
+  const phone = await page.isVisible("#poolline");   // a phone's layout: its line stands for the pool (boardphone.css)
+  if (phone) await page.click("#poolline");
   const { tracks, left } = await page.evaluate(() => { const b = document.getElementById("board"), cs = getComputedStyle(b), rail = document.getElementById("railboard").getBoundingClientRect();
     const w = b.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight) - rail.width - 8;
     return { tracks: b.clientWidth >= 1500 ? (w - 5 * 8) / 6 : 0, left: Math.round(rail.right + 8) }; });
@@ -60,17 +63,26 @@ export async function liveFolded(page, live) {
     const aligned = agents.slice(0, 4).every(([x, w], i) => Math.abs(x - (left + i * (tracks + 8))) <= 1 && Math.abs(w - tracks) <= 1);
     check("AC-138 agents stand a track wide, four a row", aligned && agents[4][2] > agents[0][2] && Math.abs(agents[4][0] - left) <= 1, JSON.stringify({ tracks, left, agents }));
     check("AC-138 AC-203 the add tile stands right after the last agent", add.y === agents[4][2] && Math.abs(add.x - (agents[4][0] + agents[4][1] + 8)) <= 1, JSON.stringify({ add, agents }));
+  } else if (phone) {
+    const sheet = await box("#pool");
+    check("AC-138 on a phone the agents stand one a row in the pool's sheet", agents.length >= 5 && agents.every(([x, w, y], i) =>
+      Math.abs(x - agents[0][0]) <= 1 && Math.abs(w - agents[0][1]) <= 1 && x >= sheet.x && x + w <= sheet.x + sheet.w && (i === 0 || y > agents[i - 1][2])), JSON.stringify({ sheet, agents }));
   } else {
     check("AC-138 under 1500 px of board one row of agents that scrolls, each 240 px, from the board's edge",
       agents.every(([, w, y]) => y === agents[0][2] && w === 240) && Math.abs(agents[0][0] - left) <= 1, JSON.stringify({ left, agents }));
   }
   await shot("agents");
+  if (phone) {
+    await page.keyboard.press("Escape");
+    check("AC-138 Esc closes the pool's sheet", await until(async () => await page.getAttribute("#poolline", "aria-expanded") === "false"));
+  }
 
   // a task card's play key, pressed, takes no focus: its RUN window closed or a key typed after lights no ring; Tab
-  // still reaches it, ringed (docs/UI-GUIDELINES.md "Focus")
+  // still reaches it, ringed (docs/UI-GUIDELINES.md "Focus"); a phone's window has no Cancel, × closes it
+  // (terminum.md AC-173)
   const run = `${card(a)} .crun`;
-  for (const [how, close] of [["Cancel, pressed,", () => page.click('#runbox button[value="cancel"]')], ["×, pressed,", () => page.click("#runbox .dhead .x")],
-    ["Esc", () => page.keyboard.press("Escape")]]) {
+  for (const [how, close] of [...(phone ? [] : [["Cancel, pressed,", () => page.click('#runbox button[value="cancel"]')]]),
+    ["×, pressed,", () => page.click("#runbox .dhead .x")], ["Esc", () => page.keyboard.press("Escape")]]) {
     await page.click(run);
     const opened = await until(() => page.isVisible("#runbox[open]"));
     await close();
@@ -242,7 +254,7 @@ export async function liveSchedules(page, live) {
   await page.evaluate(() => document.activeElement?.blur());
   const w = await page.evaluate((s) => Math.round(document.querySelector(s).getBoundingClientRect().width), sched);
   const agentW = await page.evaluate(() => Math.round(document.querySelector("#agentbar .agentcard").getBoundingClientRect().width));
-  if (page.viewportSize().width > 600) check("AC-163 a card as wide as an agent: a track, or 240 px under 1500 px of board", Math.abs(w - agentW) <= 1, `${w} ${agentW}`);
+  if (!(await page.isVisible("#poolline"))) check("AC-163 a card as wide as an agent: a track, or 240 px under 1500 px of board", Math.abs(w - agentW) <= 1, `${w} ${agentW}`);
   const owl = `#agentbar .agentcard[data-agent="${agent}"]`;
   check("AC-161 its agent shows the kept slot", await until(async () => (await page.$$(`${owl} .agkept`)).length === 1 && /1\/2/.test(await page.textContent(owl))), await page.textContent(owl));
   // more agents than a few rows: the bars scroll, the columns stay
