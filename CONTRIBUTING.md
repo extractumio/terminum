@@ -27,7 +27,7 @@ The agreement is recorded by a sign-off on **every commit** of your pull request
 | When | Do |
 |---|---|
 | a new commit | `git commit -s` |
-| commits already made | `git rebase --signoff origin/main`, then `git push --force-with-lease` |
+| commits already made | `git rebase --signoff HEAD~N` (N: the pull request's commits, a merge commit too, such as GitHub's "Update branch"), then `git push --force-with-lease` |
 | your employer has rights in the work (a work address, work time or equipment) | have its permission first: your sign-off states it (point 1 above) |
 
 A pull request with a commit not signed off is not merged. The Maintainer checks it with

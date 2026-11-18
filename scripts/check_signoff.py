@@ -18,8 +18,9 @@ import sys
 TRAILER = re.compile(r"^Signed-off-by:\s*(.+?)\s*<([^<>\s]+@[^<>\s]+)>\s*$", re.MULTILINE)
 
 FIX = """How to fix it, in the pull request's branch:
-  git rebase --signoff origin/main    # adds your Signed-off-by to each commit
+  git rebase --signoff HEAD~N         # N: its commits; each gets your Signed-off-by, its base stays
   git push --force-with-lease
+A merge commit, such as GitHub's "Update branch", needs one too; the rebase above leaves it out.
 Your sign-off confirms the agreement in CONTRIBUTING.md ("Contributor license agreement"); from a work
 address or on your employer's time it also confirms your employer allows the contribution."""
 
