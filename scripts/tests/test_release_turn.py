@@ -142,13 +142,19 @@ class Outer(unittest.TestCase):
         held.__enter__.return_value = held
         held.take.return_value = False
         held.holder.return_value = "release v1.0.0 at 4f2a91c07, pid 4242"
-        with mock.patch.object(release_turn.release_tree, "pin", return_value="4f2a91c07aa"), \
+        with mock.patch.object(release_turn, "primary_of", return_value=Path("/w")), \
+                mock.patch.object(release_turn.release_tree, "pin", return_value="4f2a91c07aa"), \
                 mock.patch.object(release_turn.release_tree, "Held", return_value=held), \
                 mock.patch.object(release_turn.release, "tag_exists", return_value=False), \
                 mock.patch.object(release_turn.release_tree, "take") as take, \
                 self.assertRaisesRegex(SystemExit, "release: another release runs in .worktrees/release: release v1.0.0 at 4f2a91c07, pid 4242"):
             release_turn.main(["v1.0.0"])
         take.assert_not_called()
+
+    def test_outside_a_git_checkout_it_says_so(self):  # AC-200
+        with mock.patch.object(release_turn, "primary_of", side_effect=release_turn.Refused("git worktree list: not a git repository")), \
+                self.assertRaisesRegex(SystemExit, "release: git worktree list: not a git repository"):
+            release_turn.main(["v1.0.0"])
 
     def test_the_pinned_trees_own_make_runs_the_rest(self):  # AC-200
         held = mock.MagicMock()

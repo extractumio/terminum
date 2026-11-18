@@ -124,9 +124,9 @@ def main(argv):
         sys.exit("usage: release_turn.py [--rehearse] [--pin <commit>] vX.Y.Z")
     if args.here:
         return here(args.tag, args.rehearse)
-    primary = primary_of(Path(__file__).resolve().parent)
     name = "rehearse" if args.rehearse else "release"
     try:
+        primary = primary_of(Path(__file__).resolve().parent)
         wanted = args.pin or (f"refs/tags/{args.tag}" if release.tag_exists(args.tag) else None)   # released where it stands
         commit = release_tree.pin(primary, wanted, args.rehearse, say)
         with release_tree.Held(primary, name) as held:
