@@ -54,8 +54,7 @@ pub fn move_to(tx: &Transaction, author: &str, id: &str, status: &str, at: i64) 
 /// moved it (terminum-integration.md AC-187).
 pub(crate) fn place(tx: &Transaction, author: &str, task: &Task, status: &str, at: i64) -> Result<(), String> {
     if task.status == INTEGRATION {
-        crate::integrate::red_target::left(tx, task, status, at)?;
-        super::integration_queue::leave(tx, &task.key)?;
+        super::integration_queue::leave(tx, task, status, at)?;
         // A return is activity (AC-123, AC-198), even if no walk saw the wait; keep the budget already used.
         if status == "IN PROGRESS" && let Some(mut run) = crate::dispatcher::runs::holding(tx, &task.key)? {
             run.idle_for = 0;

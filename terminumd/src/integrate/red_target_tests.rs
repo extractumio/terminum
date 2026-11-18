@@ -225,12 +225,19 @@ fn ac198_a_run_on_the_target_that_cannot_start_returns_the_task() {
     assert!(!w.root.join("home/integration/api/verify-1").exists(), "its tree removed");
 }
 
-/// Held tasks leave the queue: by new work in its session (Dispatcher's move), taken out, then DONE, queued again,
-/// and DONE from the queue; only the one still out of the queue and open is told to integrate again, once.
+fn again(bug: &str, t: &str) -> String {
+    format!("{bug} (the red target) ended: {t} left the queue while it waited behind it, so nothing runs for it. Integrate again to land it.")
+}
+
+/// Held tasks leave the queue: by new work in its session (Dispatcher's move), a human's Take out then DONE, a human's
+/// move then queued again by Integrate, and DONE from the queue; only the one still out of the queue and open is told
+/// to integrate again, once.
 #[test]
 fn ac198_a_held_task_that_leaves_the_queue_is_told_and_told_again_when_the_red_target_ends() {
     let (w, a, _) = setup("rt-left", "critical", "critical");
-    let (b, c, d) = (queued_with(&w, 2, "b.txt", "c\n", true), queued_with(&w, 3, "b.txt", "d\n", true), queued_with(&w, 4, "b.txt", "e\n", true));
+    let b = queued_with(&w, 2, "b.txt", "c\n", true);
+    let c = queued_with(&w, 3, "b.txt", "d\n", true);
+    let d = queued_with(&w, 4, "b.txt", "e\n", true);
     let r = Sh::default();
     go(&w, &r, 8);
     for t in [&a, &b, &c, &d] {
@@ -238,40 +245,41 @@ fn ac198_a_held_task_that_leaves_the_queue_is_told_and_told_again_when_the_red_t
     }
     let bug = bugs(&w)[0].0.clone();
     let human = crate::tasks::store::HUMAN;
-    let out_words = |t: &str| format!("{t} left the queue while it waited behind {bug} (the red target): it is not queued now, so {bug}'s end runs nothing for it. \
-        Integrate again to land it; {t} is told when {bug} ends.");
-    let again = |t: &str| format!("{bug} (the red target) ended: {t} left the queue while it waited behind it, so nothing runs for it. Integrate again to land it.");
     w.s.with(|tx| {
         ops::move_to(tx, DISPATCHER, &a, "IN PROGRESS", 150)?;
-        ops::place(tx, human, &ops::get(tx, &b)?, "IN PROGRESS", 150)?;
+        crate::integrate::column::out(tx, &b, 150)?;
         ops::place(tx, human, &ops::get(tx, &c)?, "IN PROGRESS", 150)?;
         ops::place(tx, human, &ops::get(tx, &d)?, "DONE", 150)
     }).unwrap();
     for t in [&a, &b, &c] {
         assert_eq!(status(&w, t), "IN PROGRESS");
-        assert_eq!(left(&w, t).as_deref(), Some("out"), "{t}");
-        assert!(said(&w, t).contains(&out_words(t)), "{t}: {}", said(&w, t));
+        assert!(said(&w, t).contains(&format!("{t} left the queue while it waited behind {bug} (the red target): it is not queued now, so {bug}'s end runs nothing for it. \
+            Integrate again to land it; {t} is told when {bug} ends.")), "{t}: {}", said(&w, t));
         assert!(said(&w, &bug).contains(&format!("{t} left the queue while it waited on this red target: when this task ends, {t} is told to integrate again.")));
     }
+    assert_eq!((left(&w, &a).as_deref(), left(&w, &c).as_deref()), (Some("out"), Some("out")));
     assert!(!said(&w, &d).contains("left the queue"), "DONE from the queue: nothing pending");
-    assert!(!said(&w, &bug).contains(&format!("{d} left the queue")));
-    // b ends; c is queued again (as integrate does)
-    w.s.with(|tx| {
-        ops::place(tx, human, &ops::get(tx, &b)?, "DONE", 160)?;
-        let t = ops::get(tx, &c)?;
-        ops::place(tx, human, &t, INTEGRATION, 160)?;
-        ops::log(tx, &t.key, human, "queue", "Queued again.", None, 160)?;
-        ops::place(tx, human, &ops::get(tx, &c)?, "IN PROGRESS", 161).map(drop)
-    }).unwrap();
+    // b ends; c is queued again by a human's Integrate from a folder at a new commit
+    w.s.with(|tx| ops::place(tx, human, &ops::get(tx, &b)?, "DONE", 160)).unwrap();
+    let sh = |args: &[&str]| crate::integrate::engine::tests::sh(&w.api, args);
+    sh(&["checkout", "-q", "--detach", "origin/main"]);
+    std::fs::write(w.api.join("b.txt"), "f\n").unwrap();
+    sh(&["add", "b.txt"]);
+    sh(&["commit", "-qm", "t5"]);
+    crate::tasks::integration_queue::integrate_by_human(&w.s, &c, w.api.to_str()).unwrap();
+    sh(&["checkout", "-q", "main"]);
+    assert_eq!(status(&w, &c), INTEGRATION);
     w.s.with(|tx| { let t = ops::get(tx, &bug)?; ops::place(tx, human, &t, "DONE", 300) }).unwrap();
     go(&w, &r, 2);
-    assert_eq!(said(&w, &a).matches(&again(&a)).count(), 1, "told once: {}", said(&w, &a));
+    assert_eq!(said(&w, &a).matches(&again(&bug, &a)).count(), 1, "told once: {}", said(&w, &a));
     assert_eq!(status(&w, &a), "IN PROGRESS", "nothing queued for it");
     let notice = w.s.with(|tx| ops::noticed(tx, DISPATCHER, &ops::key_of(tx, &a)?, "requeue", &ops::key_of(tx, &bug)?)).unwrap();
     assert!(notice, "a notice: its session hears it (AC-192)");
     for t in [&b, &c, &d] {
-        assert!(!said(&w, t).contains(&again(t)), "{t}: DONE or queued again since");
+        assert!(!said(&w, t).contains(&again(&bug, t)), "{t}: DONE or queued again since");
     }
+    let rows: i64 = w.s.with(|tx| tx.query_row("SELECT count(*) FROM integration_held_left", [], |r| r.get(0)).map_err(sql)).unwrap();
+    assert_eq!(rows, 0, "nothing kept once told");
 }
 
 #[test]
@@ -280,9 +288,9 @@ fn ac198_a_held_task_leaving_after_its_red_target_ended_is_told_at_once() {
     go(&w, &Sh::default(), 3);
     let bug = bugs(&w)[0].0.clone();
     w.s.with(|tx| {
-        ops::place(tx, crate::tasks::store::HUMAN, &ops::get(tx, &bug)?, "DONE", 300)?;
+        ops::archive(tx, crate::tasks::store::HUMAN, &bug, true, 300)?;
         ops::move_to(tx, DISPATCHER, &a, "IN PROGRESS", 301)
     }).unwrap();
-    assert!(said(&w, &a).contains(&format!("{bug} (the red target) ended: {a} left the queue while it waited behind it, so nothing runs for it. Integrate again to land it.")));
+    assert!(said(&w, &a).contains(&again(&bug, &a)));
     assert_eq!(left(&w, &a).as_deref(), Some("out"));
 }

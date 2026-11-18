@@ -96,6 +96,8 @@ fn hold(tx: &Transaction, run: &Run, name: &str, target: &str, failed: &str, log
             bug
         }
         None => {
+            // an ended Bug task's held tasks go back to Verify before the new one is made, never waiting behind it untold
+            release(tx, now)?;
             let text = format!("## Problem or goal\n{name} is red at {short}: the Verify steps {failed} fail there. {id}'s Verify failed the same steps, so it waits in INTEGRATION behind this task, with each task held for the same reason. {logs}\n\n\
                 ## Expected result\nThose steps green on {name}. When this task is DONE or FAILED, the Verify of each task held behind it runs again.\n\n\
                 ## Context\nMade by Dispatcher: a red Verify's failed steps failed on the target too (terminum-integration.md AC-198).");
@@ -111,32 +113,33 @@ fn hold(tx: &Transaction, run: &Run, name: &str, target: &str, failed: &str, log
         serde_json::json!({"held": HELD, "bug": bug}), now).map(drop)
 }
 
-/// The project's Bug task for its red target while it is open, by its ID: what its held tasks wait for.
-pub fn open_bug(tx: &Transaction, project: &str) -> Result<Option<String>, String> {
-    tx.query_row(&format!("SELECT b.slug FROM project_integration i JOIN tasks b ON b.id = i.red_bug WHERE i.project = ?1 AND {OPEN}"), [project],
-                 |r| r.get(0)).optional().map_err(sql)
+/// The project's Bug task for its red target, (key, ID, open), while it is a task.
+fn red_bug(tx: &Transaction, project: &str) -> Result<Option<(String, String, bool)>, String> {
+    tx.query_row(&format!("SELECT b.id, b.slug, {OPEN} FROM project_integration i JOIN tasks b ON b.id = i.red_bug WHERE i.project = ?1"), [project],
+                 |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).optional().map_err(sql)
 }
 
-/// Held task `task` leaving INTEGRATION for `status`: anything but DONE or FAILED, it is told the Bug task's end runs
-/// nothing for it, and the Bug task hears of it so that its end tells it to integrate again (`release`).
+/// The project's Bug task for its red target while it is open, by its ID: what its held tasks wait for.
+pub fn open_bug(tx: &Transaction, project: &str) -> Result<Option<String>, String> {
+    Ok(red_bug(tx, project)?.filter(|b| b.2).map(|b| b.1))
+}
+
+/// Held task `task` left INTEGRATION for `status`: anything but DONE or FAILED, it is told the Bug task's end runs
+/// nothing for it, and is kept to be told to integrate again at that end (`release`); the Bug task hears of it.
 pub(crate) fn left(tx: &Transaction, task: &Task, status: &str, at: i64) -> Result<(), String> {
     if matches!(status, "DONE" | "FAILED") {
         return Ok(());
     }
-    let bug: Option<(Option<String>, bool)> = tx.query_row(&format!("SELECT b.slug, coalesce({OPEN}, 0) FROM integration_entries e
-            LEFT JOIN project_integration i ON i.project = e.project LEFT JOIN tasks b ON b.id = i.red_bug WHERE e.task = ?1 AND e.stage = ?2"),
-        (&task.key, HELD), |r| Ok((r.get(0)?, r.get(1)?))).optional().map_err(sql)?;
-    let id = &task.id;
-    match bug {
-        None => Ok(()),
-        Some((Some(bug), true)) => {
+    let (id, out) = (&task.id, Left::Out.word());
+    match red_bug(tx, &task.project)? {
+        Some((key, bug, true)) => {
             ops::left_queue(tx, DISPATCHER, id, &format!("{id} left the queue while it waited behind {bug} (the red target): it is not queued now, so {bug}'s end runs nothing for it. \
-                Integrate again to land it; {id} is told when {bug} ends."), "out", at)?;
-            ops::comment_with(tx, DISPATCHER, &bug, &format!("{id} left the queue while it waited on this red target: when this task ends, {id} is told to integrate again."),
-                              Some(&serde_json::json!({"held_left": task.key})), at).map(drop)
+                Integrate again to land it; {id} is told when {bug} ends."), out, at)?;
+            ops::comment(tx, DISPATCHER, &bug, &format!("{id} left the queue while it waited on this red target: when this task ends, {id} is told to integrate again."), at)?;
+            tx.execute("INSERT OR REPLACE INTO integration_held_left (task, bug) VALUES (?1, ?2)", (&task.key, &key)).map(drop).map_err(sql)
         }
-        // the Bug task ended before this beat's release
-        Some((bug, _)) => ops::left_queue(tx, DISPATCHER, id, &integrate_again(bug.as_deref(), id), "out", at).map(drop),
+        // the Bug task ended, or is gone, before this beat's release
+        bug => ops::left_queue(tx, DISPATCHER, id, &integrate_again(bug.map(|b| b.1).as_deref(), id), out, at).map(drop),
     }
 }
 
@@ -150,7 +153,7 @@ fn integrate_again(bug: Option<&str>, id: &str) -> String {
 }
 
 /// The tasks held for a red target whose Bug task ended (DONE, FAILED, archived or gone) verified again, each told;
-/// each that left the queue while held, still out of it, open and not queued since, told once to integrate again.
+/// each that left the queue while held behind it, open still, told once to integrate again.
 pub(super) fn release(tx: &Transaction, now: i64) -> Result<(), String> {
     let held: Vec<(String, String, Option<String>)> = ops::rows(tx, &format!("SELECT e.task, t.slug, b.slug FROM integration_entries e JOIN tasks t ON t.id = e.task
             LEFT JOIN project_integration i ON i.project = e.project LEFT JOIN tasks b ON b.id = i.red_bug
@@ -159,13 +162,13 @@ pub(super) fn release(tx: &Transaction, now: i64) -> Result<(), String> {
         tx.execute("UPDATE integration_entries SET stage = 'verifying' WHERE task = ?1", [task]).map_err(sql)?;
         ops::comment(tx, DISPATCHER, id, &format!("{}: {id}'s Prepare and Verify run again.", ended(bug.as_deref())), now)?;
     }
-    let left: Vec<(String, String, String)> = ops::rows(tx, &format!("SELECT b.id, b.slug, t.slug FROM project_integration i JOIN tasks b ON b.id = i.red_bug
-            JOIN events e ON e.task = b.id AND e.kind = 'comment' AND e.author = ?1 JOIN tasks t ON t.id = json_extract(e.data, '$.held_left')
-            WHERE NOT ({OPEN}) AND t.status NOT IN ('DONE', 'FAILED', ?2) AND t.archived_at IS NULL
-                AND NOT EXISTS (SELECT 1 FROM events x WHERE x.task = t.id AND x.rowid > e.rowid AND (x.kind = 'queue' OR json_extract(x.data, '$.requeue') = b.id))"),
-        (DISPATCHER, ops::INTEGRATION), |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
-    for (key, bug, id) in &left {
-        ops::notice(tx, DISPATCHER, id, &integrate_again(Some(bug), id), serde_json::json!({"requeue": key}), now)?;
+    let to_tell: Vec<(String, String, String, String, bool)> = ops::rows(tx, &format!("SELECT h.task, t.slug, b.id, b.slug, t.status IN ('DONE', 'FAILED') OR t.archived_at IS NOT NULL
+            FROM integration_held_left h JOIN tasks t ON t.id = h.task JOIN tasks b ON b.id = h.bug WHERE NOT ({OPEN})"), [], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)))?;
+    for (task, id, key, bug, closed) in &to_tell {
+        tx.execute("DELETE FROM integration_held_left WHERE task = ?1", [task]).map_err(sql)?;
+        if !closed {
+            ops::notice(tx, DISPATCHER, id, &integrate_again(Some(bug), id), serde_json::json!({"requeue": key}), now)?;
+        }
     }
     Ok(())
 }

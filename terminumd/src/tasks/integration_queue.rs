@@ -23,12 +23,18 @@ pub struct Entry {
     pub batch: Option<i64>,
 }
 
-/// Whatever moved it out of INTEGRATION, the task is no longer queued; a batch it was in goes on without it.
-pub(crate) fn leave(tx: &Transaction, task_key: &str) -> Result<(), String> {
-    let batch: Option<i64> = tx.query_row("SELECT batch FROM integration_entries WHERE task = ?1", [task_key], |r| r.get(0)).optional().map_err(sql)?.flatten();
-    tx.execute("DELETE FROM integration_entries WHERE task = ?1", [task_key]).map_err(sql)?;
+/// Whatever moved it out of INTEGRATION (to `status`), the task is no longer queued: a batch it was in goes on
+/// without it; held behind a red target, it is told that target's end runs nothing for it (AC-198).
+pub(crate) fn leave(tx: &Transaction, task: &Task, status: &str, at: i64) -> Result<(), String> {
+    let entry: Option<(Option<i64>, Option<String>)> = tx.query_row("SELECT batch, stage FROM integration_entries WHERE task = ?1", [&task.key],
+                                                                    |r| Ok((r.get(0)?, r.get(1)?))).optional().map_err(sql)?;
+    tx.execute("DELETE FROM integration_entries WHERE task = ?1", [&task.key]).map_err(sql)?;
+    let Some((batch, stage)) = entry else { return Ok(()) };
+    if stage.as_deref() == Some(crate::integrate::red_target::HELD) {
+        crate::integrate::red_target::left(tx, task, status, at)?;
+    }
     match batch {
-        Some(b) => crate::integrate::store::left(tx, task_key, b, ops::now()),
+        Some(b) => crate::integrate::store::left(tx, &task.key, b, at),
         None => Ok(()),
     }
 }
@@ -109,6 +115,8 @@ fn enter(tx: &Transaction, t: &Task, s: &Settings, commit: &str, result: &str, m
     let stage = (!s.prepare.is_empty() || !s.verify.is_empty()).then_some("verifying");
     tx.execute("INSERT INTO integration_entries (task, project, commit_sha, result, author, queued_at, stage) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
                 ON CONFLICT (task) DO UPDATE SET commit_sha = ?3, result = ?4, author = ?5, stage = ?7", rusqlite::params![t.key, t.project, commit, result, me, at, stage]).map_err(sql)?;
+    // queued again: a red target's end that it left has nothing to tell it (AC-198)
+    tx.execute("DELETE FROM integration_held_left WHERE task = ?1", [&t.key]).map_err(sql)?;
     let short = short(commit);
     if t.status == INTEGRATION {
         ops::log(tx, &t.key, me, "queue", &format!("Queued {short} for integration into {} in its place.", s.target), None, at).map(drop)
