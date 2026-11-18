@@ -89,11 +89,12 @@ class Gate(Repo, unittest.TestCase):
         self.assertEqual(self.ran, ["build", *STEPS])
 
     def test_a_step_sees_only_the_allow_list(self):  # AC-201
-        caller = {"PATH": os.environ["PATH"], "HOME": "/Users/alex", "CLAUDECODE": "1", "TM_APP_DIR": "/x", "TM_PORT": "48080",
+        home = str(self.root / "alex")   # in the test's folder: a machine's real /Users/alex may refuse a stat (TERM-576)
+        caller = {"PATH": os.environ["PATH"], "HOME": home, "CLAUDECODE": "1", "TM_APP_DIR": "/x", "TM_PORT": "48080",
                   "SSH_AUTH_SOCK": "/agent", "TM_TEST_NO_CLAUDE": "1", "TM_GATE_PASSED": "1", "DOCKER_CONTEXT": "colima"}
         with mock.patch.dict(os.environ, caller, clear=True):
             self.check()
-        self.assertEqual(self.envs[0], {"PATH": os.environ["PATH"], "HOME": "/Users/alex", "DOCKER_CONTEXT": "colima", "TM_TIMING": "report"})
+        self.assertEqual(self.envs[0], {"PATH": os.environ["PATH"], "HOME": home, "DOCKER_CONTEXT": "colima", "TM_TIMING": "report"})
         self.assertTrue(all(env == self.envs[0] for env in self.envs))
 
     def test_a_busy_machine_ends_a_run_before_any_step(self):  # AC-146
