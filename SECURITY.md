@@ -23,7 +23,7 @@ Three things hold everywhere below:
 |---|---|
 | Other machines | terminumd listens on `127.0.0.1` only. Other devices come through `tailscale serve` (HTTPS on your tailnet); `tailscale funnel` is refused. |
 | Other devices | A forwarded request cannot use Finder, type a path into a terminal or choose about updates: a guard against accidents, no boundary. |
-| Web pages (CSRF, DNS rebinding) | Every request needs the sign-in, sent as a header, never a cookie or an address; writes need a `Host` terminum serves, a JSON `Content-Type` and the page's exact `Origin`; no CORS headers. |
+| Web pages (CSRF, DNS rebinding) | Every request that reads or changes terminals or files needs the sign-in, sent as a header, never a cookie or an address. The `Host` must be a name terminum serves; writes need a JSON `Content-Type` and the page's exact `Origin`; no CORS headers. |
 | Getting a sign-in | Only the `terminum` command sets the password, over its Unix socket; terminumd keeps a salted, slow hash and brakes wrong ones. `terminum signout` or a new password ends every sign-in. |
 | Other users of this Mac | `~/.terminum` is private (0700, 0600); the CLI uses the Unix socket only. |
 
@@ -39,12 +39,14 @@ Three things hold everywhere below:
 
 - **Terminal output and files are text to the page**: CSP `script-src 'self'`, no eval; Markdown
   with raw HTML off, Mermaid in strict mode; links never navigate the page; SVG only as an image;
-  HTML files in a sandboxed frame without scripts (`terminum-terminal.md`, `terminum-files.md`).
+  HTML files in a sandboxed frame without scripts (`terminum-terminal.md` and `terminum-files.md`,
+  §9 Security).
 - **A program's clipboard writes (OSC 52)** reach a page only just after your mouse release in
   that full-screen pane, and only as Copy, [+] and Ask: nothing is copied or typed until you press
   one (`terminum.md` AC-06 and §9 Security). **Left**: a program that writes the clipboard over
-  and over can have its own text offered after your release, and Copy shows only its line count
-  and first line: **check what you paste** (Ask and [+] show it whole).
+  and over can have its own text offered after your release, in place of what you dragged over,
+  and Copy shows only its line count and first line: **check what you paste** (Ask and [+] show
+  it whole).
 
 ## Terminals and files
 
@@ -60,18 +62,18 @@ Three things hold everywhere below:
 - **Remote hosts**: a host is the ssh string you gave, checked against an allowlist: no
   ProxyCommand, no command but terminumd's own (`terminum-remote.md` AC-81 and §9 Security).
   **Adding a host is the consent to set it up**: the files agent, terminum's hooks and its MCP
-  server are put there with no further question. A page signed in from another device can add a host too, so **the password also
-  decides which machines terminum writes to**. **Left**: a broken host can read its project's
-  tasks and write comments the project's other agents read, as data.
+  server are put there with no further question. A page signed in from another device can add a host
+  too, so **the password also decides which machines terminum writes to**. **Left**: a broken host
+  can read its project's tasks and write comments the project's other agents read, as data.
 
 ## Coding agents
 
 `terminum-agents.md`, `terminum-kanban.md` and `terminum-dispatcher.md`: §9 Security of each.
 
-- **Coding agents' hooks** send a few fields of each event, never a tool's output, a file's text
-  or the agent's answer, only to terminumd's socket. **Left**: any process of yours can post a
-  made-up event: it changes what a pane or a card shows and can move the task of a session
-  Dispatcher started; none of its words runs or reaches tmux.
+- **Coding agents' hooks** send a few fields of each event, never a tool's output, a file's text or
+  the agent's answer, only to terminumd's socket, or on a host to a Mac's link. **Left**: any
+  process of yours can post a made-up event: it changes what a pane or a card shows and can move the
+  task of a session Dispatcher started; none of its words runs or reaches tmux.
 - **Codex's trust of terminum's hooks** is by the entry's hash, not the program's: **an upgrade of
   terminum changes what the hook does without a new trust prompt.** Its MCP tools are approved
   without a prompt.
@@ -80,9 +82,9 @@ Three things hold everywhere below:
   `terminum mcp` listens on no port; a worker's tools write only the plan and the store, never
   tmux. **Left**: an agent does all on its own tasks, and reads and comments on its project's
   others: a scope, no boundary, since a process of yours can name another pane.
-- **The tasks' store** (0600, on the Mac alone) is reached only with the sign-in. Agents' text is
-  redacted, yours is not: you can purge a text or a file for good. Its input log holds what was
-  typed into panes, but no password at a recognized prompt and no line begun with a space
+- **The tasks' store** (0600, on the Mac alone) is reached by pages only with the sign-in. Agents'
+  text is redacted, yours is not: you can purge a text or a file for good. Its input log holds what
+  was typed into panes, but no password at a recognized prompt and no line begun with a space
   (`terminum.md` AC-147). **Left**: a password typed at a prompt it does not recognize is kept.
 - **The pools of agents**: an agent's command is one line you wrote, run in your login shell, kept
   and shown as written: **keep a secret in your shell's environment, never in the command.**
@@ -100,7 +102,7 @@ Three things hold everywhere below:
   human's RUN, whose window shows it first; a schedule's; a project's manager's; the integration
   queue's own words. A task's words never reach the shell an agent leaves. **Left**: in one
   session of several tasks an agent-written task can still sway the others once read.
-- **Closing and ending**: it closes only such a pane, its agent idle; at a task's time budget it
+- **Closing and ending**: it closes only such a pane, its agent idle, and at a task's time budget
   signals what runs under it by pid and start time, its shell spared, never by name or pattern.
 - **Auto-Dispatch** (AC-170), off until you turn it on for a project, starts tasks no human looked
   at, an agent's own too: **an agent that writes tasks can have them run by another, with that
@@ -121,10 +123,9 @@ makes schedules, and pastes into and closes the project's other sessions.
 
 - **So** what a manager's agent reads (a task, a comment, a file, a web page, a session's screen)
   is one tool call from a command of its choosing, run with an agent's permissions, a bypassing
-  one's too. **Start a manager only on an agent you would give your own shell, and keep the
-  agents' week and month limits set.**
-- **The record**: what it makes carries its name ("Opus · manager"), each call is a line of the
-  log, and what it typed is in the input log.
+  one's too; its client asks about `execute_tool` once, not for each tool behind it. **Start a
+  manager only on an agent you would give your own shell, and keep the agents' week and month
+  limits set.**
 - **Tokens** (`terminum tokens`, AC-181) give a program outside a pane a role in one project:
   keep one in the program's environment, never on a command line.
 - **Left**: all of it guards against an agent that errs, never against a process of yours.
@@ -153,6 +154,7 @@ days and that is not Dispatcher's. What the agent ran in the background ends wit
 |---|---|
 | Sent history | What you send to a shell or an agent is kept on the Mac (0600), for signed-in pages only. A line starting with a space is never kept; values of words named like secrets, and words of secrets' shapes, are written as `[redacted]`. **Left**: a quote that opens inside a value's word (`TOKEN=abc'd e'`) is not followed; other secrets typed on a command line are kept as typed (`terminum-terminal.md` AC-90). |
 | Last lines (`lastLines`) | What a terminal printed (a token, a `.env` you displayed) is kept on disk for a shown pane's last lines, so it survives a reboot; what turns that off: `terminum-lifecycle.md` AC-96. |
+| Bookmarks | Selected terminal text and your note, which can hold what the terminal showed, are kept 0600 and sent only to signed-in pages (`terminum-terminal.md` AC-33). |
 | Reboot restore | `layout.json` (0600) holds the layout, never output, history or environment; only shells are started again (`terminum-lifecycle.md` AC-15). |
 
 ## Updates and releases
@@ -163,7 +165,8 @@ days and that is not Dispatcher's. What the agent ran in the background ends wit
 - **The installer and releases**: `install.sh` and `terminum upgrade` verify the signature of
   `SHA256SUMS` with the release key they carry, before the checksum, and refuse root. Releases are
   built and signed only on the maintainer's Mac (`docs/RELEASING.md`; `terminum-lifecycle.md` §9
-  Security). **Left**:
+  Security). The folder access macOS grants terminumd passes to every program in terminum's tmux,
+  agents too. **Left**:
   whoever controls the maintainer's GitHub account can replace a release's `install.sh`, which a
   *first* `curl | sh` trusts; a program running as the maintainer while the Keychain is unlocked
   can sign.

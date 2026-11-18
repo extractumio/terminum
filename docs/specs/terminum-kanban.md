@@ -1372,7 +1372,7 @@ Pages hear over the page's WebSocket: `taskchange {id, history?}` (`""` for seve
 
 **Security.**
 - A task's text, comments and files are data for agents: every tool answer says so; what reaches an agent as a prompt is what `terminum-dispatcher.md` §9 Security lists.
-- The store and the files are on the Mac alone (an Agent on a host never opens one), reached only with the sign-in. A file shows inline only as a raster picture checked by its bytes; all else downloads, so nothing runs on the page's origin.
+- The store and the files are on the Mac alone (an Agent on a host never opens one), reached by pages only with the sign-in. A file shows inline only as a raster picture checked by its bytes; all else downloads, so nothing runs on the page's origin.
 - Agents' text is redacted, a human's is not: a human can purge a file or a text for good, for a secret pasted by mistake (AC-109).
 - What reaches a session of a task's change is fixed words with a task's ID: never a title, text or comment.
 - An agent does all on its own tasks, and reads and comments on its project's others: a scope, no boundary: `terminum mcp` names the pane from the agent's environment (`terminum-agents.md` §9 Security).

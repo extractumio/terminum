@@ -537,7 +537,7 @@ Agents' link (AC-99): a process on the host (the user, or root) can, only for th
 
 The files agent writes only under that user's `$HOME` and `/tmp` (its Roots) and exits when its ssh ends; its answers are untrusted, capped and timed.
 
-Left: adding a host is the consent to set it up (AC-83, AC-99), and a page signed in from another device can add one too, so the password also decides which machines terminum writes to. An agent on a host reaches its project's tasks through the host's link, so a broken host can read them and write comments its project's other agents read, which they are told are data (`terminum-kanban.md` AC-120).
+Adding a host is the consent to set it up (AC-83, AC-99). Left: a page signed in from another device can add one too, so the password also decides which machines terminum writes to; an agent on a host reaches its project's tasks through the host's link, so a broken host can read them and write comments its project's other agents read, which they are told are data (`terminum-kanban.md` AC-120).
 
 ### Compatibility
 
