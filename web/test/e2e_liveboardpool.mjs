@@ -3,7 +3,7 @@
 // AC-142; terminum-kanban.md AC-106): assignment, running, slots and task windows.
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { boardKit, cardInSight, pressCard, pressRun, showColumnOf, startOf } from "./boardkit.mjs";
+import { boardKit, cardInSight, nap, pressCard, pressRun, showColumnOf, startOf } from "./boardkit.mjs";
 import { check, until } from "./check.mjs";
 import { subscriptionStripes } from "./e2e_liveboardsubs.mjs";
 
@@ -237,12 +237,13 @@ export async function agentPool(page, opts, pressAt) {
 
   // + Session: the agent in the project's place, nothing typed, a dot of its own, let go by the human (AC-142)
   await shown();
-  const under = await page.evaluate(() => { const k = document.getElementById("adhocsession"), rows = [...document.querySelectorAll("#sessions .item")];
-    return { inList: k?.parentElement?.id === "sessions" && k === k.parentElement.lastElementChild, below: rows.every((r) => r.getBoundingClientRect().bottom <= k.getBoundingClientRect().top), rows: rows.length }; });
-  check("AC-142 one project shown: + Session under its sessions in the list", await page.isVisible("#adhocsession") && under.inList && under.below && !(await page.$("#boardacts #adhocsession")), JSON.stringify(under));
+  // a computer's: the list head's [+ Session]; the list's own under its sessions is a phone's
+  const under = await page.evaluate(() => { const k = document.getElementById("adhocsession");
+    return { inList: k?.parentElement?.id === "sessions" && k === k.parentElement.lastElementChild, shown: !!k?.offsetWidth }; });
+  check("AC-142 one project shown: the list head's [+ Session]; the list's own under its sessions only on a phone", await page.isVisible("#navnew") && under.inList && !under.shown, JSON.stringify(under));
   const spare = (await j("/api/task-agents", "POST", { project, name: "Spare", kind: "claude", command: "claude" })).id;   // a pool of two: it asks which
   await until(() => page.isVisible('.agents .agentcard:has-text("Spare")'));
-  await page.click("#adhocsession");
+  await page.click("#navnew");
   const tiles = await until(() => page.$("#agentpick[open]")) && await page.textContent("#agentpicklist");
   check("AC-142 with several agents it asks which, as tiles", /Fast fixer/.test(tiles), tiles);
   // each tile in the window, on one line, its kind, slots and command line said; the window in the page's middle
@@ -262,7 +263,7 @@ export async function agentPool(page, opts, pressAt) {
   const extra = [];
   for (const n of ["Third", "Fourth", "Fifth"]) extra.push((await j("/api/task-agents", "POST", { project, name: n, kind: "codex", command: "codex" })).id);
   await until(() => page.isVisible('.agents .agentcard:has-text("Fifth")'));
-  await page.click("#adhocsession");
+  await page.click("#navnew");
   await until(() => page.$("#agentpick[open]"));
   const five = await lay();
   check("AC-142 five agents: three and two, all inside the window, centered", five.n === 5 && five.rows === 2 && five.inside && five.fits && Math.abs(five.dx) <= 1 && Math.abs(five.dy) <= 1, JSON.stringify(five));
@@ -292,6 +293,31 @@ export async function agentPool(page, opts, pressAt) {
   check("AC-142 and leaves its window", adPane && paneAlive(tmux, adPane));
   await page.click('#agentbox button[value="cancel"]');
   if (adPane) tmux("kill-pane", "-t", adPane);
+
+  // + Session on the agent's card with a first prompt (AC-204): typed once through the gate, then AC-142's session
+  await shown();
+  await page.click(`${pool} .agsess`);
+  check("AC-204 the card's + Session opens the dock under the pool, its box in focus", await until(() => page.isVisible("#sesscompose")) && await page.evaluate(() => document.activeElement?.id === "sesstext"));
+  await page.fill("#sesstext", "AC204 first prompt, typed once");
+  await page.click("#sessstart");
+  check("AC-204 Start opens the session", await until(() => /\/sessions\//.test(page.url()), 30000), page.url());
+  const typed = async () => ((await j("/api/messages?q=AC204")).items ?? []).filter((i) => i.text.includes("AC204 first prompt, typed once")).length;
+  check("AC-204 its prompt went in once, and only once", await until(async () => (await typed()) === 1, 20000) && (await nap(3000), (await typed()) === 1), String(await typed()));
+  let prompted;
+  check("AC-204 then it is AC-142's: of no task, working, the human's", await until(async () => (prompted = (await j("/api/tasks?counts=1")).slots?.agents?.[fixer]?.find((s) => !s.tasks))?.state === "working", 15000)
+    && startOf(opts.app) === "human session", JSON.stringify(prompted));
+  check("AC-204 the draft is cleared once it went in", await page.evaluate(() => !localStorage.getItem("tm.sessiondraft")));
+  await shown();
+  await page.click(pool, { position: { x: 60, y: 8 } });
+  await page.waitForSelector("#agentbox[open]");
+  await page.click('#agentview button:has-text("Let go")');
+  await pressAt(page, "#confirmok");
+  check("AC-204 Let go frees its slot too", await until(async () => !(await j("/api/tasks?counts=1")).slots?.agents?.[fixer]?.length, 15000));
+  await page.click('#agentbox button[value="cancel"]');
+  const promptPane = prompted?.key?.split(":").pop();
+  if (promptPane) tmux("kill-pane", "-t", promptPane);
+  const stray = await j(`/api/task-projects/${project}/session`, "POST", { agent: fixer, prompt: "bad\u0007bell" });
+  check("AC-204 a prompt with a control character is refused before anything starts", /control or invisible/.test(stray.error ?? "") && !(await j("/api/tasks?counts=1")).slots?.agents?.[fixer]?.length, JSON.stringify(stray));
   const noPlace = (await j("/api/task-projects", "POST", { name: "NoPlace" })).id;
   const homeless = await j(`/api/task-projects/${noPlace}/session`, "POST", { agent: fixer });
   check("AC-142 a project with no folder refuses it, said", /NoPlace has no folder/.test(homeless.error ?? ""), JSON.stringify(homeless));

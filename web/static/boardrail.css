@@ -1,0 +1,53 @@
+/* SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial */
+/* The board's section rails (terminum-kanban.md AC-203; kanbanrail.js): Agent Pool, Routines and Task Management named
+   on a 24 px strip at each section's left, one column down the board, 2 px smaller than the board's words, a step above
+   the cards' surface. The pool's and the routines' rails fold their section to one 28 px strip: the word turned
+   flat, a line of what it holds, its add key. Task Management's is a plain head. After boardpanel.css. */
+:root { --board-rail: 24px; }
+.railed { display: grid; grid-template-columns: var(--board-rail) minmax(0, 1fr); column-gap: var(--sp-2); }
+.rail { position: relative; display: flex; align-items: center; margin: 0; min-height: 0; border-radius: var(--r-sm); background: var(--surface-2);
+  font-size: var(--fs-meta); font-weight: var(--fw-head); color: color-mix(in srgb, var(--t-fg) 70%, var(--t-bg)); letter-spacing: .04em; }   /* 4.5:1 on its surface, dark or light */
+.railkey { flex: 1; align-self: stretch; display: flex; flex-direction: column; align-items: center; gap: var(--sp-1); min-width: 0; padding: var(--sp-2) 0;
+  border: 0; border-radius: inherit; background: none; font: inherit; letter-spacing: inherit; color: inherit; cursor: pointer; }
+/* the word reads bottom to top: vertical-rl turned half round (Safari has no sideways-lr) */
+.railword { writing-mode: vertical-rl; transform: rotate(180deg); white-space: nowrap; }
+@media (hover: hover) { .railkey:hover { background: var(--surface-3); color: var(--t-fg); } }
+@media (pointer: coarse) { .railed:not(.folded) .railkey::before { content: ""; position: absolute; inset: 0 -10px; } }   /* a finger's 44 px across, the rail 24 */
+.railkey .chev { flex: none; color: var(--muted); transition: transform var(--dur-pop, .15s); }
+.railkey[aria-expanded="false"] .chev { transform: rotate(-90deg); }
+@media (prefers-reduced-motion: reduce) { .railkey .chev { transition: none; } }
+.railsum { display: none; }
+/* Task Management: a plain head, its word at its top, nothing to press */
+#railboard { align-items: flex-start; justify-content: center; padding-top: var(--sp-2); cursor: default; }
+@media (min-width: 601px) and (min-height: 501px), (min-width: 601px) and (pointer: fine) {
+  #board { grid-template-columns: var(--board-rail) repeat(var(--tracks), minmax(0, 1fr)); }
+  #board > #railboard { grid-column: 1; grid-row: 1; }
+  /* TODO over the panel (under 1100 px of board): the rail beside TODO, the panel the board's whole width under it, so
+     its tabs and keys keep one row on an iPad mini */
+  #board > .colpanel { grid-column: 1 / -1; }
+  @container board (min-width: 1100px) {
+    #board > #railboard { grid-row: 1 / -1; }
+    #board > .colpanel { grid-column: span max(var(--tracks) - var(--todo), var(--todo)); }
+  }
+}
+/* the add tile, last of a section's cards: as tall as they are */
+.addtile { display: grid; place-items: center; align-self: stretch; justify-self: start; flex: none; width: 44px; min-height: 44px; padding: 0;
+  border: 0; border-radius: var(--r-sm); background: var(--surface-1); color: var(--icon-ink, var(--muted)); cursor: pointer; }
+@media (hover: hover) { .addtile:hover { background: var(--surface-2); color: var(--t-fg); } }
+.trackitems > .addtile ~ .colempty { grid-column: 2 / -1; align-self: center; }
+/* folded: one strip across, the word flat, then what it holds, its add key at the end (a phone's sheet: below) */
+.railed.folded { grid-template-columns: minmax(0, 1fr); }
+.railed.folded .rail { height: 28px; }
+.railed.folded .railkey { flex-direction: row; justify-content: flex-start; gap: var(--sp-2); padding: 0 var(--sp-2); }
+.railed.folded .railword { writing-mode: horizontal-tb; transform: none; }
+.railed.folded .railsum { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-weight: var(--fw-body); letter-spacing: 0; color: var(--muted-text); }
+.railadd { flex: none; width: 28px; height: 28px; margin-right: var(--sp-1); }
+/* a phone: the pool's sheet names its sections flat, 44 px heads; Task Management's rail is for screen readers alone */
+@media (max-width: 600px), (pointer: coarse) and (max-height: 500px) {
+  #pool .railed { grid-template-columns: minmax(0, 1fr); row-gap: var(--sp-2); }
+  #pool .rail { height: var(--h-touch, 44px); }
+  #pool .railkey { flex-direction: row; justify-content: flex-start; gap: var(--sp-2); padding: 0 var(--sp-3); }
+  #pool .railword { writing-mode: horizontal-tb; transform: none; }
+  #board > #railboard { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+}

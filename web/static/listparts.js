@@ -53,6 +53,26 @@ export const colored = (p) => p?.color >= 0;
 /** A project's color for words and dots, Default's the muted. */
 export const projectInk = (p) => (colored(p) ? projectColor(p) : "var(--muted)");
 
+/** A name cut to `most` characters (code points, so no letter is split), then "…" (terminum-agents.md AC-39). */
+export function shortName(name, most = 32) {
+  const cs = [...name];
+  return cs.length <= most ? name : `${cs.slice(0, most).join("").trimEnd()}…`;
+}
+
+/** A waiting line in its project's stripe and name (terminum-agents.md AC-39, terminum-kanban.md AC-117); `p` none (no
+ *  project, Default) takes both off. Written only when changed: the lines are a live region. Answers the whole name
+ *  when it was cut, for the key's title. */
+export function tagProject(line, p) {
+  let tag = line.querySelector(".proj");
+  line.classList.toggle("inproject", !!p);
+  if (!p) { line.style.removeProperty("--proj"); tag?.remove(); return ""; }
+  const cut = shortName(p.name), ink = projectInk(p), words = textForm(`${cut}:`);
+  if (line.style.getPropertyValue("--proj") !== ink) line.style.setProperty("--proj", ink);
+  if (!tag) { tag = el("span", "proj"); line.querySelector(".what").before(tag); }
+  if (tag.textContent !== words) tag.textContent = words;
+  return cut === p.name ? "" : p.name;
+}
+
 /** A reminder not resolved (AC-91). */
 export const openReminder = (i) => !!i.remind && !i.resolved;
 /** pane id -> {mark, remind}: the list's marks of a session with bookmarks or open reminders. */

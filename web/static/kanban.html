@@ -23,10 +23,13 @@
 <link rel="stylesheet" href="askfold.css">
 <link rel="stylesheet" href="boardphone.css">
 <link rel="stylesheet" href="boardpanel.css">
+<link rel="stylesheet" href="boardrail.css">
+<link rel="stylesheet" href="sessbox.css">
 <link rel="stylesheet" href="markdown.css">
 <link rel="stylesheet" href="taskwin.css">
 <link rel="stylesheet" href="taskattrs.css">
 <link rel="stylesheet" href="dialogsize.css">
+<link rel="stylesheet" href="agentpick.css">
 <link rel="stylesheet" href="expand.css">
 <link rel="stylesheet" href="sheets.css">
 <link rel="stylesheet" href="phone.css">
@@ -45,7 +48,7 @@
         <input id="filter" type="search" placeholder="Filter sessions" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" aria-label="Filter sessions">
         <kbd class="wide-only" title="Press / to filter">/</kbd>
       </label>
-      <button id="navnew" class="icon wide-only" type="button" aria-expanded="false" aria-controls="newsess" title="New session" aria-label="New session"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:17px"><path d="M5 12h14"/><path d="M12 5v14"/></svg></button>
+      <button id="navnew" class="textkey wide-only" type="button" aria-haspopup="menu" aria-expanded="false" title="A session of an agent in a project, no task" aria-label="New agent session"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:14px"><path d="M5 12h14"/><path d="M12 5v14"/></svg><span class="word">Session</span></button>
       <button id="navclose" class="icon wide-only" type="button" aria-label="Hide the session list"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:17px"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/><path d="m16 15-3-3 3-3"/></svg></button>
     </div>
     <div id="sessions"></div>
@@ -138,11 +141,23 @@
 </header>
 <div id="boardbanner" class="banner" role="status" hidden></div>
 <div id="asks" aria-live="polite" hidden></div>
-<div id="pool"><div id="agentbar" aria-label="Agents"></div>
-<section id="schedbar" aria-label="Scheduled tasks"></section></div>
+<!-- The board's three sections, each named on a rail at its left (terminum-kanban.md AC-203): Agent Pool and Routines fold
+     by theirs (kanbanrail.js), folded to one strip with their add key; Task Management's is a plain head. -->
+<div id="pool"><section id="agentbar" class="railed" aria-labelledby="railpool"><h2 class="rail"><button id="railpool" class="railkey" type="button" aria-expanded="true" aria-controls="agentgrid"><svg class="lu chev" viewBox="0 0 24 24" aria-hidden="true" style="--s:12px"><path d="m6 9 6 6 6-6"/></svg><span class="railword">Agent Pool</span><span class="railsum"></span></button><button class="railadd icon" type="button" aria-label="Add agent" title="Add an agent to a project's pool" hidden><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M5 12h14"/><path d="M12 5v14"/></svg></button></h2>
+<!-- + Session on an agent's card with a first prompt (terminum-dispatcher.md AC-204; kanbansessbox.js): a dock under the pool, not a dialog, so task cards can be dragged onto it -->
+<form id="sesscompose" class="sessdock" aria-labelledby="sesshead" hidden>
+  <div class="sesshead"><h3 id="sesshead">+ Session on <span id="sessagent"></span></h3><button id="sessclose" class="icon x" type="button" title="Close, keep the text (Esc)" aria-label="Close"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
+  <textarea id="sesstext" class="field taskmd droparea" rows="3" aria-label="Its first prompt" placeholder="What should it do? Paste or drop files; drop tasks to name them."></textarea>
+  <ul id="sessfiles" class="filelist"></ul>
+  <p id="sesserror" class="error" role="alert" hidden></p>
+  <div class="sessfoot"><button id="sessadd" class="textkey" type="button">Add files…</button><input id="sessfile" type="file" multiple hidden>
+    <span class="hint">Drop tasks or files here · ⌘Enter starts</span>
+    <button id="sessdiscard" class="textkey danger" type="button" hidden>Discard</button><button id="sessstart" class="textkey primary" type="submit" title="Start the session; with no text nothing is typed">Start</button></div>
+</form></section>
+<section id="schedbar" class="railed" aria-labelledby="railsched"><h2 class="rail"><button id="railsched" class="railkey" type="button" aria-expanded="false" aria-controls="schedgrid"><svg class="lu chev" viewBox="0 0 24 24" aria-hidden="true" style="--s:12px"><path d="m6 9 6 6 6-6"/></svg><span class="railword">Routines</span><span class="railsum"></span></button><button class="railadd icon" type="button" aria-label="Add routine" title="Add a routine: a task that runs on a cadence on one agent" hidden><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M5 12h14"/><path d="M12 5v14"/></svg></button></h2></section></div>
 <div id="colswitch" class="seg" role="tablist" aria-label="Columns"></div>
-<button id="poolline" class="textkey" type="button" aria-haspopup="dialog" aria-controls="pool" title="Auto-Dispatch, the agents and the schedules"></button>
-<main id="board" aria-label="Tasks"></main>
+<button id="poolline" class="textkey" type="button" aria-haspopup="dialog" aria-controls="pool" title="Auto-Dispatch, the agents and the routines"></button>
+<main id="board" aria-labelledby="railboard"><h2 id="railboard" class="rail"><span class="railword">Task Management</span></h2></main>
   </section>
 </div>
 <p id="toast" class="box" role="status" popover="manual" hidden></p>
@@ -212,7 +227,7 @@
 
 <dialog id="schedbox" data-size="write" class="box dlg" aria-labelledby="schedhead">
   <form method="dialog">
-    <div class="dhead"><h2 id="schedhead">New schedule</h2><button class="icon x" type="button" title="Close (Esc)" aria-label="Close"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
+    <div class="dhead"><h2 id="schedhead">New routine</h2><button class="icon x" type="button" title="Close (Esc)" aria-label="Close"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
     <label class="fieldrow">Title <input id="schedtitle" class="field" type="text" maxlength="200" autocomplete="off"></label>
     <div class="edithead"><span>Text</span>
       <div id="schedtabs"></div>

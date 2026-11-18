@@ -222,6 +222,12 @@ PROGRESS, WAIT FOR HUMAN, FAILED or DONE.
 - **Agents** stand over the columns. Each project has its own pool (the Agents tab of its window).
   An agent's window: its subscription stripes and reset times, its tokens of 7 and 30 days, its
   live sessions with their tasks.
+- **Sections**: Agent Pool, Routines and Task Management, each named on a rail at its left. The
+  pool's and Routines' rails fold their section to one strip that keeps its +; each section's +
+  tile follows its last card.
+- **+ Session** on an agent's card opens a box under the pool: type a prompt, paste or add files,
+  drop task cards to name their IDs; Start opens that agent's session and types the prompt once.
+  The list head's + Session starts one in the project in view, with nothing typed.
 - **New task**: + New task in TODO (drop or paste files in), a file dropped on the board, a
   session's menu, a terminal's selection (New task from selection), Convert to task on a bookmark.
   ⌘Enter in a text keeps it.
@@ -317,7 +323,7 @@ several projects shown the switch only turns it off; each project turns it on in
 
 ### Schedules
 
-The line Scheduled N over the columns lists them; + Schedule opens one.
+Routines, the board's word for them, are a strip over the columns; its + opens one.
 
 - **Fields**: title, text, project, severity, agent, When, a time budget (required), Paused. What
   the agent gets shows the prompt, the command and where it runs.

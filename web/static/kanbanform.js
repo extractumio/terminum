@@ -2,9 +2,9 @@
 // The new-task window (AC-106): a title, Markdown with Preview, files dropped or pasted into the
 // text, in TODO unless said. A draft survives closing and a reload on this browser.
 import { askConfirm, oneAtATime } from "./dialogs.js";
-import { el, iconButton, read, write } from "./listparts.js";
+import { read, write } from "./listparts.js";
 import { detailsPane, LISTS, typeSelect } from "./taskattrs.js";
-import { $, AT_LIMIT, agentsOf, api, fileMarkdown, FILE_GONE, fillAgents, fillSelect, goneFiles, goneSaid, onFiles, onSend, onlyProject, projectOptions, sessionOptions, showError, upload, withFileLink, withoutFileLinks, writePreview } from "./kanbanutil.js";
+import { $, agentsOf, api, AT_LIMIT, FILE_GONE, fileChips, fileMarkdown, fillAgents, fillSelect, goneFiles, goneSaid, onFiles, onlyProject, onSend, projectOptions, sessionOptions, showError, upload, withFileLink, withoutFileLinks, writePreview } from "./kanbanutil.js";
 
 const DRAFT = "tm.taskdraft";
 
@@ -32,13 +32,7 @@ export function taskForm({ getMeta, getFilter, onMade, onRun, slots }) {
   const draft = () => ({ title: $("newtitle").value, text: $("newtext").value, project: $("newproj").value, severity: $("newsev").value, type: $("newtype").value, owner: $("newowner").value, session: $("newsession").value, files, attrs });
   const keep = () => write(draftKey(), draft());
 
-  function showFiles() {
-    $("newfiles").replaceChildren(...files.map((f) => {
-      const li = el("li", null, f.name);
-      li.append(iconButton("icon", "x", `Remove ${f.name}`, "Remove this file", () => { forget([f]); keep(); }));
-      return li;
-    }));
-  }
+  const showFiles = () => fileChips($("newfiles"), files, (f) => { forget([f]); keep(); });
 
   /** Files out of the draft, their links too. */
   function forget(gone) {

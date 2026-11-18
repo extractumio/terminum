@@ -48,16 +48,18 @@ export async function liveFolded(page, live) {
   await j(`/api/tasks/${a}`, "PATCH", { title: "Folded first, renamed again" });
   check("AC-159 shown whole stays so as the columns are read again", await until(async () => (await page.textContent(`${card(a)} .ctitle`)) === "Folded first, renamed again") && await shown(`${card(a)} .cfoot`));
 
-  // AC-138: from 1500 px of board an agent a track wide (six tracks), four a row, + Agent in the fifth track; under it
+  // AC-138: from 1500 px of board an agent a track wide (six tracks), four a row, the add tile after the last; under it
   // one row that scrolls, an agent 240 px wide (terminum-kanban.md AC-105's tracks)
-  const { tracks, left } = await page.evaluate(() => { const b = document.getElementById("board"), cs = getComputedStyle(b), w = b.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
-    return { tracks: b.clientWidth >= 1500 ? (w - 5 * 8) / 6 : 0, left: Math.round(b.getBoundingClientRect().x + parseFloat(cs.paddingLeft)) }; });
+  // the tracks start after Task Management's rail and its gap (terminum-kanban.md AC-203)
+  const { tracks, left } = await page.evaluate(() => { const b = document.getElementById("board"), cs = getComputedStyle(b), rail = document.getElementById("railboard").getBoundingClientRect();
+    const w = b.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight) - rail.width - 8;
+    return { tracks: b.clientWidth >= 1500 ? (w - 5 * 8) / 6 : 0, left: Math.round(rail.right + 8) }; });
   const agents = await page.evaluate(() => [...document.querySelectorAll(".agents .agentcard")].map((c) => { const r = c.getBoundingClientRect(); return [Math.round(r.x), Math.round(r.width), Math.round(r.y)]; }));
   const add = await box("#addagent");
   if (tracks) {
     const aligned = agents.slice(0, 4).every(([x, w], i) => Math.abs(x - (left + i * (tracks + 8))) <= 1 && Math.abs(w - tracks) <= 1);
     check("AC-138 agents stand a track wide, four a row", aligned && agents[4][2] > agents[0][2] && Math.abs(agents[4][0] - left) <= 1, JSON.stringify({ tracks, left, agents }));
-    check("AC-138 + Agent stands in the fifth track", add.x >= left + 4 * (tracks + 8) - 1 && add.x < left + 5 * (tracks + 8), JSON.stringify(add));
+    check("AC-138 AC-203 the add tile stands right after the last agent", add.y === agents[4][2] && Math.abs(add.x - (agents[4][0] + agents[4][1] + 8)) <= 1, JSON.stringify({ add, agents }));
   } else {
     check("AC-138 under 1500 px of board one row of agents that scrolls, each 240 px, from the board's edge",
       agents.every(([, w, y]) => y === agents[0][2] && w === 240) && Math.abs(agents[0][0] - left) <= 1, JSON.stringify({ left, agents }));
@@ -127,11 +129,11 @@ export async function liveSchedules(page, live) {
   const agent = (await j("/api/task-agents", "POST", { project, name: "Night owl", kind: "claude", command: `python3 -I ${FAKE} ${cli} --kind claude`, at_once: 2 })).id;
   const defaultAgent = (await j("/api/task-agents", "POST", { project: "default", name: "Preview owl", kind: "claude", command: "claude" })).id;
   await open(`?project=${project}`);
-  const toggle = "#schedbar .schedtoggle";
-  check("AC-163 the section is one line, folded, by default", await page.textContent(toggle) === "Scheduled 0" && await page.getAttribute(toggle, "aria-expanded") === "false" && !(await page.isVisible("#schedgrid")));
+  const toggle = "#railsched", says = () => page.textContent("#schedbar .railsum");
+  check("AC-163 AC-203 Routines is one strip, folded, by default", await page.textContent(`${toggle} .railword`) === "Routines" && await says() === "none" && await page.getAttribute(toggle, "aria-expanded") === "false" && !(await page.isVisible("#schedgrid")));
 
-  // AC-160: the window, its picker and terminumd's words
-  await page.click("#newschedule");
+  // AC-160: the window, its picker and terminumd's words; the folded strip's + opens it
+  await page.click("#schedbar .railadd");
   await page.waitForSelector("#schedbox[open]");
   await page.fill("#schedtitle", "Nightly deps check");
   await page.fill("#schedtext", "FINISHES the check of dependencies.");
@@ -197,12 +199,12 @@ export async function liveSchedules(page, live) {
   await shot("schedule-window");
   await page.click("#schedok");
   check("AC-160 Save keeps it and closes the window", await until(async () => !(await page.isVisible("#schedbox[open]"))));
-  check("AC-163 the head counts it", await until(async () => await page.textContent(toggle) === "Scheduled 1"));
+  check("AC-163 AC-203 the strip counts it and says its next run", await until(async () => /^1 · next SCH-\d+ /.test(await says())), await says());
   await page.click(toggle);
   // a press with the pointer leaves no focus ring round the key it pressed: the ring is the keyboard's (docs/UI-GUIDELINES.md "Focus")
   await page.keyboard.press("Shift+ArrowRight");     // a key after the press: Chrome lights a focused key's ring by it
   let r = await ring(page, toggle);
-  check("AC-163 the pressed Scheduled key, then a key typed, draws no focus ring", !r.lit, JSON.stringify(r));
+  check("AC-163 the pressed Routines rail, then a key typed, draws no focus ring", !r.lit, JSON.stringify(r));
   const sched = "#schedgrid .schedcard";
   check("AC-163 open, its card: key, title, cadence, next run, agent", await until(async () => {
     const t = await page.textContent(sched).catch(() => "");
@@ -233,10 +235,10 @@ export async function liveSchedules(page, live) {
   const afterCancel = (await j("/api/schedules")).schedules.find((s) => s.id === saved.id);
   check("AC-182 Cancel runs nothing", !afterCancel.last, JSON.stringify({ schedule: saved.key, last: afterCancel.last }));
   intoStore(live.app, `UPDATE schedules SET cron = '*/1 * * * *' WHERE id = '${saved.id}'`);
-  await page.focus(toggle);
+  await page.focus(run);
   await tabKey(page);
   r = await ring(page, "#newschedule");
-  check("AC-163 Tab still reaches + Schedule and rings it", r.focused && r.lit, JSON.stringify(r));
+  check("AC-163 AC-203 Tab from the last routine reaches its add tile and rings it", r.focused && r.lit, JSON.stringify(r));
   await page.evaluate(() => document.activeElement?.blur());
   const w = await page.evaluate((s) => Math.round(document.querySelector(s).getBoundingClientRect().width), sched);
   const agentW = await page.evaluate(() => Math.round(document.querySelector("#agentbar .agentcard").getBoundingClientRect().width));

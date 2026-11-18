@@ -8,7 +8,7 @@ import "./pop.js";                                  // where a window flies out 
 import { Input } from "./input.js";
 import { kbdPlacer } from "./kbdplace.js";
 import { pageTasks } from "./pagetasks.js";
-import { findItem, listParts, renderNav, seeWaits, serverDown, setTaskMarks, taskMarksOf } from "./nav.js";
+import { findItem, listParts, projectOfSession, renderNav, seeWaits, serverDown, setTaskMarks, taskMarksOf } from "./nav.js";
 import { pageHeader } from "./header.js";
 import { banner } from "./banners.js";
 import { sessionDrawer } from "./drawer.js";
@@ -68,7 +68,7 @@ const store = {
 if (embedded) document.body.classList.add("embed");
 
 const SIZE_MIN = 7, SIZE_MAX = 28;                 // the text sizes the − and + buttons allow
-const tasks = pageTasks({ box: $("asks"), embedded, say: toast, show: (id) => { if (id !== st.sid) select(id); } });
+const tasks = pageTasks({ box: $("asks"), embedded, say: toast, show: (id) => { if (id !== st.sid) select(id); }, projects: () => st.projects, here: () => projectOfSession(st.groups, st.projects, st.sid), menu: (key, pick) => rowMenu.sessionMenu(key, pick) });
 const st = {
   groups: [], sid: embedded ?? tasks.asked ?? store.get("sid", null), projects: [], listOrder: [],
   size: null, base: null, step: store.get("sizeStep", 0),
@@ -299,7 +299,7 @@ function onMessage(m) {
     case "plan": case "plannew": showCurrent.plan.onMessage(m); break;   // the Plan pane (AC-97)
     case "sentone": case "sentnew": sent.onMessage(m); break;
     case "taskchange": madeHere.heard(m); break;   // the tasks made in the session shown (terminum-kanban.md AC-150)
-    case "projects": st.projects = Array.isArray(m.items) ? m.items : []; st.listOrder = Array.isArray(m.order) ? m.order : []; place.note(); bookmarks.changed(); break;   // the list, and the projects the list below it names
+    case "projects": st.projects = Array.isArray(m.items) ? m.items : []; st.listOrder = Array.isArray(m.order) ? m.order : []; place.note(); bookmarks.changed(); reminders.draw(); break;   // the list, the projects the list below it names, the lines' names
     case "taskmarks": setTaskMarks(m); bookmarks.changed(); tasks.marks(m); break;   // the rows' marks, the Plan button (terminum-kanban.md AC-113)
     case "created": if (!m.stay) pick(m.id); if (m.note) toast(m.note, 6000); break;
   }
@@ -330,7 +330,7 @@ function pick(id) {
   select(of || id); closeDrawer();
   if (of) quick.focus(); else focusTerminal();
 }
-const reminders = waitingCards($("asks"), pick);
+const reminders = waitingCards($("asks"), pick, (id) => projectOfSession(st.groups, st.projects, id));
 const sent = sentHistory({ view, send, item: () => itemOf(st.sid), copy: (text) => input.copySelection(text, true), toast, toChat: (text) => bookmarks.toChat(text),
   jump: (it) => bookmarks.jumpText(it) });
 const rail = embedded ? null : promptRail({ view, term: $("term"), send, sid: () => st.sid, marks: bookmarks, toast });

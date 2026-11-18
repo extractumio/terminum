@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 //! Where a run starts and its window opens (`terminum-dispatcher.md` AC-140, AC-142): a project's place, what
-//! refuses it before any slot is asked, and + Session.
+//! refuses it before any slot is asked, and + Session, with its first prompt (AC-204).
 
 use std::sync::Arc;
 
@@ -11,7 +11,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 
 use super::runs::{self, Phase, Run};
-use super::{pool, start, store};
+use super::{firstprompt, pool, start, store, Held};
 use crate::app::Shared;
 use crate::tasks::agents::{self, Agent};
 use crate::tasks::api::answer;
@@ -83,15 +83,23 @@ pub(super) async fn place(app: &Shared, project: &str, agent: Option<String>) ->
 #[derive(Deserialize)]
 pub(super) struct AdHoc {
     agent: String,
+    /// the human's first prompt, typed once (AC-204); none: nothing is typed (AC-142)
+    #[serde(default)]
+    prompt: Option<String>,
+    /// files the human added for it (`/api/task-files`, no task's): their paths go into the prompt, on this Mac only
+    #[serde(default)]
+    files: Vec<String>,
 }
 
-/// + Session (AC-142): a project's agent with no task, nothing typed: the human's from its first box.
+/// A project's agent with no task, + Session's (AC-142), the human's from its first box; with a prompt, that typed
+/// once first (AC-204). `typed` says whether it went in, `why` what missed: the session stays either way.
 pub(super) async fn ad_hoc(State(app): State<Shared>, Path(project): Path<String>, Json(body): Json<AdHoc>) -> Response {
-    answer(session(&app, &project, body.agent).await)
+    answer(session(&app, &project, body).await)
 }
 
-pub(super) async fn session(app: &Shared, project: &str, agent: String) -> Result<Value, String> {
-    let (a, host, dir, server) = place(app, project, Some(agent)).await?;
+pub(super) async fn session(app: &Shared, project: &str, body: AdHoc) -> Result<Value, String> {
+    let (a, host, dir, server) = place(app, project, Some(body.agent)).await?;
+    let prompt = firstprompt::asked(app, body.prompt.as_deref(), &body.files, host.is_some()).await?;
     let (ag, p, f) = (a.clone(), project.to_string(), dir.clone());
     let run = store(app, move |tx| {
         if let Some(full) = pool::check(tx, Some(&ag), &p, None)? {
@@ -99,23 +107,38 @@ pub(super) async fn session(app: &Shared, project: &str, agent: String) -> Resul
         }
         runs::add(tx, &Run::of(&ag, host, f, p, None), &[], runs::Started::of(runs::How::Session), ops::now())
     }).await?;
-    let key = launch(app, &run, &server, project, &dir, &a, &[]).await?;
-    Ok(json!({"run": run, "key": key}))
+    let Some(text) = prompt else {
+        let key = launch(app, &run, &server, project, &dir, &a, &[]).await?;
+        return Ok(json!({"run": run, "key": key}));
+    };
+    // its start is this request's until the prompt went in or missed: a walk's watch would take an empty box as AC-142's
+    // and leave nothing to type into; on a task of its own, so a page that goes away cuts no paste short
+    let hold = Held::take(app, |d| &d.starting, &run).ok_or("its start is already watched")?;
+    let (app, project) = (app.clone(), project.to_string());
+    tokio::spawn(async move {
+        let key = open_run(&app, &run, &server, &project, &dir, &a, &[]).await?;
+        let typed = firstprompt::type_once(&app, &run, &text).await;
+        drop(hold);
+        start::watch(&app, &run);                    // after the prompt: a run it made Working is no more its to type in
+        Ok(json!({"run": run, "key": key, "typed": typed.is_ok(), "why": typed.err()}))
+    }).await.map_err(|e| format!("+ Session stopped: {e}"))?
 }
 
 /// The window of a run just added: opened at its place and watched; one that does not open closes its run. Its key.
 pub(super) async fn launch(app: &Shared, run: &str, server: &Arc<Server>, project: &str, dir: &str, a: &Agent, tasks: &[String]) -> Result<String, String> {
+    let key = open_run(app, run, server, project, dir, a, tasks).await?;
+    start::watch(app, run);
+    Ok(key)
+}
+
+/// The window of a run just added, opened at its place, not yet watched; one that does not open closes its run.
+async fn open_run(app: &Shared, run: &str, server: &Arc<Server>, project: &str, dir: &str, a: &Agent, tasks: &[String]) -> Result<String, String> {
     let named = project_named(app, project);
     let opening = start::Opening { server, project: named.as_ref().map(|(i, n)| (i.as_str(), n.as_str())), folder: dir, command: &a.line, run, tasks, program: &a.kind, agent: &a.id };
-    match start::open(app, opening).await {
-        Ok(key) => {
-            start::watch(app, run);
-            Ok(key)
-        }
-        Err(e) => {
-            let r = run.to_string();
-            let _ = store(app, move |tx| runs::change(tx, &r, |now| now.state = Phase::Closed).map(drop)).await;
-            Err(e)
-        }
+    let opened = start::open(app, opening).await;
+    if opened.is_err() {
+        let r = run.to_string();
+        let _ = store(app, move |tx| runs::change(tx, &r, |now| now.state = Phase::Closed).map(drop)).await;
     }
+    opened
 }
