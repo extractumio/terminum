@@ -34,7 +34,7 @@ pub(super) fn place(store: &Store, home: &Path, project: &str) -> Result<Place, 
 }
 
 /// The target as fetched now.
-fn target_now(p: &Place) -> Result<String, String> {
+pub(super) fn target_now(p: &Place) -> Result<String, String> {
     let (remote, branch) = integration::target_of(&p.s.target)?;
     // a fetch beside it (an After's, a Prepare's) holding a ref is waited for, as worktree.py's fetched() waits
     let fetch = || git::run(&p.repo, &["-c", "core.filesRefLockTimeout=5000", "-c", "core.packedRefsTimeout=5000", "fetch", "--quiet", remote]);

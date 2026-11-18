@@ -7,7 +7,8 @@ holds Prepare, Check and Publish in the landing turn.
 
   land.py prepare [<slug>]   the target merged into the tree; a conflict stays there to resolve (exit 2)
   land.py verify  [<slug>]   the targeted checks on the tree's content (kept per content), or the pass of the commit
-                             Prepare merged into when origin/main changed none of its files
+                             Prepare merged into when origin/main changed none of its files; with
+                             TM_INTEGRATION_RERUN, a red Verify's failed steps run on the target
   land.py queue   <slug>     with integration on: queued by terminum (TASK, RESULT); off: nothing to queue
   land.py check   [<slug>]   the smoke set on HEAD, its green kept for that commit
   land.py publish <slug>     pushed, never forced, only a commit checked green that holds the target as it is now
@@ -36,10 +37,13 @@ def terminum():
     return shutil.which("terminum") or str(Path.home() / ".terminum" / "bin" / "terminum")
 
 
-def verify(tree, check=land.checks_of, say=print):
+def verify(tree, check=land.checks_of, say=print, env=os.environ):
     """Stage 2: the targeted checks on the tree's content; check_changed.py itself skips a pass kept for it, or for
-    the commit Prepare merged the target into when the target changed none of its files (AC-198)."""
-    if not check(tree):
+    the commit Prepare merged the target into when the target changed none of its files (AC-198). terminumd's run of
+    a red Verify's failed steps on the target (TM_INTEGRATION_RERUN, of TM_INTEGRATION_RERUN_OF) runs only those."""
+    steps, of = env.get("TM_INTEGRATION_RERUN"), env.get("TM_INTEGRATION_RERUN_OF")
+    flags = ("--rerun", steps, "--of", of) if steps and of else ()
+    if not check(tree, *flags):
         raise Stop(1, f"verify: targeted checks failed in {tree}")
     say("verify: passed")
 
