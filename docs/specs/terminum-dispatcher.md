@@ -396,7 +396,7 @@ Scenario: AC-122 edge — a turn the agent scheduled itself
   Given API-12 is queued for integration (terminum-integration.md AC-198) and its agent set itself a wakeup in its session (Claude Code's ScheduleWakeup, CronCreate, /loop)
   When the wakeup fires and its hook speaks the agent's scheduled words as a prompt
   Then API-12 stays in INTEGRATION, its history, clocks and place in the queue unchanged, and the prompt is no message (terminum-terminal.md AC-90); the agent's turn starts
-  And terminumd knows such a prompt by the hook's source where Claude Code gives one (a wakeup's, a scheduled task's, a machine's: its own; the user's: a human's), else by its words, blanks aside: the prompt that pane's agent gave the scheduling tool (its PreToolUse event, late or not), known for 7 days, the newest 20 a pane, kept across terminumd's restarts in the state folder's scheduled-prompts.json
+  And terminumd knows such a prompt by the hook's source where Claude Code gives one (a wakeup's, a scheduled task's, a machine's: its own; the user's or a script's: a human's), else (none, or one not known) by its words, blanks aside: the prompt that pane's agent gave the scheduling tool (its PreToolUse event, late or not), known for 7 days, the newest 20 a pane, kept across terminumd's restarts in the state folder's scheduled-prompts.json
   And a human who types the very words the agent scheduled in that pane counts as its own turn, and a /loop without a prompt of its own ("<<autonomous-loop-dynamic>>") or a wakeup whose hook event was lost counts as a human's
 
 Scenario: AC-122 edge — SAVE

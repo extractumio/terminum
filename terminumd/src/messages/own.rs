@@ -35,31 +35,17 @@ pub struct Scheduled {
     write: Mutex<()>,
 }
 
-fn now() -> i64 {
-    crate::inputs::now_ms() / 1000
-}
-
 impl Scheduled {
-    /// The texts kept in `path`; a missing file is none, an unreadable one is said in the log.
+    /// The texts kept in `path`; a missing file is none, an unreadable one is set aside as the other state files are.
     pub fn load(path: PathBuf) -> Scheduled {
-        let all = match std::fs::read(&path) {
-            Ok(bytes) => serde_json::from_slice::<Vec<Entry>>(&bytes).unwrap_or_else(|e| {
-                tracing::warn!(event = "scheduled.load", path = %path.display(), error = %e);
-                Vec::new()
-            }),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Vec::new(),
-            Err(e) => {
-                tracing::warn!(event = "scheduled.load", path = %path.display(), error = %e);
-                Vec::new()
-            }
-        };
+        let all = crate::auth::store::read_or_set_aside(&path, |v| serde_json::from_value(v).map_err(|e| e.to_string())).unwrap_or_default();
         Scheduled { all: Mutex::new(all), path: Some(path), write: Mutex::default() }
     }
 
     /// Pane `key`'s agent scheduled `text`: known again from now. `save` keeps it.
     pub fn remember(&self, key: &str, text: &str) {
         let mut all = self.all.lock();
-        let at = now();
+        let at = crate::tasks::ops::now();
         all.retain(|e| at - e.at < KEPT && !(e.pane == key && e.text == text));
         if all.iter().filter(|e| e.pane == key).count() >= PER_PANE
             && let Some(oldest) = all.iter().position(|e| e.pane == key) {
@@ -73,14 +59,14 @@ impl Scheduled {
         let Some(path) = &self.path else { return };
         let _one = self.write.lock();
         let bytes = serde_json::to_vec(&*self.all.lock()).unwrap_or_default();
-        if let Err(e) = crate::config::write_replacing(path, &bytes, 0o600, None) {
+        if let Err(e) = crate::config::write_private(path, &bytes) {
             tracing::warn!(event = "scheduled.save", path = %path.display(), error = %e);
         }
     }
 
     /// Whether pane `key`'s agent scheduled `prompt` (blanks aside); kept: a cron fires again.
     pub fn has(&self, key: &str, prompt: &str) -> bool {
-        let at = now();
+        let at = crate::tasks::ops::now();
         self.all.lock().iter().any(|e| e.pane == key && at - e.at < KEPT && crate::dispatcher::same_prompt(&e.text, prompt))
     }
 }
@@ -91,10 +77,15 @@ pub fn scheduled(ev: &Value) -> Option<&str> {
 }
 
 /// Whether hook event `ev` of pane `key` is a prompt of the agent's own turn: a `source` Claude Code
-/// gives decides ("user" is a human's even in words the agent scheduled), else the scheduled texts.
+/// gives decides ("user", "sdk": a human's even in words the agent scheduled), else, none or one not
+/// known, the scheduled texts.
 pub fn turn(scheduled: &Scheduled, key: &str, ev: &Value) -> bool {
     let Some(prompt) = ev["prompt"].as_str().filter(|_| ev["event"] == "UserPromptSubmit") else { return false };
-    super::injected(prompt) || ev["source"].as_str().map_or_else(|| scheduled.has(key, prompt), |s| SOURCES.contains(&s))
+    super::injected(prompt) || match ev["source"].as_str() {
+        Some("user" | "sdk") => false,
+        Some(s) if SOURCES.contains(&s) => true,
+        _ => scheduled.has(key, prompt),
+    }
 }
 
 #[cfg(test)]
@@ -121,6 +112,7 @@ mod tests {
         assert!(turn(&s, a, &prompt(wake, None)), "a cron fires again");
         assert!(!turn(&s, b, &prompt(wake, None)), "another pane's agent did not schedule it");
         assert!(!turn(&s, a, &prompt(wake, Some("user"))), "a source Claude Code gives decides");
+        assert!(turn(&s, a, &prompt(wake, Some("later_kind"))) && !turn(&s, a, &prompt("fix it", Some("later_kind"))), "one not known: the words do");
         assert!(!turn(&s, a, &prompt("fix the tests", None)), "a human's");
         for source in SOURCES {
             assert!(turn(&s, b, &prompt("go on", Some(source))), "{source}");
@@ -155,7 +147,8 @@ mod tests {
         s.save();
         assert!(Scheduled::load(path.clone()).has("k", "land TERM-9 once its checks pass"));
         std::fs::write(&path, "not json").unwrap();
-        assert!(!Scheduled::load(path).has("k", "x"), "an unreadable file is none");
+        assert!(!Scheduled::load(path.clone()).has("k", "x"), "an unreadable file is none");
+        assert!(crate::auth::store::backup_path(&path).exists(), "and set aside, not overwritten");
         std::fs::remove_dir_all(dir).unwrap();
     }
 

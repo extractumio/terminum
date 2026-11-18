@@ -7,6 +7,16 @@ use crate::tasks::store::{Store, HUMAN};
 use serde_json::json;
 use std::sync::Arc;
 
+/// `evs` through the real /hook, then Dispatcher's queue taken in order.
+async fn post(app: &Shared, server: &Arc<crate::tmux::server::Server>, events: &mut UnboundedReceiver<(String, Value)>, evs: Vec<Value>) {
+    for e in evs {
+        crate::sock::hook_on(app.clone(), Some(server.clone()), e).await;
+    }
+    while let Ok((k, e)) = events.try_recv() {
+        one_event(app.clone(), k, e).await;
+    }
+}
+
 #[tokio::test]
 async fn ac122_a_wakeup_the_agent_scheduled_leaves_its_queued_task_in_integration() {
     let (root, mut app) = crate::testutil::app("hooks-wakeup");
@@ -36,23 +46,12 @@ async fn ac122_a_wakeup_the_agent_scheduled_leaves_its_queued_task_in_integratio
     let wake = "Check check_changed.py for TERM-9, then land via make land SLUG=term-9 TASK=TERM-9 RESULT=file.";
     let history = || app.tasks.with(|tx| crate::tasks::comments::history(tx, &task)).unwrap();
     let status = || app.tasks.with(|tx| Ok(crate::tasks::ops::get(tx, &task)?.status)).unwrap();
-    let post = |events_: Vec<Value>| {
-        let (app, server) = (app.clone(), server.clone());
-        async move {
-            for e in events_ {
-                crate::sock::hook_on(app.clone(), Some(server.clone()), e).await;
-            }
-        }
-    };
     // the wakeup's tool came late, after its turn's Stop: it is remembered all the same
-    post(vec![
+    post(&app, &server, &mut events, vec![
         ev("UserPromptSubmit", json!({"turn": "p1", "prompt": "queue the landing"})),
         ev("Stop", json!({"turn": "p1"})),
         ev("PreToolUse", json!({"turn": "p1", "tool": "ScheduleWakeup", "scheduled": wake})),
     ]).await;
-    while let Ok((k, e)) = events.try_recv() {
-        one_event(app.clone(), k, e).await;
-    }
     for _ in 0..300 {
         if crate::messages::own::Scheduled::load(file.clone()).has(&key, wake) { break }
         tokio::time::sleep(std::time::Duration::from_millis(10)).await;
@@ -65,19 +64,13 @@ async fn ac122_a_wakeup_the_agent_scheduled_leaves_its_queued_task_in_integratio
     }).unwrap();
     let before = history();
     let human_at = std::time::Instant::now();
-    post(vec![ev("UserPromptSubmit", json!({"turn": "p2", "prompt": wake}))]).await;
-    while let Ok((k, e)) = events.try_recv() {
-        one_event(app.clone(), k, e).await;
-    }
+    post(&app, &server, &mut events, vec![ev("UserPromptSubmit", json!({"turn": "p2", "prompt": wake}))]).await;
     assert_eq!(status(), crate::tasks::ops::INTEGRATION, "the wakeup is no one's new work");
     assert_eq!(history(), before, "nothing moved it");
     let r = app.tasks.with(|tx| runs::by_id(tx, &run)).unwrap();
     assert!(!r.turn_ended, "its turn started all the same");
     assert!(!app.inputs.human_since(&key, human_at), "no human typed it (AC-131)");
-    post(vec![ev("Stop", json!({"turn": "p2"})), ev("UserPromptSubmit", json!({"turn": "p3", "prompt": "and fix the docs too"}))]).await;
-    while let Ok((k, e)) = events.try_recv() {
-        one_event(app.clone(), k, e).await;
-    }
+    post(&app, &server, &mut events, vec![ev("Stop", json!({"turn": "p2"})), ev("UserPromptSubmit", json!({"turn": "p3", "prompt": "and fix the docs too"}))]).await;
     assert_eq!(status(), "IN PROGRESS", "a human's prompt is new work");
     drop(app);
     std::fs::remove_dir_all(root).unwrap();
