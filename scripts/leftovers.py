@@ -26,7 +26,7 @@ OLD_S = 6 * 3600
 TEST_HELPER = re.compile(r"/\S*/terminumd/target/(?:debug|release)/deps/terminumd-[0-9a-f]{16} --exact cli::tests::fake_terminumd( |$)")
 BUILD_OUTPUT = re.compile(r"/\S*/terminumd/target/(?:debug|release)/(?:terminumd|deps/terminumd-[0-9a-f]{16})( |$)")
 # what tests name their folders; test_leftovers.py fails on a test's prefix missing here
-FOLDER_PREFIXES = ("tm-", "tma-", "tmb-", "tme-", "tmh-", "tml-", "tmln-", "tmlo-", "tmlp-", "tmlw-",
+FOLDER_PREFIXES = ("tm-", "tma-", "tmb-", "tme-", "tmh-", "tmi-", "tml-", "tmln-", "tmlo-", "tmlp-", "tmlw-",
                    "tmr-", "tmr9-", "tmrel-", "tmsq-", "tmv-", "tmw-", "tmz-", "tmc.", "tmps-", "fssh-", ".fssh-")
 
 
