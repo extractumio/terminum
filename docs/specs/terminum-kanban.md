@@ -1370,10 +1370,12 @@ Pages hear over the page's WebSocket: `taskchange {id, history?}` (`""` for seve
 
 **Performance.** With AS-112's tasks, on the owner's Mac: first page of the board p95 < 300 ms, a move shown on another page p95 < 200 ms, Find p95 < 300 ms; measured by `liveBoardScale` (`node web/test/e2e_live.mjs board`). No board work blocks a screen's frames (`terminum.md` budgets).
 
-**Security** (`SECURITY.md` carries these with the code).
-- A task's text, comments and files are data for agents: every tool answer says so, and only RUN by a human sends a task's text as a prompt.
+**Security.**
+- A task's text, comments and files are data for agents: every tool answer says so; what reaches an agent as a prompt is what `terminum-dispatcher.md` §9 Security lists.
+- The store and the files are on the Mac alone (an Agent on a host never opens one), reached by pages only with the sign-in. A file shows inline only as a raster picture checked by its bytes; all else downloads, so nothing runs on the page's origin.
+- Agents' text is redacted, a human's is not: a human can purge a file or a text for good, for a secret pasted by mistake (AC-109).
 - What reaches a session of a task's change is fixed words with a task's ID: never a title, text or comment.
-- An agent's scope is a scope, no boundary: `terminum mcp` names the pane from the agent's environment.
+- An agent does all on its own tasks, and reads and comments on its project's others: a scope, no boundary: `terminum mcp` names the pane from the agent's environment (`terminum-agents.md` §9 Security).
 - A host's agent reads every task and file of its project (AC-120), and its comments are read by the project's other agents: a broken host can read them all and write text others read.
 
 **Logging.** `taskstore: moved API-12 TODO→IN PROGRESS by alex in 3 ms`; a refused write at warn with the store's message.
