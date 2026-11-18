@@ -191,7 +191,7 @@ pub(super) fn text_of(tx: &Transaction, project: &str, raw: &str) -> Result<Stri
 /// `run_with` at the default limit: tests' calls.
 #[cfg(test)]
 pub fn run(store: &Store, state_dir: &Path, who: &Who, tool: &str, args: &Value) -> Result<(String, Vec<String>), String> {
-    run_with(store, state_dir, who, tool, args, ops::AGENTS_OPEN_MOST)
+    run_with(store, state_dir, who, tool, args, crate::settings::DEFAULT_AGENT_OPEN_TASKS)
 }
 
 /// Runs one tool in one transaction: its answer and the tasks it changed; create_task is refused at `open_most` open
@@ -254,8 +254,7 @@ pub fn run_with(store: &Store, state_dir: &Path, who: &Who, tool: &str, args: &V
                     severity: args["severity"].as_str().map(str::to_string),
                     owner: Some(me.clone()),
                     session: None,
-                    by_agent: true,
-                    open_most: Some(open_most),
+                    by_agent: Some(open_most),
                     made_in: Some(who.key.clone()),
                     scheduled: false,
                     integration: false,

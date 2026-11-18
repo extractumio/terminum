@@ -26,7 +26,9 @@ pub const DEFAULT_PORT: u16 = 48080;
 const FILE: &str = "settings.json";
 /// The most days of agentExitDays (AC-153): ten years.
 pub const MAX_EXIT_DAYS: i64 = 3650;
-/// The highest agentOpenTasks (terminum-kanban.md AC-115).
+/// Open tasks by agents a project holds before create_task is refused, and the highest agentOpenTasks
+/// (terminum-kanban.md AC-115).
+pub const DEFAULT_AGENT_OPEN_TASKS: i64 = 10_000;
 pub const MAX_AGENT_OPEN_TASKS: i64 = 1_000_000;
 
 /// The usage commands by default (AC-168): neither is a model call, so neither spends tokens; Claude Code's loads
@@ -117,7 +119,7 @@ impl Default for Settings {
             memory_end_gib: 8.0,
             midi_soundfont: None,
             agent_exit_days: 0,
-            agent_open_tasks: crate::tasks::ops::AGENTS_OPEN_MOST,
+            agent_open_tasks: DEFAULT_AGENT_OPEN_TASKS,
             usage_commands: default_usage_commands(),
             messages: Vec::new(),
         }
