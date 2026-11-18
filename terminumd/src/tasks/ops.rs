@@ -16,8 +16,6 @@ pub const SEVERITIES: [&str; 4] = ["P0", "P1", "P2", "P3"];
 pub(crate) const TITLE_MOST: usize = 200;
 pub const TEXT_MOST: usize = 1 << 20;
 pub const COMMENT_MOST: usize = 256 << 10;
-/// Open tasks by agents in one project (AC-115).
-pub const AGENTS_OPEN_MOST: i64 = 200;
 
 pub fn sql(e: rusqlite::Error) -> String {
     super::store::message(&e)
@@ -216,7 +214,8 @@ pub struct NewTask {
     pub severity: Option<String>,
     pub owner: Option<String>,
     pub session: Option<String>,
-    pub by_agent: bool,
+    /// made by an agent: the most open tasks by agents its project may hold (settings.json's agentOpenTasks, AC-115)
+    pub by_agent: Option<i64>,
     pub made_in: Option<String>,
     /// a schedule's firing made it: IN PROGRESS from its first moment, its ID saying so (terminum-schedules.md AC-162)
     pub scheduled: bool,
@@ -259,10 +258,11 @@ pub fn create(tx: &Transaction, author: &str, new: NewTask, at: i64) -> Result<T
         None => chosen_project(new.project.as_deref(), TASK_NEEDS_PROJECT)?,
     };
     check_project(tx, &project)?;
-    if new.by_agent {
-        let open: i64 = tx.query_row("SELECT count(*) FROM tasks WHERE project = ?1 AND by_agent = 1 AND archived_at IS NULL AND status <> 'DONE'", [&project], |r| r.get(0)).map_err(sql)?;
-        if open >= AGENTS_OPEN_MOST {
-            return Err(format!("This project holds {AGENTS_OPEN_MOST} open tasks by agents. Ask the user to close some."));
+    if let Some(most) = new.by_agent {
+        // counted up to the limit only: a project may hold many more
+        let open: i64 = tx.query_row("SELECT count(*) FROM (SELECT 1 FROM tasks WHERE project = ?1 AND by_agent = 1 AND archived_at IS NULL AND status <> 'DONE' LIMIT ?2)", rusqlite::params![project, most], |r| r.get(0)).map_err(sql)?;
+        if open >= most {
+            return Err(format!("This project holds {most} open tasks by agents, the most settings.json's \"agentOpenTasks\" allows. Ask the user to close some, or to raise that limit."));
         }
     }
     let owner = new.owner.unwrap_or_else(|| HUMAN.to_string());
@@ -272,7 +272,7 @@ pub fn create(tx: &Transaction, author: &str, new: NewTask, at: i64) -> Result<T
     let key = crate::auth::crypto::random_hex::<16>();
     tx.execute("INSERT INTO tasks (id, number, project, parent, title, body, status, severity, rank, owner, by_agent, session_key, made_in, updated_at, created_at, type)
                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?14, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?13, ?15)",
-               rusqlite::params![key, number, project, parent.as_ref().map(|(k, _)| k), title, new.text, severity, rank, owner, new.by_agent as i64, new.session, new.made_in, at, status, kind.flatten()]).map_err(sql)?;
+               rusqlite::params![key, number, project, parent.as_ref().map(|(k, _)| k), title, new.text, severity, rank, owner, new.by_agent.is_some() as i64, new.session, new.made_in, at, status, kind.flatten()]).map_err(sql)?;
     let slug = super::slugs::assign(tx, &key, &project, if new.scheduled { "S_" } else if new.integration { "I_" } else { "" })?;
     log(tx, &key, author, "made", &format!("{} made it", user_name(tx, author)?), None, at)?;
     super::attrs::apply(tx, author, &key, &new.attrs, at)?;

@@ -51,7 +51,7 @@ fn ac162_a_due_schedule_makes_its_task_as_it_is_then() {
         // AC-166: its own ID in its result is a task the board holds, and what its session made counts from its making
         assert!(crate::tasks::closeout::unknown_ids(tx, &format!("See {id}, and {}.", human.id))?.is_empty());
         ops::link(tx, DISPATCHER, &id, Some("tmux:local:t:%7"), NOW + 11 * 60)?;
-        let left = ops::create(tx, HUMAN, NewTask { title: "Debt: left".into(), by_agent: true, made_in: Some("tmux:local:t:%7".into()), ..Default::default() }, NOW + 12 * 60)?;
+        let left = ops::create(tx, HUMAN, NewTask { title: "Debt: left".into(), by_agent: Some(10), made_in: Some("tmux:local:t:%7".into()), ..Default::default() }, NOW + 12 * 60)?;
         assert_eq!(crate::tasks::closeout::made_line(tx, &ops::get(tx, &id)?)?, Some(format!("Tasks made in its session: {}.", left.id)));
         assert_eq!(schedules::by_id(tx, &s.id)?.last_due, NOW + 10 * 60);
         assert!(matches!(decide(tx, &s, NOW + 11 * 60, false)?, Next::Nothing), "not due again within the quarter");

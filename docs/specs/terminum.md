@@ -1458,7 +1458,7 @@ Sign-ins `state/signins.json` (AC-09): `{"items": [{"sha256": "…", "id": "…"
 | `TM_LOG` | `info` | `debug` | log level |
 | `web.json` | no password | `{"allow_hosts": ["proxy.example"]}` | the password's hash (`terminum password`) and names another proxy forwards besides `*.ts.net` (AC-09, AC-10) |
 
-Listed elsewhere: `page.widgets`, `page.folds` in `terminum-terminal.md`; `restore`, `lastLines` and the install's variables in `terminum-lifecycle.md`; `hosts.*` in `terminum-remote.md`; `TM_WRITABLE_ROOTS` and `midi.soundfont` in `terminum-files.md`.
+Listed elsewhere: `page.widgets`, `page.folds` in `terminum-terminal.md`; `restore`, `lastLines` and the install's variables in `terminum-lifecycle.md`; `hosts.*` in `terminum-remote.md`; `TM_WRITABLE_ROOTS` and `midi.soundfont` in `terminum-files.md`; `agentOpenTasks` in `terminum-kanban.md` §9.
 
 ### Performance
 

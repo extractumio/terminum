@@ -245,6 +245,17 @@ fn ac153_agent_exit_days_off_by_default_under_one_off_a_wrong_value_said() {
 }
 
 #[test]
+fn ac115_agent_open_tasks_10000_by_default_a_wrong_value_said() {
+    assert_eq!(parse("").0.agent_open_tasks, 10000, "the default");
+    let (s, m) = parse(r#"{"agentOpenTasks": 500}"#);
+    assert!(m.is_empty() && s.agent_open_tasks == 500, "{m:?}");
+    for bad in ["0", "-5", "1.5", "\"500\"", "null", "1000001"] {
+        let (s, m) = parse(&format!(r#"{{"agentOpenTasks": {bad}}}"#));
+        assert_eq!((s.agent_open_tasks, m), (10000, vec!["settings.json: agentOpenTasks must be a whole number of 1–1000000".to_string()]), "{bad}: the default kept, said");
+    }
+}
+
+#[test]
 fn ac153_the_menus_days_are_saved_as_one_top_level_key_the_rest_kept() {
     let p = tmp("agentexit");
     std::fs::write(&p, "{\n  \"port\": 47901\n}\n").unwrap();

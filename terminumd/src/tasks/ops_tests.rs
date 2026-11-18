@@ -208,7 +208,7 @@ fn ac111_filters_hold_together_and_count_columns() {
     let a = new(&s, "Fix the retry 100%", "P0").id;
     new(&s, "other", "P1");
     let agent = s.with(|tx| agent_user(tx, "claude", "api")).unwrap();
-    let w = s.with(|tx| create(tx, &agent, NewTask { title: "web one".into(), text: "retry here".into(), project: Some("web".into()), severity: Some("P1".into()), owner: Some(agent.clone()), by_agent: true, ..Default::default() }, 1)).unwrap();
+    let w = s.with(|tx| create(tx, &agent, NewTask { title: "web one".into(), text: "retry here".into(), project: Some("web".into()), severity: Some("P1".into()), owner: Some(agent.clone()), by_agent: Some(10), ..Default::default() }, 1)).unwrap();
     let ids = |q: Query| s.with(|tx| list(tx, &q)).unwrap().into_iter().map(|t| t.id).collect::<Vec<_>>();
     assert_eq!(ids(Query { projects: vec!["web".into()], ..Default::default() }), vec![w.id.clone()]);
     assert_eq!(ids(Query { severities: vec!["P0".into()], ..Default::default() }), vec![a.clone()]);
@@ -231,13 +231,44 @@ fn ac115_a_repeat_and_the_agents_limit() {
     assert_eq!(s.with(|tx| repeat_of(tx, "default", "another")).unwrap(), None);
     moved(&s, &a, "DONE").unwrap();
     assert_eq!(s.with(|tx| repeat_of(tx, "default", "fix the retry loop")).unwrap(), None, "only open ones");
+}
+
+/// An agent's create_task in the Default project under `open_most` (settings.json's agentOpenTasks).
+fn by_agent(s: &Store, title: &str, open_most: i64) -> Result<Task, String> {
     let agent = s.with(|tx| agent_user(tx, "codex", "web")).unwrap();
-    for n in 0..AGENTS_OPEN_MOST {
-        s.with(|tx| create(tx, &agent, NewTask { title: format!("n{n}"), by_agent: true, ..Default::default() }, 1)).unwrap();
-    }
-    let over = s.with(|tx| create(tx, &agent, NewTask { title: "over".into(), by_agent: true, ..Default::default() }, 1)).unwrap_err();
-    assert_eq!(over, "This project holds 200 open tasks by agents. Ask the user to close some.");
-    assert!(s.with(|tx| create(tx, HUMAN, NewTask { title: "a human's".into(), ..Default::default() }, 1)).is_ok());
+    s.with(|tx| create(tx, &agent, NewTask { title: title.into(), by_agent: Some(open_most), ..Default::default() }, 1))
+}
+
+const AT_3: &str = "This project holds 3 open tasks by agents, the most settings.json's \"agentOpenTasks\" allows. Ask the user to close some, or to raise that limit.";
+
+#[test]
+fn ac115_the_agents_limit_as_configured_counts_only_their_open_tasks() {
+    let s = store("t-agents-most");
+    let made: Vec<String> = (0..3).map(|n| by_agent(&s, &format!("n{n}"), 3).unwrap().id).collect();
+    assert_eq!(by_agent(&s, "over", 3).unwrap_err(), AT_3, "refused, naming the limit and where it is set");
+    assert!(s.with(|tx| create(tx, HUMAN, NewTask { title: "a human's".into(), ..Default::default() }, 1)).is_ok(), "a human's task is never refused, nor counted");
+    assert_eq!(by_agent(&s, "over", 3).unwrap_err(), AT_3);
+    assert!(by_agent(&s, "a raised limit", 4).is_ok(), "the limit read at each call");
+    assert_eq!(by_agent(&s, "over", 2).unwrap_err().split(',').next(), Some("This project holds 2 open tasks by agents"), "a lowered limit refuses new ones only");
+    assert_eq!(column(&s, "TODO").len(), 5, "nothing closed or archived by it");
+    moved(&s, &made[0], "DONE").unwrap();
+    assert!(by_agent(&s, "after a DONE", 4).is_ok(), "a DONE task frees a place");
+    s.with(|tx| archive(tx, HUMAN, &made[1], true, 2)).unwrap();
+    assert!(by_agent(&s, "after an archive", 4).is_ok(), "an archived task frees a place");
+}
+
+#[test]
+fn ac115_the_agents_limit_is_10000_by_default() {
+    let s = store("t-agents-default");
+    let most = crate::settings::Settings::default().agent_open_tasks;
+    let one = by_agent(&s, "one", most).unwrap();
+    // the rest copies of it, in one statement: the count reads only the tasks' rows
+    s.with(|tx| tx.execute("WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < ?2)
+        INSERT INTO tasks (id, number, project, title, body, status, severity, rank, owner, by_agent, updated_at, created_at)
+        SELECT 'seed' || i, 100000 + i, project, 'seed ' || i, body, status, severity, rank, owner, by_agent, updated_at, created_at FROM tasks, n WHERE id = ?1",
+        rusqlite::params![one.key, most - 1]).map_err(sql)).unwrap();
+    let over = by_agent(&s, "over", most).unwrap_err();
+    assert!(over.starts_with("This project holds 10000 open tasks by agents, the most settings.json's \"agentOpenTasks\" allows."), "{over}");
 }
 
 #[test]

@@ -26,6 +26,10 @@ pub const DEFAULT_PORT: u16 = 48080;
 const FILE: &str = "settings.json";
 /// The most days of agentExitDays (AC-153): ten years.
 pub const MAX_EXIT_DAYS: i64 = 3650;
+/// Open tasks by agents a project holds before create_task is refused, and the highest agentOpenTasks
+/// (terminum-kanban.md AC-115).
+pub const DEFAULT_AGENT_OPEN_TASKS: i64 = 10_000;
+pub const MAX_AGENT_OPEN_TASKS: i64 = 1_000_000;
 
 /// The usage commands by default (AC-168): neither is a model call, so neither spends tokens; Claude Code's loads
 /// none of the user's settings (hooks, plugins) and keeps no session.
@@ -87,6 +91,8 @@ pub struct Settings {
     pub midi_soundfont: Option<String>,
     /// Days a coding agent's pane may stay unopened before its agent is asked to exit (AC-153); 0: off.
     pub agent_exit_days: u32,
+    /// Open tasks by agents a project may hold before create_task is refused (terminum-kanban.md AC-115).
+    pub agent_open_tasks: i64,
     /// Each agent kind's usage command, a line for `sh -c` (terminum-dispatcher.md AC-168); empty: not asked.
     pub usage_commands: BTreeMap<String, String>,
     /// The messages of the last parse, for the page (`page_json`).
@@ -113,6 +119,7 @@ impl Default for Settings {
             memory_end_gib: 8.0,
             midi_soundfont: None,
             agent_exit_days: 0,
+            agent_open_tasks: DEFAULT_AGENT_OPEN_TASKS,
             usage_commands: default_usage_commands(),
             messages: Vec::new(),
         }
@@ -293,6 +300,10 @@ fn apply(s: &mut Settings, key: &str, v: &Value, m: &mut Msgs) {
         "agentExitDays" => match v.as_i64() {
             Some(n @ ..=MAX_EXIT_DAYS) => s.agent_exit_days = n.max(0) as u32,
             _ => m.bad(format!("agentExitDays must be a whole number of days up to {MAX_EXIT_DAYS}, 0 for off")),
+        },
+        "agentOpenTasks" => match v.as_i64() {
+            Some(n @ 1..=MAX_AGENT_OPEN_TASKS) => s.agent_open_tasks = n,
+            _ => m.bad(format!("agentOpenTasks must be a whole number of 1–{MAX_AGENT_OPEN_TASKS}")),
         },
         "lastLines" => match v.as_u64() {
             Some(n @ 0..=2000) => s.last_lines = n as u32,
