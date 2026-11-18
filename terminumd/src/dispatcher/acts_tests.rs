@@ -4,6 +4,7 @@
 //! off (terminum-dispatcher.md AC-126, AC-125, AC-131).
 
 use super::*;
+use super::super::screen::Screen;
 use crate::tasks::store::{Store, HUMAN};
 
 /// A run marked in a pane of its own whose shell runs `sleep`, as its agent.
@@ -131,34 +132,41 @@ async fn ac157_run_cancels_a_waiting_close_already_decided() {
     assert!(s.pane_stands(), "RUN's answer still has its pane");
 }
 
+/// What a pane drawn by `printf` shows once it has drawn: an empty screen reads as nothing known.
+async fn settled(server: &Arc<Server>, pane: &str) -> Result<Screen, String> {
+    let until = tokio::time::Instant::now() + Duration::from_secs(3);
+    loop {
+        let shown = gate::read(server, pane, "claude").await;
+        if shown != Ok(Screen::Unknown) || tokio::time::Instant::now() > until {
+            return shown;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+}
+
 /// TERM-248: a draft in the box, typed where no activity is counted (a terminal attached to the server, `send-keys`),
-/// keeps AC-125's close off, as AC-157's; an empty box or an agent gone to its shell closes; AC-157 needs a box known empty.
+/// keeps AC-125's close off; an empty box, or its agent gone to the shell, closes.
 #[tokio::test]
 async fn ac125_a_draft_in_the_box_keeps_a_finished_session_open() {
     let s = Stage::new("draft", Phase::Working, "DONE").await.expect("private tmux starts");
     let rule = "\u{2500}".repeat(20);
     let drawn = |inner: &str| s.tm.read(&["new-window", "-d", "-P", "-F", "#{pane_id}", &format!("printf '%s\\n' '{rule}' '\u{276f} {inner}' '{rule}'; sleep 600")]).trim().to_string();
-    let (draft, empty) = (drawn("half a sentence"), drawn(""));
-    let read = |pane: String| { let server = s.server.clone(); async move {
-        let until = tokio::time::Instant::now() + Duration::from_secs(3);
-        loop {
-            let shown = gate::read(&server, &pane, "claude").await;
-            if !matches!(shown, Ok(super::super::screen::Screen::Unknown)) || tokio::time::Instant::now() > until { return shown; }
-            tokio::time::sleep(Duration::from_millis(50)).await;
-        }
-    } };
-    let (draft, empty, shell) = (read(draft).await, read(empty).await, gate::read(&s.server, &s.pane, "claude").await);
-    assert_eq!(draft, Ok(super::super::screen::Screen::Holds("half a sentence".into())), "the drawn box is read");
+    let (draft, empty) = (settled(&s.server, &drawn("half a sentence")).await, settled(&s.server, &drawn("")).await);
+    assert_eq!(draft, Ok(Screen::Holds("half a sentence".into())), "the drawn box is read");
     let done = s.now();
     assert!(plan::box_keeps(&done, &draft), "a draft keeps it: the next walk decides again");
     assert!(!plan::box_keeps(&done, &empty), "an empty box closes");
-    assert!(!plan::box_keeps(&done, &shell), "its agent gone to the shell: no box, it closes");
+    assert!(!plan::box_keeps(&done, &gate::read(&s.server, &s.pane, "claude").await), "its agent gone to the shell: no box, it closes");
     assert!(!plan::box_keeps(&done, &Err("tmux did not give its screen".into())), "an unread screen keeps no close off");
+}
 
-    s.app.tasks.with(|tx| runs::change(tx, &s.run.id, |r| { r.asked = true; r.agent_session = Some("fake-1".into()); }).map(drop)).unwrap();
-    s.app.tasks.with(|tx| super::super::move_one(tx, &s.run.task, "WAIT FOR HUMAN", "asked")).unwrap();
-    let asked = s.now();
+/// AC-157: a session waiting for a human's answers closes only at a box known empty.
+#[test]
+fn ac157_only_a_box_known_empty_closes_a_waiting_session() {
+    let asked = Run { task: "k".into(), status: "WAIT FOR HUMAN".into(), state: Phase::Working, asked: true, agent_session: Some("fake-1".into()), ..Default::default() };
     assert!(plan::asked_human(&asked));
-    assert!(plan::box_keeps(&asked, &draft) && plan::box_keeps(&asked, &shell), "AC-157: only a box known empty closes");
-    assert!(!plan::box_keeps(&asked, &empty));
+    for kept in [Ok(Screen::Holds("a".into())), Ok(Screen::Asks), Ok(Screen::Unknown), Err("no screen".into())] {
+        assert!(plan::box_keeps(&asked, &kept), "{kept:?}");
+    }
+    assert!(!plan::box_keeps(&asked, &Ok(Screen::Empty)));
 }

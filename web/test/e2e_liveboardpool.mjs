@@ -3,14 +3,13 @@
 // AC-142; terminum-kanban.md AC-106): assignment, running, slots and task windows.
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { boardKit, cardInSight, nap, pressCard, pressRun, showColumnOf, startOf } from "./boardkit.mjs";
+import { boardKit, cardInSight, nap, paneAlive, pressCard, pressRun, showColumnOf, startOf } from "./boardkit.mjs";
 import { check, until } from "./check.mjs";
 import { subscriptionStripes } from "./e2e_liveboardsubs.mjs";
 
 const FAKE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../scripts/fake_agent.py");
 
 /** Whether tmux still has `pane`, by its whole ID: %1 is no part of %12. */
-const paneAlive = (tmux, pane) => tmux("list-panes", "-a", "-F", "#{pane_id}").split("\n").map((l) => l.trim()).includes(pane);
 
 /** AC-138: tasks chosen and dropped on a free agent, one session; busy refuses more; it stays on their cards. */
 export async function agentPool(page, opts, pressAt) {

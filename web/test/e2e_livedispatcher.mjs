@@ -6,8 +6,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { DatabaseSync } from "node:sqlite";
-import { boardKit, cardInSight, intoStore, nap, pressRun } from "./boardkit.mjs";
+import { boardKit, cardInSight, intoStore, lastRunOf, nap, paneAlive, pressRun } from "./boardkit.mjs";
 import { check, slack, until } from "./check.mjs";
 
 const FAKE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../scripts/fake_agent.py");
@@ -247,10 +246,10 @@ export async function liveDispatcher(page, opts) {
   check("AC-126 the last warning went first", /last warning/.test(await history(timed)), await history(timed));
   const timedPane = await paneOf(timed);
   check("AC-126 the agent ended: SIGTERM, recorded", await until(() => tmux("display", "-p", "-t", timedPane, "#{@terminum-exit}").trim() !== "", 8000), tmux("display", "-p", "-t", timedPane, "#{@terminum-exit}"));
-  check("AC-126 its pane and shell stay", tmux("list-panes", "-a", "-F", "#{pane_id}").split("\n").map((l) => l.trim()).includes(timedPane));
+  check("AC-126 its pane and shell stay", paneAlive(tmux, timedPane));
   const shellPid = tmux("display", "-p", "-t", timedPane, "#{pane_pid}").trim();
   check("AC-126 the shell is spared", (() => { try { process.kill(Number(shellPid), 0); return true; } catch { return false; } })(), shellPid);
-  check("AC-126 a sibling pane is untouched", tmux("list-panes", "-a", "-F", "#{pane_id}").split("\n").some((l) => l.trim() === otherPane));
+  check("AC-126 a sibling pane is untouched", paneAlive(tmux, otherPane));
   // a program a human starts at the shell it left is none of a later limit: the exit is recorded
   tmux("send-keys", "-t", timedPane, "-l", "sleep 30");
   tmux("send-keys", "-t", timedPane, "Enter");
@@ -329,20 +328,15 @@ export async function liveDispatcher(page, opts) {
   await run(keptOpen);
   await hasStatus(keptOpen, "DONE", 15000);
   const draftPane = await paneOf(keptOpen);
-  const paneAlive = (pane) => tmux("list-panes", "-a", "-F", "#{pane_id}").split("\n").some((l) => l.trim() === pane);
   const draftScreen = () => tmux("capture-pane", "-p", "-t", draftPane);
   tmux("send-keys", "-t", draftPane, "-l", "an unsent draft");
   check("AC-125 the draft is in its box", await until(() => draftScreen().includes("an unsent draft")), draftScreen());
-  const closingFor = () => {
-    const db = new DatabaseSync(path.join(opts.app, "kanban.sqlite"), { readOnly: true });
-    try { return db.prepare("SELECT r.closing_for AS c FROM runs r JOIN run_tasks rt ON rt.run = r.id JOIN tasks t ON t.id = rt.task WHERE t.slug = ? ORDER BY r.rowid DESC LIMIT 1").get(keptOpen)?.c ?? 0; }
-    finally { db.close(); }
-  };
+  const closingFor = () => lastRunOf(opts.app, keptOpen, "r.closing_for AS c")?.c ?? 0;
   check("AC-125 its 5 minutes pass with the draft there", await until(() => closingFor() >= slack(7200), slack(60000)), String(closingFor()));
   await nap(1500);                                   // 15 walks of this clock, each of which would have closed it
-  check("AC-125 a draft in its box keeps it: nothing closed, nothing said", paneAlive(draftPane) && draftScreen().includes("an unsent draft") && !(await history(keptOpen)).includes("Session ended"), await history(keptOpen));
+  check("AC-125 a draft in its box keeps it: nothing closed, nothing said", paneAlive(tmux, draftPane) && draftScreen().includes("an unsent draft") && !(await history(keptOpen)).includes("Session ended"), await history(keptOpen));
   tmux("send-keys", "-t", draftPane, "C-u");
-  check("AC-125 once its box is empty the next walk closes it", await said(keptOpen, "Session ended: closed 5 minutes after DONE.", 15000) && !paneAlive(draftPane), await history(keptOpen));
+  check("AC-125 once its box is empty the next walk closes it", await said(keptOpen, "Session ended: closed 5 minutes after DONE.", 15000) && !paneAlive(tmux, draftPane), await history(keptOpen));
 
   // AC-122 resume: a closed session goes on in a new window
   const resumed = await run(closes, { comment: "go on FINISHES" });
@@ -351,11 +345,7 @@ export async function liveDispatcher(page, opts) {
 
   // AC-131 terminumd restarts: the session goes on, the walk reads its run from the store
   const restart = await task("over a restart STOPS");
-  const restartState = () => {
-    const db = new DatabaseSync(path.join(opts.app, "kanban.sqlite"), { readOnly: true });
-    try { return db.prepare("SELECT r.turn_ended, r.nudged, r.idle_for FROM runs r JOIN run_tasks rt ON rt.run = r.id JOIN tasks t ON t.id = rt.task WHERE t.slug = ? ORDER BY r.rowid DESC LIMIT 1").get(restart); }
-    finally { db.close(); }
-  };
+  const restartState = () => lastRunOf(opts.app, restart, "r.turn_ended, r.nudged, r.idle_for");
   const stopAfter = path.join(fs.mkdtempSync(path.join(work, "restart-")), "stop");
   // A real Claude title lets the screen recover a Stop missed during downtime; python3 alone is no agent.
   await run(restart, { agent: await agent("Restart", `--title '✳ Restart' --stop-after '${stopAfter}'`) });

@@ -304,7 +304,8 @@ pub fn close_near(run: &Run, dt: i64) -> bool {
 }
 
 /// Whether what the agent's box shows, read just before, keeps a decided Close off: a draft there is someone's, typed
-/// through the page or not (AC-125), and a session waiting for a human's answers closes only at a box known empty (AC-157).
+/// through the page or not (AC-125); the agent's own question (a login, an update) is no one's words, and a screen with
+/// no box is its agent gone to the shell. A session waiting for a human's answers closes only at a box known empty (AC-157).
 pub fn box_keeps(run: &Run, shown: &Result<Screen, String>) -> bool {
     if asked_human(run) { !matches!(shown, Ok(Screen::Empty)) } else { matches!(shown, Ok(Screen::Holds(_))) }
 }
