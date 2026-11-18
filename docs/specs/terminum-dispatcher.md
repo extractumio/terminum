@@ -923,6 +923,7 @@ Scenario: AC-141 edge — at the project's limit
   Given api with Agents at once 2, API-12 and API-14 running on any agents
   When the user runs API-13 of api
   Then no session starts and the queue is offered; added, the answer says "It waits for Opus reviewer: api runs 2 agents at once, its limit: API-12 is working; API-14 is working. It starts when there is room."
+  But a red batch's integration task in its kept slot is not held by the project's limit (terminum-integration.md AC-194)
 
 Scenario: AC-141 happy path — an idle holder
   Given Opus reviewer with 1 at once, and API-12 DONE, its turn over, no tool open, quiet for two walks, with an empty input box and no subagent

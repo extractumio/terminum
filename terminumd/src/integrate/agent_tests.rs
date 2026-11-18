@@ -272,6 +272,32 @@ fn ac194_an_ended_integration_task_s_closing_session_leaves_the_kept_slot() {
     }).unwrap();
 }
 
+/// TERM-518: a project at its own agent limit holds every run of it but a red batch's integration task in its kept
+/// slot, which starts at once and then counts against that limit as any run.
+#[test]
+fn ac194_a_red_batch_s_agent_starts_at_once_with_its_project_at_its_limit() {
+    use crate::dispatcher::pool;
+    let (w, _, _, i) = red_with_agent("ia-limit", "exit 3", 3);
+    let driver = w.s.with(|tx| ops::create(tx, HUMAN, ops::NewTask { title: "a driver task".into(), project: Some("api".into()), ..Default::default() }, 5)).unwrap();
+    crate::tasks::tools::tests::running(&w.s, &driver.id, "tmux:local:terminum:%10");
+    w.s.with(|tx| {
+        tx.execute("UPDATE agents SET at_once = 3 WHERE id = 'a1'", []).map_err(sql)?;
+        tx.execute("UPDATE projects SET agent_limit = 1 WHERE id = 'api'", []).map_err(sql)?;
+        let a1 = crate::tasks::agents::chosen(tx, "a1", "api")?;
+        let full = pool::check_for(tx, &a1, "api", None, None)?.expect("an ordinary run waits for the project's limit");
+        assert!(full.words.contains("its limit"), "{}", full.words);
+        assert_eq!(pool::check_for(tx, &a1, "api", Some(&ops::key_of(tx, &i)?), None)?, None, "the red batch's agent starts at once");
+        Ok(())
+    }).unwrap();
+    pressed(&w);
+    w.s.with(|tx| {
+        let a1 = crate::tasks::agents::chosen(tx, "a1", "api")?;
+        assert!(pool::check_for(tx, &a1, "api", None, None)?.is_some(), "its run counts against the project's limit as any run");
+        Ok(())
+    }).unwrap();
+    assert_eq!(status(&w, &i), "IN PROGRESS");
+}
+
 fn queued_commit(w: &World, id: &str) -> String {
     w.s.with(|tx| {
         let key = ops::key_of(tx, id)?;
