@@ -81,11 +81,28 @@ def build_macos(build, platforms):
     env = agents.tool_env()
     env.update(TM_BUILD=build, TM_AGENT_ID=agents.agent_id(), TM_BUILD_DATE=time.strftime("%Y-%m-%d"))
     out = {}
+    host = rust_host(env)
     for platform in platforms:
         target = agents.TARGETS[platform]
-        agents.run(["cargo", "build", "--locked", "--release", "--target", target], env=env)
-        out[platform] = agents.TERMINUMD / "target" / target / "release/terminumd"
+        # the host's: make build's own command and folder, so cargo compiles only what changed since
+        cross = [] if target == host else ["--target", target]
+        agents.run(["cargo", "build", "--locked", "--release", *cross], env=env)
+        out[platform] = agents.TERMINUMD.joinpath("target", *cross[1:], "release/terminumd")
     return out
+
+
+def says_its_build(binary, build, aid):
+    """The packed copy of this machine's terminumd answers this build and agent id: a folder another
+    cargo run wrote between (another build id, a build.target elsewhere) is never packed."""
+    got = agents.says(binary)
+    if got != (aid, build):
+        raise agents.Failed(f"{binary} says agent id {got[0]}, build {got[1]}; expected {aid}, {build}: not packed")
+
+
+def rust_host(env):
+    """The target cargo builds without --target (rustc's host; under Rosetta perhaps not the Mac's own)."""
+    r = subprocess.run(["rustc", "-vV"], cwd=agents.TERMINUMD, env=env, capture_output=True, text=True)
+    return next((line.split(":", 1)[1].strip() for line in r.stdout.splitlines() if line.startswith("host:")), None)
 
 
 def binaries(build, given, stage, release=False):
@@ -173,11 +190,14 @@ def stage(build, out, given=None, only_stage=False, release=False):
     for rel in COPY:
         shutil.copy2(REPO / rel, pkg / rel)
     identity = None
+    here, aid = agents.this_platform(), agents.agent_id()
     for platform, path in binaries(build, given, only_stage, release).items():
         dest = pkg / "agents" / platform / "terminumd"
         dest.parent.mkdir(parents=True)
         shutil.copy2(path, dest)
         os.chmod(dest, 0o755)
+        if not given and platform == here:
+            says_its_build(dest, build, aid)
         if platform.startswith("macos-") and (release or is_macho(dest)):
             identity = identity or signer(release)
             codesign(dest, identity, release)
@@ -185,7 +205,7 @@ def stage(build, out, given=None, only_stage=False, release=False):
     for name in SOUNDFONT:
         shutil.copy2(soundfont() / name, pkg / "soundfonts" / name)
     (pkg / "BUILD").write_text(build + "\n")
-    (pkg / "AGENT_ID").write_text(agents.agent_id() + "\n")
+    (pkg / "AGENT_ID").write_text(aid + "\n")
     return pkg
 
 

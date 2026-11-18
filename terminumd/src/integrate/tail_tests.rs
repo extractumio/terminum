@@ -201,10 +201,17 @@ fn ac191_both_windows_lost_the_check_runs_again_and_after_does_not() {
     go(&w, &fresh, 1);
     let first = nth(&w, 1);
     assert_eq!(first.state, "ended");
-    assert!(said(&w, &first).contains("After's outcome is not known for batch 1: its window was lost. After is not run again."), "{}", said(&w, &first));
+    assert!(said(&w, &first).contains("After's outcome is not known for batch 1: its window was lost. After is not run again. Check its work: API-"), "{}", said(&w, &first));
+    // a human sees it on the board: a P1 Bug task of the project, which holds nothing
+    let bug = said(&w, &first).rsplit("Check its work: ").next().unwrap().split('.').next().unwrap().to_string();
+    let (t, text) = w.s.with(|tx| Ok((ops::get(tx, &bug)?, ops::text_of(tx, &bug)?))).unwrap();
+    assert_eq!((t.title.as_str(), t.severity.as_str(), t.project.as_str(), t.owner_kind.as_str()), ("Bug: After's outcome is not known for batch 1 of api", "P1", "api", "human"));
+    assert!(text.contains("After's line:\n\n```\ntrue\n```") && text.contains(&format!("({a})")) && text.contains("closed, or terminum's tmux server ended"), "{text}");
     until(&w, &fresh, 2, "after", true);
     let lines = fresh.lines.lock().unwrap().clone();
     assert!(lines.iter().any(|l| l.starts_with("batch-2.1.check")) && !lines.iter().any(|l| l.starts_with("batch-1.1.after")), "{lines:?}");
+    let second = nth(&w, 2);
+    assert!(said(&w, &second).contains("Batch 2 is checked again: its window was lost.") && second.red_rounds == 0, "said, never red (AC-190): {}", said(&w, &second));
     assert_eq!((status(&w, &a), status(&w, &b)), ("DONE".into(), "DONE".into()));
 }
 

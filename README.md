@@ -141,5 +141,6 @@ This takes the machine's tailnet name; to give terminum a name of its own, see
 - [All the docs](docs/README.md): specs, contributing, releases.
 
 Licensed under AGPL-3.0 or a commercial license (`LICENSE`, `LICENSE-COMMERCIAL.md`);
-contributions under the agreement in `CONTRIBUTING.md`. The coding agents' marks in
+contributions under the agreement in `CONTRIBUTING.md`, each commit signed off
+(`git commit -s`). The coding agents' marks in
 `web/static/agents/` are their owners' trademarks, outside both licenses (`NOTICE`).

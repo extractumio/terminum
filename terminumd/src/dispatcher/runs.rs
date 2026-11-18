@@ -87,6 +87,11 @@ impl How {
         HOWS.iter().find(|(h, _)| *h == self).map_or("", |(_, w)| w)
     }
 
+    /// The way the store keeps as `word`.
+    pub fn of_word(word: &str) -> Option<How> {
+        HOWS.iter().find(|(_, w)| *w == word).map(|(h, _)| *h)
+    }
+
     /// Dispatcher's own start, no user's.
     pub fn automatic(self) -> bool {
         matches!(self, How::Schedule | How::Auto | How::Integration)
@@ -113,7 +118,7 @@ impl serde::Serialize for How {
 impl<'de> serde::Deserialize<'de> for How {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<How, D::Error> {
         let word = String::deserialize(d)?;
-        HOWS.iter().find(|(_, w)| *w == word).map(|(h, _)| *h).ok_or_else(|| serde::de::Error::custom(format!("a run's way is not known: {word:?}")))
+        How::of_word(&word).ok_or_else(|| serde::de::Error::custom(format!("a run's way is not known: {word:?}")))
     }
 }
 
@@ -183,6 +188,8 @@ pub struct Run {
     /// its agent asked a human itself (ask_human, move_task): RUN resumes it (AC-157)
     pub asked: bool,
     pub last_walk: i64,
+    /// the identity of the tmux server a walk last saw its pane in, marked (AC-205)
+    pub server_id: Option<String>,
 }
 
 impl Run {
@@ -280,7 +287,7 @@ const SELECT: &str = "SELECT r.id, COALESCE(r.task, ''),
     (SELECT sum(x.budget_seconds) FROM run_tasks m JOIN tasks x ON x.id = m.task WHERE m.run = r.id),
     r.agent_id, r.agent_name, r.agent_color, r.kind, r.command, r.host, r.folder, r.pane_key, r.agent_session, r.state, r.prompt,
     r.turn_ended, r.open_tools, r.idle_for, r.waited_for, r.closing_for, r.budget_used, r.nudged, r.nudge_turn, r.warned, r.wait_moved,
-    NOT EXISTS (SELECT 1 FROM run_tasks m WHERE m.run = r.id AND m.result = 0), r.again_said, r.close_tried, r.last_walk, r.memory_warned, r.asked
+    NOT EXISTS (SELECT 1 FROM run_tasks m WHERE m.run = r.id AND m.result = 0), r.again_said, r.close_tried, r.last_walk, r.memory_warned, r.asked, r.server_id
     FROM runs r";
 /// A run Dispatcher still holds, over `runs r`.
 pub(crate) const STILL: &str = "r.state NOT IN ('closed', 'left')";
@@ -295,7 +302,7 @@ fn of_row(r: &Row) -> rusqlite::Result<Run> {
     Ok(Run {
         id: r.get(0)?, task: r.get(1)?, ids: listed(r.get(2)?), open: listed(r.get(3)?), status: r.get(4)?, project: r.get(5)?, budget: r.get(6)?, agent_id: r.get(7)?, agent_name: r.get(8)?, agent_color: r.get(9)?, kind: r.get(10)?, command: r.get(11)?, host: r.get(12)?, folder: r.get(13)?,
         pane_key: r.get(14)?, agent_session: r.get(15)?, state: r.get(16)?, prompt: r.get(17)?, turn_ended: r.get(18)?, open_tools: r.get(19)?, idle_for: r.get(20)?, waited_for: r.get(21)?,
-        closing_for: r.get(22)?, budget_used: r.get(23)?, nudged: r.get(24)?, nudge_turn: r.get(25)?, warned: r.get(26)?, wait_moved: r.get(27)?, result: r.get(28)?, again_said: r.get(29)?, close_tried: r.get(30)?, last_walk: r.get(31)?, memory_warned: r.get(32)?, asked: r.get(33)?,
+        closing_for: r.get(22)?, budget_used: r.get(23)?, nudged: r.get(24)?, nudge_turn: r.get(25)?, warned: r.get(26)?, wait_moved: r.get(27)?, result: r.get(28)?, again_said: r.get(29)?, close_tried: r.get(30)?, last_walk: r.get(31)?, memory_warned: r.get(32)?, asked: r.get(33)?, server_id: r.get(34)?,
     })
 }
 
@@ -358,9 +365,9 @@ pub fn add(tx: &Transaction, like: &Run, tasks: &[String], started: Started, at:
 /// Writes what changes as a run goes on.
 pub fn save(tx: &Transaction, r: &Run) -> Result<(), String> {
     tx.execute("UPDATE runs SET pane_key = ?2, agent_session = ?3, state = ?4, prompt = ?5, turn_ended = ?6, open_tools = ?7, idle_for = ?8, waited_for = ?9, closing_for = ?10, budget_used = ?11,
-                nudged = ?12, nudge_turn = ?13, warned = ?14, wait_moved = ?15, again_said = ?16, close_tried = ?17, last_walk = ?18, memory_warned = ?19, asked = ?20 WHERE id = ?1",
+                nudged = ?12, nudge_turn = ?13, warned = ?14, wait_moved = ?15, again_said = ?16, close_tried = ?17, last_walk = ?18, memory_warned = ?19, asked = ?20, server_id = ?21 WHERE id = ?1",
                rusqlite::params![r.id, r.pane_key, r.agent_session, r.state, r.prompt, r.turn_ended, r.open_tools, r.idle_for, r.waited_for, r.closing_for, r.budget_used,
-                                 r.nudged, r.nudge_turn, r.warned, r.wait_moved, r.again_said, r.close_tried, r.last_walk, r.memory_warned, r.asked]).map(|_| ()).map_err(sql)
+                                 r.nudged, r.nudge_turn, r.warned, r.wait_moved, r.again_said, r.close_tried, r.last_walk, r.memory_warned, r.asked, r.server_id]).map(|_| ()).map_err(sql)
 }
 
 /// The agent gave `task`'s result (`finish_task`): no screen is kept for it (AC-125).

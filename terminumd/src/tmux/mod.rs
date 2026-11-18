@@ -122,6 +122,29 @@ impl Tmux {
         };
         (server.socket == socket).then(|| (server, pane.to_string()))
     }
+
+    /// Pane `key`'s state by its server's list of every pane, read whole and fresh on a live link
+    /// (terminum-kanban.md AC-113): a list not read now (terminumd just started, a host off or not
+    /// answering) lacks live panes too, so it is Unread, never Closed.
+    pub fn pane_state(&self, key: &str) -> PaneState {
+        let Some((server, _)) = self.resolve(key) else { return PaneState::Unwatched };
+        let up = server.connected();
+        server.list.with_told(|t| match t {
+            Some(t) if t.ok && up => if t.every.iter().any(|k| k == key) { PaneState::Open } else { PaneState::Closed },
+            _ => PaneState::Unread,
+        })
+    }
+}
+
+/// What `Tmux::pane_state` says of a pane.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PaneState {
+    Open,
+    Closed,
+    /// its server's list is not read now
+    Unread,
+    /// on a tmux server terminumd does not read (the user's own, not attached; a host not configured): it may live
+    Unwatched,
 }
 
 #[cfg(test)]

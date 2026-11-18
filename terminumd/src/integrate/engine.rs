@@ -202,14 +202,13 @@ pub(super) fn follow(store: &Store, runner: &dyn Runner, p: &Place, b: Batch, no
     let over = matches!(step, "check" | "after") && now - b.step_started.unwrap_or(now) > p.s.check_minutes * 60;
     let status = match window(runner, &pane, &log, over) {
         // After lost with its window is not run again (AC-191): what it did is not known
-        Window::Lost if step == "after" => return store.with(|tx| {
-            bs::set_pane(tx, b.id, None, now)?;
-            let words = format!("After's outcome is not known for batch {}: its window was lost. After is not run again.", b.number);
-            bs::tell_task(tx, &b, &words, now)?;
-            bs::set_state(tx, b.id, after_after(&p.s), Some(&words), now)
-        }),
+        Window::Lost if step == "after" => return store.with(|tx| super::tail::lost(tx, p, &b, now)),
         // lost with its window: run again, not counted as red (AC-190)
-        Window::Lost => return store.with(|tx| { bs::set_pane(tx, b.id, None, now)?; bs::tell_task(tx, &b, &format!("Batch {}'s {step} runs again: its window was lost.", b.number), now) }),
+        Window::Lost => return store.with(|tx| {
+            bs::set_pane(tx, b.id, None, now)?;
+            let again = if step == "check" { format!("Batch {} is checked again", b.number) } else { format!("Batch {}'s {step} runs again", b.number) };
+            bs::tell_task(tx, &b, &format!("{again}: its window was lost."), now)
+        }),
         Window::Running => return Ok(()),
         Window::Ended(code) => code,
     };
