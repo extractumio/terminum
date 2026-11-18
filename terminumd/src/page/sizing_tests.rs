@@ -16,51 +16,41 @@ fn a_grid_stays_within_its_bounds() {
 #[test]
 fn a_split_window_shrinks_only_for_typing() {
     let split = Fields { panes: 2, window_size: (129, 68), ..Fields::default() };
-    assert_eq!(target((46, 32), &split, split.window_size, Why::Open, false), (129, 68), "a phone that only looks takes nothing from the hidden panes");
-    assert_eq!(target((46, 32), &split, split.window_size, Why::Active, false), (129, 68));
-    assert_eq!(target((46, 32), &split, split.window_size, Why::Typed, false), (46, 32));
-    assert_eq!(target((180, 50), &split, split.window_size, Why::View, false), (180, 68), "each direction on its own");
+    assert_eq!(target((46, 32), &split, split.window_size, Why::Open), (129, 68), "a phone that only looks takes nothing from the hidden panes");
+    assert_eq!(target((46, 32), &split, split.window_size, Why::Active), (129, 68));
+    assert_eq!(target((46, 32), &split, split.window_size, Why::Typed), (46, 32));
+    assert_eq!(target((180, 50), &split, split.window_size, Why::View), (180, 68), "each direction on its own");
     let ends = |asked| Win { manual: true, asked: Some(asked), ..Win::default() }.ends_at(split.window_size);
-    assert_eq!(target((87, 32), &split, ends((140, 60)), Why::Open, false), (140, 60),
+    assert_eq!(target((87, 32), &split, ends((140, 60)), Why::Open), (140, 60),
         "a grow to 140×60 still on its way: an opening page's look never shrinks the window back to the fields' 129×68");
-    assert_eq!(target((87, 32), &split, ends((46, 32)), Why::Open, false), (87, 32),
+    assert_eq!(target((87, 32), &split, ends((46, 32)), Why::Open), (87, 32),
         "a typer's shrink to 46×32 still on its way: an opening page grows the window from there, not from the fields' 129×68");
     let one = Fields { panes: 1, ..split };
-    assert_eq!(target((46, 32), &one, one.window_size, Why::Open, false), (46, 32), "a window of one pane has nothing to squeeze");
+    assert_eq!(target((46, 32), &one, one.window_size, Why::Open), (46, 32), "a window of one pane has nothing to squeeze");
 }
 
 /// AC-13: a coding agent on the normal screen prints its transcript again on each new size and
-/// leaves copies in the history, so only typing sizes its window.
+/// leaves copies in the history: a page that only looks leaves its window as it is.
 #[test]
 fn ac13_a_looking_page_leaves_an_agent_s_window_as_it_is() {
-    let agent = Fields { panes: 1, window_size: (148, 58), ..Fields::default() };
+    let normal = Fields::default();
     for why in [Why::Open, Why::Active, Why::View] {
-        assert_eq!(target((46, 30), &agent, agent.window_size, why, true), (148, 58), "a phone that looks: {why:?}");
-        assert_eq!(target((180, 70), &agent, agent.window_size, why, true), (148, 58), "nor a larger view, nor its rows: {why:?}");
-        assert_eq!(target((46, 30), &agent, agent.window_size, why, false), (46, 30), "a shell re-wraps with tmux: sized as before: {why:?}");
+        assert!(leaves(why, &normal, true), "a page that only looks: {why:?}");
+        assert!(!leaves(why, &normal, false), "a shell re-wraps with tmux, sized as before: {why:?}");
+        assert!(!leaves(why, &Fields { alt: true, ..Fields::default() }, true), "the alternate screen has no history to copy into: {why:?}");
     }
-    assert_eq!(target((46, 30), &agent, agent.window_size, Why::Typed, true), (46, 30), "typing gives the window the page's grid");
-    let on_its_way = Win { manual: true, asked: Some((46, 30)), ..Win::default() }.ends_at(agent.window_size);
-    assert_eq!(target((180, 50), &agent, on_its_way, Why::Active, true), (46, 30), "a typer's resize on its way is where the window ends");
-    let split = Fields { panes: 3, ..agent };
-    assert_eq!(target((180, 70), &split, split.window_size, Why::Open, true), (148, 58), "its split window does not grow for a look either");
-    assert_eq!(target((46, 30), &split, split.window_size, Why::Typed, true), (46, 30));
+    assert!(!leaves(Why::Typed, &normal, true), "typing gives the window the page's grid");
 }
 
-/// AC-13: the page that sized an agent's window changed its view without typing: the window is
-/// left as it is and is no longer that page's, so its next key claims it at once.
+/// AC-13: the page that sized a window changed its view while the window was left as it is: the
+/// window is no longer at that page's grid, so its next key claims it at once.
 #[test]
-fn ac13_a_window_left_as_it_is_is_not_the_page_s_once_its_view_moved_on() {
+fn ac13_a_window_is_a_page_s_only_at_its_view() {
     let sized = Win { by: Some(1), manual: true, asked: Some((148, 58)), ..Win::default() };
-    let mut same = sized.clone();
-    same.left_as_is(1, Some((148, 58)), (148, 58));
-    assert_eq!(same.by, Some(1), "its view is the window's grid: still its own");
-    let mut moved = sized.clone();
-    moved.left_as_is(1, Some((120, 58)), (148, 58));
-    assert_eq!(moved.by, None, "docked Files took 28 columns of its view");
-    let mut other = sized.clone();
-    other.left_as_is(2, Some((46, 30)), (148, 58));
-    assert_eq!(other.by, Some(1), "a phone that looks takes nothing from the page that sized it");
+    assert!(sized.is_of(1, Some((148, 58)), (148, 58)), "its view is the window's grid");
+    assert!(!sized.is_of(1, Some((120, 58)), (148, 58)), "docked Files took 28 columns of its view");
+    assert!(!sized.is_of(2, Some((148, 58)), (148, 58)), "another page's, whatever its view");
+    assert!(!Win::default().is_of(1, Some((148, 58)), (148, 58)), "nobody's");
 }
 
 /// AC-13 failure: tmux refusing a resize undoes the claim (the window is not that page's), a

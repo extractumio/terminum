@@ -176,8 +176,7 @@ def split(t, pid, pane):
     narrow = narrow_frame(ws)
     check("AC-13 a second teammate: the zoom comes back, no frame at the narrow width", narrow is None and until_filling(pane), narrow and narrow.get("cols"))
     layout = tmux("display", "-p", "-t", pane, "#{window_layout}")
-    # tmux 3.8 writes a layout as JSON ("w":39,"h":40), earlier ones as "39x40,0,0"
-    check("AC-13 the window's layout stays its maker's: the leader's 30% (restore reads it)", ("39x40" in layout or '"w":39,"h":40' in layout) and layout != tmux("display", "-p", "-t", pane, "#{window_visible_layout}"), layout)
+    check("AC-13 the window's layout stays its maker's: the leader's 30% (restore reads it)", "39x40" in layout and layout != tmux("display", "-p", "-t", pane, "#{window_visible_layout}"), layout)
     tmux("kill-pane", "-t", third)
     until_filling(pane)
     border(ws, pane)
@@ -345,9 +344,9 @@ def agent(t):
     check("AC-13 agent: the phone put away: the page still looking gets nothing without a key", held(pane, "46x28"), window_of(pane))
     mac.send({"t": "in", "data": " "})
     check("AC-13 agent: its key sizes the window to its view as it is then", settle(pane, "120x58") == "120x58", window_of(pane))
-    log = t.log()
+    resizes = [line for line in t.log().split("\n") if 'event="sizing.resize"' in line]
     check("AC-13 the log names each resize: the page, the pane, from, to and why",
-          'event="sizing.resize"' in log and "from=148x58 to=46x28 why=Typed" in log, [line for line in log.split("\n") if "sizing" in line][-4:])
+          any(all(word in line for word in ("page=", pane, "from=148x58", "to=46x28", 'why="key"')) for line in resizes), resizes[-4:])
     phone.close()
     mac.close()
     tmux("kill-pane", "-t", pane)

@@ -106,6 +106,13 @@ async function claude(page, { tmux, work }, tui) {
   return { pane, dir, stubLog, ready };
 }
 
+/** `command` run by Claude Code's shell mode (no model call), as typed and sent. */
+async function bang(tmux, pane, command) {
+  tmux("send-keys", "-t", pane, "-l", `!${command}`);
+  await new Promise((r) => setTimeout(r, 300));
+  tmux("send-keys", "-t", pane, "Enter");
+}
+
 /** Ctrl-C twice: Claude Code ends; the shell is back. */
 async function quit(tmux, pane) {
   for (let i = 0; i < 3 && !SHELLS.test(tmux("display", "-p", "-t", pane, "#{pane_current_command}")); i++) {
@@ -139,37 +146,35 @@ async function looking(page, tmux, pane, dir) {
   fs.writeFileSync(path.join(dir, "tall.txt"), Array.from({ length: 90 }, (_, i) => `tall line ${i + 1} of the answer`).join("\n") + "\n");
   tmux("send-keys", "-t", pane, "Escape");                      // no model answers here: the retry ends, so "!" runs at once
   await new Promise((r) => setTimeout(r, 800));
-  tmux("send-keys", "-t", pane, "-l", "!cat tall.txt");
-  await new Promise((r) => setTimeout(r, 300));
-  tmux("send-keys", "-t", pane, "Enter");
+  await bang(tmux, pane, "cat tall.txt");
   const size = () => tmux("display", "-p", "-t", pane, "#{window_width}x#{window_height}");
   const history = () => tmux("capture-pane", "-p", "-J", "-S", "-", "-E", "-", "-t", pane).split("\n");
   // the answer's lines in the history and on the screen: [how many, how many of them differ]
   const answer = () => { const got = history().flatMap((l) => l.match(/tall line \d+ of the answer/g) ?? []); return [got.length, new Set(got).size]; };
   const tall = await until(() => Number(tmux("display", "-p", "-t", pane, "#{history_size}")) > 0 && history().some((l) => l.includes("tall line 90 of")), 10000);
-  await new Promise((r) => setTimeout(r, 1500));                // past a resize's second
   const before = size(), wide = page.viewportSize();
   await page.setViewportSize({ width: 1000, height: 640 });      // a narrower, lower view, nothing typed
   await page.waitForTimeout(2500);                               // the view settles (300 ms); a resize would wait a second at most
   const other = await page.evaluate(() => document.querySelector("#sessions .item:not(.on)")?.dataset.id);
   if (other) {                                                   // and the pane opened again, as a phone's page opens it
     await page.click(`#sessions .item[data-id="${other}"]`);
-    await page.waitForTimeout(700);
+    await page.waitForSelector(`#sessions .item.on[data-id="${other}"]`, { timeout: 3000 }).catch(() => {});
     await page.click(`#sessions .item[data-id$=":${pane}"]`);
-    await page.waitForTimeout(1500);
+    await page.waitForTimeout(1500);                             // an opening's resize would be there
   }
   const reflowed = await page.evaluate(() => document.getElementById("term").classList.contains("reflow"));
-  check("AC-13 real claude (default): a page that only looks leaves its window as it is and re-flows the pane",
-    tall && size() === before && reflowed, JSON.stringify({ tall, before, now: size(), reflowed, other: !!other }));
-  check("AC-13 real claude (default): its history holds each of the answer's 90 lines once", String(answer()) === "90,90",
-    `${answer()[0]} lines, ${answer()[1]} of them differ; ${tmux("display", "-p", "-t", pane, "#{history_size}")} rows of history`);
+  const now = size(), [lines, differ] = answer();
+  check("AC-13 real claude (default): a page that only looks (a narrower view, the pane opened again) leaves its window as it is and re-flows the pane",
+    tall && !!other && now === before && reflowed, JSON.stringify({ tall, before, now, reflowed, other: !!other }));
+  check("AC-13 real claude (default): its history holds each of the answer's 90 lines once", lines === 90 && differ === 90,
+    `${lines} lines, ${differ} of them differ; ${tmux("display", "-p", "-t", pane, "#{history_size}")} rows of history`);
   await page.focus("#kbd");
   await page.keyboard.type("x");
   const typed = await until(() => size() !== before, 5000);
   check("AC-13 real claude (default): a key typed on the page gives the window the page's grid", typed, `${before} -> ${size()}`);
   await page.keyboard.press("Backspace");
   await page.setViewportSize(wide);
-  await page.waitForTimeout(1500);
+  await page.waitForTimeout(400);                                // the view settles; the window stays until a key
 }
 
 /** `t` pasted with ⌘V into the page's keyboard field. */
@@ -290,9 +295,7 @@ async function claudeDefault(page, ctx) {
   fs.writeFileSync(path.join(dir, "claude-table.txt"), ["┌───┬────────┐", "│ # │ Server │", "│   │ name   │", "├───┼────────┤", "│ 1 │ alpha  │", "└───┴────────┘", "between them",
     "│ gamma │ a first │", "│       │ part    │", "├───────┼─────────┤", "│ delta │ two     │", "└───────┴─────────┘"].join("\n") + "\n");
   await page.evaluate(watch);
-  tmux("send-keys", "-t", pane, "-l", "!cat claude-table.txt");
-  await new Promise((r) => setTimeout(r, 300));
-  tmux("send-keys", "-t", pane, "Enter");
+  await bang(tmux, pane, "cat claude-table.txt");
   const inClaude = await until(() => page.evaluate(() => [...document.querySelectorAll("#term .ln.wg-host")].some((h) => h.shadowRoot?.querySelector("table"))), 10000);
   await new Promise((r) => setTimeout(r, 300));
   const claudeTable = await page.evaluate(() => [...document.querySelectorAll("#term .ln.wg-host")].map((h) => h.shadowRoot?.querySelector("table")).filter(Boolean).map((t) => [...t.querySelectorAll("th")].map((c) => c.textContent).join()));
