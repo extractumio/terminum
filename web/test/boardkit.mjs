@@ -26,6 +26,14 @@ export function startOf(app, slug = null) {
     return r?.said ?? null;
   } finally { store.close(); }
 }
+/** Columns of the newest run of task `slug`, read from the private store: `lastRunOf(app, "API-12", "r.closing_for")`. */
+export function lastRunOf(app, slug, cols) {
+  const store = new DatabaseSync(path.join(app, "kanban.sqlite"), { readOnly: true });
+  try { return store.prepare(`SELECT ${cols} FROM runs r JOIN run_tasks rt ON rt.run = r.id JOIN tasks t ON t.id = rt.task WHERE t.slug = ? ORDER BY r.rowid DESC LIMIT 1`).get(slug); }
+  finally { store.close(); }
+}
+/** Whether `pane` still stands on the private tmux server. */
+export const paneAlive = (tmux, pane) => tmux("list-panes", "-a", "-F", "#{pane_id}").split("\n").some((l) => l.trim() === pane);
 /** A card's column in sight: wider than a phone the panel shows one column at a time, by its tab (terminum-kanban.md AC-105). */
 export async function showColumnOf(page, id) {
   const status = await page.$eval(`.card[data-id="${id}"]`, (c) => { const col = c.closest(".col"); return col.offsetWidth ? "" : col.dataset.status; }).catch(() => "");

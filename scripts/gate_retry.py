@@ -55,11 +55,11 @@ def named(step, check):
     return step if check == step else f"{step} {check}"
 
 
-def crash(began, said, reports=CRASH_REPORTS):
-    """What crashed while the step ran, by file names only, or None."""
+def crash(began, said, reports=None):
+    """What crashed while the step ran, by file names only, or None; `reports` read at the call, so a test's stand-in holds."""
     names = []
     try:
-        names = sorted(p.name for p in reports.iterdir() if p.name.startswith(CRASHERS) and p.stat().st_mtime >= began)
+        names = sorted(p.name for p in (reports or CRASH_REPORTS).iterdir() if p.name.startswith(CRASHERS) and p.stat().st_mtime >= began)
     except OSError:
         pass
     if any(SERVER_GONE.search(line) for line in said):

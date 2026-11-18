@@ -564,6 +564,10 @@ Scenario: AC-125 edge — someone reads it
   Then it is not closed and nothing is said; the 5 minutes start when the page leaves it, goes behind or closes
   And such a session is no idle holder (AC-141)
 
+Scenario: AC-125 edge — a draft in the box
+  When a draft stands in the agent's input box at that moment, typed through the page, in a terminal attached to the server or by `tmux send-keys`
+  Then it is not closed and nothing is said; the next walk decides again, and closes it once the box is empty
+
 Scenario: AC-125 edge — other tasks
   Given that session also holds API-13 in TODO, IN PROGRESS or WAIT FOR HUMAN
   Then it is not closed until each of its tasks is DONE or FAILED and past its 5 minutes
@@ -2094,7 +2098,7 @@ Depends on `terminum-kanban.md`'s Stage 1. All three stages belong to terminum's
 - [x] AC-122 — `cargo test dispatcher::hooks`, `cargo test dispatcher::acts` (RUN cancels a waiting close already decided), `web/test/e2e_taskrun.mjs` (all columns, held sessions, queue and refusals; one press in the task's window, Run from scratch), `web/test/e2e_livewaiting.mjs` (answer before closing, `e2e_live.mjs waiting`), `web/test/e2e_livedispatcher.mjs` (answer after closing), `web/test/e2e_livearchived.mjs` (a human's prompt restores archived DONE and IN PROGRESS cards), `cargo test messages::own` (a turn it scheduled itself), `cargo test cli::hook` (its scheduled prompt and source), its real run as AC-121's
 - [x] AC-123 — `cargo test dispatcher::plan` (idle time stopped in INTEGRATION), `cargo test dispatcher::hooks` (a request's turn and its Stop), `cargo test dispatcher::walk` (every footer kind; a red Verify after two hours, its return and fresh request and hour after a store reload), `cargo test dispatcher::start`, `cargo test tasks::tools`, `web/test/e2e_livedispatcher.mjs` with the test clock, `web/test/e2e_livebackground.mjs` (a monitor-only run past the idle hour; `node web/test/e2e_live.mjs background`), `scripts/e2e_remote_tasks.py`
 - [x] AC-124 — `cargo test dispatcher::plan`, `web/test/e2e_livedispatcher.mjs`
-- [x] AC-125 — `cargo test dispatcher::plan`, `cargo test dispatcher::acts` (a close decided before a human's input), `web/test/e2e_livedispatcher.mjs`
+- [x] AC-125 — `cargo test dispatcher::plan`, `cargo test dispatcher::acts` (a close decided before a human's input; a draft in the box), `web/test/e2e_livedispatcher.mjs` (a draft typed by tmux)
 - [x] AC-126 — `cargo test dispatcher::plan`, `cargo test tasks::tell` (words not heard go again), `cargo test dispatcher::acts` (an end decided before a human's input), `web/test/e2e_livedispatcher.mjs`, `SECURITY.md` carries Dispatcher's signals
 - [x] AC-127 — `cargo test dispatcher::plan`, `cargo test dispatcher::hooks`, `cargo test tmux::hookstate`, `web/test/e2e_livedispatcher.mjs`
 - [x] AC-128 — `cargo test dispatcher`, `cargo test tasks::agents`, `web/test/e2e_livedispatcher.mjs`, its window's words and global placeholders in `web/test/e2e_liveboardagents.mjs`

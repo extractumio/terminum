@@ -3,6 +3,7 @@
 //! the run's clocks and what was just read, so every case is a test with no tmux and no waiting.
 
 use super::runs::{Phase, Run};
+use super::screen::Screen;
 
 /// WAIT FOR HUMAN after an agent's question stands this long.
 pub const WAIT: i64 = 120;
@@ -300,6 +301,13 @@ pub fn asked_human(run: &Run) -> bool {
 /// its session is open (AC-125, AC-157).
 pub fn close_near(run: &Run, dt: i64) -> bool {
     (finished(&run.status) && run.closing_for + dt >= super::close_after()) || (asked_human(run) && run.closing_for + dt >= ASKED_QUIET)
+}
+
+/// Whether what the agent's box shows, read just before, keeps a decided Close off: a draft there is someone's, typed
+/// through the page or not (AC-125); the agent's own question (a login, an update) is no one's words, and a screen with
+/// no box is its agent gone to the shell. A session waiting for a human's answers closes only at a box known empty (AC-157).
+pub fn box_keeps(run: &Run, shown: &Result<Screen, String>) -> bool {
+    if asked_human(run) { !matches!(shown, Ok(Screen::Empty)) } else { matches!(shown, Ok(Screen::Holds(_))) }
 }
 
 /// Whether a Close for an agent's question still holds, read just before the pane goes.

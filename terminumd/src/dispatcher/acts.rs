@@ -212,8 +212,9 @@ pub(super) async fn do_later(app: &Shared, l: Later) {
             went(app, &l.run, mark).await;
             Ok(())
         }
-        // a session that waits for a human's answers closes only at an empty box: a draft there is someone's (AC-157)
-        Act::Close { .. } if plan::asked_human(&l.run) && !matches!(gate::read(&server, &pane, &l.run.kind).await, Ok(super::screen::Screen::Empty)) => Ok(()),
+        // a draft in the box is someone's: it stays, and the next walk decides again; read before its screen is kept,
+        // so a session held this way gains no file each walk (AC-125, AC-157)
+        Act::Close { .. } if plan::box_keeps(&l.run, &gate::read(&server, &pane, &l.run.kind).await) => Ok(()),
         Act::Close { words, keep } => close(app, &l.run, (&server, &pane), &words, keep, l.at, |_, r| Ok(plan::still_closes(r) || plan::asked_closes(r))).await.map(drop),
         _ => Ok(()),
     };

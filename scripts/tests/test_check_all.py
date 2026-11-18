@@ -17,7 +17,15 @@ import gate_retry  # noqa: E402
 import load_gate  # noqa: E402
 from test_gate_record import Repo  # noqa: E402
 
-STEPS = [name for name, _ in check_all.steps(Path("/nowhere"), "x")]
+
+def steps_on(system):
+    """The steps' names on `system`: each test fakes its platform, so a Mac's run also proves Linux's CI (TERM-522)."""
+    with mock.patch.object(check_all.platform, "system", return_value=system):
+        return [name for name, _ in check_all.steps(Path("/nowhere"), "x")]
+
+
+STEPS = steps_on("Linux")   # every Gate test runs on Linux, as CI does, unless it calls on_mac()
+MAC = steps_on("Darwin")
 
 
 class Gate(Repo, unittest.TestCase):
@@ -29,11 +37,17 @@ class Gate(Repo, unittest.TestCase):
         self.busy = None
         patches = [mock.patch.object(check_all, "REPO", self.repo), mock.patch.object(check_all, "attempt", self.attempt),
                    mock.patch.object(check_all.load_gate, "wait", lambda busy: busy() or self.busy),
-                   mock.patch.object(gate_retry, "CRASH_REPORTS", self.root / "none"), mock.patch("builtins.print", self.say)]
+                   mock.patch.object(gate_retry, "CRASH_REPORTS", self.root / "none"), mock.patch("builtins.print", self.say),
+                   mock.patch.object(check_all.platform, "system", return_value="Linux")]
         for patch in patches:
             patch.start()
             self.addCleanup(patch.stop)
         self.said = []
+
+    def on_mac(self):
+        patch = mock.patch.object(check_all.platform, "system", return_value="Darwin")
+        patch.start()
+        self.addCleanup(patch.stop)
 
     def say(self, *words, **_):
         self.said.append(" ".join(str(w) for w in words))
@@ -138,12 +152,20 @@ class Gate(Repo, unittest.TestCase):
         self.assertEqual(self.check("--by", "release"), 0)
         self.assertEqual(self.ran, ["build", *STEPS], "never for a release")
 
+    def test_the_page_step_runs_on_a_mac_only(self):  # AC-201
+        self.assertNotIn("page", STEPS, "e2e_all.mjs measures a Mac's browsers")
+        self.assertEqual(MAC, [*STEPS[:-1], "page", "security"], "on a Mac, before the scan")
+        self.on_mac()
+        self.assertEqual(self.check(), 0)
+        self.assertEqual(self.ran, ["build", *MAC])
+
     def test_a_flaky_page_check_passes_on_its_retry_after_every_first_run(self):  # AC-201
+        self.on_mac()
         self.again = {"page"}
         self.red = {"clippy"}
         self.lines["page"] = ["FAIL [webkit] a check", "red checks: webBoardPanel"]
         self.assertEqual(self.check(), 1, "clippy stays red")
-        self.assertEqual(self.ran, ["build", *STEPS, "page"], "the retry after every first run, beside a red step")
+        self.assertEqual(self.ran, ["build", *MAC, "page"], "the retry after every first run, beside a red step")
         self.assertIn("ok   page (6 s) on its retry", self.said)
         self.assertIn("PASSED ONLY ON RETRY, the first run red: page webBoardPanel", "\n".join(self.said))
         ident = check_all.tree_id(self.repo)
