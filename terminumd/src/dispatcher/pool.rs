@@ -124,14 +124,19 @@ impl Slots {
     }
 
     /// `check` for a run of task `task` alone (its key; none: several tasks): one of a schedule of `agent` takes the
-    /// slot kept for it while no other run, but `but`, stands there, only its project's limit holding it (AC-161).
+    /// slot kept for it while no other run, but `but`, stands there, only its project's limit holding it (AC-161); a
+    /// batch's integration task in the slot kept for integration not even that: a red batch never waits for room
+    /// (terminum-integration.md AC-194).
     pub fn check_for(&self, tx: &Transaction, agent: &Agent, project: &str, task: Option<&str>, but: Option<&str>) -> Result<Option<Full>, String> {
         let schedule = match task {
             Some(t) => kept_schedule(tx, &agent.id, t)?,
             None => None,
         };
-        let free = schedule.is_some_and(|s| !self.in_kept.iter().any(|(run, of)| *of == s && Some(run.as_str()) != but));
-        self.check(tx, (!free).then_some(agent), project, but)
+        let free = schedule.filter(|s| !self.in_kept.iter().any(|(run, of)| of == s && Some(run.as_str()) != but));
+        if free.as_ref().is_some_and(|s| *s == schedules::integration_slot(&agent.id)) {
+            return Ok(None);
+        }
+        self.check(tx, free.is_none().then_some(agent), project, but)
     }
 }
 
