@@ -102,7 +102,7 @@ pub fn close(tx: &Transaction, id: i64, why: &str, at: i64) -> Result<String, St
 }
 
 /// A batch whose After failed: After run once more in the tail's turn, before its project's later Afters, its folder
-/// not moved; its integration task back in INTEGRATION until After passes or fails again (AC-191). A human's key only.
+/// moved only if it does not hold the batch's commit yet; its integration task back in INTEGRATION until After passes or fails again (AC-191). A human's key only.
 pub fn after_again(tx: &Transaction, id: i64, at: i64) -> Result<String, String> {
     let b = deciding(tx, id)?;
     if b.state != bs::AFTER_FAILED {

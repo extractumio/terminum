@@ -45,7 +45,7 @@ pub fn step(store: &Store, runner: &dyn Runner, home: &Path, now: i64) -> Result
         return engine::follow(store, runner, &p, b, now);
     }
     // its folder moved at its first try: a try again moves nothing under what made it wait; a folder that made it
-    // wait, not on the batch's commit yet, is tried again
+    // wait, not on the batch's commit yet, is tried again; clean is the move's rule, not After's (AC-191)
     let moved = if b.state == bs::AFTER_WAITS && folder_holds(&p, &b) { Ok(()) } else { folder_follows(&p) };
     let stays = |w: String| format!("{}'s folder stays where it is: {w}", p.name);
     match moved {
@@ -162,13 +162,13 @@ enum Stays {
 /// change keeps it where it is, untracked files and changes the move would not touch included (CLAUDE.md §9).
 fn folder_follows(p: &Place) -> Result<(), Stays> {
     let (remote, branch) = integration::target_of(&p.s.target).map_err(Stays::Off)?;
-    let dirty = git::uncommitted(&p.repo).map_err(Stays::Off)?;
-    if dirty > 0 {
-        return Err(Stays::Dirty(format!("{dirty} uncommitted files in it; it moves only when git status --porcelain is empty")));
-    }
     let on = git::run(&p.repo, &["branch", "--show-current"]).map_err(Stays::Off)?;
     if on != branch {
         return Err(Stays::Off(format!("it is on {}, not {branch}", if on.is_empty() { "no branch" } else { &on })));
+    }
+    let dirty = git::uncommitted(&p.repo).map_err(Stays::Off)?;
+    if dirty > 0 {
+        return Err(Stays::Dirty(format!("{dirty} uncommitted files in it; it moves only when git status --porcelain is empty")));
     }
     git::run(&p.repo, &["merge", "--ff-only", "--quiet", &format!("{remote}/{branch}")]).map(drop).map_err(Stays::Off)
 }

@@ -232,6 +232,15 @@ fn ac191_a_folder_still_dirty_after_6_hours_fails_for_a_human() {
     let words = said(&w, &failed);
     assert!(words.contains(&format!("After waited 6 hours for batch 1: {DIRTY}. The batch stays published")) && !words.contains("Its log"), "{words}");
     assert!(afters(&r).is_empty());
+    // After again, still dirty: it waits again, from that try; clean: the folder moves and After runs
+    let pressed = first.waits_since.unwrap() + 22_000;
+    again(&w, &failed).unwrap();
+    at(&w, &r, pressed);
+    assert_eq!((nth(&w, 1).state.as_str(), nth(&w, 1).waits_since), (bs::AFTER_WAITS, Some(pressed)));
+    sh(&w.api, &["checkout", "-q", "--", "a.txt"]);
+    std::fs::remove_file(w.api.join("notes.txt")).unwrap();
+    at(&w, &r, pressed + 300);
+    assert_eq!((files(&w).as_str(), nth(&w, 1).state.as_str(), afters(&r).len()), ("a.txt\nb.txt", "ended", 1));
 }
 
 #[test]
