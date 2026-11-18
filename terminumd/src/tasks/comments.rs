@@ -59,7 +59,7 @@ pub fn newest_by(tx: &Transaction, key: &str, author: &str, most: i64) -> Result
          (key, author, most), |r| Ok((r.get(0)?, r.get(1)?)))
 }
 
-fn comment_with(tx: &Transaction, author: &str, id: &str, text: &str, data: Option<&Value>, at: i64) -> Result<String, String> {
+pub(crate) fn comment_with(tx: &Transaction, author: &str, id: &str, text: &str, data: Option<&Value>, at: i64) -> Result<String, String> {
     check_comment(text)?;
     let key = key_of(tx, id)?;
     touch(tx, &key, at)?;

@@ -12,7 +12,7 @@ pub mod keys;
 pub mod notices;
 mod retry_notes;
 pub mod runner;
-mod red_target;
+pub(crate) mod red_target;
 pub mod stages;
 pub mod store;
 pub mod tail;

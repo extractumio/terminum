@@ -29,6 +29,7 @@ pub(crate) fn rows<T>(tx: &Transaction, query: &str, params: impl Params, f: imp
 pub use super::users::{agent_named, agent_user, pool_user, pool_user_id};
 pub use super::columns::move_to;
 pub(crate) use super::columns::{check_free, place};
+pub(crate) use super::comments::comment_with;
 pub use super::comments::{answers, change_comment, comment, history, how_left, keep_human_comment, left_queue, newest_by, notice, noticed, questions};
 pub(crate) use super::users::user_name;
 
