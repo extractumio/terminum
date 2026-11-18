@@ -15,6 +15,7 @@ import os
 import shutil
 import sys
 import tempfile
+import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from e2e_ws import BIN, Terminumd, check, end_tmux, summary, tmux_on, wait_for  # noqa: E402
@@ -62,17 +63,23 @@ class World:
         t = self.get(tid)
         return (t.get("session") or {}).get("key") if t.get("status") == "IN PROGRESS" else None
 
-    def running(self, title):
-        """A task run on the fake agent, at work (its WORKS prompt keeps a tool open): its ID and session key."""
-        tid = self.call("/api/tasks", "POST", {"title": f"{title} WORKS", "project": self.project})[1]["id"]
-        st, ran = self.call(f"/api/tasks/{tid}/run", "POST", {"agent": self.agent})
-        key = wait_for(lambda: self.key(tid), bool, 30, 0.3, last=True)
-        check(f"setup: {tid} runs on its agent", st == 200 and bool(key), ran)
-        return tid, key
+    def running(self, *titles):
+        """Tasks run on the fake agent, started at once, each at work (its WORKS prompt keeps a tool open): their IDs and session keys."""
+        ran = []
+        for title in titles:
+            tid = self.call("/api/tasks", "POST", {"title": f"{title} WORKS", "project": self.project})[1]["id"]
+            ran.append((tid, self.call(f"/api/tasks/{tid}/run", "POST", {"agent": self.agent})))
+        out = []
+        for tid, (st, said) in ran:
+            key = wait_for(lambda: self.key(tid), bool, 30, 0.3, last=True)
+            check(f"setup: {tid} runs on its agent", st == 200 and bool(key), said)
+            out += [tid, key]
+        return out
 
-    def walked(self):
+    @staticmethod
+    def walked():
         """Two walks (a second each) saw what stands now."""
-        wait_for(lambda: False, bool, 2.5, 0.5, last=True)
+        time.sleep(2.5)
 
     def typed(self):
         try:
@@ -87,9 +94,7 @@ def main():
     w = World(work)
     try:
         w.setup()
-        a, _ = w.running("resumed")
-        b, b_key = w.running("closed by hand")
-        c, _ = w.running("no room")
+        a, _, b, b_key, c, _ = w.running("resumed", "closed by hand", "no room")
         w.walked()
         # 2. a window closed by hand, its server running on
         tmux_on(SOCKET, "kill-pane", "-t", b_key.rsplit(":", 1)[1])

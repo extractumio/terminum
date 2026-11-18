@@ -14,12 +14,12 @@ use crate::tasks::ops::{self, sql, Task};
 use crate::tasks::{agents, store::HUMAN};
 
 /// After a resume, how long another end of the same server resumes nothing.
-pub const AGAIN_WITHIN: i64 = 3600;
-pub const RESUMES: &str = "Dispatcher resumes it: its tmux server ended and started anew.";
-pub const ENDED_AGAIN: &str = "Its tmux server ended again within an hour of resuming it: run it once the cause is found.";
+const AGAIN_WITHIN: i64 = 3600;
+const RESUMES: &str = "Dispatcher resumes it: its tmux server ended and started anew.";
+const ENDED_AGAIN: &str = "Its tmux server ended again within an hour of resuming it: run it once the cause is found.";
 
 /// What the resumed agent hears, through the gate: its open tasks' IDs and fixed words, approved by the maintainer.
-pub fn words(ids: &[String]) -> String {
+fn words(ids: &[String]) -> String {
     format!("[terminum Dispatcher] {}: your session ended because terminum's tmux server stopped (a crash or a restart of the machine), and Dispatcher resumed it. \
         Your conversation shows what was done: do not redo finished steps. Programs and servers you ran in the background are gone. \
         Before you go on with the task, check your working tree (git status, files half written, a stale .git/index.lock) and start again what you still need.", ids.join(", "))
@@ -27,12 +27,17 @@ pub fn words(ids: &[String]) -> String {
 
 /// The server's last resume (the identity it took, when) against this end's `identity`: what to keep, or None when
 /// another end came within the hour of it. The runs one end cut off resume together, by the identity it took.
-pub fn breaker(last: Option<(String, i64)>, identity: &str, now: i64) -> Option<(String, i64)> {
+fn breaker(last: Option<(String, i64)>, identity: &str, now: i64) -> Option<(String, i64)> {
     match last {
         Some((was, at)) if was == identity => Some((was, at)),
         Some((_, at)) if now - at < AGAIN_WITHIN => None,
         _ => Some((identity.to_string(), now)),
     }
+}
+
+/// Why a run its server's end cut off does not go on, on its tasks.
+fn not_resumed(why: &str) -> String {
+    format!("Not resumed after its tmux server started anew: {why}")
 }
 
 /// The store's key for a server's last resume: this Mac's, or a host's.
@@ -52,16 +57,22 @@ pub(super) async fn after_restart(app: &Shared, r: Run, identity: String) {
             return Ok(None);
         };
         if agents::in_project(tx, &run.agent_id, &run.project)?.is_none() {
-            fail(tx, &run, &format!("Not resumed after its tmux server started anew: {} is no longer in the pool.", run.agent_name))?;
+            fail(tx, &run, &not_resumed(&format!("{} is no longer in the pool.", run.agent_name)))?;
             return Ok(None);
         }
         // its tasks in progress, as they stand now: one moved meanwhile stays where it went
-        let tasks: Vec<Task> = run.open.iter().map(|id| ops::get(tx, id)).collect::<Result<Vec<_>, _>>()?.into_iter().filter(|t| t.status == "IN PROGRESS").collect();
+        let mut tasks: Vec<Task> = Vec::new();
+        for id in &run.open {
+            let t = ops::get(tx, id)?;
+            if t.status == "IN PROGRESS" {
+                tasks.push(t);
+            }
+        }
         if tasks.is_empty() {
             return Ok(None);
         }
         // the hour counts from this end's first resume, not from a run that could not be resumed
-        tx.execute("INSERT OR REPLACE INTO meta (key, value) VALUES (?1, ?2)", [&key, &serde_json::json!(now_kept).to_string()]).map_err(sql)?;
+        tx.execute("INSERT OR REPLACE INTO meta (key, value) VALUES (?1, ?2)", [&key, &serde_json::to_string(&now_kept).map_err(|e| e.to_string())?]).map_err(sql)?;
         let started: (Option<String>, Option<String>) = tx.query_row("SELECT started_by, started_how FROM runs WHERE id = ?1", [&run.id], |x| Ok((x.get(0)?, x.get(1)?))).map_err(sql)?;
         say(tx, &run, RESUMES)?;
         Ok(Some((tasks, started)))
@@ -76,17 +87,16 @@ pub(super) async fn after_restart(app: &Shared, r: Run, identity: String) {
                 Ok(v) => v["full"]["words"].as_str().map(str::to_string),
                 Err(why) => Some(why),
             };
-            if let Some(why) = missed {
-                let (run, words) = (r.clone(), format!("Not resumed after its tmux server started anew: {why}"));
-                let _ = store(app, move |tx| fail(tx, &run, &words)).await;
-            }
+            let Some(why) = missed else { return super::told_all(app, &r) };   // its resume closed the old run
+            let (run, words) = (r.clone(), not_resumed(&why));
+            let _ = store(app, move |tx| fail(tx, &run, &words)).await;
         }
         Ok(None) => {}
         Err(e) => return tracing::warn!(event = "dispatcher.resume", run = %r.id, error = %e),
     }
     // tried: the old run is over, however it went (a resume closed it already)
     let id = r.id.clone();
-    let _ = store(app, move |tx| runs::change(tx, &id, |was| if !matches!(was.state, Phase::Closed | Phase::Left) { was.state = Phase::Closed; was.pane_key = None; }).map(drop)).await;
+    let _ = store(app, move |tx| runs::change(tx, &id, |was| if !was.is_over() { was.state = Phase::Closed; was.pane_key = None; }).map(drop)).await;
     super::told_all(app, &r);
 }
 

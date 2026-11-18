@@ -439,7 +439,7 @@ fn ac187_a_queued_task_stays_queued_when_its_session_ends() {
 
 /// A run at work whose walk last saw its pane in server `a1`.
 fn seen_in(status: &str) -> Run {
-    Run { server_id: Some("a1".into()), agent_session: Some("c0ffee".into()), ..run(status) }
+    Run { server_id: Some("a1".into()), agent_session: Some("c0ffee".into()), pane_key: Some("tmux:local:t:%1".into()), ..run(status) }
 }
 
 #[test]
@@ -481,10 +481,10 @@ fn ac205_a_walk_keeps_the_server_its_marked_pane_stands_in() {
 
 #[test]
 fn ac205_a_link_dropped_when_its_server_started_anew_is_its_end_however_old_the_run() {
-    let mut r = Run { server_id: None, ..seen_in("IN PROGRESS") };
-    let acts = step(&mut r, &Facts { pane: false, dropped: true, identity: Some("b2".into()), ..up(30) });
+    let mut r = Run { server_id: None, pane_key: None, ..seen_in("IN PROGRESS") };
+    let acts = step(&mut r, &Facts { pane: false, identity: Some("b2".into()), ..up(30) });
     assert_eq!(acts, vec![Act::Resume { identity: "b2".into() }], "a run from before its server was ever recorded");
-    let mut waiting = Run { server_id: None, ..seen_in("WAIT FOR HUMAN") };
-    assert_eq!(moved(&step(&mut waiting, &Facts { pane: false, dropped: true, identity: Some("b2".into()), ..up(30) })),
+    let mut waiting = Run { server_id: None, pane_key: None, ..seen_in("WAIT FOR HUMAN") };
+    assert_eq!(moved(&step(&mut waiting, &Facts { pane: false, identity: Some("b2".into()), ..up(30) })),
         Some(("FAILED", "Its tmux server started anew.".to_string())), "not resumed: said why");
 }

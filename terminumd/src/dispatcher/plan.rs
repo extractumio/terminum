@@ -70,8 +70,6 @@ pub struct Facts {
     pub dt: i64,
     /// the identity of its pane's tmux server as this walk read it (`@terminum-id`, AC-205)
     pub identity: Option<String>,
-    /// its link was dropped when terminumd saw its server started anew (`tasks::projects`)
-    pub dropped: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -123,8 +121,8 @@ fn end_failed(run: &mut Run, acts: &mut Vec<Act>, words: String) {
 
 /// A run its tmux server's end cut off goes on by itself (AC-205): Dispatcher's, its agent at work on a task in
 /// progress, its conversation known; never + Session's, one ending at a limit, given up, or whose agent had ended.
-fn resumable(run: &Run, was: Phase) -> bool {
-    was == Phase::Working && !run.ad_hoc() && run.status == "IN PROGRESS" && run.agent_session.is_some()
+fn resumable(run: &Run) -> bool {
+    run.state == Phase::Working && !run.ad_hoc() && run.status == "IN PROGRESS" && run.agent_session.is_some()
 }
 
 /// The walk's step for `run`: its clocks change here, what is to be done comes back.
@@ -138,16 +136,16 @@ pub fn step(run: &mut Run, f: &Facts) -> Vec<Act> {
         run.server_id.clone_from(&f.identity);
     }
     if !f.pane || !f.marked {
-        let was = std::mem::replace(&mut run.state, Phase::Closed);
+        // its server ended under it, not a human's close: under another identity, or its link dropped when terminumd
+        // saw the server started anew (tasks::projects); a run at work on a task in progress goes on by itself
+        let anew = f.identity.as_ref().filter(|now| run.pane_key.is_none() || run.server_id.as_ref().is_some_and(|was| was != *now));
+        if let Some(identity) = anew && resumable(run) {
+            // it stays as it is until the resume is tried: a terminumd stopped meanwhile tries it again (resume.rs)
+            return vec![Act::Resume { identity: identity.clone() }];
+        }
+        run.state = Phase::Closed;
         if f.pane {
             run.pane_key = None;
-        }
-        // its server ended under it: not a human's close; a run at work on a task in progress goes on by itself
-        let anew = f.identity.as_ref().filter(|now| f.dropped || run.server_id.as_ref().is_some_and(|was| was != *now));
-        if let Some(identity) = anew && resumable(run, was) {
-            // it stays as it was until the resume is tried: a terminumd stopped meanwhile tries it again (resume.rs)
-            run.state = was;
-            return vec![Act::Resume { identity: identity.clone() }];
         }
         let words = if anew.is_some() { "Its tmux server started anew." } else if f.pane { "Its pane is no longer this run's: the link is dropped." } else { "Its window was closed." };
         if movable {

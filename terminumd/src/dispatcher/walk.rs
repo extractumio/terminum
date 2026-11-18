@@ -35,15 +35,10 @@ struct Pane {
 /// between two reads is never judged by the old one's list (AC-205); none set yet, none.
 async fn panes_of(server: &Server) -> Option<(HashMap<String, Pane>, Option<String>)> {
     let lines = tokio::time::timeout(LIST_WAIT, server.run("list-panes -a -F '#{pane_id}\t#{@terminum-run}\t#{@terminum-exit}\t#{pane_pid}\t#{pane_current_command}\t#{@terminum-id}'")).await.ok()?.ok()?;
-    let mut identity = None;
-    let panes = lines.iter().filter_map(|l| {
-        let f: Vec<&str> = l.split('\t').collect();
-        if f.len() != 6 {
-            return None;
-        }
-        identity = identity.take().or_else(|| Some(f[5].to_string()).filter(|i| !i.is_empty()));
-        Some((f[0].to_string(), Pane { mark: f[1].to_string(), exit: f[2].parse().ok(), pid: f[3].to_string(), command: f[4].to_string() }))
-    }).collect();
+    let rows: Vec<Vec<&str>> = lines.iter().map(|l| l.split('\t').collect()).filter(|f: &Vec<&str>| f.len() == 6).collect();
+    // a server option: every row says the same
+    let identity = rows.first().map(|f| f[5].to_string()).filter(|i| !i.is_empty());
+    let panes = rows.iter().map(|f| (f[0].to_string(), Pane { mark: f[1].to_string(), exit: f[2].parse().ok(), pid: f[3].to_string(), command: f[4].to_string() })).collect();
     Some((panes, identity))
 }
 
@@ -191,11 +186,11 @@ async fn read_servers(app: &Shared, wanted: &[String], with_run: &HashSet<String
         let wants = panes.as_ref().is_some_and(|list| mine.iter().any(|p| list.contains_key(p)));
         let due = server.is_local() || with_run.contains(&server.id()) || (beat.is_multiple_of(IDLE_HOST_BEATS) && app.pages.count() > 0);
         let tree = if wants && due { procs::read(app, &server).await } else { None };
-        // none set yet on a new server: terminumd sets it, and the next walk reads it in its list
-        let identity = listed_id.flatten();
-        if panes.is_some() && identity.is_none() {
-            let _ = server.identity().await;
-        }
+        // none set yet on a new server, or no pane to say it: terminumd's own read sets it
+        let identity = match (&panes, listed_id.flatten()) {
+            (Some(_), None) => server.identity().await,
+            (_, listed) => listed,
+        };
         (server.id(), Seen { panes, tree, skipped: wants && !due, identity })
     });
     futures_util::future::join_all(read).await.into_iter().collect()
@@ -258,7 +253,7 @@ async fn walk(app: &Shared) {
         .filter_map(|r| Some((r.id.clone(), super::places::server_of(app, r.host.as_deref()).ok()?))).collect();
     // what it decides holds as of now: a human's input after it calls off or puts off what it leaves to do (AC-131)
     let at = Instant::now();
-    let seen = read_servers(app, &wanted, &with_run, &dropped.iter().map(|(_, s)| s.clone()).collect::<Vec<_>>()).await;
+    let seen = read_servers(app, &wanted, &with_run, &dropped.values().cloned().collect::<Vec<_>>()).await;
     let now = ops::now();
     let (mut reads, mut subagents) = (Vec::new(), Vec::new());
     for r in &all {
@@ -317,7 +312,6 @@ async fn walk(app: &Shared) {
             memory,
             subs,
             identity: s.identity.clone(),
-            dropped: r.pane_key.is_none(),
             ..Default::default()
         };
         // + Session's is the human's: nothing is typed in it, about its subagents either (AC-142)

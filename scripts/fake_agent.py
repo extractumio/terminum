@@ -133,8 +133,8 @@ def main():
             if kind == "codex":
                 hook("SessionStart", source="startup")
             hook("UserPromptSubmit", prompt=prompt)
-            if opt("--prompts", ""):          # what it was typed, for a test to read whole
-                with open(opt("--prompts", ""), "a", encoding="utf8") as f:
+            if log := opt("--prompts", ""):    # what it was typed, for a test to read whole
+                with open(log, "a", encoding="utf8") as f:
                     f.write(prompt + "\n")
             several = re.search(rf"tasks: ((?:{TASK_ID}(?:, )?)+)", prompt)   # a press of several names them all (AC-138)
             tasks = re.findall(TASK_ID, several[1]) if several else re.findall(TASK_ID, prompt)[:1] or [""]
