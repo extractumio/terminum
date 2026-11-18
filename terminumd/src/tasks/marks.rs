@@ -37,6 +37,8 @@ pub fn of_session(tx: &Transaction, key: &str) -> Result<Vec<String>, String> {
 #[derive(PartialEq)]
 struct Asks {
     id: String,
+    /// its project, so a page shows the line in that project's color and name (AC-117), never guessed from the ID
+    project: String,
     failed: bool,
     words: String,
     /// what a close names: the move (back into the column is a new line, whatever its words) and its words, so a
@@ -52,7 +54,7 @@ fn asks(tx: &Transaction, one: Option<&str>) -> Result<Vec<Asks>, String> {
     let queued = crate::dispatcher::waits::queued_task("t");
     rows(tx, &format!("SELECT t.slug, t.status = 'FAILED', COALESCE(m.author != 'human', 0),
             COALESCE((SELECT text FROM events e WHERE e.task = t.id AND e.kind = 'why' AND e.author = m.author AND e.rowid > m.rowid ORDER BY e.at DESC, e.rowid DESC LIMIT 1), m.text, ''),
-            COALESCE(m.rowid, 0), t.line_seen
+            COALESCE(m.rowid, 0), t.line_seen, t.project
         FROM tasks t LEFT JOIN events m ON m.rowid = (SELECT e.rowid FROM events e WHERE e.task = t.id AND e.kind = 'move' ORDER BY e.at DESC, e.rowid DESC LIMIT 1)
         WHERE t.status IN ('WAIT FOR HUMAN', 'FAILED') AND (t.status = 'FAILED' OR NOT {queued})
             AND t.archived_at IS NULL AND (?1 IS NULL OR t.id = ?1) ORDER BY t.number DESC"), [one], |r| {
@@ -65,7 +67,7 @@ fn asks(tx: &Transaction, one: Option<&str>) -> Result<Vec<Asks>, String> {
         };
         let key = format!("{}|{words}", r.get::<_, i64>(4)?);
         let due = r.get::<_, bool>(2)? && r.get::<_, Option<String>>(5)?.as_deref() != Some(key.as_str());
-        Ok(Asks { id, failed, words, key, due })
+        Ok(Asks { id, project: r.get(6)?, failed, words, key, due })
     })
 }
 
@@ -169,7 +171,7 @@ impl Marks {
 
     fn message(&self) -> String {
         let held = self.held.lock();
-        let lines: Vec<_> = held.attention.iter().filter(|a| a.due).map(|a| json!({"id": a.id, "failed": a.failed, "words": a.words, "key": a.key})).collect();
+        let lines: Vec<_> = held.attention.iter().filter(|a| a.due).map(|a| json!({"id": a.id, "project": a.project, "failed": a.failed, "words": a.words, "key": a.key})).collect();
         let (waiting, failed) = held.cards;
         json!({"t": "taskmarks", "marks": held.sessions, "counts": held.counts, "waiting": waiting, "failed": failed, "lines": lines}).to_string()
     }
@@ -243,6 +245,7 @@ mod tests {
         let (need, told) = lines(&marks);
         let key = told[0]["key"].as_str().unwrap().to_string();
         assert_eq!((need, told[0]["words"].clone()), (json!(1), json!(format!("{} waits for you", t.id))));
+        assert_eq!(told[0]["project"], json!("default"), "the line names its task's project; the page never guesses it");
         store.with(|tx| keep_seen(tx, &t.id, Some("1|an older line"))).unwrap();
         marks.refresh(&store).unwrap();
         assert_eq!(lines(&marks).1[0]["key"], json!(key), "a close of another line leaves this one up");

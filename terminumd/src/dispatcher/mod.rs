@@ -11,6 +11,7 @@ mod goes_on;
 pub(crate) mod letgo;
 mod press;
 mod places;
+mod firstprompt;
 mod queue;
 mod gate;
 mod hooks;

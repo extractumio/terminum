@@ -82,6 +82,10 @@
 /* in a bar beside a hidden list (a computer's): icons, after ☰ */
 #app #bar > .sections { display: none; }
 @media (min-width: 861px) { #app.nav-hidden #bar > .sections { display: inline-flex; } }
+/* the list's head [+ Session] (terminum-dispatcher.md AC-142): the board's text key at the head's height; its word from a
+   400 px list, the plus alone below. Id and class: the keys' rule above weighs (1,1,1) */
+.nav-head #navnew.textkey { flex: none; height: var(--icon-key); }
+@container (max-width: 379px) { .nav-head #navnew.textkey { width: var(--icon-key); padding: 0; justify-content: center; } .nav-head #navnew .word { display: none; } }
 
 /* ---- fields: soft shadows, never a line: a recess at rest; in focus a glow, its fill as at rest (no gradient) ---- */
 :is(.field, .search, .filter, .inline-edit input), #findq { border: 0; border-radius: var(--key-r); color: inherit;

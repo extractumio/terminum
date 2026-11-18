@@ -9,10 +9,12 @@
 import { icon } from "./icons.js";
 import { textForm } from "./render.js";
 import { floats, FLOATING } from "./fold.js";
+import { tagProject } from "./listparts.js";
 
 const STEADY = 2500;
 
-export function waitingCards(box, onOpen) {
+/** `projectOf(id)`: the project that holds session `id`, or null: its line's stripe and name. */
+export function waitingCards(box, onOpen, projectOf = () => null) {
   const asking = new Map();        // id -> {since, title}: waiting, as the last layout said
   const leaving = new Map();       // id -> {since, title}: stopped waiting after it counted
   const seen = new Set();          // shown or closed while it waits
@@ -67,7 +69,8 @@ export function waitingCards(box, onOpen) {
         mark.className = `state ${failed ? "failed" : "waiting"}`;
         mark.replaceChildren(icon(failed ? "triangle-alert" : "circle-help", 14));
       }
-      put(c.querySelector(".go"), "title", `Open ${title}`);
+      const full = tagProject(c, projectOf(id));
+      put(c.querySelector(".go"), "title", full ? `Open ${title} (${full})` : `Open ${title}`);
       const more = i === room - 1 ? due.length - room : 0;       // the last card says how many more wait
       put(c.querySelector(".more"), "textContent", more > 0 ? `+${more} more` : "");
       put(c, "hidden", i >= room);
@@ -96,5 +99,7 @@ export function waitingCards(box, onOpen) {
     },
     /** The session the page shows now. */
     show(id) { shown = id; draw(); },
+    /** The projects changed (a move, a rename, a new color): the lines say so in place. */
+    draw,
   };
 }

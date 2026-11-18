@@ -242,6 +242,15 @@ export function onFiles(area, zone, add, show = () => {}) {
   });
 }
 
+/** A window's files as chips in `list`, each with its × (`remove(f)`). */
+export function fileChips(list, files, remove) {
+  list.replaceChildren(...files.map((f) => {
+    const li = el("li", null, f.name);
+    li.append(iconButton("icon", "x", `Remove ${f.name}`, "Remove this file", () => remove(f)));
+    return li;
+  }));
+}
+
 /** Keeps a file with terminumd: its {id, name, bytes, mime}. Over `most` bytes is said before it is sent. */
 export async function upload(file, most) {
   if (file.size > most) throw new Error(`${file.name} is over ${Math.round(most / 2 ** 20)} MB`);

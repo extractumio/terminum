@@ -100,7 +100,8 @@ Three things hold everywhere below:
 - **Typing**: only in a pane it started and marked, at that agent's empty box, and only what the
   typing gate of `terminum-dispatcher.md` §9 lists: task IDs with fixed words; the prompt of a
   human's RUN, whose window shows it first; a schedule's; a project's manager's; the integration
-  queue's own words. A task's words never reach the shell an agent leaves. **Left**: in one
+  queue's own words; your first prompt in + Session's box, once, into the pane that request
+  started (`terminum-dispatcher.md` AC-204). A task's words never reach the shell an agent leaves. **Left**: in one
   session of several tasks an agent-written task can still sway the others once read.
 - **Closing and ending**: it closes only such a pane, its agent idle, and at a task's time budget
   signals what runs under it by pid and start time, its shell spared, never by name or pattern.

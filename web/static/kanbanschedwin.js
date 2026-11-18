@@ -104,7 +104,7 @@ export function scheduleWindow({ getMeta, chosen, changed }) {
     shownDays();
     shownParts();
     f.every.value = String(p.every);
-    $("schedhead").textContent = s ? `${s.key} · ${s.title}` : "New schedule";
+    $("schedhead").textContent = s ? `${s.key} · ${s.title}` : "New routine";
     $("scheddrop").hidden = !s;
     $("schedby").hidden = !s;
     if (s) $("schedby").textContent = `Set by ${s.author_name || "you"} · changed ${stamp(s.updated_at)}${s.paused_why ? ` · ${s.paused_why}` : ""}`;

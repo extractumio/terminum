@@ -26,6 +26,7 @@ import "./dropdown.js";
 import { runWindow } from "./kanbanrun.js";
 import { sessionStarter } from "./kanbansession.js";
 import { taskLines } from "./tasklines.js";
+import { sessionComposer } from "./kanbansessbox.js";
 import { liveSession } from "./cardstate.js";
 import { el, iconButton, plural, projectInk, textKey } from "./listparts.js";
 import { integrationColumn } from "./kanbanqueuecol.js";
@@ -266,12 +267,13 @@ function send(m) {
 }
 const openSession = (key) => { location.href = sessionUrl(key); };
 const folds = foldedCards((id) => openTask(id));
-const side = boardSessions({ chosen: () => filters().project, openTask, send, narrow, newSession: () => newSession(projectOf(filters().project[0])) });
+const side = boardSessions({ chosen: () => filters().project, openTask, send, narrow, newSession: (p) => p && newSession(projectOf(p.id) ?? p), project: projectOf });
 const runs = runWindow({ addAgent: (project) => agents.add(project), noFolder: askFolder, done: (waits) => { if (waits) say(waits); readSoon(); } });
-const agents = agentsSection({ getMeta: () => meta, chosen: () => filters().project, reload: loadMeta, slots: () => slots, liveRow: (key) => liveRows.get(key),
+const composer = sessionComposer({ getMeta: () => meta, dragging: () => dragging });
+const agents = agentsSection({ getMeta: () => meta, chosen: () => filters().project, reload: loadMeta, slots: () => slots, liveRow: (key) => liveRows.get(key), composer,
   refreshQueue: async (id) => { const got = await load(); return got ? (got.queue?.[id] ?? []) : undefined; },
   dragging: () => dragging, given: () => dragging ?? (picked.size ? pickedTasks() : null), run: runThem, openSession, readings: () => readings, openTask });
-$("agentbar").append(agents.box);
+$("sesscompose").before(agents.box);            // the pool's cards, then + Session's dock under them (AC-204)
 const scheduled = scheduledSection({ getMeta: () => meta, chosen: () => filters().project, openTask });
 $("schedbar").append(scheduled.box);
 
@@ -374,7 +376,7 @@ const project = projectWindow({ getMeta: () => meta, reload: loadMeta, agents, a
   chosen: (id) => bar.setFilters({ project: [id] }), shownProjects });
 /** What goes by the pool and the projects shown. */
 const drawPool = () => { agents.draw(); scheduled.draw(); project.refresh(); auto.draw(); };
-const needs = taskLines($("asks"), (id) => openTask(id), say);
+const needs = taskLines($("asks"), (id) => openTask(id), say, projectOf);
 const windowed = taskWindow({ getMeta: () => meta, runs, openTask, newSubtask: (t) => form.open({ parent: t.id, project: t.project }), openSchedule: (key) => scheduled.openKey(key) });
 const address = taskAddress({ windowed, needs });
 const form = taskForm({ getMeta: () => meta, getFilter: filters, onMade: madeHidden, onRun: runMade, slots: () => slots });

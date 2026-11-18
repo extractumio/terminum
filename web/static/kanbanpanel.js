@@ -14,7 +14,7 @@ export function columnPanel(columns, still) {
   const phone = matchMedia(BOARD_PHONE), board = $("board"), tabs = $("colswitch"), panel = el("div", "colpanel");
   const todo = columns.get("TODO");
   panel.append(...[...columns.values()].filter((c) => c !== todo).map((c) => c.col));
-  board.replaceChildren(todo.col, panel);
+  board.replaceChildren($("railboard"), todo.col, panel);   // Task Management's rail first (terminum-kanban.md AC-203)
   tabs.replaceChildren(...[...columns.values()].map((c) => c.tab));
   const kept = read(KEPT);
   let chosen = columns.has(kept) && kept !== "TODO" ? kept : FIRST;   // the panel's

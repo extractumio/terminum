@@ -158,7 +158,8 @@ export async function liveBoardSessions(page, opts) {
   // it can be hidden, and it stays so
   await page.click("#navclose");
   check("AC-135 its key hides the list", !(await page.isVisible("#nav")));
-  check("AC-135 the columns take its room", await page.evaluate(() => document.querySelector('.col[data-status="TODO"]').getBoundingClientRect().left < 40));
+  // Task Management's rail first, on the gutter (terminum-kanban.md AC-203), the columns after it
+  check("AC-135 the columns take its room", await page.evaluate(() => document.getElementById("railboard").getBoundingClientRect().left < 40 && document.querySelector('.col[data-status="TODO"]').getBoundingClientRect().left < 80));
   await page.reload();
   await page.waitForSelector('.col[data-status="TODO"]');
   check("AC-135 and this browser remembers it", !(await page.isVisible("#nav")));

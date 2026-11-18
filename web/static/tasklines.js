@@ -3,12 +3,13 @@
 // and how many on Kanban in the page's head: those waiting for a human in yellow, those failed in red. terminumd says which lines are up and keeps which a human
 // closed or saw, so every browser shows the same; a line being closed stays hidden while the close goes.
 import { icon } from "./icons.js";
-import { el, iconButton, plural } from "./listparts.js";
+import { el, iconButton, plural, tagProject } from "./listparts.js";
 import { kanbanLinks } from "./sections.js";
 import { api } from "./kanbanutil.js";
 
-/** Lines in `box`; `open(id)` shows a task (its window then says it was seen); `say(text)` tells a refused close. */
-export function taskLines(box, open, say) {
+/** Lines in `box`; `open(id)` shows a task (its window then says it was seen); `say(text)` tells a refused close;
+ *  `project(id)`: the project of that id the page knows, which names a line (terminumd says a task's: AC-117). */
+export function taskLines(box, open, say, project = () => null) {
   let last = [];
   const closing = new Set();       // keys sent or kept by terminumd, until its lines leave them out
 
@@ -19,9 +20,10 @@ export function taskLines(box, open, say) {
     go.type = "button";
     mark.append(icon(l.failed ? "triangle-alert" : "circle-help", 14));
     go.append(mark, el("span", "what", l.words));
-    go.title = `Open ${l.id}`;
     go.addEventListener("click", () => open(l.id));
     c.append(go, iconButton("x", "x", "Close this line", "Close this line", () => shut(l.id, l.key)));
+    const full = tagProject(c, l.project ? project(l.project) : null);   // Default is no project the page knows
+    go.title = full ? `Open ${l.id} (${full})` : `Open ${l.id}`;
     return c;
   }
 
