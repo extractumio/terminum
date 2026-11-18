@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 //! RUN's routes (`terminum-dispatcher.md` AC-121, AC-122): what its dialog offers, and the press.
 
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use axum::extract::{Path, State};
@@ -39,10 +40,9 @@ pub fn routes() -> Router<Shared> {
 /// What RUN's dialog shows (AC-121, AC-138): the tasks' project's pool, each saying what keeps it busy; an agent named that cannot
 /// take them is refused here, so the window never offers another under its name. `no_folder`: nothing can start (AC-140).
 async fn offer(State(app): State<Shared>, Path(id): Path<String>, axum::extract::Query(asked): axum::extract::Query<Asked>) -> Response {
-    reread_closed_links(&app, &id, &also_of(&asked.also)).await;
-    let a = app.clone();
+    let pane = linked_panes(&app, &id, &also_of(&asked.also)).await;
     answer(store(&app, move |tx| {
-        let (tasks, w, moved_from) = ways(tx, &id, &also_of(&asked.also), asked.agent.as_deref(), false, &|k| a.tmux.pane_state(k))?;
+        let (tasks, w, moved_from) = ways(tx, &id, &also_of(&asked.also), asked.agent.as_deref(), false, &pane)?;
         let w = w?;
         let t = &tasks[0];
         let (name, host, dir) = ops::project_place(tx, &t.project)?;
@@ -249,15 +249,23 @@ pub(crate) async fn press_by_manager(app: &Shared, id: &str, user: &str, agent: 
 const REREAD_WAIT: std::time::Duration = std::time::Duration::from_secs(5);
 
 /// A linked pane its server's list lacks may be newer than that list (an agent's take_task): that server is
-/// read once more before the press judges it closed (AC-113).
-async fn reread_closed_links(app: &Shared, id: &str, also: &[String]) {
-    let (id, also) = (id.to_string(), also.to_vec());
-    let Ok(keys) = store(app, move |tx| Ok(members(tx, &id, &also)?.into_iter().filter_map(|t| t.session).collect::<Vec<_>>())).await else { return };
-    for key in keys.iter().filter(|k| app.tmux.pane_state(k) == PaneState::Closed) {
-        if let Some((server, _)) = app.tmux.resolve(key) {
-            let _ = tokio::time::timeout(REREAD_WAIT, crate::lists::refresh_server(app, &server)).await;
+/// read once more before the press judges it closed (AC-113). The press's judge of a linked pane: one whose
+/// server was not read again in time stays Unread, never Closed by the older list.
+async fn linked_panes(app: &Shared, id: &str, also: &[String]) -> impl Fn(&str) -> PaneState + Send + 'static {
+    let (ids, more) = (id.to_string(), also.to_vec());
+    let keys = store(app, move |tx| Ok(members(tx, &ids, &more)?.into_iter().filter_map(|t| t.session).collect::<Vec<_>>())).await.unwrap_or_default();
+    let mut late = HashSet::new();
+    for key in keys.into_iter().filter(|k| app.tmux.pane_state(k) == PaneState::Closed) {
+        let read = match app.tmux.resolve(&key) {
+            Some((server, _)) => tokio::time::timeout(REREAD_WAIT, crate::lists::refresh_server(app, &server)).await.is_ok(),
+            None => true,
+        };
+        if !read {
+            late.insert(key);
         }
     }
+    let a = app.clone();
+    move |k: &str| if late.contains(k) { PaneState::Unread } else { a.tmux.pane_state(k) }
 }
 
 /// Where a run's pane is.
@@ -271,10 +279,10 @@ async fn pressed(app: &Shared, id: &str, body: Press) -> Result<Value, String> {
         return Err("The message has control or invisible characters.".to_string());
     }
     let (wanted, said, attached, fresh, also, agent) = (id.to_string(), comment.clone(), body.files.clone(), body.fresh, body.also.clone(), body.agent.clone());
-    reread_closed_links(app, &wanted, &also).await;
-    let (kept, by, a) = (body.clone(), body.clone(), app.clone());
+    let pane = linked_panes(app, &wanted, &also).await;
+    let (kept, by) = (body.clone(), body.clone());
     let (tasks, w, again) = store(app, move |tx| {
-        let (tasks, w, _) = ways(tx, &wanted, &also, agent.as_deref(), fresh, &|k| a.tmux.pane_state(k))?;
+        let (tasks, w, _) = ways(tx, &wanted, &also, agent.as_deref(), fresh, &pane)?;
         // a run that starts keeps its comment with it, in the transaction that adds it; going on, or refused, it stays, once
         if !matches!(w, Ok(Way::First)) && let Some(c) = &said {
             by.keep_on(tx, &tasks, c, &attached)?;
