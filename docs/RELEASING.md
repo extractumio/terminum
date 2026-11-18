@@ -167,3 +167,10 @@ The repository's settings keep everyone else's code off the runner: Actions › 
 repos/extractumio/terminum/actions/permissions/fork-pr-contributor-approval -f
 approval_policy=all_external_contributors`), the runner registered to this repository alone,
 and the workflow's `permissions: {}`. Never approve a fork's run (CLAUDE.md §10).
+
+Two rulesets, with no bypass actors, keep `main` and the releases' tags: "main: no force-push,
+no deletion" (`refs/heads/main`: `non_fast_forward`, `deletion`; fast-forward pushes from
+`make land` and the integration queue pass) and "v* tags: no update, no deletion"
+(`refs/tags/v*`: `update`, `deletion`; `make release` only creates a tag, so a release's fix
+after its tag was pushed takes a new version). Read them with `gh api
+repos/extractumio/terminum/rulesets/<id>` (ids from `gh api repos/extractumio/terminum/rulesets`).

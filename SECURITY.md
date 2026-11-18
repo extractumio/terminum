@@ -175,10 +175,11 @@ days and that is not Dispatcher's. What the agent ran in the background ends wit
   `SHA256SUMS` with the release key they carry, before the checksum, and refuse root. Releases are
   built and signed only on the maintainer's Mac (`docs/RELEASING.md`; `terminum-lifecycle.md` §9
   Security). The folder access macOS grants terminumd passes to every program in terminum's tmux,
-  agents too. **Left**:
+  agents too. The repository's rulesets refuse everyone a force-push to `main` or its deletion,
+  and a moved or deleted `v*` tag; fast-forward pushes and new tags pass. **Left**:
   whoever controls the maintainer's GitHub account can replace a release's `install.sh`, which a
-  *first* `curl | sh` trusts; a program running as the maintainer while the Keychain is unlocked
-  can sign.
+  *first* `curl | sh` trusts, or remove those rulesets; a program running as the maintainer while
+  the Keychain is unlocked can sign.
 
 ## Reporting
 
