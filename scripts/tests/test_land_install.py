@@ -69,6 +69,32 @@ class Install(test_land.Repos, unittest.TestCase):
         self.assertEqual((ran, said), ([], ["install: none, the primary checkout is not on what landed: the next landing tries again"]))
         self.assertTrue(land.install_mark(self.primary).exists())
 
+    def test_a_landing_beside_uncommitted_work_counts_and_installs_once_the_checkout_is_clean(self):  # AC-104
+        (self.primary / "b.txt").write_text("the maintainer's work\n")   # not in the move's way
+        before, printed = git("rev-parse", "HEAD", cwd=self.primary), []
+        def landed(slug):
+            tree = self.tree(slug)
+            made = self.commit(tree, f"{slug}.rs", "x\n")
+            after = lambda files: self.installs(files)
+            with mock.patch("builtins.print", lambda *a, **k: printed.append(" ".join(map(str, a)))):
+                self.assertEqual(land.land(tree, check=self.green, say=lambda _: None, after=after), made)
+            return made
+        made = landed("one")
+        self.assertEqual(self.on_origin(), made, "the push counts")
+        self.assertEqual(printed, ["primary checkout stays where it is: 1 uncommitted files in it; it moves only when "
+                                   "git status --porcelain is empty; the push counts, nothing installed until it follows"])
+        self.assertEqual((git("rev-parse", "HEAD", cwd=self.primary), (self.primary / "b.txt").read_text()),
+                         (before, "the maintainer's work\n"))
+        ran, said = [], []
+        land.install_pending(self.primary, run=self.made(ran), say=said.append)
+        self.assertEqual((ran, said), ([], ["install: none, the primary checkout is not on what landed: the next landing tries again"]))
+        git("checkout", "-q", "--", "b.txt", cwd=self.primary)
+        self.assertEqual(git("rev-parse", "HEAD", cwd=self.primary), before, "clean, it waits for the next landing")
+        landed("two")
+        land.install_pending(self.primary, run=self.made(ran), say=said.append)
+        self.assertEqual((git("rev-parse", "HEAD", cwd=self.primary), ran), (self.on_origin(), ["build", "install", "installed"]))
+        self.assertFalse(land.install_mark(self.primary).exists())
+
     def test_a_mark_written_during_an_install_stays_for_its_landing(self):  # AC-104
         self.installs({"one.rs"})
         def run(primary, target):

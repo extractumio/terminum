@@ -87,8 +87,18 @@ def merge_base_in(tree):
         raise Stop(2, f"conflict with {BASE} in: {' '.join(conflicts)}\nresolve them in {tree}, commit, and land again")
 
 
+def dirty_words(folder):
+    """Why a checkout with uncommitted changes stays where it is, or None when it is clean (CLAUDE.md §9). Untracked
+    files and submodules count whatever git's config says, as terminumd counts (integrate/tail.rs). A file made between
+    this look and the move: git still refuses one in the move's way."""
+    dirty = git("status", "--porcelain", "--untracked-files=normal", "--ignore-submodules=none", cwd=folder).stdout.splitlines()
+    return f"{len(dirty)} uncommitted files in it; it moves only when git status --porcelain is empty" if dirty else None
+
+
 def update_primary(primary):
     """The primary checkout on the fresh origin/main; one that cannot move is said, never forced."""
+    if words := dirty_words(primary):
+        return words
     branch = git("branch", "--show-current", cwd=primary).stdout.strip()
     if branch == "main":
         done = git("merge", "--ff-only", BASE, cwd=primary, check=False)
@@ -302,7 +312,8 @@ def after_push(primary, files):
     """In the turn, seconds: the primary checkout on the fresh origin/main; code landed on the maintainer's
     machine (TM_LAND_INSTALL=1) marks an install, run after the turn by install_pending."""
     stuck = update_primary(primary)
-    print("main: on the fresh origin/main" if stuck is None else f"primary checkout stays where it is: {stuck}")
+    print("main: on the fresh origin/main" if stuck is None else f"primary checkout stays where it is: {stuck}; the push counts, "
+          "nothing installed until it follows")
     if os.environ.get("TM_LAND_INSTALL") == "1" and has_code(files):
         install_mark(primary).write_text(git("rev-parse", BASE, cwd=primary).stdout)
 

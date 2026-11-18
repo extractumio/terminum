@@ -761,6 +761,8 @@ Scenario: AC-198 edge — terminum's own After cannot run now
   When `python3 scripts/land.py after` runs
   Then it moves nothing, installs nothing and ends 75 with "after: an install runs in the primary checkout: waits for its end" ("after: a landing holds its turn: waits for its end"), which terminumd's queue takes as AC-191's wait
   And it holds the install turn from its first look to its install's end; a release, in a tree of its own, never holds it back (`terminum-lifecycle.md` AC-200)
+  When the primary checkout holds uncommitted files, whether the move would touch them or not
+  Then it moves nothing, installs nothing and ends 75 with "after: the primary checkout stays where it is: 2 uncommitted files in it; it moves only when git status --porcelain is empty": the batch waits for the checkout to be clean (`terminum-lifecycle.md` AC-104)
 
 Scenario: AC-198 edge — a task taken out while it is verified
   When API-12 is taken out (AC-187) while its Verify runs
