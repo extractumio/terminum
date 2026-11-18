@@ -535,6 +535,10 @@ The recipe allowlist (AC-81), with no remote command but tmux, the agent or term
 
 Agents' link (AC-99): a process on the host (the user, or root) can, only for that host's rows: post status, plan and prompt events for panes of the host's default server, write and read their plans and their project's tasks (terminum-kanban.md AC-120), and receive reminder text; it cannot reach other routes, local or other hosts' keys, or the Mac's files (a note's file is shown as text). Other users of the host cannot connect: sshd binds the socket 0600 in a 0700 folder; root can, an accepted risk. The Mac-side socket `<app>/links/<host id>.sock` (0600, folder 0700) has two routes only, `POST /hook` and `POST /agent`, with the limits of §9 Constraints; a body never names the host. The helper's check of `run` (AC-99) is its own code, not shell glue, and the hook checks the folder the same way before connecting. A host's notes shown in a project mixing local panes carry the host's name.
 
+The files agent writes only under that user's `$HOME` and `/tmp` (its Roots) and exits when its ssh ends; its answers are untrusted, capped and timed.
+
+Left: adding a host is the consent to set it up (AC-83, AC-99), and a page signed in from another device can add one too, so the password also decides which machines terminum writes to. An agent on a host reaches its project's tasks through the host's link, so a broken host can read them and write comments its project's other agents read, which they are told are data (`terminum-kanban.md` AC-120).
+
 ### Compatibility
 
 `agents.json` of iterm-enhancer is imported by `terminum import` as hosts with `files: enabled`; tmux keys `tmux-remote:<dest>:…` become `tmux:<name>:…`.

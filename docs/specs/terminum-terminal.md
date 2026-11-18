@@ -753,7 +753,7 @@ Limits a scenario states are in §5. Only these are not:
 - Bookmarks hold selected terminal text: sent only over a signed-in WebSocket, shown as text.
 - Pasted files: the name is terminumd's (AC-36).
 - Traces: AC-38.
-- Sent history: AC-90; the threat: `SECURITY.md`.
+- Sent history (AC-90) is kept on the Mac (0600, folders 0700) and sent only to signed-in pages. Left: a quote that opens inside a value's word (`TOKEN=abc'd e'`) is not followed; other secrets typed on a command line are kept as typed.
 
 Denied request: `{"t":"unfold","n":5,"to":40000}` → `{"t":"lines","sid":"tmux:local:default:%3","first":5,"lines":[],"error":"Not a fold terminumd told of"}`.
 
