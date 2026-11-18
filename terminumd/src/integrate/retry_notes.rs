@@ -23,7 +23,7 @@ fn directory(tree: &Path) -> io::Result<Option<File>> {
 /// The notes a check leaves in `.checks`, by file name, with what they are called where said.
 const RETRIED: (&CStr, &str) = (c"retried", "Retry diagnostics");
 const SKIPPED: (&CStr, &str) = (c"skipped", "Skipped checks");
-const FAILED: (&CStr, &str) = (c"failed", "Failed steps");
+const FAILED: &CStr = c"failed";
 /// The most failed steps a note may name (§9 Limits).
 const STEPS_MOST: usize = 16;
 
@@ -32,7 +32,7 @@ const STEPS_MOST: usize = 16;
 pub(super) fn clear(tree: &Path) -> Result<(), String> {
     let clear = || -> io::Result<()> {
         let Some(dir) = directory(tree)? else { return Ok(()) };
-        for (name, _) in [RETRIED, SKIPPED, FAILED] {
+        for name in [RETRIED.0, SKIPPED.0, FAILED] {
             // SAFETY: dir owns an open directory fd and the fixed name is NUL-terminated.
             if unsafe { libc::unlinkat(dir.as_raw_fd(), name.as_ptr(), 0) } != 0 {
                 let e = io::Error::last_os_error();
@@ -45,7 +45,7 @@ pub(super) fn clear(tree: &Path) -> Result<(), String> {
 }
 
 /// A note's bytes, at most MOST + 1 of them, from a regular file reached without following a link.
-fn raw(tree: &Path, (name, _): (&CStr, &str)) -> io::Result<Option<Vec<u8>>> {
+fn raw(tree: &Path, name: &CStr) -> io::Result<Option<Vec<u8>>> {
     let Some(dir) = directory(tree)? else { return Ok(None) };
     // SAFETY: as above; NONBLOCK avoids waiting on a FIFO before metadata rejects non-regular files.
     let fd = unsafe { libc::openat(dir.as_raw_fd(), name.as_ptr(), libc::O_RDONLY | libc::O_CLOEXEC | libc::O_NOFOLLOW | libc::O_NONBLOCK) };
@@ -61,9 +61,8 @@ fn raw(tree: &Path, (name, _): (&CStr, &str)) -> io::Result<Option<Vec<u8>>> {
     Ok(Some(bytes))
 }
 
-fn read_file(tree: &Path, kind: (&CStr, &str)) -> io::Result<Option<String>> {
-    let what = kind.1;
-    let Some(mut bytes) = raw(tree, kind)? else { return Ok(None) };
+fn read_file(tree: &Path, (name, what): (&CStr, &str)) -> io::Result<Option<String>> {
+    let Some(mut bytes) = raw(tree, name)? else { return Ok(None) };
     let truncated = bytes.len() > MOST;
     bytes.truncate(MOST);
     let text = crate::plans::rules::clean(&String::from_utf8_lossy(&bytes));
@@ -100,7 +99,7 @@ pub(super) fn failed(tree: &Path) -> Option<Vec<String>> {
     let text = String::from_utf8(raw(tree, FAILED).ok()??).ok()?;
     let mut steps: Vec<String> = Vec::new();
     for line in text.lines().filter(|l| !l.is_empty()) {
-        let word = (1..=64).contains(&line.len()) && line.bytes().all(|b| b.is_ascii_alphanumeric() || b"_.-".contains(&b));
+        let word = line.len() <= 64 && line.bytes().all(|b| b.is_ascii_alphanumeric() || b"_.-".contains(&b));
         if !word { return None }
         if !steps.iter().any(|s| s == line) { steps.push(line.to_string()) }
     }

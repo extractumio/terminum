@@ -2,7 +2,7 @@
 //! A red Verify told apart from a red target (terminum-integration.md AC-198), on real repositories; the windows
 //! stood in for by `sh`.
 use super::*;
-use crate::integrate::engine::tests::{go, queued_with, status, world, Sh, World};
+use crate::integrate::engine::tests::{go, queued_with, said, status, world, Sh, World};
 use crate::tasks::integration::Settings;
 
 /// A Verify line that writes what each run saw (`rerun|of|sha|whose tree`) to `seen` and fails `task` on the task's
@@ -23,10 +23,6 @@ fn setup(name: &str, task: &str, target: &str) -> (World, String, std::path::Pat
     let w = world(name, Settings { prepare: format!("echo prepared >> {}", root.join("prepared.txt").display()), verify: verify(&seen, task, target), ..Settings::default() });
     let a = queued_with(&w, 1, "b.txt", "b\n", true);
     (w, a, seen)
-}
-
-fn said(w: &World, id: &str) -> String {
-    w.s.with(|tx| ops::history(tx, id)).unwrap().to_string()
 }
 
 fn bugs(w: &World) -> Vec<(String, String, String)> {

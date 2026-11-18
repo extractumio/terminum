@@ -117,6 +117,11 @@ pub(crate) fn status(w: &World, id: &str) -> String {
     w.s.with(|tx| Ok(ops::get(tx, id)?.status)).unwrap()
 }
 
+/// A task's history as one text.
+pub(crate) fn said(w: &World, id: &str) -> String {
+    w.s.with(|tx| ops::history(tx, id)).unwrap().to_string()
+}
+
 /// Round `n` of the newest batch as its row says: result, why, ended.
 pub(crate) fn round_row(w: &World, n: i64) -> (String, Option<String>, Option<i64>) {
     let id = batch(w).id;

@@ -60,10 +60,12 @@ def git(*args, cwd=REPO, env=None, input=None, check=True):
     return subprocess.run(["git", *args], cwd=cwd, env=env, input=input, capture_output=True, text=True, check=check).stdout
 
 
-def changed_files(base, cwd=REPO):
-    merge_base = git("merge-base", base, "HEAD", cwd=cwd).strip()
-    named = set(git("diff", "--name-only", merge_base, cwd=cwd).splitlines())
-    named |= set(git("ls-files", "-o", "--exclude-standard", cwd=cwd).splitlines())
+def changed_files(base, cwd=REPO, head=None):
+    """The files changed since the merge base with `base`: in the work tree, untracked ones too, or in commit `head`."""
+    merge_base = git("merge-base", base, head or "HEAD", cwd=cwd).strip()
+    named = set(git("diff", "--name-only", merge_base, *([head] if head else []), cwd=cwd).splitlines())
+    if not head:
+        named |= set(git("ls-files", "-o", "--exclude-standard", cwd=cwd).splitlines())
     return sorted(named), merge_base
 
 
@@ -287,16 +289,19 @@ def land_plan(files):
 
 
 BUILDS = ("ui", "debug-build")   # what the other steps run on
+UNBUILT = ("security", "docs", "scripts", "ui-unit", "page-unit")   # steps that need neither
 
 
 def rerun_plan(names, commit, root=REPO):
     """The steps `names` of `commit`'s plan, made on this tree's content from the files it changed that are here,
     with the builds they run on; a step the plan here lacks (a test the commit added) is not run."""
-    base = git("merge-base", "HEAD", commit, cwd=root).strip()
-    files = [f for f in git("diff", "--name-only", base, commit, cwd=root).splitlines() if (root / f).exists()]
+    files, base = changed_files("HEAD", root, head=commit)
+    files = [f for f in files if (root / f).exists()]
     planned = plan(files, touched_cases(files, base, root, head=commit), root)
-    builds = any(s[0] in names and s[0] not in ("security", "docs") for s in planned)
-    return [s for s in planned if s[0] in names and s[0] not in BUILDS or builds and s[0] in BUILDS]
+    keep = {name for name, _ in planned if name in names} - set(BUILDS)
+    if keep - set(UNBUILT) or names & set(BUILDS):
+        keep |= set(BUILDS)
+    return [s for s in planned if s[0] in keep]
 
 
 def say_failed(root, failed):

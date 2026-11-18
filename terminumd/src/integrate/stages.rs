@@ -10,7 +10,7 @@ use std::path::Path;
 
 use rusqlite::Transaction;
 
-use super::engine::{place, window, worktree, Window, OVER};
+use super::engine::{place, window, worktree, Place, Window, OVER};
 use super::git;
 use super::red_target;
 use super::retry_notes;
@@ -119,7 +119,7 @@ fn follow(store: &Store, runner: &dyn Runner, home: &Path, run: &Run, now: i64) 
         return Ok(false);
     }
     // read before the tree moves to the target
-    let failed = retry_notes::failed(&tree).filter(|_| code == 1);
+    let failed = (code == 1).then(|| retry_notes::failed(&tree)).flatten();
     let notes = retry_notes::read(&tree);
     let skipped = retry_notes::skipped(&tree).filter(|_| code == 0);
     let (id, log) = (&run.id, log.display());
@@ -130,6 +130,17 @@ fn follow(store: &Store, runner: &dyn Runner, home: &Path, run: &Run, now: i64) 
         if let Some(skipped) = &skipped {
             ops::notice(tx, DISPATCHER, id, &format!("{id}'s Verify passed without the timed checks a busy machine skipped (AC-146): they did not run before its batch.\nCheck output (data):\n{skipped}"), serde_json::json!({"skipped": "verify"}), now)?;
         }
+        Ok(())
+    })?;
+    // its failed steps named: judged by their run on the target
+    if let Some(steps) = &failed {
+        if red_target::start(store, runner, home, run, steps, &run.attempt, now)? {
+            return Ok(true);
+        }
+        finish(store, home, run)?;
+        return Ok(false);
+    }
+    store.with(|tx| {
         match code {
             0 => {
                 ready(tx, &run.task)?;
@@ -137,20 +148,25 @@ fn follow(store: &Store, runner: &dyn Runner, home: &Path, run: &Run, now: i64) 
             }
             // Prepare's 2 is a conflict with the target; any other failure a red check (§9)
             2 => bs::give_back(tx, &run.task, &format!("{id} returned: conflict: its Prepare or Verify ended with status 2. Its log: {log}"), Left::Conflict, now),
-            // its failed steps named: judged by their run on the target
-            _ if failed.is_some() => Ok(()),
             code => {
                 bs::not_again(tx, &run.task, &run.commit, now)?;
-                let how = if code == OVER { format!("ran over {} minutes", run.minutes) } else { format!("ended with status {code}") };
-                bs::give_back(tx, &run.task, &format!("{id} returned: red check: its Prepare or Verify {how}. Its log: {log}"), Left::Red, now)
+                bs::give_back(tx, &run.task, &format!("{id} returned: red check: its Prepare or Verify {}. Its log: {log}", how(code, run.minutes)), Left::Red, now)
             }
         }
     })?;
-    if let Some(steps) = &failed && red_target::start(store, runner, home, run, steps, &run.attempt, now)? {
-        return Ok(true);
-    }
     finish(store, home, run)?;
     Ok(false)
+}
+
+/// How a Verify's window ended, in its notices' words (§9).
+pub(super) fn how(code: i32, minutes: i64) -> String {
+    if code == OVER { format!("ran over {minutes} minutes") } else { format!("ended with status {code}") }
+}
+
+/// What Prepare and Verify get (§9): the task, the commit they run on, the target and the tree.
+pub(super) fn vars(id: &str, sha: &str, p: &Place, tree: &Path) -> Vec<(&'static str, String)> {
+    vec![("TM_INTEGRATION_TASK", id.to_string()), ("TM_INTEGRATION_SHA", sha.to_string()), ("TM_INTEGRATION_TARGET", p.s.target.clone()),
+         ("TM_INTEGRATION_TREE", tree.display().to_string()), ("TM_INTEGRATION_PROJECT_DIR", p.repo.display().to_string())]
 }
 
 /// The queued task ready for a batch.
@@ -169,8 +185,7 @@ fn start(store: &Store, runner: &dyn Runner, home: &Path, task: &str, project: &
     let tree = integration::verify_tree_in(home, project, number);
     let attempt = crate::auth::crypto::random_hex::<16>();
     let log = integration::verify_log_in(home, project, number, &attempt);
-    let vars = vec![("TM_INTEGRATION_TASK", id.clone()), ("TM_INTEGRATION_SHA", commit.to_string()), ("TM_INTEGRATION_TARGET", p.s.target.clone()),
-                    ("TM_INTEGRATION_TREE", tree.display().to_string()), ("TM_INTEGRATION_PROJECT_DIR", p.repo.display().to_string())];
+    let vars = vars(&id, commit, &p, &tree);
     let started = worktree(&p, tree.clone(), commit).map_err(|e| format!("its tree could not be made: {e}"))
         .and_then(|t| {
             retry_notes::clear(&t)?;

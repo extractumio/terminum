@@ -8,11 +8,11 @@ use std::path::Path;
 
 use rusqlite::{OptionalExtension, Transaction};
 
-use super::engine::{place, target_now, worktree, OVER};
+use super::engine::{place, target_now, worktree};
 use super::git;
 use super::retry_notes;
 use super::runner::Runner;
-use super::stages::{line_of, Run};
+use super::stages::{how, line_of, vars, Run};
 use super::store::{self as bs, Left};
 use crate::tasks::integration;
 use crate::tasks::integration_queue::and_list;
@@ -21,6 +21,8 @@ use crate::tasks::store::{Store, DISPATCHER};
 
 /// A queued entry held for a red target.
 pub const HELD: &str = "red target";
+/// A Bug task `b` still open: what its held tasks wait for.
+const OPEN: &str = "b.status NOT IN ('DONE', 'FAILED') AND b.archived_at IS NULL";
 
 /// The task's failed steps started on the target, its Verify alone with what to run again; whether it runs. One
 /// that cannot start returns the task, red, as one that cannot tell. `red_attempt`: the task's own run.
@@ -29,16 +31,13 @@ pub(super) fn start(store: &Store, runner: &dyn Runner, home: &Path, run: &Run, 
     let tree = integration::verify_tree_in(home, &run.project, run.number);
     let attempt = crate::auth::crypto::random_hex::<16>();
     let line = line_of("", &p.s.verify);
-    let started = (!line.is_empty()).then_some(()).ok_or_else(|| "Verify is empty".to_string())
-        .and_then(|()| target_now(&p))
-        .and_then(|target| {
-            worktree(&p, tree.clone(), &target).map_err(|e| format!("its tree could not be moved there: {e}"))?;
-            retry_notes::clear(&tree)?;
-            let vars = vec![("TM_INTEGRATION_TASK", run.id.clone()), ("TM_INTEGRATION_SHA", target.clone()), ("TM_INTEGRATION_TARGET", p.s.target.clone()),
-                            ("TM_INTEGRATION_TREE", tree.display().to_string()), ("TM_INTEGRATION_PROJECT_DIR", p.repo.display().to_string()),
-                            ("TM_INTEGRATION_RERUN", steps.join(" ")), ("TM_INTEGRATION_RERUN_OF", run.commit.clone())];
-            runner.start(&format!("verify-{}", run.number), &tree, &line, &vars).map(|pane| (target, pane))
-        });
+    let started = if line.is_empty() { Err("Verify is empty".to_string()) } else { target_now(&p) }.and_then(|target| {
+        worktree(&p, tree.clone(), &target).map_err(|e| format!("its tree could not be moved there: {e}"))?;
+        retry_notes::clear(&tree)?;
+        let mut vars = vars(&run.id, &target, &p, &tree);
+        vars.extend([("TM_INTEGRATION_RERUN", steps.join(" ")), ("TM_INTEGRATION_RERUN_OF", run.commit.clone())]);
+        runner.start(&format!("verify-{}", run.number), &tree, &line, &vars).map(|pane| (target, pane))
+    });
     let own = integration::verify_log_in(home, &run.project, run.number, red_attempt);
     let (id, failed) = (&run.id, and_list(&steps.iter().map(String::as_str).collect::<Vec<_>>()));
     store.with(|tx| match &started {
@@ -75,11 +74,7 @@ pub(super) fn judge(tx: &Transaction, home: &Path, run: &Run, target: &str, code
                     and_list(&passed), if passed.len() == 1 { "it" } else { "them" })
         }
         None => {
-            let how = match code {
-                OVER => format!("ran over {} minutes", run.minutes),
-                1 => "ended with status 1 naming no failed step".to_string(),
-                code => format!("ended with status {code}"),
-            };
+            let how = if code == 1 { "ended with status 1 naming no failed step".to_string() } else { how(code, run.minutes) };
             format!("{id} returned: red check: its Verify failed {failed}; its run on {at} {how}, so whether the target is red too is not known. {logs}")
         }
     };
@@ -113,23 +108,21 @@ fn hold(tx: &Transaction, run: &Run, name: &str, target: &str, failed: &str, log
 
 /// The project's Bug task for its red target while it is open, by its ID: what its held tasks wait for.
 pub fn open_bug(tx: &Transaction, project: &str) -> Result<Option<String>, String> {
-    tx.query_row("SELECT t.slug FROM project_integration i JOIN tasks t ON t.id = i.red_bug
-                  WHERE i.project = ?1 AND t.status NOT IN ('DONE', 'FAILED') AND t.archived_at IS NULL", [project], |r| r.get(0)).optional().map_err(sql)
+    tx.query_row(&format!("SELECT b.slug FROM project_integration i JOIN tasks b ON b.id = i.red_bug WHERE i.project = ?1 AND {OPEN}"), [project],
+                 |r| r.get(0)).optional().map_err(sql)
 }
 
 /// The tasks held for a red target whose Bug task ended (DONE, FAILED, archived or gone) verified again, each told.
 pub(super) fn release(tx: &Transaction, now: i64) -> Result<(), String> {
-    let held: Vec<(String, String, Option<String>)> = ops::rows(tx, "SELECT e.task, t.slug, b.slug FROM integration_entries e JOIN tasks t ON t.id = e.task
+    let held: Vec<(String, String, Option<String>)> = ops::rows(tx, &format!("SELECT e.task, t.slug, b.slug FROM integration_entries e JOIN tasks t ON t.id = e.task
             LEFT JOIN project_integration i ON i.project = e.project LEFT JOIN tasks b ON b.id = i.red_bug
-            WHERE e.stage = ?1 AND (b.id IS NULL OR b.status IN ('DONE', 'FAILED') OR b.archived_at IS NOT NULL)", [HELD],
-        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
+            WHERE e.stage = ?1 AND NOT coalesce({OPEN}, 0)"), [HELD], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
     for (task, id, bug) in &held {
         tx.execute("UPDATE integration_entries SET stage = 'verifying' WHERE task = ?1", [task]).map_err(sql)?;
         let ended = bug.as_deref().map_or("The red target's task is gone".to_string(), |b| format!("{b} (the red target) ended"));
         ops::comment(tx, DISPATCHER, id, &format!("{ended}: {id}'s Prepare and Verify run again."), now)?;
     }
-    tx.execute("UPDATE project_integration SET red_bug = NULL WHERE red_bug IS NOT NULL AND NOT EXISTS
-                (SELECT 1 FROM tasks t WHERE t.id = red_bug AND t.status NOT IN ('DONE', 'FAILED') AND t.archived_at IS NULL)", []).map(drop).map_err(sql)
+    Ok(())
 }
 
 #[cfg(test)]
