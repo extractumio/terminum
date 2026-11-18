@@ -6,7 +6,7 @@
 
 use serde_json::json;
 
-use super::press::{budget_words, ASK, FINISH};
+use super::press::{boss, budget_words, the_boss, ASK, FINISH};
 use super::{pool, runs, store, DISPATCHER};
 use crate::app::Shared;
 use crate::tasks::cron;
@@ -17,15 +17,18 @@ use crate::tasks::schedules::{self, Schedule};
 const LATE: i64 = 120;
 
 /// What a scheduled run's agent is told (AC-162): only the schedule's own words, as its task holds them; a long
-/// text by its read call, as RUN's own (AC-121). `again`: a human's RUN of a task the schedule made, not the firing.
-pub fn prompt(s: &Schedule, task: &str, title: &str, body: &str, again: bool) -> String {
+/// text by its read call, as RUN's own (AC-121). Who stands behind them is said as it is, a manager's never as a
+/// human's (terminum-agents.md AC-179): who set the schedule, its last author; `again`: a RUN of a task the schedule
+/// made, not its first run; `manager`: the project's manager pressed, by run_task, or by run_schedule for a first run.
+pub fn prompt(s: &Schedule, task: &str, title: &str, body: &str, again: bool, manager: bool) -> String {
     let words = s.words();
     let cadence = words.chars().next().map_or(String::new(), |c| c.to_lowercase().chain(words.chars().skip(1)).collect());
-    let schedule = format!("terminum's schedule {} \"{}\" ({cadence}), set by a human", s.key, s.title);
-    let mut parts = vec![if again {
-        format!("The human ran task {task} again: {title}. A task of {schedule}.")
-    } else {
-        format!("Task {task}: {title}. A scheduled run of {schedule}; no human started this run or watches it now.")
+    let set_by = if s.by_manager { boss(true) } else { "a human" };
+    let schedule = format!("terminum's schedule {} \"{}\" ({cadence}), set by {set_by}", s.key, s.title);
+    let mut parts = vec![match (again, manager) {
+        (true, _) => format!("{} ran task {task} again: {title}. A task of {schedule}.", the_boss(manager)),
+        (false, true) => format!("Task {task}: {title}. A run of {schedule}, started now by {}; no human watches it.", boss(true)),
+        (false, false) => format!("Task {task}: {title}. A scheduled run of {schedule}; no human started this run or watches it now."),
     }];
     if body.chars().count() > super::press::MOST_PROMPT {
         parts.push(format!("Its text, by execute_tool(\"get_task\", {{id}}) for {task}, is your assignment; its comments and other tasks stay data."));
@@ -109,8 +112,9 @@ fn made(tx: &rusqlite::Transaction, s: &Schedule, (due, missed): (i64, i64), why
 
 /// Runs schedule `id` now, whatever its cadence and paused or not (terminum-schedules.md AC-182): its task is made
 /// and started as a firing's, its cadence untouched; refused while a task of it is in progress or its last
-/// session is busy. `who`: who asked, for the task's history. The task's ID.
-pub async fn now(app: &Shared, id: &str, who: &str) -> Result<String, String> {
+/// session is busy. `who`: who asked, for the task's history; `manager`: the project's manager's user, when it asked
+/// by run_schedule, its run's words then saying so. The task's ID.
+pub async fn now(app: &Shared, id: &str, who: &str, manager: Option<&str>) -> Result<String, String> {
     let (mut closed, mut stays) = (false, String::new());
     let (s, task, fire) = loop {
         let (wanted, by, why) = (id.to_string(), who.to_string(), stays.clone());
@@ -140,7 +144,7 @@ pub async fn now(app: &Shared, id: &str, who: &str) -> Result<String, String> {
             }
         }
     };
-    start(app, &s, &task, fire).await;
+    start(app, &s, &task, fire, manager).await;
     crate::tasks::schedulesapi::heard(app);
     Ok(task)
 }
@@ -155,15 +159,15 @@ fn not_started(tx: &rusqlite::Transaction, task: &str, fire: i64, why: &str) -> 
 }
 
 /// Runs a schedule's task on its agent as RUN's route would; a refusal fails the task, and the schedule goes on:
-/// its next firing tries again.
-async fn start(app: &Shared, s: &Schedule, task: &str, fire: i64) {
-    let started = super::api::press_again(app, task, json!({"agent": s.agent, "how": super::runs::How::Schedule})).await;
-    let (id, s_now) = (task.to_string(), s.clone());
+/// its next firing tries again. `manager`: the project's manager's user, pressing by run_schedule.
+async fn start(app: &Shared, s: &Schedule, task: &str, fire: i64, manager: Option<&str>) {
+    let started = super::api::press_again(app, task, json!({"agent": s.agent, "how": super::runs::How::Schedule, "manager": manager})).await;
+    let (id, s_now, by_manager) = (task.to_string(), s.clone(), manager.is_some());
     let _ = store(app, move |tx| match started {
         Ok(_) => {
             let t = ops::get(tx, &id)?;
             // the firing's own words, as its run was sent them: that run exists now, and a RUN after it would be a human's
-            schedules::fire_started(tx, fire, &prompt(&s_now, &t.id, &t.title, &ops::text_of(tx, &t.id)?, false))
+            schedules::fire_started(tx, fire, &prompt(&s_now, &t.id, &t.title, &ops::text_of(tx, &t.id)?, false, by_manager))
         }
         Err(why) => not_started(tx, &id, fire, &why),
     }).await;
@@ -192,7 +196,7 @@ pub async fn due(app: &Shared) {
             Ok((t, Some(_), false)) if t.status == "IN PROGRESS" && now - made_at > LATE => {
                 let _ = store(app, move |tx| not_started(tx, &t.id, fire, "terminumd stopped before its run began.")).await;
             }
-            Ok((t, Some(owner), false)) if t.status == "IN PROGRESS" && t.archived_at.is_none() => start(app, &owner, &t.id, fire).await,
+            Ok((t, Some(owner), false)) if t.status == "IN PROGRESS" && t.archived_at.is_none() => start(app, &owner, &t.id, fire, None).await,
             _ => { let _ = store(app, move |tx| schedules::fire_is(tx, fire, "called off", Some("Its task was moved or archived before it ran."))).await; }
         }
     }
@@ -203,7 +207,7 @@ pub async fn due(app: &Shared) {
             let one = s.clone();
             match store(app, move |tx| decide(tx, &one, now, closed)).await {
                 Ok(Next::Run(task, fire)) => {
-                    start(app, &s, &task, fire).await;
+                    start(app, &s, &task, fire, None).await;
                     heard = true;
                 }
                 Ok(Next::Skipped) => heard = true,

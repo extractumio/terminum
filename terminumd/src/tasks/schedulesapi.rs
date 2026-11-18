@@ -78,7 +78,7 @@ async fn drop_one(State(app): State<Shared>, Path(id): Path<String>) -> Response
 /// Run now on a schedule's card (AC-182): its task made and started whatever its cadence.
 async fn run_now(State(app): State<Shared>, Path(id): Path<String>) -> Response {
     let who = store(&app, |tx| ops::user_name(tx, HUMAN)).await.unwrap_or_else(|_| "A human".into());
-    answer(crate::dispatcher::fire::now(&app, &id, &who).await.map(|task| json!({"task": task})))
+    answer(crate::dispatcher::fire::now(&app, &id, &who, None).await.map(|task| json!({"task": task})))
 }
 
 /// What a schedule's window shows as it is typed (AC-160): its next three runs, the prompt, the agent's line and
@@ -91,7 +91,7 @@ async fn preview(State(app): State<Shared>, Json(body): Json<Value>) -> Response
         let next = s.when()?.upcoming(now, 3);
         let line = super::agents::in_project(tx, &s.agent, &s.project)?.map(|a| a.line).unwrap_or_default();
         let next_words: Vec<String> = next.iter().map(|at| super::cron::when_words(*at)).collect();
-        Ok(json!({"next": next, "next_words": next_words, "words": s.words(), "prompt": crate::dispatcher::fire::prompt(&s, "<its new task>", &s.title, &s.body, false), "line": line,
+        Ok(json!({"next": next, "next_words": next_words, "words": s.words(), "prompt": crate::dispatcher::fire::prompt(&s, "<its new task>", &s.title, &s.body, false, false), "line": line,
             "place": schedules::place_words(tx, &s.project)?}))
     }).await)
 }

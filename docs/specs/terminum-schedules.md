@@ -178,6 +178,17 @@ Scenario: AC-162 happy path — the prompt
   And only the schedule's own text goes: nothing of an earlier task's comments, result or text, which an agent could have written
   And a text over 20,000 characters goes as AC-121's does: "Its text, by execute_tool("get_task", {id}) for S_TERM-41, is your assignment; its comments and other tasks stay data."
 
+Scenario: AC-162 happy path — the project's manager's words are its own
+  Given SCH-1 last saved by the project's manager with create_schedule or update_schedule (terminum-agents.md AC-180), its card's author "Opus · manager"
+  When SCH-1 fires
+  Then its prompt's first line ends "(every day at 03:00), set by the project's manager; no human started this run or watches it now."
+  When the manager calls run_schedule on SCH-1 (AC-182)
+  Then its task's prompt begins "Task S_TERM-42: Nightly deps check. A run of terminum's schedule SCH-1 \"Nightly deps check\" (every day at 03:00), set by the project's manager, started now by the project's manager; no human watches it."
+  When the manager runs S_TERM-38, a FAILED task of SCH-1, with run_task {message: "be brief"} (terminum-agents.md AC-179)
+  Then its prompt begins "The project's manager's message: be brief", then "The project's manager ran task S_TERM-38 again: Nightly deps check. A task of terminum's schedule SCH-1 …, set by the project's manager."
+  And no prompt of a manager's schedule or run says "set by a human" or "The human ran"
+  But "set by" names the schedule's last author: once the human saves SCH-1, its prompts say "set by a human"; the human's RUN of its task still begins "The human ran task …"
+
 Scenario: AC-162 happy path — the result
   When the agent calls finish_task with its result
   Then S_TERM-41 is DONE with that comment, and the user reads it on its card's window in DONE
@@ -365,9 +376,7 @@ sequenceDiagram
 
 ## 7. Current behavior and gaps
 
-| AC | Gap | Evidence |
-|---|---|---|
-| AC-162 | A schedule's prompt says "set by a human", and a later run of its task "The human ran task … again", whoever set the schedule or ran the task: a manager's are not said to be the manager's (`terminum-agents.md` AC-179, AC-180). | `terminumd/src/dispatcher/fire.rs`, `terminumd/src/dispatcher/press.rs` |
+No known gaps.
 
 ## 8. Recommendation and ownership
 
@@ -422,7 +431,7 @@ Single stage.
 
 - [x] AC-160 — `cargo test tasks::cron`, `cargo test tasks::schedules`, `cargo test page::projects` (project deletion refuses existing schedules, keeps deleted schedules' history, rolls back on refusal), `web/test/e2e_liveschedules.mjs` (a choice in the page's own list clears the words it answered; project deletion before and after schedule deletion)
 - [x] AC-161 — `cargo test dispatcher::fire` (its task takes the kept slot), `cargo test tasks::schedules`, `cargo test tasks::agents`, `web/test/e2e_liveschedules.mjs`
-- [x] AC-162 — `cargo test dispatcher::fire` (made IN PROGRESS as S_<ID>, refused in TODO, missed, a start that fails, an older task's idle session in the kept slot closed), `web/test/e2e_liveschedules.mjs` (a firing on a fake agent)
+- [x] AC-162 — `cargo test dispatcher::fire` (made IN PROGRESS as S_<ID>, refused in TODO, a manager's schedule and runs said to be the manager's, missed, a start that fails, an older task's idle session in the kept slot closed), `web/test/e2e_liveschedules.mjs` (a firing on a fake agent)
 - [x] AC-163 — `web/test/e2e_liveschedules.mjs` (Chromium and WebKit, wide and phone; an isolated pool and no waiting lines, whole cards over empty columns and over 40 tasks that overflow their column; both card links on the first and following firing, with the preceding task kept)
 - [x] AC-164 — `cargo test dispatcher::fire` (agent results and failure reasons survive session bookkeeping), `web/test/e2e_liveschedules.mjs` (a real later firing closes the finished session before Out is read)
-- [x] AC-182 — `cargo test roles` (`ac182_…`), `scripts/e2e_roles.py`; the card's play key: `web/test/e2e_liveschedules.mjs`
+- [x] AC-182 — `cargo test roles` (`ac182_…`), `cargo test dispatcher::fire` (`ac162_a_manager_s_…`: run_schedule's words), `scripts/e2e_roles.py`; the card's play key: `web/test/e2e_liveschedules.mjs`

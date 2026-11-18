@@ -78,12 +78,12 @@ pub(super) fn named(tasks: &[Task]) -> String {
 
 /// Who a run's words name as the one who pressed: the human, or the project's manager by its run_task
 /// (terminum-agents.md AC-179), so an agent's words never stand as a human's.
-fn boss(manager: bool) -> &'static str {
+pub(super) fn boss(manager: bool) -> &'static str {
     if manager { "the project's manager" } else { "the human" }
 }
 
 /// `boss`, a sentence's first word.
-fn the_boss(manager: bool) -> &'static str {
+pub(super) fn the_boss(manager: bool) -> &'static str {
     if manager { "The project's manager" } else { "The human" }
 }
 
@@ -176,8 +176,8 @@ impl Facts {
         }
         // a schedule's task goes as the schedule's run, in its own words (terminum-schedules.md AC-162)
         if let Some((s, again)) = &self.schedule {
-            // its first run is the firing's; any after is a human's RUN
-            let run = super::fire::prompt(s, &t.id, &t.title, body, *again);
+            // its first run is the firing's or a Run now's; any after is a RUN, the human's or the manager's
+            let run = super::fire::prompt(s, &t.id, &t.title, body, *again, self.manager);
             return match said { Some(m) => format!("{m}\n\n{run}"), None => run };
         }
         let mut parts = vec![format!("{who} ran task {}: {}", t.id, t.title)];
@@ -215,7 +215,14 @@ impl Facts {
     /// and none of terminum's own words: a press that waited through an upgrade of terminum still goes (AC-158).
     pub(super) fn rev(&self) -> String {
         let tasks: Vec<_> = self.tasks.iter().zip(&self.texts).map(|(t, text)| (&t.id, &t.title, text, t.by_agent, &t.parent, t.budget_seconds)).collect();
-        let schedule = self.schedule.as_ref().map(|(s, again)| (&s.key, &s.title, &s.cron, s.once_at, s.budget_seconds, again));
+        // who set it is said in its words (AC-162): a manager's adds itself, so what a human's press saw before holds
+        let schedule = self.schedule.as_ref().map(|(s, again)| {
+            let mut v = serde_json::json!([&s.key, &s.title, &s.cron, s.once_at, s.budget_seconds, again]);
+            if s.by_manager && let Some(a) = v.as_array_mut() {
+                a.push(serde_json::json!("manager"));
+            }
+            v
+        });
         // the answers a main task's run brings are shown too (AC-185); with none, what a press saw before them holds (AC-158)
         let facts = if self.answers.is_empty() { serde_json::json!([tasks, self.files, schedule, self.language]) } else { serde_json::json!([tasks, self.files, schedule, self.language, self.answers]) };
         crate::auth::crypto::sha256_hex(facts.to_string().as_bytes())
