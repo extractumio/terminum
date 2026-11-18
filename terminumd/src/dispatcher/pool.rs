@@ -132,11 +132,11 @@ impl Slots {
             Some(t) => kept_schedule(tx, &agent.id, t)?,
             None => None,
         };
-        let free = schedule.as_ref().is_some_and(|s| !self.in_kept.iter().any(|(run, of)| of == s && Some(run.as_str()) != but));
-        if free && schedule.is_some_and(|s| s == schedules::integration_slot(&agent.id)) {
+        let free = schedule.filter(|s| !self.in_kept.iter().any(|(run, of)| of == s && Some(run.as_str()) != but));
+        if free.as_ref().is_some_and(|s| *s == schedules::integration_slot(&agent.id)) {
             return Ok(None);
         }
-        self.check(tx, (!free).then_some(agent), project, but)
+        self.check(tx, free.is_none().then_some(agent), project, but)
     }
 }
 
