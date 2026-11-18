@@ -27,6 +27,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from check_changed import is_doc, late_notes, red, tree_id  # noqa: E402
 import heavy_slots  # noqa: E402
+from install_turn import HELD  # noqa: E402
 from worktree import common_dir, fetched, INSTALL_TURN, primary_of, Refused, Turn as TreeTurn  # noqa: E402
 
 BASE = "origin/main"
@@ -70,10 +71,7 @@ class Turn(TreeTurn):
 
     def __enter__(self):
         super().__enter__()
-        if not self.take():
-            print(f"land: {self.holder()}'s landing has its turn (its checks and push can take half an hour): waiting", flush=True)
-            self.take(wait=True)
-        self.hold_as(self.slug)
+        self.take_as(self.slug, lambda holder: print(f"land: {holder}'s landing has its turn (its checks and push can take half an hour): waiting", flush=True))
         return self
 
 
@@ -319,7 +317,9 @@ def after_push(primary, files):
 
 
 def make(primary, target):
-    return subprocess.run(["make", target], cwd=primary, capture_output=True, text=True)
+    """`make <target>` in the primary checkout, its caller holding the install turn: the make install it starts runs
+    in that turn instead of waiting for it (scripts/install_turn.py)."""
+    return subprocess.run(["make", target], cwd=primary, capture_output=True, text=True, env=dict(os.environ, **{HELD: "1"}))
 
 
 def landing_holder(primary):
@@ -337,7 +337,8 @@ def install_pending(primary, run=make, say=print):
         say(f"install: left to {holder}'s landing, which has the turn")
         return
     with TreeTurn(primary, INSTALL_TURN) as turn:
-        turn.take(wait=True)   # a landing that ended meanwhile may install too: one after the other
+        # a landing that ended meanwhile, After or one by hand: one after the other
+        turn.take_as(f"a landing's install (pid {os.getpid()})", lambda holder: say(f"install: {holder} holds the install turn: waiting for its end"))
         install_now(primary, run, say)
 
 

@@ -111,6 +111,13 @@ class Turn:
         """Says who holds it, for those who find it held: written once taken."""
         self.path.with_name(self.path.name + ".holder").write_text(name)
 
+    def take_as(self, name, waiting):
+        """Held as `name`: at once when free, else after `waiting(its holder)` and that holder's end."""
+        if not self.take():
+            waiting(self.holder())
+            self.take(wait=True)
+        self.hold_as(name)
+
     def holder(self, unknown="another tree"):
         """Who holds it, as its holder said."""
         try:

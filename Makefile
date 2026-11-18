@@ -89,10 +89,10 @@ primary-checkout:
 	echo "make install: refused in a worktree ($$(git rev-parse --show-toplevel)): the machine has one install;"; \
 	echo "  here make build and the checks; after the merge, make install from the primary checkout"; exit 2; fi
 
+# one install at a time, in the install turn landings and the queue's After hold too (scripts/install_turn.py);
 # freshen first and the rest in a make of its own: this one's TM_BUILD was read before main moved
 install: primary-checkout
-	python3 scripts/worktree_fresh.py freshen
-	$(MAKE) --no-print-directory install-stage
+	python3 scripts/install_turn.py sh -c 'python3 scripts/worktree_fresh.py freshen && $(MAKE) --no-print-directory install-stage'
 
 install-stage: primary-checkout ui
 	python3 scripts/package.py --stage
