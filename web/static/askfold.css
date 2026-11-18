@@ -23,5 +23,6 @@ body.embed #askcount { display: none !important; }
   body.asksfold:not(.asksopen) #asks { display: none; }   /* folded: no room taken, the terminal's rows stay */
   #asks[data-sheet] { max-height: calc(var(--app-h, 100dvh) / 2) !important; padding: var(--sp-1) 0; border-radius: var(--r-xl); background: var(--chrome-2); }
   #asks[data-sheet] .what { white-space: normal; overflow-wrap: anywhere; }   /* whole, wrapped */
+  #asks[data-sheet] .proj { align-self: flex-start; }   /* the name stays on the first line */
   #asks[data-kind="failed"] .ask:not(:has(.state.failed)), #asks[data-kind="waiting"] .ask:not(:has(.state.waiting)) { display: none; }
 }

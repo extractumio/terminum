@@ -123,6 +123,14 @@ Scenario: AC-39 happy path — reminders
   When an agent in a pane not shown has waited 2.5 s
   Then "<title> waits for your answer" stands at the terminal's top under the banners: a line across its whole width for each waiting session (three at most on a computer, the third with "+N more"; where the floating buttons float they fold into `terminum-kanban.md` AC-117's two counters), its ? in the waiting yellow on a faint tint of it (no card, no shadow), starting where the terminal's text does, its words cut by an ellipsis where they would not fit; a click opens that pane, × closes it; it goes 2.5 s after the pane stops waiting or when shown; a reminder closed or seen comes back only when the pane asks again
 
+Scenario: AC-39 happy path — a reminder names its project
+  Given the waiting session belongs to project "Terminum" (as the list places it: a window's other panes and quick shells go with their session)
+  Then its reminder reads "Terminum: <title> waits for your answer": the name in weight 600, in the project's color mixed as the list's project header, a 4 px stripe of the project's color down the line's left edge, the ? still where the terminal's text starts
+  And a name of more than 32 characters shows its first 32 (counted as characters, never splitting one) then "…", and the line's tooltip holds the whole name; on a narrow screen the name takes at most 45% of the line
+  And a session in no project has neither stripe nor name, its ? where the others' stand
+  When the project is renamed, recolored, or the session moves to another project
+  Then the line changes in place, never removed and added again
+
 Scenario: AC-39 edge — a question's words in the transcript
   Given Claude Code's screen read (no hooks) shows its input box (a rule, "❯ ", a rule) and, above it, text that reads like a question ("Would you like to run…", "Do you want to …", "(y/n)": printed by a tool, quoted by the agent)
   Then the session is not waiting: a question of Claude Code's replaces its input box, so words above the box are the transcript
@@ -756,7 +764,7 @@ All cases are shipped; nothing is staged.
 
 ## 11. Checklist with Definition of Done
 
-- [x] AC-39 — `cargo test tmux::agentstate`, `cargo test tmux::hookstate`, `cargo test tmux::titles`, `cargo test cli::` (`terminumd/src/cli/tests/hooks_tests.rs`), `scripts/e2e_agentstate.py`, `scripts/e2e_hooks.py`, `web/test/e2e_app.mjs`, `web/test/e2e_rows.mjs`, `web/test/e2e_look.mjs`, `web/test/cardstate.test.mjs` (work it started runs on), `web/test/e2e_askfold.mjs` (reminders folded into a counter)
+- [x] AC-39 — `cargo test tmux::agentstate`, `cargo test tmux::hookstate`, `cargo test tmux::titles`, `cargo test cli::` (`terminumd/src/cli/tests/hooks_tests.rs`), `scripts/e2e_agentstate.py`, `scripts/e2e_hooks.py`, `web/test/e2e_app.mjs`, `web/test/e2e_rows.mjs`, `web/test/e2e_look.mjs`, `web/test/cardstate.test.mjs` (work it started runs on), `web/test/e2e_askfold.mjs` (reminders folded into a counter), `web/test/e2e_bannerproj.mjs` (a reminder's project)
 - [x] AC-93 — `cargo test page::unread`, `cargo test page::turns`, `scripts/e2e_hooks.py`, `web/test/e2e_projects.mjs`
 - [x] AC-97 — `cargo test plans`, `cargo test page::plans`, `cargo test cli::` (`terminumd/src/cli/mcp_tests.rs`, `hookplan_tests.rs`, `tests/refresh_tests.rs`), `web/test/plans.test.mjs`, `web/test/e2e_plans.mjs`, `web/test/e2e_plansfind.mjs`, `web/test/e2e_planslook.mjs`, `web/test/e2e_liveplans.mjs`
 - [x] AC-98 — `cargo test agentapi`, `cargo test agentmarks`, `cargo test page::bookmarks`, `web/test/e2e_marksscope.mjs`

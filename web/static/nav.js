@@ -258,6 +258,13 @@ function membership(groups, projects) {
   return { kids, topsOf: (p) => p.members.map((k) => byId.get(k)).filter(Boolean), leftOf: (g) => g.items.filter((it) => !taken.has(it.id)) };
 }
 
+/** The project that holds session `id` as the list places it (a window's other panes and quick shells go with their
+ *  session), or null (terminum.md AC-39). */
+export function projectOfSession(groups, projects, id) {
+  const { kids, topsOf } = membership(groups, projects);
+  return projects.find((p) => topsOf(p).some((t) => t.id === id || kids(t).some((k) => k.id === id))) ?? null;
+}
+
 const projectKey = (p) => `project\n${p.id}`;
 
 /** The sessions among a group's rows `left`: a window's first pane, not the panes and quick shells under it. */

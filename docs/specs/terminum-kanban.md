@@ -758,6 +758,12 @@ Scenario: AC-117 happy path — banner and count
   And Kanban among the sections counts them as the board's cards: those in WAIT FOR HUMAN on WAIT FOR HUMAN's yellow, those FAILED on FAILED's red, each count said in words on hover ("2 tasks wait for you", "3 tasks failed"), and none at 0
   And a subtask counts once with its main task when both stand in the same column; in another column it counts on its own
 
+Scenario: AC-117 happy path — the line names its project
+  Given API-12 of project "Terminum"
+  Then its line reads "Terminum: API-12 waits for you" with the stripe and name of terminum-agents.md AC-39's reminder, on both pages
+  And terminumd says the task's project with its line; the page never guesses it from the ID's prefix
+  And a task of Default has neither stripe nor name
+
 Scenario: AC-117 edge — closed and seen
   When the user closes the line, opens the task or moves it on
   Then the line goes; its count falls when it leaves those columns
@@ -1403,7 +1409,7 @@ Depends on: nothing more.
 - [x] AC-113 — `cargo test tasks::ops` (a task whose session could not follow goes back), `web/test/e2e_liveboard.mjs`
 - [x] AC-115 — `cargo test tasks::tools`, `cargo test cli::mcp`, `web/test/e2e_livenotes.mjs`, `web/test/e2e_livearchived.mjs` (archived moves and results refused; unchanged history)
 - [x] AC-116 — `web/test/e2e_livenotes.mjs` (Convert to task from the list and the bar, Cancel, a refusal, Create, pressed twice, two tabs at once, the link to its line; `node web/test/e2e_live.mjs notes`)
-- [x] AC-117 — `cargo test tasks::marks`, `web/test/e2e_livedispatcher.mjs`, `web/test/e2e_tasklines.mjs`, `web/test/e2e_askfold.mjs` (the counters), `web/test/e2e_boardphone.mjs` (the board's counters, their pulse)
+- [x] AC-117 — `cargo test tasks::marks`, `web/test/e2e_livedispatcher.mjs`, `web/test/e2e_tasklines.mjs`, `web/test/e2e_bannerproj.mjs` (its project), `web/test/e2e_askfold.mjs` (the counters), `web/test/e2e_boardphone.mjs` (the board's counters, their pulse)
 - [x] AC-118 — `cargo test tasks::archiving`, `web/test/e2e_liveboardtasks.mjs`
 - [x] AC-119 — `cargo test tasks::store`
 - [x] AC-136 — `cargo test tasks::tell` (fresh settlement with and without background work, a new prompt), `web/test/e2e_liveboardedge.mjs`, `web/test/e2e_livebackground.mjs` (monitor-only Stop, work ending, immediate failure), `web/test/cardstate.test.mjs` (its background work)

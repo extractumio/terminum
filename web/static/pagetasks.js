@@ -6,12 +6,12 @@ import { findItem, serverDown } from "./nav.js";
 import { taskLines } from "./tasklines.js";
 import { asksFold } from "./askfold.js";
 
-/** `box` holds the lines. */
-export function pageTasks({ box, embedded, say, show }) {
+/** `box` holds the lines; `projects()`: the list's projects, which name a task's line. */
+export function pageTasks({ box, embedded, say, show, projects }) {
   let asked = addressedSession(), then = new URLSearchParams(location.search).get("then");
   // Back and Forward go through the sessions pressed
   if (!embedded) addEventListener("popstate", () => { const id = addressedSession(); if (id) show(id); });
-  const lines = taskLines(box, (id) => { location.href = taskUrl(id); }, (text) => say(text, 6000));
+  const lines = taskLines(box, (id) => { location.href = taskUrl(id); }, (text) => say(text, 6000), (id) => projects().find((p) => p.id === id));
   const counts = asksFold({ box, counters: document.getElementById("askcount") });   // the waiting agents' lines too (waiting.js)
   return {
     /** The session asked for, before any list. */
