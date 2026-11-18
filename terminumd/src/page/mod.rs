@@ -14,6 +14,7 @@ pub mod hist;
 pub mod marks;
 mod pastefold;
 pub mod plans;
+mod pointer;
 mod lost_marks;
 pub mod projects;
 pub mod quick;

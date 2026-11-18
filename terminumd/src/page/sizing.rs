@@ -21,7 +21,7 @@ use super::zoom::{may_take, zoom_line, zoomable};
 use super::Page;
 use crate::app::Shared;
 use crate::screen::frame::Fields;
-use crate::tmux::{mouse, Server};
+use crate::tmux::Server;
 
 const EVERY: Duration = Duration::from_secs(1);
 /// The grids a pane is sized to, whatever the screen (AC-13): the smallest fits an iPhone in
@@ -60,6 +60,14 @@ impl Win {
         self.asked.unwrap_or(now)
     }
 
+    /// A looking page left the window as it is (`claim`): once `page`'s view is no longer the
+    /// grid the window ends at, the window is not that page's, and its next key claims at once.
+    fn left_as_is(&mut self, page: u64, view: Option<(usize, usize)>, now: (usize, usize)) {
+        if self.by == Some(page) && view != Some(self.ends_at(now)) {
+            self.by = None;
+        }
+    }
+
     /// Whether the window is at `grid` as terminumd sized it: tmux's last-read size and the grid
     /// terminumd last asked for agree (asked only with `window-size manual` set).
     fn holds(&self, now: (usize, usize), grid: (usize, usize)) -> bool {
@@ -93,7 +101,7 @@ impl Sizes {
 }
 
 /// Why a page claims its pane's window.
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 enum Why {
     /// its view changed size: only a window it sizes or nobody does
     View,
@@ -176,11 +184,12 @@ async fn resize(app: &Shared, page: &Arc<Page>, why: Why) -> bool {
         cmds.push(zoom_line(&pane, f.zoomed));
     }
     let users = users_pane(&server, &pane);
+    let redraws = redraws(app, &server.key(&pane), &f);
     // read and written under one lock: a claim of another page meanwhile is never overwritten by a stale copy
     let (before, claim, manual_at, (cols, rows)) = {
         let mut g = app.sizes.0.lock();
         let mut win = g.get(&key).cloned().unwrap_or_default();
-        let (cols, rows) = target(grid, &f, win.ends_at(f.window_size), why);
+        let (cols, rows) = target(grid, &f, win.ends_at(f.window_size), why, redraws);
         let mut manual_at = None;
         if !win.holds(f.window_size, (cols, rows)) {
             // also at its size already: held by tmux's own policy, another client would take it
@@ -217,6 +226,10 @@ async fn resize(app: &Shared, page: &Arc<Page>, why: Why) -> bool {
         app.sizes.undo(&key, claim, before, manual);
         refused(page, &resized, &f, "resize-window", e.clone());
         return false;
+    }
+    if (cols, rows) != f.window_size {
+        // who changed which window: a program that redraws shows each change in its history
+        tracing::info!(event = "sizing.resize", page = page.id, web = page.web, pane = %resized, from = %format!("{}x{}", f.window_size.0, f.window_size.1), to = %format!("{cols}x{rows}"), why = ?why);
     }
     for p in viewers(app, &server, &f.window) {
         p.send_json(&json!({"t": "sized", "sid": shown_key(&p), "cols": cols, "rows": rows, "mine": p.id == page.id}));
@@ -260,34 +273,55 @@ fn shown_key(page: &Page) -> String {
 /// nothing; a change of the view only a window this page sizes or nobody (looking) does; the
 /// user's own tmux as any (AC-89).
 async fn claim(app: &Shared, page: &Arc<Page>, why: Why) -> bool {
-    let Some((server, _, f)) = shown_window(page) else { return false };
-    let (has_view, inactive) = {
+    let Some((server, pane, f)) = shown_window(page) else { return false };
+    let (view, inactive) = {
         let st = page.state.lock();
-        (st.view.is_some(), !st.active())
+        (st.view.map(|(c, r)| (c as usize, r as usize)), !st.active())
     };
-    if !has_view || inactive {
+    if view.is_none() || inactive {
         return false;
     }
     let key = (server.id(), f.window.clone());
+    if why != Why::Typed && f.whole() && redraws(app, &server.key(&pane), &f) {
+        // left as it is: nothing sent, and the page's once-a-second slot stays free for its next key
+        if let Some(w) = app.sizes.0.lock().get_mut(&key) {
+            w.left_as_is(page.id, view, f.window_size);
+        }
+        return false;
+    }
     let win = app.sizes.0.lock().get(&key).cloned().unwrap_or_default();
     let mine = win.by == Some(page.id);
     // free: nobody sizes it, or the page that does no longer shows it or is hidden (a locked phone, a tab in the background)
     let free = win.by.is_none_or(|id| !viewers(app, &server, &f.window).iter().any(|v| v.id == id && v.state.lock().active()));
-    let view = page.state.lock().view.map(|(c, r)| (c as usize, r as usize));
     if mine && f.whole() && view.is_some_and(|v| win.holds(f.window_size, v)) {
         return false;                                         // it has this page's grid already: the once-a-second slot stays free
     }
     (why != Why::View || free || mine) && resize(app, page, why).await
 }
 
-/// The grid the window gets for `grid`: a window of several panes grows on any claim and shrinks
-/// only for typing: a phone that just looks would squeeze the panes the zoom hides (AC-13); `now`:
-/// where the window ends (`Win::ends_at`).
-fn target(grid: (usize, usize), f: &Fields, now: (usize, usize), why: Why) -> (usize, usize) {
-    if f.panes > 1 && why != Why::Typed {
-        return (grid.0.max(now.0), grid.1.max(now.1));
+/// Whether a coding agent (the list's, for the pane `key`) draws on the pane's normal screen. On a
+/// new size it prints its transcript again from the top of the screen and leaves the scrollback
+/// as it is, while tmux's re-wrap has moved rows of the old picture there: every change of the
+/// window's size leaves copies, or loses rows, in the pane's history (AC-13).
+fn redraws(app: &Shared, key: &str, f: &Fields) -> bool {
+    !f.alt && super::marks::find_item(&app.layout.read(), key).is_some_and(|it| it["agent"].is_string())
+}
+
+/// The grid the window gets for `grid`; `now`: where the window ends (`Win::ends_at`). Typing
+/// gives it the page's grid. A page that only looks leaves a window whose pane a coding agent
+/// redraws (`redraws`) as it is, and the page re-flows the pane (AC-04); a window of several
+/// panes grows for it and never shrinks: a phone that just looks would squeeze the panes the
+/// zoom hides (AC-13).
+fn target(grid: (usize, usize), f: &Fields, now: (usize, usize), why: Why, redraws: bool) -> (usize, usize) {
+    if why == Why::Typed {
+        grid
+    } else if redraws {
+        now
+    } else if f.panes > 1 {
+        (grid.0.max(now.0), grid.1.max(now.1))
+    } else {
+        grid
     }
-    grid
 }
 
 /// A claim on its own task: a resize that waits for its second never holds up the page's
@@ -395,7 +429,7 @@ pub fn handle(app: &Shared, page: &Arc<Page>, t: &str, msg: &Value) {
                 later(app, page, if msg["typing"].as_bool().unwrap_or(false) { Why::Typed } else { Why::View });
             }
         }
-        _ => mouse_event(app, page, msg),
+        _ => super::pointer::event(app, page, msg),
     }
 }
 
@@ -450,40 +484,6 @@ pub async fn reclaim(app: &Shared, server: &Server) {
         let _ = server.run_all(cmds).await;
     }
 }
-
-/// A click, drag or wheel for a full-screen program, as the mouse report a terminal would send
-/// (AC-06): queued with the keys (typing.rs), never awaited here.
-fn mouse_event(app: &Shared, page: &Arc<Page>, msg: &Value) {
-    let Some((server, pane, key, f)) = (|| {
-        let st = page.state.lock();
-        let s = st.shown.as_ref()?;
-        Some((s.server.clone(), s.pane.clone(), s.key.clone(), s.ctl.fields.lock().clone()?))
-    })() else {
-        return;
-    };
-    if !f.mouse {
-        return; // the program did not ask for the mouse: nothing is sent
-    }
-    let Some(bytes) = from_message(msg, f.mouse_sgr) else { return };
-    // a left release to a full-screen program: what it copies of its selection is this page's (AC-06)
-    let arm = f.alt && msg["action"] == "release" && msg["button"] == 0;
-    super::typing::mouse(app, page, server, pane, key, bytes, arm);
-}
-
-/// The page's `mouse` message as the bytes of a report.
-fn from_message(msg: &Value, sgr: bool) -> Option<Vec<u8>> {
-    let (button, action) = mouse::from_page(msg["button"].as_u64().unwrap_or(0).min(255) as u8, msg["action"].as_str().unwrap_or(""))?;
-    let m = &msg["mods"];
-    let mods = mouse::Mods { shift: m["shift"].as_bool().unwrap_or(false), meta: m["alt"].as_bool().unwrap_or(false), ctrl: m["ctrl"].as_bool().unwrap_or(false) };
-    let coord = |k: &str| msg[k].as_u64().filter(|v| *v < 10_000).map(|v| v as u16);
-    let one = mouse::report(coord("x")?, coord("y")?, button, action, mods, sgr)?;
-    // the wheel's steps of one frame of the page come as one message with their count
-    let n = if msg["action"].as_str().is_some_and(|a| a.starts_with("wheel")) { msg["count"].as_u64().unwrap_or(1).clamp(1, WHEEL_MAX) as usize } else { 1 };
-    Some(one.repeat(n))
-}
-
-/// Most wheel steps one message carries.
-const WHEEL_MAX: u64 = 100;
 
 #[cfg(test)]
 #[path = "sizing_tests.rs"]
