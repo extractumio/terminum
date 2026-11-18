@@ -9,6 +9,7 @@ and no subshell.
 """
 import json
 import os
+import re
 import shutil
 import signal
 import subprocess
@@ -164,6 +165,15 @@ def narrow_frame(ws):
     return ws.until(lambda m: m["t"] == "screen" and m.get("cols") != 130, 1)
 
 
+def pane_sizes(layout):
+    """The panes' "WxH" in a #{window_layout}: tmux 3.8's JSON or the older "csum,WxH,x,y{...}" form."""
+    if layout.startswith("{"):
+        def leaves(n):
+            return [f"{n['w']}x{n['h']}"] if n["t"] == "p" else [s for c in n["c"] for s in leaves(c)]
+        return leaves(json.loads(layout)["L"])
+    return re.findall(r"(\d+x\d+),\d+,\d+,\d+", layout)   # a pane: WxH,x,y,id; a split has no id
+
+
 def split(t, pid, pane):
     """AC-13: the shown pane of a window of several panes is zoomed to fill it; old pages' fit and screenmode are ignored."""
     ws = open_pane(t, pid, 130, 40)
@@ -176,7 +186,8 @@ def split(t, pid, pane):
     narrow = narrow_frame(ws)
     check("AC-13 a second teammate: the zoom comes back, no frame at the narrow width", narrow is None and until_filling(pane), narrow and narrow.get("cols"))
     layout = tmux("display", "-p", "-t", pane, "#{window_layout}")
-    check("AC-13 the window's layout stays its maker's: the leader's 30% (restore reads it)", "39x40" in layout and layout != tmux("display", "-p", "-t", pane, "#{window_visible_layout}"), layout)
+    check("AC-13 the window's layout stays its maker's: the leader's 30% (restore reads it)",
+          "39x40" in pane_sizes(layout) and layout != tmux("display", "-p", "-t", pane, "#{window_visible_layout}"), layout)
     tmux("kill-pane", "-t", third)
     until_filling(pane)
     border(ws, pane)
