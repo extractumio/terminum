@@ -358,8 +358,7 @@ budget and prompt. The whole design: `docs/specs/terminum-integration.md`.
   it waits for; Pause and Batches… in its head; Integrate and Take out in a task's window.
 - When terminum's tmux server ends (a crash, a reboot), queued tasks stay queued; a Check, Verify
   or Publish runs again; an After does not, and a P1 task "After's outcome is not known for batch
-  N" asks you to check its work. For terminum's own After (the install): `make installed` says which
-  build runs; not the batch's or a later one, run `make install` in the primary checkout.
+  N", yours, asks you to check its work and do it by hand if it is not done.
 
 ### Managers and workers
 

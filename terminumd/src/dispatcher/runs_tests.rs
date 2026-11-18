@@ -275,12 +275,18 @@ fn ac183_a_run_keeps_who_asked_for_it_and_how() {
 #[test]
 fn ac187_a_closed_window_fails_its_work_and_leaves_a_queued_task_queued() {
     store("runs-queued-stays").with(|tx| {
-        let (_, t) = working(tx, "a", &["one", "two"]);
-        tx.execute("UPDATE tasks SET status = ?1 WHERE id = ?2", (ops::INTEGRATION, &t[1].key)).map_err(ops::sql)?;
+        let (_, t) = working(tx, "a", &["one", "two", "integration task"]);
+        for k in [&t[1].key, &t[2].key] {
+            tx.execute("UPDATE tasks SET status = ?1 WHERE id = ?2", (ops::INTEGRATION, k)).map_err(ops::sql)?;
+        }
+        // only the second's commit is queued; the third stands for a batch's integration task, in no queue
+        tx.execute("INSERT INTO integration_entries (task, project, commit_sha, result, author, queued_at) VALUES (?1, ?2, 'abc', 'r', 'h', 3)",
+            (&t[1].key, &t[1].project)).map_err(ops::sql)?;
         let r = by_id(tx, &holding_agent(tx, "a")?.expect("its run").id)?;
         crate::dispatcher::move_task(tx, &r, "FAILED", "Its window was closed.")?;
         assert_eq!(ops::get(tx, &t[0].id)?.status, "FAILED", "the work in its session is lost with it");
         assert_eq!(ops::get(tx, &t[1].id)?.status, ops::INTEGRATION, "a queued commit lands as any (terminum-integration.md AC-187)");
+        assert_eq!(ops::get(tx, &t[2].id)?.status, "FAILED", "a task in no queue moves as any: an integration task's wait for a human is seen");
         Ok(())
     }).unwrap();
 }

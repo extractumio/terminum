@@ -54,18 +54,33 @@ impl Tmux {
         Ok(String::from_utf8_lossy(&o.stdout).trim().to_string())
     }
 
-    /// The handle's pane while it is the window that line was started in, with its status if it ended; else the
-    /// window is gone: a pane of another's, or of another line after the server started anew, is never ours.
-    fn mine<'a>(&self, handle: &'a str) -> Result<(&'a str, Option<i32>), String> {
-        let gone = || "its window is gone".to_string();
+    /// What the handle's window is now: the line's own, with its status once it ended; gone (a pane of another's, or
+    /// of another line after the server started anew, is never ours); or not known, tmux not answering for a moment.
+    fn read<'a>(&self, handle: &'a str) -> Window<'a> {
         let (pane, label) = (pane_of(handle), handle.split_once(' ').map(|(_, l)| l));
-        let said = self.run(&["display", "-p", "-t", pane, "#{@terminum-integration}|#{@terminum-exit}"]).map_err(|_| gone())?;
+        let said = match self.run(&["display", "-p", "-t", pane, "#{@terminum-integration}|#{@terminum-exit}"]) {
+            Ok(said) => said,
+            Err(e) if gone(&e) => return Window::Gone,
+            Err(_) => return Window::Unknown,
+        };
         let (mark, exit) = said.split_once('|').unwrap_or((&said, ""));
         if mark.is_empty() || label.is_some_and(|l| l != mark) {
-            return Err(gone());
+            return Window::Gone;
         }
-        Ok((pane, exit.trim().parse::<i32>().ok()))
+        Window::Ours(pane, exit.trim().parse::<i32>().ok())
     }
+}
+
+/// A window as `read` finds it.
+enum Window<'a> {
+    Ours(&'a str, Option<i32>),
+    Gone,
+    Unknown,
+}
+
+/// tmux's words for a pane or a server that is no more; any other failure says nothing of the window.
+fn gone(said: &str) -> bool {
+    ["can't find pane", "can't find window", "no server running", "error connecting to"].iter().any(|w| said.contains(w))
 }
 
 impl Runner for Tmux {
@@ -89,16 +104,21 @@ impl Runner for Tmux {
     }
 
     fn status(&self, handle: &str) -> Result<Option<i32>, String> {
-        self.mine(handle).map(|(_, status)| status)
+        match self.read(handle) {
+            Window::Ours(_, status) => Ok(status),
+            Window::Gone => Err("its window is gone".into()),
+            // read again at the next beat: a line is never run again for a moment tmux did not answer
+            Window::Unknown => Ok(None),
+        }
     }
 
     fn output(&self, handle: &str) -> String {
-        let Ok((pane, _)) = self.mine(handle) else { return String::new() };
+        let Window::Ours(pane, _) = self.read(handle) else { return String::new() };
         self.run(&["capture-pane", "-p", "-J", "-S", "-", "-E", "-", "-t", pane]).unwrap_or_default()
     }
 
     fn stop(&self, handle: &str) {
-        let Ok((pane, _)) = self.mine(handle) else { return };
+        let Window::Ours(pane, _) = self.read(handle) else { return };
         let Ok(pid) = self.run(&["display", "-p", "-t", pane, "#{pane_pid}"]) else { return };
         let Ok(pid) = pid.parse::<i32>() else { return };
         // the wrapper runs the line in a process group of its own (set -m): its children's group is the line's
@@ -120,7 +140,7 @@ impl Runner for Tmux {
     }
 
     fn close(&self, handle: &str) {
-        if let Ok((pane, _)) = self.mine(handle) {
+        if let Window::Ours(pane, _) = self.read(handle) {
             let _ = self.run(&["kill-pane", "-t", pane]);
         }
     }
@@ -166,5 +186,17 @@ mod tests {
         runner.close(&check);
         assert_eq!(runner.status(&other), Ok(Some(4)), "stopping or closing the lost check leaves the other line's window alone");
         assert_eq!(pane_of("%7"), "%7", "a handle kept before marks were in it is its pane");
+        drop(tmux);
+        assert!(runner.status(&other).is_err(), "no server: the window is gone");
+    }
+
+    #[test]
+    fn ac190_only_tmux_s_words_for_a_pane_or_server_that_is_no_more_lose_a_window() {
+        for said in ["can't find pane: %5", "no server running on /tmp/tmux-501/tm", "error connecting to /tmp/tmux-501/tm (No such file or directory)"] {
+            assert!(gone(said), "{said}");
+        }
+        for said in ["tmux: Resource temporarily unavailable (os error 35)", "server exited unexpectedly", ""] {
+            assert!(!gone(said), "a failure that says nothing of the window: {said}");
+        }
     }
 }
