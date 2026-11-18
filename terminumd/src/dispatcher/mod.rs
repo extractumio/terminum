@@ -9,7 +9,6 @@ pub mod fire;
 pub mod api;
 mod goes_on;
 pub(crate) mod letgo;
-mod linked;
 mod press;
 mod places;
 mod firstprompt;

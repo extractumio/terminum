@@ -112,3 +112,31 @@ async fn ac132_news_of_one_pane_or_host_asks_only_its_server() {
     drop(app);
     std::fs::remove_dir_all(root).unwrap();
 }
+
+/// AC-113 (RUN's linked session): a pane is Open while its server's fresh list has it, and Closed once
+/// it closed and that server was read again.
+#[tokio::test]
+async fn ac113_a_pane_is_open_by_its_servers_fresh_list_and_closed_once_gone() {
+    use crate::tmux::PaneState;
+    let Some(tm) = crate::testutil::Tmux::start("pane-state", (80, 24), "/bin/sh") else { panic!("tmux required") };
+    let tmux = crate::config::find_program("tmux", "TM_TMUX").expect("tmux on PATH");
+    let link = crate::tmux::server::Link::Local { tmux, socket: tm.socket.clone(), conf: "/dev/null".into() };
+    let (root, app) = crate::testutil::app_linked("pane-state", link);
+    let server = app.tmux.local.clone();
+    let split = tm.read(&["split-window", "-d", "-P", "-F", "#{pane_id}", "-t", "main"]).trim().to_string();
+    server.sync_clients(&["main".to_string()]).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(3);
+    while !server.connected() && Instant::now() < deadline {
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    refresh_server(&app, &server).await;
+    let state = |pane: &str| app.tmux.pane_state(&server.key(pane));
+    assert_eq!(state(&split), PaneState::Open, "{:?}", server.last_words());
+    tm.tmux(&["kill-pane", "-t", &split]);
+    refresh_server(&app, &server).await;
+    assert_eq!(state(&split), PaneState::Closed);
+    server.disconnect();
+    drop(tm);
+    drop(app);
+    std::fs::remove_dir_all(root).unwrap();
+}
