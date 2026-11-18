@@ -3,6 +3,7 @@
 //! on the target, in the task's verify tree moved there. Red there too, the target is red, not the task: it stays
 //! queued behind its project's one open Bug task for the red target and runs Verify again once that task is DONE
 //! or FAILED. Green there, the task broke them and goes back to its agent; a run that cannot tell returns it too.
+//! A held task that leaves the queue meanwhile is told so, and told again to integrate when that task ends.
 
 use std::path::Path;
 
@@ -16,7 +17,7 @@ use super::stages::{how, line_of, vars, Run};
 use super::store::{self as bs, Left};
 use crate::tasks::integration;
 use crate::tasks::integration_queue::and_list;
-use crate::tasks::ops::{self, sql, NewTask};
+use crate::tasks::ops::{self, sql, NewTask, Task};
 use crate::tasks::store::{Store, DISPATCHER};
 
 /// A queued entry held for a red target.
@@ -95,6 +96,8 @@ fn hold(tx: &Transaction, run: &Run, name: &str, target: &str, failed: &str, log
             bug
         }
         None => {
+            // an ended Bug task's held tasks go back to Verify before the new one is made, never waiting behind it untold
+            release(tx, now)?;
             let text = format!("## Problem or goal\n{name} is red at {short}: the Verify steps {failed} fail there. {id}'s Verify failed the same steps, so it waits in INTEGRATION behind this task, with each task held for the same reason. {logs}\n\n\
                 ## Expected result\nThose steps green on {name}. When this task is DONE or FAILED, the Verify of each task held behind it runs again.\n\n\
                 ## Context\nMade by Dispatcher: a red Verify's failed steps failed on the target too (terminum-integration.md AC-198).");
@@ -106,25 +109,66 @@ fn hold(tx: &Transaction, run: &Run, name: &str, target: &str, failed: &str, log
     };
     tx.execute("UPDATE integration_entries SET stage = ?2 WHERE task = ?1", (&run.task, HELD)).map_err(sql)?;
     ops::notice(tx, DISPATCHER, id, &format!("{id} stays queued: the steps its Verify failed ({failed}) fail on {name} at {short} too, so the target is red, not {id}. \
-        It waits until {bug} (the red target) is DONE or FAILED, then its Verify runs again; its wait for integration goes on. {logs}"),
+        It waits until {bug} (the red target) is DONE or FAILED, then its Verify runs again; its wait for integration goes on while it stays in INTEGRATION. {logs}"),
         serde_json::json!({"held": HELD, "bug": bug}), now).map(drop)
+}
+
+/// The project's Bug task for its red target, (key, ID, open), while it is a task.
+fn red_bug(tx: &Transaction, project: &str) -> Result<Option<(String, String, bool)>, String> {
+    tx.query_row(&format!("SELECT b.id, b.slug, {OPEN} FROM project_integration i JOIN tasks b ON b.id = i.red_bug WHERE i.project = ?1"), [project],
+                 |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).optional().map_err(sql)
 }
 
 /// The project's Bug task for its red target while it is open, by its ID: what its held tasks wait for.
 pub fn open_bug(tx: &Transaction, project: &str) -> Result<Option<String>, String> {
-    tx.query_row(&format!("SELECT b.slug FROM project_integration i JOIN tasks b ON b.id = i.red_bug WHERE i.project = ?1 AND {OPEN}"), [project],
-                 |r| r.get(0)).optional().map_err(sql)
+    Ok(red_bug(tx, project)?.filter(|b| b.2).map(|b| b.1))
 }
 
-/// The tasks held for a red target whose Bug task ended (DONE, FAILED, archived or gone) verified again, each told.
+/// Held task `task` left INTEGRATION for `status`: anything but DONE or FAILED, it is told the Bug task's end runs
+/// nothing for it, and is kept to be told to integrate again at that end (`release`); the Bug task hears of it.
+pub(crate) fn left(tx: &Transaction, task: &Task, status: &str, at: i64) -> Result<(), String> {
+    if matches!(status, "DONE" | "FAILED") {
+        return Ok(());
+    }
+    let (id, out) = (&task.id, Left::Out.word());
+    match red_bug(tx, &task.project)? {
+        Some((key, bug, true)) => {
+            ops::left_queue(tx, DISPATCHER, id, &format!("{id} left the queue while it waited behind {bug} (the red target): it is not queued now, so {bug}'s end runs nothing for it. \
+                Integrate again to land it; {id} is told when {bug} ends."), out, at)?;
+            ops::comment(tx, DISPATCHER, &bug, &format!("{id} left the queue while it waited on this red target: when this task ends, {id} is told to integrate again."), at)?;
+            tx.execute("INSERT OR REPLACE INTO integration_held_left (task, bug) VALUES (?1, ?2)", (&task.key, &key)).map(drop).map_err(sql)
+        }
+        // the Bug task ended, or is gone, before this beat's release
+        bug => ops::left_queue(tx, DISPATCHER, id, &integrate_again(bug.map(|b| b.1).as_deref(), id), out, at).map(drop),
+    }
+}
+
+/// How a task released from a red target, or told to integrate again, names that target's end.
+fn ended(bug: Option<&str>) -> String {
+    bug.map_or("The red target's task is gone".to_string(), |b| format!("{b} (the red target) ended"))
+}
+
+fn integrate_again(bug: Option<&str>, id: &str) -> String {
+    format!("{}: {id} left the queue while it waited behind it, so nothing runs for it. Integrate again to land it.", ended(bug))
+}
+
+/// The tasks held for a red target whose Bug task ended (DONE, FAILED, archived or gone) verified again, each told;
+/// each that left the queue while held behind it, open still, told once to integrate again.
 pub(super) fn release(tx: &Transaction, now: i64) -> Result<(), String> {
     let held: Vec<(String, String, Option<String>)> = ops::rows(tx, &format!("SELECT e.task, t.slug, b.slug FROM integration_entries e JOIN tasks t ON t.id = e.task
             LEFT JOIN project_integration i ON i.project = e.project LEFT JOIN tasks b ON b.id = i.red_bug
             WHERE e.stage = ?1 AND NOT coalesce({OPEN}, 0)"), [HELD], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
     for (task, id, bug) in &held {
         tx.execute("UPDATE integration_entries SET stage = 'verifying' WHERE task = ?1", [task]).map_err(sql)?;
-        let ended = bug.as_deref().map_or("The red target's task is gone".to_string(), |b| format!("{b} (the red target) ended"));
-        ops::comment(tx, DISPATCHER, id, &format!("{ended}: {id}'s Prepare and Verify run again."), now)?;
+        ops::comment(tx, DISPATCHER, id, &format!("{}: {id}'s Prepare and Verify run again.", ended(bug.as_deref())), now)?;
+    }
+    let to_tell: Vec<(String, String, String, String, bool)> = ops::rows(tx, &format!("SELECT h.task, t.slug, b.id, b.slug, t.status IN ('DONE', 'FAILED') OR t.archived_at IS NOT NULL
+            FROM integration_held_left h JOIN tasks t ON t.id = h.task JOIN tasks b ON b.id = h.bug WHERE NOT ({OPEN})"), [], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)))?;
+    for (task, id, key, bug, closed) in &to_tell {
+        tx.execute("DELETE FROM integration_held_left WHERE task = ?1", [task]).map_err(sql)?;
+        if !closed {
+            ops::notice(tx, DISPATCHER, id, &integrate_again(Some(bug), id), serde_json::json!({"requeue": key}), now)?;
+        }
     }
     Ok(())
 }

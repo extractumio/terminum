@@ -4,6 +4,7 @@
 use super::*;
 use crate::integrate::engine::tests::{go, queued_with, said, status, world, Sh, World};
 use crate::tasks::integration::Settings;
+use crate::tasks::ops::INTEGRATION;
 
 /// A Verify line that writes what each run saw (`rerun|of|sha|whose tree`) to `seen` and fails `task` on the task's
 /// commit and `target` on the target ("" exits 0, "-" exits 1 naming none).
@@ -59,7 +60,7 @@ fn ac198_a_red_verify_whose_steps_fail_on_the_target_too_stays_queued_behind_one
     let short = &target[..9];
     let words = said(&w, &a);
     assert!(words.contains(&format!("{a}'s Verify failed critical: they run on origin/main at {short} to tell whether the target is red too.")), "{words}");
-    assert!(words.contains(&format!("{a} stays queued: the steps its Verify failed (critical) fail on origin/main at {short} too, so the target is red, not {a}. It waits until {bug} (the red target) is DONE or FAILED, then its Verify runs again; its wait for integration goes on. Its log: ")), "{words}");
+    assert!(words.contains(&format!("{a} stays queued: the steps its Verify failed (critical) fail on origin/main at {short} too, so the target is red, not {a}. It waits until {bug} (the red target) is DONE or FAILED, then its Verify runs again; its wait for integration goes on while it stays in INTEGRATION. Its log: ")), "{words}");
     assert!(w.s.with(|tx| ops::text_of(tx, bug)).unwrap().contains(&format!("origin/main is red at {short}: the Verify steps critical fail there. {a}'s Verify failed the same steps")));
     let marks = w.s.with(|tx| crate::integrate::column::marks(tx, &[ops::get(tx, &a)?], 200)).unwrap();
     assert_eq!(marks.values().next().unwrap()["mark"], format!("waits: the target is red ({bug})"));
@@ -222,4 +223,74 @@ fn ac198_a_run_on_the_target_that_cannot_start_returns_the_task() {
     assert!(words.contains(&format!("{a} returned: red check: its Verify failed critical; its run on the target did not start: ")) && words.contains("so whether the target is red too is not known."), "{words}");
     assert_eq!(std::fs::read_to_string(&seen).unwrap().lines().count(), 1, "nothing ran on the target");
     assert!(!w.root.join("home/integration/api/verify-1").exists(), "its tree removed");
+}
+
+fn again(bug: &str, t: &str) -> String {
+    format!("{bug} (the red target) ended: {t} left the queue while it waited behind it, so nothing runs for it. Integrate again to land it.")
+}
+
+/// Held tasks leave the queue: by new work in its session (Dispatcher's move), a human's Take out then DONE, a human's
+/// move then queued again by Integrate, and DONE from the queue; only the one still out of the queue and open is told
+/// to integrate again, once.
+#[test]
+fn ac198_a_held_task_that_leaves_the_queue_is_told_and_told_again_when_the_red_target_ends() {
+    let (w, a, _) = setup("rt-left", "critical", "critical");
+    let b = queued_with(&w, 2, "b.txt", "c\n", true);
+    let c = queued_with(&w, 3, "b.txt", "d\n", true);
+    let d = queued_with(&w, 4, "b.txt", "e\n", true);
+    let r = Sh::default();
+    go(&w, &r, 8);
+    for t in [&a, &b, &c, &d] {
+        assert_eq!(stage(&w, t).as_deref(), Some(HELD), "{t}");
+    }
+    let bug = bugs(&w)[0].0.clone();
+    let human = crate::tasks::store::HUMAN;
+    w.s.with(|tx| {
+        ops::move_to(tx, DISPATCHER, &a, "IN PROGRESS", 150)?;
+        crate::integrate::column::out(tx, &b, 150)?;
+        ops::place(tx, human, &ops::get(tx, &c)?, "IN PROGRESS", 150)?;
+        ops::place(tx, human, &ops::get(tx, &d)?, "DONE", 150)
+    }).unwrap();
+    for t in [&a, &b, &c] {
+        assert_eq!(status(&w, t), "IN PROGRESS");
+        assert!(said(&w, t).contains(&format!("{t} left the queue while it waited behind {bug} (the red target): it is not queued now, so {bug}'s end runs nothing for it. \
+            Integrate again to land it; {t} is told when {bug} ends.")), "{t}: {}", said(&w, t));
+        assert!(said(&w, &bug).contains(&format!("{t} left the queue while it waited on this red target: when this task ends, {t} is told to integrate again.")));
+    }
+    assert_eq!((left(&w, &a).as_deref(), left(&w, &c).as_deref()), (Some("out"), Some("out")));
+    assert!(!said(&w, &d).contains("left the queue"), "DONE from the queue: nothing pending");
+    // b ends; c is queued again by a human's Integrate from a folder at a new commit
+    w.s.with(|tx| ops::place(tx, human, &ops::get(tx, &b)?, "DONE", 160)).unwrap();
+    let sh = |args: &[&str]| crate::integrate::engine::tests::sh(&w.api, args);
+    sh(&["checkout", "-q", "--detach", "origin/main"]);
+    std::fs::write(w.api.join("b.txt"), "f\n").unwrap();
+    sh(&["add", "b.txt"]);
+    sh(&["commit", "-qm", "t5"]);
+    crate::tasks::integration_queue::integrate_by_human(&w.s, &c, w.api.to_str()).unwrap();
+    sh(&["checkout", "-q", "main"]);
+    assert_eq!(status(&w, &c), INTEGRATION);
+    w.s.with(|tx| { let t = ops::get(tx, &bug)?; ops::place(tx, human, &t, "DONE", 300) }).unwrap();
+    go(&w, &r, 2);
+    assert_eq!(said(&w, &a).matches(&again(&bug, &a)).count(), 1, "told once: {}", said(&w, &a));
+    assert_eq!(status(&w, &a), "IN PROGRESS", "nothing queued for it");
+    let notice = w.s.with(|tx| ops::noticed(tx, DISPATCHER, &ops::key_of(tx, &a)?, "requeue", &ops::key_of(tx, &bug)?)).unwrap();
+    assert!(notice, "a notice: its session hears it (AC-192)");
+    for t in [&b, &c, &d] {
+        assert!(!said(&w, t).contains(&again(&bug, t)), "{t}: DONE or queued again since");
+    }
+    let rows: i64 = w.s.with(|tx| tx.query_row("SELECT count(*) FROM integration_held_left", [], |r| r.get(0)).map_err(sql)).unwrap();
+    assert_eq!(rows, 0, "nothing kept once told");
+}
+
+#[test]
+fn ac198_a_held_task_leaving_after_its_red_target_ended_is_told_at_once() {
+    let (w, a, _) = setup("rt-left-late", "critical", "critical");
+    go(&w, &Sh::default(), 3);
+    let bug = bugs(&w)[0].0.clone();
+    w.s.with(|tx| {
+        ops::archive(tx, crate::tasks::store::HUMAN, &bug, true, 300)?;
+        ops::move_to(tx, DISPATCHER, &a, "IN PROGRESS", 301)
+    }).unwrap();
+    assert!(said(&w, &a).contains(&again(&bug, &a)));
+    assert_eq!(left(&w, &a).as_deref(), Some("out"));
 }

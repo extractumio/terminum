@@ -206,7 +206,7 @@ pub enum Left {
 }
 
 impl Left {
-    fn word(self) -> &'static str {
+    pub(crate) fn word(self) -> &'static str {
         match self { Left::Red => "red", Left::Conflict => "conflict", Left::Out => "out" }
     }
 }
