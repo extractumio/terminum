@@ -8,7 +8,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { DatabaseSync } from "node:sqlite";
 import { boardKit, cardInSight, intoStore, nap, pressRun } from "./boardkit.mjs";
-import { check, until } from "./check.mjs";
+import { check, slack, until } from "./check.mjs";
 
 const FAKE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../scripts/fake_agent.py");
 
@@ -323,6 +323,26 @@ export async function liveDispatcher(page, opts) {
   check("AC-125 it closes 5 minutes after FAILED", await said(closes, "Session ended: closed 5 minutes after FAILED.", 40000), await history(closes));
   check("AC-125 the card says session closed", await until(async () => (await j(`/api/tasks/${closes}`)).session?.closed === true));
   check("AC-125 with no result its screen stays on the task", (await j(`/api/tasks/${closes}`)).files.some((f) => /screen/.test(f.name)), JSON.stringify((await j(`/api/tasks/${closes}`)).files));
+
+  // AC-125 a draft typed where no activity is counted (tmux, as a terminal attached to the server types) keeps it open
+  const keptOpen = await task("keeps a draft FINISHES");
+  await run(keptOpen);
+  await hasStatus(keptOpen, "DONE", 15000);
+  const draftPane = await paneOf(keptOpen);
+  const paneAlive = (pane) => tmux("list-panes", "-a", "-F", "#{pane_id}").split("\n").some((l) => l.trim() === pane);
+  const draftScreen = () => tmux("capture-pane", "-p", "-t", draftPane);
+  tmux("send-keys", "-t", draftPane, "-l", "an unsent draft");
+  check("AC-125 the draft is in its box", await until(() => draftScreen().includes("an unsent draft")), draftScreen());
+  const closingFor = () => {
+    const db = new DatabaseSync(path.join(opts.app, "kanban.sqlite"), { readOnly: true });
+    try { return db.prepare("SELECT r.closing_for AS c FROM runs r JOIN run_tasks rt ON rt.run = r.id JOIN tasks t ON t.id = rt.task WHERE t.slug = ? ORDER BY r.rowid DESC LIMIT 1").get(keptOpen)?.c ?? 0; }
+    finally { db.close(); }
+  };
+  check("AC-125 its 5 minutes pass with the draft there", await until(() => closingFor() >= slack(7200), slack(60000)), String(closingFor()));
+  await nap(1500);                                   // 15 walks of this clock, each of which would have closed it
+  check("AC-125 a draft in its box keeps it: nothing closed, nothing said", paneAlive(draftPane) && draftScreen().includes("an unsent draft") && !(await history(keptOpen)).includes("Session ended"), await history(keptOpen));
+  tmux("send-keys", "-t", draftPane, "C-u");
+  check("AC-125 once its box is empty the next walk closes it", await said(keptOpen, "Session ended: closed 5 minutes after DONE.", 15000) && !paneAlive(draftPane), await history(keptOpen));
 
   // AC-122 resume: a closed session goes on in a new window
   const resumed = await run(closes, { comment: "go on FINISHES" });
