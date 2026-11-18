@@ -60,7 +60,7 @@ fn commit_to_queue(repo: &Path, s: &Settings, given: Option<&str>, folder: Optio
         Some(c) => c.to_string(),
         None => {
             let folder = Path::new(folder.ok_or("This session has no folder on this Mac: name the commit.")?);
-            let changed = String::from_utf8_lossy(&git(folder, &["status", "--porcelain"])?.stdout).lines().count();
+            let changed = crate::integrate::git::uncommitted(folder)?;
             if changed > 0 {
                 return Err(format!("Commit your work first: {changed} file{} changed in {}.", if changed == 1 { " is" } else { "s are" }, folder.display()));
             }
