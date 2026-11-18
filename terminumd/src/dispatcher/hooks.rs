@@ -60,8 +60,9 @@ pub(super) fn apply(tx: &rusqlite::Transaction, r: &mut Run, ev: &Value, typed: 
             r.agent_session = session.map(str::to_string).or(r.agent_session.take());
             active = false;
         }
-        // the agent's own turn (a background task's end, another session's message): it works, no one asked for new work
-        "UserPromptSubmit" if ev["prompt"].as_str().is_some_and(crate::messages::injected) => r.turn_starts(),
+        // the agent's own turn (a background task's end, another session's message, a wakeup it scheduled, as /hook
+        // decided): it works, no one asked for new work
+        "UserPromptSubmit" if ev["own"] == true || ev["prompt"].as_str().is_some_and(crate::messages::injected) => r.turn_starts(),
         "UserPromptSubmit" if r.is_starting() || r.prompt.as_deref().zip(ev["prompt"].as_str()).is_some_and(|(a, b)| super::same_prompt(a, b)) => {
             moved = accept(tx, r)?;
             r.prompt = None;
@@ -212,6 +213,10 @@ pub async fn hearing(app: Shared) {
 #[cfg(test)]
 #[path = "hooks_order_tests.rs"]
 mod order_tests;
+
+#[cfg(test)]
+#[path = "hooks_own_tests.rs"]
+mod own_tests;
 
 #[cfg(test)]
 mod tests {

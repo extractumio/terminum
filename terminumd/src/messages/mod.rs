@@ -6,6 +6,7 @@
 //! redacted: `crate::sent`. Called off the async workers, in the store's transactions.
 
 pub mod api;
+pub mod own;
 pub mod search;
 #[cfg(test)]
 mod tests;

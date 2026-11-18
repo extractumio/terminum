@@ -115,6 +115,8 @@ pub struct Hooks {
     changed: Mutex<Vec<String>>,
     /// the latest sessions that ended ("agent session"), oldest first
     ended: Mutex<std::collections::VecDeque<String>>,
+    /// the prompts each pane's agent scheduled for itself: its own turns when they fire (AC-90, AC-122)
+    pub scheduled: crate::messages::own::Scheduled,
 }
 
 /// Whose an event is, decided once before it changes anything: only the main agent's events of its current turn move
@@ -166,6 +168,11 @@ impl Rec {
 }
 
 impl Hooks {
+    /// The hooks' record, the prompts agents scheduled being those kept in `scheduled`.
+    pub fn new(scheduled: crate::messages::own::Scheduled) -> Hooks {
+        Hooks { scheduled, ..Default::default() }
+    }
+
     /// Applies event `ev` (cli/hook.rs's fields) to pane `key`; true when what the list shows changed.
     #[cfg(test)]
     pub fn apply(&self, key: &str, ev: &Value, now: Instant) -> bool {

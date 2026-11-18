@@ -189,6 +189,15 @@ pub fn event(agent: &str, input: &Value, tmux: &str, pane: &str) -> Option<Value
     if name == "UserPromptSubmit"
         && let Some(p) = input.get("prompt").and_then(Value::as_str) {
             out.insert("prompt".into(), json!(p.chars().take(crate::sent::TEXT).collect::<String>()));
+            // who wrote it, where Claude Code says: a wakeup's or a cron's is the agent's own turn (AC-90)
+            if let Some(s) = text(input, "source", 40) {
+                out.insert("source".into(), json!(s));
+            }
+        }
+    // the prompt the agent schedules for itself, which a later prompt of its own repeats (AC-90, AC-122)
+    if name == "PreToolUse" && tool.is_some_and(|t| matches!(t, "ScheduleWakeup" | "CronCreate"))
+        && let Some(p) = input.pointer("/tool_input/prompt").and_then(Value::as_str) {
+            out.insert("scheduled".into(), json!(p.chars().take(crate::sent::TEXT).collect::<String>()));
         }
     Some(Value::Object(out))
 }
@@ -229,6 +238,23 @@ mod tests {
         assert_eq!(ev, json!({"agent": "claude", "socket": "terminum", "socket_path": "/private/tmp/tmux-501/terminum", "pane": "%3", "event": "PostToolUse", "session": "s1", "turn": "p1",
             "cwd": "/Users/alex/api", "tool": "Bash: npm test"}));
         assert!(!ev.to_string().contains("output") && !ev.to_string().contains("SECRET") && !ev.to_string().contains("transcript"));
+    }
+
+    /// AC-90, AC-122: what tells the agent's own turn: the prompt it schedules for itself, the source Claude Code gives.
+    #[test]
+    fn a_scheduled_prompt_and_a_prompts_source_go() {
+        for tool in ["ScheduleWakeup", "CronCreate"] {
+            let pre = json!({"hook_event_name": "PreToolUse", "tool_name": tool, "tool_input": {"prompt": "check the landing", "delaySeconds": 900, "cron": "*/5 * * * *"}});
+            assert_eq!(event("claude", &pre, TMUX, "%1").unwrap()["scheduled"], "check the landing", "{tool}");
+        }
+        let other = json!({"hook_event_name": "PreToolUse", "tool_name": "Agent", "tool_input": {"prompt": "a subagent's brief"}});
+        assert!(event("claude", &other, TMUX, "%1").unwrap().get("scheduled").is_none(), "another tool's prompt stays");
+        let post = json!({"hook_event_name": "PostToolUse", "tool_name": "ScheduleWakeup", "tool_input": {"prompt": "check the landing"}});
+        assert!(event("claude", &post, TMUX, "%1").unwrap().get("scheduled").is_none(), "said once, before it runs");
+        let fired = json!({"hook_event_name": "UserPromptSubmit", "prompt": "check the landing", "source": "loop_wakeup"});
+        assert_eq!(event("claude", &fired, TMUX, "%1").unwrap()["source"], "loop_wakeup");
+        let typed = json!({"hook_event_name": "UserPromptSubmit", "prompt": "fix the tests"});
+        assert!(event("claude", &typed, TMUX, "%1").unwrap().get("source").is_none(), "none given, none said");
     }
 
     #[test]

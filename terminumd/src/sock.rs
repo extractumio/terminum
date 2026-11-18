@@ -147,6 +147,14 @@ pub async fn hook_on(app: Shared, server: Option<std::sync::Arc<crate::tmux::ser
         return StatusCode::NO_CONTENT.into_response();
     }
     let _dispatch = app.hooks.dispatch.lock();
+    if let Some(text) = crate::messages::own::scheduled(&ev) {
+        app.hooks.scheduled.remember(&key, text);
+        let a = app.clone();
+        tokio::task::spawn_blocking(move || a.hooks.scheduled.save());
+    }
+    // the agent's own turn, decided here once, for the sent history and Dispatcher alike (AC-90, AC-122)
+    let mut ev = ev;
+    ev["own"] = json!(crate::messages::own::turn(&app.hooks.scheduled, &key, &ev));
     // whose it is, decided once: only the main agent's events of its turn move a run, a task, a plan (AC-127)
     let Some((changed, whose)) = app.hooks.apply_event(&key, &ev, std::time::Instant::now()) else {
         return StatusCode::NO_CONTENT.into_response();
@@ -163,9 +171,9 @@ pub async fn hook_on(app: Shared, server: Option<std::sync::Arc<crate::tmux::ser
         crate::tasks::tell::turn_ended(&app, &key, None);
     }
     // a human's prompt, not one Dispatcher typed: what was decided before it no longer holds (AC-131);
-    // the agent's own turns (a background task's end, another session's message) and a subagent's
-    // prompts are no one's: neither that nor a message (AC-90)
-    let prompt = ev["prompt"].as_str().filter(|p| ev["event"] == "UserPromptSubmit" && whose == crate::tmux::hookstate::Whose::Main && !crate::messages::injected(p));
+    // the agent's own turns (a background task's end, another session's message, a wakeup it scheduled)
+    // and a subagent's prompts are no one's: neither that nor a message (AC-90)
+    let prompt = ev["prompt"].as_str().filter(|_| ev["event"] == "UserPromptSubmit" && whose == crate::tmux::hookstate::Whose::Main && ev["own"] != true);
     // who typed it: Dispatcher's gate, a project's manager (send_to_session; as a human's for AC-131), else the human (AC-147)
     let typed = prompt.is_some_and(|p| app.dispatcher.typed_it(&key, p));
     let sender = if typed { crate::tasks::store::DISPATCHER } else if prompt.is_some_and(|p| app.sent.managers.has(&key, p, true)) { crate::inputs::MANAGER } else { crate::tasks::store::HUMAN };
