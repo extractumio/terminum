@@ -24,6 +24,7 @@
 <link rel="stylesheet" href="boardphone.css">
 <link rel="stylesheet" href="boardpanel.css">
 <link rel="stylesheet" href="boardrail.css">
+<link rel="stylesheet" href="sessbox.css">
 <link rel="stylesheet" href="markdown.css">
 <link rel="stylesheet" href="taskwin.css">
 <link rel="stylesheet" href="taskattrs.css">
@@ -142,7 +143,17 @@
 <div id="asks" aria-live="polite" hidden></div>
 <!-- The board's three sections, each named on a rail at its left (terminum-kanban.md AC-203): Agent Pool and Routines fold
      by theirs (kanbanrail.js), folded to one strip with their add key; Task Management's is a plain head. -->
-<div id="pool"><section id="agentbar" class="railed" aria-labelledby="railpool"><h2 class="rail"><button id="railpool" class="railkey" type="button" aria-expanded="true" aria-controls="agentgrid"><svg class="lu chev" viewBox="0 0 24 24" aria-hidden="true" style="--s:12px"><path d="m6 9 6 6 6-6"/></svg><span class="railword">Agent Pool</span><span class="railsum"></span></button><button class="railadd icon" type="button" aria-label="Add agent" title="Add an agent to a project's pool" hidden><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M5 12h14"/><path d="M12 5v14"/></svg></button></h2></section>
+<div id="pool"><section id="agentbar" class="railed" aria-labelledby="railpool"><h2 class="rail"><button id="railpool" class="railkey" type="button" aria-expanded="true" aria-controls="agentgrid"><svg class="lu chev" viewBox="0 0 24 24" aria-hidden="true" style="--s:12px"><path d="m6 9 6 6 6-6"/></svg><span class="railword">Agent Pool</span><span class="railsum"></span></button><button class="railadd icon" type="button" aria-label="Add agent" title="Add an agent to a project's pool" hidden><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M5 12h14"/><path d="M12 5v14"/></svg></button></h2>
+<!-- + Session on an agent's card with a first prompt (terminum-dispatcher.md AC-204; kanbansessbox.js): a dock under the pool, not a dialog, so task cards can be dragged onto it -->
+<form id="sesscompose" class="sessdock" aria-labelledby="sesshead" hidden>
+  <div class="sesshead"><h3 id="sesshead">+ Session on <span id="sessagent"></span></h3><button id="sessclose" class="icon x" type="button" title="Close, keep the text (Esc)" aria-label="Close"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
+  <textarea id="sesstext" class="field taskmd droparea" rows="3" aria-label="Its first prompt" placeholder="What should it do? Paste or drop files; drop tasks to name them."></textarea>
+  <ul id="sessfiles" class="filelist"></ul>
+  <p id="sesserror" class="error" role="alert" hidden></p>
+  <div class="sessfoot"><button id="sessadd" class="textkey" type="button">Add files…</button><input id="sessfile" type="file" multiple hidden>
+    <span class="hint">Drop tasks or files here · ⌘Enter starts</span>
+    <button id="sessdiscard" class="textkey danger" type="button" hidden>Discard</button><button id="sessstart" class="textkey primary" type="submit" title="Start the session; with no text nothing is typed">Start</button></div>
+</form></section>
 <section id="schedbar" class="railed" aria-labelledby="railsched"><h2 class="rail"><button id="railsched" class="railkey" type="button" aria-expanded="false" aria-controls="schedgrid"><svg class="lu chev" viewBox="0 0 24 24" aria-hidden="true" style="--s:12px"><path d="m6 9 6 6 6-6"/></svg><span class="railword">Routines</span><span class="railsum"></span></button><button class="railadd icon" type="button" aria-label="Add routine" title="Add a routine: a task that runs on a cadence on one agent" hidden><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M5 12h14"/><path d="M12 5v14"/></svg></button></h2></section></div>
 <div id="colswitch" class="seg" role="tablist" aria-label="Columns"></div>
 <button id="poolline" class="textkey" type="button" aria-haspopup="dialog" aria-controls="pool" title="Auto-Dispatch, the agents and the routines"></button>

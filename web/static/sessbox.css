@@ -1,0 +1,33 @@
+/* SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial */
+/* + Session with a first prompt (terminum-dispatcher.md AC-204; kanbansessbox.js): each agent card's own key, and the
+   dock it opens under the pool, the pool's width at most four cards; the agent named by its dot (no stripe along a
+   rounded box: docs/UI-GUIDELINES.md §1). After boardrail.css. */
+.agsess { flex: none; margin-left: auto; height: 22px; padding: 0 var(--sp-2); border: 0; border-radius: var(--r-xs);
+  background: var(--surface-3); color: var(--t-fg); font: var(--fw-ctl) var(--fs-meta) var(--ui); white-space: nowrap; cursor: pointer; }
+@media (hover: hover) { .agsess:hover { background: color-mix(in srgb, var(--ag, var(--accent)) 30%, var(--surface-3)); } }
+.agsess[aria-expanded="true"] { background: color-mix(in srgb, var(--ag, var(--accent)) 40%, var(--surface-3)); }
+@media (pointer: coarse) { .agsess { height: 32px; } }   /* with the card's own press round it: 44 px of finger room */
+#agentbar > .rail { grid-row: span 2; }
+#agentbar > .sessdock { grid-column: 2; }
+.sessdock { display: flex; flex-direction: column; gap: var(--sp-2); max-width: 984px; margin-top: var(--sp-2); padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--r-lg); background: var(--surface-1); }
+.sessdock[hidden], .railed.folded > .sessdock { display: none; }
+.sesshead { display: flex; align-items: center; gap: var(--sp-2); }
+.sesshead h3 { flex: 1; min-width: 0; margin: 0; font-size: var(--fs-label); font-weight: var(--fw-head); }
+#sessagent { display: inline-flex; align-items: center; gap: var(--sp-1); }
+.sessdot { flex: none; width: 8px; height: 8px; border-radius: 2px; background: var(--ag); }
+#sesstext { box-sizing: border-box; width: 100%; min-height: 5.5em; max-height: 30dvh; padding: var(--sp-2); resize: vertical; field-sizing: content; }
+#sesserror { margin: 0; color: var(--danger-text); }
+.sessfoot { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); }
+.sessfoot .hint { flex: 1 1 auto; min-width: 0; color: var(--muted-text); font-size: var(--fs-meta); }
+.sessfoot .danger { --kc: var(--danger-text); }
+.sessfoot .primary { margin-left: auto; }
+.sessdock[aria-busy="true"] #sessstart { cursor: progress; }
+@media (max-width: 900px) { .sessfoot .hint { display: none; } }
+/* a phone: in the pool's sheet, under the pool; no drag there (the sheet covers the board): IDs are typed */
+@media (max-width: 600px), (pointer: coarse) and (max-height: 500px) {
+  #pool #agentbar > .sessdock { grid-column: 1; }
+  #pool #agentbar > .rail { grid-row: auto; }
+  #sesstext { font-size: 16px; min-height: 7em; }
+  .sessfoot #sessstart { flex: 1 1 100%; height: var(--h-touch, 44px); justify-content: center; }
+}

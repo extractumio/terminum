@@ -14,12 +14,12 @@ use crate::tasks::store::DISPATCHER;
 use crate::tmux::server::{Link, HOST_SESSION};
 use crate::tmux::{args, Server};
 
-const BOX_WITHIN: Duration = Duration::from_secs(60);
+pub(super) const BOX_WITHIN: Duration = Duration::from_secs(60);
 const TAKEN_WITHIN: Duration = Duration::from_secs(30);
 /// How long an empty box stands before a first prompt goes in with no start heard.
-const STANDS: Duration = Duration::from_secs(2);
+pub(super) const STANDS: Duration = Duration::from_secs(2);
 /// A test's clock runs these slower than the rest: a program needs its real moment to start.
-fn start_scaled(d: Duration) -> Duration {
+pub(super) fn start_scaled(d: Duration) -> Duration {
     d / super::scale().min(10) as u32
 }
 /// The wrapper's words are its arguments: no quote or `#` in them can break it. What the tty still

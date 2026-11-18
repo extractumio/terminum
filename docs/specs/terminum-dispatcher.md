@@ -78,7 +78,8 @@ Open questions:
 | AC-138 | [MUST / P0] | The pools of the projects shown stand over the board, each agent with its color, kind, effort, its week and month, and one dot per live session, blinking while it works; a task, or several chosen, dropped on an agent runs in one session with a short message; a finished task stays on its agent; a run that cannot be reached can be given up. |
 | AC-140 | [MUST / P0] | A project is a full path on one server: every agent of it starts there, and with no folder none starts; Default is the home folder of the Mac terminumd runs on. |
 | AC-141 | [MUST / P0] | Starting a session takes a slot of its agent and of its project; at a limit RUN starts nothing, names what holds it and offers the queue (AC-169), and an idle holder can be closed with one press; a human typing in a session is never refused. |
-| AC-142 | [SHOULD / P1] | + Session starts a project's agent with no task; Dispatcher never types in it or closes it, and it counts against both limits. |
+| AC-142 | [SHOULD / P1] | + Session starts a project's agent with no task; Dispatcher never types in it (but its first prompt, AC-204) or closes it, and it counts against both limits. |
+| AC-204 | [SHOULD / P1] | + Session on an agent's card takes a first prompt, files and task IDs dropped on it; terminumd types the prompt once, through the §9 gate, into the pane that request started, then it is AC-142's session. |
 | AC-143 | [SHOULD / P1] | An agent's window shows what it spent in the last 7 and 30 days, against its limits if it has them; a limit is shown, it stops nothing. |
 | AC-168 | [SHOULD / P1] | An agent's rectangle shows two stripes, its kind's subscription windows (five hours and a week) in percent as its kind's usage command or a session of that kind last read them; the usage command, a line in settings.json that spends no tokens, runs at terminumd's start, every 10 minutes while a run of its kind works on a task, as one of its tasks ends, else hourly; the last reading outlives a restart; a window not known, reset since, or read long ago, and a failed usage command, say so, never a made-up 0%. |
 | AC-144 | [MUST / P0] | Task, project, agent, a run's process and its tmux pane each live their own life: each outlives the others' restart or deletion as the table says, and what is lost is said. |
@@ -981,7 +982,7 @@ Scenario: AC-142 happy path — the session list's head key
 
 Scenario: AC-142 edge — what Dispatcher does with it
   Given that session
-  Then no prompt is typed, no task moves, no budget runs, nothing nudges it, and only its numbers show; the human closes it
+  Then no prompt is typed but the human's own first prompt, once, when + Session was given one (AC-204); no task moves, no budget runs, nothing nudges it, and only its numbers show; the human closes it
   And it stays such when its agent calls take_task: that task is its own, the session is still the human's to close
 
 Scenario: AC-142 failure — cannot start
@@ -993,6 +994,43 @@ Scenario: AC-142 failure — cannot start
 Scenario: AC-142 edge — a host out of reach
   When its host stops answering
   Then its dot says "out of reach", and its agent's window offers Let go, which frees the slot; the window, when the host returns, stays
+```
+
+### AC-204 — + Session with a first prompt [SHOULD / P1]
+
+```gherkin
+Scenario: AC-204 happy path — the composer
+  Given the board with the pool unfolded (terminum-kanban.md AC-203)
+  Then each agent's card has a "+ Session" key in its last row, its state said to assistive tech
+  When the user presses it on Opus reviewer
+  Then a dock opens under the pool's cards (not a dialog: the board's cards stay draggable onto it), headed "+ Session on" and the agent's dot and name, its text box in focus; another card's key moves it to that agent, the text kept
+  And the box takes typing, copy, cut, paste and undo as a text field does; a pasted image, a pasted or dropped file, and Add files… keep the file with terminumd, a chip each with its ×; Start waits while one is on its way
+  When the user drags TERM-12 and TERM-15 from the board onto the box
+  Then "TERM-12 TERM-15 " stands at the caret (the box's end without focus), a space before when it follows a word; neither task runs or moves; the agent reads each by get_task
+  When the user presses Start or ⌘Enter
+  Then a session of that agent opens in the project's place as AC-142's, terminumd types the prompt once (the human's words, then a line per file: its name, its kind and the path it is kept at), and the page shows the session; the draft is cleared
+
+Scenario: AC-204 edge — how it is typed
+  Then terminumd checks the words before anything starts: control or invisible characters other than line ends and tabs, or more than 20,000 characters, are refused with words and no session starts
+  And it waits for that agent's empty input box (60 s), marks the run as at work first, so neither a restart nor its watch types it again, then pastes it through the §9 gate (AC-121) into the pane that request started and presses Enter: never on the agent's command line, never in another pane, never twice
+  When the gate misses (no box in 60 s, a question first, the agent ended, the paste not shown)
+  Then the session stays open, the human's; the dock says "The session started, but its prompt was not typed: <why>. Paste it there yourself." with a link to it, and keeps the draft
+  And Start with an empty box and no file is AC-142's: nothing is typed
+
+Scenario: AC-204 edge — files
+  Given a project whose agents run on another host
+  When the user adds a file
+  Then the dock says files go only to a session on this Mac, and terminumd refuses a request that names one
+  And a file added and never sent is terminumd's for 7 days, as a new task's never saved (terminum-kanban.md AC-106), then goes; one sent stays there as long
+
+Scenario: AC-204 edge — the draft
+  When the user closes the dock by × or Esc, reloads the page, or folds the pool
+  Then the dock's text is kept in this browser and shown when + Session opens again; its files are not kept
+  When the user presses Discard
+  Then it asks "Discard what you typed?" when there is text, and clears the text and the files
+  When the agent is deleted meanwhile
+  Then the dock says so and Start is off
+  And on a phone the dock stands in the pool's sheet under the cards, Start a full-width 44 px key; task IDs are typed there
 ```
 
 ### AC-143 — An agent's week and month [SHOULD / P1]
@@ -2020,6 +2058,7 @@ Depends on `terminum-kanban.md`'s Stage 1. All three stages belong to terminum's
 - [x] AC-140 — `cargo test tasks::agents`, `cargo test tasks::store`, `web/test/e2e_liveboardagents.mjs`, `web/test/e2e_livedispatcher.mjs`, `scripts/e2e_remote_tasks.py`
 - [x] AC-141 — `cargo test dispatcher::pool`, `cargo test dispatcher::plan`, `cargo test tasks::limits`, `web/test/e2e_liveboardpool.mjs` (an empty-box offer, a draft typed before its press, refusal preserving the pane/draft/unqueued task, then an empty-box close)
 - [x] AC-142 — `cargo test dispatcher::runs`, `cargo test dispatcher::plan`, `cargo test tasks::tools`, `web/test/e2e_liveboardagents.mjs` (the tiles: `web/test/e2e_liveboardpool.mjs`), `web/test/e2e_navsession.mjs` (the list's head key)
+- [x] AC-204 — `cargo test dispatcher::firstprompt` (the words and files checked), `web/test/e2e_liveboardpool.mjs` (typed once through the gate, a refused control character), `web/test/e2e_sessbox.mjs` (`node web/test/e2e_all.mjs webSessBox`: the dock, files, dropped tasks, the draft, a miss)
 - [x] AC-143 — `cargo test dispatcher::usage`, `cargo test tasks::agents`, `web/test/e2e_liveboardagents.mjs`
 - [x] AC-168 — `cargo test subscriptions`, `cargo test usageask`, `cargo test usageread`, `cargo test settings::tests::ac168`, `cargo test cli::statusline`, `cargo test cli::hooktokens`, `scripts/e2e_hooks.py`, `web/test/e2e_liveboardsubs.mjs` (a stripe under 40% green, over 90% red)
 - [ ] AC-156 — `cargo test tasks::agents`, `cargo test dispatcher::press`, `web/test/e2e_liveboardagents.mjs`, `web/test/e2e_livedispatcher.mjs` (the inline words), `SECURITY.md` carries the operator's command

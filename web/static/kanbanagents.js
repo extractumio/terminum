@@ -18,8 +18,9 @@ const KINDS = ["claude", "codex"];                 // their commands are their n
 
 /** `getMeta()`: terminumd's projects and agents; `chosen()`: the projects shown, none for all; `slots()`: what each agent's slots hold, as terminumd counts them;
  *  `liveRow(key)`: a session's row; `dragging()`: the tasks of a drag; `given()`: those a press or a drop would run on an
- *  agent; `run(tasks, agent)`; `readings()`: each kind's subscription windows (AC-168); `openTask(id)`. */
-export function agentsSection({ getMeta, chosen, reload, refreshQueue, slots: counted, liveRow, dragging, given, run, openSession, readings, openTask }) {
+ *  agent; `run(tasks, agent)`; `readings()`: each kind's subscription windows (AC-168); `openTask(id)`; `composer`: + Session's
+ *  dock with a first prompt (AC-204), opened by a card's own key. */
+export function agentsSection({ getMeta, chosen, reload, refreshQueue, slots: counted, liveRow, dragging, given, run, openSession, readings, openTask, composer }) {
   // on the columns' tracks: an agent a column wide, the add tile after the last, the hint in the fifth (kanban.css .tracks)
   const box = el("section", "agents tracks"), list = el("div", "agentlist trackitems"), side = el("div", "trackside");
   box.id = "agentgrid";
@@ -85,9 +86,17 @@ export function agentsSection({ getMeta, chosen, reload, refreshQueue, slots: co
   }
 
   /** Over the columns it takes tasks: dropped or pressed, terminumd says if it cannot; a dot opens its session, else a press opens its window. */
+  const sessKeys = new Map();                       // agent id -> its + Session key, as last drawn
   function target(a) {
     const b = row(a);
     b.append(iconButton("agedit", "pencil", `Edit ${a.name}`, `Edit ${a.name}`, () => open(a)));
+    // + Session with a prompt (AC-204): its own key, never a run of the chosen tasks
+    const sess = button("agsess", "+ Session", (e) => { e.stopPropagation(); composer.open(a, sess); });
+    Object.assign(sess, { title: `Start a session on ${a.name} with a prompt` });
+    sess.setAttribute("aria-controls", "sesscompose");
+    sess.setAttribute("aria-expanded", "false");
+    sessKeys.set(a.id, sess);
+    b.querySelector(".agdots").append(sess);      // the card's last row, at its right
     b.addEventListener("click", (e) => {
       const tasks = given(), key = e.target.closest?.(".agdot")?.dataset.key;
       if (tasks) run(tasks, a.id);
@@ -125,7 +134,9 @@ export function agentsSection({ getMeta, chosen, reload, refreshQueue, slots: co
     drawn = now;
     box.dataset.n = agents.length;                 // a phone's line says it (kanbanphone.js)
     railed.summary(poolSummary(agents));
+    sessKeys.clear();
     list.replaceChildren(...agents.map(target), addKey);
+    composer.drawn(sessKeys);
     if (!agents.length) list.append(el("p", "colempty", chosen().length === 1 ? `${projectName(chosen()[0]) ?? "This project"} has no agents yet: add one to run its tasks.` : "No agents yet: add one to run tasks."));
     hint.hidden = !tasks;
     if (tasks) hint.textContent = `${tasks.length} chosen: press an agent or drop them on it. Esc lets them go.`;
