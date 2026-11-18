@@ -6,35 +6,35 @@
 // get_task. Start opens the session on that agent and terminumd types the prompt once; with no text nothing is
 // typed (AC-142). Close and Esc keep the draft (its text, in this browser); Discard clears it.
 import { askConfirm } from "./dialogs.js";
-import { el, iconButton, read, write } from "./listparts.js";
+import { el, read, write } from "./listparts.js";
 import { sessionUrl } from "./tasklink.js";
-import { $, agentColor, api, onFiles, onSend, showError, upload } from "./kanbanutil.js";
+import { $, agentColor, api, fileChips, onFiles, onSend, showError, upload } from "./kanbanutil.js";
 
 const DRAFT = "tm.sessiondraft";
 
 /** `getMeta()`: projects and agents, `most` bytes a file may have among them; `dragging()`: the tasks of a drag. */
 export function sessionComposer({ getMeta, dragging }) {
   const dock = $("sesscompose"), area = $("sesstext"), list = $("sessfiles"), error = $("sesserror"), start = $("sessstart"), discard = $("sessdiscard");
-  let agent = null, key = null, files = [], uploading = 0, busy = false;
+  let agent = null, files = [], uploading = 0, busy = false;
   let missed = null;                               // the text of a prompt whose session started without it: Start again would open another
   area.value = read(DRAFT)?.text ?? "";
 
   const say = (text) => showError(error, text);
   const keep = () => write(DRAFT, area.value.trim() ? { text: area.value } : null);
   /** Start waits for files on their way and for its own answer; Discard shows while there is something to clear. */
+  const gone = () => !getMeta().agents.some((a) => a.id === agent?.id);
   function state() {
-    start.disabled = busy || uploading > 0 || !agent || area.value === missed;
+    start.disabled = busy || uploading > 0 || gone() || area.value === missed;
     dock.setAttribute("aria-busy", String(busy || uploading > 0));
     discard.hidden = !area.value.trim() && !files.length;
   }
   function showFiles() {
-    list.replaceChildren(...files.map((f) => {
-      const li = el("li", null, f.name);
-      li.append(iconButton("icon", "x", `Remove ${f.name}`, "Remove this file", () => { files = files.filter((o) => o !== f); showFiles(); }));
-      return li;
-    }));
+    fileChips(list, files, (f) => { files = files.filter((o) => o !== f); showFiles(); });
     state();
   }
+  /** The agents' keys say which one it is open for (the pool draws them by `shownFor`). */
+  const keys = () => document.querySelectorAll("#agentbar .agsess");
+  const lit = () => { for (const k of keys()) k.setAttribute("aria-expanded", String(!dock.hidden && k.dataset.agent === agent?.id)); };
 
   async function add(chosen) {
     const p = getMeta().projects.find((x) => x.id === agent?.project);
@@ -57,27 +57,24 @@ export function sessionComposer({ getMeta, dragging }) {
     state();
   }
 
-  function open(a, from) {
-    if (key && key !== from) key.setAttribute("aria-expanded", "false");
+  function open(a) {
     agent = a;
-    key = from;
-    key?.setAttribute("aria-expanded", "true");
     $("sessagent").replaceChildren(el("span", "sessdot"), el("span", null, a.name));
     dock.style.setProperty("--ag", agentColor(a));
     dock.hidden = false;
+    lit();
     say("");
     state();
     area.focus();
   }
   function close() {
     dock.hidden = true;
-    key?.setAttribute("aria-expanded", "false");
-    key?.focus({ preventScroll: true });
-    key = null;
+    lit();
+    [...keys()].find((k) => k.dataset.agent === agent?.id)?.focus({ preventScroll: true });
   }
 
   async function go() {
-    if (start.disabled) return;
+    if (start.disabled) return gone() && say("Its agent is gone: choose another's + Session.");
     busy = true;
     state();
     say("");
@@ -128,12 +125,7 @@ export function sessionComposer({ getMeta, dragging }) {
 
   return {
     open,
-    /** The pool drew anew: the key of the agent it is open for is lit again, an agent gone says so. */
-    drawn(keys) {
-      if (dock.hidden || !agent) return;
-      key = keys.get(agent.id) ?? null;
-      key?.setAttribute("aria-expanded", "true");
-      if (!getMeta().agents.some((a) => a.id === agent.id)) { agent = null; say("Its agent is gone: choose another's + Session."); state(); }
-    },
+    /** The agent it is open for, if open: its key is drawn expanded. */
+    shownFor: () => (dock.hidden ? null : agent?.id),
   };
 }

@@ -259,10 +259,15 @@ function membership(groups, projects) {
 }
 
 /** The project that holds session `id` as the list places it (a window's other panes and quick shells go with their
- *  session), or null (terminum.md AC-39). */
+ *  session), or null (terminum.md AC-39): one map a layout and projects, however many ask. */
+let placed = { groups: null, projects: null, of: new Map() };
 export function projectOfSession(groups, projects, id) {
-  const { kids, topsOf } = membership(groups, projects);
-  return projects.find((p) => topsOf(p).some((t) => t.id === id || kids(t).some((k) => k.id === id))) ?? null;
+  if (placed.groups !== groups || placed.projects !== projects) {
+    const { kids, topsOf } = membership(groups, projects), of = new Map();
+    for (const p of projects) for (const t of topsOf(p)) for (const it of [t, ...kids(t)]) of.set(it.id, p);
+    placed = { groups, projects, of };
+  }
+  return placed.of.get(id) ?? null;
 }
 
 const projectKey = (p) => `project\n${p.id}`;

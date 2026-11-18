@@ -84,7 +84,6 @@ body.board-page { margin: 0; overflow: hidden; background: var(--surface-0); col
 /* the Routines section, between the pool and the columns: folded by its rail (boardrail.css), its cards on the same tracks (terminum-schedules.md AC-163) */
 #schedbar { flex: none; padding: var(--sp-2) var(--gutter) 0; min-width: 0; }
 #poolline::after { content: ""; width: 6px; height: 6px; margin-left: var(--sp-1); border: solid currentColor; border-width: 0 1.5px 1.5px 0; transform: rotate(-45deg); }
-.schedtracks[hidden] { display: none; }
 .schedcard { display: flex; flex-direction: column; align-items: stretch; gap: var(--sp-1); padding: var(--sp-2); cursor: pointer; }   /* stretch: .item (style.css) starts its rows */
 @media (hover: hover) { .schedcard:hover { background: var(--surface-2); } }
 .schedcard:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; }

@@ -9,7 +9,8 @@ import { pointerKey, read, write } from "./listparts.js";
 export function rail(section, body, { key, open, add }) {
   // a pointer's press leaves no focus ring, as the board's keys (docs/UI-GUIDELINES.md "Focus")
   const fold = pointerKey(section.querySelector(".railkey")), sum = section.querySelector(".railsum"), plus = pointerKey(section.querySelector(".railadd"));
-  let opened = (read(key) === true) !== open;
+  const flipped = read(key) === true;              // kept: it differs from the section's default
+  let opened = flipped ? !open : open;
   function draw() {
     section.classList.toggle("folded", !opened);
     fold.setAttribute("aria-expanded", String(opened));
@@ -18,7 +19,7 @@ export function rail(section, body, { key, open, add }) {
   }
   fold.addEventListener("click", () => {
     opened = !opened;
-    write(key, opened !== open || null);
+    write(key, opened !== open || null);           // the default is kept as nothing
     draw();
   });
   plus.addEventListener("click", add);

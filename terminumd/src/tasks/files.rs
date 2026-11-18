@@ -140,6 +140,13 @@ pub fn attach(tx: &Transaction, ids: &[String], task: &str, event: Option<&str>)
     Ok(())
 }
 
+/// A file kept for no task yet (a window's or + Session's upload): its row and where its bytes are.
+pub fn unattached(tx: &Transaction, dir: &Path, id: &str) -> Result<(File, PathBuf), String> {
+    let path = path_of(dir, id)?;
+    let file = tx.query_row("SELECT id, name, bytes, mime FROM files WHERE id = ?1 AND task IS NULL", [id], |r| File::of_row(r, 0)).optional().map_err(sql)?;
+    file.map(|f| (f, path)).ok_or_else(|| "No such file".into())
+}
+
 pub fn of_task(tx: &Transaction, task: &str) -> Result<Vec<File>, String> {
     let key = ops::key_of(tx, task)?;
     rows(tx, "SELECT id, name, bytes, mime FROM files WHERE task = ?1 ORDER BY at, rowid", [&key], |r| File::of_row(r, 0))

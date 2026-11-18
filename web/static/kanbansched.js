@@ -69,7 +69,7 @@ export function scheduledSection({ getMeta, chosen, openTask }) {
   /** The folded strip's line: how many, and the next run of them ("3 · next SCH-2 today 03:00"), or none. */
   function summary(mine) {
     if (!mine.length) return "none";
-    const soonest = mine.filter((s) => !s.paused && s.next.length).sort((a, b) => a.next[0] - b.next[0])[0];
+    const soonest = mine.filter((s) => !s.paused && s.next.length).reduce((a, s) => (!a || s.next[0] < a.next[0] ? s : a), null);
     return soonest ? `${mine.length} · next ${soonest.key} ${soonest.next_words[0]}` : String(mine.length);
   }
 

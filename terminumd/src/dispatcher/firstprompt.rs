@@ -11,7 +11,6 @@ use super::screen::Screen;
 use super::{api::has_stray, gate, start, store};
 use crate::app::Shared;
 use crate::tasks::files;
-use crate::tasks::ops::rows;
 
 /// The files one prompt names, at most.
 const MOST_FILES: usize = 20;
@@ -37,16 +36,8 @@ pub(super) async fn asked(app: &Shared, words: Option<&str>, ids: &[String], rem
     }
     let (wanted, dir) = (ids.to_vec(), app.cfg.dir.clone());
     // a file not yet any task's (the composer's own upload): its name, its kind, where it is kept
-    let found: Vec<(String, String, String)> = store(app, move |tx| {
-        let mut out = Vec::new();
-        for id in &wanted {
-            let got = rows(tx, "SELECT name, mime FROM files WHERE id = ?1 AND task IS NULL", [id], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?;
-            let (name, mime) = got.into_iter().next().ok_or("A file to send is gone: add it again.")?;
-            out.push((name, mime, files::folder(&dir).join(id).display().to_string()));
-        }
-        Ok(out)
-    }).await?;
-    let lines: Vec<String> = found.iter().map(|(name, mime, path)| format!("- {} ({mime}): {path}", crate::termtext::clean(name, false))).collect();
+    let found = store(app, move |tx| wanted.iter().map(|id| files::unattached(tx, &dir, id).map_err(|_| "A file to send is gone: add it again.".to_string())).collect::<Result<Vec<_>, _>>()).await?;
+    let lines: Vec<String> = found.iter().map(|(f, path)| format!("- {} ({}): {}", crate::termtext::clean(&f.name, false), f.mime, path.display())).collect();
     let files = format!("Files the human added, kept with no extension; read each at its path:\n{}", lines.join("\n"));
     Ok(Some(match words { Some(w) => format!("{w}\n\n{files}"), None => files }))
 }

@@ -5,7 +5,7 @@
 import { icon } from "./icons.js";
 import { el, iconButton, plural, tagProject } from "./listparts.js";
 import { kanbanLinks } from "./sections.js";
-import { api, DEFAULT } from "./kanbanutil.js";
+import { api } from "./kanbanutil.js";
 
 /** Lines in `box`; `open(id)` shows a task (its window then says it was seen); `say(text)` tells a refused close;
  *  `project(id)`: the project of that id the page knows, which names a line (terminumd says a task's: AC-117). */
@@ -22,7 +22,7 @@ export function taskLines(box, open, say, project = () => null) {
     go.append(mark, el("span", "what", l.words));
     go.addEventListener("click", () => open(l.id));
     c.append(go, iconButton("x", "x", "Close this line", "Close this line", () => shut(l.id, l.key)));
-    const full = tagProject(c, l.project && l.project !== DEFAULT ? project(l.project) : null);
+    const full = tagProject(c, l.project ? project(l.project) : null);   // Default is no project the page knows
     go.title = full ? `Open ${l.id} (${full})` : `Open ${l.id}`;
     return c;
   }

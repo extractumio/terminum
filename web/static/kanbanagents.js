@@ -86,16 +86,15 @@ export function agentsSection({ getMeta, chosen, reload, refreshQueue, slots: co
   }
 
   /** Over the columns it takes tasks: dropped or pressed, terminumd says if it cannot; a dot opens its session, else a press opens its window. */
-  const sessKeys = new Map();                       // agent id -> its + Session key, as last drawn
   function target(a) {
     const b = row(a);
     b.append(iconButton("agedit", "pencil", `Edit ${a.name}`, `Edit ${a.name}`, () => open(a)));
     // + Session with a prompt (AC-204): its own key, never a run of the chosen tasks
-    const sess = button("agsess", "+ Session", (e) => { e.stopPropagation(); composer.open(a, sess); });
-    Object.assign(sess, { title: `Start a session on ${a.name} with a prompt` });
+    const sess = button("agsess", "+ Session", (e) => { e.stopPropagation(); composer.open(a); });
+    sess.title = `Start a session on ${a.name} with a prompt`;
+    sess.dataset.agent = a.id;
     sess.setAttribute("aria-controls", "sesscompose");
-    sess.setAttribute("aria-expanded", "false");
-    sessKeys.set(a.id, sess);
+    sess.setAttribute("aria-expanded", String(composer.shownFor() === a.id));
     b.querySelector(".agdots").append(sess);      // the card's last row, at its right
     b.addEventListener("click", (e) => {
       const tasks = given(), key = e.target.closest?.(".agdot")?.dataset.key;
@@ -134,9 +133,7 @@ export function agentsSection({ getMeta, chosen, reload, refreshQueue, slots: co
     drawn = now;
     box.dataset.n = agents.length;                 // a phone's line says it (kanbanphone.js)
     railed.summary(poolSummary(agents));
-    sessKeys.clear();
     list.replaceChildren(...agents.map(target), addKey);
-    composer.drawn(sessKeys);
     if (!agents.length) list.append(el("p", "colempty", chosen().length === 1 ? `${projectName(chosen()[0]) ?? "This project"} has no agents yet: add one to run its tasks.` : "No agents yet: add one to run tasks."));
     hint.hidden = !tasks;
     if (tasks) hint.textContent = `${tasks.length} chosen: press an agent or drop them on it. Esc lets them go.`;

@@ -65,11 +65,11 @@ export function shortName(name, most = 32) {
 export function tagProject(line, p) {
   let tag = line.querySelector(".proj");
   if (!p) { line.style.removeProperty("--proj"); tag?.remove(); return ""; }
-  const ink = projectInk(p), words = textForm(`${shortName(p.name)}:`);
+  const cut = shortName(p.name), ink = projectInk(p), words = textForm(`${cut}:`);
   if (line.style.getPropertyValue("--proj") !== ink) line.style.setProperty("--proj", ink);
   if (!tag) { tag = el("span", "proj"); line.querySelector(".what").before(tag); }
   if (tag.textContent !== words) tag.textContent = words;
-  return shortName(p.name) === p.name ? "" : p.name;
+  return cut === p.name ? "" : p.name;
 }
 
 /** A reminder not resolved (AC-91). */
