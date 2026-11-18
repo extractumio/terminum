@@ -51,16 +51,10 @@ def main():
         ws.send({"t": "sub", "id": here})                  # the user moves on meanwhile
         ws.until(lambda m: m["t"] == "screen", 5)
         os.kill(pid, signal.SIGKILL)                       # and it goes
-        said = ["screen"]
-        def watch(m):
-            if m["t"] == "sized" and (m.get("error") or m.get("sid") == here):
-                said.append(m)                             # `here` sized instead: the resize went too late
-            elif m["t"] == "screen":
-                said.append("screen")
-            return said.count("screen") and any(x != "screen" for x in said)
-        ws.until(watch, 20)
-        refused = next((x for x in said if x != "screen"), None)
-        check("the refusal came", bool(refused and refused.get("error")), refused)
+        # `here` opening at the page's grid is sized too (AC-04), before or after the refusal: only an
+        # error tells; a resize gone too late sizes `here` without one, and no refusal comes
+        refused = ws.until(lambda m: m["t"] == "sized" and m.get("error"), 10)
+        check("the refusal came", bool(refused), refused)
         check("AC-13 a failed resize names the pane it was for, not the one shown now",
               bool(refused) and refused.get("sid") == there, (refused, here, there))
     finally:
