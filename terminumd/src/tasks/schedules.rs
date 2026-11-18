@@ -37,19 +37,23 @@ pub struct Schedule {
     /// the due time of its last firing, or its last save (§9)
     pub last_due: i64,
     pub author_name: String,
+    /// its author is an agent: the project's manager, by its tools (terminum-agents.md AC-180); a worker has none.
+    /// Its prompt's own fact, the card says the author by name
+    #[serde(skip)]
+    pub by_manager: bool,
     pub created_at: i64,
     pub updated_at: i64,
     pub deleted_at: Option<i64>,
 }
 
 const SELECT: &str = "SELECT s.id, s.number, s.project, s.title, s.body, s.severity, s.agent_id, s.cron, s.once_at, s.budget_seconds, s.paused, s.paused_why,
-    s.last_due, u.name, s.created_at, s.updated_at, s.deleted_at FROM schedules s JOIN users u ON u.id = s.author";
+    s.last_due, u.name, s.created_at, s.updated_at, s.deleted_at, u.kind = 'agent' FROM schedules s JOIN users u ON u.id = s.author";
 
 fn of_row(r: &Row) -> rusqlite::Result<Schedule> {
     Ok(Schedule {
         id: r.get(0)?, key: format!("SCH-{}", r.get::<_, i64>(1)?), project: r.get(2)?, title: r.get(3)?, body: r.get(4)?, severity: r.get(5)?,
         agent: r.get(6)?, cron: r.get(7)?, once_at: r.get(8)?, budget_seconds: r.get(9)?, paused: r.get::<_, i64>(10)? != 0, paused_why: r.get(11)?,
-        last_due: r.get(12)?, author_name: r.get(13)?, created_at: r.get(14)?, updated_at: r.get(15)?, deleted_at: r.get(16)?,
+        last_due: r.get(12)?, author_name: r.get(13)?, created_at: r.get(14)?, updated_at: r.get(15)?, deleted_at: r.get(16)?, by_manager: r.get(17)?,
     })
 }
 
@@ -161,7 +165,7 @@ impl Given {
         Schedule {
             id: String::new(), key: "SCH-?".into(), project: self.project.clone(), title: self.title.clone(), body: self.body.clone(), severity: self.severity.clone(),
             agent: self.agent.clone(), cron: self.cron.clone(), once_at: self.once_at, budget_seconds: self.budget_seconds, paused: self.paused, paused_why: None,
-            last_due: 0, author_name: String::new(), created_at: 0, updated_at: 0, deleted_at: None,
+            last_due: 0, author_name: String::new(), by_manager: false, created_at: 0, updated_at: 0, deleted_at: None,
         }
     }
 }

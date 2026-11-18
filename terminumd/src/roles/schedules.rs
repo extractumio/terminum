@@ -89,7 +89,7 @@ pub async fn delete(app: &Shared, boss: &Boss, args: &Value) -> Result<String, S
 pub async fn run_now(app: &Shared, boss: &Boss, args: &Value) -> Result<String, String> {
     let (b, args) = (boss.clone(), args.clone());
     let s = store(app, move |tx| of_project(tx, &b, &args)).await?;
-    let task = crate::dispatcher::fire::now(app, &s.id, &boss.name).await?;
+    let task = crate::dispatcher::fire::now(app, &s.id, &boss.name, Some(&boss.user)).await?;
     let wanted = task.clone();
     let status = store(app, move |tx| Ok(ops::get(tx, &wanted)?.status)).await?;
     Ok(format!("{} ran now: its task {task} is {status}. list_runs shows its run; get_task its result.", s.key))
