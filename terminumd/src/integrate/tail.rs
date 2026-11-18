@@ -44,10 +44,13 @@ pub fn step(store: &Store, runner: &dyn Runner, home: &Path, now: i64) -> Result
     if running {
         return engine::follow(store, runner, &p, b, now);
     }
-    // its folder moved at its first try: a try again moves nothing under what made it wait
-    let moved = if b.state == bs::AFTER_WAITS { Ok(()) } else { folder_follows(&p) };
+    // its folder moved at its first try: a try again moves nothing under what made it wait; a folder that made it
+    // wait, not on the batch's commit yet, is tried again; clean is the move's rule, not After's (AC-191)
+    let moved = if b.state == bs::AFTER_WAITS && folder_holds(&p, &b) { Ok(()) } else { folder_follows(&p) };
+    let stays = |w: String| format!("{}'s folder stays where it is: {w}", p.name);
     match moved {
-        Err(w) => not_run(store, &b, &format!("{}'s folder stays where it is: {w}", p.name), after_after(&p.s), now),
+        Err(Stays::Dirty(w)) => waits(store, &p, &b, &stays(w), None, now),
+        Err(Stays::Off(w)) => not_run(store, &b, &stays(w), after_after(&p.s), now),
         Ok(()) => store.with(|tx| bs::set_state(tx, b.id, if p.s.after.is_empty() { after_after(&p.s) } else { "after" }, None, now)),
     }
 }
@@ -102,37 +105,45 @@ pub(super) fn ended(store: &Store, p: &Place, b: &bs::Batch, code: i32, log: &Pa
             bs::set_state(tx, b.id, after_after(&p.s), None, now)?;
             bs::after_passed(tx, b, now)
         }),
-        LATER if b.waits_since.is_some_and(|since| now - since >= WAIT_MOST_S) => failed(store, p, b, None, log, now),
         LATER => {
             let rows = last_rows(log);
-            let why = if rows.is_empty() { format!("status {LATER}") } else { rows };
-            store.with(|tx| {
-                if b.waits_since.is_none() {
-                    bs::tell_task(tx, b, &format!("After waits for batch {}: {why}. It runs again by itself; nothing waits for you.", b.number), now)?;
-                }
-                bs::after_waits(tx, b, &why, now)
-            })
+            waits(store, p, b, &if rows.is_empty() { format!("status {LATER}") } else { rows }, Some(log), now)
         }
-        engine::OVER => failed(store, p, b, Some(&format!("it ran over {} minutes", p.s.check_minutes)), log, now),
-        code => failed(store, p, b, Some(&format!("status {code}")), log, now),
+        engine::OVER => failed(store, p, b, Some(&format!("it ran over {} minutes", p.s.check_minutes)), &last_rows(log), Some(log), now),
+        code => failed(store, p, b, Some(&format!("status {code}")), &last_rows(log), Some(log), now),
     }
 }
 
-/// After failed `how`, or (None) waited past its cap: the batch stands "after failed" with its cause and last rows,
-/// its integration task waits for a human told what is held and what Close does (AC-191, AC-194).
-fn failed(store: &Store, p: &Place, b: &bs::Batch, how: Option<&str>, log: &Path, now: i64) -> Result<(), String> {
+/// After cannot run now, `why`: it waits without a human and runs again after its pause; waited past its cap, it
+/// failed (AC-191).
+fn waits(store: &Store, p: &Place, b: &bs::Batch, why: &str, log: Option<&Path>, now: i64) -> Result<(), String> {
+    if b.waits_since.is_some_and(|since| now - since >= WAIT_MOST_S) {
+        return failed(store, p, b, None, why, log, now);
+    }
+    store.with(|tx| {
+        if b.waits_since.is_none() {
+            bs::tell_task(tx, b, &format!("After waits for batch {}: {why}. It runs again by itself; nothing waits for you.", b.number), now)?;
+        }
+        bs::after_waits(tx, b, why, now)
+    })
+}
+
+/// After failed `how`, or (None) waited past its cap: the batch stands "after failed" with its cause and `rows`, its
+/// log's last or what it waited for, its integration task waits for a human told what is held and what Close does
+/// (AC-191, AC-194).
+fn failed(store: &Store, p: &Place, b: &bs::Batch, how: Option<&str>, rows: &str, log: Option<&Path>, now: i64) -> Result<(), String> {
     let waited = format!("waited {} hours", WAIT_MOST_S / 3600);
     let head = match how {
         Some(how) => format!("After failed for batch {} with {how}", b.number),
         None => format!("After {waited} for batch {}", b.number),
     };
-    let rows = last_rows(log);
     let said = if rows.is_empty() { String::new() } else { format!(": {rows}") };
     let why = format!("{}{said}", how.unwrap_or(&waited));
     let name = &p.name;
     let words = format!("{head}{said}. The batch stays published and its tasks DONE. Held until this task ends: {name}'s next batches are not built, \
                          and the After of every batch published after it waits. Mend the cause, then press After again to run After once more, or do \
-                         its work by hand and press Close…: {name}'s batches and later Afters go on. Its log: {}", log.display());
+                         its work by hand and press Close…: {name}'s batches and later Afters go on.{}",
+                         log.map(|l| format!(" Its log: {}", l.display())).unwrap_or_default());
     store.with(|tx| {
         bs::set_pane(tx, b.id, None, now)?;
         bs::set_state(tx, b.id, bs::AFTER_FAILED, Some(&why), now)?;
@@ -140,14 +151,31 @@ fn failed(store: &Store, p: &Place, b: &bs::Batch, how: Option<&str>, log: &Path
     })
 }
 
-/// The project's folder fast-forwarded to the target when it stands clean on its branch (AC-191).
-fn folder_follows(p: &Place) -> Result<(), String> {
-    let (remote, branch) = integration::target_of(&p.s.target)?;
-    let on = git::run(&p.repo, &["branch", "--show-current"])?;
+/// Why the project's folder stays where it is: an uncommitted change, which its batch waits out; or another cause
+/// (off its branch, commits of its own, git's refusal), for which After does not run (AC-191).
+enum Stays {
+    Dirty(String),
+    Off(String),
+}
+
+/// The project's folder fast-forwarded to the target when it stands clean on its branch (AC-191): any uncommitted
+/// change keeps it where it is, untracked files and changes the move would not touch included (CLAUDE.md §9).
+fn folder_follows(p: &Place) -> Result<(), Stays> {
+    let (remote, branch) = integration::target_of(&p.s.target).map_err(Stays::Off)?;
+    let on = git::run(&p.repo, &["branch", "--show-current"]).map_err(Stays::Off)?;
     if on != branch {
-        return Err(format!("it is on {}, not {branch}", if on.is_empty() { "no branch" } else { &on }));
+        return Err(Stays::Off(format!("it is on {}, not {branch}", if on.is_empty() { "no branch" } else { &on })));
     }
-    git::run(&p.repo, &["merge", "--ff-only", "--quiet", &format!("{remote}/{branch}")]).map(drop)
+    let dirty = git::uncommitted(&p.repo).map_err(Stays::Off)?;
+    if dirty > 0 {
+        return Err(Stays::Dirty(format!("{dirty} uncommitted files in it; it moves only when git status --porcelain is empty")));
+    }
+    git::run(&p.repo, &["merge", "--ff-only", "--quiet", &format!("{remote}/{branch}")]).map(drop).map_err(Stays::Off)
+}
+
+/// Whether the project's folder holds the batch's published commit: moved by its first try, or by a later one.
+fn folder_holds(p: &Place, b: &bs::Batch) -> bool {
+    b.candidate.as_deref().is_some_and(|c| git::ok(&p.repo, &["merge-base", "--is-ancestor", c, "HEAD"]).unwrap_or(false))
 }
 
 #[cfg(test)]

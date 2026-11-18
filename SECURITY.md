@@ -146,7 +146,8 @@ Verify, Check, Publish, After, Cleanup) are then **a standing permission to run 
 push as you** (`terminum-integration.md` AC-186, AC-191, AC-198 and §9 Security). Only a signed-in
 page writes them; an agent chooses only which commit is queued, and no task's text reaches a
 commit, a command or a shell. terminumd's own push is one commit whose check was green, never
-forced, never a tag. **Left**: a check runs the queued code as you, and the check is the
+forced, never a tag. It moves your project's folder only by a fast-forward, and only while `git status --porcelain`
+is empty there. **Left**: a check runs the queued code as you, and the check is the
 candidate's own, so a task can change what checks it: **read the batches and the published
 history.**
 

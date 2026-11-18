@@ -187,6 +187,62 @@ fn ac191_a_folder_off_its_branch_stays_and_the_batch_s_row_says_after_did_not_ru
     assert!(r.lines.lock().unwrap().iter().any(|l| l.ends_with(".cleanup: true")));
 }
 
+const DIRTY: &str = "api's folder stays where it is: 2 uncommitted files in it; it moves only when git status --porcelain is empty";
+
+/// Batch 1 published, its folder holding the maintainer's work: a change beside the move, which git alone would let
+/// through, and a new file; an ignored file, which does not count.
+fn dirty(name: &str, r: &Sh) -> (World, Batch) {
+    let w = world(name, settings());
+    queued(&w, 1, "b.txt", "b\n");
+    std::fs::write(w.api.join("a.txt"), "the maintainer's work\n").unwrap();
+    std::fs::write(w.api.join("notes.txt"), "mine\n").unwrap();
+    std::fs::write(w.api.join(".git/info/exclude"), "build/\n").unwrap();
+    std::fs::create_dir(w.api.join("build")).unwrap();
+    std::fs::write(w.api.join("build/out"), "x\n").unwrap();
+    let first = until(&w, r, 1, bs::AFTER_WAITS, false);
+    (w, first)
+}
+
+#[test]
+fn ac191_a_folder_with_any_uncommitted_change_waits_until_it_is_clean() {
+    let r = Sh::default();
+    let (w, first) = dirty("it-dirty", &r);
+    assert_eq!(first.why.as_deref(), Some(DIRTY));
+    assert!(said(&w, &first).contains(&format!("After waits for batch 1: {DIRTY}. It runs again by itself; nothing waits for you.")), "{}", said(&w, &first));
+    assert_eq!(status(&w, &i_of(&w, &first)), "DONE", "nothing waits for a human");
+    let since = first.waits_since.unwrap();
+    at(&w, &r, since + 300);
+    assert_eq!((nth(&w, 1).state.as_str(), nth(&w, 1).waits_since), (bs::AFTER_WAITS, Some(since)), "still dirty: it waits on");
+    assert_eq!((files(&w).as_str(), std::fs::read_to_string(w.api.join("a.txt")).unwrap().as_str()), ("a.txt", "the maintainer's work\n"));
+    assert!(afters(&r).is_empty(), "After does not run on a folder that did not move");
+    sh(&w.api, &["checkout", "-q", "--", "a.txt"]);
+    std::fs::remove_file(w.api.join("notes.txt")).unwrap();
+    at(&w, &r, since + 600);
+    assert_eq!(files(&w), "a.txt\nb.txt", "clean, its ignored file kept: it follows on its next try");
+    assert_eq!((nth(&w, 1).state.as_str(), afters(&r)), ("ended", vec!["batch-1.1.after".to_string()]));
+}
+
+#[test]
+fn ac191_a_folder_still_dirty_after_6_hours_fails_for_a_human() {
+    let r = Sh::default();
+    let (w, first) = dirty("it-dirty-cap", &r);
+    at(&w, &r, first.waits_since.unwrap() + 21_900);
+    let failed = nth(&w, 1);
+    assert_eq!((failed.state.as_str(), failed.why.as_deref()), ("after failed", Some(format!("waited 6 hours: {DIRTY}").as_str())));
+    let words = said(&w, &failed);
+    assert!(words.contains(&format!("After waited 6 hours for batch 1: {DIRTY}. The batch stays published")) && !words.contains("Its log"), "{words}");
+    assert!(afters(&r).is_empty());
+    // After again, still dirty: it waits again, from that try; clean: the folder moves and After runs
+    let pressed = first.waits_since.unwrap() + 22_000;
+    again(&w, &failed).unwrap();
+    at(&w, &r, pressed);
+    assert_eq!((nth(&w, 1).state.as_str(), nth(&w, 1).waits_since), (bs::AFTER_WAITS, Some(pressed)));
+    sh(&w.api, &["checkout", "-q", "--", "a.txt"]);
+    std::fs::remove_file(w.api.join("notes.txt")).unwrap();
+    at(&w, &r, pressed + 300);
+    assert_eq!((files(&w).as_str(), nth(&w, 1).state.as_str(), afters(&r).len()), ("a.txt\nb.txt", "ended", 1));
+}
+
 #[test]
 fn ac191_both_windows_lost_the_check_runs_again_and_after_does_not() {
     let r = Sh { hang_on: vec![".after", ".check"], ..Default::default() };

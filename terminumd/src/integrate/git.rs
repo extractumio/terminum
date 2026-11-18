@@ -37,6 +37,12 @@ pub fn ok(dir: &Path, args: &[&str]) -> Result<bool, String> {
     Ok(output(dir, args)?.status.success())
 }
 
+/// How many files `git status --porcelain` lists: changed, staged or untracked, ignored ones not; whatever the
+/// user's config hides (untracked files, submodules) counted too.
+pub fn uncommitted(dir: &Path) -> Result<usize, String> {
+    Ok(run(dir, &["status", "--porcelain", "--untracked-files=normal", "--ignore-submodules=none"])?.lines().count())
+}
+
 /// The files `head` changed since it left `base`, as git lists them.
 pub fn changed(repo: &Path, base: &str, head: &str) -> Result<Vec<String>, String> {
     // quoted as git quotes by default, whatever the user set: no control or invisible character reaches a prompt
