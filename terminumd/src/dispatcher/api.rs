@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 use super::gate::{self, Miss};
+use super::linked::Linked;
 use super::runs::{self, How, Phase, Run, Started};
 use super::press::{again_words, also_of, answers_of, bring_back, facts, way, ways, with_open, Asked, Facts, Way};
 use super::pool;
@@ -38,8 +39,9 @@ pub fn routes() -> Router<Shared> {
 /// What RUN's dialog shows (AC-121, AC-138): the tasks' project's pool, each saying what keeps it busy; an agent named that cannot
 /// take them is refused here, so the window never offers another under its name. `no_folder`: nothing can start (AC-140).
 async fn offer(State(app): State<Shared>, Path(id): Path<String>, axum::extract::Query(asked): axum::extract::Query<Asked>) -> Response {
+    let linked = Linked::read(&app);
     answer(store(&app, move |tx| {
-        let (tasks, w, moved_from) = ways(tx, &id, &also_of(&asked.also), asked.agent.as_deref(), false)?;
+        let (tasks, w, moved_from) = ways(tx, &id, &also_of(&asked.also), asked.agent.as_deref(), false, &linked)?;
         let w = w?;
         let t = &tasks[0];
         let (name, host, dir) = ops::project_place(tx, &t.project)?;
@@ -253,9 +255,9 @@ async fn pressed(app: &Shared, id: &str, body: Press) -> Result<Value, String> {
         return Err("The message has control or invisible characters.".to_string());
     }
     let (wanted, said, attached, fresh, also, agent) = (id.to_string(), comment.clone(), body.files.clone(), body.fresh, body.also.clone(), body.agent.clone());
-    let (kept, by) = (body.clone(), body.clone());
+    let (kept, by, linked) = (body.clone(), body.clone(), Linked::read(app));
     let (tasks, w, again) = store(app, move |tx| {
-        let (tasks, w, _) = ways(tx, &wanted, &also, agent.as_deref(), fresh)?;
+        let (tasks, w, _) = ways(tx, &wanted, &also, agent.as_deref(), fresh, &linked)?;
         // a run that starts keeps its comment with it, in the transaction that adds it; going on, or refused, it stays, once
         if !matches!(w, Ok(Way::First)) && let Some(c) = &said {
             by.keep_on(tx, &tasks, c, &attached)?;
@@ -356,11 +358,11 @@ async fn first_run(app: &Shared, tasks: &[Task], body: Press, kept: Press, comme
     if let Some(holder) = &body.close {
         close_idle(app, holder, &tasks.iter().map(|t| t.id.as_str()).collect::<Vec<_>>().join(", ")).await?;
     }
-    let (ag, f, project) = (a.clone(), dir.clone(), t.project.clone());
+    let (ag, f, project, linked) = (a.clone(), dir.clone(), t.project.clone(), Linked::read(app));
     let next = store(app, move |tx| {
         let now: Vec<Task> = all.iter().map(|t| ops::get(tx, &t.id)).collect::<Result<_, _>>()?;
         for t in &now {
-            way(t, runs::last_of(tx, &t.key)?, true)?;
+            way(t, runs::last_of(tx, &t.key)?, true, &linked)?;
         }
         let goes = kept.first_words(tx, &now)?;
         // the one check that counts: in the transaction that takes the slots; a press that closed a holder

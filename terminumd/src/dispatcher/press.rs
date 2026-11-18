@@ -4,6 +4,7 @@
 
 use serde::Deserialize;
 
+use super::linked::Linked;
 use super::runs::{self, Phase, Run};
 use crate::tasks::{closeout, files};
 use crate::tasks::ops::{self, Task};
@@ -269,7 +270,8 @@ impl Way {
     }
 }
 
-pub(super) fn way(t: &Task, last: Option<Run>, fresh: bool) -> Result<Way, String> {
+/// `linked`: whether a task's linked session is open; a closed one holds nothing (AC-113), one not read now is said.
+pub(super) fn way(t: &Task, last: Option<Run>, fresh: bool, linked: &Linked) -> Result<Way, String> {
     if let Some(r) = &last {
         if t.status == "IN PROGRESS" && r.holds_slot() {
             return Err(format!("{} is in progress by Dispatcher.", t.id));
@@ -283,7 +285,7 @@ pub(super) fn way(t: &Task, last: Option<Run>, fresh: bool) -> Result<Way, Strin
             return Err(format!("{} shares its session with {}: it can run again when they end.", t.id, others.join(", ")));
         }
     }
-    if t.session.is_some() && last.as_ref().is_none_or(|r| r.pane_key != t.session) {
+    if let Some(s) = &t.session && last.as_ref().is_none_or(|r| r.pane_key.as_ref() != Some(s)) && linked.open(s)? {
         return Err("Unlink the session to run it".to_string());
     }
     Ok(match last {
@@ -376,7 +378,7 @@ pub(super) type Ways = (Vec<Task>, Result<Way, String>, Option<String>);
 
 /// How a press on `id` and `also` goes on: each task as it stands now may go, the first says how; the agent its
 /// conversation moves from, when it moves (AC-138).
-pub(super) fn ways(tx: &rusqlite::Transaction, id: &str, also: &[String], agent: Option<&str>, fresh: bool) -> Result<Ways, String> {
+pub(super) fn ways(tx: &rusqlite::Transaction, id: &str, also: &[String], agent: Option<&str>, fresh: bool, linked: &Linked) -> Result<Ways, String> {
     let tasks = members(tx, id, also)?;
     let mut lasts = tasks.iter().map(|t| runs::last_of(tx, &t.key)).collect::<Result<Vec<_>, _>>()?;
     let last = lasts[0].clone();
@@ -388,11 +390,11 @@ pub(super) fn ways(tx: &rusqlite::Transaction, id: &str, also: &[String], agent:
         m @ Some(_) => m,
         None => last.map(|r| as_pool_has(tx, r)).transpose()?,
     };
-    let lead = way(&tasks[0], last, anew);
+    let lead = way(&tasks[0], last, anew, linked);
     for (other, its) in tasks[1..].iter().zip(lasts.drain(1..)) {
         // a subtask that cannot go holds its main task's press, said as its own; one of the run going on, still
         // open in its live session, goes on with it (AC-185)
-        way(other, its, anew).map_err(|why| match other.parent.as_deref().filter(|p| tasks.iter().any(|t| t.id == *p)) {
+        way(other, its, anew, linked).map_err(|why| match other.parent.as_deref().filter(|p| tasks.iter().any(|t| t.id == *p)) {
             Some(main) => format!("{}, a subtask of {main}: {why}", other.id),
             None => why,
         })?;
