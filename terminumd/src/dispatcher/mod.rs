@@ -285,7 +285,7 @@ impl<const SECS: u64> Typed<SECS> {
 }
 
 /// Whether a hook's prompt `b` is the text `a` typed into its pane: their first 20,000 characters, blanks aside.
-fn same_prompt(a: &str, b: &str) -> bool {
+pub(crate) fn same_prompt(a: &str, b: &str) -> bool {
     a.chars().filter(|c| !c.is_whitespace()).take(20_000).eq(b.chars().filter(|c| !c.is_whitespace()).take(20_000))
 }
 

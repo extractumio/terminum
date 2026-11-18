@@ -60,8 +60,9 @@ pub(super) fn apply(tx: &rusqlite::Transaction, r: &mut Run, ev: &Value, typed: 
             r.agent_session = session.map(str::to_string).or(r.agent_session.take());
             active = false;
         }
-        // the agent's own turn (a background task's end, another session's message): it works, no one asked for new work
-        "UserPromptSubmit" if ev["prompt"].as_str().is_some_and(crate::messages::injected) => r.turn_starts(),
+        // the agent's own turn (a background task's end, another session's message, a wakeup it scheduled, as /hook
+        // decided): it works, no one asked for new work
+        "UserPromptSubmit" if ev["own"] == true => r.turn_starts(),
         "UserPromptSubmit" if r.is_starting() || r.prompt.as_deref().zip(ev["prompt"].as_str()).is_some_and(|(a, b)| super::same_prompt(a, b)) => {
             moved = accept(tx, r)?;
             r.prompt = None;
@@ -214,6 +215,10 @@ pub async fn hearing(app: Shared) {
 mod order_tests;
 
 #[cfg(test)]
+#[path = "hooks_own_tests.rs"]
+mod own_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::tasks::store::{Store, HUMAN};
@@ -268,7 +273,8 @@ mod tests {
                 ops::move_to(tx, HUMAN, &t.id, status, 2)?;
                 ops::archive(tx, HUMAN, &t.id, true, 3)?;
                 let mut r = Run { state: Phase::Working, ids: vec![t.id.clone()], status: status.into(), ..Default::default() };
-                let prompt = |text: &str| serde_json::json!({"event": "UserPromptSubmit", "prompt": text});
+                // "own" as /hook decides it (messages::own)
+                let prompt = |text: &str| serde_json::json!({"event": "UserPromptSubmit", "prompt": text, "own": crate::messages::injected(text)});
                 let history = ops::history(tx, &t.id)?;
                 for (text, typed) in [("Dispatcher's prompt", true), ("<task-notification>an agent's turn", false)] {
                     assert!(!apply(tx, &mut r, &prompt(text), typed)?.0);
@@ -323,7 +329,8 @@ mod tests {
         s.with(|tx| {
             let mut r = runs::Run { state: Phase::Working, turn_ended: true, nudged: 1, ..Default::default() };
             let prompt = |p: &str| serde_json::json!({"agent": "claude", "event": "UserPromptSubmit", "prompt": p});
-            let (moved, _) = apply(tx, &mut r, &prompt("<task-notification>\n<task-id>b1</task-id>"), false)?;
+            let own = serde_json::json!({"agent": "claude", "event": "UserPromptSubmit", "prompt": "<task-notification>\n<task-id>b1</task-id>", "own": true});
+            let (moved, _) = apply(tx, &mut r, &own, false)?;
             assert_eq!((moved, r.turn_ended, r.nudged), (false, false, 1), "its clocks go on");
             apply(tx, &mut r, &prompt("and now this"), false)?;
             assert_eq!(r.nudged, 0, "a human's prompt is new work: its requests count anew");

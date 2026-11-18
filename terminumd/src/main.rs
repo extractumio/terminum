@@ -125,7 +125,7 @@ fn build_app(cfg: Config, env: &Env, looks: looks::Looks, link: Link, socket: &s
         refreshing: tokio::sync::Mutex::new(()),
         inventory_at: Mutex::new(None),
         agent_states: Mutex::new(tmux::agentstate::States::new()),
-        hooks: Default::default(),
+        hooks: if cfg.agent { Default::default() } else { tmux::hookstate::Hooks::new(crate::messages::own::Scheduled::load(dir.join("scheduled-prompts.json"))) },
         sent: sent::Sent::new(cfg.home.join("sessions")),
         inputs: inputs::Inputs::new((!cfg.agent).then(|| tasks.clone())),
         sizes: Default::default(),
