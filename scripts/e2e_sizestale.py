@@ -51,10 +51,11 @@ def main():
         ws.send({"t": "sub", "id": here})                  # the user moves on meanwhile
         ws.until(lambda m: m["t"] == "screen", 5)
         os.kill(pid, signal.SIGKILL)                       # and it goes
-        # `here` opening at the page's grid is sized too (AC-04), before or after the refusal: only an
-        # error tells; a resize gone too late sizes `here` without one, and no refusal comes
+        # `here` also gets a `sized` on opening (AC-04), before or after the refusal; only the refusal
+        # carries `error`. A resize gone too late sizes `here` without one: no refusal comes, the checks fail.
+        # 10 s: a waiting command that is not failed on the server's exit is answered by its own timeout
         refused = ws.until(lambda m: m["t"] == "sized" and m.get("error"), 10)
-        check("the refusal came", bool(refused), refused)
+        check("the refusal came", refused, refused)
         check("AC-13 a failed resize names the pane it was for, not the one shown now",
               bool(refused) and refused.get("sid") == there, (refused, here, there))
     finally:
