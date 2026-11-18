@@ -1,9 +1,11 @@
 # SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 """check_signoff.py: an outside pull request's commits carry their authors' Signed-off-by (CONTRIBUTING.md)."""
 import importlib.util
+import os
 from pathlib import Path
 import subprocess
 import tempfile
+import time
 import unittest
 
 SPEC = importlib.util.spec_from_file_location("check_signoff", Path(__file__).resolve().parents[1] / "check_signoff.py")
@@ -50,13 +52,15 @@ class Range(unittest.TestCase):
         self.tmp.cleanup()
 
     def test_a_local_range_is_read_and_judged(self):
-        import os
+        commits = check_signoff.from_range("HEAD~2..HEAD", cwd=self.dir)
+        self.assertEqual(len(commits), 2)
+        self.assertEqual([c["message"].splitlines()[0] for c in check_signoff.unsigned(commits)], ["not signed"])
+        self.assertEqual(check_signoff.unsigned(check_signoff.from_range("HEAD~2..HEAD~1", cwd=self.dir)), [])
+
+    def test_main_exits_by_what_it_found(self):
         here = os.getcwd()
         os.chdir(self.dir)
         try:
-            commits = check_signoff.from_range("HEAD~2..HEAD")
-            self.assertEqual(len(commits), 2)
-            self.assertEqual([c["message"].splitlines()[0] for c in check_signoff.unsigned(commits)], ["not signed"])
             self.assertEqual(check_signoff.main(["--range", "HEAD~2..HEAD"]), 1)
             self.assertEqual(check_signoff.main(["--range", "HEAD~2..HEAD~1"]), 0)
             self.assertEqual(check_signoff.main(["--range", "HEAD..HEAD"]), 2, "nothing to check is not a pass")
@@ -64,6 +68,10 @@ class Range(unittest.TestCase):
         finally:
             os.chdir(here)
 
+    def test_a_long_trailer_line_is_judged_at_once(self):
+        start = time.monotonic()
+        self.assertFalse(check_signoff.signed_off("x\n\nSigned-off-by:" + " " * 50000 + "x", "alex@example.com"))
+        self.assertLess(time.monotonic() - start, 1.0, "a contributor's message cannot stall the check")
 
 if __name__ == "__main__":
     unittest.main()

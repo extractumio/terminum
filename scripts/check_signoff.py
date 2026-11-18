@@ -15,20 +15,19 @@ import re
 import subprocess
 import sys
 
-TRAILER = re.compile(r"^Signed-off-by:\s*(.+?)\s*<([^<>\s]+@[^<>\s]+)>\s*$", re.MULTILINE)
+# one pass, no overlapping quantifiers: commit messages are a contributor's text
+TRAILER = re.compile(r"^Signed-off-by:[^<\n]*<([^<>\s]+@[^<>\s]+)>[ \t]*$", re.MULTILINE)
 
-FIX = """How to fix it, in the pull request's branch:
-  git rebase --signoff HEAD~N         # N: its commits; each gets your Signed-off-by, its base stays
+FIX = """How to fix it, in the pull request's branch (N: your commits in it):
+  git rebase --signoff HEAD~N
   git push --force-with-lease
-A merge commit, such as GitHub's "Update branch", needs one too; the rebase above leaves it out.
-Your sign-off confirms the agreement in CONTRIBUTING.md ("Contributor license agreement"); from a work
-address or on your employer's time it also confirms your employer allows the contribution."""
+A merge commit, an employer's rights: CONTRIBUTING.md "Sign off every commit"."""
 
 
 def signed_off(message: str, author_email: str) -> bool:
     """A `Signed-off-by:` trailer with the commit author's own address (case aside)."""
     want = author_email.strip().lower()
-    return bool(want) and any(email.lower() == want for _, email in TRAILER.findall(message))
+    return bool(want) and any(email.lower() == want for email in TRAILER.findall(message))
 
 
 def unsigned(commits: list[dict]) -> list[dict]:
@@ -45,9 +44,9 @@ def from_pr(number: str) -> list[dict]:
     return [json.loads(line) for line in out.splitlines() if line.strip()]
 
 
-def from_range(spec: str) -> list[dict]:
+def from_range(spec: str, cwd: str | None = None) -> list[dict]:
     out = subprocess.run(["git", "log", "--format=%H%x00%ae%x00%B%x1e", spec],
-                         capture_output=True, text=True, check=True).stdout
+                         capture_output=True, text=True, check=True, cwd=cwd).stdout
     commits = []
     for record in filter(str.strip, out.split("\x1e")):
         sha, email, message = record.strip("\n").split("\x00", 2)

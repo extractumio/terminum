@@ -16,12 +16,15 @@ KEY = "AKIA" + "ABCDEFGHIJKLMNOP"
 
 
 class MessageCheckTest(unittest.TestCase):
-    def run_check(self, text, patterns=None, hook=False):
+    def run_check(self, text, patterns=None, hook=False, author=None):
         with tempfile.TemporaryDirectory() as d:
             msg = Path(d) / "COMMIT_EDITMSG"
             msg.write_text(text)
             env = {k: v for k, v in os.environ.items() if k not in ("TM_PORT", "TM_APP_DIR")}
             env["XDG_CONFIG_HOME"] = d   # no default patterns file of this machine
+            if author:   # the git author the hook keeps out of messages, in a config of the test's own
+                (Path(d) / "gitconfig").write_text(f"[user]\n\tname = {author[0]}\n\temail = {author[1]}\n")
+                env.update(GIT_CONFIG_GLOBAL=str(Path(d) / "gitconfig"), GIT_CONFIG_NOSYSTEM="1")
             if patterns is not None:
                 (Path(d) / "pp").write_text(patterns)
                 env["TM_PRIVATE_PATTERNS"] = str(Path(d) / "pp")
@@ -35,6 +38,15 @@ class MessageCheckTest(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertIn("ok   message: 1 files, 0 findings", r.stdout)
         self.assertIn("private patterns: none", r.stdout)
+
+    def test_a_sign_off_may_name_its_author_the_body_may_not(self):
+        sam = ("Sam Doe", "sam@example.com")
+        r = self.run_check("Fix the row menu\n\nSigned-off-by: Sam Doe <sam@example.com>\n", author=sam)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        r = self.run_check("Fix the row menu, by Sam Doe\n\nSigned-off-by: Sam Doe <sam@example.com>\n", author=sam)
+        self.assertNotEqual(r.returncode, 0, "the author's name outside the sign-off still fails")
+        r = self.run_check(f"Fix\n\nSigned-off-by: Sam Doe <sam@example.com> {KEY}\n", author=sam)
+        self.assertNotEqual(r.returncode, 0, "a secret in a sign-off line still fails")
 
     def test_secret_fails_and_is_not_printed(self):
         r = self.run_check(f"Fix\n\nkey {KEY}\n")
