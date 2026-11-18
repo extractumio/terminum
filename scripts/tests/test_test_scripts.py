@@ -82,6 +82,17 @@ class Cases(unittest.TestCase):
                 self.assertIn("ok   test_good.py: 1 tests", result.stdout)
                 self.assertIn("scripts: FAIL test_bad.py", result.stdout)
 
+    def test_each_red_test_is_named_even_when_the_tail_shows_only_another(self):  # AC-104
+        self.module("test_red.py", """import unittest
+class Cases(unittest.TestCase):
+    def test_a_error(self): raise KeyError('fixture error')
+    def test_b_long_failure(self): self.assertEqual(list(range(40)), list(range(41)))
+""")
+        result = self.run_modules()
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn("ERROR test_red.Cases.test_a_error: KeyError: 'fixture error'", result.stdout)
+        self.assertIn("FAIL test_red.Cases.test_b_long_failure: AssertionError:", result.stdout)
+
     def test_an_empty_or_entirely_skipped_suite_is_red(self):
         self.assertEqual(self.run_modules().returncode, 1)
         self.module("test_skip.py", "import unittest\n@unittest.skip('fixture')\nclass Cases(unittest.TestCase):\n def test_skip(self): pass\n")
