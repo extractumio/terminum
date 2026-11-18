@@ -447,7 +447,7 @@ fn ac205_a_pane_gone_under_a_server_started_anew_resumes_a_run_at_work() {
     for gone in [Facts { pane: false, identity: Some("b2".into()), ..up(30) }, Facts { marked: false, identity: Some("b2".into()), ..up(30) }] {
         let mut r = seen_in("IN PROGRESS");
         assert_eq!(step(&mut r, &gone), vec![Act::Resume { identity: "b2".into() }], "gone, or another's pane under the same ID");
-        assert_eq!(r.state, Phase::Closed, "the old run is over: the walk never reads it again");
+        assert_eq!(r.state, Phase::Working, "it stays until the resume is tried, so a stop meanwhile tries it again");
     }
 }
 

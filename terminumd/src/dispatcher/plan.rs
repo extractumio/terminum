@@ -143,6 +143,8 @@ pub fn step(run: &mut Run, f: &Facts) -> Vec<Act> {
         // its server ended under it: not a human's close; a run at work on a task in progress goes on by itself
         let anew = f.identity.as_ref().filter(|now| run.server_id.as_ref().is_some_and(|was| was != *now));
         if let Some(identity) = anew && resumable(run, was) {
+            // it stays as it was until the resume is tried: a terminumd stopped meanwhile tries it again (resume.rs)
+            run.state = was;
             return vec![Act::Resume { identity: identity.clone() }];
         }
         let words = if anew.is_some() { "Its tmux server started anew." } else if f.pane { "Its pane is no longer this run's: the link is dropped." } else { "Its window was closed." };

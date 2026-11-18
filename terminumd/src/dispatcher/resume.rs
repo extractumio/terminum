@@ -7,7 +7,7 @@
 use rusqlite::OptionalExtension;
 
 use super::api::Press;
-use super::runs::{How, Run};
+use super::runs::{self, How, Phase, Run};
 use super::{fail, say, store};
 use crate::app::Shared;
 use crate::tasks::ops::{self, sql, Task};
@@ -70,14 +70,22 @@ pub(super) async fn after_restart(app: &Shared, r: Run, identity: String) {
             let ids: Vec<String> = tasks.iter().map(|t| t.id.clone()).collect();
             // who started it and how stay its own (AC-183): the server's end was no one's press
             let press = Press::resumed(how.as_deref().and_then(How::of_word).unwrap_or_default(), by.as_deref().unwrap_or(HUMAN));
-            if let Err(why) = super::goes_on::resume(app, r.clone(), &tasks, words(&ids), press).await {
+            // no room is no queue: no human agreed to wait (AC-169); the limit's words say why
+            let missed = match super::goes_on::resume(app, r.clone(), &tasks, words(&ids), press).await {
+                Ok(v) => v["full"]["words"].as_str().map(str::to_string),
+                Err(why) => Some(why),
+            };
+            if let Some(why) = missed {
                 let (run, words) = (r.clone(), format!("Not resumed after its tmux server started anew: {why}"));
                 let _ = store(app, move |tx| fail(tx, &run, &words)).await;
             }
         }
         Ok(None) => {}
-        Err(e) => tracing::warn!(event = "dispatcher.resume", run = %r.id, error = %e),
+        Err(e) => return tracing::warn!(event = "dispatcher.resume", run = %r.id, error = %e),
     }
+    // tried: the old run is over, however it went (a resume closed it already)
+    let id = r.id.clone();
+    let _ = store(app, move |tx| runs::change(tx, &id, |was| if !matches!(was.state, Phase::Closed | Phase::Left) { was.state = Phase::Closed; was.pane_key = None; }).map(drop)).await;
     super::told_all(app, &r);
 }
 
