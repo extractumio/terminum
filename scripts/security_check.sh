@@ -92,7 +92,8 @@ for path in filter(None, files):
     for n, line in enumerate(data.decode("utf-8", "replace").splitlines(), 1):
         if message and line.startswith("# ------------------------ >8"):
             break   # git's own text below: the diff of `commit -v` (lines with # are kept: -m and -F keep them)
-        for kind, rx in checks:
+        # an outside contributor's sign-off names its author by design (CONTRIBUTING.md); secrets still count
+        for kind, rx in (rules if message and line.startswith("Signed-off-by:") else checks):
             if rx.search(line):
                 print(f"FAIL {path}:{n}: {kind}")
                 found += 1
