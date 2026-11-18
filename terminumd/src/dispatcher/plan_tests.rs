@@ -426,3 +426,13 @@ fn ac123_each_quiet_stop_gets_a_request_three_a_run_at_most() {
     fresh.new_work();
     assert_eq!(step(&mut fresh, &up(300)), vec![Act::Nudge], "a human's prompt or RUN counts them anew");
 }
+
+#[test]
+fn ac187_a_queued_task_stays_queued_when_its_session_ends() {
+    for (facts, how) in [(Facts { alive: false, exit: Some(0), ..up(30) }, "its agent ended"), (Facts { pane: false, ..up(30) }, "its window closed"),
+                         (Facts { marked: false, ..up(30) }, "its pane is another's")] {
+        let mut r = run("INTEGRATION");
+        let acts = step(&mut r, &facts);
+        assert_eq!(moved(&acts), None, "{how}: a task in INTEGRATION lands as any (terminum-integration.md AC-187): {acts:?}");
+    }
+}

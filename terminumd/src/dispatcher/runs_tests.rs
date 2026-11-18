@@ -271,3 +271,16 @@ fn ac183_a_run_keeps_who_asked_for_it_and_how() {
         Ok(())
     }).unwrap();
 }
+
+#[test]
+fn ac187_a_closed_window_fails_its_work_and_leaves_a_queued_task_queued() {
+    store("runs-queued-stays").with(|tx| {
+        let (_, t) = working(tx, "a", &["one", "two"]);
+        tx.execute("UPDATE tasks SET status = ?1 WHERE id = ?2", (ops::INTEGRATION, &t[1].key)).map_err(ops::sql)?;
+        let r = by_id(tx, &holding_agent(tx, "a")?.expect("its run").id)?;
+        crate::dispatcher::move_task(tx, &r, "FAILED", "Its window was closed.")?;
+        assert_eq!(ops::get(tx, &t[0].id)?.status, "FAILED", "the work in its session is lost with it");
+        assert_eq!(ops::get(tx, &t[1].id)?.status, ops::INTEGRATION, "a queued commit lands as any (terminum-integration.md AC-187)");
+        Ok(())
+    }).unwrap();
+}

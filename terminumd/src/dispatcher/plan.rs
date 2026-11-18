@@ -118,7 +118,8 @@ fn end_failed(run: &mut Run, acts: &mut Vec<Act>, words: String) {
 /// The walk's step for `run`: its clocks change here, what is to be done comes back.
 pub fn step(run: &mut Run, f: &Facts) -> Vec<Act> {
     let mut acts = Vec::new();
-    let movable = !finished(&run.status) && !run.ad_hoc();     // + Session's has no task to move
+    // + Session's has no task to move; a queued task lands as any, whatever its session does (terminum-integration.md AC-187)
+    let movable = !finished(&run.status) && !run.ad_hoc() && run.status != crate::tasks::ops::INTEGRATION;
     if !f.pane || !f.marked {
         run.state = Phase::Closed;
         if f.pane {

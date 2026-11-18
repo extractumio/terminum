@@ -321,9 +321,10 @@ fn fail(tx: &rusqlite::Transaction, run: &runs::Run, words: &str) -> Result<(), 
     if plan::finished(&run.status) { say(tx, run, words) } else { move_task(tx, run, "FAILED", words) }
 }
 
-/// Moves `run`'s tasks still open: what is done stays done (AC-138).
+/// Moves `run`'s tasks still open: what is done stays done (AC-138), and a queued one stays queued: its session's
+/// state is not its commit's (terminum-integration.md AC-187).
 fn move_task(tx: &rusqlite::Transaction, run: &runs::Run, to: &str, words: &str) -> Result<(), String> {
-    run.open.iter().try_for_each(|id| move_one(tx, id, to, words))
+    run.open.iter().try_for_each(|id| if ops::get(tx, id)?.status == ops::INTEGRATION { Ok(()) } else { move_one(tx, id, to, words) })
 }
 
 /// The agent of `run` asked a human on `asked` (AC-185): its other tasks in progress wait with it, so its session

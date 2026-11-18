@@ -1123,7 +1123,7 @@ Scenario Outline: AC-144 what each outlives
   Examples:
     | what | rest |
     | terminumd restarts | its runs and panes go on and the walk reads them anew (AC-131) |
-    | tmux restarts | the panes are gone: each run is closed, its open tasks FAILED, and Run resumes its conversation (AC-122) |
+    | tmux restarts | the panes are gone: each run is closed, its open tasks FAILED but a queued one, which lands as any (`terminum-integration.md` AC-187), and Run resumes its conversation (AC-122) |
     | the machine restarts | as for tmux, once terminumd is up again |
     | a pane is closed by hand | its run is closed, its open tasks FAILED, and Run resumes its conversation |
     | an agent ends in its pane | the pane stands at its shell, and Run starts the agent there (AC-122) |
