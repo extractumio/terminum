@@ -93,6 +93,16 @@ def build_macos(build, platforms):
     return out
 
 
+def says_its_build(binary, build):
+    """The packed copy of this machine's terminumd answers this build and agent id: a folder another
+    cargo run wrote between (another build id, a build.target elsewhere) is never packed."""
+    own = {k: v for k, v in os.environ.items() if k != "TM_BUILD_ID"}   # it would answer for it
+    said = lambda flag: subprocess.run([str(binary), flag], capture_output=True, text=True, env=own).stdout.strip()
+    got, want = (said("--version"), said("--agent-id")), (build, agents.agent_id())
+    if got != want:
+        raise agents.Failed(f"{binary} says build {got[0]}, agent id {got[1]}; expected {want[0]}, {want[1]}: not packed")
+
+
 def rust_host(env):
     """The target cargo builds without --target (rustc's host; under Rosetta perhaps not the Mac's own)."""
     r = subprocess.run(["rustc", "-vV"], cwd=agents.TERMINUMD, env=env, capture_output=True, text=True)
@@ -189,6 +199,8 @@ def stage(build, out, given=None, only_stage=False, release=False):
         dest.parent.mkdir(parents=True)
         shutil.copy2(path, dest)
         os.chmod(dest, 0o755)
+        if not given and platform == agents.this_platform():
+            says_its_build(dest, build)
         if platform.startswith("macos-") and (release or is_macho(dest)):
             identity = identity or signer(release)
             codesign(dest, identity, release)

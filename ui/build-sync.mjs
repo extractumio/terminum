@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // Makes a folder hold exactly the given files, writing only those whose bytes differ: an unchanged
 // file keeps its time, so cargo does not compile terminumd again for a UI build that changed nothing
-// (rust-embed embeds ui/dist; cargo judges embedded files by their times).
+// (rust-embed embeds ui/dist; cargo judges embedded files by their times). A file only added is
+// seen through TM_BUILD, which hashes ui/src and ui/public: a cargo build without it may miss one.
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 
@@ -17,6 +18,7 @@ export function listFiles(dir) {
 export function syncDir(dir, files) {
   const written = [];
   const removed = [];
+  mkdirSync(dir, { recursive: true });
   for (const [rel, bytes] of files) {
     const path = join(dir, rel);
     if (existsSync(path) && Buffer.compare(readFileSync(path), Buffer.from(bytes)) === 0) continue;
