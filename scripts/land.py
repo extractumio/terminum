@@ -71,10 +71,7 @@ class Turn(TreeTurn):
 
     def __enter__(self):
         super().__enter__()
-        if not self.take():
-            print(f"land: {self.holder()}'s landing has its turn (its checks and push can take half an hour): waiting", flush=True)
-            self.take(wait=True)
-        self.hold_as(self.slug)
+        self.take_as(self.slug, lambda holder: print(f"land: {holder}'s landing has its turn (its checks and push can take half an hour): waiting", flush=True))
         return self
 
 
@@ -329,10 +326,8 @@ def install_pending(primary, run=make, say=print):
         say(f"install: left to {holder}'s landing, which has the turn")
         return
     with TreeTurn(primary, INSTALL_TURN) as turn:
-        if not turn.take():   # a landing that ended meanwhile, After or one by hand: one after the other
-            say(f"install: {turn.holder('another install')} holds the install turn: waiting for its end")
-            turn.take(wait=True)
-        turn.hold_as(f"a landing's install, pid {os.getpid()}")
+        # a landing that ended meanwhile, After or one by hand: one after the other
+        turn.take_as(f"a landing's install (pid {os.getpid()})", lambda holder: say(f"install: {holder} holds the install turn: waiting for its end"))
         install_now(primary, run, say)
 
 

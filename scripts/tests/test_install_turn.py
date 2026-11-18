@@ -50,73 +50,72 @@ class InstallTurn(unittest.TestCase):
         self.out = Path(home.name) / "dist"
         self.out.mkdir()
 
+    def spawn(self, *command, env=None):
+        """`install_turn.py <command>` in the primary checkout, ended at the test's end if still running."""
+        run = subprocess.Popen([sys.executable, str(SCRIPTS / "install_turn.py"), *command], cwd=self.repo, text=True,
+                               stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=dict(os.environ, **(env or {})))
+        self.addCleanup(lambda: run.poll() is None and (run.kill(), run.communicate()))
+        return run
+
     def installs(self, *names, env=None):
-        """Each name's staging, under install_turn.py, all started at once."""
-        runs = [subprocess.Popen([sys.executable, str(SCRIPTS / "install_turn.py"), sys.executable, "-c", STAGE, str(self.out), name],
-                                 cwd=self.repo, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
-                                 env=dict(os.environ, **(env or {})))
-                for name in names]
+        """Each name's staging, all started at once: [(exit status, stdout, stderr)]."""
+        runs = [self.spawn(sys.executable, "-c", STAGE, str(self.out), name, env=env) for name in names]
+        ended = []
         for run in runs:
-            self.addCleanup(lambda r=run: r.poll() is None and (r.kill(), r.wait()))
-        return [(run.wait(timeout=30), *run.communicate()) for run in runs]
+            out, err = run.communicate(timeout=30)
+            ended.append((run.returncode, out, err))
+        return ended
 
     def test_two_installs_staging_at_once_take_turns(self):  # AC-104
         ended = self.installs("one", "two")
         self.assertEqual([code for code, *_ in ended], [0, 0], ended)
-        (a0, a1), (b0, b1) = sorted(tuple(map(float, (self.out / f"ran-{n}").read_text().split())) for n in ("one", "two"))
-        self.assertLessEqual(a1, b0, "the second stages only after the first has ended")
+        (_, first_end), (second_start, _) = sorted(tuple(map(float, (self.out / f"ran-{n}").read_text().split())) for n in ("one", "two"))
+        self.assertLessEqual(first_end, second_start, "the second stages only after the first has ended")
         self.assertTrue((self.out / "package/terminum/agents/macos-aarch64").is_dir())
 
     def test_without_the_turn_they_collide_as_the_symptom(self):  # AC-104: what the turn prevents
         ended = self.installs("one", "two", env={install_turn.HELD: "1", "BARRIER": "1"})
-        self.assertIn("FileExistsError", "".join(err for _, _, err in ended), "the staging folder raced")
+        self.assertIn("FileExistsError", "".join(err for *_, err in ended), "the staging folder raced")
 
     def test_one_by_hand_waits_for_a_landings_install_and_says_whose(self):  # AC-104
         with Turn(self.repo, INSTALL_TURN) as held:
-            self.assertTrue(held.take())
-            held.hold_as("a landing's After")
-            run = subprocess.Popen([sys.executable, str(SCRIPTS / "install_turn.py"), sys.executable, "-c", "print('installed')"],
-                                   cwd=self.repo, stdout=subprocess.PIPE, text=True)
-            self.addCleanup(lambda: run.poll() is None and (run.kill(), run.wait()))
-            self.addCleanup(run.stdout.close)
+            held.take_as("a landing's After (pid 4242)", self.fail)
+            run = self.spawn(sys.executable, "-c", "print('installed')")
             self.assertTrue(select.select([run.stdout], [], [], 10)[0], "it says why it waits")
-            self.assertEqual(run.stdout.readline().strip(), "make install: a landing's After holds the install turn: waiting for its end")
-            time.sleep(0.3)
+            self.assertEqual(run.stdout.readline(), "make install: a landing's After (pid 4242) holds the install turn: waiting for its end\n")
+            time.sleep(0.1)
             self.assertIsNone(run.poll(), "it waits while the turn is held")
-        self.assertEqual(run.wait(timeout=10), 0)
-        self.assertEqual(run.stdout.read().strip(), "installed")
+        out, _ = run.communicate(timeout=10)
+        self.assertEqual((run.returncode, out), (0, "installed\n"))
 
     def test_the_holders_own_make_install_runs_inside_its_turn(self):  # AC-104, AC-198
         with Turn(self.repo, INSTALL_TURN) as held:
             self.assertTrue(held.take())
-            done = subprocess.run([sys.executable, str(SCRIPTS / "install_turn.py"), sys.executable, "-c", "print('ran')"],
-                                  cwd=self.repo, capture_output=True, text=True, timeout=10,
-                                  env=dict(os.environ, **{install_turn.HELD: "1"}))
-        self.assertEqual((done.returncode, done.stdout), (0, "ran\n"), "no wait for its own caller")
-        with mock.patch.object(land.subprocess, "run") as run:
+            run = self.spawn(sys.executable, "-c", "print('ran')", env={install_turn.HELD: "1"})
+            self.assertEqual((run.communicate(timeout=10)[0], run.returncode), ("ran\n", 0), "no wait for its own caller")
+        with mock.patch.object(land.subprocess, "run") as made:
             land.make(self.repo, "install")
-        self.assertEqual(run.call_args.kwargs["env"][install_turn.HELD], "1", "a landing's make install is in its turn")
+        self.assertEqual(made.call_args.kwargs["env"][install_turn.HELD], "1", "a landing's make install is in its turn")
 
     def test_a_landings_install_says_whose_install_it_waits_for(self):  # AC-104
-        said = []
+        said, waits = [], threading.Event()
         land.install_mark(self.repo).write_text("4f2a91c07\n")
         with mock.patch.object(land, "landing_holder", return_value=None), mock.patch.object(land, "install_now") as now:
             with Turn(self.repo, INSTALL_TURN) as held:
-                self.assertTrue(held.take())
-                held.hold_as("make install in /Users/alex/terminum, pid 7")
-                pending = threading.Thread(target=land.install_pending, args=(self.repo,), kwargs={"say": said.append})
+                held.take_as("make install in /Users/alex/terminum (pid 7)", self.fail)
+                pending = threading.Thread(target=land.install_pending, args=(self.repo,),
+                                           kwargs={"say": lambda words: (said.append(words), waits.set())})
                 pending.start()
-                deadline = time.time() + 10
-                while not said and time.time() < deadline:
-                    time.sleep(0.01)
-                self.assertEqual(said, ["install: make install in /Users/alex/terminum, pid 7 holds the install turn: waiting for its end"])
+                self.assertTrue(waits.wait(10))
+                self.assertEqual(said, ["install: make install in /Users/alex/terminum (pid 7) holds the install turn: waiting for its end"])
                 self.assertFalse(now.called, "nothing installed while the other holds the turn")
             pending.join(10)
             now.assert_called_once()
 
     def test_the_commands_status_is_its_own(self):  # AC-104
-        failed = subprocess.run([sys.executable, str(SCRIPTS / "install_turn.py"), "false"], cwd=self.repo, timeout=10)
-        self.assertEqual(failed.returncode, 1)
+        run = self.spawn("false")
+        run.communicate(timeout=10)
+        self.assertEqual(run.returncode, 1)
 
 
 if __name__ == "__main__":

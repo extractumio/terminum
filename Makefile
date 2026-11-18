@@ -45,7 +45,7 @@ export TM_BUILD_DATE := $(shell date +%Y-%m-%d)
 # which terminumd sources: an agent on a remote host works with this terminumd when the ids match
 export TM_AGENT_ID := $(shell python3 scripts/agents.py id)
 
-.PHONY: all build ui terminumd test check test-mac primary-checkout install install-fresh install-stage installed hooks upgrade rollback uninstall package agents toolchain land leftovers release rehearse release-here rehearse-here signing-key $(addprefix land-,$(LAND_STAGES))
+.PHONY: all build ui terminumd test check test-mac primary-checkout install install-stage installed hooks upgrade rollback uninstall package agents toolchain land leftovers release rehearse release-here rehearse-here signing-key $(addprefix land-,$(LAND_STAGES))
 
 # this machine's platform (a Mac's own architecture, right under Rosetta too; or Linux's), the
 # package's terminumd for it
@@ -92,12 +92,7 @@ primary-checkout:
 # one install at a time, in the install turn landings and the queue's After hold too (scripts/install_turn.py);
 # freshen first and the rest in a make of its own: this one's TM_BUILD was read before main moved
 install: primary-checkout
-	python3 scripts/install_turn.py $(MAKE) --no-print-directory install-fresh
-
-# only through install, in its turn
-install-fresh: primary-checkout
-	python3 scripts/worktree_fresh.py freshen
-	$(MAKE) --no-print-directory install-stage
+	python3 scripts/install_turn.py sh -c 'python3 scripts/worktree_fresh.py freshen && $(MAKE) --no-print-directory install-stage'
 
 install-stage: primary-checkout ui
 	python3 scripts/package.py --stage

@@ -114,7 +114,7 @@ def after(primary, run=land.make, env=os.environ, say=print):
     with Turn(primary, INSTALL_TURN) as turn:
         if not turn.take():
             raise Stop(LATER, "after: an install runs in the primary checkout: waits for its end")
-        turn.hold_as(f"a landing's After, pid {os.getpid()}")
+        turn.hold_as(f"a landing's After (pid {os.getpid()})")
         if land.landing_holder(primary):
             raise Stop(LATER, "after: a landing holds its turn: waits for its end")
         stuck = land.update_primary(primary)

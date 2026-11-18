@@ -685,7 +685,7 @@ Scenario: AC-104 edge — installing, on the maintainer's machine
 Scenario: AC-104 edge — make install by hand beside another install
   Given a landing's install, or the integration queue's After (`terminum-integration.md` AC-198), holding the install turn in the primary checkout
   When `make install` runs there by hand
-  Then it says "make install: a landing's After holds the install turn: waiting for its end" and stages, installs and restarts terminumd only once that one ends; two by hand take turns the same way, so none fails on the shared `dist/package`
+  Then it says "make install: a landing's After (pid 4242) holds the install turn: waiting for its end" and stages, installs and restarts terminumd only once that one ends; two by hand take turns the same way, so none fails on the shared `dist/package`
   And the make install a landing or After starts inside the turn it holds runs at once
 
 Scenario: AC-104 failure — a conflict
