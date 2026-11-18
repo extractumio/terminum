@@ -293,9 +293,9 @@ fn ac179_a_manager_s_press_says_whose_words_they_are() {
 fn ac179_a_manager_s_run_of_a_schedule_s_task_says_whose_words_they_are() {
     store_of("api-manager-schedule").with(|tx| {
         tx.execute("INSERT INTO agents (id, project, name, kind, command, color, at_once) VALUES ('a', 'default', 'Opus reviewer', 'claude', 'claude', 0, 1)", []).map_err(ops::sql)?;
-        tx.execute("INSERT INTO users (id, kind, name, role) VALUES ('m', 'agent', 'Opus · manager', 'agent')", []).map_err(ops::sql)?;
+        let m = crate::tasks::users::agent_named(tx, "m".into(), "Opus · manager")?;
         let given = crate::tasks::schedules::Given::of(tx, &serde_json::json!({"title": "Nightly", "body": "Check them.", "agent": "a", "cron": "0 3 * * *", "budget_minutes": 30}), 1)?;
-        let (id, _) = crate::tasks::schedules::add(tx, "m", &given, 1)?;
+        let (id, _) = crate::tasks::schedules::add(tx, &m, &given, 1)?;
         let s = crate::tasks::schedules::by_id(tx, &id)?;
         let t = made(tx, "Nightly", "Check them.");
         let mut goes = facts(tx, std::slice::from_ref(&t))?;
@@ -303,6 +303,12 @@ fn ac179_a_manager_s_run_of_a_schedule_s_task_says_whose_words_they_are() {
         let prompt = goes.prompt(Some("be brief"));
         assert!(prompt.starts_with(&format!("The project's manager's message: be brief\n\nThe project's manager ran task {} again: Nightly. A task of terminum's schedule SCH-1 \"Nightly\" (every day at 03:00), set by the project's manager.", t.id)), "{prompt}");
         assert!(!prompt.contains("The human ran") && !prompt.contains("set by a human"), "an agent's words never stand as a human's: {prompt}");
+        // a human who saw it before the manager saved it is asked again (AC-121)
+        let rev = goes.rev();
+        if let Some((s, _)) = goes.schedule.as_mut() {
+            s.by_manager = false;
+        }
+        assert_ne!(rev, goes.rev(), "who set it is in what the human saw");
         Ok(())
     }).unwrap();
 }

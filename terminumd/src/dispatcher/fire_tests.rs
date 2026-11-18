@@ -200,11 +200,12 @@ fn ac162_the_prompt_says_a_scheduled_run_and_the_result_s_form() {
 #[test]
 fn ac162_a_manager_s_schedule_and_runs_are_said_to_be_the_manager_s() {
     open("fire-manager").with(|tx| {
-        tx.execute("INSERT INTO users (id, kind, name, role) VALUES ('m', 'agent', 'Opus · manager', 'agent')", []).map_err(ops::sql)?;
-        let human = schedule(tx, 1, json!({"title": "Nightly deps check", "body": "Check them.", "agent": "a", "cron": "0 3 * * *", "budget_minutes": 30}));
+        let m = crate::tasks::users::agent_named(tx, "m".into(), "Opus · manager")?;
+        let nightly = json!({"title": "Nightly deps check", "body": "Check them.", "agent": "a", "cron": "0 3 * * *", "budget_minutes": 30});
+        let human = schedule(tx, 1, nightly.clone());
         assert!(!human.by_manager);
-        let given = Given::of(tx, &json!({"title": "Nightly deps check", "body": "Check them.", "agent": "a", "cron": "0 3 * * *", "budget_minutes": 30}), NOW)?;
-        schedules::change(tx, "m", &human.id, &given, NOW)?;
+        let given = Given::of(tx, &nightly, NOW)?;
+        schedules::change(tx, &m, &human.id, &given, NOW)?;
         let s = schedules::by_id(tx, &human.id)?;
         assert!(s.by_manager, "its last author is the manager");
         let schedule = "terminum's schedule SCH-1 \"Nightly deps check\" (every day at 03:00), set by the project's manager";

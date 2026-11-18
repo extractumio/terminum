@@ -37,7 +37,9 @@ pub struct Schedule {
     /// the due time of its last firing, or its last save (§9)
     pub last_due: i64,
     pub author_name: String,
-    /// its author is an agent: the project's manager, by its tools (terminum-agents.md AC-180); a worker has none
+    /// its author is an agent: the project's manager, by its tools (terminum-agents.md AC-180); a worker has none.
+    /// Its prompt's own fact, the card says the author by name
+    #[serde(skip)]
     pub by_manager: bool,
     pub created_at: i64,
     pub updated_at: i64,

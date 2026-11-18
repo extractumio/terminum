@@ -6,7 +6,7 @@
 
 use serde_json::json;
 
-use super::press::{budget_words, ASK, FINISH};
+use super::press::{boss, budget_words, the_boss, ASK, FINISH};
 use super::{pool, runs, store, DISPATCHER};
 use crate::app::Shared;
 use crate::tasks::cron;
@@ -23,11 +23,11 @@ const LATE: i64 = 120;
 pub fn prompt(s: &Schedule, task: &str, title: &str, body: &str, again: bool, manager: bool) -> String {
     let words = s.words();
     let cadence = words.chars().next().map_or(String::new(), |c| c.to_lowercase().chain(words.chars().skip(1)).collect());
-    let set_by = if s.by_manager { "the project's manager" } else { "a human" };
+    let set_by = if s.by_manager { boss(true) } else { "a human" };
     let schedule = format!("terminum's schedule {} \"{}\" ({cadence}), set by {set_by}", s.key, s.title);
     let mut parts = vec![match (again, manager) {
-        (true, _) => format!("{} ran task {task} again: {title}. A task of {schedule}.", super::press::the_boss(manager)),
-        (false, true) => format!("Task {task}: {title}. A run of {schedule}, started now by the project's manager; no human watches it."),
+        (true, _) => format!("{} ran task {task} again: {title}. A task of {schedule}.", the_boss(manager)),
+        (false, true) => format!("Task {task}: {title}. A run of {schedule}, started now by {}; no human watches it.", boss(true)),
         (false, false) => format!("Task {task}: {title}. A scheduled run of {schedule}; no human started this run or watches it now."),
     }];
     if body.chars().count() > super::press::MOST_PROMPT {
