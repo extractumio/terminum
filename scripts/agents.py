@@ -118,6 +118,13 @@ def native():
     return f"{system}-{machine}"
 
 
+def says(binary):
+    """(agent id, build) a terminumd this machine runs answers, asked without TM_BUILD_ID (it would answer for it)."""
+    own = {k: v for k, v in os.environ.items() if k != "TM_BUILD_ID"}
+    said = lambda flag: subprocess.run([str(binary), flag], capture_output=True, text=True, env=own).stdout.strip()
+    return said("--agent-id"), said("--version")
+
+
 def build(platforms, build_id=None):
     """Build each platform's agent once per agent id and build; returns {platform: path}.
     `build_id`: the build it names (a package's, which its installer checks against BUILD);
@@ -145,10 +152,8 @@ def build(platforms, build_id=None):
             dest.parent.mkdir(parents=True, exist_ok=True)
             tmp = dest.with_name(".terminumd.new")  # checked before it is cached under its id
             shutil.copy2(TERMINUMD / "target" / target / "release/terminumd", tmp)
-            if p == native():  # asked (no TM_BUILD_ID: it would answer for it), else found in its bytes
-                own = {k: v for k, v in os.environ.items() if k != "TM_BUILD_ID"}
-                said = lambda flag: subprocess.run([str(tmp), flag], capture_output=True, text=True, env=own).stdout.strip()
-                got = (said("--agent-id"), said("--version"))
+            if p == native():  # asked, else found in its bytes
+                got = says(tmp)
             else:
                 data = tmp.read_bytes()
                 got = tuple(x if x.encode() in data else "none" for x in (aid, bid))

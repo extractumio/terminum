@@ -245,10 +245,9 @@ class LinuxBuildTest(unittest.TestCase):
                  mock.patch.object(package.agents, "build", return_value={}), \
                  mock.patch.object(package, "soundfont", return_value=Path(tmp)), \
                  mock.patch.object(package, "SOUNDFONT", {}):
-                package.says_its_build(binary, "v9")
                 with self.assertRaises(package.agents.Failed) as e:
                     package.stage("v8", Path(tmp) / "out", only_stage=True)
-                self.assertIn("says build v9", str(e.exception))
+                self.assertIn("build v9; expected", str(e.exception))
                 self.assertTrue(package.stage("v9", Path(tmp) / "out", only_stage=True).is_dir())
 
     def test_rust_host_reads_rustcs_host_line(self):

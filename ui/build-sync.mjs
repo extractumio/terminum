@@ -3,38 +3,34 @@
 // file keeps its time, so cargo does not compile terminumd again for a UI build that changed nothing
 // (rust-embed embeds ui/dist; cargo judges embedded files by their times). A file only added is
 // seen through TM_BUILD, which hashes ui/src and ui/public: a cargo build without it may miss one.
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { dirname, join, relative } from "node:path";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { dirname, join, relative, resolve } from "node:path";
 
-/** Every file under `dir`, as paths relative to it ("/"-separated). */
+/** `path` relative to `dir`, "/"-separated: the keys of syncDir's files. */
+export const relPath = (dir, path) => relative(dir, path).split("\\").join("/");
+
+/** Every file under `dir`, as relPath keys. */
 export function listFiles(dir) {
   if (!existsSync(dir)) return [];
   return readdirSync(dir, { recursive: true, withFileTypes: true })
     .filter((e) => e.isFile())
-    .map((e) => relative(dir, join(e.parentPath, e.name)).split("\\").join("/"));
+    .map((e) => relPath(dir, join(e.parentPath, e.name)));
 }
 
-/** `files`: Map of relative path → bytes. Returns the paths written and removed. */
+/** `files`: Map of relPath → bytes (Uint8Array). Folders a removal leaves empty go too. */
 export function syncDir(dir, files) {
-  const written = [];
-  const removed = [];
   mkdirSync(dir, { recursive: true });
   for (const [rel, bytes] of files) {
     const path = join(dir, rel);
-    if (existsSync(path) && Buffer.compare(readFileSync(path), Buffer.from(bytes)) === 0) continue;
+    const st = statSync(path, { throwIfNoEntry: false });
+    if (st?.size === bytes.length && Buffer.compare(readFileSync(path), bytes) === 0) continue;
     mkdirSync(dirname(path), { recursive: true });
     writeFileSync(path, bytes);
-    written.push(rel);
   }
-  for (const rel of listFiles(dir)) {
-    if (!files.has(rel)) {
-      rmSync(join(dir, rel));
-      removed.push(rel);
-    }
+  const root = resolve(dir);   // the walk up stops here, however `dir` was written
+  for (const rel of listFiles(root)) {
+    if (files.has(rel)) continue;
+    rmSync(join(root, rel));
+    for (let p = dirname(join(root, rel)); p !== root && readdirSync(p).length === 0; p = dirname(p)) rmSync(p, { recursive: true });
   }
-  const dirs = readdirSync(dir, { recursive: true, withFileTypes: true }).filter((e) => e.isDirectory());
-  for (const path of dirs.map((e) => join(e.parentPath, e.name)).sort((a, b) => b.length - a.length)) {
-    if (readdirSync(path).length === 0) rmSync(path, { recursive: true }); // deepest first
-  }
-  return { written, removed };
 }

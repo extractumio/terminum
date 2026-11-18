@@ -84,23 +84,19 @@ def build_macos(build, platforms):
     host = rust_host(env)
     for platform in platforms:
         target = agents.TARGETS[platform]
-        if target == host:   # make build's own command and folder: cargo compiles only what changed since
-            agents.run(["cargo", "build", "--locked", "--release"], env=env)
-            out[platform] = agents.TERMINUMD / "target/release/terminumd"
-        else:
-            agents.run(["cargo", "build", "--locked", "--release", "--target", target], env=env)
-            out[platform] = agents.TERMINUMD / "target" / target / "release/terminumd"
+        # the host's: make build's own command and folder, so cargo compiles only what changed since
+        cross = [] if target == host else ["--target", target]
+        agents.run(["cargo", "build", "--locked", "--release", *cross], env=env)
+        out[platform] = agents.TERMINUMD.joinpath("target", *cross[1:], "release/terminumd")
     return out
 
 
-def says_its_build(binary, build):
+def says_its_build(binary, build, aid):
     """The packed copy of this machine's terminumd answers this build and agent id: a folder another
     cargo run wrote between (another build id, a build.target elsewhere) is never packed."""
-    own = {k: v for k, v in os.environ.items() if k != "TM_BUILD_ID"}   # it would answer for it
-    said = lambda flag: subprocess.run([str(binary), flag], capture_output=True, text=True, env=own).stdout.strip()
-    got, want = (said("--version"), said("--agent-id")), (build, agents.agent_id())
-    if got != want:
-        raise agents.Failed(f"{binary} says build {got[0]}, agent id {got[1]}; expected {want[0]}, {want[1]}: not packed")
+    got = agents.says(binary)
+    if got != (aid, build):
+        raise agents.Failed(f"{binary} says agent id {got[0]}, build {got[1]}; expected {aid}, {build}: not packed")
 
 
 def rust_host(env):
@@ -194,13 +190,14 @@ def stage(build, out, given=None, only_stage=False, release=False):
     for rel in COPY:
         shutil.copy2(REPO / rel, pkg / rel)
     identity = None
+    here, aid = agents.this_platform(), agents.agent_id()
     for platform, path in binaries(build, given, only_stage, release).items():
         dest = pkg / "agents" / platform / "terminumd"
         dest.parent.mkdir(parents=True)
         shutil.copy2(path, dest)
         os.chmod(dest, 0o755)
-        if not given and platform == agents.this_platform():
-            says_its_build(dest, build)
+        if not given and platform == here:
+            says_its_build(dest, build, aid)
         if platform.startswith("macos-") and (release or is_macho(dest)):
             identity = identity or signer(release)
             codesign(dest, identity, release)
@@ -208,7 +205,7 @@ def stage(build, out, given=None, only_stage=False, release=False):
     for name in SOUNDFONT:
         shutil.copy2(soundfont() / name, pkg / "soundfonts" / name)
     (pkg / "BUILD").write_text(build + "\n")
-    (pkg / "AGENT_ID").write_text(agents.agent_id() + "\n")
+    (pkg / "AGENT_ID").write_text(aid + "\n")
     return pkg
 
 
