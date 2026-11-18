@@ -356,6 +356,10 @@ budget and prompt. The whole design: `docs/specs/terminum-integration.md`.
   gives a red one to that agent, which returns the task that broke it, checks again or adds a fix.
 - The INTEGRATION column shows the batch in work, then the queue, each card with its place or what
   it waits for; Pause and Batches… in its head; Integrate and Take out in a task's window.
+- When terminum's tmux server ends (a crash, a reboot), queued tasks stay queued; a Check, Verify
+  or Publish runs again; an After does not, and a P1 task "After's outcome is not known for batch
+  N" asks you to check its work. For terminum's own After (the install): `make installed` says which
+  build runs; not the batch's or a later one, run `make install` in the primary checkout.
 
 ### Managers and workers
 

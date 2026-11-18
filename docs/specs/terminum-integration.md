@@ -67,8 +67,8 @@ Open questions: none.
 | AC-187 | [MUST / P0] | An agent queues its task's commit with its result by `integrate`: the task stands in INTEGRATION, its budget and idle clocks stopped, its session kept; queued again it replaces its commit; taken out it is IN PROGRESS again. |
 | AC-188 | [MUST / P0] | terminumd alone builds a batch: from the fresh target, the queued commits in queue order that merge cleanly together, each its own merge commit named by its task's ID, at most the batch's size, which starts at 4, doubles after a green batch up to the project's most (8) and halves after a red one; each batch is an integration task, I_<ID>, made by Dispatcher, and one batch is in work on the machine at a time: built, checked or published; a published batch's After and Cleanup run beside the next one (AC-191, §9 Limits). |
 | AC-189 | [MUST / P0] | A commit that conflicts with the target returns to its agent at once with the target's commit and the files; one that conflicts only with a task of the batch stays queued, told once which task it waits for, and is judged again when that one's batch ends. |
-| AC-190 | [MUST / P0] | The project's Check runs on each candidate in a window the human can read; green is published; red, over its time or not started, the batch's integration task gets its agent (AC-194); nothing is published but a candidate whose own check was green; a check outlives terminumd's restart. |
-| AC-191 | [MUST / P0] | A green candidate is published only if the target has not moved: by terminum's own push, never forced, or by the project's Publish; then its tasks are DONE with their results and the next batch may start; when its turn comes, one batch's at a time on the machine, the oldest batch first, the project's folder is brought up to the target where it can be and After runs once for the batch, then Cleanup; an After that says it cannot run now (status 75) waits and runs again by itself, holding only the project's later Afters, until a cap; a failure there undoes nothing, waits for a human on the batch's integration task (AC-194) and holds the project's later Afters until that task ends. |
+| AC-190 | [MUST / P0] | The project's Check runs on each candidate in a window the human can read; green is published; red, over its time or not started, the batch's integration task gets its agent (AC-194); nothing is published but a candidate whose own check was green; a check outlives terminumd's restart, and is checked again when terminum's tmux server ends. |
+| AC-191 | [MUST / P0] | A green candidate is published only if the target has not moved: by terminum's own push, never forced, or by the project's Publish; then its tasks are DONE with their results and the next batch may start; when its turn comes, one batch's at a time on the machine, the oldest batch first, the project's folder is brought up to the target where it can be and After runs once for the batch, then Cleanup; an After that says it cannot run now (status 75) waits and runs again by itself, holding only the project's later Afters, until a cap; a failure there undoes nothing, waits for a human on the batch's integration task (AC-194) and holds the project's later Afters until that task ends; an After whose window was lost is not run again, and a P1 Bug task asks a human to check its work. |
 | AC-192 | [MUST / P0] | Agents are told early and in detail, in fixed words with tasks, sessions, files and what to do: an overlap with another task's commits while both still work, the target moving in files they changed, their place and expected batch, being held back, a return for a conflict or a red check, and landing; each notice is a comment on its task and reaches a working agent by its next hook, a waiting one by the command it waits on, and an idle one of Dispatcher's by the gate. |
 | AC-193 | [MUST / P0] | The board shows INTEGRATION as a column where a shown project has integration on: the batch under check on top as one group with its state and time, the queue under it in order, each card saying its place or what it waits for; keys pause the queue, take a task out, queue a task, return a batch's task, check a batch again and list past batches with their results. |
 | AC-198 | [MUST / P0] | A landing is seven stages, each a command of the project's settings in a row of its Integration tab and each idempotent: Prepare and Verify, run by terminumd for each queued task, up to three tasks at once on the machine, in a tree of its own at the task's commit before it joins a batch; Queue, terminum's own; Check and Publish on the candidate; After in the project's folder; Cleanup after a published batch; without terminumd the same stages are commands run in order, `make land` running them all.; a red Verify that names its failed steps has them run on the target: red there too, its task stays queued behind one Bug task for the red target until that task ends; green there, or not known, it returns. |
@@ -300,7 +300,14 @@ Scenario: AC-190 edge — terminumd restarts
   Then the check runs on in its window
   When terminumd starts
   Then it finds the batch's window by its mark: still running, it goes on waiting, the time counted from the check's start; ended, it reads its status and goes on as above
-  And a batch whose window is gone is checked again, its round saying "checked again: its window was lost", not counted as red
+  And a batch whose window is gone is checked again, its integration task told "Batch 7 is checked again: its window was lost.", not counted as red
+
+Scenario: AC-190 edge — terminum's tmux server ends
+  Given batch 7 under check, API-16's Verify and batch 6's After running in windows of terminum's tmux server
+  When the server ends (a crash, kill-server, a restart of the machine) and starts again
+  Then a window is known by its pane and the mark its line started with, never by the pane's ID alone: a server started anew gives the same IDs to other windows, and a line is never read, ended or closed through another's window
+  And batch 7 is checked again as above, API-16's Verify runs again from its commit (AC-198), batch 6's After is not run again (AC-191)
+  And nothing is published but a candidate whose own check ended green, and every queued task stays queued, its session's end not its commit's (AC-187)
 
 Scenario: AC-190 edge — no check
   Given an empty Check
@@ -401,7 +408,14 @@ Scenario: AC-191 edge — After restarts terminumd
   Then the batch was written published and its tasks DONE before After began, and both lines run on in their windows
   When terminumd starts
   Then it finds each window by its mark and waits for it or reads its status: batch 8's check goes on as AC-190 says, batch 8 is published as above, and its After waits for batch 7's end
-  And with After's window lost, the batch's row says "After's outcome is not known for batch 7: its window was lost. After is not run again." and its Cleanup follows; a lost check runs again (AC-190)
+  And with After's window lost, the batch's row says "After's outcome is not known for batch 7: its window was lost. After is not run again. Check its work: API-40." and its Cleanup follows; a lost check runs again (AC-190)
+
+Scenario: AC-191 failure — After's window is lost
+  Given After "make install" running for batch 7 when terminum's tmux server ends
+  Then After is not run again: what it did is not known, and a second install over a half-done one is no surer
+  And Dispatcher makes a P1 Bug task in Billing, "Bug: After's outcome is not known for batch 7 of Billing", which says the batch's tasks, the folder, the server's end, and what to do: check After's work in the folder; not done or half done, run After's line there by hand, its words in the text; then DONE
+  And the batch's row and its integration task name that task: "After's outcome is not known for batch 7: its window was lost. After is not run again. Check its work: API-40."
+  And it holds nothing: Billing's later Afters and batches go on, and a later After does its own work as any
 ```
 
 ### AC-192 — What agents are told [MUST / P0]

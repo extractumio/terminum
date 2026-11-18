@@ -13,7 +13,8 @@ use super::git;
 use super::runner::Runner;
 use super::store as bs;
 use crate::tasks::integration;
-use crate::tasks::store::Store;
+use crate::tasks::ops::{self, NewTask};
+use crate::tasks::store::{Store, DISPATCHER};
 
 /// After's status that says it cannot run now (`EX_TEMPFAIL`): its last rows say why (AC-191).
 pub(super) const LATER: i32 = 75;
@@ -49,6 +50,24 @@ pub fn step(store: &Store, runner: &dyn Runner, home: &Path, now: i64) -> Result
         Err(w) => not_run(store, &b, &format!("{}'s folder stays where it is: {w}", p.name), after_after(&p.s), now),
         Ok(()) => store.with(|tx| bs::set_state(tx, b.id, if p.s.after.is_empty() { after_after(&p.s) } else { "after" }, None, now)),
     }
+}
+
+/// An After lost with its window (terminum's tmux server ended while it ran) is not run again: what it did is not
+/// known (AC-191). Said on the batch's row and its integration task, and by a P1 Bug task on the board, which a human
+/// closes once they checked After's work or did it by hand; it holds nothing.
+pub(super) fn lost(tx: &rusqlite::Transaction, p: &Place, b: &bs::Batch, now: i64) -> Result<(), String> {
+    let (n, name, folder, line) = (b.number, &p.name, p.repo.display(), &p.s.after);
+    let tasks = b.tasks.iter().filter_map(|k| bs::slug(tx, k).ok()).collect::<Vec<_>>().join(", ");
+    let text = format!("## Problem or goal\nBatch {n} of {name} was published ({tasks}) and its After was running in {folder} when its window was lost: \
+        terminum's tmux server ended (a crash, kill-server, a restart of the machine). What After did is not known, and terminum does not run it again.\n\n\
+        ## Expected result\nAfter's work done once for batch {n}: check it in {folder}; not done or half done, run After's line there by hand: `{line}`. \
+        Then move this task to DONE.\n\n## Context\nMade by Dispatcher: an After lost with its window is not run again (terminum-integration.md AC-191).");
+    let bug = ops::create(tx, DISPATCHER, NewTask { title: format!("Bug: After's outcome is not known for batch {n} of {name}"), text,
+        project: Some(b.project.clone()), severity: Some("P1".into()), ..Default::default() }, now)?;
+    let words = format!("After's outcome is not known for batch {n}: its window was lost. After is not run again. Check its work: {}.", bug.id);
+    bs::set_pane(tx, b.id, None, now)?;
+    bs::tell_task(tx, b, &words, now)?;
+    bs::set_state(tx, b.id, after_after(&p.s), Some(&words), now)
 }
 
 /// A published batch's After not run, said on its integration task and its row (AC-191); `next` follows.
