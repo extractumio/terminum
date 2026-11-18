@@ -549,8 +549,14 @@ Scenario: AC-115 happy path — a new task
   And a title equal to an open task of the project (case, runs of spaces and end punctuation aside) is not kept: the answer names that task
 
 Scenario: AC-115 edge — limits and scope
-  When a project holds 200 open tasks by agents
-  Then create_task is refused: "This project holds 200 open tasks by agents. Ask the user to close some."
+  Given settings.json names no "agentOpenTasks"
+  When a project holds 10000 open tasks by agents (made by create_task, not archived, not DONE)
+  Then create_task is refused: "This project holds 10000 open tasks by agents, the most settings.json's "agentOpenTasks" allows. Ask the user to close some, or to raise that limit."
+  And a human's task is neither refused nor counted; a task that goes DONE or is archived frees a place
+  Given the user sets "agentOpenTasks": 500 in settings.json
+  Then within a second the refusal comes at 500 open tasks by agents, saying 500
+  And a limit set below what a project holds refuses only new tasks: none is closed or archived by it
+  And 0, a negative, a fraction, a text or a number over 1000000 keeps 10000, and the page's toast says "settings.json: agentOpenTasks must be a whole number of 1–1000000"
   Given a session in Default
   Then list_tasks and get_task reach only its own tasks and tasks it made
   And list_tasks says so on its first line, "In no project (Default): the list holds only the caller's own tasks and those it made, never a board's.", the array still its second line
@@ -1366,7 +1372,7 @@ Pages hear over the page's WebSocket: `taskchange {id, history?}` (`""` for seve
 
 **MCP tools** added to `terminum mcp`'s catalog: `list_tasks`, `get_task`, `create_task`, `update_task` (AC-154), `link_task` (AC-199), `take_task`, `move_task`, `ask_human` (terminum-dispatcher.md AC-157), `add_comment`, `attach_file`, `get_file`, `finish_task`; none is listed: each is found with `search_tools` and run with `execute_tool`, and terminum's own words write the call, `execute_tool("finish_task", {id, result})` (terminum-agents.md AC-155). `add_notes_for_user`, `update_notes_for_user`, `get_notes_for_user` and `delete_notes_for_user` go (AC-98).
 
-**Limits.** Title 1–200 characters, its type's word aside; external link 2048 characters; target 64; a list 20 tasks, a reason 1000 characters; text 1 MiB; a project's template 8 KiB; ID letters 1–8; comment 256 KiB; a file 100 MB, no limit per project; 200 cards a page; 200 open tasks by agents a project; 50 projects (`terminum.md` AC-92), Default not counted. Over a host's link, a request of 64 KB (`terminum-remote.md` §9).
+**Limits.** Title 1–200 characters, its type's word aside; external link 2048 characters; target 64; a list 20 tasks, a reason 1000 characters; text 1 MiB; a project's template 8 KiB; ID letters 1–8; comment 256 KiB; a file 100 MB, no limit per project; 200 cards a page; open tasks by agents a project: settings.json's `"agentOpenTasks"`, 10000 by default, 1–1000000 (AC-115); 50 projects (`terminum.md` AC-92), Default not counted. Over a host's link, a request of 64 KB (`terminum-remote.md` §9).
 
 **Performance.** With AS-112's tasks, on the owner's Mac: first page of the board p95 < 300 ms, a move shown on another page p95 < 200 ms, Find p95 < 300 ms; measured by `liveBoardScale` (`node web/test/e2e_live.mjs board`). No board work blocks a screen's frames (`terminum.md` budgets).
 
@@ -1403,7 +1409,7 @@ Depends on: nothing more.
 - [x] AC-111 — `cargo test tasks::ops`, `web/test/e2e_liveboard.mjs`, Find in TODO's head in `web/test/e2e_boardpanel.mjs`, a phone's in its head in `web/test/e2e_boardphone.mjs`
 - [x] AC-112 — `cargo test tasks::ops`, `cargo test tasks::family`, `web/test/e2e_liveboardtasks.mjs`, `web/test/e2e_liveboardids.mjs`
 - [x] AC-113 — `cargo test tasks::ops` (a task whose session could not follow goes back), `web/test/e2e_liveboard.mjs`
-- [x] AC-115 — `cargo test tasks::tools`, `cargo test cli::mcp`, `web/test/e2e_livenotes.mjs`, `web/test/e2e_livearchived.mjs` (archived moves and results refused; unchanged history)
+- [x] AC-115 — `cargo test tasks::tools`, `cargo test tasks::ops::tests::ac115` and `cargo test settings::tests::ac115` (the agents' limit: 10000 by default, as configured, wrong values), `cargo test cli::mcp`, `web/test/e2e_livenotes.mjs`, `web/test/e2e_livearchived.mjs` (archived moves and results refused; unchanged history)
 - [x] AC-116 — `web/test/e2e_livenotes.mjs` (Convert to task from the list and the bar, Cancel, a refusal, Create, pressed twice, two tabs at once, the link to its line; `node web/test/e2e_live.mjs notes`)
 - [x] AC-117 — `cargo test tasks::marks`, `web/test/e2e_livedispatcher.mjs`, `web/test/e2e_tasklines.mjs`, `web/test/e2e_askfold.mjs` (the counters), `web/test/e2e_boardphone.mjs` (the board's counters, their pulse)
 - [x] AC-118 — `cargo test tasks::archiving`, `web/test/e2e_liveboardtasks.mjs`

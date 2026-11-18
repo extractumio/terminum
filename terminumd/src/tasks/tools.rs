@@ -188,8 +188,15 @@ pub(super) fn text_of(tx: &Transaction, project: &str, raw: &str) -> Result<Stri
     Ok(text)
 }
 
-/// Runs one tool in one transaction: its answer and the tasks it changed.
+/// `run_with` at the default limit: tests' calls.
+#[cfg(test)]
 pub fn run(store: &Store, state_dir: &Path, who: &Who, tool: &str, args: &Value) -> Result<(String, Vec<String>), String> {
+    run_with(store, state_dir, who, tool, args, ops::AGENTS_OPEN_MOST)
+}
+
+/// Runs one tool in one transaction: its answer and the tasks it changed; create_task is refused at `open_most` open
+/// tasks by agents in the project (settings.json's agentOpenTasks, AC-115).
+pub fn run_with(store: &Store, state_dir: &Path, who: &Who, tool: &str, args: &Value, open_most: i64) -> Result<(String, Vec<String>), String> {
     if let Some((_, own)) = store.with(|tx| super::auto::round_in_pane(tx, &who.key))? && (!A_ROUNDS.contains(&tool) || (tool == "finish_task" && args["id"].as_str() != Some(&own.id))) {
         return Err(format!("Auto-Dispatcher's round reads tasks, starts them with dispatch_task and finishes its own, {}: {tool} is not its.", own.id));
     }
@@ -248,6 +255,7 @@ pub fn run(store: &Store, state_dir: &Path, who: &Who, tool: &str, args: &Value)
                     owner: Some(me.clone()),
                     session: None,
                     by_agent: true,
+                    open_most: Some(open_most),
                     made_in: Some(who.key.clone()),
                     scheduled: false,
                     integration: false,

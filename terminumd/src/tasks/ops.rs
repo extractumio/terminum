@@ -16,8 +16,8 @@ pub const SEVERITIES: [&str; 4] = ["P0", "P1", "P2", "P3"];
 pub(crate) const TITLE_MOST: usize = 200;
 pub const TEXT_MOST: usize = 1 << 20;
 pub const COMMENT_MOST: usize = 256 << 10;
-/// Open tasks by agents in one project (AC-115).
-pub const AGENTS_OPEN_MOST: i64 = 200;
+/// Open tasks by agents in one project when settings.json's `agentOpenTasks` names none (AC-115).
+pub const AGENTS_OPEN_MOST: i64 = 10000;
 
 pub fn sql(e: rusqlite::Error) -> String {
     super::store::message(&e)
@@ -217,6 +217,8 @@ pub struct NewTask {
     pub owner: Option<String>,
     pub session: Option<String>,
     pub by_agent: bool,
+    /// when by_agent: the most open tasks by agents its project may hold; none: AGENTS_OPEN_MOST
+    pub open_most: Option<i64>,
     pub made_in: Option<String>,
     /// a schedule's firing made it: IN PROGRESS from its first moment, its ID saying so (terminum-schedules.md AC-162)
     pub scheduled: bool,
@@ -261,8 +263,9 @@ pub fn create(tx: &Transaction, author: &str, new: NewTask, at: i64) -> Result<T
     check_project(tx, &project)?;
     if new.by_agent {
         let open: i64 = tx.query_row("SELECT count(*) FROM tasks WHERE project = ?1 AND by_agent = 1 AND archived_at IS NULL AND status <> 'DONE'", [&project], |r| r.get(0)).map_err(sql)?;
-        if open >= AGENTS_OPEN_MOST {
-            return Err(format!("This project holds {AGENTS_OPEN_MOST} open tasks by agents. Ask the user to close some."));
+        let most = new.open_most.unwrap_or(AGENTS_OPEN_MOST);
+        if open >= most {
+            return Err(format!("This project holds {most} open tasks by agents, the most settings.json's \"agentOpenTasks\" allows. Ask the user to close some, or to raise that limit."));
         }
     }
     let owner = new.owner.unwrap_or_else(|| HUMAN.to_string());

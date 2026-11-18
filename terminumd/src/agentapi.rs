@@ -120,8 +120,8 @@ pub async fn task_tool_of(app: &Shared, who: crate::tasks::tools::Who, host: Opt
     if tool == "get_file" && let Some(host) = host {
         return host_file(app, &host, who, args).await;
     }
-    let a = app.clone();
-    let (text, changed) = crate::http::off(move || crate::tasks::tools::run(&a.tasks, &a.cfg.dir, &who, &tool, &args)).await?;
+    let (a, open_most) = (app.clone(), app.looks.settings.read().agent_open_tasks);
+    let (text, changed) = crate::http::off(move || crate::tasks::tools::run_with(&a.tasks, &a.cfg.dir, &who, &tool, &args, open_most)).await?;
     for task in &changed {
         crate::tasks::api::told(app, task);
     }

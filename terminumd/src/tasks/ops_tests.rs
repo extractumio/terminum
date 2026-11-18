@@ -231,13 +231,39 @@ fn ac115_a_repeat_and_the_agents_limit() {
     assert_eq!(s.with(|tx| repeat_of(tx, "default", "another")).unwrap(), None);
     moved(&s, &a, "DONE").unwrap();
     assert_eq!(s.with(|tx| repeat_of(tx, "default", "fix the retry loop")).unwrap(), None, "only open ones");
+}
+
+/// An agent's create_task in the Default project under `open_most` (settings.json's agentOpenTasks).
+fn by_agent(s: &Store, title: &str, open_most: Option<i64>) -> Result<Task, String> {
     let agent = s.with(|tx| agent_user(tx, "codex", "web")).unwrap();
-    for n in 0..AGENTS_OPEN_MOST {
-        s.with(|tx| create(tx, &agent, NewTask { title: format!("n{n}"), by_agent: true, ..Default::default() }, 1)).unwrap();
-    }
-    let over = s.with(|tx| create(tx, &agent, NewTask { title: "over".into(), by_agent: true, ..Default::default() }, 1)).unwrap_err();
-    assert_eq!(over, "This project holds 200 open tasks by agents. Ask the user to close some.");
-    assert!(s.with(|tx| create(tx, HUMAN, NewTask { title: "a human's".into(), ..Default::default() }, 1)).is_ok());
+    s.with(|tx| create(tx, &agent, NewTask { title: title.into(), by_agent: true, open_most, ..Default::default() }, 1))
+}
+
+const AT_3: &str = "This project holds 3 open tasks by agents, the most settings.json's \"agentOpenTasks\" allows. Ask the user to close some, or to raise that limit.";
+
+#[test]
+fn ac115_the_agents_limit_as_configured_counts_only_their_open_tasks() {
+    let s = store("t-agents-most");
+    let made: Vec<String> = (0..3).map(|n| by_agent(&s, &format!("n{n}"), Some(3)).unwrap().id).collect();
+    assert_eq!(by_agent(&s, "over", Some(3)).unwrap_err(), AT_3, "refused, naming the limit and where it is set");
+    assert!(s.with(|tx| create(tx, HUMAN, NewTask { title: "a human's".into(), ..Default::default() }, 1)).is_ok(), "a human's task is never refused, nor counted");
+    assert_eq!(by_agent(&s, "over", Some(3)).unwrap_err(), AT_3);
+    assert!(by_agent(&s, "a raised limit", Some(4)).is_ok(), "the limit read at each call");
+    assert_eq!(by_agent(&s, "over", Some(2)).unwrap_err().split(',').next(), Some("This project holds 2 open tasks by agents"), "a lowered limit refuses new ones only");
+    assert_eq!(column(&s, "TODO").len(), 5, "nothing closed or archived by it");
+    moved(&s, &made[0], "DONE").unwrap();
+    assert!(by_agent(&s, "after a DONE", Some(4)).is_ok(), "a DONE task frees a place");
+    s.with(|tx| archive(tx, HUMAN, &made[1], true, 2)).unwrap();
+    assert!(by_agent(&s, "after an archive", Some(4)).is_ok(), "an archived task frees a place");
+}
+
+#[test]
+fn ac115_the_agents_limit_is_10000_by_default() {
+    let s = store("t-agents-default");
+    let agent = s.with(|tx| agent_user(tx, "codex", "web")).unwrap();
+    s.with(|tx| (0..10000).try_for_each(|n| create(tx, &agent, NewTask { title: format!("n{n}"), by_agent: true, ..Default::default() }, 1).map(|_| ()))).unwrap();
+    let over = by_agent(&s, "over", None).unwrap_err();
+    assert!(over.starts_with("This project holds 10000 open tasks by agents, the most settings.json's \"agentOpenTasks\" allows."), "{over}");
 }
 
 #[test]

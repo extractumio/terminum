@@ -287,6 +287,7 @@ async fn make(State(app): State<Shared>, Json(body): Json<Value>) -> Response {
         owner: text(&body, "owner"),
         session: text(&body, "session"),
         by_agent: false,
+        open_most: None,
         made_in: text(&body, "made_in"),           // a record's session it was made of (AC-116, AC-150)
         scheduled: false,
         integration: false,
