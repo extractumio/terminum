@@ -70,7 +70,7 @@ Open questions:
 |---|---|---|---|---|
 | OQ-01 | Which tmux server holds local terminals: the user's default server or a private `-L terminum` server? | Owner | resolved | A private server: socket `terminum`, started by terminumd with its own config `~/.terminum/tmux.conf` (history-limit 12000, window-size latest (per window: AC-13), extended-keys on, focus-events on, escape-time 0; the user may edit it), so the user's sessions and `~/.tmux.conf` are never touched; `tmux -L terminum attach` from any terminal works. The user may also attach sessions of their own server by name (AC-89). |
 | OQ-02 | How many control clients: one per server, or one per session? | Claude | resolved | One per session for notices and typing (AS-06), plus one bulk client per server for history pages, search, `list-panes` and layout reads, so a bulk read never queues ahead of an echo. |
-| OQ-03 | When two clients of different widths show one pane (a phone and the Mac's browser), whose width wins? | Owner | resolved | The active page (AC-13). |
+| OQ-03 | When two clients of different widths show one pane (a phone and the Mac's browser), whose width wins? | Owner | resolved | The active page; where a coding agent draws on the normal screen, the page that types (AC-13). |
 | OQ-04 | Does an app replace the browser for daily use on the Mac, or is a browser tab enough? | Owner | resolved | No app: the clients to build and test for are those of AS-07. terminum-lifecycle.md AC-11 is dropped. |
 | OQ-06 | Should the page ship JetBrains Mono Nerd Font as woff2 (OFL) so the phone shows the Mac's font, or keep `local()` with Menlo as the fallback? | Owner | resolved | Ship it: JetBrains Mono Nerd Font Mono 2.304 of Nerd Fonts 3.4.0, after the theme's font in every list (AC-12). |
 | OQ-05 | Absolute line numbers after `history-limit` is reached (AS-04) or a resize re-wrapped the history (AS-09): keep counting by matching rows, or reset the page's history? | Claude | resolved | Reset when the last frame's rows cannot be matched, counted on where they can (AC-02); bookmarks and search marks are found again by their text. |
@@ -89,7 +89,7 @@ Open questions:
 | AC-09 | [MUST / P0] | A web page or local process cannot list sessions, read screens, type or touch files through terminumd without the sign-in, which only the password set by `terminum password` gets; wrong passwords are braked; writes need the exact Host, Origin and Content-Type. |
 | AC-10 | [SHOULD / P1] | A browser on another device reaches the same page through `tailscale serve` over HTTPS and signs in with the same password; what only the Mac may do is refused to forwarded requests; Tailscale Funnel is refused. |
 | AC-12 | [SHOULD / P1] | The user sees each session in a theme (colors, ANSI palette, font) chosen by rules per host and session from theme files, with light and dark variants following the system, changed live when a file changes; `local.json` and `remote.json` are the defaults. |
-| AC-13 | [MUST / P0] | The pane's size follows the active page that shows it: a wide window gets a wide pane and a phone a narrow one, the shown pane of a window of several panes is zoomed to fill it, and a tmux client attached by hand keeps working. |
+| AC-13 | [MUST / P0] | The pane's size follows the active page that shows it: a wide window gets a wide pane and a phone a narrow one, the shown pane of a window of several panes is zoomed to fill it, and a tmux client attached by hand keeps working; where a coding agent draws on the normal screen, only a page that types sizes the window. |
 | AC-18 | [SHOULD / P1] | On a touch screen or a narrow window the hot keys panel, the keyboard button and the floating buttons work with a finger, and the panel's layout comes from a file the user can change. |
 | AC-19 | [SHOULD / P1] | The user customizes the page with a stylesheet of their own (`custom.css`) and settings in `settings.json`, with the page reloading when they change and refusing nothing silently. |
 | AC-20 | [SHOULD / P1] | terminumd stays within its budgets: under 60 MB with 60 panes and two pages, under 0.5 % CPU idle, a key echoed in 25 ms median on the Mac, a frame encoded in 3 ms; the page under 150 MB with 10,000 lines. |
@@ -292,7 +292,7 @@ Scenario: AC-04 happy path — one view, re-flowed to the browser
   Then the page draws the pane's lines at the chosen text size, its history above (AC-02); the pane is sized to this view's grid (AC-13), so its rows fill the view; there is no view mode to pick
   And on the normal screen nothing is scaled or scrolled sideways: a row wider than the view wraps at its edge; while the pane has the view's width its rows stay as the program laid them out (its hanging indents too)
 Scenario: AC-04 edge — a pane wider or narrower than the view
-  Given the pane's width is not the view's: a window of several panes that stays as it is (AC-13), a split window another page zoomed, another page's size, a refused resize, the 45-column floor, a view whose new width is on its way to tmux
+  Given the pane's width is not the view's: a window of several panes that stays as it is (AC-13), a split window another page zoomed, another page's size, a coding agent's window a page that only looks leaves as it is (AC-13), a refused resize, the 45-column floor, a view whose new width is on its way to tmux
   Then on the normal screen its lines re-flow to the view's width (Wrap), at the chosen text size: a line tmux wrapped is one line again, prose a program wrapped at the pane's width re-joins (a word broken at the edge without a space), list items, agent marks and numbered lines start lines, separator lines span the view, and a narrow pane's lines fill the view
   And a full-screen program (AC-05) is drawn as its grid: scaled down to the view's width, at the chosen size with the rest by scrolling sideways when that would make the text smaller than 7 px (the smallest size − and + allow); "Sized for another screen (W×H)" says so when another page sized it
 Scenario: AC-04 edge — the view changes width
@@ -303,7 +303,7 @@ Scenario: AC-04 edge — the view changes width
 Scenario: AC-04 edge — another pane opened
   When the user opens another pane (the list, ⌘[ ⌘], a bookmark, a new window) whose window has another size than this view's grid
   Then the page lays the new pane's session out first (its own docked Files, terminum-files.md AC-70) and sends "sub" with the grid that leaves; terminumd sizes the window to it before the pane's first frame (AC-13), so that frame comes at this view's grid
-  And the view keeps showing the pane shown before, still (never blank), until that first frame, 1.5 s at most, then draws the new pane at once, at the chosen text size: no frame at the window's old size is drawn first, so the text size never jumps; a window of several panes (never resized) comes at its own size, re-flowed to the view
+  And the view keeps showing the pane shown before, still (never blank), until that first frame, 1.5 s at most, then draws the new pane at once, at the chosen text size: no frame at the window's old size is drawn first, so the text size never jumps; a window of several panes (never resized) comes at its own size, re-flowed to the view, and so does one where a coding agent draws on the normal screen (AC-13)
 ```
 
 ### AC-05 — Full-screen programs [SHOULD / P1]
@@ -554,7 +554,17 @@ Scenario: AC-13 happy path — the active page sizes the pane
   When the iPhone opens %3 (its page in sight) or types there
   Then the window is resized to the phone's 48×30; the Mac's view re-flows the 48-column lines to its width (a full-screen program: the 48×30 grid) until the Mac's page is the active one again
   When the Mac's browser window comes to the front (focus) or its page types
-  Then the window is 180×50 again; a page sizes on opening the pane, on becoming the active page (in sight and, on a computer, focused), and on typing; a change of its view's size (a split, a dragged edge, the keyboard, the phone's toolbar) resizes only a window this page already sizes or nobody does, so a phone's toolbar never takes the window from the Mac being typed on; a window is resized at most once a second per client (another window at once: switching panes waits for none), and a size held back for that second is dropped when a later one comes (a dragged window reaches tmux at its first and its last size: each narrowing re-wraps the pane, and a program that redraws, such as Claude Code, leaves its old top lines in the history, as it does on each switch between pages of different sizes)
+  Then the window is 180×50 again; a page sizes on opening the pane, on becoming the active page (in sight and, on a computer, focused), and on typing; a change of its view's size (a split, a dragged edge, the keyboard, the phone's toolbar) resizes only a window this page already sizes or nobody does, so a phone's toolbar never takes the window from the Mac being typed on; a window is resized at most once a second per client (another window at once: switching panes waits for none), and a size held back for that second is dropped when a later one comes (a dragged window reaches tmux at its first and its last size)
+Scenario: AC-13 edge — a coding agent on the normal screen
+  Given %3 runs Claude Code in its default TUI (the list names the pane's agent, and it is not on the alternate screen), its window 148×58, its answer taller than the pane
+  When a page that types nothing opens %3, becomes the active page or changes its view (an iPhone that looks, the Mac's window made narrower, Files docked, the phone's toolbar), or the page that sized it is put away
+  Then terminumd sends tmux no size: the window stays 148×58 and the page re-flows the pane to its view (AC-04); such an agent prints its transcript again on every new size, from the top of the screen, into a history tmux has re-wrapped, so a new width leaves parts of the answer there two or three times (one column is enough) and new rows lose lines where the history meets the screen
+  When that page types
+  Then the window gets its grid, whoever sized it before: one such change for a page that works there; a page whose view changed since it sized the window no longer holds it, so its next key sizes it at once
+  And in a window of several panes the shown pane is still zoomed (the scenario below), which changes that pane's size once; the window neither grows nor shrinks for a look
+  And a session whose agent started unseen (Dispatcher's, a schedule's) keeps the size tmux gave its window until a page types there
+  And a shell, a full-screen program and an agent on the alternate screen (Claude Code's fullscreen TUI, Codex) are sized as the happy path says
+  And terminumd's log names each resize it makes ("sizing.resize"): the page, whether it came through a proxy, the pane, the window's size before and after, and why (the pane opened, the page active, its view, a key)
 Scenario: AC-13 edge — the smallest and the largest grid
   When a page's view holds fewer than 45×14 cells (a phone's split, a narrow window, big text) or more than 240×70 (a large display)
   Then terminumd sizes the window to 45 to 240 columns and 14 to 70 rows: an iPhone in portrait at 13 px holds the smallest, about a 1920×1200 window the largest; a pane wider than the view is drawn as AC-04 says, rows the view does not hold scroll, and a view larger than the grid leaves the rest blank; a view under 20×5 (an animation, a dragged edge, a hidden part) sends no size and the pane keeps its own
@@ -571,7 +581,7 @@ Scenario: AC-13 edge — a resize that fails
 Scenario: AC-13 edge — the page that sized it is put away
   Given the iPhone sized %3 (the window is 103×21) and the Mac's browser shows %3 too
   When the iPhone's page is hidden (the phone locked, Safari in the background, another tab)
-  Then the window goes to the Mac's view at once, without a key, and a hidden page's new size takes nothing
+  Then the window goes to the Mac's view at once, without a key, and a hidden page's new size takes nothing; where a coding agent draws on the normal screen it stays 103×21 until the Mac's page types (the edge above)
 Scenario: AC-13 edge — a window of several panes
   Given %3's window holds three panes (split by an agent such as Claude Code's teammates, or restored, terminum-lifecycle.md AC-15) and %3 is 31 of its 45 columns
   When a page in sight shows %3 (focused or not)
@@ -1297,6 +1307,7 @@ stateDiagram-v2
   Sized --> Other: this page is hidden: a page still looking takes it at once
   note right of Other: drawn as a pane of another width (AC-04)
   note right of Sized: in a window of several panes the shown pane is zoomed first
+  note left of Sized: where a coding agent draws on the normal screen only typing sizes: opening, becoming active, a changed view and a hidden page change nothing
 ```
 
 ## 7. Current behavior and gaps
@@ -1569,7 +1580,7 @@ All cases are shipped. What AC-195's lines may call for, each only once the inst
 - [x] AC-09 — scripts/e2e_access.py, scripts/e2e_ws.py, web/test/e2e_signin.mjs, `node web/test/e2e_live.mjs signin` (a renewed context, delayed sign-in installation and a genuine refusal), web/test/proof.test.mjs, terminumd/src/auth/web_tests.rs, terminumd/src/auth/signin_tests.rs, terminumd/src/auth/credential_tests.rs, terminumd/src/auth/checks_tests.rs, terminumd/src/auth/websignin_tests.rs, terminumd/src/umask_tests.rs
 - [x] AC-10 — terminumd/src/auth/checks_tests.rs, scripts/e2e_access.py
 - [x] AC-12 — terminumd/src/theme_tests.rs, web/test/e2e_live.mjs, web/test/e2e_split.mjs, web/test/e2e_liveprogs.mjs
-- [x] AC-13 — `cargo test page::zoom`, `cargo test page::sizing` (a refused resize undone, a resize on its way), scripts/e2e_sizing.py, scripts/e2e_attach.py, scripts/e2e_sizestale.py, scripts/e2e_core.py, web/test/e2e_screen.mjs, web/test/e2e_livesplit.mjs, web/test/e2e_live.mjs
+- [x] AC-13 — `cargo test page::zoom`, `cargo test page::sizing` (a refused resize undone, a resize on its way, an agent's window left as it is), scripts/e2e_sizing.py, scripts/e2e_attach.py, scripts/e2e_sizestale.py, scripts/e2e_core.py, web/test/e2e_screen.mjs, web/test/e2e_livesplit.mjs, web/test/e2e_live.mjs, web/test/e2e_liveprogs.mjs (real Claude Code looked at: its history holds the answer once)
 - [x] AC-18 — web/test/e2e_tmux.mjs, web/test/e2e_hold.mjs, web/test/e2e_phonerow.mjs, web/test/e2e_sheets.mjs, web/test/e2e_fold.mjs, web/test/onekbd.test.mjs, web/test/e2e_touchkeys.mjs (the keyboard's light, a hardware keyboard, the cursor), web/test/e2e_tabhead.mjs (a tablet's header)
 - [x] AC-19 — terminumd/src/settings_tests.rs, web/test/e2e_signin.mjs, web/test/e2e_live.mjs, web/test/e2e_tmux.mjs
 - [x] AC-20 — scripts/bench_load.py, scripts/bench_echo.py, terminumd/benches/frame.rs (`cargo bench frame`)

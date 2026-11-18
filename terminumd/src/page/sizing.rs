@@ -2,7 +2,7 @@
 //! The pane's size follows the active page that shows it (AC-13, AC-06): a page sizes the
 //! window on opening the pane (before its first frame, at the grid sent with `sub`: AC-04), on
 //! becoming active (in sight and focused: `resume`) and on typing; a change of its view resizes only a window it sizes or nobody does; a hidden page
-//! sizes nothing and hands its windows over. The user's own tmux too (AC-89), marked. A
+//! sizes nothing and hands its windows over. Where a coding agent draws on the normal screen only typing sizes the window (`redraws`). The user's own tmux too (AC-89), marked. A
 //! window of one pane, or whose shown pane is zoomed, is resized with
 //! `window-size manual` + `resize-window`. In a window of several panes terminumd zooms the
 //! shown pane first, and only typing makes the window smaller: its hidden panes share what is
