@@ -188,6 +188,28 @@ fn ac191_a_folder_off_its_branch_stays_and_the_batch_s_row_says_after_did_not_ru
 }
 
 #[test]
+fn ac191_a_folder_with_any_uncommitted_change_stays_until_it_is_clean() {
+    let w = world("it-dirty", settings());
+    queued(&w, 1, "b.txt", "b\n");
+    // beside the move, which git alone would let through, and a new file
+    std::fs::write(w.api.join("a.txt"), "the maintainer's work\n").unwrap();
+    std::fs::write(w.api.join("notes.txt"), "mine\n").unwrap();
+    let r = Sh::default();
+    until(&w, &r, 1, "ended", false);
+    assert_eq!(nth(&w, 1).why.as_deref(), Some("After did not run for batch 1: api's folder stays where it is: \
+        2 uncommitted files in it; it moves only when git status --porcelain is empty"));
+    assert_eq!(files(&w), "a.txt", "not moved");
+    assert_eq!(std::fs::read_to_string(w.api.join("a.txt")).unwrap(), "the maintainer's work\n");
+    assert!(!r.lines.lock().unwrap().iter().any(|l| l.contains(".after:")), "{:?}", r.lines.lock().unwrap());
+    sh(&w.api, &["checkout", "-q", "--", "a.txt"]);
+    std::fs::remove_file(w.api.join("notes.txt")).unwrap();
+    queued(&w, 2, "c.txt", "c\n");
+    until(&w, &r, 2, "ended", false);
+    assert_eq!(nth(&w, 2).why, None, "clean: it follows and After runs");
+    assert_eq!(files(&w), "a.txt\nb.txt\nc.txt");
+}
+
+#[test]
 fn ac191_both_windows_lost_the_check_runs_again_and_after_does_not() {
     let r = Sh { hang_on: vec![".after", ".check"], ..Default::default() };
     let w = world("it-lost", settings());

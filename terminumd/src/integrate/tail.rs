@@ -140,9 +140,14 @@ fn failed(store: &Store, p: &Place, b: &bs::Batch, how: Option<&str>, log: &Path
     })
 }
 
-/// The project's folder fast-forwarded to the target when it stands clean on its branch (AC-191).
+/// The project's folder fast-forwarded to the target when it stands clean on its branch (AC-191): any uncommitted
+/// change keeps it where it is, untracked files and changes the move would not touch included (CLAUDE.md §9).
 fn folder_follows(p: &Place) -> Result<(), String> {
     let (remote, branch) = integration::target_of(&p.s.target)?;
+    let dirty = git::run(&p.repo, &["status", "--porcelain"])?.lines().count();
+    if dirty > 0 {
+        return Err(format!("{dirty} uncommitted files in it; it moves only when git status --porcelain is empty"));
+    }
     let on = git::run(&p.repo, &["branch", "--show-current"])?;
     if on != branch {
         return Err(format!("it is on {}, not {branch}", if on.is_empty() { "no branch" } else { &on }));
