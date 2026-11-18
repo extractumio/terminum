@@ -2,10 +2,12 @@
 """`make install` in the install turn (spec AC-104), on a real repository in a temporary folder: two installs'
 staging at once, one by hand beside a landing's install, and a landing's own make install inside its turn."""
 import os
+import select
 from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import unittest
 from unittest import mock
@@ -77,6 +79,7 @@ class InstallTurn(unittest.TestCase):
                                    cwd=self.repo, stdout=subprocess.PIPE, text=True)
             self.addCleanup(lambda: run.poll() is None and (run.kill(), run.wait()))
             self.addCleanup(run.stdout.close)
+            self.assertTrue(select.select([run.stdout], [], [], 10)[0], "it says why it waits")
             self.assertEqual(run.stdout.readline().strip(), "make install: a landing's After holds the install turn: waiting for its end")
             time.sleep(0.3)
             self.assertIsNone(run.poll(), "it waits while the turn is held")
@@ -93,6 +96,23 @@ class InstallTurn(unittest.TestCase):
         with mock.patch.object(land.subprocess, "run") as run:
             land.make(self.repo, "install")
         self.assertEqual(run.call_args.kwargs["env"][install_turn.HELD], "1", "a landing's make install is in its turn")
+
+    def test_a_landings_install_says_whose_install_it_waits_for(self):  # AC-104
+        said = []
+        land.install_mark(self.repo).write_text("4f2a91c07\n")
+        with mock.patch.object(land, "landing_holder", return_value=None), mock.patch.object(land, "install_now") as now:
+            with Turn(self.repo, INSTALL_TURN) as held:
+                self.assertTrue(held.take())
+                held.hold_as("make install in /Users/alex/terminum, pid 7")
+                pending = threading.Thread(target=land.install_pending, args=(self.repo,), kwargs={"say": said.append})
+                pending.start()
+                deadline = time.time() + 10
+                while not said and time.time() < deadline:
+                    time.sleep(0.01)
+                self.assertEqual(said, ["install: make install in /Users/alex/terminum, pid 7 holds the install turn: waiting for its end"])
+                self.assertFalse(now.called, "nothing installed while the other holds the turn")
+            pending.join(10)
+            now.assert_called_once()
 
     def test_the_commands_status_is_its_own(self):  # AC-104
         failed = subprocess.run([sys.executable, str(SCRIPTS / "install_turn.py"), "false"], cwd=self.repo, timeout=10)

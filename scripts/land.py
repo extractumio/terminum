@@ -329,8 +329,10 @@ def install_pending(primary, run=make, say=print):
         say(f"install: left to {holder}'s landing, which has the turn")
         return
     with TreeTurn(primary, INSTALL_TURN) as turn:
-        turn.take(wait=True)   # a landing that ended meanwhile may install too: one after the other
-        turn.hold_as("a landing's install")
+        if not turn.take():   # a landing that ended meanwhile, After or one by hand: one after the other
+            say(f"install: {turn.holder('another install')} holds the install turn: waiting for its end")
+            turn.take(wait=True)
+        turn.hold_as(f"a landing's install, pid {os.getpid()}")
         install_now(primary, run, say)
 
 

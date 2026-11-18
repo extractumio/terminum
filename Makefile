@@ -94,6 +94,7 @@ primary-checkout:
 install: primary-checkout
 	python3 scripts/install_turn.py $(MAKE) --no-print-directory install-fresh
 
+# only through install, in its turn
 install-fresh: primary-checkout
 	python3 scripts/worktree_fresh.py freshen
 	$(MAKE) --no-print-directory install-stage
