@@ -83,7 +83,7 @@ fn boss(manager: bool) -> &'static str {
 }
 
 /// `boss`, a sentence's first word.
-fn the_boss(manager: bool) -> &'static str {
+pub(super) fn the_boss(manager: bool) -> &'static str {
     if manager { "The project's manager" } else { "The human" }
 }
 
@@ -176,8 +176,8 @@ impl Facts {
         }
         // a schedule's task goes as the schedule's run, in its own words (terminum-schedules.md AC-162)
         if let Some((s, again)) = &self.schedule {
-            // its first run is the firing's; any after is a human's RUN
-            let run = super::fire::prompt(s, &t.id, &t.title, body, *again);
+            // its first run is the firing's or a Run now's; any after is a RUN, the human's or the manager's
+            let run = super::fire::prompt(s, &t.id, &t.title, body, *again, self.manager);
             return match said { Some(m) => format!("{m}\n\n{run}"), None => run };
         }
         let mut parts = vec![format!("{who} ran task {}: {}", t.id, t.title)];
