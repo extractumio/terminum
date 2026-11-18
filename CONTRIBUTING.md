@@ -19,10 +19,24 @@ needs this agreement. By opening a pull request you confirm that:
    necessarily infringes, on the same terms.
 4. You keep the copyright of your contribution and may use it under any terms.
 
-The agreement is recorded by a CLA check on the pull request (until it is set up:
-`Signed-off-by: Your Name <you@example.com>` on each commit, `git commit -s`). This is for
-pull requests from outside contributors only: the Maintainer's commits, and those of AI
-agents working in the Maintainer's checkout, carry no such line (plain `git commit`): the
+### Sign off every commit
+
+The agreement is recorded by a sign-off on **every commit** of your pull request: the line
+`Signed-off-by: Your Name <you@example.com>`, with the commit's own author address.
+
+| When | Do |
+|---|---|
+| a new commit | `git commit -s` |
+| commits already made | `git rebase --signoff origin/main`, then `git push --force-with-lease` |
+| your employer has rights in the work (a work address, work time or equipment) | have its permission first: your sign-off states it (point 1 above) |
+
+A pull request with a commit not signed off is not merged. The Maintainer checks it with
+`python3 scripts/check_signoff.py <number>`; the pull request template says the same. When the
+change is wanted and the sign-off does not come, the Maintainer may fix the same problem in a
+commit of their own, written anew, and close the pull request with a link to it.
+
+This is for pull requests from outside contributors only: the Maintainer's commits, and those
+of AI agents working in the Maintainer's checkout, carry no such line (plain `git commit`): the
 `commit-msg` hook refuses the author's name and email in a message (CLAUDE.md §2).
 
 ## Worktrees
