@@ -114,6 +114,13 @@ impl Press {
         Ok(goes)
     }
 
+    /// The resume of a run its tmux server's end cut off (AC-205): no one's new press; who started the run and how stay
+    /// its own (AC-183), a manager's start its manager's.
+    pub(super) fn resumed(how: How, by: &str) -> Press {
+        let manager = (by != HUMAN && by != crate::tasks::store::DISPATCHER).then(|| by.to_string());
+        Press { how, manager, auto: how == How::Auto, ..Default::default() }
+    }
+
     /// Who pressed: the manager's user, else the human.
     fn by(&self) -> &str {
         self.manager.as_deref().unwrap_or(HUMAN)

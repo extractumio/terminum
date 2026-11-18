@@ -27,7 +27,7 @@ In scope:
 - Time budgets, warnings and ending; subagents; CPU, memory and tokens; local and remote hosts.
 
 Out of scope (explicit):
-- Automatic restarts; starting a task with no human's press, but by Auto-Dispatcher where a human turned it on for the project (AC-170). A human's RUN at a slot's limit joins its agent's queue once the human agrees (AC-169) and waits for its room (AC-158): the press is the human's. A human's schedule is a standing press: its tasks start on their cadence (`terminum-schedules.md`).
+- Automatic restarts but one: a run whose tmux server ended under it resumes by itself (AC-205), as the press that started it still stands and the server's end was no one's decision; starting a task with no human's press, but by Auto-Dispatcher where a human turned it on for the project (AC-170). A human's RUN at a slot's limit joins its agent's queue once the human agrees (AC-169) and waits for its room (AC-158): the press is the human's. A human's schedule is a standing press: its tasks start on their cadence (`terminum-schedules.md`).
 - Choosing an agent's permissions: its command, as the operator writes it, carries them (AC-156).
 - Tasks, the board and the agent's tools: `terminum-kanban.md`.
 - Any act on a session Dispatcher did not start, other than writing its start and end on the task.
@@ -83,6 +83,7 @@ Open questions:
 | AC-143 | [SHOULD / P1] | An agent's window shows what it spent in the last 7 and 30 days, against its limits if it has them; a limit is shown, it stops nothing. |
 | AC-168 | [SHOULD / P1] | An agent's rectangle shows two stripes, its kind's subscription windows (five hours and a week) in percent as its kind's usage command or a session of that kind last read them; the usage command, a line in settings.json that spends no tokens, runs at terminumd's start, every 10 minutes while a run of its kind works on a task, as one of its tasks ends, else hourly; the last reading outlives a restart; a window not known, reset since, or read long ago, and a failed usage command, say so, never a made-up 0%. |
 | AC-144 | [MUST / P0] | Task, project, agent, a run's process and its tmux pane each live their own life: each outlives the others' restart or deletion as the table says, and what is lost is said. |
+| AC-205 | [MUST / P0] | A run Dispatcher started whose task was IN PROGRESS when its tmux server ended resumes by itself once the server is back, as RUN would, with fixed words that say so; a window closed by hand, a task not in progress, a run with nothing to resume, and a server that ends again within an hour of such a resume do not. |
 | AC-156 | [MUST / P0] | A run starts its agent's command as the operator wrote it, its permissions and model included; Dispatcher adds only the inline TUI in the agent's own process with Codex's update menu off (§9), the effort and, going on, the resume of its conversation; going on starts the agent's command as the pool has it then. |
 | AC-157 | [MUST / P0] | An agent that needs a human asks by `ask_human`: its questions, written for a newcomer as why a person is needed (one sentence), the recommended answers with why and the other options, then the whole issue (one paragraph), stay on the task, the task waits for the human, and once the agent's turn is over its session closes; the task keeps its agent and conversation, and RUN resumes that conversation with the human's answers. |
 | AC-158 | [MUST / P0] | A RUN at its agent's or project's limit that the human added to the queue (AC-169) waits for room, in the queue's order, and starts once there is room; it is called off by the human, or by the task moving, archived or its agent deleted. |
@@ -1123,7 +1124,7 @@ Scenario Outline: AC-144 what each outlives
   Examples:
     | what | rest |
     | terminumd restarts | its runs and panes go on and the walk reads them anew (AC-131) |
-    | tmux restarts | the panes are gone: each run is closed, its open tasks FAILED but a queued one, which lands as any (`terminum-integration.md` AC-187), and Run resumes its conversation (AC-122) |
+    | tmux restarts | the panes are gone: a run whose task was IN PROGRESS resumes by itself (AC-205); every other run is closed, its open tasks FAILED but a queued one, which lands as any (`terminum-integration.md` AC-187), and Run resumes its conversation (AC-122) |
     | the machine restarts | as for tmux, once terminumd is up again |
     | a pane is closed by hand | its run is closed, its open tasks FAILED, and Run resumes its conversation |
     | an agent ends in its pane | the pane stands at its shell, and Run starts the agent there (AC-122) |
@@ -1140,6 +1141,44 @@ Scenario: AC-144 edge — a project on another server
   Given two projects on two servers, each with an agent of the same command
   When a task of each runs
   Then each process runs on its project's server, on its project's agent, and each agent's limit counts its own
+```
+
+### AC-205 — After its tmux server ended [MUST / P0]
+
+```gherkin
+Scenario: AC-205 happy path — resumed by itself
+  Given API-12 IN PROGRESS on Opus reviewer, its run started by Dispatcher on a human's press, a schedule's or a manager's, its agent at work, its conversation known
+  When terminum's tmux server ends under it (a crash, kill-server, a restart of the machine) and is back: the server's identity (`@terminum-id`) is not the one its run last saw
+  Then at the next walk API-12 stays IN PROGRESS, its history saying "Dispatcher resumes it: its tmux server ended and started anew."
+  And its conversation goes on as RUN's resume does (AC-122): a new window in the run's first folder and host, the pool's command for that agent as it is now with --resume <id> (AC-156), on its agent's and project's slots (AC-141), who started it and how kept (AC-183); with no room it is FAILED with the limit's words: nothing waits, as no human agreed to a queue (AC-169)
+  And the prompt, typed through the gate (§9), is the task's ID with fixed words: "[terminum Dispatcher] API-12: your session ended because terminum's tmux server stopped (a crash or a restart of the machine), and Dispatcher resumed it. Your conversation shows what was done: do not redo finished steps. Programs and servers you ran in the background are gone. Before you go on with the task, check your working tree (git status, files half written, a stale .git/index.lock) and start again what you still need."
+  And a run of several tasks names each open one's ID (AC-185), and a host's server ending resumes its runs there the same way
+
+Scenario: AC-205 edge — what is not resumed
+  Given the server ended and is back
+  Then a run is not resumed, and what it holds is FAILED with "Its tmux server started anew." as before, but a queued task stays queued (`terminum-integration.md` AC-187), when:
+    | its task was WAIT FOR HUMAN, TODO or INTEGRATION; or every task of it was DONE or FAILED |
+    | its agent had ended by itself, it was being ended at a limit (AC-126), or given up (AC-138) |
+    | it is + Session's, a human's session (AC-142), or a session Dispatcher did not start |
+    | no conversation of its agent is known |
+  And a run whose agent was deleted from the pool is FAILED with "Not resumed after its tmux server started anew: Opus reviewer is no longer in the pool."
+  And a first folder gone, or a conversation the agent refuses, fails as RUN's resume does (AC-122)
+
+Scenario: AC-205 edge — a window closed by hand
+  Given API-12's window closed by a human while its server runs on: its identity is the one its run last saw
+  Then nothing resumes: API-12 is FAILED with "Its window was closed." as AC-144 says
+
+Scenario: AC-205 failure — the server ends again within the hour
+  Given Dispatcher resumed runs after the local server ended at 10:00
+  When that server ends again at 10:40, whatever ended it
+  Then nothing is resumed that time: each run that would have been is FAILED with "Its tmux server ended again within an hour of resuming it: run it once the cause is found."
+  And a later end, after 11:00, resumes again; a host's server keeps its own hour
+  And the runs cut off by one end resume together: the hour counts from that end's first resume, by the identity the server took
+
+Scenario: AC-205 edge — a link lost, terminumd down
+  Given a host out of reach, or terminumd stopped while the server ran on
+  Then nothing is decided while the server is not read; once read with the identity its runs last saw, they go on as AC-131 says
+  And a machine's restart is read when terminumd is up again: its server's identity is new
 ```
 
 ### AC-156 — The operator's command [MUST / P0]
@@ -1741,9 +1780,9 @@ Scenario: AC-131 edge — a Stop during the restart
 
 Scenario: AC-131 edge — tmux restarted
   When the server restarted and restore says which new pane is API-12's
-  Then the run follows it, its @terminum-run set again; its agent is gone: API-12 is FAILED and RUN continues the conversation (AC-122)
+  Then the run follows it, its @terminum-run set again; its agent is gone: API-12, IN PROGRESS, resumes in a new window (AC-205), else it is FAILED and RUN continues the conversation (AC-122)
   When no restore says so
-  Then the link drops, nothing is typed or ended, and API-12 is FAILED with "Its tmux server started anew"
+  Then the link drops and nothing is typed or ended in that pane: API-12, IN PROGRESS, resumes in a new window (AC-205); else it is FAILED with "Its tmux server started anew."
 
 Scenario: AC-131 failure — the store is down
   When a write fails
@@ -1840,7 +1879,7 @@ New task and Run is two presses; a drop and Run one drag and one press. What to 
 | AC-123 | An agent's move_task to DONE keeps no result: a task goes DONE without one that way (TERM-85). | `terminumd/src/tasks/tools.rs` |
 | AC-138 | Several tasks are chosen with a pointer's ⌘ or Ctrl: a phone or the keyboard runs one at a time. Clearing one task's budget takes the limit off the run. | `web/static/kanban.js`, `terminumd/src/dispatcher/runs.rs` |
 | AC-125 | Of a session Dispatcher did not start, its end is written, its start not. | `terminumd/src/tasks/tell.rs` |
-| AC-131 | A restored tmux server's new pane is not followed: its run says its window was closed. | `terminumd/src/dispatcher/plan.rs` |
+| AC-131 | A restored tmux server's new pane is not followed: a run at work on a task in progress resumes in a new window (AC-205), any other is FAILED with "Its tmux server started anew." | `terminumd/src/dispatcher/plan.rs` |
 | AC-131 | §9's walk budget has no bench yet (`scripts/bench_board.py`). | `terminumd/src/dispatcher/walk.rs` |
 | AC-121 | A real Codex's hooks need its own trust (AS-124), not checked here beyond its failure's words. | `terminumd/src/dispatcher/start.rs` |
 | AC-126 | A subagent in a pane of its own is not ended with its agent: its pane is not tied to its hook ID (AS-126). | `terminumd/src/dispatcher/walk.rs` |
@@ -1882,6 +1921,8 @@ CREATE TABLE runs (id TEXT PRIMARY KEY, task TEXT NOT NULL REFERENCES tasks, age
 ```
 
 `asked` (AC-157): its agent asked a human itself (`ask_human`), set in that call's transaction, cleared by its own move off it and by new work.
+
+`server_id` (AC-205): the identity of the tmux server (`@terminum-id`, set once per server by terminumd) a walk last saw the run's pane in, marked; null until then. A walk that finds the pane gone or another's, and the server read with another identity, knows the server ended. The hour against a loop is the store's `meta` key `resumed:<server>` (`{"identity", "at"}`): the identity the server took and when the first run cut off by that end resumed.
 
 Taking a first prompt is one transition, shared by its hook and a status-changing task tool. The tool accepts every task of its run before its mutation in the same transaction. `prompt` stays until the matching first hook acknowledges it, including in `working`; that acknowledgment records the conversation and tells the pages, without resetting clocks, tools or task outcomes.
 
@@ -1983,7 +2024,7 @@ Exit -1 is the folder's: no process exits with it. The target names the pane: `t
 5. Read the screen again until the text or Claude's fold marker stands in the box, with no dialog, within its time below (a first prompt's longer: an agent still starting shows it late).
 6. Enter.
 
-Only the following pass: a task's ID with fixed words, never a title or a comment, Auto-Dispatcher's two prompts among them (AC-170: a round's with its candidates' IDs, a started task's with its own and its subtasks', AC-185), and the integration queue's two return notices and its round's words (`terminum-integration.md` AC-192, AC-194); the prompt of a batch's integration task: its project's saved Prompt with terminumd's facts filled in (`terminum-integration.md` §9); the prompt of a human's RUN: for one task its title and text, for several, a main task with its subtasks among them (AC-185), their numbers, the human's message and the humans' answers alone (AC-138); the prompt of a schedule's firing: the schedule's own title and text, as a human saved them or its project's manager made them, with fixed words that name who set it, a human or the project's manager (`terminum-schedules.md` AC-162); the message of a project's manager's run_task, said to be the manager's, with the task's title and text and the humans' answers (`terminum-agents.md` AC-179); the close-out of AC-166 in fixed words with the project's language, a name of letters, spaces, hyphens and brackets that a human set; the first prompt of a human's + Session, its words and its files' lines, once, into the pane that request started, the request holding the run's start until it went in or missed (AC-204). terminumd keeps what it typed for 5 minutes and matches it to the hook's `prompt`, on that field's first 20,000 characters: such a prompt is not new work (AC-122) and is no activity (AC-123). Each paste and the window's command are rows of the input log, as Dispatcher's (terminum.md AC-147).
+Only the following pass: a task's ID with fixed words, never a title or a comment, Auto-Dispatcher's two prompts among them (AC-170: a round's with its candidates' IDs, a started task's with its own and its subtasks', AC-185), and the integration queue's two return notices and its round's words (`terminum-integration.md` AC-192, AC-194); the prompt of a batch's integration task: its project's saved Prompt with terminumd's facts filled in (`terminum-integration.md` §9); the prompt of a human's RUN: for one task its title and text, for several, a main task with its subtasks among them (AC-185), their numbers, the human's message and the humans' answers alone (AC-138); the prompt of a schedule's firing: the schedule's own title and text, as a human saved them or its project's manager made them, with fixed words that name who set it, a human or the project's manager (`terminum-schedules.md` AC-162); the message of a project's manager's run_task, said to be the manager's, with the task's title and text and the humans' answers (`terminum-agents.md` AC-179); the resume after a tmux server's end in fixed words with the open tasks' IDs (AC-205); the close-out of AC-166 in fixed words with the project's language, a name of letters, spaces, hyphens and brackets that a human set; the first prompt of a human's + Session, its words and its files' lines, once, into the pane that request started, the request holding the run's start until it went in or missed (AC-204). terminumd keeps what it typed for 5 minutes and matches it to the hook's `prompt`, on that field's first 20,000 characters: such a prompt is not new work (AC-122) and is no activity (AC-123). Each paste and the window's command are rows of the input log, as Dispatcher's (terminum.md AC-147).
 
 **Times.** Constants, not settings: no need for another value is known. Tests drive them with an injected clock (`TM_TEST_CLOCK_SCALE`) and, to act on a finished session before it closes, a longer Close (`TM_TEST_CLOSE_AFTER`, seconds), both read only with a test's `TM_APP_DIR`.
 
@@ -2033,7 +2074,7 @@ Measure first: AS-122, AS-125, AS-126, AS-127. Stage 1 rests on them; the gate's
 | Stage 1 | AC-138, AC-137, AC-121, AC-122, AC-123, AC-124, AC-125, AC-131, with `terminum-kanban.md` AC-117 | Press RUN and walk away: tasks start, wait, end and close by themselves on this Mac, and a human hears what needs them. |
 | Stage 2 | AC-126 | Time budgets: the one irreversible act on healthy work, once the walk and clocks have run for real. |
 | Stage 3 | AC-127, AC-128, AC-129, AC-130 | Subagents watched, consumption shown and limited, and all of it on remote hosts. |
-| Stage 4 | AC-140, AC-144, AC-141, AC-142, AC-143, AC-168 | A pool for each project, limits, sessions with no task, and what each agent spent. |
+| Stage 4 | AC-140, AC-144, AC-205, AC-141, AC-142, AC-143, AC-168 | A pool for each project, limits, sessions with no task, and what each agent spent. |
 | Stage 5 | AC-158, AC-169 | Queue tasks on a busy agent, see the queue on it, order it and take tasks out. |
 | Stage 6 | AC-170 | Turn Auto-Dispatcher on for a project: TODO tasks start by themselves on free slots, picked by an agent. |
 | Stage 7 | AC-185 | Run a main task: its subtasks go with it, in one session, in the agent's order. |
@@ -2069,4 +2110,5 @@ Depends on `terminum-kanban.md`'s Stage 1. All three stages belong to terminum's
 - [x] AC-185 — `cargo test ac185` (dispatcher::press, tasks::tools), `cargo test dispatcher::auto` (a main task as a candidate, its agent's words), `web/test/e2e_livemain.mjs` on `scripts/fake_agent.py` (a human's RUN, a subtask failed, run again); no test of its own: Auto-Dispatcher's start of a main task through the page, the ask and its answers through the page, a manager's run_task; not run on a real model: whether a real agent follows the words
 - [x] AC-183 — `cargo test dispatcher::runs`, `cargo test dashboard::`, `web/test/e2e_liveboardagents.mjs` (a drop, a page's press, the new-task window, + Session), `web/test/e2e_liveschedules.mjs` (a firing), `web/test/e2e_liveauto.mjs` (Auto-Dispatcher's start); no test of its own: a wait's press started later
 - [x] AC-166 — `cargo test tasks::closeout`, `cargo test tasks::tools`, `cargo test dispatcher::press`, `cargo test cli::mcp`, `web/test/e2e_livedispatcher.mjs`, `web/test/e2e_liveboardids.mjs`
+- [x] AC-205 — `cargo test dispatcher::plan` (a pane gone, or another's, under a server started anew resumes a run at work; the same server is a window closed by hand; WAIT FOR HUMAN, TODO, INTEGRATION, an agent ended or being ended, no conversation, a server never seen, + Session's: not resumed; a link dropped when its server started anew counts as its end, however old the run; the walk keeps the server its marked pane stands in), `cargo test dispatcher::resume` (the fixed words with the open tasks' IDs; one end resumes all it cut off, another within the hour none, an hour on again; the hour starts only once a resume passed its checks), `scripts/e2e_resume.py` on a private terminumd and tmux with `scripts/fake_agent.py` (a window closed by hand: FAILED; the server killed with two runs at work and one slot: one resumed, the other FAILED with the limit's words and nothing queued; the one resumed in a new window, the pool's command with --resume of its conversation, the words typed through the gate, IN PROGRESS, said; killed again within the hour: FAILED with why); not checked: a host's server, an agent deleted from the pool (cargo only by its words), a real machine restart
 - [x] AC-144 — `cargo test tasks::store`, `cargo test tasks::agents` (a project or an agent deleted), `cargo test dispatcher::runs`, `web/test/e2e_livedispatcher.mjs`

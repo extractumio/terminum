@@ -165,6 +165,10 @@ pub(super) fn note(app: &Shared, msg: String) {
 }
 
 pub(super) async fn do_later(app: &Shared, l: Later) {
+    // its pane is gone with its server: it goes on in a new window (AC-205)
+    if let Act::Resume { identity } = l.act {
+        return super::resume::after_restart(app, l.run, identity).await;
+    }
     let Some((server, pane)) = l.run.place(app) else { return };
     let (task, key) = (l.run.names(), server.key(&pane));
     let done = match l.act {

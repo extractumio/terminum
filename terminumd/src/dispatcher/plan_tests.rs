@@ -436,3 +436,55 @@ fn ac187_a_queued_task_stays_queued_when_its_session_ends() {
         assert_eq!(moved(&acts), None, "{how}: a task in INTEGRATION lands as any (terminum-integration.md AC-187): {acts:?}");
     }
 }
+
+/// A run at work whose walk last saw its pane in server `a1`.
+fn seen_in(status: &str) -> Run {
+    Run { server_id: Some("a1".into()), agent_session: Some("c0ffee".into()), pane_key: Some("tmux:local:t:%1".into()), ..run(status) }
+}
+
+#[test]
+fn ac205_a_pane_gone_under_a_server_started_anew_resumes_a_run_at_work() {
+    for gone in [Facts { pane: false, identity: Some("b2".into()), ..up(30) }, Facts { marked: false, identity: Some("b2".into()), ..up(30) }] {
+        let mut r = seen_in("IN PROGRESS");
+        assert_eq!(step(&mut r, &gone), vec![Act::Resume { identity: "b2".into() }], "gone, or another's pane under the same ID");
+        assert_eq!(r.state, Phase::Working, "it stays until the resume is tried, so a stop meanwhile tries it again");
+    }
+}
+
+#[test]
+fn ac205_what_is_not_resumed_fails_as_before_with_why() {
+    let anew = Facts { pane: false, identity: Some("b2".into()), ..up(30) };
+    let failed = |r: &mut Run, f: &Facts| moved(&step(r, f));
+    assert_eq!(failed(&mut seen_in("IN PROGRESS"), &Facts { identity: Some("a1".into()), ..anew.clone() }),
+        Some(("FAILED", "Its window was closed.".to_string())), "the same server: a window closed by hand");
+    for status in ["WAIT FOR HUMAN", "TODO"] {
+        assert_eq!(failed(&mut seen_in(status), &anew), Some(("FAILED", "Its tmux server started anew.".to_string())), "{status}");
+    }
+    assert!(step(&mut seen_in("INTEGRATION"), &anew).iter().all(|a| !matches!(a, Act::Resume { .. } | Act::Move { .. })), "a queued task stays queued");
+    for (r, why) in [(Run { state: Phase::Gone, ..seen_in("IN PROGRESS") }, "its agent had ended"), (Run { state: Phase::Ending, ..seen_in("IN PROGRESS") }, "being ended at a limit"),
+                     (Run { agent_session: None, ..seen_in("IN PROGRESS") }, "no conversation known"), (Run { server_id: None, ..seen_in("IN PROGRESS") }, "its server never seen")] {
+        let mut r = r;
+        assert!(!step(&mut r, &anew).iter().any(|a| matches!(a, Act::Resume { .. })), "{why}");
+    }
+    let mut session = Run { task: String::new(), ..seen_in("IN PROGRESS") };
+    assert!(!step(&mut session, &anew).iter().any(|a| matches!(a, Act::Resume { .. })), "+ Session's is the human's");
+}
+
+#[test]
+fn ac205_a_walk_keeps_the_server_its_marked_pane_stands_in() {
+    let mut r = run("IN PROGRESS");
+    step(&mut r, &Facts { identity: Some("a1".into()), ..up(30) });
+    assert_eq!(r.server_id.as_deref(), Some("a1"));
+    step(&mut r, &Facts { identity: None, ..up(30) });
+    assert_eq!(r.server_id.as_deref(), Some("a1"), "not read this beat: kept");
+}
+
+#[test]
+fn ac205_a_link_dropped_when_its_server_started_anew_is_its_end_however_old_the_run() {
+    let mut r = Run { server_id: None, pane_key: None, ..seen_in("IN PROGRESS") };
+    let acts = step(&mut r, &Facts { pane: false, identity: Some("b2".into()), ..up(30) });
+    assert_eq!(acts, vec![Act::Resume { identity: "b2".into() }], "a run from before its server was ever recorded");
+    let mut waiting = Run { server_id: None, pane_key: None, ..seen_in("WAIT FOR HUMAN") };
+    assert_eq!(moved(&step(&mut waiting, &Facts { pane: false, identity: Some("b2".into()), ..up(30) })),
+        Some(("FAILED", "Its tmux server started anew.".to_string())), "not resumed: said why");
+}

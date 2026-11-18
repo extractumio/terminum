@@ -31,12 +31,15 @@ struct Pane {
     command: String,
 }
 
-async fn panes_of(server: &Server) -> Option<HashMap<String, Pane>> {
-    let lines = tokio::time::timeout(LIST_WAIT, server.run("list-panes -a -F '#{pane_id}\t#{@terminum-run}\t#{@terminum-exit}\t#{pane_pid}\t#{pane_current_command}'")).await.ok()?.ok()?;
-    Some(lines.iter().filter_map(|l| {
-        let f: Vec<&str> = l.split('\t').collect();
-        (f.len() == 5).then(|| (f[0].to_string(), Pane { mark: f[1].to_string(), exit: f[2].parse().ok(), pid: f[3].to_string(), command: f[4].to_string() }))
-    }).collect())
+/// The server's panes, and its identity (`@terminum-id`) as the same list says it: one read, so a server started anew
+/// between two reads is never judged by the old one's list (AC-205); none set yet, none.
+async fn panes_of(server: &Server) -> Option<(HashMap<String, Pane>, Option<String>)> {
+    let lines = tokio::time::timeout(LIST_WAIT, server.run("list-panes -a -F '#{pane_id}\t#{@terminum-run}\t#{@terminum-exit}\t#{pane_pid}\t#{pane_current_command}\t#{@terminum-id}'")).await.ok()?.ok()?;
+    let rows: Vec<Vec<&str>> = lines.iter().map(|l| l.split('\t').collect()).filter(|f: &Vec<&str>| f.len() == 6).collect();
+    // a server option: every row says the same
+    let identity = rows.first().map(|f| f[5].to_string()).filter(|i| !i.is_empty());
+    let panes = rows.iter().map(|f| (f[0].to_string(), Pane { mark: f[1].to_string(), exit: f[2].parse().ok(), pid: f[3].to_string(), command: f[4].to_string() })).collect();
+    Some((panes, identity))
 }
 
 
@@ -160,6 +163,8 @@ struct Seen {
     tree: Option<procs::Tree>,
     /// its `ps` was not asked this beat: a host with no run is read less often
     skipped: bool,
+    /// the server's identity (`@terminum-id`), read with its list: a server started anew has another (AC-205)
+    identity: Option<String>,
 }
 
 /// A host with no run of Dispatcher's is read one beat in this many, and only with a page open.
@@ -167,18 +172,26 @@ const IDLE_HOST_BEATS: u64 = 4;
 
 /// Every wanted pane's server: its list first, and only where one stands its `ps`, so a stale link
 /// or a dead host costs no ssh; each on its own time, a slow host delaying only itself.
-async fn read_servers(app: &Shared, wanted: &[String], with_run: &HashSet<String>) -> HashMap<String, Seen> {
+async fn read_servers(app: &Shared, wanted: &[String], with_run: &HashSet<String>, more: &[Arc<Server>]) -> HashMap<String, Seen> {
     let mut servers: HashMap<String, (Arc<Server>, Vec<String>)> = HashMap::new();
     for (server, pane) in wanted.iter().filter_map(|k| app.tmux.resolve(k)) {
         servers.entry(server.id()).or_insert_with(|| (server, Vec::new())).1.push(pane);
     }
+    for server in more {
+        servers.entry(server.id()).or_insert_with(|| (server.clone(), Vec::new()));
+    }
     let beat = app.dispatcher.beat.fetch_add(1, Ordering::Relaxed);
     let read = servers.into_values().map(|(server, mine)| async move {
-        let panes = panes_of(&server).await;
+        let (panes, listed_id) = panes_of(&server).await.unzip();
         let wants = panes.as_ref().is_some_and(|list| mine.iter().any(|p| list.contains_key(p)));
         let due = server.is_local() || with_run.contains(&server.id()) || (beat.is_multiple_of(IDLE_HOST_BEATS) && app.pages.count() > 0);
         let tree = if wants && due { procs::read(app, &server).await } else { None };
-        (server.id(), Seen { panes, tree, skipped: wants && !due })
+        // none set yet on a new server, or no pane to say it: terminumd's own read sets it
+        let identity = match (&panes, listed_id.flatten()) {
+            (Some(_), None) => server.identity().await,
+            (_, listed) => listed,
+        };
+        (server.id(), Seen { panes, tree, skipped: wants && !due, identity })
     });
     futures_util::future::join_all(read).await.into_iter().collect()
 }
@@ -235,9 +248,12 @@ async fn walk(app: &Shared) {
     let (global_warn, global_end) = { let s = app.looks.settings.read(); (s.memory_warn_gib, s.memory_end_gib) };
     let with_run: HashSet<String> = all.iter().filter_map(|r| r.place(app)).map(|(s, _)| s.id()).collect();
     let wanted: Vec<String> = all.iter().filter_map(|r| r.pane_key.clone()).chain(linked.iter().map(|(_, k)| k.clone())).collect();
+    // a run whose link a server started anew dropped (tasks::projects): read on its own server, its pane gone (AC-205)
+    let dropped: HashMap<String, Arc<Server>> = all.iter().filter(|r| r.pane_key.is_none() && !r.is_starting())
+        .filter_map(|r| Some((r.id.clone(), super::places::server_of(app, r.host.as_deref()).ok()?))).collect();
     // what it decides holds as of now: a human's input after it calls off or puts off what it leaves to do (AC-131)
     let at = Instant::now();
-    let seen = read_servers(app, &wanted, &with_run).await;
+    let seen = read_servers(app, &wanted, &with_run, &dropped.values().cloned().collect::<Vec<_>>()).await;
     let now = ops::now();
     let (mut reads, mut subagents) = (Vec::new(), Vec::new());
     for r in &all {
@@ -246,11 +262,15 @@ async fn walk(app: &Shared) {
             continue;
         }
         // no server for its key, or out of reach: nothing is known of its pane, and no clock runs (AC-130)
-        let Some((server, pane)) = r.place(app) else { continue };
+        let Some((server, pane)) = r.place(app).or_else(|| dropped.get(&r.id).map(|s| (s.clone(), String::new()))) else { continue };
         let Some(s) = seen.get(&server.id()) else { continue };
         let Some(list) = &s.panes else { continue };
         let key = server.key(&pane);
         let p = list.get(&pane);
+        // its pane gone or another's while the server's identity is not read: nothing is decided until it is (AC-205)
+        if !p.is_some_and(|p| p.mark == r.id) && s.identity.is_none() {
+            continue;
+        }
         let measured = s.tree.as_ref().zip(p).map(|(t, p)| procs::under(t, &p.pid));
         // ps did not answer: the agent stands while tmux says no exit, and no limit fires on missing numbers
         let under = measured.as_ref().map_or(p.is_some_and(|p| p.exit.is_none()), |u| u.any);
@@ -291,6 +311,7 @@ async fn walk(app: &Shared) {
             watched: app.pages.watched(&key),
             memory,
             subs,
+            identity: s.identity.clone(),
             ..Default::default()
         };
         // + Session's is the human's: nothing is typed in it, about its subagents either (AC-142)
