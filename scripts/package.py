@@ -81,11 +81,22 @@ def build_macos(build, platforms):
     env = agents.tool_env()
     env.update(TM_BUILD=build, TM_AGENT_ID=agents.agent_id(), TM_BUILD_DATE=time.strftime("%Y-%m-%d"))
     out = {}
+    host = rust_host(env)
     for platform in platforms:
         target = agents.TARGETS[platform]
-        agents.run(["cargo", "build", "--locked", "--release", "--target", target], env=env)
-        out[platform] = agents.TERMINUMD / "target" / target / "release/terminumd"
+        if target == host:   # make build's own command and folder: cargo compiles only what changed since
+            agents.run(["cargo", "build", "--locked", "--release"], env=env)
+            out[platform] = agents.TERMINUMD / "target/release/terminumd"
+        else:
+            agents.run(["cargo", "build", "--locked", "--release", "--target", target], env=env)
+            out[platform] = agents.TERMINUMD / "target" / target / "release/terminumd"
     return out
+
+
+def rust_host(env):
+    """The target cargo builds without --target (rustc's host; under Rosetta perhaps not the Mac's own)."""
+    r = subprocess.run(["rustc", "-vV"], cwd=agents.TERMINUMD, env=env, capture_output=True, text=True)
+    return next((line.split(":", 1)[1].strip() for line in r.stdout.splitlines() if line.startswith("host:")), None)
 
 
 def binaries(build, given, stage, release=False):
