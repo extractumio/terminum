@@ -63,7 +63,8 @@ pub fn state_words(tx: &Transaction, b: &Batch) -> Result<String, String> {
 }
 
 /// What a card says of the queue, by task key: the batch's line on its integration task's card ("batch 7 ·
-/// checking · 12 min"), "in batch 7", a place, "verifying" or "waits for Verify", "waits for API-12"; a task back in work, "returned: …".
+/// checking · 12 min"), "in batch 7", a place, "verifying" or "waits for Verify", "waits for API-12", "waits: the target is red (API-77)"; a task back in
+/// work, "returned: …".
 /// With the batch's number, so the page draws a batch's cards as one group; a task in work, the tasks it overlaps;
 /// and the human's keys on the card (AC-193): "integrate" on a task in work of a project that integrates, "take-out" on
 /// a queued one, a deciding batch's own.
@@ -90,8 +91,10 @@ pub fn marks(tx: &Transaction, tasks: &[Task], now: i64) -> Result<HashMap<Strin
                                      FROM integration_entries e JOIN tasks t ON t.id = e.task
                                      WHERE e.project = ?1 AND e.batch IS NULL ORDER BY e.queued_at, t.number", [project],
             |r| Ok((r.get::<_, String>(0)?, r.get::<_, Option<String>>(1)?, r.get::<_, Option<String>>(2)?, r.get::<_, bool>(3)?)))?;
+        let bug = waiting.iter().any(|w| w.1.as_deref() == Some(super::red_target::HELD)).then(|| super::red_target::open_bug(tx, project)).transpose()?.flatten();
         for (i, (task, stage, waits, verified)) in waiting.into_iter().enumerate() {
             let mark = match (waits.filter(|w| !w.is_empty()), stage) {
+                (_, Some(s)) if s == super::red_target::HELD => bug.as_ref().map_or("waits: the target is red".into(), |b| format!("waits: the target is red ({b})")),
                 (Some(w), _) => format!("waits for {w}"),
                 (None, Some(_)) if verified => "verifying".to_string(),
                 (None, Some(_)) => "waits for Verify".to_string(),

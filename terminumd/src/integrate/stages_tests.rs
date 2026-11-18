@@ -2,7 +2,7 @@
 //! Prepare and Verify before a batch, and Cleanup after one (terminum-integration.md AC-198), on real repositories;
 //! the windows stood in for by `sh`.
 use super::*;
-use crate::integrate::engine::tests::{batch, go, on_origin, queued_with, status, world, Sh, World};
+use crate::integrate::engine::tests::{batch, go, on_origin, queued_with, said, status, world, Sh, World};
 use crate::tasks::integration::Settings;
 
 const RETRY: &str = "mkdir -p .checks; printf '%s\\n' 'PASSED ONLY ON RETRY, the first run red: critical: name each with its open task' 'critical first run: expected width 80, got 79' > .checks/retried";
@@ -172,9 +172,6 @@ fn verified(name: &str) -> (World, Sh) {
     (world(name, Settings { verify: "true".into(), ..Settings::default() }), Sh { hang: true, ..Default::default() })
 }
 
-fn said(w: &World, id: &str) -> String {
-    w.s.with(|tx| ops::history(tx, id)).unwrap().to_string()
-}
 
 #[test]
 fn ac198_three_tasks_verify_at_once_the_oldest_first_and_a_short_one_passes_beside_long_ones() {

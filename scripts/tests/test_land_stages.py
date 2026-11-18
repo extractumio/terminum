@@ -65,10 +65,18 @@ class Stages(test_land.Repos, unittest.TestCase):
 
     def test_verify_runs_the_targeted_checks_and_fails_red(self):  # AC-198
         tree, ran = self.ready(), []
-        stages.verify(tree, check=lambda t: ran.append(t) or True, **QUIET)
+        stages.verify(tree, check=lambda t: ran.append(t) or True, env={}, **QUIET)
         self.assertEqual(ran, [tree])
         with self.assertRaises(stages.Stop):
-            stages.verify(tree, check=lambda t: False, **QUIET)
+            stages.verify(tree, check=lambda t: False, env={}, **QUIET)
+
+    def test_verify_on_the_target_runs_only_the_failed_steps(self):  # AC-198
+        tree, ran = self.ready(), []
+        env = {"TM_INTEGRATION_RERUN": "critical cargo", "TM_INTEGRATION_RERUN_OF": "4f2a91c"}
+        stages.verify(tree, check=lambda t, *flags: ran.append(flags) or True, env=env, **QUIET)
+        self.assertEqual(ran, [("--rerun", "critical cargo", "--of", "4f2a91c")])
+        with self.assertRaises(stages.Stop):
+            stages.verify(tree, check=lambda t, *flags: False, env=env, **QUIET)
 
     def test_check_keeps_its_green_for_that_commit(self):  # AC-198
         tree, smokes = self.ready(), []

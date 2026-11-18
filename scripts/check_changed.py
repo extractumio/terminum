@@ -10,10 +10,13 @@ said in red last, here and by make land (.checks/skipped). A step that runs real
 the smoke step) and fails runs once more, unchanged; passing then, it counts and is said in red last the same
 way (.checks/retried, AC-197); the release's full run (`make check`) has no retry. A cargo step holds a heavy-build slot (scripts/heavy_slots.py); a real-program step holds a live-check slot
 (scripts/live_slots.py), including its retry and its first quiet-machine gate. --land: a landing's smoke set on its merged result, the
-basics on one platform, no timed check. The full run is the release's gate, not this (`make check`).
+basics on one platform, no timed check. The full run is the release's gate, not this (`make check`). A red run
+names its failed steps in .checks/failed, one a line; --rerun runs those of a commit's plan again on this tree's
+content, the target, so terminum tells a task that broke them from a red target (AC-198).
 
   check_changed.py [--print] [--force] [--base <ref>]   default origin/main; --print only says the plan
   check_changed.py --land | --passed | --tree-id        the smoke set; 0 if this content passed; its id
+  check_changed.py --rerun "<steps>" --of <commit>      those steps of <commit>'s plan, here; 1 naming the red ones
 Each step's output goes to .checks/changed.<step>.log, one line here, as scripts/check_all.py does."""
 import argparse
 import ast
@@ -21,6 +24,7 @@ from contextlib import nullcontext
 import os
 from pathlib import Path
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -49,17 +53,19 @@ DEBUG_BUILD = f"cd terminumd && {NICE} cargo build --locked"   # what the e2e ch
 
 
 def cargo_test(modules):
-    return f"cd terminumd && {NICE} cargo test --locked -- " + " ".join(sorted(modules))
+    return f"cd terminumd && {NICE} cargo test --locked -- " + " ".join(shlex.quote(m) for m in sorted(modules))
 
 
 def git(*args, cwd=REPO, env=None, input=None, check=True):
     return subprocess.run(["git", *args], cwd=cwd, env=env, input=input, capture_output=True, text=True, check=check).stdout
 
 
-def changed_files(base, cwd=REPO):
-    merge_base = git("merge-base", base, "HEAD", cwd=cwd).strip()
-    named = set(git("diff", "--name-only", merge_base, cwd=cwd).splitlines())
-    named |= set(git("ls-files", "-o", "--exclude-standard", cwd=cwd).splitlines())
+def changed_files(base, cwd=REPO, head=None):
+    """The files changed since the merge base with `base`: in the work tree, untracked ones too, or in commit `head`."""
+    merge_base = git("merge-base", base, head or "HEAD", cwd=cwd).strip()
+    named = set(git("diff", "--name-only", merge_base, *([head] if head else []), cwd=cwd).splitlines())
+    if not head:
+        named |= set(git("ls-files", "-o", "--exclude-standard", cwd=cwd).splitlines())
     return sorted(named), merge_base
 
 
@@ -142,9 +148,9 @@ def is_doc(path):
     return path.endswith(".md") or path.startswith("docs/")
 
 
-def touched_cases(files, merge_base, cwd=REPO):
-    """Cases named on the changed lines, or at the top of a changed source file."""
-    cases = set(AC.findall("\n".join(line for line in git("diff", "-U0", merge_base, cwd=cwd).splitlines()
+def touched_cases(files, merge_base, cwd=REPO, head=None):
+    """Cases named on the changed lines (against the work tree, or commit `head`), or at the top of a changed source file."""
+    cases = set(AC.findall("\n".join(line for line in git("diff", "-U0", merge_base, *([head] if head else []), cwd=cwd).splitlines()
                                      if line[:1] in "+-" and line[:3] not in ("+++", "---"))))
     for name in files:
         if not is_doc(name):
@@ -282,6 +288,48 @@ def land_plan(files):
     return steps
 
 
+BUILDS = ("ui", "debug-build")   # what the other steps run on
+UNBUILT = ("security", "docs", "scripts", "ui-unit", "page-unit")   # steps that need neither
+
+
+def rerun_plan(names, commit, root=REPO):
+    """The steps `names` of `commit`'s plan, made on this tree's content from the files it changed that are here,
+    with the builds they run on; a step the plan here lacks (a test the commit added) is not run."""
+    files, base = changed_files("HEAD", root, head=commit)
+    files = [f for f in files if (root / f).exists()]
+    planned = plan(files, touched_cases(files, base, root, head=commit), root)
+    keep = {name for name, _ in planned if name in names} - set(BUILDS)
+    if keep - set(UNBUILT) or names & set(BUILDS):
+        keep |= set(BUILDS)
+    return [s for s in planned if s[0] in keep]
+
+
+def say_failed(root, failed):
+    """The failed steps' names, a line each, for terminum to run on the target (AC-198); none: no note."""
+    note = root / ".checks" / "failed"
+    if failed:
+        note.write_text("".join(f"{name}\n" for name in failed))
+    else:
+        note.unlink(missing_ok=True)
+
+
+def rerun(names, commit, root=REPO):
+    """0: the steps pass here; 1 naming the red ones in .checks/failed, or 1 naming none: a step skipped for a busy
+    machine (AC-146), or none of them in the plan here, did not run, so nothing is known of it. No pass is kept:
+    this is the target's run."""
+    steps = rerun_plan(names, commit, root)
+    if not steps:   # none of them is in the plan here: nothing known of them, never a pass
+        print(f"rerun: none of {' '.join(sorted(names))} is in {commit[:9]}'s plan here: not known")
+        say_failed(root, [])
+        return 1
+    print(f"rerun: {' '.join(s[0] for s in steps if s[0] not in BUILDS) or 'none'} of {commit[:9]} on {git('rev-parse', '--short=9', 'HEAD', cwd=root).strip()}")
+    failed = run(steps, root)
+    skipped = bool(note(root, "skipped"))
+    say_failed(root, [] if skipped else failed)
+    print(f"rerun: FAIL {' '.join(failed)}" if failed else "rerun: SKIPPED, not known" if skipped else "rerun: PASS")
+    return 1 if failed or skipped else 0
+
+
 def timed(name):
     """A step whose checks measure time, which a busy machine fails (AC-146)."""
     return name in ("panel", "page", "critical") or name.startswith("e2e_")
@@ -395,7 +443,13 @@ def main(argv):
     parser.add_argument("--passed", action="store_true")
     parser.add_argument("--tree-id", action="store_true")
     parser.add_argument("--base", default="origin/main")
+    parser.add_argument("--rerun", default=None)
+    parser.add_argument("--of", default=None)
     args = parser.parse_args(argv)
+    if args.rerun is not None:
+        if not args.of:
+            parser.error("--rerun needs --of <commit>")
+        return rerun(set(args.rerun.split()), args.of)
     if args.tree_id or args.passed:
         ident = tree_id()
         if args.tree_id:
@@ -430,6 +484,7 @@ def main(argv):
             print("note: --force runs them")
         return 0
     failed = run(steps)
+    say_failed(REPO, failed)
     print(f"targeted: FAIL {' '.join(failed)}" if failed else "targeted: PASS")
     say_late(REPO)
     if not failed and tree_id() == ident:   # changed during the run: no pass recorded
