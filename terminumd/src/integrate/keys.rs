@@ -144,7 +144,7 @@ async fn shown(State(app): State<Shared>, Path(task): Path<String>) -> Response 
     let mut shown = store(&app, move |tx| of_task(tx, &task)).await;
     // its step's window is a session of terminumd's own tmux: its key, so the window can show it (AC-193)
     if let Ok(v) = &mut shown && let Some(pane) = v["pane"].as_str().map(str::to_string) {
-        v["window"] = json!(app.tmux.local.key(&pane));
+        v["window"] = json!(app.tmux.local.key(super::runner::pane_of(&pane)));
     }
     answer(shown)
 }

@@ -9,7 +9,7 @@ use std::process::Command;
 
 /// Runs a line and follows it; a test stands in for tmux.
 pub trait Runner: Send + Sync {
-    /// Starts `line` in `folder` with `vars`; its handle (a pane).
+    /// Starts `line` in `folder` with `vars`; its handle (a pane and its mark, `pane_of`).
     fn start(&self, label: &str, folder: &Path, line: &str, vars: &[(&str, String)]) -> Result<String, String>;
     /// Its status once it ended, None while it runs; Err when its window is gone.
     fn status(&self, handle: &str) -> Result<Option<i32>, String>;
@@ -38,6 +38,13 @@ pub struct Tmux {
 /// The session the integration's windows stand in.
 const SESSION: &str = "integration";
 
+/// The pane of a handle `"%5 batch-7.1.check"`: the pane and the mark its line was started with. A server started
+/// anew gives its pane IDs from %0 again, so the mark tells a lost window from another line's that took its ID; a
+/// handle kept before marks were in it is the pane alone.
+pub fn pane_of(handle: &str) -> &str {
+    handle.split_once(' ').map_or(handle, |(pane, _)| pane)
+}
+
 impl Tmux {
     fn run(&self, args: &[&str]) -> Result<String, String> {
         let o = Command::new(&self.tmux).args(["-L", &self.socket, "-f"]).arg(&self.conf).args(args).output().map_err(|e| format!("tmux: {e}"))?;
@@ -45,6 +52,19 @@ impl Tmux {
             return Err(String::from_utf8_lossy(&o.stderr).trim().to_string());
         }
         Ok(String::from_utf8_lossy(&o.stdout).trim().to_string())
+    }
+
+    /// The handle's pane while it is the window that line was started in, with its status if it ended; else the
+    /// window is gone: a pane of another's, or of another line after the server started anew, is never ours.
+    fn mine<'a>(&self, handle: &'a str) -> Result<(&'a str, Option<i32>), String> {
+        let gone = || "its window is gone".to_string();
+        let (pane, label) = (pane_of(handle), handle.split_once(' ').map(|(_, l)| l));
+        let said = self.run(&["display", "-p", "-t", pane, "#{@terminum-integration}|#{@terminum-exit}"]).map_err(|_| gone())?;
+        let (mark, exit) = said.split_once('|').unwrap_or((&said, ""));
+        if mark.is_empty() || label.is_some_and(|l| l != mark) {
+            return Err(gone());
+        }
+        Ok((pane, exit.trim().parse::<i32>().ok()))
     }
 }
 
@@ -65,23 +85,20 @@ impl Runner for Tmux {
             self.run(&a)
         }.map_err(|e| format!("No window for the line: {e}"))?;
         self.run(&["set-option", "-p", "-t", &made, "@terminum-integration", label]).map_err(|e| format!("tmux did not take the mark: {e}"))?;
-        Ok(made)
+        Ok(format!("{made} {label}"))
     }
 
-    fn status(&self, pane: &str) -> Result<Option<i32>, String> {
-        let said = self.run(&["display", "-p", "-t", pane, "#{@terminum-integration}|#{@terminum-exit}"]).map_err(|_| "its window is gone".to_string())?;
-        let (mark, exit) = said.split_once('|').unwrap_or((&said, ""));
-        if mark.is_empty() {
-            return Err("its window is gone".into());   // a pane of another's: never read as ours
-        }
-        Ok(exit.trim().parse::<i32>().ok())
+    fn status(&self, handle: &str) -> Result<Option<i32>, String> {
+        self.mine(handle).map(|(_, status)| status)
     }
 
-    fn output(&self, pane: &str) -> String {
+    fn output(&self, handle: &str) -> String {
+        let Ok((pane, _)) = self.mine(handle) else { return String::new() };
         self.run(&["capture-pane", "-p", "-J", "-S", "-", "-E", "-", "-t", pane]).unwrap_or_default()
     }
 
-    fn stop(&self, pane: &str) {
+    fn stop(&self, handle: &str) {
+        let Ok((pane, _)) = self.mine(handle) else { return };
         let Ok(pid) = self.run(&["display", "-p", "-t", pane, "#{pane_pid}"]) else { return };
         let Ok(pid) = pid.parse::<i32>() else { return };
         // the wrapper runs the line in a process group of its own (set -m): its children's group is the line's
@@ -102,8 +119,8 @@ impl Runner for Tmux {
         });
     }
 
-    fn close(&self, pane: &str) {
-        if self.status(pane).is_ok() {
+    fn close(&self, handle: &str) {
+        if let Ok((pane, _)) = self.mine(handle) {
             let _ = self.run(&["kill-pane", "-t", pane]);
         }
     }
@@ -130,5 +147,24 @@ mod tests {
         assert_eq!(got, "export TM_INTEGRATION_SHA=3e9b5c2; export TM_INTEGRATION_TASKS='API-1 it'\"'\"'s'; make smoke && echo \"$TM_INTEGRATION_SHA\"");
         let o = Command::new("/bin/sh").arg("-c").arg(format!("{}; printf %s \"$TM_INTEGRATION_TASKS\"", with_vars("true", &[("TM_INTEGRATION_TASKS", "API-1 it's".into())]))).output().unwrap();
         assert_eq!(String::from_utf8_lossy(&o.stdout), "API-1 it's", "a value's quote stays");
+    }
+
+    #[test]
+    fn ac190_a_window_of_a_server_started_anew_is_never_read_as_the_lost_one() {
+        let tmux = crate::testutil::Tmux::start("runner-anew", (80, 24), "sleep 120").expect("tmux is required for the runner's check");
+        let runner = Tmux { tmux: "tmux".into(), socket: tmux.socket.clone(), conf: "/dev/null".into() };
+        let check = runner.start("batch-2.1.check", &tmux.dir, "sleep 120", &[]).unwrap();
+        assert!(check.ends_with(" batch-2.1.check"), "the handle keeps its mark: {check}");
+        assert_eq!(runner.status(&check), Ok(None), "its own window runs");
+        // the server ends (a crash, kill-server, a reboot) and starts anew: its pane IDs start again from %0
+        tmux.tmux(&["kill-server"]);
+        let other = (0..4).map(|n| runner.start(&format!("verify-{n}"), &tmux.dir, "exit 4", &[]).unwrap())
+            .find(|h| pane_of(h) == pane_of(&check)).expect("a window of the new server takes the lost window's pane ID");
+        assert!((0..100).any(|_| { std::thread::sleep(std::time::Duration::from_millis(50)); runner.status(&other) == Ok(Some(4)) }), "the other line ends 4");
+        assert!(runner.status(&check).is_err(), "another line's window under the same ID is the check's lost window, never its status");
+        runner.stop(&check);
+        runner.close(&check);
+        assert_eq!(runner.status(&other), Ok(Some(4)), "stopping or closing the lost check leaves the other line's window alone");
+        assert_eq!(pane_of("%7"), "%7", "a handle kept before marks were in it is its pane");
     }
 }
