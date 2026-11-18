@@ -52,11 +52,11 @@ export function agentsSection({ getMeta, chosen, reload, refreshQueue, slots: co
   function dot(s) {
     const now = doing(s), d = el("span", `agdot ${now === "working" || now === "starting" ? "on" : now === "integration" ? "idle" : now}${s.round ? " round" : ""}`);
     d.dataset.key = s.key ?? "";
-    d.title = [s.tasks, projectName(s.project), WORDS[now], s.round ? "Auto-Dispatcher's round: it takes no slot" : "", s.integration ? "Integration wait: it takes no ordinary slot" : ""].filter(Boolean).join(" · ");
+    d.title = [s.tasks, projectName(s.project), WORDS[now], s.round ? "Auto-Dispatcher's round: it takes no slot" : "", s.integration ? "Integration wait: it takes no ordinary slot" : "", s.ended ? "Its integration task ended: it takes no slot while it closes" : ""].filter(Boolean).join(" · ");
     return d;
   }
 
-  /** Its rectangle: its color, name, kind, effort, project and live sessions; the count excludes rounds and integration waits. */
+  /** Its rectangle: its color, name, kind, effort, project and live sessions; the count excludes rounds, integration waits and ended integration tasks' sessions. */
   function row(a) {
     const shown = chosen(), mine = slots(a).filter((s) => !shown.length || shown.includes(s.project)), of = whose(a);
     const b = button(`item agentcard${full(a) ? " busy" : ""}`);
