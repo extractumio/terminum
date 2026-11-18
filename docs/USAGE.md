@@ -261,9 +261,13 @@ page says how; how the sign-in is kept is in [SECURITY.md](../SECURITY.md). `tmu
   track wide over the columns, four a row. TODO stands as a column of its own; the other columns
   share the rest of the board one at a time, under tabs that show each one's count (WAIT FOR
   HUMAN's and FAILED's pulse while they hold tasks); on a phone one column shows at a time.
-  **Scheduled tasks**: the line Scheduled N between the agents and the columns opens (and stays
-  open in that browser) to the schedules of the projects shown; + Schedule opens a schedule's
-  window: title, text, project, severity, the agent that runs it, When (every 1, 5, 10, 15, 20, 30 or 45 minutes, every
+  The board's three sections, Agent Pool, Routines and Task Management, are named on narrow rails
+  at their left; a press on Agent Pool's or Routines' rail folds that section to one strip that says
+  what it holds and keeps its +, and that browser remembers it. Each section's [+] tile stands right
+  after its last card.
+  **Routines** (the board's word for scheduled tasks): the Routines strip between the agents and the
+  columns opens (and stays open in that browser) to the schedules of the projects shown; its [+]
+  opens a routine's window: title, text, project, severity, the agent that runs it, When (every 1, 5, 10, 15, 20, 30 or 45 minutes, every
   N hours, every day, weekdays, chosen days of the week, a day of the month, once, or five cron
   fields, in the Mac's local time, the next three runs said under it),
   a time budget (required: no one watches the run) and Paused; What the agent gets shows the

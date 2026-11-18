@@ -1,30 +1,24 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-// The board's Scheduled section (terminum-schedules.md AC-163): between the pool and the columns, folded to its
-// head by default and remembered by this browser; open, its cards stand on the columns' tracks, four to a row.
-// terminumd owns the schedules and says their next runs and words; every page hears of a change.
+// The board's Routines section (terminum-schedules.md AC-163; "routine" is the board's word for a schedule): between the
+// pool and the columns, folded by its rail by default (terminum-kanban.md AC-203) and remembered by this browser; open,
+// its cards stand on the columns' tracks, four to a row, its add tile after the last. terminumd owns the schedules and
+// says their next runs and words; every page hears of a change.
 import { askConfirm } from "./dialogs.js";
-import { el, iconButton, read, write } from "./listparts.js";
+import { el, iconButton } from "./listparts.js";
+import { rail } from "./kanbanrail.js";
 import { scheduleWindow } from "./kanbanschedwin.js";
-import { agentColor, api, button, say, statusBox } from "./kanbanutil.js";
-
-const OPEN_KEY = "tm.board.schedules";
+import { $, agentColor, api, say, statusBox } from "./kanbanutil.js";
 
 /** `getMeta()`: projects and agents; `chosen()`: the projects shown, none for all; `openTask(id)`. */
 export function scheduledSection({ getMeta, chosen, openTask }) {
-  const box = el("div", "schedsection");
-  const head = el("div", "schedhead"), toggle = button("textkey schedtoggle"), list = el("div", "agentlist trackitems schedlist");
-  const grid = el("div", "tracks schedtracks");
-  toggle.setAttribute("aria-controls", "schedgrid");
-  grid.id = "schedgrid";
-  const add = button("textkey", "+ Schedule", () => win.open());
+  const list = el("div", "agentlist trackitems schedlist"), box = el("div", "tracks schedtracks schedsection");
+  box.id = "schedgrid";
+  const add = iconButton("addtile", "plus", "Add routine", "Add a routine: a task that runs on a cadence on one agent", () => win.open(), 16);
   add.id = "newschedule";
-  add.title = "A task that runs on a cadence on one agent";
-  head.append(toggle, add);   // + Schedule stands with the head: the section may be folded
-  grid.append(list);
-  box.append(head, grid);
-  let schedules = [], drawn = "", opened = read(OPEN_KEY) === true;
+  box.append(list);
+  let schedules = [], drawn = "";
   const win = scheduleWindow({ getMeta, chosen, changed: () => load() });
-
+  const railed = rail($("schedbar"), box, { key: "tm.board.schedules", open: false, add: () => win.open() });
 
   /** Its card: SCH-1, severity, title, cadence, next run or why it is paused, agent, last task, skips, why its last run did not start. */
   function card(s) {
@@ -72,31 +66,30 @@ export function scheduledSection({ getMeta, chosen, openTask }) {
     return b;
   }
 
+  /** The folded strip's line: how many, and the next run of them ("3 · next SCH-2 today 03:00"), or none. */
+  function summary(mine) {
+    if (!mine.length) return "none";
+    const soonest = mine.filter((s) => !s.paused && s.next.length).sort((a, b) => a.next[0] - b.next[0])[0];
+    return soonest ? `${mine.length} · next ${soonest.key} ${soonest.next_words[0]}` : String(mine.length);
+  }
+
   /** Anew only when what it shows changed. */
   function draw() {
     const shown = chosen(), mine = schedules.filter((s) => !shown.length || shown.includes(s.project));
-    toggle.textContent = `Scheduled ${mine.length}`;
     box.dataset.n = mine.length;                   // a phone's line says it (kanbanphone.js)
-    toggle.setAttribute("aria-expanded", String(opened));
-    grid.hidden = !opened;
+    railed.summary(summary(mine));
     const now = JSON.stringify([mine, getMeta().agents.map((a) => [a.id, a.name, a.color])]);
     if (now === drawn) return;
     drawn = now;
-    list.replaceChildren(...mine.map(card));
-    if (!mine.length) list.append(el("p", "colempty", "No schedules: + Schedule runs a task on a cadence."));
+    list.replaceChildren(...mine.map(card), add);
+    if (!mine.length) list.append(el("p", "colempty", "No routines yet: + adds a task that runs on a cadence."));
   }
-
-  toggle.addEventListener("click", () => {
-    opened = !opened;
-    write(OPEN_KEY, opened || null);
-    draw();
-  });
 
   async function load() {
     try {
       schedules = (await api("/api/schedules")).schedules;
       draw();
-    } catch (e) { say(`The schedules could not be read: ${e.message}`); }
+    } catch (e) { say(`The routines could not be read: ${e.message}`); }
   }
   /** The window of the schedule `key` names ("SCH-1"), from a task's window. */
   const openKey = (key) => { const s = schedules.find((x) => x.key === key); if (s) win.open(s); };

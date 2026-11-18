@@ -40,7 +40,7 @@ const look = (page) => page.evaluate(() => {
     todoCard: box(q('.col[data-status="TODO"] .card')), panelCards: all(".colpanel .col.shown .card").map(box), shown: q(".colpanel .col.shown")?.dataset.status,
     agent: box(q("#agentbar .agentcard")), newKey: box(q('.col[data-status="TODO"] .colhead .new')), newWords: q('.col[data-status="TODO"] .colhead .new')?.textContent,
     sortKeys: all('.col[data-status="TODO"] .colsort button').map(box), todoTitle: box(q('.col[data-status="TODO"] .card .ctitle')), gutter: parseFloat(getComputedStyle(q("#board")).paddingLeft),
-    head };
+    rail: box(q("#railboard")), poolRail: box(q("#agentbar > .rail")), head };
 });
 
 async function board(browser, device, { motion = "reduce" } = {}) {
@@ -69,7 +69,8 @@ async function computer(browser, name) {
     try {
       await go();
       const g = await look(page);
-      const track = (g.board.w - 2 * g.gutter - (tracks - 1) * 8) / tracks, todoTracks = tracks === 6 ? 2 : 1;
+      // Task Management's rail first, on the gutter, then the tracks (terminum-kanban.md AC-203)
+      const track = (g.board.w - 2 * g.gutter - g.rail.w - 8 - (tracks - 1) * 8) / tracks, todoTracks = tracks === 6 ? 2 : 1;
       check(`AC-105 ${w} px: TODO is a column of its own, ${todoTracks} of the board's ${tracks} tracks; the panel takes the rest beside it`,
         near(g.todo.w, todoTracks * track + (todoTracks - 1) * 8, 2) && near(g.panel.l, g.todo.r + 8, 1) && near(g.panel.r, g.board.r - g.gutter, 1) && near(g.panel.t, g.todo.t), JSON.stringify({ todo: g.todo, panel: g.panel, track }));
       check(`AC-105 ${w} px: the panel's tabs name IN PROGRESS, WAIT FOR HUMAN, INTEGRATION, FAILED and DONE with their counts, IN PROGRESS shown`,
@@ -144,8 +145,13 @@ async function tablet(browser, name) {
         g.todo.w >= 300 && g.panel.w >= 300 && (w > 1100 ? near(g.todo.t, g.panel.t) : g.panel.t >= g.todo.b), JSON.stringify({ todo: g.todo, panel: g.panel }));
       check(`AC-105 tablet ${w}×${h}: TODO's head and the tabs each on one line; a TODO card's title gets room`,
         g.todoHead.h <= 60 && g.tabs.every((t) => near(t.t, g.tabs[0].t)) && g.todoTitle.w >= 150, JSON.stringify({ head: g.todoHead, tabs: g.tabs, title: g.todoTitle }));
-      check(`AC-105 tablet ${w}×${h}: the agents, TODO and the panel start on the gutter`,
-        near(g.agent.l, g.gutter) && near(g.todo.l, g.gutter) && near(Math.min(g.panel.l, g.todo.l), g.gutter), JSON.stringify({ agent: g.agent, todo: g.todo, panel: g.panel, gutter: g.gutter }));
+      // the rails on the gutter, one column (terminum-kanban.md AC-203); TODO over the panel: the rail beside TODO alone,
+      // the panel the board's whole width, on the gutter
+      const start = g.gutter + g.rail?.w + 8, stacked = g.panel.t >= g.todo.b;
+      check(`AC-105 AC-203 tablet ${w}×${h}: the rails on the gutter, one column; the agents and TODO start after them, the panel ${stacked ? "on the gutter under TODO and its rail" : "beside TODO"}`,
+        near(g.rail?.l, g.gutter) && near(g.poolRail?.l, g.gutter) && near(g.poolRail?.w, g.rail?.w) && near(g.agent.l, start) && near(g.todo.l, start)
+        && (stacked ? near(g.panel.l, g.gutter) && g.rail.b <= g.panel.t : near(g.panel.l, g.todo.r + 8)),
+        JSON.stringify({ rail: g.rail, poolRail: g.poolRail, agent: g.agent, todo: g.todo, panel: g.panel, gutter: g.gutter }));
       await shot(page, `boardpanel-${name}-ipad-${w}x${h}`);
       await page.tap('#colswitch button[data-status="WAIT FOR HUMAN"]');
       check(`AC-105 tablet ${w}×${h}: a tap on a tab shows its column`, await until(() => page.evaluate(() => document.querySelector(".colpanel .col.shown")?.dataset.status === "WAIT FOR HUMAN")));

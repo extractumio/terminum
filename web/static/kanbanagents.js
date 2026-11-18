@@ -6,11 +6,12 @@
 // terminumd checks what is kept and says what is wrong; every page hears.
 import { askConfirm, oneAtATime } from "./dialogs.js";
 import { agentName, metaLine } from "./nav.js";
-import { el, iconButton } from "./listparts.js";
+import { el, iconButton, plural } from "./listparts.js";
 import { agentFace, agentView, stripes } from "./kanbanagentview.js";
 import { asTyped } from "./astyped.js";
 import { slotState } from "./cardstate.js";
 import { queueKey, queueList } from "./kanbanqueue.js";
+import { rail } from "./kanbanrail.js";
 import { $, agentColor, agentsOf, api, button, fillSelect, guardCancel, onlyProject, projectOptions, showError, slotsUsed } from "./kanbanutil.js";
 
 const KINDS = ["claude", "codex"];                 // their commands are their names: what a kind fills in
@@ -19,14 +20,17 @@ const KINDS = ["claude", "codex"];                 // their commands are their n
  *  `liveRow(key)`: a session's row; `dragging()`: the tasks of a drag; `given()`: those a press or a drop would run on an
  *  agent; `run(tasks, agent)`; `readings()`: each kind's subscription windows (AC-168); `openTask(id)`. */
 export function agentsSection({ getMeta, chosen, reload, refreshQueue, slots: counted, liveRow, dragging, given, run, openSession, readings, openTask }) {
-  // on the columns' tracks: an agent a column wide, its keys in the fifth (kanban.css .tracks)
+  // on the columns' tracks: an agent a column wide, the add tile after the last, the hint in the fifth (kanban.css .tracks)
   const box = el("section", "agents tracks"), list = el("div", "agentlist trackitems"), side = el("div", "trackside");
-  const addKey = iconButton("icon", "plus", "Add agent", "Add an agent to a project's pool", () => open());
+  box.id = "agentgrid";
+  const addKey = iconButton("addtile", "plus", "Add agent", "Add an agent to a project's pool", () => open(), 16);
   addKey.id = "addagent";
   const hint = el("p", "pickhint");
   hint.hidden = true;
-  side.append(addKey, hint);
+  side.append(hint);
   box.append(list, side);
+  // Agent Pool's rail folds it (terminum-kanban.md AC-203), open by default
+  const railed = rail($("agentbar"), box, { key: "tm.board.poolfolded", open: true, add: () => open() });
   const field = { project: $("agentproject"), name: $("agentname"), kind: $("agentkind"), effort: $("agenteffort"), command: $("agentcommand"), at_once: $("agentatonce"), week_limit: $("agentweek"), month_limit: $("agentmonth") };
   const dialog = $("agentbox"), error = $("agenterror");
   asTyped(field.command);
@@ -120,10 +124,18 @@ export function agentsSection({ getMeta, chosen, reload, refreshQueue, slots: co
     if (pressed || dragging() || now === drawn) return;
     drawn = now;
     box.dataset.n = agents.length;                 // a phone's line says it (kanbanphone.js)
-    list.replaceChildren(...agents.map(target));
+    railed.summary(poolSummary(agents));
+    list.replaceChildren(...agents.map(target), addKey);
     if (!agents.length) list.append(el("p", "colempty", chosen().length === 1 ? `${projectName(chosen()[0]) ?? "This project"} has no agents yet: add one to run its tasks.` : "No agents yet: add one to run tasks."));
     hint.hidden = !tasks;
     if (tasks) hint.textContent = `${tasks.length} chosen: press an agent or drop them on it. Esc lets them go.`;
+  }
+
+  /** The folded strip's line: "4 agents · 2 working · 1 waits for you", the parts at 0 left out but the first. */
+  function poolSummary(agents) {
+    const now = agents.flatMap((a) => slots(a)).map(doing), n = (w) => now.filter((d) => w.includes(d)).length;
+    const working = n(["working", "starting"]), waits = n(["waits"]);
+    return [plural(agents.length, "agent"), ...(working ? [`${working} working`] : []), ...(waits ? [`${waits} ${waits === 1 ? "waits" : "wait"} for you`] : [])].join(" · ");
   }
 
   /** `project`'s pool as rows, for its window: a press opens one. */

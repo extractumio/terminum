@@ -58,7 +58,7 @@ Open questions: none.
 | AC-160 | [MUST / P0] | A human makes a schedule in its window: title, text, project, severity, an agent of that project's pool (terminum-dispatcher.md AC-137), a cadence picked by kind (every N minutes or hours, daily, weekdays, weekly on days, monthly on a day, once, or five cron fields) in the Mac's local time, and a time budget; the window shows its next runs and the prompt that will go; it can be changed, paused or deleted at any time; a project with schedules is kept until they move or are deleted. |
 | AC-161 | [MUST / P0] | A schedule not paused keeps one slot of its agent: other runs have the rest, every run of its own tasks takes the kept one; an agent with no slot left to keep is refused, as are an at once below its kept slots and deleting an agent with schedules. |
 | AC-162 | [MUST / P0] | When a schedule is due, terminumd makes a task from it as it is then, IN PROGRESS and named S_<its project's next ID>, and runs it on its agent in the project's folder, the agent told it is a scheduled run and how to give its result; such a task never stands in TODO; a firing while a task of it is IN PROGRESS is skipped; a firing over 2 minutes late is missed, never run later; a start that fails fails its task and the next firing tries again; each firing is written. |
-| AC-163 | [MUST / P0] | The board's Scheduled section stands between the pool and the columns, folded to its head by default, a press away; its cards stand four to a row on the board's tracks, each with its cadence, next run, agent, last task and why that one did not start, every card whole; a schedule's tasks carry its name. |
+| AC-163 | [MUST / P0] | The board's Routines section (the board's word for schedules) stands between the pool and the columns, folded to one strip by default, a press away; its cards stand four to a row on the board's tracks, each with its cadence, next run, agent, last task and why that one did not start, every card whole; a schedule's tasks carry its name. |
 | AC-164 | [SHOULD / P1] | The Message history's Scheduled page lists every firing, newest first: when, the schedule, its task and agent, status, when it went IN PROGRESS and ended, what went in and what came out, or why nothing ran. |
 | AC-182 | [SHOULD / P1] | Run now on a schedule's card, and a manager's run_schedule, make the schedule's task and start it at once, whatever its cadence and paused or not; the cadence stays as it is. |
 
@@ -251,9 +251,10 @@ Scenario: AC-162 edge — Once
 ```gherkin
 Scenario: AC-163 happy path — folded
   Given three schedules of the projects shown
-  Then between the pool and the columns stands one line: a key "Scheduled 3" with its arrow and + Schedule
+  Then between the pool and the columns stands one strip: "Routines 3 · next SCH-2 today 03:00" and its + (terminum-kanban.md AC-203)
   When the user presses it
-  Then the section opens under it and this browser remembers it open; a press again folds it
+  Then the section opens on its rail and this browser remembers it open; a press on the rail folds it again
+  And the board's words say "routine" for a schedule: the section, its + ("Add routine"), its window ("New routine"), its empty line and errors, the phone's line; SCH-n, the API and this spec keep "schedule"
 
 Scenario: AC-163 happy path — its cards
   Then its cards stand on the board's tracks (terminum-kanban.md AC-105), each a track wide, four to a row; a board under 1500 px keeps one row that scrolls

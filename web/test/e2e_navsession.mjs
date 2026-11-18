@@ -77,6 +77,7 @@ export async function webNavSession(browser, name) {
   check(`AC-142 ${at} a menu "A session of an agent in", a row per project with its mark, the key sunk`,
     menu?.head === "A session of an agent in" && JSON.stringify(menu.rows) === '["API","Docs"]' && menu.dots === 2 && menu.expanded === "true", JSON.stringify(menu));
   await page.keyboard.press("Escape");
+  await until(() => page.evaluate(() => document.getElementById("navnew").getAttribute("aria-expanded") === "false"));   // "close" comes after Esc
   const back = await page.evaluate(() => ({ open: document.getElementById("rowmenu").open, focus: document.activeElement?.id, expanded: document.getElementById("navnew").getAttribute("aria-expanded") }));
   check(`AC-142 ${at} Esc closes it, the focus back on the key`, !back.open && back.focus === "navnew" && back.expanded === "false" && later.length === 0, JSON.stringify(back));
   await page.click("#navnew");

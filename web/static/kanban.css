@@ -81,12 +81,9 @@ body.board-page { margin: 0; overflow: hidden; background: var(--surface-0); col
   .agentlist .item { flex: none; width: 240px; }
   .pickhint { white-space: nowrap; }
 }
-/* the Scheduled section, between the pool and the columns: folded to its head, its cards on the same tracks (terminum-schedules.md AC-163) */
+/* the Routines section, between the pool and the columns: folded by its rail (boardrail.css), its cards on the same tracks (terminum-schedules.md AC-163) */
 #schedbar { flex: none; padding: var(--sp-2) var(--gutter) 0; min-width: 0; }
-.schedhead { display: flex; align-items: center; gap: var(--sp-2); }
-.schedtoggle::after, #poolline::after { content: ""; width: 6px; height: 6px; margin-left: var(--sp-1); border: solid currentColor; border-width: 0 1.5px 1.5px 0; transform: rotate(-45deg); transition: transform var(--dur-pop, .15s); }
-.schedtoggle[aria-expanded="true"]::after { transform: rotate(45deg) translate(-1px, -1px); }
-.schedtracks { margin-top: var(--sp-2); }
+#poolline::after { content: ""; width: 6px; height: 6px; margin-left: var(--sp-1); border: solid currentColor; border-width: 0 1.5px 1.5px 0; transform: rotate(-45deg); }
 .schedtracks[hidden] { display: none; }
 .schedcard { display: flex; flex-direction: column; align-items: stretch; gap: var(--sp-1); padding: var(--sp-2); cursor: pointer; }   /* stretch: .item (style.css) starts its rows */
 @media (hover: hover) { .schedcard:hover { background: var(--surface-2); } }

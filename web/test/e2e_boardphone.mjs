@@ -50,7 +50,7 @@ export async function webBoardPhone(browser, name) {
         g.keys.every((k) => k && k.t === g.keys[0].t && k.w >= 44 && k.h >= 44 && k.l >= 0 && k.r <= g.win) && g.keys.every((k, i) => !i || k.l >= g.keys[i - 1].r), JSON.stringify(g.keys));
       check("AC-105 phone: Find, the filters and the agents take no room; the first card stands under the switch and the line", !g.find && !g.picks && !g.agents && g.line && g.card.t < 240, JSON.stringify(g));
       check("AC-117 board: the lines fold into the head's counters, a single kind too; no line stands over the board", !g.asks && await page.textContent(".askn.waiting") === "2" && await page.textContent(".askn.failed") === "1", JSON.stringify(g.asks));
-      check("AC-105 phone: the line says Auto-Dispatch's state first, then the agents and the schedules", /^Auto OFF\s*Agents 2\s*Scheduled 0$/.test(g.lineWords.trim()), g.lineWords);
+      check("AC-105 phone: the line says Auto-Dispatch's state first, then the agents and the routines", /^Auto OFF\s*Agents 2\s*Routines 0$/.test(g.lineWords.trim()), g.lineWords);
       await shot(page, `boardphone-${name}-${width}`);
 
       // a counter: its lines as a sheet, the board not moved
@@ -85,7 +85,7 @@ export async function webBoardPhone(browser, name) {
       await page.click("#poolline");
       await pause(page, 200);
       const pool = await page.evaluate(() => { const p = document.getElementById("pool"), r = p.getBoundingClientRect(), seen = (id) => document.getElementById(id).getBoundingClientRect().height > 0;
-        return { l: Math.round(r.left), r: Math.round(innerWidth - r.right), t: r.top, b: visualViewport.height - r.bottom, parts: ["autoswitch", "agentbar", "newschedule"].map(seen), agents: p.querySelectorAll(".agentcard").length,
+        return { l: Math.round(r.left), r: Math.round(innerWidth - r.right), t: r.top, b: visualViewport.height - r.bottom, parts: ["autoswitch", "agentbar", "schedbar"].map(seen), agents: p.querySelectorAll(".agentcard").length,
           shaded: document.elementFromPoint(4, 4)?.id }; });
       check("AC-105 phone: the line opens Auto-Dispatch, the agents and the schedules as one centered sheet over a shade",
         pool.l === 16 && pool.r === 16 && pool.t >= 0 && pool.b >= 0 && pool.parts.every(Boolean) && pool.agents === 2 && pool.shaded === "sheetscrim", JSON.stringify(pool));

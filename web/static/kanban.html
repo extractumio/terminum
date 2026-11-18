@@ -23,6 +23,7 @@
 <link rel="stylesheet" href="askfold.css">
 <link rel="stylesheet" href="boardphone.css">
 <link rel="stylesheet" href="boardpanel.css">
+<link rel="stylesheet" href="boardrail.css">
 <link rel="stylesheet" href="markdown.css">
 <link rel="stylesheet" href="taskwin.css">
 <link rel="stylesheet" href="taskattrs.css">
@@ -139,11 +140,13 @@
 </header>
 <div id="boardbanner" class="banner" role="status" hidden></div>
 <div id="asks" aria-live="polite" hidden></div>
-<div id="pool"><div id="agentbar" aria-label="Agents"></div>
-<section id="schedbar" aria-label="Scheduled tasks"></section></div>
+<!-- The board's three sections, each named on a rail at its left (terminum-kanban.md AC-203): Agent Pool and Routines fold
+     by theirs (kanbanrail.js), folded to one strip with their add key; Task Management's is a plain head. -->
+<div id="pool"><section id="agentbar" class="railed" aria-labelledby="railpool"><h2 class="rail"><button id="railpool" class="railkey" type="button" aria-expanded="true" aria-controls="agentgrid"><svg class="lu chev" viewBox="0 0 24 24" aria-hidden="true" style="--s:12px"><path d="m6 9 6 6 6-6"/></svg><span class="railword">Agent Pool</span><span class="railsum"></span></button><button class="railadd icon" type="button" aria-label="Add agent" title="Add an agent to a project's pool" hidden><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M5 12h14"/><path d="M12 5v14"/></svg></button></h2></section>
+<section id="schedbar" class="railed" aria-labelledby="railsched"><h2 class="rail"><button id="railsched" class="railkey" type="button" aria-expanded="false" aria-controls="schedgrid"><svg class="lu chev" viewBox="0 0 24 24" aria-hidden="true" style="--s:12px"><path d="m6 9 6 6 6-6"/></svg><span class="railword">Routines</span><span class="railsum"></span></button><button class="railadd icon" type="button" aria-label="Add routine" title="Add a routine: a task that runs on a cadence on one agent" hidden><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M5 12h14"/><path d="M12 5v14"/></svg></button></h2></section></div>
 <div id="colswitch" class="seg" role="tablist" aria-label="Columns"></div>
-<button id="poolline" class="textkey" type="button" aria-haspopup="dialog" aria-controls="pool" title="Auto-Dispatch, the agents and the schedules"></button>
-<main id="board" aria-label="Tasks"></main>
+<button id="poolline" class="textkey" type="button" aria-haspopup="dialog" aria-controls="pool" title="Auto-Dispatch, the agents and the routines"></button>
+<main id="board" aria-labelledby="railboard"><h2 id="railboard" class="rail"><span class="railword">Task Management</span></h2></main>
   </section>
 </div>
 <p id="toast" class="box" role="status" popover="manual" hidden></p>
@@ -213,7 +216,7 @@
 
 <dialog id="schedbox" data-size="write" class="box dlg" aria-labelledby="schedhead">
   <form method="dialog">
-    <div class="dhead"><h2 id="schedhead">New schedule</h2><button class="icon x" type="button" title="Close (Esc)" aria-label="Close"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
+    <div class="dhead"><h2 id="schedhead">New routine</h2><button class="icon x" type="button" title="Close (Esc)" aria-label="Close"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
     <label class="fieldrow">Title <input id="schedtitle" class="field" type="text" maxlength="200" autocomplete="off"></label>
     <div class="edithead"><span>Text</span>
       <div id="schedtabs"></div>

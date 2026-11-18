@@ -82,6 +82,7 @@ Open questions: none.
 | AC-148 | [MUST / P0] | A task's ID is its project's letters and the project's own count (TERM-7), "S_" before them for a task a schedule made (S_TERM-8), "I_" for a batch's integration task (`terminum-integration.md` AC-194): the letters come from the project's folder and can be set; every ID a task had, and its key's start, still find it. |
 | AC-149 | [MUST / P0] | A task's window sets the task apart from its subtasks and from its comments and history, read as a conversation: a comment's kind shows by its bar, oldest first, the comment field last; what the human must react to (questions, a result, a failure) stands first, the field under it; tasks, subtasks and comments say when they were made and changed. |
 | AC-150 | [SHOULD / P1] | The session page counts the tasks made in the shown session, says new ones as reminders are said, lists them and opens the board's own task window. |
+| AC-203 | [SHOULD / P1] | The board names its three sections, Agent Pool, Routines and Task Management, on rails at their left; the pool's and the routines' rails fold their section to one strip that keeps its add key; each block's add tile stands right after its last card. |
 
 ## 5. BDD scenarios
 
@@ -1267,6 +1268,32 @@ Scenario: AC-150 edge — archived, or the pane gone
   Then an archived task leaves the count; a tmux server started anew forgets which of its panes made what (AC-113), so a new pane of an old number counts none of them
 ```
 
+### AC-203 — Section rails, folds and add tiles [SHOULD / P1]
+
+```gherkin
+Scenario: AC-203 happy path — three rails
+  Given the board on a computer
+  Then the pool, the routines (terminum-schedules.md AC-163) and the columns each stand beside a rail at their left, 24 px wide, the three in one column on the gutter: "Agent Pool", "Routines", "Task Management", read bottom to top (the words turned 90° counter-clockwise), 2 px smaller than the board's words, on a surface a step above the cards', 4.5:1
+  And each rail is as tall as its section; Task Management's word stands at its top
+  And Task Management's rail is a plain head: no key, no chevron, no pointer, never folding
+  And with TODO over the panel (under 1100 px of board) Task Management's rail stands beside TODO and the panel takes the board's whole width under them, its tabs and keys on one row of an iPad mini
+
+Scenario: AC-203 happy path — a rail folds its section
+  When the user presses Agent Pool's or Routines' rail (a key with the session list's chevron, its state said to assistive tech)
+  Then its section folds to one 28 px strip across the board: the chevron, the word flat, a line of what it holds ("2 agents · 1 working · 1 waits for you"; "3 · next SCH-2 today 03:00", "none" with none), and its + at the strip's right end
+  And a press on the strip folds it open again; this browser remembers each, Agent Pool open and Routines folded by default
+  When the user presses the strip's +
+  Then it adds an agent or a routine as the tile does, the section staying folded
+  And a folded pool takes no dropped task: the user folded it
+
+Scenario: AC-203 happy path — add tiles
+  Then each block's last item is a 44 px [+] tile as tall as its cards, right after the last one ("Add agent", "Add routine"); a full row of four puts it on the next row; no add key stands elsewhere
+
+Scenario: AC-203 edge — a phone
+  Given a phone (AC-105: the pool and the routines in the sheet behind one line)
+  Then in the sheet Agent Pool and Routines are flat 44 px heads that fold their section the same way; Task Management's rail is not shown, its name kept for screen readers
+```
+
 ## 6. Flow and sequence diagrams
 
 ```mermaid
@@ -1420,6 +1447,7 @@ Depends on: nothing more.
 - [x] AC-148 — `cargo test tasks::slugs`, `cargo test tasks::store` (an older store), `web/test/e2e_liveboardids.mjs`
 - [x] AC-149 — `web/test/e2e_liveboardids.mjs`, `web/test/e2e_taskwin.mjs` (the parts, the kinds' bars, what leads, a change while open)
 - [x] AC-150 — `web/test/e2e_livenotes.mjs` (counted, listed, the task window on the session page), `cargo test tasks::ops` (a restore, a server started anew)
+- [x] AC-203 — `web/test/e2e_boardrail.mjs` (`node web/test/e2e_all.mjs webBoardRail`: 1900 px and a phone), the rails' column and a tablet's in `web/test/e2e_boardpanel.mjs`, Routines' strip in `web/test/e2e_liveschedules.mjs`
 - [x] AC-120 — `cargo test tasks::tools` (pages, a host's file), `scripts/e2e_remote_agents.py` (get_file on a host, with files off), `scripts/e2e_remote_sshd_agents.py`
 - [x] AC-145 — `cargo test tasks::tools` (refused with what to do, the template), `cargo test tasks::template`, `cargo test cli::mcp`, `web/test/e2e_livenotes.mjs`
 - [x] AC-154 — `cargo test tasks::groom`, `cargo test cli::mcp` (the tool offered, its shape checked, its size)
