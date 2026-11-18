@@ -604,8 +604,9 @@ Scenario: AC-194 edge — its kept slot
   Given Billing's integration Agent Opus reviewer with 2 at once
   Then it keeps one slot for integration, as a schedule keeps one (terminum-schedules.md AC-161): the agent's card shows "kept for integration" and a red batch never waits for room; an agent that several projects name keeps one slot for them all, as one batch is in work at a time
   And a project's integration turned off, or its Agent set to none, frees it
-  When I_API-31 is DONE and its session stays open until its close (terminum-dispatcher.md AC-125)
-  Then that session holds no slot, its dot saying "Its integration task ended: it takes no slot while it closes", and the next red batch's agent starts at once in the kept slot, beside the agent's other runs
+  When I_API-31 is DONE, its agent idle, and its session stays open until its close (terminum-dispatcher.md AC-125)
+  Then that session holds no slot, as no batch goes on in it, its dot saying "Its integration task ended: it takes no slot while it closes", and the next red batch's agent starts at once in the kept slot, beside the agent's other runs
+  But while its agent is still in a turn, the session holds the kept slot
   When the user saves as Agent one with no slot left to keep
   Then the Integration window says "Opus reviewer runs 1 at once, kept for SCH-1: raise its at once, or choose another agent." and nothing is kept
 

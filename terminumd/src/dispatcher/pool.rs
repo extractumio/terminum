@@ -86,11 +86,9 @@ pub struct Slots {
     in_kept: HashMap<String, String>,
     /// the runs of Auto-Dispatcher's rounds: live and shown, but no slot is theirs, so they are not in `holding` (AC-170)
     rounds: Vec<Run>,
-    /// retained sessions whose work is in integration: shown, but no ordinary slot is theirs (AC-169)
+    /// retained sessions whose work is in integration (AC-169), and an ended integration task's session, idle until its
+    /// close (AC-125, terminum-integration.md AC-194): shown, but no ordinary slot is theirs
     integrating: Vec<Run>,
-    /// sessions of a batch's integration task that ended, only waiting for their close (AC-125): shown, no slot is
-    /// theirs, so the next red batch's agent never waits for one (terminum-integration.md AC-194)
-    closing: Vec<Run>,
 }
 
 impl Slots {
@@ -98,12 +96,11 @@ impl Slots {
         let live: Vec<Run> = runs::live(tx)?.into_iter().filter(Run::holds_slot).collect();
         let of_rounds: HashSet<String> = rows(tx, "SELECT m.run FROM run_tasks m JOIN auto_rounds a ON a.task = m.task", [], |r| r.get(0))?.into_iter().collect();
         let (rounds, ordinary): (Vec<Run>, Vec<Run>) = live.into_iter().partition(|r| of_rounds.contains(&r.id));
-        let of_batches: HashSet<String> = rows(tx, "SELECT m.run FROM run_tasks m JOIN integration_batches b ON b.task = m.task", [], |r| r.get(0))?.into_iter().collect();
-        let (closing, ordinary): (Vec<Run>, Vec<Run>) = ordinary.into_iter().partition(|r| of_batches.contains(&r.id) && !r.is_starting() && plan::finished(&r.status));
+        let ended = ended_integration(tx, &ordinary)?;
         // Integration owns handed-off work until it returns; a new process still reserves room during startup.
-        let (integrating, holding): (Vec<Run>, Vec<Run>) = ordinary.into_iter().partition(|r| !r.is_starting() && r.status == ops::INTEGRATION);
+        let (integrating, holding): (Vec<Run>, Vec<Run>) = ordinary.into_iter().partition(|r| !r.is_starting() && (r.status == ops::INTEGRATION || ended.contains(&r.id)));
         let ids: Vec<&str> = holding.iter().map(|r| r.id.as_str()).collect();
-        Ok(Slots { in_kept: in_kept(tx, &ids)?, kept: schedules::kept_by_agent(tx)?, holding, rounds, integrating, closing })
+        Ok(Slots { in_kept: in_kept(tx, &ids)?, kept: schedules::kept_by_agent(tx)?, holding, rounds, integrating })
     }
 
     /// Whether a process of `agent` (none: one deleted since, its slot no one's) can start in `project`, `but` run
@@ -136,6 +133,17 @@ impl Slots {
         let free = schedule.is_some_and(|s| !self.in_kept.iter().any(|(run, of)| *of == s && Some(run.as_str()) != but));
         self.check(tx, (!free).then_some(agent), project, but)
     }
+}
+
+/// The runs of `live` of a batch's integration task that ended, their agent idle: their sessions are never gone on in,
+/// the next batch's is a task of its own, so none waits for their close (terminum-integration.md AC-194).
+fn ended_integration(tx: &Transaction, live: &[Run]) -> Result<HashSet<String>, String> {
+    let ids: Vec<&str> = live.iter().filter(|r| !r.is_starting() && !r.busy() && plan::finished(&r.status)).map(|r| r.id.as_str()).collect();
+    if ids.is_empty() {
+        return Ok(HashSet::new());
+    }
+    Ok(rows(tx, "SELECT m.run FROM run_tasks m JOIN integration_batches b ON b.task = m.task WHERE m.run IN (SELECT value FROM json_each(?1))",
+            [runs::listed_keys(&ids)], |r| r.get(0))?.into_iter().collect())
 }
 
 /// `check_for`, read now.
@@ -227,20 +235,21 @@ fn in_runs(tx: &Transaction, ids: &[&str]) -> Result<HashMap<String, Vec<Value>>
 
 /// What the board shows of the slots (AC-138): each agent's sessions, and the agents and projects at their limit.
 pub fn board(tx: &Transaction) -> Result<Value, String> {
-    let Slots { holding, kept, in_kept, rounds, integrating, closing } = Slots::read(tx)?;
-    let mut tasks = in_runs(tx, &holding.iter().chain(&rounds).chain(&integrating).chain(&closing).map(|r| r.id.as_str()).collect::<Vec<_>>())?;
+    let Slots { holding, kept, in_kept, rounds, integrating } = Slots::read(tx)?;
+    let mut tasks = in_runs(tx, &holding.iter().chain(&rounds).chain(&integrating).map(|r| r.id.as_str()).collect::<Vec<_>>())?;
     let mut of_agent: BTreeMap<&str, Vec<Value>> = BTreeMap::new();
     let mut in_project: HashMap<&str, i64> = HashMap::new();
     // a slot its schedules keep counts once, whether its run is live or not (AC-161)
     let mut others: HashMap<&str, usize> = HashMap::new();
     // rounds, integration waits and ended integration tasks' sessions stay visible on their agent without taking
     // ordinary slots (AC-138, AC-169, AC-170, terminum-integration.md AC-194)
-    for (r, round, integration, ended) in holding.iter().map(|r| (r, false, false, false)).chain(rounds.iter().map(|r| (r, true, false, false)))
-        .chain(integrating.iter().map(|r| (r, false, true, false))).chain(closing.iter().map(|r| (r, false, false, true))) {
+    for (r, round, no_slot) in holding.iter().map(|r| (r, false, false))
+        .chain(rounds.iter().map(|r| (r, true, false))).chain(integrating.iter().map(|r| (r, false, true))) {
         let in_slot = in_kept.contains_key(&r.id);
+        let (integration, ended) = (no_slot && r.status == ops::INTEGRATION, no_slot && r.status != ops::INTEGRATION);
         of_agent.entry(&r.agent_id).or_default().push(json!({"run": r.id, "tasks": r.names(), "state": r.state, "key": r.pane_key, "project": r.project, "idle": !r.busy() && !r.ad_hoc(), "kept": in_slot,
-            "round": round, "integration": integration, "closing": ended, "list": tasks.remove(&r.id).unwrap_or_default()}));
-        if round || integration || ended {
+            "round": round, "integration": integration, "ended": ended, "list": tasks.remove(&r.id).unwrap_or_default()}));
+        if round || no_slot {
             continue;
         }
         if !in_slot {

@@ -234,8 +234,8 @@ fn ac194_each_integration_agent_keeps_a_slot_of_its_own() {
     assert_eq!(status(&w, &i), "IN PROGRESS");
 }
 
-/// TERM-500: an ended integration task's session, still closing (terminum-dispatcher.md AC-125), keeps no slot: the
-/// next red batch's agent starts at once beside a driver task's run, and then stands in the kept slot itself.
+/// TERM-500: an ended integration task's session, its agent idle until its close (terminum-dispatcher.md AC-125),
+/// keeps no slot: the next red batch's agent starts at once beside a driver task's run, then stands in the kept slot.
 #[test]
 fn ac194_an_ended_integration_task_s_closing_session_leaves_the_kept_slot() {
     use crate::dispatcher::pool::{self, Slots};
@@ -249,7 +249,10 @@ fn ac194_an_ended_integration_task_s_closing_session_leaves_the_kept_slot() {
         let t = ops::create(tx, DISPATCHER, ops::NewTask { title: "Integration batch 2: API-9".into(), project: Some("api".into()), integration: true, ..Default::default() }, 5)?;
         tx.execute("INSERT INTO integration_batches (project, number, task, tasks, base_sha, state, created_at) VALUES ('api', 2, ?1, '[]', 'x', 'red', 5)", [&t.key]).map_err(sql)?;
         let a1 = crate::tasks::agents::chosen(tx, "a1", "api")?;
-        assert_eq!(pool::check_for(tx, &a1, "api", Some(&t.key), None)?, None, "the kept slot is free while batch 1's session closes");
+        assert!(pool::check_for(tx, &a1, "api", Some(&t.key), None)?.is_some(), "its agent still in its turn after DONE holds the slot");
+        let run = crate::dispatcher::runs::last_of(tx, &ops::key_of(tx, &first)?)?.unwrap();
+        crate::dispatcher::runs::change(tx, &run.id, |r| r.turn_ended = true)?;
+        assert_eq!(pool::check_for(tx, &a1, "api", Some(&t.key), None)?, None, "the kept slot is free while batch 1's idle session closes");
         assert!(pool::check_for(tx, &a1, "api", None, None)?.is_some(), "an ordinary run still finds its one slot taken by the driver");
         Ok(t.id)
     }).unwrap();
@@ -263,7 +266,7 @@ fn ac194_an_ended_integration_task_s_closing_session_leaves_the_kept_slot() {
         let shown = pool::board(tx)?;
         let rows = shown["agents"]["a1"].as_array().unwrap();
         assert_eq!(rows.len(), 3, "the closing session stays shown");
-        assert_eq!(rows.iter().filter(|r| r["closing"] == true).map(|r| r["tasks"].clone()).collect::<Vec<_>>(), vec![json!(first)]);
+        assert_eq!(rows.iter().filter(|r| r["ended"] == true).map(|r| r["tasks"].clone()).collect::<Vec<_>>(), vec![json!(first)]);
         assert_eq!(shown["full"], json!(["a1"]), "driver and kept slot: at its limit, the closing session not counted");
         Ok(())
     }).unwrap();

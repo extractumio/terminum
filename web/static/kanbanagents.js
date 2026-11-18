@@ -52,7 +52,7 @@ export function agentsSection({ getMeta, chosen, reload, refreshQueue, slots: co
   function dot(s) {
     const now = doing(s), d = el("span", `agdot ${now === "working" || now === "starting" ? "on" : now === "integration" ? "idle" : now}${s.round ? " round" : ""}`);
     d.dataset.key = s.key ?? "";
-    d.title = [s.tasks, projectName(s.project), WORDS[now], s.round ? "Auto-Dispatcher's round: it takes no slot" : "", s.integration ? "Integration wait: it takes no ordinary slot" : "", s.closing ? "Its integration task ended: it takes no slot while it closes" : ""].filter(Boolean).join(" · ");
+    d.title = [s.tasks, projectName(s.project), WORDS[now], s.round ? "Auto-Dispatcher's round: it takes no slot" : "", s.integration ? "Integration wait: it takes no ordinary slot" : "", s.ended ? "Its integration task ended: it takes no slot while it closes" : ""].filter(Boolean).join(" · ");
     return d;
   }
 
