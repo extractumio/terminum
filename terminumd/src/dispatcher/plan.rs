@@ -68,6 +68,8 @@ pub struct Facts {
     pub memory: Option<Memory>,
     /// seconds to add to the clocks: none over a gap (AC-131)
     pub dt: i64,
+    /// the identity of its pane's tmux server as this walk read it (`@terminum-id`, AC-205)
+    pub identity: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -86,6 +88,8 @@ pub enum Act {
     MemoryWarn(f64),
     /// Closes the pane; `keep` keeps the screen's last rows on the task first. The run is closed when tmux did it.
     Close { words: String, keep: bool },
+    /// Its tmux server ended under it and is back as `identity`: its conversation goes on in a new window (AC-205).
+    Resume { identity: String },
 }
 
 /// The request for a result (AC-123): fixed words and the task's ID, typed through the gate (§9).
@@ -115,18 +119,35 @@ fn end_failed(run: &mut Run, acts: &mut Vec<Act>, words: String) {
     acts.push(Act::End);
 }
 
+/// A run its tmux server's end cut off goes on by itself (AC-205): Dispatcher's, its agent at work on a task in
+/// progress, its conversation known; never + Session's, one ending at a limit, given up, or whose agent had ended.
+fn resumable(run: &Run) -> bool {
+    run.state == Phase::Working && !run.ad_hoc() && run.status == "IN PROGRESS" && run.agent_session.is_some()
+}
+
 /// The walk's step for `run`: its clocks change here, what is to be done comes back.
 pub fn step(run: &mut Run, f: &Facts) -> Vec<Act> {
     let mut acts = Vec::new();
     // + Session's has no task to move; a run whose open tasks all wait in INTEGRATION moves none: a queued commit lands
     // as any (terminum-integration.md AC-187), a batch's integration task ends with its batch; its end is said instead
     let movable = !finished(&run.status) && !run.ad_hoc() && run.status != crate::tasks::ops::INTEGRATION;
+    // the server it stands in, as this walk saw it there: what a gone pane is judged by (AC-205)
+    if f.pane && f.marked && f.identity.is_some() {
+        run.server_id.clone_from(&f.identity);
+    }
     if !f.pane || !f.marked {
+        // its server ended under it, not a human's close: under another identity, or its link dropped when terminumd
+        // saw the server started anew (tasks::projects); a run at work on a task in progress goes on by itself
+        let anew = f.identity.as_ref().filter(|now| run.pane_key.is_none() || run.server_id.as_ref().is_some_and(|was| was != *now));
+        if let Some(identity) = anew && resumable(run) {
+            // it stays as it is until the resume is tried: a terminumd stopped meanwhile tries it again (resume.rs)
+            return vec![Act::Resume { identity: identity.clone() }];
+        }
         run.state = Phase::Closed;
         if f.pane {
             run.pane_key = None;
         }
-        let words = if f.pane { "Its pane is no longer this run's: the link is dropped." } else { "Its window was closed." };
+        let words = if anew.is_some() { "Its tmux server started anew." } else if f.pane { "Its pane is no longer this run's: the link is dropped." } else { "Its window was closed." };
         if movable {
             acts.push(Act::Move { to: "FAILED", words: words.to_string() });
         } else {

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 //! RUN's routes (`terminum-dispatcher.md` AC-121, AC-122): what its dialog offers, and the press.
 
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use axum::extract::{Path, State};
@@ -12,13 +13,14 @@ use serde_json::{json, Value};
 
 use super::gate::{self, Miss};
 use super::runs::{self, How, Phase, Run, Started};
-use super::press::{again_words, also_of, answers_of, bring_back, facts, way, ways, with_open, Asked, Facts, Way};
+use super::press::{again_words, also_of, answers_of, bring_back, facts, members, way, ways, with_open, Asked, Facts, Way};
 use super::pool;
 use super::screen::Screen;
 use super::goes_on::{from_shell, resume, went_on};
 use super::places::{ad_hoc, launch, no_folder, place};
 use super::{acts, start, store};
 use crate::app::Shared;
+use crate::tmux::PaneState;
 use crate::tasks::agents::{self, Agent};
 use crate::tasks::api::{answer, told};
 use crate::tasks::ops::{self, Task};
@@ -38,8 +40,9 @@ pub fn routes() -> Router<Shared> {
 /// What RUN's dialog shows (AC-121, AC-138): the tasks' project's pool, each saying what keeps it busy; an agent named that cannot
 /// take them is refused here, so the window never offers another under its name. `no_folder`: nothing can start (AC-140).
 async fn offer(State(app): State<Shared>, Path(id): Path<String>, axum::extract::Query(asked): axum::extract::Query<Asked>) -> Response {
+    let pane = linked_panes(&app, &id, &also_of(&asked.also)).await;
     answer(store(&app, move |tx| {
-        let (tasks, w, moved_from) = ways(tx, &id, &also_of(&asked.also), asked.agent.as_deref(), false)?;
+        let (tasks, w, moved_from) = ways(tx, &id, &also_of(&asked.also), asked.agent.as_deref(), false, &pane)?;
         let w = w?;
         let t = &tasks[0];
         let (name, host, dir) = ops::project_place(tx, &t.project)?;
@@ -112,6 +115,13 @@ impl Press {
             return Err("The task's text changed: look at it again.".to_string());
         }
         Ok(goes)
+    }
+
+    /// The resume of a run its tmux server's end cut off (AC-205): no one's new press; who started the run and how stay
+    /// its own (AC-183), a manager's start its manager's.
+    pub(super) fn resumed(how: How, by: &str) -> Press {
+        let manager = (by != HUMAN && by != crate::tasks::store::DISPATCHER).then(|| by.to_string());
+        Press { how, manager, auto: how == How::Auto, ..Default::default() }
     }
 
     /// Who pressed: the manager's user, else the human.
@@ -242,6 +252,29 @@ pub(crate) async fn press_by_manager(app: &Shared, id: &str, user: &str, agent: 
     pressed(app, id, Press { agent, comment, fresh, queue, manager: Some(user.to_string()), ..Default::default() }).await
 }
 
+/// The longest a press waits for a linked pane's server to be read again.
+const REREAD_WAIT: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// A linked pane its server's list lacks may be newer than that list (an agent's take_task): that server is
+/// read once more before the press judges it closed (AC-113). The press's judge of a linked pane: one whose
+/// server was not read again in time stays Unread, never Closed by the older list.
+async fn linked_panes(app: &Shared, id: &str, also: &[String]) -> impl Fn(&str) -> PaneState + Send + 'static {
+    let (ids, more) = (id.to_string(), also.to_vec());
+    let keys = store(app, move |tx| Ok(members(tx, &ids, &more)?.into_iter().filter_map(|t| t.session).collect::<Vec<_>>())).await.unwrap_or_default();
+    let mut late = HashSet::new();
+    for key in keys.into_iter().filter(|k| app.tmux.pane_state(k) == PaneState::Closed) {
+        let read = match app.tmux.resolve(&key) {
+            Some((server, _)) => tokio::time::timeout(REREAD_WAIT, crate::lists::refresh_server(app, &server)).await.is_ok(),
+            None => true,
+        };
+        if !read {
+            late.insert(key);
+        }
+    }
+    let a = app.clone();
+    move |k: &str| if late.contains(k) { PaneState::Unread } else { a.tmux.pane_state(k) }
+}
+
 /// Where a run's pane is.
 fn pane_of(app: &Shared, r: &Run) -> Result<(Arc<Server>, String), String> {
     r.place(app).ok_or_else(|| "Its session is gone.".to_string())
@@ -253,9 +286,10 @@ async fn pressed(app: &Shared, id: &str, body: Press) -> Result<Value, String> {
         return Err("The message has control or invisible characters.".to_string());
     }
     let (wanted, said, attached, fresh, also, agent) = (id.to_string(), comment.clone(), body.files.clone(), body.fresh, body.also.clone(), body.agent.clone());
+    let pane = linked_panes(app, &wanted, &also).await;
     let (kept, by) = (body.clone(), body.clone());
     let (tasks, w, again) = store(app, move |tx| {
-        let (tasks, w, _) = ways(tx, &wanted, &also, agent.as_deref(), fresh)?;
+        let (tasks, w, _) = ways(tx, &wanted, &also, agent.as_deref(), fresh, &pane)?;
         // a run that starts keeps its comment with it, in the transaction that adds it; going on, or refused, it stays, once
         if !matches!(w, Ok(Way::First)) && let Some(c) = &said {
             by.keep_on(tx, &tasks, c, &attached)?;
@@ -356,11 +390,11 @@ async fn first_run(app: &Shared, tasks: &[Task], body: Press, kept: Press, comme
     if let Some(holder) = &body.close {
         close_idle(app, holder, &tasks.iter().map(|t| t.id.as_str()).collect::<Vec<_>>().join(", ")).await?;
     }
-    let (ag, f, project) = (a.clone(), dir.clone(), t.project.clone());
+    let (ag, f, project, at) = (a.clone(), dir.clone(), t.project.clone(), app.clone());
     let next = store(app, move |tx| {
         let now: Vec<Task> = all.iter().map(|t| ops::get(tx, &t.id)).collect::<Result<_, _>>()?;
         for t in &now {
-            way(t, runs::last_of(tx, &t.key)?, true)?;
+            way(t, runs::last_of(tx, &t.key)?, true, &|k| at.tmux.pane_state(k))?;
         }
         let goes = kept.first_words(tx, &now)?;
         // the one check that counts: in the transaction that takes the slots; a press that closed a holder

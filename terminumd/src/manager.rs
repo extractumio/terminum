@@ -167,7 +167,7 @@ async fn read_server(app: &Shared, server: Arc<Server>) -> Got {
                 crate::page::plans::tell(&app.pages, &changed);
             }
             server.set_panes(read.panes);
-            Got::Read(Told { groups: Arc::new(gs), keys: read.keys, ok: true, ..Default::default() })
+            Got::Read(Told { groups: Arc::new(gs), keys: read.keys, every: read.every, ok: true, ..Default::default() })
         }
         Err(e) => {
             tracing::warn!(event = "tmux.error", server = %server.name, cmd = "list-panes", msg = e);

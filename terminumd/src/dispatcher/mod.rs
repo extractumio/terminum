@@ -13,6 +13,7 @@ mod press;
 mod places;
 mod firstprompt;
 mod queue;
+mod resume;
 mod gate;
 mod hooks;
 pub mod plan;

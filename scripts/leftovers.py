@@ -27,7 +27,7 @@ TEST_HELPER = re.compile(r"/\S*/terminumd/target/(?:debug|release)/deps/terminum
 BUILD_OUTPUT = re.compile(r"/\S*/terminumd/target/(?:debug|release)/(?:terminumd|deps/terminumd-[0-9a-f]{16})( |$)")
 # what tests name their folders; test_leftovers.py fails on a test's prefix missing here
 FOLDER_PREFIXES = ("tm-", "tma-", "tmb-", "tme-", "tmh-", "tmi-", "tml-", "tmln-", "tmlo-", "tmlp-", "tmlw-",
-                   "tmr-", "tmr9-", "tmrel-", "tmsq-", "tmv-", "tmw-", "tmz-", "tmc.", "tmps-", "fssh-", ".fssh-")
+                   "tmr-", "tmr9-", "tmrs-", "tmrel-", "tmsq-", "tmv-", "tmw-", "tmz-", "tmc.", "tmps-", "fssh-", ".fssh-")
 
 
 def age_s(etime):
