@@ -62,6 +62,8 @@ pub struct Told {
     /// shown after every server's rows
     pub absent: Vec<Value>,
     pub keys: Vec<String>,
+    /// every pane key of the server, of a session not shown too: a pane not here closed
+    pub every: Vec<String>,
     /// nothing in it failed
     pub ok: bool,
 }

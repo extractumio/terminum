@@ -3,6 +3,7 @@
 
 use super::*;
 use crate::dispatcher::api::has_stray;
+use crate::tmux::PaneState;
 use crate::dispatcher::runs;
 use crate::tasks::agents::inline_words;
 use crate::tasks::ops::NewTask;
@@ -79,15 +80,15 @@ fn ac138_what_is_done_of_a_run_still_working_runs_again_only_when_it_ends() {
         ops::move_to(tx, HUMAN, &a.id, "DONE", 3)?;
         ops::move_to(tx, HUMAN, &b.id, "IN PROGRESS", 3)?;
         let last = runs::last_of(tx, &a.key)?;
-        let refused = |fresh| way(&ops::get(tx, &a.id).unwrap(), last.clone(), fresh).err().unwrap_or_default();
+        let refused = |fresh| way(&ops::get(tx, &a.id).unwrap(), last.clone(), fresh, &closed).err().unwrap_or_default();
         assert!(refused(false).contains("shares its session with"), "{}", refused(false));
         assert!(refused(true).contains("shares its session with"), "nor from scratch: its run would be left unwatched");
         ops::move_to(tx, HUMAN, &b.id, "WAIT FOR HUMAN", 4)?;
         let last = runs::last_of(tx, &b.key)?;
-        assert!(matches!(way(&ops::get(tx, &b.id)?, last.clone(), false), Ok(Way::Live(_))), "an answer to what waits goes in");
+        assert!(matches!(way(&ops::get(tx, &b.id)?, last.clone(), false, &closed), Ok(Way::Live(_))), "an answer to what waits goes in");
         ops::move_to(tx, HUMAN, &b.id, "DONE", 5)?;
         let last = runs::last_of(tx, &a.key)?;
-        assert!(matches!(way(&ops::get(tx, &a.id)?, last, false), Ok(Way::Live(_))), "all ended: it goes on in that session");
+        assert!(matches!(way(&ops::get(tx, &a.id)?, last, false, &closed), Ok(Way::Live(_))), "all ended: it goes on in that session");
         Ok(())
     }).unwrap();
 }
@@ -105,14 +106,14 @@ fn ac126_run_waits_while_its_agent_is_being_ended() {
         ops::move_to(tx, HUMAN, &a.id, "FAILED", 3)?;
         let last = runs::last_of(tx, &a.key)?;
         for fresh in [false, true] {
-            let refused = way(&ops::get(tx, &a.id)?, last.clone(), fresh).err().unwrap_or_default();
+            let refused = way(&ops::get(tx, &a.id)?, last.clone(), fresh, &closed).err().unwrap_or_default();
             assert!(refused.contains("being ended"), "fresh {fresh}: {refused}");
         }
         runs::change(tx, &id, |r| r.state = Phase::Gone)?;
-        let gone = way(&ops::get(tx, &a.id)?, runs::last_of(tx, &a.key)?, false);
+        let gone = way(&ops::get(tx, &a.id)?, runs::last_of(tx, &a.key)?, false, &closed);
         assert!(matches!(&gone, Ok(Way::Anew(_))) && gone.as_ref().is_ok_and(Way::first_words), "ended with no conversation: anew from its shell, a first run's words (AC-122)");
         runs::change(tx, &id, |r| r.agent_session = Some("abc-1".into()))?;
-        let gone = way(&ops::get(tx, &a.id)?, runs::last_of(tx, &a.key)?, false);
+        let gone = way(&ops::get(tx, &a.id)?, runs::last_of(tx, &a.key)?, false, &closed);
         assert!(matches!(&gone, Ok(Way::Shell(_))) && !gone.as_ref().is_ok_and(Way::first_words), "ended with its conversation: from its shell, it goes on");
         Ok(())
     }).unwrap();
@@ -227,7 +228,7 @@ fn ac138_dropped_on_another_agent_of_its_kind_its_ended_conversation_goes_on_the
         assert_eq!(moved_to(tx, std::slice::from_ref(&t), Some(&r), Some("b"), true)?, None, "Run from scratch");
         let live = Run { state: Phase::Working, ..r.clone() };
         assert_eq!(moved_to(tx, std::slice::from_ref(&t), Some(&live), Some("b"), false)?, None, "a live agent: never two on one conversation");
-        let (_, w, from) = ways(tx, &t.id, &[], Some("b"), false)?;
+        let (_, w, from) = ways(tx, &t.id, &[], Some("b"), false, &closed)?;
         assert!(matches!(w, Ok(Way::Resume(r)) if r.agent_id == "b"), "the press resumes it on Jones");
         assert_eq!(from.as_deref(), Some("Smith"), "its window names the agent it moves from");
         Ok(())
@@ -261,11 +262,11 @@ fn ac156_going_on_starts_the_agent_s_command_as_the_pool_has_it_now() {
         let t = made(tx, "Fix it", "the text");
         let old = runs::add(tx, &Run { agent_id: "a".into(), agent_name: "Smith".into(), kind: "claude".into(), command: "claude".into(), folder: "/srv/api".into(), project: "default".into(), ..Default::default() }, std::slice::from_ref(&t.key), Default::default(), 1)?;
         runs::change(tx, &old, |r| { r.state = Phase::Closed; r.agent_session = Some("c0ffee".into()); })?;
-        let (_, w, from) = ways(tx, &t.id, &[], None, false)?;
+        let (_, w, from) = ways(tx, &t.id, &[], None, false, &closed)?;
         assert!(matches!(&w, Ok(Way::Resume(r)) if r.command == format!("myclaude{} --effort high", inline_words("claude", "")) && r.agent_session.as_deref() == Some("c0ffee")), "the operator changed claude to myclaude: the resume starts that");
         assert_eq!(from, None, "its own agent: nothing moves");
         tx.execute("DELETE FROM agents WHERE id = 'a'", []).map_err(ops::sql)?;
-        let (_, w, _) = ways(tx, &t.id, &[], None, false)?;
+        let (_, w, _) = ways(tx, &t.id, &[], None, false, &closed)?;
         assert!(matches!(&w, Ok(Way::Resume(r)) if r.command == "claude"), "an agent deleted since: the run's own");
         Ok(())
     }).unwrap();
@@ -369,13 +370,46 @@ fn ac185_several_chosen_each_main_task_brings_its_own_and_the_answers_come_along
     }).unwrap();
 }
 
+/// Every linked session closed.
+fn closed(_: &str) -> PaneState {
+    PaneState::Closed
+}
+
+/// Server `tmux:local:t:`'s list, read whole and fresh, shows `panes`; the rest are closed.
+fn open_on_t(panes: &'static [&'static str]) -> impl Fn(&str) -> PaneState {
+    move |k| if panes.iter().any(|p| k == format!("tmux:local:t:{p}")) { PaneState::Open } else { PaneState::Closed }
+}
+
+#[test]
+fn ac113_ac121_a_linked_session_holds_run_only_while_open_and_a_server_not_read_is_said() {
+    store_of("api-linked-session").with(|tx| {
+        let t = made(tx, "t", "");
+        ops::link(tx, HUMAN, &t.id, Some("tmux:local:t:%9"), 2)?;
+        let w = |pane: &dyn Fn(&str) -> PaneState| ways(tx, &t.id, &[], None, false, pane).map(|(_, w, _)| w);
+        assert_eq!(w(&open_on_t(&["%9"]))?.err().as_deref(), Some("Unlink the session to run it"), "open, not Dispatcher's (AC-122)");
+        assert!(matches!(w(&open_on_t(&["%8"]))?, Ok(Way::First)), "closed: its list lacks it, RUN starts anew (AC-113)");
+        assert_eq!(w(&|_| PaneState::Unread)?.err().as_deref(), Some(NOT_READ), "its server not read now: a live pane may look closed, nothing starts");
+        assert_eq!(w(&|_| PaneState::Unwatched)?.err().as_deref(), Some("Unlink the session to run it"), "a tmux terminumd does not read: it may live there");
+        Ok(())
+    }).unwrap();
+}
+
+#[tokio::test]
+async fn ac121_right_after_start_no_list_is_read_so_a_link_there_is_not_judged() {
+    let (root, app) = crate::testutil::app("linked-start");
+    let _ = std::fs::remove_dir_all(root);
+    assert_eq!(app.tmux.pane_state(&app.tmux.local.key("%3")), PaneState::Unread, "terminumd just started: this Mac's list not read yet");
+    assert_eq!(app.tmux.pane_state("tmux:devbox.example:terminum:%3"), PaneState::Unwatched, "a host terminumd does not read");
+    assert_eq!(app.tmux.pane_state("tmux:local:default:%3"), PaneState::Unwatched, "the user's own tmux, not attached");
+}
+
 #[test]
 fn ac185_a_subtask_held_elsewhere_holds_its_main_tasks_press() {
     store_of("api-main-held").with(|tx| {
         let main = made(tx, "main", "");
         let a = subtask(tx, &main, "a");
         ops::link(tx, HUMAN, &a.id, Some("tmux:local:t:%9"), 2)?;
-        let refused = |tx: &rusqlite::Transaction| ways(tx, &main.id, &[], None, false).err().unwrap_or_default();
+        let refused = |tx: &rusqlite::Transaction| ways(tx, &main.id, &[], None, false, &open_on_t(&["%9"])).err().unwrap_or_default();
         assert_eq!(refused(tx), format!("{}, a subtask of {}: Unlink the session to run it", a.id, main.id));
         ops::link(tx, HUMAN, &a.id, None, 3)?;
         let run = runs::add(tx, &Run { agent_id: "x".into(), ..Default::default() }, std::slice::from_ref(&a.key), Default::default(), 3)?;
@@ -387,9 +421,9 @@ fn ac185_a_subtask_held_elsewhere_holds_its_main_tasks_press() {
         runs::change(tx, &run, |r| r.state = Phase::Closed)?;
         let own = runs::add(tx, &Run { agent_id: "x".into(), agent_session: Some("c0ffee".into()), ..Default::default() }, std::slice::from_ref(&main.key), Default::default(), 4)?;
         runs::change(tx, &own, |r| r.state = Phase::Closed)?;
-        assert!(matches!(ways(tx, &main.id, &[], None, false)?.1, Ok(Way::First)));
+        assert!(matches!(ways(tx, &main.id, &[], None, false, &closed)?.1, Ok(Way::First)));
         ops::move_to(tx, HUMAN, &a.id, "DONE", 5)?;
-        assert!(matches!(ways(tx, &main.id, &[], None, false)?.1, Ok(Way::Resume(_))), "every subtask DONE: one task again, its conversation goes on (AC-122)");
+        assert!(matches!(ways(tx, &main.id, &[], None, false, &closed)?.1, Ok(Way::Resume(_))), "every subtask DONE: one task again, its conversation goes on (AC-122)");
         Ok(())
     }).unwrap();
 }
@@ -402,19 +436,19 @@ fn ac185_a_main_tasks_press_of_its_own_runs_tasks_goes_on_in_its_conversation() 
         // the run of the three asked a human or failed: its work and context are kept for the next press
         let run = runs::add(tx, &Run { agent_id: "x".into(), agent_session: Some("c0ffee".into()), ..Default::default() }, &[main.key.clone(), a.key.clone()], Default::default(), 2)?;
         runs::change(tx, &run, |r| r.state = Phase::Closed)?;
-        assert!(matches!(ways(tx, &main.id, &[], None, false)?.1, Ok(Way::First)), "b was not of that run: a new session");
+        assert!(matches!(ways(tx, &main.id, &[], None, false, &closed)?.1, Ok(Way::First)), "b was not of that run: a new session");
         ops::move_to(tx, HUMAN, &b.id, "DONE", 3)?;
-        let (tasks, w, _) = ways(tx, &main.id, &[], None, false)?;
+        let (tasks, w, _) = ways(tx, &main.id, &[], None, false, &closed)?;
         assert_eq!(tasks.len(), 2);
         assert!(matches!(&w, Ok(Way::Resume(r)) if r.agent_session.as_deref() == Some("c0ffee")), "its own run's tasks: its conversation goes on");
-        assert!(matches!(ways(tx, &main.id, &[], Some("y"), false)?.1, Ok(Way::First)), "another agent starts anew");
-        assert!(matches!(ways(tx, &main.id, &[], None, true)?.1, Ok(Way::First)), "Run from scratch starts anew");
+        assert!(matches!(ways(tx, &main.id, &[], Some("y"), false, &closed)?.1, Ok(Way::First)), "another agent starts anew");
+        assert!(matches!(ways(tx, &main.id, &[], None, true, &closed)?.1, Ok(Way::First)), "Run from scratch starts anew");
         let open = with_open("Go on.".into(), &[main.clone(), a.clone()]);
         assert_eq!(open, format!("Go on.\n\nIts open tasks: {}, {} (a main task last).", a.id, main.id), "it learns which are open again");
         assert_eq!(with_open("Go on.".into(), std::slice::from_ref(&main)), "Go on.", "one task: its words alone");
         let alone = runs::add(tx, &Run { agent_id: "x".into(), agent_session: Some("beef".into()), ..Default::default() }, std::slice::from_ref(&a.key), Default::default(), 4)?;
         runs::change(tx, &alone, |r| r.state = Phase::Closed)?;
-        assert!(matches!(ways(tx, &main.id, &[], None, false)?.1, Ok(Way::First)), "a subtask run alone since has newer work: anew");
+        assert!(matches!(ways(tx, &main.id, &[], None, false, &closed)?.1, Ok(Way::First)), "a subtask run alone since has newer work: anew");
         Ok(())
     }).unwrap();
 }
@@ -431,10 +465,10 @@ fn ac185_a_main_tasks_press_goes_on_in_its_live_session_that_asked_a_human() {
             ops::move_to(tx, HUMAN, &t.id, "WAIT FOR HUMAN", 3)?;
         }
         runs::change(tx, &run, |r| { r.state = Phase::Working; r.pane_key = Some(pane.clone()); })?;
-        let (tasks, w, _) = ways(tx, &main.id, &[], None, false)?;
+        let (tasks, w, _) = ways(tx, &main.id, &[], None, false, &closed)?;
         assert_eq!(tasks.len(), 2);
         assert!(matches!(&w, Ok(Way::Live(r)) if r.id == run), "the answers go into the session that asked, its subtask with it");
-        let refused = ways(tx, &main.id, &[], None, true).err().unwrap_or_default();
+        let refused = ways(tx, &main.id, &[], None, true, &closed).err().unwrap_or_default();
         assert!(refused.contains("shares its session with"), "from scratch, its live run would be left unwatched: {refused}");
         Ok(())
     }).unwrap();

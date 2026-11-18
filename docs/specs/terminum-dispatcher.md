@@ -136,9 +136,13 @@ Scenario: AC-121 edge — where it opens
   And where is the project's alone (AC-140)
 
 Scenario: AC-121 edge — a linked session
-  Given API-12 linked to a session Dispatcher did not start
+  Given API-12 linked to a session Dispatcher did not start, open in its server's list of every pane, or on a tmux server terminumd does not read (the user's own, not attached; a host not configured)
   When the user presses Run
   Then Dispatcher starts nothing and RUN says "Unlink the session to run it"
+  When that session closed: its server's list of every pane, read whole and fresh, lacks its pane, read once more first (a pane newer than the list)
+  Then RUN starts as a first run and links API-12 to its own pane (its card says "session closed", terminum-kanban.md AC-113)
+  When its server's list is not read now (terminumd just started, its host off or not answering, the user's tmux not attached)
+  Then Dispatcher starts nothing and RUN says "Its session's server is not read now: run it once that server answers, or unlink the session"
 
 Scenario: AC-121 edge — a question before the box
   When the screen shows the agent's own question: a folder's trust, an update, a login
@@ -1689,7 +1693,7 @@ Scenario: AC-185 edge — what runs alone
   Then it runs alone, in its schedule's words (terminum-schedules.md AC-162)
 
 Scenario: AC-185 failure — a subtask held elsewhere
-  Given API-14, a subtask of API-12, IN PROGRESS in another run, or linked to a session Dispatcher did not start
+  Given API-14, a subtask of API-12, IN PROGRESS in another run, or linked to an open session Dispatcher did not start
   When the user presses Run on API-12
   Then nothing starts and RUN says "API-14, a subtask of API-12: API-14 is in progress by Dispatcher." or "API-14, a subtask of API-12: Unlink the session to run it"
 ```
@@ -2083,7 +2087,7 @@ Depends on `terminum-kanban.md`'s Stage 1. All three stages belong to terminum's
 
 ## 11. Checklist with Definition of Done
 
-- [x] AC-121 — `web/test/e2e_taskrun.mjs` (Run in the task's window: at once, or the dialog for an agent's words, subtasks, no agent, no room, a refusal), `cargo test dispatcher::screen`, `cargo test tmux::control` (the gate's guarded paste and Enter get their own answers), `web/test/e2e_livedispatcher.mjs` on `scripts/fake_agent.py`; on the real programs, outside every gate as it spends model calls: `TM_TEST_REAL_AGENTS=1 TM_TEST_CLOCK_SCALE=1 node web/test/e2e_live.mjs board` (`TM_TEST_REAL_CODEX=1` too); `SECURITY.md` carries Dispatcher's typing
+- [x] AC-121 — `web/test/e2e_taskrun.mjs` (Run in the task's window: at once, or the dialog for an agent's words, subtasks, no agent, no room, a refusal), `cargo test dispatcher::press` (a linked session holds RUN only while open; its server not read now is said), `cargo test lists::` (a pane open, then closed, on a real tmux), `cargo test dispatcher::screen`, `cargo test tmux::control` (the gate's guarded paste and Enter get their own answers), `web/test/e2e_livedispatcher.mjs` on `scripts/fake_agent.py`; on the real programs, outside every gate as it spends model calls: `TM_TEST_REAL_AGENTS=1 TM_TEST_CLOCK_SCALE=1 node web/test/e2e_live.mjs board` (`TM_TEST_REAL_CODEX=1` too); `SECURITY.md` carries Dispatcher's typing
 - [x] AC-138 — `cargo test dispatcher::runs`, `cargo test dispatcher::press`, `cargo test tasks::agents`, `web/test/e2e_liveboardagents.mjs`, `web/test/e2e_liveschedules.mjs` (`node web/test/e2e_live.mjs folded`: keyboard Run through a held board refresh), `web/test/cardstate.test.mjs` (a dot at work)
 - [x] AC-137 — `cargo test tasks::agents`, `cargo test tasks::store` (`ac137_one_pool_s_agents_each_go_to_a_project`), `cargo test tasks::auto` (`ac137_a_task_names_an_agent_of_its_own_project_alone`), `cargo test roles`, `cargo test cli::mcp`, `cargo test auth::checks`, `web/test/e2e_liveboardagents.mjs`, `web/test/astyped.test.mjs`, `SECURITY.md` carries a project agent's command
 - [x] AC-122 — `cargo test dispatcher::hooks`, `cargo test dispatcher::acts` (RUN cancels a waiting close already decided), `web/test/e2e_taskrun.mjs` (all columns, held sessions, queue and refusals; one press in the task's window, Run from scratch), `web/test/e2e_livewaiting.mjs` (answer before closing, `e2e_live.mjs waiting`), `web/test/e2e_livedispatcher.mjs` (answer after closing), `web/test/e2e_livearchived.mjs` (a human's prompt restores archived DONE and IN PROGRESS cards), `cargo test messages::own` (a turn it scheduled itself), `cargo test cli::hook` (its scheduled prompt and source), its real run as AC-121's
