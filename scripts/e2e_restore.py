@@ -44,7 +44,7 @@ def main():
         time.sleep(1)
         tmux("rename-window", "-t", "main:", "api")
         tmux("send-keys", "-t", "main:api", f"cd {work}/api", "Enter")
-        tmux("split-window", "-t", "main:api", "-c", f"{work}/api")
+        tmux("split-window", "-t", "main:api", "-l", "7", "-c", f"{work}/api")   # uneven: its sizes come from the layout
         tmux("new-window", "-t", "main:", "-n", "docs", "-c", f"{work}/docs")
         tmux("send-keys", "-t", "main:docs", "export SECRET_TOKEN=abc123; echo private-output", "Enter")
         tmux("new-session", "-d", "-s", "notes", "-c", f"{work}/notes")
@@ -62,6 +62,7 @@ def main():
         text = open(layout).read()
         check("AC-15 layout.json holds no output or environment", "private-output" not in text and "abc123" not in text)
         check("AC-88 a quick shell is not in the checkpoint", '"quick"' not in text and quick.startswith("@"), quick)
+        split = tmux("list-panes", "-t", "main:api", "-F", "#{pane_width}x#{pane_height}").split()
         t.stop()
         tmux("kill-server")
         t.env["TM_BOOT_ID"] = "boot-B"
@@ -73,6 +74,8 @@ def main():
         check("AC-15 the sessions are back", sorted(sessions) == ["main", "notes"], sessions)
         wins = tmux("list-windows", "-t", "main", "-F", "#{window_name} #{window_panes}").splitlines()
         check("AC-15 windows and splits are back", wins == ["api 2", "docs 1"], wins)
+        back = tmux("list-panes", "-t", "main:api", "-F", "#{pane_width}x#{pane_height}").split()
+        check(f"AC-15 a split's sizes are back from its layout (tmux {tmux('-V').split()[-1]})", back == split, (split, back))
         renames = tmux("list-windows", "-a", "-F", "#{session_name}:#{window_index} #{automatic-rename}").splitlines()
         check("AC-15 a window the user named keeps its name; one tmux named after its program is tmux's to name again",
               renames == ["main:0 0", "main:1 0", "notes:0 1"], renames)
