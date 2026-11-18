@@ -160,6 +160,8 @@ struct Seen {
     tree: Option<procs::Tree>,
     /// its `ps` was not asked this beat: a host with no run is read less often
     skipped: bool,
+    /// the server's identity (`@terminum-id`), read with its list: a server started anew has another (AC-205)
+    identity: Option<String>,
 }
 
 /// A host with no run of Dispatcher's is read one beat in this many, and only with a page open.
@@ -178,7 +180,8 @@ async fn read_servers(app: &Shared, wanted: &[String], with_run: &HashSet<String
         let wants = panes.as_ref().is_some_and(|list| mine.iter().any(|p| list.contains_key(p)));
         let due = server.is_local() || with_run.contains(&server.id()) || (beat.is_multiple_of(IDLE_HOST_BEATS) && app.pages.count() > 0);
         let tree = if wants && due { procs::read(app, &server).await } else { None };
-        (server.id(), Seen { panes, tree, skipped: wants && !due })
+        let identity = if panes.is_some() { server.identity().await } else { None };
+        (server.id(), Seen { panes, tree, skipped: wants && !due, identity })
     });
     futures_util::future::join_all(read).await.into_iter().collect()
 }
@@ -251,6 +254,10 @@ async fn walk(app: &Shared) {
         let Some(list) = &s.panes else { continue };
         let key = server.key(&pane);
         let p = list.get(&pane);
+        // its pane gone or another's while the server's identity is not read: nothing is decided until it is (AC-205)
+        if !p.is_some_and(|p| p.mark == r.id) && s.identity.is_none() {
+            continue;
+        }
         let measured = s.tree.as_ref().zip(p).map(|(t, p)| procs::under(t, &p.pid));
         // ps did not answer: the agent stands while tmux says no exit, and no limit fires on missing numbers
         let under = measured.as_ref().map_or(p.is_some_and(|p| p.exit.is_none()), |u| u.any);
@@ -291,6 +298,7 @@ async fn walk(app: &Shared) {
             watched: app.pages.watched(&key),
             memory,
             subs,
+            identity: s.identity.clone(),
             ..Default::default()
         };
         // + Session's is the human's: nothing is typed in it, about its subagents either (AC-142)
