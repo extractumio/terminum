@@ -116,7 +116,9 @@ Three things hold everywhere below:
   the press that started it stands. It resumes its own conversation with the pool's command as it is
   then, types only the task IDs with fixed words, and never resumes a window closed by hand, + Session's
   or your own sessions; a second end of that server within the hour of a resume resumes nothing.
-  **Left**: an agent whose work kills tmux runs once more before the hour stops it.
+  **Left**: an agent whose work kills tmux runs once more before the hour stops it; a process in that
+  tmux can change the server's identity option and close its own window to have its run resumed, at
+  most once an hour, with the same words.
 - **Schedules**: a schedule's window shows its prompt and command before Save. **Left**: a
   process of yours writing the store could add one, a recurring run with every tool, so the board
   shows each schedule's author and last change (`terminum-schedules.md` §9).

@@ -70,6 +70,8 @@ pub struct Facts {
     pub dt: i64,
     /// the identity of its pane's tmux server as this walk read it (`@terminum-id`, AC-205)
     pub identity: Option<String>,
+    /// its link was dropped when terminumd saw its server started anew (`tasks::projects`)
+    pub dropped: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -141,7 +143,7 @@ pub fn step(run: &mut Run, f: &Facts) -> Vec<Act> {
             run.pane_key = None;
         }
         // its server ended under it: not a human's close; a run at work on a task in progress goes on by itself
-        let anew = f.identity.as_ref().filter(|now| run.server_id.as_ref().is_some_and(|was| was != *now));
+        let anew = f.identity.as_ref().filter(|now| f.dropped || run.server_id.as_ref().is_some_and(|was| was != *now));
         if let Some(identity) = anew && resumable(run, was) {
             // it stays as it was until the resume is tried: a terminumd stopped meanwhile tries it again (resume.rs)
             run.state = was;

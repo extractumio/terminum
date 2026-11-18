@@ -47,7 +47,8 @@ class World:
         self.secret = self.t.signin()
         self.project = self.call("/api/task-projects", "POST", {"name": "Api", "dir": os.path.join(self.work, "api")})[1]["id"]
         command = f"python3 -I {os.path.join(HERE, 'fake_agent.py')} {self.cli} --kind claude --prompts {self.prompts}"
-        st, added = self.call("/api/task-agents", "POST", {"project": self.project, "name": "Fake", "kind": "claude", "command": command, "at_once": 4})
+        self.given = {"project": self.project, "name": "Fake", "kind": "claude", "command": command}
+        st, added = self.call("/api/task-agents", "POST", {**self.given, "at_once": 4})
         check("setup: the agent", st == 200, added)
         self.agent = added["id"]
 
@@ -86,18 +87,28 @@ def main():
     w = World(work)
     try:
         w.setup()
-        a, a_key = w.running("resumed")
+        a, _ = w.running("resumed")
         b, b_key = w.running("closed by hand")
+        c, _ = w.running("no room")
         w.walked()
         # 2. a window closed by hand, its server running on
         tmux_on(SOCKET, "kill-pane", "-t", b_key.rsplit(":", 1)[1])
         check("AC-205 a window closed by hand is no server's end: FAILED, nothing resumed",
               wait_for(lambda: w.get(b).get("status") == "FAILED", bool, 20, 0.5, last=True) and "Its window was closed." in w.history(b)
               and "resumes it" not in w.history(b), w.history(b))
-        # 1. the server ends under A's run and is back
+        # 1. the server ends under A's and C's runs and is back, their agent's slots lowered to one meanwhile
+        st, said = w.call(f"/api/task-agents/{w.agent}", "PATCH", {**w.given, "at_once": 1})
+        check("setup: the agent's slots lowered to one", st == 200, said)
         end_tmux(SOCKET)
         # its new window may take the old one's pane ID: a server started anew counts from %0 again
-        resumed = wait_for(lambda: "resumes it" in w.history(a) and w.history(a).count("Session started") == 2 and w.key(a), bool, 60, 0.5, last=True)
+        took = lambda t: "resumes it" in w.history(t) and w.history(t).count("Session started") == 2 and w.key(t)  # noqa: E731
+        first = wait_for(lambda: next((t for t in (a, c) if took(t)), None), bool, 60, 0.5, last=True)
+        other = c if first == a else a
+        check("AC-205 with no room the other run is not resumed: FAILED with the limit's words, nothing queued",
+              wait_for(lambda: w.get(other).get("status") == "FAILED", bool, 30, 0.5, last=True) and "Not resumed after its tmux server started anew: " in w.history(other)
+              and not w.get(other).get("waits"), w.history(other))
+        a = first or a
+        resumed = took(a)
         check("AC-205 the run resumes in a new window, its task IN PROGRESS, its history saying so",
               bool(resumed) and w.get(a).get("status") == "IN PROGRESS" and "Dispatcher resumes it: its tmux server ended and started anew." in w.history(a), w.history(a))
         check("AC-205 the fixed words with its ID are typed through the gate",

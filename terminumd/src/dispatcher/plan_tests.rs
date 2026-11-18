@@ -478,3 +478,13 @@ fn ac205_a_walk_keeps_the_server_its_marked_pane_stands_in() {
     step(&mut r, &Facts { identity: None, ..up(30) });
     assert_eq!(r.server_id.as_deref(), Some("a1"), "not read this beat: kept");
 }
+
+#[test]
+fn ac205_a_link_dropped_when_its_server_started_anew_is_its_end_however_old_the_run() {
+    let mut r = Run { server_id: None, ..seen_in("IN PROGRESS") };
+    let acts = step(&mut r, &Facts { pane: false, dropped: true, identity: Some("b2".into()), ..up(30) });
+    assert_eq!(acts, vec![Act::Resume { identity: "b2".into() }], "a run from before its server was ever recorded");
+    let mut waiting = Run { server_id: None, ..seen_in("WAIT FOR HUMAN") };
+    assert_eq!(moved(&step(&mut waiting, &Facts { pane: false, dropped: true, identity: Some("b2".into()), ..up(30) })),
+        Some(("FAILED", "Its tmux server started anew.".to_string())), "not resumed: said why");
+}

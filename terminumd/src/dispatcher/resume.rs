@@ -51,7 +51,6 @@ pub(super) async fn after_restart(app: &Shared, r: Run, identity: String) {
             fail(tx, &run, ENDED_AGAIN)?;
             return Ok(None);
         };
-        tx.execute("INSERT OR REPLACE INTO meta (key, value) VALUES (?1, ?2)", [&key, &serde_json::json!(now_kept).to_string()]).map_err(sql)?;
         if agents::in_project(tx, &run.agent_id, &run.project)?.is_none() {
             fail(tx, &run, &format!("Not resumed after its tmux server started anew: {} is no longer in the pool.", run.agent_name))?;
             return Ok(None);
@@ -61,6 +60,8 @@ pub(super) async fn after_restart(app: &Shared, r: Run, identity: String) {
         if tasks.is_empty() {
             return Ok(None);
         }
+        // the hour counts from this end's first resume, not from a run that could not be resumed
+        tx.execute("INSERT OR REPLACE INTO meta (key, value) VALUES (?1, ?2)", [&key, &serde_json::json!(now_kept).to_string()]).map_err(sql)?;
         let started: (Option<String>, Option<String>) = tx.query_row("SELECT started_by, started_how FROM runs WHERE id = ?1", [&run.id], |x| Ok((x.get(0)?, x.get(1)?))).map_err(sql)?;
         say(tx, &run, RESUMES)?;
         Ok(Some((tasks, started)))

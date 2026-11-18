@@ -31,12 +31,20 @@ struct Pane {
     command: String,
 }
 
-async fn panes_of(server: &Server) -> Option<HashMap<String, Pane>> {
-    let lines = tokio::time::timeout(LIST_WAIT, server.run("list-panes -a -F '#{pane_id}\t#{@terminum-run}\t#{@terminum-exit}\t#{pane_pid}\t#{pane_current_command}'")).await.ok()?.ok()?;
-    Some(lines.iter().filter_map(|l| {
+/// The server's panes, and its identity (`@terminum-id`) as the same list says it: one read, so a server started anew
+/// between two reads is never judged by the old one's list (AC-205); none set yet, none.
+async fn panes_of(server: &Server) -> Option<(HashMap<String, Pane>, Option<String>)> {
+    let lines = tokio::time::timeout(LIST_WAIT, server.run("list-panes -a -F '#{pane_id}\t#{@terminum-run}\t#{@terminum-exit}\t#{pane_pid}\t#{pane_current_command}\t#{@terminum-id}'")).await.ok()?.ok()?;
+    let mut identity = None;
+    let panes = lines.iter().filter_map(|l| {
         let f: Vec<&str> = l.split('\t').collect();
-        (f.len() == 5).then(|| (f[0].to_string(), Pane { mark: f[1].to_string(), exit: f[2].parse().ok(), pid: f[3].to_string(), command: f[4].to_string() }))
-    }).collect())
+        if f.len() != 6 {
+            return None;
+        }
+        identity = identity.take().or_else(|| Some(f[5].to_string()).filter(|i| !i.is_empty()));
+        Some((f[0].to_string(), Pane { mark: f[1].to_string(), exit: f[2].parse().ok(), pid: f[3].to_string(), command: f[4].to_string() }))
+    }).collect();
+    Some((panes, identity))
 }
 
 
@@ -179,11 +187,15 @@ async fn read_servers(app: &Shared, wanted: &[String], with_run: &HashSet<String
     }
     let beat = app.dispatcher.beat.fetch_add(1, Ordering::Relaxed);
     let read = servers.into_values().map(|(server, mine)| async move {
-        let panes = panes_of(&server).await;
+        let (panes, listed_id) = panes_of(&server).await.unzip();
         let wants = panes.as_ref().is_some_and(|list| mine.iter().any(|p| list.contains_key(p)));
         let due = server.is_local() || with_run.contains(&server.id()) || (beat.is_multiple_of(IDLE_HOST_BEATS) && app.pages.count() > 0);
         let tree = if wants && due { procs::read(app, &server).await } else { None };
-        let identity = if panes.is_some() { server.identity().await } else { None };
+        // none set yet on a new server: terminumd sets it, and the next walk reads it in its list
+        let identity = listed_id.flatten();
+        if panes.is_some() && identity.is_none() {
+            let _ = server.identity().await;
+        }
         (server.id(), Seen { panes, tree, skipped: wants && !due, identity })
     });
     futures_util::future::join_all(read).await.into_iter().collect()
@@ -305,6 +317,7 @@ async fn walk(app: &Shared) {
             memory,
             subs,
             identity: s.identity.clone(),
+            dropped: r.pane_key.is_none(),
             ..Default::default()
         };
         // + Session's is the human's: nothing is typed in it, about its subagents either (AC-142)
