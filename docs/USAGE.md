@@ -30,6 +30,10 @@ install commands: [README](../README.md). Exact behavior and limits: the specs
 - The page that opens a pane, comes to the front or types sizes it to its view (45×14 to 240×70
   cells). Text is never scaled: it re-flows; a full-screen program is drawn as its grid, scaled
   when wider.
+- Where a coding agent (Claude Code in its default TUI) draws on the normal screen, looking
+  changes nothing: only typing sizes its window. Such an agent prints its answer again at every
+  new size, and tmux's history would hold it twice. Until you type, the pane is re-flowed to
+  your view.
 - In a window of several panes the one you look at is zoomed, the layout kept; only typing
   shrinks the window. Your own tmux, or a tmux client showing that window, keeps its layout
   unzoomed.

@@ -29,6 +29,30 @@ fn a_split_window_shrinks_only_for_typing() {
     assert_eq!(target((46, 32), &one, one.window_size, Why::Open), (46, 32), "a window of one pane has nothing to squeeze");
 }
 
+/// AC-13: a coding agent on the normal screen prints its transcript again on each new size and
+/// leaves copies in the history: a page that only looks leaves its window as it is.
+#[test]
+fn ac13_a_looking_page_leaves_an_agent_s_window_as_it_is() {
+    let normal = Fields::default();
+    for why in [Why::Open, Why::Active, Why::View] {
+        assert!(leaves(why, &normal, true), "a page that only looks: {why:?}");
+        assert!(!leaves(why, &normal, false), "a shell re-wraps with tmux, sized as before: {why:?}");
+        assert!(!leaves(why, &Fields { alt: true, ..Fields::default() }, true), "the alternate screen has no history to copy into: {why:?}");
+    }
+    assert!(!leaves(Why::Typed, &normal, true), "typing gives the window the page's grid");
+}
+
+/// AC-13: the page that sized a window changed its view while the window was left as it is: the
+/// window is no longer at that page's grid, so its next key claims it at once.
+#[test]
+fn ac13_a_window_is_a_page_s_only_at_its_view() {
+    let sized = Win { by: Some(1), manual: true, asked: Some((148, 58)), ..Win::default() };
+    assert!(sized.is_of(1, Some((148, 58)), (148, 58)), "its view is the window's grid");
+    assert!(!sized.is_of(1, Some((120, 58)), (148, 58)), "docked Files took 28 columns of its view");
+    assert!(!sized.is_of(2, Some((148, 58)), (148, 58)), "another page's, whatever its view");
+    assert!(!Win::default().is_of(1, Some((148, 58)), (148, 58)), "nobody's");
+}
+
 /// AC-13 failure: tmux refusing a resize undoes the claim (the window is not that page's), a
 /// `window-size manual` it did apply stays known, and a later claim of another page is kept.
 #[test]

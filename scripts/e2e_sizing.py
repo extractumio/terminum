@@ -318,6 +318,52 @@ def drag(t, pid, pane):
     d.close()
 
 
+def held(pane, want, seconds=1.5):
+    """Whether the window is still `want` after `seconds`: past the view's settling and a resize's second."""
+    time.sleep(seconds)
+    return window_of(pane) == want
+
+
+def agent(t):
+    """AC-13: a coding agent on the normal screen prints its transcript again on each new size, into a
+    history tmux has re-wrapped: a page that only looks leaves its window as it is, typing sizes it. The
+    stand-in is a window named after the agent with a program that is no shell, as the list knows one."""
+    pane = tmux("new-window", "-d", "-P", "-F", "#{pane_id}", "-n", "claude", "cat").strip()
+    mac = t.page()
+    groups = wait_layout(mac, lambda gs: any(i["id"].endswith(":" + pane) and i["agent"] == "claude" for i in items(gs)))
+    pid = next((i["id"] for i in items(groups or []) if i["id"].endswith(":" + pane)), None)
+    check("AC-13 agent: the list knows the pane's agent", pid is not None, groups)
+    if pid is None:
+        return
+    own = window_of(pane)
+    mac.send({"t": "sub", "id": pid, "cols": 148, "rows": 58})
+    check("AC-13 agent: a page that opens its pane leaves the window as it is", own != "148x58" and held(pane, own), [own, window_of(pane)])
+    mac.send({"t": "in", "data": " "})
+    check("AC-13 agent: typing gives the window the page's grid", settle(pane, "148x58") == "148x58", window_of(pane))
+    phone = t.page()
+    phone.send({"t": "sub", "id": pid, "cols": 46, "rows": 30})
+    check("AC-13 agent: a phone that opens it takes nothing", held(pane, "148x58"), window_of(pane))
+    phone.send({"t": "pause"})
+    phone.send({"t": "resume"})
+    phone.send({"t": "size", "cols": 46, "rows": 28, "typing": False})
+    check("AC-13 agent: nor when it becomes the active page or its view changes (the toolbar)", held(pane, "148x58"), window_of(pane))
+    mac.send({"t": "size", "cols": 120, "rows": 58, "typing": False})
+    check("AC-13 agent: the view of the page that sized it changes (Files docked): the window stays", held(pane, "148x58"), window_of(pane))
+    phone.send({"t": "in", "data": " "})
+    check("AC-13 agent: the phone types: the window is the phone's", settle(pane, "46x28") == "46x28", window_of(pane))
+    phone.send({"t": "pause"})
+    check("AC-13 agent: the phone put away: the page still looking gets nothing without a key", held(pane, "46x28"), window_of(pane))
+    mac.send({"t": "in", "data": " "})
+    check("AC-13 agent: its key sizes the window to its view as it is then", settle(pane, "120x58") == "120x58", window_of(pane))
+    resizes = [line for line in t.log().split("\n") if 'event="sizing.resize"' in line]
+    check("AC-13 the log names each resize: the page, the pane, from, to and why",
+          any(all(word in line for word in ("page=", pane, "from=148x58", "to=46x28", 'why="key"')) for line in resizes), resizes[-4:])
+    phone.close()
+    mac.close()
+    tmux("kill-pane", "-t", pane)
+    time.sleep(0.5)
+
+
 def screen_text(ws, pred, timeout=8):
     m = ws.until(lambda m: m["t"] == "screen" and pred(m), timeout)
     return m
@@ -366,6 +412,7 @@ def main():
         screens_off(t, pid, pane, work)
         split(t, pid, pane)
         drag(t, pid, pane)
+        agent(t)
         mc(t, pid, pane, work)
     finally:
         if not all(results):
