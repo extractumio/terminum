@@ -688,9 +688,12 @@ Scenario: AC-104 failure — a conflict
   Then it exits 2 naming the file, pushes nothing, and leaves the conflict in the tree to resolve and commit before landing again
 
 Scenario: AC-104 edge — the primary checkout cannot move
-  Given the maintainer's uncommitted change is in the way of the fast-forward
+  Given the primary checkout holds 2 uncommitted files: changed, new, in the way of the fast-forward or not
   When a landing ends
-  Then their change stays, the landing still counts, and it prints "primary checkout stays where it is: …"
+  Then nothing moves, neither the checkout nor its main ref when it is on another branch, their changes stay, the landing still counts, and it prints "primary checkout stays where it is: 2 uncommitted files in it; it moves only when git status --porcelain is empty; the push counts, nothing installed until it follows"
+  And the install marked stays for the landing that ends with the checkout clean and following: "install: none, the primary checkout is not on what landed: the next landing tries again"
+  When it is clean but on diverged commits
+  Then it stays as well, with git's words after "primary checkout stays where it is: "
 
 Scenario Outline: AC-104 — what a change is checked with
   Given a change to <changed>

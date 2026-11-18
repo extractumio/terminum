@@ -210,6 +210,18 @@ class After(test_land.Repos, unittest.TestCase):
         stages.after(self.primary, run=lambda *_: subprocess.CompletedProcess([], 0), env={"TM_LAND_INSTALL": "1"}, **QUIET)
         self.assertNotEqual(L.head(self.primary), before, "free again: it follows")
 
+    def test_after_waits_while_the_primary_checkout_has_uncommitted_changes(self):  # AC-198, AC-104
+        self.push_from_outside("later.txt", "w\n")
+        L.git("fetch", "-q", "origin", cwd=self.primary)
+        before = L.head(self.primary)
+        (self.primary / "b.txt").write_text("the maintainer's work\n")   # a file the move would not touch
+        self.assertEqual(self.later(), "after: the primary checkout stays where it is: 1 uncommitted files in it; "
+                                       "it moves only when git status --porcelain is empty")
+        self.assertEqual((L.head(self.primary), (self.primary / "b.txt").read_text()), (before, "the maintainer's work\n"))
+        test_land.git("checkout", "-q", "--", "b.txt", cwd=self.primary)
+        stages.after(self.primary, run=lambda *_: subprocess.CompletedProcess([], 0), env={"TM_LAND_INSTALL": "1"}, **QUIET)
+        self.assertNotEqual(L.head(self.primary), before, "clean again: it follows")
+
     def test_after_holds_the_install_turn_while_it_installs(self):  # AC-191, AC-104
         seen = []
         def run(primary, target):

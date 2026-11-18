@@ -50,6 +50,7 @@ class Repos:
         git("config", "user.name", "t", cwd=self.primary)
         git("config", "user.email", "t@example.com", cwd=self.primary)
         git("checkout", "-q", "-b", "main", cwd=self.primary)
+        (git_dir(self.primary) / "info" / "exclude").write_text(".worktrees/\n")   # as the repository's .gitignore
         self.commit(self.primary, "a.txt", "one\n")
         self.commit(self.primary, "b.txt", "one\n")
         git("push", "-q", "origin", "main", cwd=self.primary)
@@ -444,14 +445,26 @@ class Landing(Repos, unittest.TestCase):
         land.land(one, check=self.green, say=lambda _: None)
         self.assertEqual(git("show", "main:a.txt", cwd=self.origin), "both")
 
-    def test_a_primary_with_changes_in_the_way_stays_and_says_so(self):
+    def test_a_primary_with_any_uncommitted_change_stays_and_says_so(self):  # AC-104
         tree = self.tree("one")
         self.commit(tree, "a.txt", "changed\n")
         land.land(tree, check=self.green, say=lambda _: None)
-        (self.primary / "a.txt").write_text("the maintainer's work\n")
         git("fetch", "-q", "origin", cwd=self.primary)
-        self.assertIsNotNone(land.update_primary(self.primary))
-        self.assertEqual((self.primary / "a.txt").read_text(), "the maintainer's work\n")
+        before = git("rev-parse", "HEAD", cwd=self.primary)
+        words = "uncommitted files in it; it moves only when git status --porcelain is empty"
+        # in the move's way; beside it (git itself would move); a new file; and on another branch, main's ref alone
+        for name, branch in (("a.txt", "main"), ("b.txt", "main"), ("new.txt", "main"), ("b.txt", "side")):
+            with self.subTest(name=name, branch=branch):
+                git("checkout", "-q", "-B", branch, before, cwd=self.primary)
+                (self.primary / name).write_text("the maintainer's work\n")
+                self.assertEqual(land.update_primary(self.primary), f"1 {words}")
+                self.assertEqual((self.primary / name).read_text(), "the maintainer's work\n")
+                self.assertEqual((git("rev-parse", "HEAD", cwd=self.primary), git("rev-parse", "main", cwd=self.primary)), (before, before))
+                git("checkout", "-q", "--", ".", cwd=self.primary)
+                git("clean", "-qf", cwd=self.primary)
+        git("checkout", "-q", "main", cwd=self.primary)
+        self.assertIsNone(land.update_primary(self.primary), "clean: it follows")
+        self.assertEqual(git("rev-parse", "HEAD", cwd=self.primary), self.on_origin())
 
 
 if __name__ == "__main__":
