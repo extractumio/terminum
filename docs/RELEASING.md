@@ -149,7 +149,9 @@ its home closed to others), as a systemd service confined (`ProtectHome=tmpfs`, 
 home bound in) and capped in memory (`MemoryMax=3G`, `OOMPolicy=continue`: a job that runs out
 fails alone), labels `terminum`. Packages: `tmux build-essential` and the browsers' system
 libraries (`npx -y playwright-core@<ui's version> install-deps chromium webkit`, as root); Rust,
-Node and the browsers install per job into the runner's home. rustc building the tests is
+Node and the browsers install per job into the runner's home. A runner without rustup gets
+rustup-init at the version the workflow pins, run only when its SHA-256 matches the one written
+there (rust-lang's published `rustup-init.sha256`); a new rustup takes both changed together. rustc building the tests is
 the job's largest process and grows with terminumd: keep the cap above the peak each run prints
 (below it rustc is killed or stalls); each run also prints the job's cap hits. It builds with
 one rustc and no debug info (the workflow's env), since two rustc with it outgrew a 2 GB machine. The registration token travels on stdin,
@@ -166,7 +168,12 @@ The repository's settings keep everyone else's code off the runner: Actions › 
 "Require approval for all external contributors" (`gh api -X PUT
 repos/extractumio/terminum/actions/permissions/fork-pr-contributor-approval -f
 approval_policy=all_external_contributors`), the runner registered to this repository alone,
-and the workflow's `permissions: {}`. Never approve a fork's run (CLAUDE.md §10).
+and the workflow's `permissions: {}`. Never approve a fork's run (CLAUDE.md §10). Actions ›
+General allows only GitHub's own actions, each pinned to a full commit SHA (`gh api -X PUT
+repos/extractumio/terminum/actions/permissions -F enabled=true -f allowed_actions=selected -F
+sha_pinning_required=true`, then `…/actions/permissions/selected-actions` with
+`github_owned_allowed: true`, `verified_allowed: false`, no patterns): a workflow naming another
+action, or a tag instead of a SHA, fails before any step runs.
 
 Two rulesets, with no bypass actors, keep `main` and the releases' tags: "main: no force-push,
 no deletion" (`refs/heads/main`: `non_fast_forward`, `deletion`; fast-forward pushes from
