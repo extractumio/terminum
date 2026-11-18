@@ -453,8 +453,11 @@ class Landing(Repos, unittest.TestCase):
         before = git("rev-parse", "HEAD", cwd=self.primary)
         words = "uncommitted files in it; it moves only when git status --porcelain is empty"
         # in the move's way; beside it (git itself would move); a new file; and on another branch, main's ref alone
-        for name, branch in (("a.txt", "main"), ("b.txt", "main"), ("new.txt", "main"), ("b.txt", "side")):
-            with self.subTest(name=name, branch=branch):
+        # and a new file where status.showUntrackedFiles hides it
+        for name, branch, shown in (("a.txt", "main", "normal"), ("b.txt", "main", "normal"), ("new.txt", "main", "normal"),
+                                    ("b.txt", "side", "normal"), ("new.txt", "main", "no")):
+            with self.subTest(name=name, branch=branch, shown=shown):
+                git("config", "status.showUntrackedFiles", shown, cwd=self.primary)
                 git("checkout", "-q", "-B", branch, before, cwd=self.primary)
                 (self.primary / name).write_text("the maintainer's work\n")
                 self.assertEqual(land.update_primary(self.primary), f"1 {words}")

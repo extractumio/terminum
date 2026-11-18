@@ -110,8 +110,8 @@ def after(primary, run=land.make, env=os.environ, say=print):
     """Stage 6: the primary checkout on the fresh target; on the maintainer's machine (TM_LAND_INSTALL=1) this build
     installed, by the landings' own install (its heavy-build slot, its guard that the checkout is on what landed).
     Done when the checkout follows and `make installed` says this build runs. It cannot run now, and moves nothing,
-    while another install or a landing holds its turn, or the checkout holds uncommitted
-    changes: LATER. It holds the install turn throughout."""
+    while another install or a landing holds its turn, or the checkout holds uncommitted changes: LATER. It holds
+    the install turn throughout."""
     with Turn(primary, INSTALL_TURN) as turn:
         if not turn.take():
             raise Stop(LATER, "after: an install runs in the primary checkout: waits for its end")

@@ -88,9 +88,10 @@ def merge_base_in(tree):
 
 
 def dirty_words(folder):
-    """Why a checkout with uncommitted changes stays where it is, or None when it is clean: it moves only when
-    `git status --porcelain` is empty, untracked files and changes the move would not touch included (CLAUDE.md §9)."""
-    dirty = git("status", "--porcelain", cwd=folder).stdout.splitlines()
+    """Why a checkout with uncommitted changes stays where it is, or None when it is clean (CLAUDE.md §9). Untracked
+    files count whatever status.showUntrackedFiles says. A file made between this look and the move: git still refuses
+    one in the move's way."""
+    dirty = git("status", "--porcelain", "--untracked-files=normal", cwd=folder).stdout.splitlines()
     return f"{len(dirty)} uncommitted files in it; it moves only when git status --porcelain is empty" if dirty else None
 
 

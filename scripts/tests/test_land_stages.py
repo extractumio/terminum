@@ -214,11 +214,13 @@ class After(test_land.Repos, unittest.TestCase):
         self.push_from_outside("later.txt", "w\n")
         L.git("fetch", "-q", "origin", cwd=self.primary)
         before = L.head(self.primary)
-        (self.primary / "b.txt").write_text("the maintainer's work\n")   # a file the move would not touch
-        self.assertEqual(self.later(), "after: the primary checkout stays where it is: 1 uncommitted files in it; "
+        for name in ("b.txt", "new.txt"):   # changed and new, neither in the move's way
+            (self.primary / name).write_text("the maintainer's work\n")
+        self.assertEqual(self.later(), "after: the primary checkout stays where it is: 2 uncommitted files in it; "
                                        "it moves only when git status --porcelain is empty")
         self.assertEqual((L.head(self.primary), (self.primary / "b.txt").read_text()), (before, "the maintainer's work\n"))
         test_land.git("checkout", "-q", "--", "b.txt", cwd=self.primary)
+        (self.primary / "new.txt").unlink()
         stages.after(self.primary, run=lambda *_: subprocess.CompletedProcess([], 0), env={"TM_LAND_INSTALL": "1"}, **QUIET)
         self.assertNotEqual(L.head(self.primary), before, "clean again: it follows")
 
