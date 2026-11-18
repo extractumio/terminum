@@ -63,7 +63,8 @@ pub fn state_words(tx: &Transaction, b: &Batch) -> Result<String, String> {
 }
 
 /// What a card says of the queue, by task key: the batch's line on its integration task's card ("batch 7 ·
-/// checking · 12 min"), "in batch 7", a place, "verifying" or "waits for Verify", "waits for API-12"; a task back in work, "returned: …".
+/// checking · 12 min"), "in batch 7", a place, "verifying" or "waits for Verify", "waits for API-12", "waits: the target is red (API-77)"; a task back in
+/// work, "returned: …".
 /// With the batch's number, so the page draws a batch's cards as one group; a task in work, the tasks it overlaps;
 /// and the human's keys on the card (AC-193): "integrate" on a task in work of a project that integrates, "take-out" on
 /// a queued one, a deciding batch's own.
@@ -93,6 +94,10 @@ pub fn marks(tx: &Transaction, tasks: &[Task], now: i64) -> Result<HashMap<Strin
         for (i, (task, stage, waits, verified)) in waiting.into_iter().enumerate() {
             let mark = match (waits.filter(|w| !w.is_empty()), stage) {
                 (Some(w), _) => format!("waits for {w}"),
+                (None, Some(s)) if s == super::red_target::HELD => match super::red_target::open_bug(tx, project)? {
+                    Some(bug) => format!("waits: the target is red ({bug})"),
+                    None => "waits: the target is red".to_string(),
+                },
                 (None, Some(_)) if verified => "verifying".to_string(),
                 (None, Some(_)) => "waits for Verify".to_string(),
                 (None, None) => ordinal(i + 1),

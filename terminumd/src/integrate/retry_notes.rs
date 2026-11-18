@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 //! AC-197 retry evidence, and AC-146's timed checks skipped for a busy machine, cross the stage/tree boundary as
-//! quoted check output, never instructions.
+//! quoted check output, never instructions; a red Verify's failed steps (AC-198) as names alone, checked here.
 use std::ffi::CStr;
 use std::fs::{File, OpenOptions};
 use std::io::{self, Read};
@@ -23,13 +23,16 @@ fn directory(tree: &Path) -> io::Result<Option<File>> {
 /// The notes a check leaves in `.checks`, by file name, with what they are called where said.
 const RETRIED: (&CStr, &str) = (c"retried", "Retry diagnostics");
 const SKIPPED: (&CStr, &str) = (c"skipped", "Skipped checks");
+const FAILED: (&CStr, &str) = (c"failed", "Failed steps");
+/// The most failed steps a note may name (§9 Limits).
+const STEPS_MOST: usize = 16;
 
 /// Each integration stage starts without the prior candidate/round's notes; standalone landing still adds its
 /// smoke retries to its targeted ones. unlinkat removes a link itself, never its target.
 pub(super) fn clear(tree: &Path) -> Result<(), String> {
     let clear = || -> io::Result<()> {
         let Some(dir) = directory(tree)? else { return Ok(()) };
-        for (name, _) in [RETRIED, SKIPPED] {
+        for (name, _) in [RETRIED, SKIPPED, FAILED] {
             // SAFETY: dir owns an open directory fd and the fixed name is NUL-terminated.
             if unsafe { libc::unlinkat(dir.as_raw_fd(), name.as_ptr(), 0) } != 0 {
                 let e = io::Error::last_os_error();
@@ -38,10 +41,11 @@ pub(super) fn clear(tree: &Path) -> Result<(), String> {
         }
         Ok(())
     };
-    clear().map_err(|e| format!("Retry diagnostics or skipped checks could not be cleared: {e}"))
+    clear().map_err(|e| format!("Retry diagnostics, skipped checks or failed steps could not be cleared: {e}"))
 }
 
-fn read_file(tree: &Path, (name, what): (&CStr, &str)) -> io::Result<Option<String>> {
+/// A note's bytes, at most MOST + 1 of them, from a regular file reached without following a link.
+fn raw(tree: &Path, (name, _): (&CStr, &str)) -> io::Result<Option<Vec<u8>>> {
     let Some(dir) = directory(tree)? else { return Ok(None) };
     // SAFETY: as above; NONBLOCK avoids waiting on a FIFO before metadata rejects non-regular files.
     let fd = unsafe { libc::openat(dir.as_raw_fd(), name.as_ptr(), libc::O_RDONLY | libc::O_CLOEXEC | libc::O_NOFOLLOW | libc::O_NONBLOCK) };
@@ -54,6 +58,12 @@ fn read_file(tree: &Path, (name, what): (&CStr, &str)) -> io::Result<Option<Stri
     if !file.metadata()?.is_file() { return Err(io::Error::other(format!(".checks/{} is not a regular file", name.to_string_lossy()))) }
     let mut bytes = Vec::new();
     file.take((MOST + 1) as u64).read_to_end(&mut bytes)?;
+    Ok(Some(bytes))
+}
+
+fn read_file(tree: &Path, kind: (&CStr, &str)) -> io::Result<Option<String>> {
+    let what = kind.1;
+    let Some(mut bytes) = raw(tree, kind)? else { return Ok(None) };
     let truncated = bytes.len() > MOST;
     bytes.truncate(MOST);
     let text = crate::plans::rules::clean(&String::from_utf8_lossy(&bytes));
@@ -83,6 +93,20 @@ pub(super) fn skipped(tree: &Path) -> Option<String> {
     note(tree, SKIPPED)
 }
 
+/// The steps a red Verify names as failed (AC-198): each a word of letters, digits, `_`, `.` or `-`, at most
+/// STEPS_MOST, in order, once each. A note that is missing, unreadable, empty or holds any other line names none:
+/// the task is then judged as without a note, never on part of a list.
+pub(super) fn failed(tree: &Path) -> Option<Vec<String>> {
+    let text = String::from_utf8(raw(tree, FAILED).ok()??).ok()?;
+    let mut steps: Vec<String> = Vec::new();
+    for line in text.lines().filter(|l| !l.is_empty()) {
+        let word = (1..=64).contains(&line.len()) && line.bytes().all(|b| b.is_ascii_alphanumeric() || b"_.-".contains(&b));
+        if !word { return None }
+        if !steps.iter().any(|s| s == line) { steps.push(line.to_string()) }
+    }
+    (!steps.is_empty() && steps.len() <= STEPS_MOST).then_some(steps)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -104,6 +128,26 @@ mod tests {
         assert_eq!(skipped(&tree).as_deref(), Some("> targeted: SKIPPED timed checks, the machine busy for 15 minutes: critical\n"));
         clear(&tree).unwrap();
         assert!(read(&tree).is_none() && skipped(&tree).is_none(), "each stage starts without either note");
+    }
+
+    #[test]
+    fn ac198_failed_steps_are_names_alone_or_none() {
+        let tree = crate::testutil::fresh_dir("failed-note");
+        assert_eq!(failed(&tree), None, "no note");
+        let checks = tree.join(".checks");
+        std::fs::create_dir(&checks).unwrap();
+        let with = |text: &str| { std::fs::write(checks.join("failed"), text).unwrap(); failed(&tree) };
+        assert_eq!(with("critical\ncargo\n\ncritical\ne2e_core\nui-unit\npage.x\n"), Some(vec!["critical".into(), "cargo".into(), "e2e_core".into(), "ui-unit".into(), "page.x".into()]));
+        for bad in ["critical\nrm -rf ~\n", "$(id)\n", "a;b\n", "\n", "", "kritisch\u{e9}\n", &"x".repeat(65)] {
+            assert_eq!(with(bad), None, "{bad:?}: any other line names none");
+        }
+        assert_eq!(with(&(0..17).map(|i| format!("s{i}\n")).collect::<String>()), None, "over the most");
+        assert_eq!(with(&(0..16).map(|i| format!("s{i}\n")).collect::<String>()).map(|s| s.len()), Some(16));
+        clear(&tree).unwrap();
+        assert_eq!(failed(&tree), None, "cleared with the other notes");
+        std::fs::write(tree.join("other"), "critical\n").unwrap();
+        symlink(tree.join("other"), checks.join("failed")).unwrap();
+        assert_eq!(failed(&tree), None, "a link is not followed");
     }
 
     #[test]

@@ -3,7 +3,8 @@
 //! the task's commit, never the agent's, before the task may join a batch. Each run is a window of terminumd's tmux
 //! as Check's is, judged by the same rules; a few at once, as their own checks pace themselves (load gate,
 //! heavy-build slots). Kept in `integration_verifies`, apart from the queue's entry, so a task taken out meanwhile
-//! still has its window ended.
+//! still has its window ended. A red Verify that names its failed steps runs them on the target before the task
+//! goes back (`red_target`).
 
 use std::path::Path;
 
@@ -11,6 +12,7 @@ use rusqlite::Transaction;
 
 use super::engine::{place, window, worktree, Window, OVER};
 use super::git;
+use super::red_target;
 use super::retry_notes;
 use super::runner::Runner;
 use super::store::{self as bs, Left};
@@ -38,28 +40,35 @@ pub(crate) fn line_of(prepare: &str, verify: &str) -> String {
 }
 
 /// A task's Prepare and Verify as kept, with what judging it needs.
-struct Run {
-    task: String,
-    id: String,
-    number: i64,
-    project: String,
-    commit: String,
+pub(super) struct Run {
+    pub(super) task: String,
+    pub(super) id: String,
+    pub(super) number: i64,
+    pub(super) project: String,
+    pub(super) commit: String,
     pane: Option<String>,
     started: i64,
-    attempt: String,
+    pub(super) attempt: String,
     /// still queued with that commit and waiting for its Verify
     wanted: bool,
-    minutes: i64,
+    pub(super) minutes: i64,
+    /// the run of the task's failed steps on the target, at this commit (`red_target`)
+    target: Option<String>,
+    pub(super) steps: Vec<String>,
+    /// the task's own run, whose log holds its red
+    pub(super) red_attempt: String,
 }
 
 /// One beat: ended windows judged, windows of tasks gone ended, new ones started; one read of the store.
 pub fn verify_step(store: &Store, runner: &dyn Runner, home: &Path, now: i64) -> Result<(), String> {
     let (runs, next) = store.with(|tx| {
+        red_target::release(tx, now)?;
         let runs = ops::rows(tx, "SELECT v.task, t.slug, t.number, v.project, v.commit_sha, v.pane, v.started,
                 EXISTS (SELECT 1 FROM integration_entries e WHERE e.task = v.task AND e.commit_sha = v.commit_sha AND e.stage = 'verifying'),
-                coalesce(i.check_minutes, 90), v.attempt
+                coalesce(i.check_minutes, 90), v.attempt, v.target_sha, v.steps, v.red_attempt
             FROM integration_verifies v JOIN tasks t ON t.id = v.task LEFT JOIN project_integration i ON i.project = v.project ORDER BY v.started", [],
-            |r| Ok(Run { task: r.get(0)?, id: r.get(1)?, number: r.get(2)?, project: r.get(3)?, commit: r.get(4)?, pane: r.get(5)?, started: r.get(6)?, wanted: r.get(7)?, minutes: r.get(8)?, attempt: r.get(9)? }))?;
+            |r| Ok(Run { task: r.get(0)?, id: r.get(1)?, number: r.get(2)?, project: r.get(3)?, commit: r.get(4)?, pane: r.get(5)?, started: r.get(6)?, wanted: r.get(7)?,
+                         minutes: r.get(8)?, attempt: r.get(9)?, target: r.get(10)?, steps: r.get::<_, String>(11)?.split_whitespace().map(String::from).collect(), red_attempt: r.get(12)? }))?;
         let next: Vec<(String, String, String)> = ops::rows(tx, "SELECT e.task, e.project, e.commit_sha FROM integration_entries e JOIN project_integration i ON i.project = e.project
             WHERE e.stage = 'verifying' AND i.is_on = 1 AND NOT EXISTS (SELECT 1 FROM integration_verifies v WHERE v.task = e.task) ORDER BY e.queued_at LIMIT ?1",
             [VERIFY_MOST as i64], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
@@ -93,7 +102,8 @@ fn follow(store: &Store, runner: &dyn Runner, home: &Path, run: &Run, now: i64) 
     let log = integration::verify_log_in(home, &run.project, run.number, &run.attempt);
     let code = match window(runner, pane, &log, now - run.started > run.minutes * 60) {
         Window::Running => return Ok(true),
-        // lost with its window: forgotten, so the next beat starts it again
+        // lost with its window: the run on the target started again, the task's own forgotten, so the next beat starts it again
+        Window::Lost if run.target.is_some() && red_target::start(store, runner, home, run, &run.steps, &run.red_attempt, now)? => return Ok(true),
         Window::Lost => {
             finish(store, home, run)?;
             return Ok(false);
@@ -101,6 +111,15 @@ fn follow(store: &Store, runner: &dyn Runner, home: &Path, run: &Run, now: i64) 
         Window::Ended(code) => code,
     };
     let tree = integration::verify_tree_in(home, &run.project, run.number);
+    // the run on the target: its notes are the target's, its failed steps what is red there
+    if let Some(target) = &run.target {
+        let red = retry_notes::failed(&tree);
+        store.with(|tx| red_target::judge(tx, home, run, target, code, red, now))?;
+        finish(store, home, run)?;
+        return Ok(false);
+    }
+    // read before the tree moves to the target
+    let failed = retry_notes::failed(&tree).filter(|_| code == 1);
     let notes = retry_notes::read(&tree);
     let skipped = retry_notes::skipped(&tree).filter(|_| code == 0);
     let (id, log) = (&run.id, log.display());
@@ -118,6 +137,8 @@ fn follow(store: &Store, runner: &dyn Runner, home: &Path, run: &Run, now: i64) 
             }
             // Prepare's 2 is a conflict with the target; any other failure a red check (§9)
             2 => bs::give_back(tx, &run.task, &format!("{id} returned: conflict: its Prepare or Verify ended with status 2. Its log: {log}"), Left::Conflict, now),
+            // its failed steps named: judged by their run on the target
+            _ if failed.is_some() => Ok(()),
             code => {
                 bs::not_again(tx, &run.task, &run.commit, now)?;
                 let how = if code == OVER { format!("ran over {} minutes", run.minutes) } else { format!("ended with status {code}") };
@@ -125,6 +146,9 @@ fn follow(store: &Store, runner: &dyn Runner, home: &Path, run: &Run, now: i64) 
             }
         }
     })?;
+    if let Some(steps) = &failed && red_target::start(store, runner, home, run, steps, &run.attempt, now)? {
+        return Ok(true);
+    }
     finish(store, home, run)?;
     Ok(false)
 }
