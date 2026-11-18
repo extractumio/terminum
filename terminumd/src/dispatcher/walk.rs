@@ -169,10 +169,13 @@ const IDLE_HOST_BEATS: u64 = 4;
 
 /// Every wanted pane's server: its list first, and only where one stands its `ps`, so a stale link
 /// or a dead host costs no ssh; each on its own time, a slow host delaying only itself.
-async fn read_servers(app: &Shared, wanted: &[String], with_run: &HashSet<String>) -> HashMap<String, Seen> {
+async fn read_servers(app: &Shared, wanted: &[String], with_run: &HashSet<String>, more: &[Arc<Server>]) -> HashMap<String, Seen> {
     let mut servers: HashMap<String, (Arc<Server>, Vec<String>)> = HashMap::new();
     for (server, pane) in wanted.iter().filter_map(|k| app.tmux.resolve(k)) {
         servers.entry(server.id()).or_insert_with(|| (server, Vec::new())).1.push(pane);
+    }
+    for server in more {
+        servers.entry(server.id()).or_insert_with(|| (server.clone(), Vec::new()));
     }
     let beat = app.dispatcher.beat.fetch_add(1, Ordering::Relaxed);
     let read = servers.into_values().map(|(server, mine)| async move {
@@ -238,9 +241,12 @@ async fn walk(app: &Shared) {
     let (global_warn, global_end) = { let s = app.looks.settings.read(); (s.memory_warn_gib, s.memory_end_gib) };
     let with_run: HashSet<String> = all.iter().filter_map(|r| r.place(app)).map(|(s, _)| s.id()).collect();
     let wanted: Vec<String> = all.iter().filter_map(|r| r.pane_key.clone()).chain(linked.iter().map(|(_, k)| k.clone())).collect();
+    // a run whose link a server started anew dropped (tasks::projects): read on its own server, its pane gone (AC-205)
+    let dropped: HashMap<String, Arc<Server>> = all.iter().filter(|r| r.pane_key.is_none() && !r.is_starting())
+        .filter_map(|r| Some((r.id.clone(), super::places::server_of(app, r.host.as_deref()).ok()?))).collect();
     // what it decides holds as of now: a human's input after it calls off or puts off what it leaves to do (AC-131)
     let at = Instant::now();
-    let seen = read_servers(app, &wanted, &with_run).await;
+    let seen = read_servers(app, &wanted, &with_run, &dropped.iter().map(|(_, s)| s.clone()).collect::<Vec<_>>()).await;
     let now = ops::now();
     let (mut reads, mut subagents) = (Vec::new(), Vec::new());
     for r in &all {
@@ -249,7 +255,7 @@ async fn walk(app: &Shared) {
             continue;
         }
         // no server for its key, or out of reach: nothing is known of its pane, and no clock runs (AC-130)
-        let Some((server, pane)) = r.place(app) else { continue };
+        let Some((server, pane)) = r.place(app).or_else(|| dropped.get(&r.id).map(|s| (s.clone(), String::new()))) else { continue };
         let Some(s) = seen.get(&server.id()) else { continue };
         let Some(list) = &s.panes else { continue };
         let key = server.key(&pane);

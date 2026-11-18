@@ -39,6 +39,9 @@ install commands: [README](../README.md). Exact behavior and limits: the specs
 - Terminals live in tmux; terminumd comes back after a crash (launchd).
 - After a reboot or a killed tmux server, sessions, windows, splits and folders are restored:
   terminum's, each host's, and attached sessions of your own tmux (`"restore": true`).
+- A task Dispatcher was running, in progress, goes on by itself in a new window, its agent told
+  the session was resumed; one waiting for you, or a window you closed, does not. A second end of
+  that tmux server within the hour resumes nothing: those tasks are FAILED, and RUN resumes them.
 - Each session's last 300 lines are kept (`"lastLines"`: up to 2000, 0 for none and to delete
   them) in `~/.terminum/state/lastlines/` (private, not in Time Machine) until the pane closes: **Show Last 300 Lines** in the
   row's menu. A full-screen program's screen is not kept.

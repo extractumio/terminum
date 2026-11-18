@@ -10,7 +10,7 @@ is worked on; any other stops at once. `--stubborn`: SIGTERM is ignored. `--star
 quits`: ends after receiving its first paste, without echoing or taking it; `--start
 none`: never a box; `--start fast`: exits at once with 7; `--start slow`: its first paste shows 3 s late, as a busy
 machine's does, and a prompt pasted twice is not worked on. `--title`: an idle OSC title after Stop to
-identify the stand-in after terminumd restarts; `--stop-after <file>`: hold Stop until the file exists and write
+identify the stand-in after terminumd restarts; `--prompts <file>`: each prompt it takes, a line; `--stop-after <file>`: hold Stop until the file exists and write
 <file>.sent after attempting the hook, so the test can place it during downtime."""
 import json
 import os
@@ -133,6 +133,9 @@ def main():
             if kind == "codex":
                 hook("SessionStart", source="startup")
             hook("UserPromptSubmit", prompt=prompt)
+            if opt("--prompts", ""):          # what it was typed, for a test to read whole
+                with open(opt("--prompts", ""), "a", encoding="utf8") as f:
+                    f.write(prompt + "\n")
             several = re.search(rf"tasks: ((?:{TASK_ID}(?:, )?)+)", prompt)   # a press of several names them all (AC-138)
             tasks = re.findall(TASK_ID, several[1]) if several else re.findall(TASK_ID, prompt)[:1] or [""]
             # a main task with its subtasks: they go first, it goes last (AC-185)
