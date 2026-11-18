@@ -149,9 +149,9 @@ its home closed to others), as a systemd service confined (`ProtectHome=tmpfs`, 
 home bound in) and capped in memory (`MemoryMax=3G`, `OOMPolicy=continue`: a job that runs out
 fails alone), labels `terminum`. Packages: `tmux build-essential` and the browsers' system
 libraries (`npx -y playwright-core@<ui's version> install-deps chromium webkit`, as root); Rust,
-Node and the browsers install per job into the runner's home. A runner without rustup gets
-rustup-init at the version the workflow pins, run only when its SHA-256 matches the one written
-there (rust-lang's published `rustup-init.sha256`); a new rustup takes both changed together. rustc building the tests is
+Node and the browsers install per job into the runner's home (rustup-init: version and SHA-256
+pinned in the workflow's Rust step, a new rustup changes both; only a runner without rustup
+downloads it). rustc building the tests is
 the job's largest process and grows with terminumd: keep the cap above the peak each run prints
 (below it rustc is killed or stalls); each run also prints the job's cap hits. It builds with
 one rustc and no debug info (the workflow's env), since two rustc with it outgrew a 2 GB machine. The registration token travels on stdin,
