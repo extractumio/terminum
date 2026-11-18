@@ -11,7 +11,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 
 use super::runs::{self, Phase, Run};
-use super::{firstprompt, pool, start, store};
+use super::{firstprompt, pool, start, store, Held};
 use crate::app::Shared;
 use crate::tasks::agents::{self, Agent};
 use crate::tasks::api::answer;
@@ -111,10 +111,17 @@ pub(super) async fn session(app: &Shared, project: &str, body: AdHoc) -> Result<
         let key = launch(app, &run, &server, project, &dir, &a, &[]).await?;
         return Ok(json!({"run": run, "key": key}));
     };
-    let key = open_run(app, &run, &server, project, &dir, &a, &[]).await?;
-    let typed = firstprompt::type_once(app, &run, &text).await;
-    start::watch(app, &run);                         // after the prompt: a run it made Working is no more its to type in
-    Ok(json!({"run": run, "key": key, "typed": typed.is_ok(), "why": typed.err()}))
+    // its start is this request's until the prompt went in or missed: a walk's watch would take an empty box as AC-142's
+    // and leave nothing to type into; on a task of its own, so a page that goes away cuts no paste short
+    let hold = Held::take(app, |d| &d.starting, &run).ok_or("its start is already watched")?;
+    let (app, project) = (app.clone(), project.to_string());
+    tokio::spawn(async move {
+        let key = open_run(&app, &run, &server, &project, &dir, &a, &[]).await?;
+        let typed = firstprompt::type_once(&app, &run, &text).await;
+        drop(hold);
+        start::watch(&app, &run);                    // after the prompt: a run it made Working is no more its to type in
+        Ok(json!({"run": run, "key": key, "typed": typed.is_ok(), "why": typed.err()}))
+    }).await.map_err(|e| format!("+ Session stopped: {e}"))?
 }
 
 /// The window of a run just added: opened at its place and watched; one that does not open closes its run. Its key.

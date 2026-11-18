@@ -96,6 +96,7 @@ export async function webSessBox(browser, name) {
   check(`AC-204 ${at} a prompt not typed: said with the why and a link to the session, the draft kept, the page stays`,
     await until(async () => /not typed: its input box did not come in 60 s/.test((await dock(page)).error)) && (await dock(page)).text === "Missed prompt" && !page.url().includes("/sessions/")
     && await page.isVisible('#sesserror a[href^="/sessions/"]'), JSON.stringify(await dock(page)));
+  check(`AC-204 ${at} after a miss Start waits for a change: a second press would open a second session`, (await dock(page)).start, JSON.stringify(await dock(page)));
   await page.click("#sessdiscard");
   await until(() => page.isVisible("#confirmbox[open]"));
   await page.click("#confirmok");

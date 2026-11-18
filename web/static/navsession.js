@@ -11,6 +11,7 @@ export function navSession({ inView, menu, start }) {
   const titled = () => {
     const p = inView();
     key.title = p ? `A session of an agent in ${p.name}, no task` : "A session of an agent in a project, no task";
+    if (p) key.removeAttribute("aria-haspopup"); else key.setAttribute("aria-haspopup", "menu");   // a press opens a menu only with none in view
   };
   key.addEventListener("pointerenter", titled);
   key.addEventListener("focus", titled);

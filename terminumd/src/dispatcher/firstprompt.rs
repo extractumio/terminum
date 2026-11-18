@@ -13,6 +13,9 @@ use crate::app::Shared;
 use crate::tasks::files;
 use crate::tasks::ops::rows;
 
+/// The files one prompt names, at most.
+const MOST_FILES: usize = 20;
+
 /// What the human asked to be typed: its words and its files' lines, or none for a session with nothing typed
 /// (AC-142); refused before anything starts.
 pub(super) async fn asked(app: &Shared, words: Option<&str>, ids: &[String], remote: bool) -> Result<Option<String>, String> {
@@ -25,6 +28,9 @@ pub(super) async fn asked(app: &Shared, words: Option<&str>, ids: &[String], rem
     }
     if ids.is_empty() {
         return Ok(words.map(str::to_string));
+    }
+    if ids.len() > MOST_FILES {
+        return Err(format!("At most {MOST_FILES} files go with a prompt."));
     }
     if remote {
         return Err("Files go only to a session on this Mac: this project's agents run on another host.".into());
@@ -61,10 +67,8 @@ pub(super) async fn type_once(app: &Shared, id: &str, text: &str) -> Result<(), 
                 return Err(format!("the program ended with exit {code}"));
             }
             match gate::read(&server, &pane, &r.kind).await.unwrap_or(Screen::Unknown) {
-                // Claude Code draws its box before it reads keys: the box stands a moment or its start is heard
                 Screen::Empty => {
-                    let since = *empty_since.get_or_insert_with(Instant::now);
-                    if app.hooks.session(&server.key(&pane)).is_some() || since.elapsed() >= start::STANDS {
+                    if start::ready(app, &server, &pane, &mut empty_since) {
                         let wanted = id.to_string();
                         let now = store(app, move |tx| runs::change(tx, &wanted, |n| if n.is_starting() { n.state = Phase::Working; })).await?;
                         return gate::deliver(app, &now, &server, &pane, text, true).await.map_err(|m| m.to_string());
@@ -101,6 +105,19 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn ac204_no_watch_takes_a_start_the_request_holds() {
+        let (_root, app) = crate::testutil::app_with_tasks("firstprompt-hold");
+        let run = app.tasks.with(|tx| runs::add(tx, &runs::Run { agent_id: "a".into(), project: "default".into(), ..Default::default() }, &[], runs::Started::of(runs::How::Session), 1)).unwrap();
+        let held = |app: &Shared| app.dispatcher.starting.lock().contains(&run);
+        let hold = super::super::Held::take(&app, |d| &d.starting, &run).unwrap();
+        start::watch(&app, &run);                     // a walk's beat while the request types
+        drop(hold);
+        assert!(!held(&app), "the watch left it to the request: nothing marks its empty box AC-142's meanwhile");
+        start::watch(&app, &run);
+        assert!(held(&app), "once the request let go, the watch takes it");
+    }
+
+    #[tokio::test]
     async fn ac204_files_go_as_their_kept_paths_on_this_mac_only() {
         let (_root, app) = crate::testutil::app_with_tasks("firstprompt-files");
         let shot = files::keep(&app.tasks, &app.cfg.dir, "shot.png", b"\x89PNG\r\n\x1a\nrest", 1).unwrap();
@@ -112,6 +129,7 @@ mod tests {
         assert!(asked(&app, None, std::slice::from_ref(&shot.id), false).await.unwrap().unwrap().starts_with("Files the human added"), "files alone make a prompt");
         assert!(asked(&app, None, std::slice::from_ref(&shot.id), true).await.unwrap_err().contains("only to a session on this Mac"), "a remote project's agent cannot read a Mac's path");
         assert!(asked(&app, None, &["0".repeat(32)], false).await.unwrap_err().contains("gone"), "an id terminumd does not keep");
+        assert!(asked(&app, None, &vec![shot.id.clone(); MOST_FILES + 1], false).await.unwrap_err().contains("At most"), "a bounded list");
         // a task's file is that task's: + Session sends only its own uploads
         app.tasks.with(|tx| {
             let t = create(tx, HUMAN, NewTask { title: "has a file".into(), ..Default::default() }, 2)?;

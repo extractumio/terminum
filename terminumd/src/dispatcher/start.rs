@@ -17,7 +17,7 @@ use crate::tmux::{args, Server};
 pub(super) const BOX_WITHIN: Duration = Duration::from_secs(60);
 const TAKEN_WITHIN: Duration = Duration::from_secs(30);
 /// How long an empty box stands before a first prompt goes in with no start heard.
-pub(super) const STANDS: Duration = Duration::from_secs(2);
+const STANDS: Duration = Duration::from_secs(2);
 /// A test's clock runs these slower than the rest: a program needs its real moment to start.
 pub(super) fn start_scaled(d: Duration) -> Duration {
     d / super::scale().min(10) as u32
@@ -163,6 +163,14 @@ async fn did_not_start(app: &Shared, r: &Run, at: Option<(&Server, &str)>, why: 
     super::told_all(app, r);
 }
 
+/// Whether an empty box takes a first prompt now: Claude Code's SessionStart comes after its box; one that stands this
+/// long has started, should the hook have gone unheard: its prompt's hook is what proves them (AS-127). `since`: when
+/// it was first seen empty, kept by the caller across its looks.
+pub(super) fn ready(app: &Shared, server: &Server, pane: &str, since: &mut Option<Instant>) -> bool {
+    let at = *since.get_or_insert_with(Instant::now);
+    app.hooks.session(&server.key(pane)).is_some() || at.elapsed() >= STANDS
+}
+
 /// The window command's record for `pane`, if the wrapper got there.
 pub async fn exit_of(server: &Server, pane: &str) -> Option<i32> {
     server.run(format!("display -p -t {pane} '#{{@terminum-exit}}'")).await.ok()?.first()?.parse().ok()
@@ -256,11 +264,7 @@ async fn watching(app: &Shared, id: &str) {
                     return;
                 }
                 Screen::Empty => {
-                    // Claude Code's SessionStart comes after its box; one that stands this long has
-                    // started, should the hook have gone unheard: its prompt's hook is what proves them (AS-127)
-                    let since = *empty_since.get_or_insert_with(Instant::now);
-                    let heard = app.hooks.session(&server.key(&pane)).is_some();
-                    if (heard || since.elapsed() >= STANDS) && let Some(prompt) = &r.prompt
+                    if ready(app, &server, &pane, &mut empty_since) && let Some(prompt) = &r.prompt
                         && let Err(m) = type_prompt(app, &r, &server, &pane, prompt).await {
                         miss = Some(m.to_string());
                         if r.state == Phase::Starting && began.elapsed() >= start_scaled(BOX_WITHIN) {

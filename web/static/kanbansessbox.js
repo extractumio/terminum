@@ -16,13 +16,14 @@ const DRAFT = "tm.sessiondraft";
 export function sessionComposer({ getMeta, dragging }) {
   const dock = $("sesscompose"), area = $("sesstext"), list = $("sessfiles"), error = $("sesserror"), start = $("sessstart"), discard = $("sessdiscard");
   let agent = null, key = null, files = [], uploading = 0, busy = false;
+  let missed = null;                               // the text of a prompt whose session started without it: Start again would open another
   area.value = read(DRAFT)?.text ?? "";
 
   const say = (text) => showError(error, text);
   const keep = () => write(DRAFT, area.value.trim() ? { text: area.value } : null);
   /** Start waits for files on their way and for its own answer; Discard shows while there is something to clear. */
   function state() {
-    start.disabled = busy || uploading > 0 || !agent;
+    start.disabled = busy || uploading > 0 || !agent || area.value === missed;
     dock.setAttribute("aria-busy", String(busy || uploading > 0));
     discard.hidden = !area.value.trim() && !files.length;
   }
@@ -84,6 +85,7 @@ export function sessionComposer({ getMeta, dragging }) {
       const text = area.value.trim();
       const r = await api(`/api/task-projects/${encodeURIComponent(agent.project)}/session`, { method: "POST", body: { agent: agent.id, ...(text ? { prompt: text } : {}), files: files.map((f) => f.id) } });
       if (r.typed === false) {                     // the session stands, the human's: the draft stays to paste there
+        missed = area.value;                       // Start waits for a change: a second press would open a second session
         say(`The session started, but its prompt was not typed: ${r.why}. Paste it there yourself.`);
         error.append(" ", Object.assign(el("a", null, "Open the session"), { href: sessionUrl(r.key) }));
         return;
@@ -118,6 +120,7 @@ export function sessionComposer({ getMeta, dragging }) {
     if (area.value.trim() && !await askConfirm("Discard what you typed?", "Discard")) return;
     area.value = "";
     files = [];
+    missed = null;
     keep();
     showFiles();
     area.focus();
