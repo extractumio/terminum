@@ -131,6 +131,47 @@ async function teammate(tmux, pane, tui) {
   tmux("kill-pane", "-t", mate);
 }
 
+/** AC-13: Claude Code on the normal screen prints its transcript again on each new size, into a
+ *  history tmux has re-wrapped. A page that only looks (its view narrower, the pane opened again)
+ *  leaves the window as it is and re-flows the pane, so the history holds each output once; a key
+ *  typed on the page gives the window the page's grid. */
+async function looking(page, tmux, pane, dir) {
+  fs.writeFileSync(path.join(dir, "tall.txt"), Array.from({ length: 90 }, (_, i) => `tall line ${i + 1} of the answer`).join("\n") + "\n");
+  tmux("send-keys", "-t", pane, "Escape");                      // no model answers here: the retry ends, so "!" runs at once
+  await new Promise((r) => setTimeout(r, 800));
+  tmux("send-keys", "-t", pane, "-l", "!cat tall.txt");
+  await new Promise((r) => setTimeout(r, 300));
+  tmux("send-keys", "-t", pane, "Enter");
+  const size = () => tmux("display", "-p", "-t", pane, "#{window_width}x#{window_height}");
+  const history = () => tmux("capture-pane", "-p", "-J", "-S", "-", "-E", "-", "-t", pane).split("\n");
+  // the answer's lines in the history and on the screen: [how many, how many of them differ]
+  const answer = () => { const got = history().flatMap((l) => l.match(/tall line \d+ of the answer/g) ?? []); return [got.length, new Set(got).size]; };
+  const tall = await until(() => Number(tmux("display", "-p", "-t", pane, "#{history_size}")) > 0 && history().some((l) => l.includes("tall line 90 of")), 10000);
+  await new Promise((r) => setTimeout(r, 1500));                // past a resize's second
+  const before = size(), wide = page.viewportSize();
+  await page.setViewportSize({ width: 1000, height: 640 });      // a narrower, lower view, nothing typed
+  await page.waitForTimeout(2500);                               // the view settles (300 ms); a resize would wait a second at most
+  const other = await page.evaluate(() => document.querySelector("#sessions .item:not(.on)")?.dataset.id);
+  if (other) {                                                   // and the pane opened again, as a phone's page opens it
+    await page.click(`#sessions .item[data-id="${other}"]`);
+    await page.waitForTimeout(700);
+    await page.click(`#sessions .item[data-id$=":${pane}"]`);
+    await page.waitForTimeout(1500);
+  }
+  const reflowed = await page.evaluate(() => document.getElementById("term").classList.contains("reflow"));
+  check("AC-13 real claude (default): a page that only looks leaves its window as it is and re-flows the pane",
+    tall && size() === before && reflowed, JSON.stringify({ tall, before, now: size(), reflowed, other: !!other }));
+  check("AC-13 real claude (default): its history holds each of the answer's 90 lines once", String(answer()) === "90,90",
+    `${answer()[0]} lines, ${answer()[1]} of them differ; ${tmux("display", "-p", "-t", pane, "#{history_size}")} rows of history`);
+  await page.focus("#kbd");
+  await page.keyboard.type("x");
+  const typed = await until(() => size() !== before, 5000);
+  check("AC-13 real claude (default): a key typed on the page gives the window the page's grid", typed, `${before} -> ${size()}`);
+  await page.keyboard.press("Backspace");
+  await page.setViewportSize(wide);
+  await page.waitForTimeout(1500);
+}
+
 /** `t` pasted with ⌘V into the page's keyboard field. */
 const pasteText = (page, t) => page.evaluate((t) => {
   const dt = new DataTransfer(); dt.setData("text/plain", t);
@@ -278,6 +319,7 @@ async function claudeDefault(page, ctx) {
   check("real claude (default): the page's own selection copies the row's words as shown",
     got === "Safe mode: all customizations", JSON.stringify({ at, got, sel: await page.evaluate(() => String(getSelection())) }));
   await page.evaluate(() => getSelection().removeAllRanges());
+  await looking(page, tmux, pane, dir);
   await teammate(tmux, pane, "default");
   check("real claude (default): Ctrl-C twice ends it", await quit(tmux, pane));
   close(tmux, pane);

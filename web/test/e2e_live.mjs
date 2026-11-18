@@ -6,7 +6,7 @@
 // Chromium and WebKit, at a wide (1400×900) and a phone (390×844) size. smoke: a landing's (AC-104):
 // signing in, the list, a pane drawn, typing and Files, at the wide size only.
 //
-//   node web/test/e2e_live.mjs [chromium|webkit] [board|smoke]
+//   node web/test/e2e_live.mjs [chromium|webkit] [board|smoke|progs|…: e2e_livemodes.mjs]
 //     (needs terminumd built: cd terminumd && cargo build; and ui built: cd ui && npm run build)
 
 import { execFileSync, spawn } from "node:child_process";
@@ -58,7 +58,7 @@ import { liveIntegrationSlots } from "./e2e_liveintegrationslots.mjs";
 import { liveAuto } from "./e2e_liveauto.mjs";
 import { liveIconKeys } from "./e2e_liveiconkeys.mjs";
 import { SORT_ALONE, BOARD_ALONE, TASKS_ALONE, WAITING_ALONE, POOL_ALONE, SMOKE, LINKS_ALONE, HISTORY_ALONE,
-  AUTO_ALONE, SCHEDULES_ALONE, NOTES_ALONE, ICONS_ALONE, REQUESTS_ALONE, SIGNIN_ALONE, QUEUE_ALONE, INTEGRATION_SLOTS_ALONE, MAIN_ALONE, BACKGROUND_ALONE, ARCHIVED_ALONE, FOLDS_ALONE, FOLDED_ALONE, SPLIT_ALONE, RAISE_ALONE } from "./e2e_livemodes.mjs";
+  AUTO_ALONE, SCHEDULES_ALONE, NOTES_ALONE, ICONS_ALONE, REQUESTS_ALONE, SIGNIN_ALONE, QUEUE_ALONE, INTEGRATION_SLOTS_ALONE, MAIN_ALONE, BACKGROUND_ALONE, ARCHIVED_ALONE, FOLDS_ALONE, FOLDED_ALONE, SPLIT_ALONE, RAISE_ALONE, PROGS_ALONE } from "./e2e_livemodes.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const SHORT = SMOKE || LINKS_ALONE || FOLDS_ALONE || FOLDED_ALONE;   // a few checks, the wide size only
@@ -253,6 +253,7 @@ async function wide(browser, name) {
   await page.keyboard.type(`cd ${WORK} && echo live-$((6*7))-${name}`);
   await page.keyboard.press("Enter");
   await within("AC-03 typed keys reach the pane and echo", () => page.waitForFunction((n) => document.getElementById("screen").innerText.includes(`live-42-${n}`), name, { timeout: 5000 }));
+  if (PROGS_ALONE) { await livePrograms(page, { tmux, work: WORK }); return ctx; }
   // its own name per browser: the tmux server is both runs' (the first run's window and its marks stay)
   const byhandName = `byhand-${name}`;
   if (!SHORT) {
@@ -478,7 +479,7 @@ try {
     const browser = await pw[name].launch(NO_SIGNALS);
     try {
       const ctx = await wide(browser, name);
-      if (!SHORT && !SIGNIN_ALONE && !BACKGROUND_ALONE && !SPLIT_ALONE) await phone(browser, name);
+      if (!SHORT && !SIGNIN_ALONE && !BACKGROUND_ALONE && !SPLIT_ALONE && !PROGS_ALONE) await phone(browser, name);
       await ctx.close();
     } catch (e) {
       ranToItsEnd(e);
