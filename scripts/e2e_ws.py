@@ -237,8 +237,10 @@ class Terminumd:
     def sock(self):
         return os.path.join(self.app, "terminumd.sock")
 
-    def start(self):
-        end_tmux(self.tmux_socket)
+    def start(self, keep_tmux=False):
+        """Starts it; `keep_tmux`: its tmux server, from a run before, goes on (a restart of terminumd)."""
+        if not keep_tmux:
+            end_tmux(self.tmux_socket)
         settings = os.path.join(self.home, "settings.json")
         if not os.path.exists(settings):   # no usage command: the user's own claude and codex never run for a test (AC-168)
             os.makedirs(self.home, exist_ok=True)

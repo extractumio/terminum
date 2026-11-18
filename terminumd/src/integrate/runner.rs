@@ -42,7 +42,12 @@ const SESSION: &str = "integration";
 /// anew gives its pane IDs from %0 again, so the mark tells a lost window from another line's that took its ID; a
 /// handle kept before marks were in it is the pane alone.
 pub fn pane_of(handle: &str) -> &str {
-    handle.split_once(' ').map_or(handle, |(pane, _)| pane)
+    parts(handle).0
+}
+
+/// A handle's pane and the mark its line started with, none in a handle kept before marks were in it.
+fn parts(handle: &str) -> (&str, Option<&str>) {
+    handle.split_once(' ').map_or((handle, None), |(pane, label)| (pane, Some(label)))
 }
 
 impl Tmux {
@@ -57,23 +62,24 @@ impl Tmux {
     /// What the handle's window is now: the line's own, with its status once it ended; gone (a pane of another's, or
     /// of another line after the server started anew, is never ours); or not known, tmux not answering for a moment.
     fn read<'a>(&self, handle: &'a str) -> Window<'a> {
-        let (pane, label) = (pane_of(handle), handle.split_once(' ').map(|(_, l)| l));
-        let said = match self.run(&["display", "-p", "-t", pane, "#{@terminum-integration}|#{@terminum-exit}"]) {
+        let (pane, label) = parts(handle);
+        let said = match self.run(&["display", "-p", "-t", pane, "#{@terminum-integration}|#{@terminum-exit}|#{pane_pid}"]) {
             Ok(said) => said,
             Err(e) if gone(&e) => return Window::Gone,
             Err(_) => return Window::Unknown,
         };
-        let (mark, exit) = said.split_once('|').unwrap_or((&said, ""));
+        let mut fields = said.split('|');
+        let (mark, exit, pid) = (fields.next().unwrap_or_default(), fields.next().unwrap_or_default(), fields.next().unwrap_or_default());
         if mark.is_empty() || label.is_some_and(|l| l != mark) {
             return Window::Gone;
         }
-        Window::Ours(pane, exit.trim().parse::<i32>().ok())
+        Window::Ours { pane, status: exit.trim().parse().ok(), pid: pid.trim().parse().ok() }
     }
 }
 
 /// A window as `read` finds it.
 enum Window<'a> {
-    Ours(&'a str, Option<i32>),
+    Ours { pane: &'a str, status: Option<i32>, pid: Option<i32> },
     Gone,
     Unknown,
 }
@@ -105,7 +111,7 @@ impl Runner for Tmux {
 
     fn status(&self, handle: &str) -> Result<Option<i32>, String> {
         match self.read(handle) {
-            Window::Ours(_, status) => Ok(status),
+            Window::Ours { status, .. } => Ok(status),
             Window::Gone => Err("its window is gone".into()),
             // read again at the next beat: a line is never run again for a moment tmux did not answer
             Window::Unknown => Ok(None),
@@ -113,14 +119,12 @@ impl Runner for Tmux {
     }
 
     fn output(&self, handle: &str) -> String {
-        let Window::Ours(pane, _) = self.read(handle) else { return String::new() };
+        let Window::Ours { pane, .. } = self.read(handle) else { return String::new() };
         self.run(&["capture-pane", "-p", "-J", "-S", "-", "-E", "-", "-t", pane]).unwrap_or_default()
     }
 
     fn stop(&self, handle: &str) {
-        let Window::Ours(pane, _) = self.read(handle) else { return };
-        let Ok(pid) = self.run(&["display", "-p", "-t", pane, "#{pane_pid}"]) else { return };
-        let Ok(pid) = pid.parse::<i32>() else { return };
+        let Window::Ours { pid: Some(pid), .. } = self.read(handle) else { return };
         // the wrapper runs the line in a process group of its own (set -m): its children's group is the line's
         let groups = child_groups(pid);
         let signal = |sig| groups.iter().for_each(|g| {
@@ -140,7 +144,7 @@ impl Runner for Tmux {
     }
 
     fn close(&self, handle: &str) {
-        if let Window::Ours(pane, _) = self.read(handle) {
+        if let Window::Ours { pane, .. } = self.read(handle) {
             let _ = self.run(&["kill-pane", "-t", pane]);
         }
     }

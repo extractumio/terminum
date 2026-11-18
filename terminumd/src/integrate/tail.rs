@@ -58,7 +58,7 @@ pub fn step(store: &Store, runner: &dyn Runner, home: &Path, now: i64) -> Result
 /// It holds nothing.
 pub(super) fn lost(tx: &rusqlite::Transaction, p: &Place, b: &bs::Batch, now: i64) -> Result<(), String> {
     let (n, name, folder, line) = (b.number, &p.name, p.repo.display(), &p.s.after);
-    let tasks = b.tasks.iter().filter_map(|k| bs::slug(tx, k).ok()).collect::<Vec<_>>().join(", ");
+    let tasks = b.tasks.iter().map(|k| bs::slug(tx, k)).collect::<Result<Vec<_>, _>>()?.join(", ");
     let text = format!("## Problem or goal\nBatch {n} of {name} was published ({tasks}) and its After was running in {folder} when its window was lost: \
         closed, or terminum's tmux server ended (a crash, kill-server, a restart of the machine). What After did is not known, and terminum does not \
         run it again.\n\n## Expected result\nAfter's work done once for batch {n}: check it in {folder}; not done or half done, run After's line \
