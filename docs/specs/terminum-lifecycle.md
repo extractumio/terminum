@@ -1288,8 +1288,10 @@ Other commands: `terminum help` lists them; usage is in `docs/USAGE.md`.
 ### Security
 
 - Install and upgrade: nothing from a download runs before the signature, the release line and the checksum passed (§9 Upgrade).
-- launchd holds the port (AC-08), so no other program can serve a page in the page's origin. What is left: `SECURITY.md` ("A program on terminumd's port").
-- Last lines (AC-96): the threat is in `SECURITY.md`.
+- launchd holds the port (AC-08) from the moment the agent is loaded, so no other program can serve a page in the page's origin while terminumd is down (a login, an upgrade, a crash). Left: before the agent is loaded, after an uninstall, when the port was taken at load, and on Linux or with `TM_NO_LAUNCHD` (terminumd binds the port itself) while it is down, another program can serve a page on the port. That page runs its own script in the page's origin, can read the sign-in stored there (the per-boot credentials of `terminum.md` AC-09 do not help here) and can ask for the password, and `tailscale serve` forwards to it as well: `SECURITY.md` tells the user not to open the page then.
+- Last lines (AC-96) put on disk what a terminal printed (a token, a `.env` the user displayed) for a shown pane's last lines, where tmux alone keeps it in memory only: where, who reads them, when they go and what turns them off are AC-96's.
+- The macOS terminumd's Developer ID signature (AC-08; no hardened runtime, not notarized) keeps the folder access macOS grants it, which every program in terminum's tmux inherits, across upgrades, and keeps it from passing to a binary signed by anyone else.
+- Releases are built and signed only on the maintainer's Mac, with locked dependencies; the release key exists only there and in its backups (`docs/RELEASING.md`); `install.sh` and `terminum upgrade` refuse root, and an upgrade installs only what the key signed. Left: whoever controls the maintainer's GitHub account can replace a release's `install.sh`, which a first `curl | sh` trusts; a program running as the maintainer while the Keychain is unlocked can sign.
 
 ### Compatibility
 
