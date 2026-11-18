@@ -111,7 +111,7 @@ body.board-page { margin: 0; overflow: hidden; background: var(--surface-0); col
 /* a tick beside a field: centred on it; a touch screen's taller row reaches under it */
 .fieldgrid > .checkrow { margin-bottom: min(0px, (var(--field-h) - var(--key-h)) / 2); }
 .agentlist .item { position: relative; min-width: 0; background: var(--surface-1); border-radius: var(--r-sm); }
-.agentlist .item .s, .agentpick .item .s, .agline { padding-left: 20px; }
+.agentlist .item .s { padding-left: 20px; }
 /* its subscription's windows (terminum-dispatcher.md AC-168): a label, a thin track filled by its use's level, the percent;
    an old reading fades; in its window the reset time follows the percent */
 .agsubs { display: flex; flex-direction: column; gap: 3px; padding-left: 20px; font-size: var(--fs-meta); color: var(--muted); font-variant-numeric: tabular-nums; }
@@ -324,15 +324,6 @@ body.board-page { margin: 0; overflow: hidden; background: var(--surface-0); col
 .integrationgroup[hidden] { display: none; }
 .integrationred { margin: var(--sp-2) 0 0; padding: 0; border: 0; }
 #integrationruns { margin: var(--sp-2) 0 0; padding-left: var(--sp-4); }
-/* + Session's agents (terminum-dispatcher.md AC-142): tiles of --tile (dialogsize.css), --across a line (kanbansession.js),
-   fewer when the window is narrower */
-#agentpick p { margin: 0; color: var(--muted); }
-.agentpick { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(var(--tile), 100%), 1fr)); gap: var(--sp-2); margin-top: var(--sp-2); }
-.agentpick .item { grid-template-columns: 10px minmax(0, 1fr); min-width: 0; min-height: 0; padding: var(--sp-2) var(--sp-3) var(--sp-2) var(--sp-1); background: var(--surface-2); border-radius: var(--r-sm); text-align: left; }
-@media (hover: hover) { .agentpick .item:hover { background: var(--surface-3); } }
-.agentpick .item:focus-visible { box-shadow: inset 0 0 0 2px var(--accent); outline: none; }
-.agline { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: var(--fs-meta) var(--term-font, monospace); color: var(--muted); }
-.aglast { margin-left: auto; flex: none; font-size: var(--fs-meta); color: var(--muted); }
 
 /* the INTEGRATION column (terminum-integration.md AC-193): a batch's cards tinted as one group under its task's card */
 .colhead .queuekeys { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1); margin-left: auto; }

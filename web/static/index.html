@@ -32,6 +32,7 @@
 <link rel="stylesheet" href="taskwin.css">
 <link rel="stylesheet" href="taskattrs.css">
 <link rel="stylesheet" href="dialogsize.css">
+<link rel="stylesheet" href="agentpick.css">
 <link rel="stylesheet" href="expand.css">
 <link rel="stylesheet" href="panewin.css">
 <link rel="stylesheet" href="sheets.css">
@@ -53,7 +54,7 @@
         <input id="filter" type="search" placeholder="Filter sessions" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" aria-label="Filter sessions">
         <kbd class="wide-only" title="Press / to filter">/</kbd>
       </label>
-      <button id="navnew" class="icon wide-only" type="button" aria-expanded="false" aria-controls="newsess" title="New session" aria-label="New session"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:17px"><path d="M5 12h14"/><path d="M12 5v14"/></svg></button>
+      <button id="navnew" class="textkey wide-only" type="button" aria-haspopup="menu" aria-expanded="false" title="A session of an agent in a project, no task" aria-label="New agent session"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:14px"><path d="M5 12h14"/><path d="M12 5v14"/></svg><span class="word">Session</span></button>
       <button id="navclose" class="icon wide-only" type="button" aria-label="Hide the session list"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:17px"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/><path d="m16 15-3-3 3-3"/></svg></button>
     </div>
     <div id="sessions"></div>
@@ -433,6 +434,16 @@
 </dialog>
 
 <!-- Convert to task (terminum-kanban.md AC-116): a bookmark or reminder made a TODO task, the board not opened. -->
+<!-- + Session's agents (terminum-dispatcher.md AC-142): the list's head key starts one here too (navsession.js) -->
+<dialog id="agentpick" data-size="ask" class="box dlg" aria-labelledby="agentpicktitle">
+  <form method="dialog">
+    <div class="dhead"><h2 id="agentpicktitle"></h2><button class="icon x" type="button" title="Close (Esc)" aria-label="Close"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
+    <p>Which agent? Nothing is typed in it: it is yours.</p>
+    <div id="agentpicklist" class="agentpick" role="group" aria-label="Agents"></div>
+    <div class="actions"><button value="cancel" type="submit">Cancel</button></div>
+  </form>
+</dialog>
+
 <dialog id="convertbox" data-size="form" class="box dlg" aria-labelledby="converthead">
   <form method="dialog">
     <div class="dhead"><h2 id="converthead">Convert to task</h2><button class="icon x" type="button" title="Close (Esc)" aria-label="Close"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>

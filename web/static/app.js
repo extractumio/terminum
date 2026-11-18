@@ -68,7 +68,7 @@ const store = {
 if (embedded) document.body.classList.add("embed");
 
 const SIZE_MIN = 7, SIZE_MAX = 28;                 // the text sizes the − and + buttons allow
-const tasks = pageTasks({ box: $("asks"), embedded, say: toast, show: (id) => { if (id !== st.sid) select(id); }, projects: () => st.projects });
+const tasks = pageTasks({ box: $("asks"), embedded, say: toast, show: (id) => { if (id !== st.sid) select(id); }, projects: () => st.projects, here: () => projectOfSession(st.groups, st.projects, st.sid), menu: (key, pick) => rowMenu.sessionMenu(key, pick) });
 const st = {
   groups: [], sid: embedded ?? tasks.asked ?? store.get("sid", null), projects: [], listOrder: [],
   size: null, base: null, step: store.get("sizeStep", 0),

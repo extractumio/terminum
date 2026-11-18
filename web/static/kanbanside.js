@@ -12,6 +12,7 @@ import { rowMenus, saveOrder } from "./rowmenu.js";
 import { sessionUrl } from "./tasklink.js";
 import { copyText } from "./touchcopy.js";
 import { icon } from "./icons.js";
+import { navSession } from "./navsession.js";
 import { $, DEFAULT, button, say } from "./kanbanutil.js";
 
 let opened = null;                                 // the session a press last opened
@@ -21,8 +22,9 @@ const store = { get: (k, d) => read(k) ?? d, set: write };
 const copy = async (got) => say((await copyText(got)).said);
 
 /** `chosen()`: the projects shown; a task's mark opens its window by `openTask`; `send(m)`: to terminumd;
- *  `newSession()`: + Session, a session of an agent in the one project shown (terminum-dispatcher.md AC-142). */
-export function boardSessions({ chosen, openTask, send, narrow, newSession }) {
+ *  `newSession(p)`: + Session, a session of an agent in project `p` (terminum-dispatcher.md AC-142); `project(id)`: the
+ *  board's project of that id. */
+export function boardSessions({ chosen, openTask, send, narrow, newSession, project }) {
   const st = { groups: [], projects: [], listOrder: [] };
   const list = $("sessions"), collapsed = new Set(store.get("collapsed", []));   // the session page's: one list, one memory
   const marks = new Map();
@@ -35,8 +37,10 @@ export function boardSessions({ chosen, openTask, send, narrow, newSession }) {
   const menus = rowMenus({ list, send, item, projects: () => st.projects, clone, orderList, lastLines: () => lastLines, copy, say,
     groups: () => st.groups,
     keepFolded: (from, to) => { if (collapsed.has(from)) { collapsed.add(to); store.set("collapsed", [...collapsed]); } } });
-  // + Session: under the project's sessions, while it is the one project shown
-  const adhoc = button("textkey", "Session", newSession);
+  // + Session: the list head's, for the one project shown, else a menu of them; a phone's (no head key) under the
+  // project's sessions, while it is the one project shown
+  navSession({ inView: () => (chosen().length === 1 ? project(chosen()[0]) : null), menu: menus.sessionMenu, start: newSession });
+  const adhoc = button("textkey narrow-only", "Session", () => newSession(project(chosen()[0])));
   Object.assign(adhoc, { id: "adhocsession", title: "A session of an agent in this project, no task" });
   adhoc.setAttribute("aria-label", "New session");
   adhoc.prepend(icon("plus", 14));

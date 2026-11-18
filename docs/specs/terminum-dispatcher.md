@@ -960,7 +960,7 @@ Scenario: AC-141 failure — settings
 ```gherkin
 Scenario: AC-142 happy path
   Given project api with its folder set
-  When the user presses + Session beside api's pencil in the project menu, or under api's sessions in the board's session list with api alone shown
+  When the user presses + Session beside api's pencil in the project menu, under api's sessions in the board's session list with api alone shown (a phone's), or the session list's head key on either page
   Then the pool's agents are offered, the one last used in api first; a press starts it in api's place with nothing typed, and its session opens
   And it stands in the list as a member of api, and as a dot on its agent
 
@@ -970,6 +970,14 @@ Scenario: AC-142 happy path — the agents offered as tiles
   Then each agent is a tile: its color, mark and name, its kind, effort and "0 of 1 at once", the command it was given; the one last used first, marked "last used"
   And the tiles stand at most 4 a line in rows as even as they go (5: 3 and 2), every tile inside a window as wide as those columns, centered across and down
   And on a narrow window or a phone the tiles take fewer columns, down to one, the window in sight and scrolling when taller
+
+Scenario: AC-142 happy path — the session list's head key
+  Given a computer (a phone's list has no head key)
+  Then the session list's head, on the session page and the board, holds [+ Session]: the board's text key, the head's 30 px high, between the filter and the list's hide key; from a 400 px list it reads "+ Session", narrower the plus alone at 30×30; its name for a screen reader "New agent session" at every width
+  When the user presses it
+  Then it is + Session for the project in view: the shown session's project on the session page (as the list places it), the one project the board shows on the board; with none in view a menu "A session of an agent in" lists the projects with their marks, Esc closing it with the focus back on the key
+  And the plain tmux session (a shell in the home folder) keeps its key, New session, at the session page's list foot; the head's key never opens its form
+  And on a computer the board's list shows no second + Session under the project's sessions
 
 Scenario: AC-142 edge — what Dispatcher does with it
   Given that session
@@ -2011,7 +2019,7 @@ Depends on `terminum-kanban.md`'s Stage 1. All three stages belong to terminum's
 - [x] AC-131 — `cargo test dispatcher::plan` with a clock jump, `cargo test dispatcher::runs` (a phase it does not know), `web/test/e2e_livedispatcher.mjs` (Stop during downtime, screen recovery, request before failure)
 - [x] AC-140 — `cargo test tasks::agents`, `cargo test tasks::store`, `web/test/e2e_liveboardagents.mjs`, `web/test/e2e_livedispatcher.mjs`, `scripts/e2e_remote_tasks.py`
 - [x] AC-141 — `cargo test dispatcher::pool`, `cargo test dispatcher::plan`, `cargo test tasks::limits`, `web/test/e2e_liveboardpool.mjs` (an empty-box offer, a draft typed before its press, refusal preserving the pane/draft/unqueued task, then an empty-box close)
-- [x] AC-142 — `cargo test dispatcher::runs`, `cargo test dispatcher::plan`, `cargo test tasks::tools`, `web/test/e2e_liveboardagents.mjs` (the tiles: `web/test/e2e_liveboardpool.mjs`)
+- [x] AC-142 — `cargo test dispatcher::runs`, `cargo test dispatcher::plan`, `cargo test tasks::tools`, `web/test/e2e_liveboardagents.mjs` (the tiles: `web/test/e2e_liveboardpool.mjs`), `web/test/e2e_navsession.mjs` (the list's head key)
 - [x] AC-143 — `cargo test dispatcher::usage`, `cargo test tasks::agents`, `web/test/e2e_liveboardagents.mjs`
 - [x] AC-168 — `cargo test subscriptions`, `cargo test usageask`, `cargo test usageread`, `cargo test settings::tests::ac168`, `cargo test cli::statusline`, `cargo test cli::hooktokens`, `scripts/e2e_hooks.py`, `web/test/e2e_liveboardsubs.mjs` (a stripe under 40% green, over 90% red)
 - [ ] AC-156 — `cargo test tasks::agents`, `cargo test dispatcher::press`, `web/test/e2e_liveboardagents.mjs`, `web/test/e2e_livedispatcher.mjs` (the inline words), `SECURITY.md` carries the operator's command

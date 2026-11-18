@@ -68,19 +68,11 @@ export function listTools({ send, store, groups, onResize = () => {}, onCreated 
   const closeForm = (id) => {
     $(id).hidden = true;
     $(`${id}btn`).setAttribute("aria-expanded", "false");
-    if (id === "newsess") $("navnew").setAttribute("aria-expanded", "false");
     if (pending?.id === id) { pending.reads.cancel(); pending = null; }
     if (id === "addtmux") tmux.cancel();
   };
-  // New session opens its form by the button pressed: under the list's head for [+], above the foot for the foot's
-  const spot = $("newsess").nextElementSibling;
-  $("newsessbtn").onclick = () => { if ($("newsess").hidden) spot.before($("newsess")); openForm("newsess"); };
-  $("navnew").onclick = () => {
-    if ($("newsess").hidden) $("sessions").before($("newsess"));
-    openForm("newsess");
-    $("newsessbtn").setAttribute("aria-expanded", "false");   // the foot stays folded (foot.css)
-    $("navnew").setAttribute("aria-expanded", String(!$("newsess").hidden));
-  };
+  // New session (a tmux session with a shell): the foot's key; the head's [+ Session] is an agent's (navsession.js)
+  $("newsessbtn").onclick = () => openForm("newsess");
   $("addhostbtn").onclick = () => openForm("addhost");
   const agents = hostAgents(send);
   const tmux = addTmux({ send, groups, openForm, closeForm, submit: (msg) => submit("addtmux", msg, () => tmux.added()) });

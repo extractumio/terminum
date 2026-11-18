@@ -27,6 +27,7 @@
 <link rel="stylesheet" href="taskwin.css">
 <link rel="stylesheet" href="taskattrs.css">
 <link rel="stylesheet" href="dialogsize.css">
+<link rel="stylesheet" href="agentpick.css">
 <link rel="stylesheet" href="expand.css">
 <link rel="stylesheet" href="sheets.css">
 <link rel="stylesheet" href="phone.css">
@@ -45,7 +46,7 @@
         <input id="filter" type="search" placeholder="Filter sessions" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" aria-label="Filter sessions">
         <kbd class="wide-only" title="Press / to filter">/</kbd>
       </label>
-      <button id="navnew" class="icon wide-only" type="button" aria-expanded="false" aria-controls="newsess" title="New session" aria-label="New session"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:17px"><path d="M5 12h14"/><path d="M12 5v14"/></svg></button>
+      <button id="navnew" class="textkey wide-only" type="button" aria-haspopup="menu" aria-expanded="false" title="A session of an agent in a project, no task" aria-label="New agent session"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:14px"><path d="M5 12h14"/><path d="M12 5v14"/></svg><span class="word">Session</span></button>
       <button id="navclose" class="icon wide-only" type="button" aria-label="Hide the session list"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:17px"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/><path d="m16 15-3-3 3-3"/></svg></button>
     </div>
     <div id="sessions"></div>

@@ -148,18 +148,30 @@ export function rowMenus({ list, send, item, projects, clone, orderList, groups,
       const name = await askName("Name the new project", `Group ${n}`, "Create");
       if (name) send({ t: "project", action: "add", id: it.id, name });
     };
-    const others = projects().filter((p) => p !== mine).map((p) => {
-      const b = button(p.name, "join", () => pick(p.id));
-      const mark = icon("group", 15);
-      mark.classList.add("picon");
-      mark.style.setProperty("--proj", projectColor(p));
-      b.prepend(mark);
-      return b;
-    });
+    const others = projects().filter((p) => p !== mine).map((p) => projectRow(p, () => pick(p.id)));
     const again = () => { const li = list.querySelector(`.item[data-id="${CSS.escape(it.id)}"]`)?.closest("li"); if (li) rowMenu(li, x, y); else hide(); };
     fill("Add to Project", button("Back", "back", again),
       document.createElement("hr"), ...others, button("New project…", "newproject", named));
     open(x, y);
+  }
+
+  /** A project's row in a menu: its mark in its color, its name. */
+  function projectRow(p, run) {
+    const b = button(p.name, "join", run), mark = icon("group", 15);
+    mark.classList.add("picon");
+    mark.style.setProperty("--proj", projectColor(p));
+    b.prepend(mark);
+    return b;
+  }
+
+  /** The list head's [+ Session] with no project in view (terminum-dispatcher.md AC-142): the projects under `key`,
+   *  `pick(p)` for the one pressed; the key sunk while it is open. */
+  function sessionMenu(key, pick) {
+    const r = key.getBoundingClientRect();
+    fill("A session of an agent in", ...projects().map((p) => projectRow(p, () => { hide(); pick(p); })));
+    key.setAttribute("aria-expanded", "true");
+    box.addEventListener("close", () => key.setAttribute("aria-expanded", "false"), { once: true });
+    open(r.left, r.bottom + 4);
   }
 
   async function rename(p) {
@@ -291,5 +303,5 @@ export function rowMenus({ list, send, item, projects, clone, orderList, groups,
     box.dataset.for = "";
     open(x, y, byFinger, keepKeys);
   }
-  return { headMenu, groupMenu, newInProject, hide, show, rename, held, deleteProject: (p) => deleteProject(p, p.members.filter((k) => item(k)).length), seen: (m) => { kept.seen(m); diag.seen(m); } };
+  return { headMenu, groupMenu, newInProject, sessionMenu, hide, show, rename, held, deleteProject: (p) => deleteProject(p, p.members.filter((k) => item(k)).length), seen: (m) => { kept.seen(m); diag.seen(m); } };
 }

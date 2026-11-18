@@ -266,7 +266,7 @@ function send(m) {
 }
 const openSession = (key) => { location.href = sessionUrl(key); };
 const folds = foldedCards((id) => openTask(id));
-const side = boardSessions({ chosen: () => filters().project, openTask, send, narrow, newSession: () => newSession(projectOf(filters().project[0])) });
+const side = boardSessions({ chosen: () => filters().project, openTask, send, narrow, newSession: (p) => p && newSession(projectOf(p.id) ?? p), project: projectOf });
 const runs = runWindow({ addAgent: (project) => agents.add(project), noFolder: askFolder, done: (waits) => { if (waits) say(waits); readSoon(); } });
 const agents = agentsSection({ getMeta: () => meta, chosen: () => filters().project, reload: loadMeta, slots: () => slots, liveRow: (key) => liveRows.get(key),
   refreshQueue: async (id) => { const got = await load(); return got ? (got.queue?.[id] ?? []) : undefined; },

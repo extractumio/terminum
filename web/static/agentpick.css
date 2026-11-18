@@ -1,0 +1,11 @@
+/* SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial */
+/* + Session's agents (terminum-dispatcher.md AC-142), on the board and the session page: tiles of --tile (dialogsize.css), --across a line (kanbansession.js),
+   fewer when the window is narrower */
+#agentpick p { margin: 0; color: var(--muted); }
+.agentpick { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(var(--tile), 100%), 1fr)); gap: var(--sp-2); margin-top: var(--sp-2); }
+.agentpick .item { grid-template-columns: 10px minmax(0, 1fr); min-width: 0; min-height: 0; padding: var(--sp-2) var(--sp-3) var(--sp-2) var(--sp-1); background: var(--surface-2); border-radius: var(--r-sm); text-align: left; }
+@media (hover: hover) { .agentpick .item:hover { background: var(--surface-3); } }
+.agentpick .item:focus-visible { box-shadow: inset 0 0 0 2px var(--accent); outline: none; }
+.agline { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: var(--fs-meta) var(--term-font, monospace); color: var(--muted); }
+.aglast { margin-left: auto; flex: none; font-size: var(--fs-meta); color: var(--muted); }
+.agentpick .item .s, .agline { padding-left: 20px; }
