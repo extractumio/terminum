@@ -40,7 +40,7 @@ pub fn queue_of(tx: &Transaction, project: &str) -> Result<Vec<Entry>, String> {
         |r| Ok(Entry { task: r.get(0)?, id: r.get(1)?, commit: r.get(2)?, batch: r.get(3)? }))
 }
 
-fn entry_of(tx: &Transaction, task_key: &str) -> Result<Option<Entry>, String> {
+pub(crate) fn entry_of(tx: &Transaction, task_key: &str) -> Result<Option<Entry>, String> {
     tx.query_row("SELECT e.task, t.slug, e.commit_sha, e.batch FROM integration_entries e JOIN tasks t ON t.id = e.task WHERE e.task = ?1", [task_key],
         |r| Ok(Entry { task: r.get(0)?, id: r.get(1)?, commit: r.get(2)?, batch: r.get(3)? })).optional().map_err(sql)
 }
