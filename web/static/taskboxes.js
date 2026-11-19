@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // A task's window and RUN's, one markup for the board and the session page (terminum-kanban.md AC-150): kanbanwin.js
-// and kanbanrun.js put them in once, before they look for them.
+// and kanbanrun.js put them in once, before they look for them; each box to read or type in has its key (terminum.md AC-184).
 import { expandKeys } from "./expand.js";
 
 const MARKUP = `

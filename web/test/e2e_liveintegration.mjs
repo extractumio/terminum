@@ -6,7 +6,7 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { check, until } from "./check.mjs";
-import { cardInSight, dropCard, intoStore } from "./boardkit.mjs";
+import { cardInSight, dropCard, intoStore, showColumnOf } from "./boardkit.mjs";
 
 const git = (dir, ...args) => execFileSync("git", ["-C", dir, "-c", "user.name=t", "-c", "user.email=t@example.com", ...args], { stdio: "pipe" });
 
@@ -149,16 +149,13 @@ async function cardKeyChecks(page, { j, gitty, t, base, repo, newPane, keyOf }) 
   await page.waitForFunction(() => document.body.dataset.socket === "open");
   /** Its card's menu opened, its column shown first; answers its items. */
   const openMenu = async () => {
-    // its card's column shown until the card is in view: a redraw may move it to another column after a read
-    const inView = await until(async () => {
-      const col = await page.evaluate((sel) => document.querySelector(sel)?.closest(".col")?.dataset.status, card);
-      if (!col) return false;
-      if (await page.isVisible(tab(col))) await page.click(tab(col));
-      return page.isVisible(card);
-    });
-    if (!inView) throw new Error(`${card} is not in view in its column`);
-    await page.hover(card);
-    await page.click(`${card} .cmenu`);
+    // a redraw may move the card to a column not shown even after its column was shown: a hidden card looks again
+    let last;
+    const pressed = await until(async () => {
+      await showColumnOf(page, t);
+      try { await page.hover(card, { timeout: 2000 }); await page.click(`${card} .cmenu`, { timeout: 2000 }); return true; } catch (e) { last = e; return false; }
+    }, 30000);
+    if (!pressed) throw new Error(`${card}'s menu key is not in view in its column: ${last?.message.split("\n")[0]}`);
     return page.$$eval("#cardmenu[open] [role=menuitem]", (bs) => bs.map((b) => b.textContent.trim()));
   };
   const menu = async (item) => { await openMenu(); await page.click(`#cardmenu[open] [role=menuitem]:has-text("${item}")`); };
@@ -182,6 +179,7 @@ async function cardKeyChecks(page, { j, gitty, t, base, repo, newPane, keyOf }) 
   await menu("Integrate");
   check("AC-193 a card's Integrate queues its session's HEAD, its place said in a toast",
     await until(async () => await status() === "INTEGRATION") && await until(async () => /queued 1st/.test(await page.textContent("#toast").catch(() => ""))));
+  await page.waitForFunction(([sel]) => document.querySelector(sel)?.closest(".col")?.dataset.status === "INTEGRATION", [card]);
   await menu("Take out");
   check("AC-193 a card's Take out puts it back IN PROGRESS", await until(async () => await status() === "IN PROGRESS"));
   await page.waitForFunction(([sel]) => document.querySelector(sel)?.closest(".col")?.dataset.status === "IN PROGRESS", [card]);
