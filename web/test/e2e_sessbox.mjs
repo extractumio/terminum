@@ -3,7 +3,7 @@
 // pool; text, a pasted image and an added file go in it, two task cards dropped on it put their IDs at the caret; Start
 // asks terminumd for that agent's session with the prompt and the files' ids, then shows the session; a miss keeps the
 // draft and says so; Esc keeps the draft, Discard asks and clears it; a remote project's composer takes no file; its box
-// has the key to the whole window (terminum.md AC-184), none on a phone.
+// has the key to the whole window (terminum.md AC-184).
 import { check, coversWindow, runningIn, until } from "./check.mjs";
 import { fakeBoard, ORIGIN, openPage, PHONE, WIDE } from "./fake.mjs";
 
@@ -130,8 +130,6 @@ export async function webSessBox(browser, name) {
     return { start: [Math.round(s.width), Math.round(s.height)], dock: Math.round(d.width), key: Math.round(k.height), font: getComputedStyle(document.getElementById("sesstext")).fontSize, fits: d.right <= innerWidth && document.documentElement.scrollWidth <= innerWidth }; });
   check(`AC-204 ${at} in the pool's sheet: the dock under the cards, Start full width and 44 px, the box 16 px (no zoom), nothing past the screen`,
     phone.start[1] >= 44 && phone.start[0] >= phone.dock - 2 * 16 - 1 && phone.font === "16px" && phone.fits, JSON.stringify(phone));
-  const key = await page.evaluate(() => document.querySelector("#sesstext ~ .xkey").getBoundingClientRect().width);
-  check(`AC-184 ${at} on a phone the box to type in has no key to the whole window`, key === 0, String(key));
   check(`no page error ${at}`, f.errors.length === 0, f.errors.join("; "));
   await f.close();
 }

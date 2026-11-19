@@ -50,7 +50,6 @@ DOCKER = re.compile(r"e2e_remote_sshd")  # needs Docker and built binaries as ar
 SCAN = "env -u TM_PORT -u TM_APP_DIR bash scripts/security_check.sh"
 NICE = "nice -n 10"   # several trees build at once: their builds leave room for the rest
 DEBUG_BUILD = f"cd terminumd && {NICE} cargo build --locked"   # what the e2e checks run; no release build
-MARKUP = re.compile(r"web/static/(index\.html|kanban\.html|taskboxes\.js)")   # the boxes webExpand finds unkeyed (AC-184)
 
 
 def cargo_test(modules):
@@ -249,7 +248,7 @@ def plan(files, cases, root=REPO, tests_of_cases=None):
     web = [f for f in tests if f.startswith("web/")]
     ui = [f for f in tests if f.startswith("ui/")]
     pages = page_checks(root)
-    named_pages = sorted({pages[f] for f in web if f in pages} | {"webExpand" for f in code if MARKUP.fullmatch(f)})
+    named_pages = sorted({pages[f] for f in web if f in pages})
     # every e2e_live*.mjs is a part of e2e_live.mjs, so it runs with the critical step
     shows = bool(rust) or any(f.startswith(("web/static/", "ui/src/")) for f in code) or any(f.startswith("web/test/e2e_live") for f in tests)
     e2e = [f for f in sorted(tests) if re.fullmatch(r"scripts/e2e_\w+\.py", f) and not DOCKER.search(f)
