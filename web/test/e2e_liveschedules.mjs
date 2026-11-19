@@ -357,11 +357,15 @@ export async function liveSchedules(page, live) {
     if (s.last) check("AC-163 the previous task's card keeps its schedule", await page.textContent(`${card(s.last.task)} .cfrom`) === s.key, s.last.task);
   }
 
-  // AC-164: a later firing closes this finished session before its result is read.
+  // AC-164: a later firing closes this finished session before its result is read: with no other room, its own
+  // schedule's idle session is closed for it (AC-161), so the agent runs one at once for this step
+  const nightOwl = { project, name: "Night owl", kind: "claude", command: `python3 -I ${FAKE} ${cli} --kind claude` };
+  await j(`/api/task-agents/${agent}`, "PATCH", { ...nightOwl, at_once: 1 });
   let next;
   const reran = await until(async () => (next = await j(`/api/schedules/${s.id}/run`, "POST")).code === 200, 15000);
-  check("AC-164 a later firing closes the finished session", reran && next.task !== task
-    && (await j(`/api/tasks/${task}`)).history.some((e) => e.kind === "told" && e.text === `Session ended: closed for ${s.key}.`), JSON.stringify(next));
+  check("AC-164 a later firing closes the finished session", reran && next.task !== task && await until(async () =>
+    (await j(`/api/tasks/${task}`)).history.some((e) => e.kind === "told" && e.text === `Session ended: closed for ${s.key}.`), 90000), JSON.stringify(next));
+  await j(`/api/task-agents/${agent}`, "PATCH", { ...nightOwl, at_once: 2 });
 
   // AC-164: the Scheduled page, this firing rather than the newer one
   const fire = `#fires .fire:has(.stbox[aria-label^="${task} · "])`;
