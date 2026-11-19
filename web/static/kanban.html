@@ -1,4 +1,5 @@
 <!doctype html>
+<!-- Its boxes to read or type in stand in a .xbox, which gives each its key to the whole window (terminum.md AC-184) -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -147,7 +148,7 @@
 <!-- + Session on an agent's card with a first prompt (terminum-dispatcher.md AC-204; kanbansessbox.js): a dock under the pool, not a dialog, so task cards can be dragged onto it -->
 <form id="sesscompose" class="sessdock" aria-labelledby="sesshead" hidden>
   <div class="sesshead"><h3 id="sesshead">+ Session on <span id="sessagent"></span></h3><button id="sessclose" class="icon x" type="button" title="Close, keep the text (Esc)" aria-label="Close"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
-  <textarea id="sesstext" class="field taskmd droparea" rows="3" aria-label="Its first prompt" placeholder="What should it do? Paste or drop files; drop tasks to name them."></textarea>
+  <div class="xbox"><textarea id="sesstext" class="field taskmd droparea" rows="3" aria-label="Its first prompt" placeholder="What should it do? Paste or drop files; drop tasks to name them."></textarea></div>
   <ul id="sessfiles" class="filelist"></ul>
   <p id="sesserror" class="error" role="alert" hidden></p>
   <div class="sessfoot"><button id="sessadd" class="textkey" type="button">Add files…</button><input id="sessfile" type="file" multiple hidden>

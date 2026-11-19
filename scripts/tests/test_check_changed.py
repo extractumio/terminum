@@ -147,6 +147,11 @@ def main():
             with self.assertRaises(SyntaxError):
                 check_changed.plan(["scripts/e2e_broken.py"], set(), root=root)
 
+    def test_the_pages_markup_runs_the_check_of_its_boxes_keys(self):  # AC-184: a box added without its key
+        for f in ("web/static/kanban.html", "web/static/index.html", "web/static/taskboxes.js"):
+            cited = check_changed.citing(check_changed.head_cases(REPO / f), REPO)
+            self.assertIn("webExpand", steps([f], cited)["page"], f)
+
     def test_a_helper_of_a_page_check_runs_with_it(self):
         self.assertIn("webApp", steps(["web/static/x.js"], ["web/test/e2e_appscreen.mjs"])["page"])
 
