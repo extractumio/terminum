@@ -121,3 +121,18 @@ async fn ac182_run_now_supersedes_a_waiting_task_but_not_a_human_s() {
     drop(app);
     std::fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn ac162_a_human_s_run_waiting_behind_a_firing_s_wait_still_skips_the_next() {
+    open("fire-two-waits").with(|tx| {
+        let s = schedule(tx, 1, every_15());
+        let (older, _) = made(decide(tx, &s, NOW + 10 * 60, false)?);
+        ops::move_to(tx, DISPATCHER, &older, "WAIT FOR HUMAN", NOW + 11 * 60)?;
+        let (firing, _) = made(decide(tx, &s, NOW + 25 * 60, false)?);
+        waiting(tx, &firing, json!({"agent": "a", "how": "schedule"}));
+        waiting(tx, &older, json!({"agent": "a", "how": "run"}));   // the human answered the older one and ran it
+        assert!(matches!(decide(tx, &s, NOW + 40 * 60, false)?, Next::Skipped), "the human's wait is never superseded, wherever it stands");
+        assert_eq!(waits::of_schedule(tx, &s.id)?.len(), 2, "both wait on");
+        Ok(())
+    }).unwrap();
+}

@@ -59,10 +59,10 @@ fn stays(tx: &rusqlite::Transaction, s: &Schedule) -> Result<Option<String>, Str
     if let Some(running) = schedules::running_task(tx, s)? {
         return Ok(Some(format!("{running} is still in progress.")));
     }
-    Ok(match super::waits::of_schedule(tx, &s.id)? {
-        Some(w) if w.by_human() => Some(format!("{} waits for room, run by a human.", ops::get(tx, &w.task)?.id)),
-        _ => None,
-    })
+    match super::waits::of_schedule(tx, &s.id)?.into_iter().find(super::waits::Wait::by_human) {
+        Some(w) => Ok(Some(format!("{} waits for room, run by a human.", ops::get(tx, &w.task)?.id))),
+        None => Ok(None),
+    }
 }
 
 /// Decides one schedule due by `now`, in one transaction.
@@ -119,19 +119,18 @@ fn own_idle(tx: &rusqlite::Transaction, s: &Schedule) -> Result<Option<runs::Run
 }
 
 /// A firing's task, made from the schedule as it is now, `why` in its history: its ID, its firing, and the place in
-/// the line of the wait of an older task of it it supersedes, called off in the same transaction (AC-162).
+/// the line of the first wait of an older task of it it supersedes, each called off in the same transaction (AC-162);
+/// `stays` has found none a human pressed.
 fn made(tx: &rusqlite::Transaction, s: &Schedule, (due, missed): (i64, i64), why: &str, now: i64) -> Result<(String, i64, Option<i64>), String> {
     let t = ops::create(tx, DISPATCHER, NewTask { title: s.title.clone(), text: s.body.clone(), project: Some(s.project.clone()), severity: Some(s.severity.clone()), scheduled: true, ..Default::default() }, now)?;
     ops::set_budget(tx, DISPATCHER, &t.id, Some(s.budget_seconds / 60), now)?;
     ops::log(tx, &t.key, DISPATCHER, "why", why, None, now)?;
     let fire = schedules::fired(tx, s, (due, missed), Some(&t.key), "made", None, now)?;
-    let place = match super::waits::of_schedule(tx, &s.id)? {
-        Some(w) => {
-            super::waits::call_off(tx, &w.task, &format!("Superseded by {}, a newer run of {}, while it waited for room.", t.id, s.key))?;
-            Some(w.pos)
-        }
-        None => None,
-    };
+    let mut place = None;
+    for w in super::waits::of_schedule(tx, &s.id)? {
+        super::waits::call_off(tx, &w.task, &format!("Superseded by {}, a newer run of {}, while it waited for room.", t.id, s.key))?;
+        place = place.or(Some(w.pos));
+    }
     Ok((t.id, fire, place))
 }
 

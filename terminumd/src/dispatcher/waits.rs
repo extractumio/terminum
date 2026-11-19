@@ -61,9 +61,10 @@ pub fn of_task(tx: &Transaction, task: &str) -> Result<Option<Wait>, String> {
     tx.query_row(&format!("{} WHERE w.task = ?1", select()), [task], of_row).optional().map_err(sql)
 }
 
-/// The wait of a task of schedule `schedule`, if one: a schedule's firings and Run now keep at most one (AC-162).
-pub fn of_schedule(tx: &Transaction, schedule: &str) -> Result<Option<Wait>, String> {
-    tx.query_row(&format!("{} JOIN schedule_fires f2 ON f2.task = w.task WHERE f2.schedule = ?1 ORDER BY {ORDER} LIMIT 1", select()), [schedule], of_row).optional().map_err(sql)
+/// The waits of tasks of schedule `schedule`, in the line's order: its firings and Run now keep at most one, a
+/// human's RUN of an older task may add one (AC-162).
+pub fn of_schedule(tx: &Transaction, schedule: &str) -> Result<Vec<Wait>, String> {
+    rows(tx, &format!("{} JOIN schedule_fires f2 ON f2.task = w.task WHERE f2.schedule = ?1 ORDER BY {ORDER}", select()), [schedule], of_row)
 }
 
 impl Wait {
