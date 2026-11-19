@@ -118,6 +118,7 @@ pub(super) async fn went_on(app: &Shared, r: &Run, tasks: &[Task], manager: bool
 async fn next_run(app: &Shared, r: &Run, tasks: &[Task], prompt: String, kept: Press) -> Result<Next, String> {
     let (old, all) = (r.clone(), tasks.to_vec());
     store(app, move |tx| {
+        kept.still_waits(tx, &all[0].key)?;
         // an agent deleted since has no slot to take: its run's own settings start, or nothing waits for it
         let agent = agents::in_project(tx, &old.agent_id, &old.project)?;
         match &agent {

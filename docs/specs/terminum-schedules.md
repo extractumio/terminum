@@ -151,6 +151,7 @@ Scenario: AC-161 happy path — ordinary runs have the rest
   When the user runs API-12 on it
   Then it starts; API-13 next is told "Opus reviewer is at its limit of 2: API-12 is working; 1 kept for 1 schedule." and is offered the queue (terminum-dispatcher.md AC-169)
   And no ordinary run takes a kept slot, free or not
+  But ordinary runs already there when K rises (a schedule added, unpaused or moved onto it) keep their slots: a kept slot is free only while the agent runs fewer than its at once, so it never runs more
 
 Scenario: AC-161 happy path — a start in a kept slot
   Given Opus reviewer with 1 at once, SCH-1 on it, and API-12 running on it as a human's RUN before SCH-1 was set
@@ -170,7 +171,7 @@ Scenario: AC-161 happy path — its own idle session closed for it
   When SCH-1 fires, or is run now (AC-182)
   Then that session closes as AC-141 closes an idle holder, its screen kept, and S_TERM-42 starts in its slot at once
   And it is closed only when there is no room without it, and only when its close makes room
-  But a session of another schedule, idle or not, or an ordinary run's, is never closed for it
+  But a session of another schedule, idle or not, or an ordinary run's, a run of several tasks among them, is never closed for it
 
 Scenario: AC-161 edge — no room: it waits, ahead of the others
   Given Opus reviewer with 2 at once, SCH-1 and SCH-2 on it keeping 1 slot, S_TERM-41 of SCH-2 working in it, API-12 working in the other, and API-13 and API-15 in its queue
@@ -275,6 +276,7 @@ Scenario: AC-162 edge — a newer run supersedes a waiting one
   Then S_TERM-45 is made, and in the same transaction S_TERM-44's wait is called off (terminum-dispatcher.md AC-158) with "Superseded by S_TERM-45, a newer run of SCH-1, while it waited for room."
   And S_TERM-44, IN PROGRESS with no run of it live, is FAILED with those words, as any task of a schedule whose wait is called off; one in another column stays there
   And S_TERM-45 starts at once when there is room, else takes S_TERM-44's place in the queue
+  And S_TERM-44 never starts once superseded: a press from a wait goes only while that wait stands, read in the transaction that takes the slot (terminum-dispatcher.md AC-158)
 
 Scenario: AC-162 edge — a human's RUN wait stays
   Given S_TERM-44 of SCH-1 answered by the human and RUN, waiting for room (who pressed it kept: terminum-dispatcher.md AC-183)
@@ -473,7 +475,7 @@ A schedule is shown as `SCH-<number>`. Times are unix seconds. `cron` or `once_a
 
 **Firing** (`terminumd/src/dispatcher/fire.rs`), on each walk before the runs: every schedule not paused or deleted, due ≤ now; due over 120 s ago → skipped as missed; a task of it IN PROGRESS with a live run or its firing `made` → skipped; a task of it waiting for room → skipped when a human's RUN pressed it (the wait's press keeps `how` and `manager`, terminum-dispatcher.md AC-183), else called off in the transaction that makes the next; no room (`pool::room_for`) and an idle run of one of its tasks whose close makes room → closed as AC-141's idle holder, then decided again; else the task, IN PROGRESS, and the firing in one transaction, then the press of RUN's route (`api::press_again` with its agent), so every check of RUN holds; a press refused → the task FAILED, the firing `failed`. Made by Dispatcher, `by_agent` 0: its text is the human's. `ops::move_to` refuses TODO for a task a firing names.
 
-**Slots** (`pool.rs`). An agent keeps K = ceil(N / 2) slots, N its schedules not paused, plus one for integration when a project names it (terminum-integration.md AC-194). Of its live runs of one task of its schedules not paused, the K oldest stand in its kept slots, and of its integration tasks' runs the oldest in integration's; `judge` counts the rest, plus every kept slot. A run of one such task is checked against the project's limit only while fewer than K stand in kept slots, else as any run. **Waits** (`waits.rs`): the line is ordered by whether the task is a schedule's, then `pos`; `ahead`, the board, the cards and a reorder read that order, and a reorder or promotion that puts another wait ahead of a schedule's task is refused or stops behind it.
+**Slots** (`pool.rs`). An agent keeps K = ceil(N / 2) slots, N its schedules not paused, plus one for integration when a project names it (terminum-integration.md AC-194). Of its live runs of one task of its schedules not paused, the K oldest stand in its kept slots, and of its integration tasks' runs the oldest in integration's; `judge` counts the rest, plus every kept slot. A run of one such task is checked against the project's limit only while fewer than K stand in kept slots, else as any run. **Waits** (`waits.rs`): the line is ordered by whether the task is a schedule's (any task a firing names, its schedule paused or not, on whichever agent), then `pos`; `ahead`, the board, the cards and a reorder read that order, and a reorder or promotion that puts another wait ahead of a schedule's task is refused or stops behind it; a reorder deals each kind its own places. A press from a wait (`api::press_waited`) is refused when its wait is gone in the transaction that takes the slot. A kept slot for schedules is free while fewer than K runs stand in them and the agent runs fewer than its at once.
 
 **Routes.**
 

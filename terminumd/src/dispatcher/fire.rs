@@ -109,10 +109,14 @@ fn own_idle(tx: &rusqlite::Transaction, s: &Schedule) -> Result<Option<runs::Run
     if slots.check_in(tx, &a, &s.project, slot, None)?.is_none() {
         return Ok(None);
     }
-    let ids: Vec<String> = ops::rows(tx, "SELECT DISTINCT m.run FROM run_tasks m JOIN schedule_fires f ON f.task = m.task WHERE f.schedule = ?1", [&s.id], |r| r.get(0))?;
-    for r in runs::live(tx)?.into_iter().filter(|r| r.holds_slot() && r.agent_id == a.id && ids.contains(&r.id)) {
-        if pool::closable(tx, &r)? && slots.check_in(tx, &a, &s.project, slot, Some(&r.id))?.is_none() {
-            return Ok(Some(r));
+    let live: Vec<runs::Run> = runs::live(tx)?.into_iter().filter(|r| r.holds_slot() && r.agent_id == a.id).collect();
+    let keys: Vec<&str> = live.iter().map(|r| r.id.as_str()).collect();
+    // from its agent's live runs, a run of one task of `s` alone: one carrying an ordinary task too is never closed for it
+    let ids: Vec<String> = ops::rows(tx, "SELECT m.run FROM run_tasks m JOIN schedule_fires f ON f.task = m.task WHERE f.schedule = ?1 AND m.run IN (SELECT value FROM json_each(?2))
+                                           AND (SELECT count(*) FROM run_tasks x WHERE x.run = m.run) = 1", (&s.id, runs::listed_keys(&keys)), |r| r.get(0))?;
+    for r in live.iter().filter(|r| ids.contains(&r.id)) {
+        if pool::closable(tx, r)? && slots.check_in(tx, &a, &s.project, slot, Some(&r.id))?.is_none() {
+            return Ok(Some(r.clone()));
         }
     }
     Ok(None)

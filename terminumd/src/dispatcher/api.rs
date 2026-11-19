@@ -98,6 +98,9 @@ pub(super) struct Press {
     /// how it was pressed, kept with its run and with a wait (AC-183); a page's request says only a human's way
     #[serde(default)]
     how: How,
+    /// pressed again from its wait (AC-158): it goes only while that wait stands; never read from a request or a kept wait
+    #[serde(skip)]
+    waited: bool,
 }
 
 impl Press {
@@ -122,6 +125,15 @@ impl Press {
     pub(super) fn resumed(how: How, by: &str) -> Press {
         let manager = (by != HUMAN && by != crate::tasks::store::DISPATCHER).then(|| by.to_string());
         Press { how, manager, auto: how == How::Auto, ..Default::default() }
+    }
+
+    /// A press from a wait goes only while the wait stands, read in the transaction that takes the slot: a newer run of
+    /// its schedule may have called it off meanwhile (terminum-schedules.md AC-162).
+    pub(super) fn still_waits(&self, tx: &rusqlite::Transaction, key: &str) -> Result<(), String> {
+        if self.waited && super::waits::of_task(tx, key)?.is_none() {
+            return Err(WAIT_GONE.to_string());
+        }
+        Ok(())
     }
 
     /// Who pressed: the manager's user, else the human.
@@ -218,11 +230,24 @@ pub(super) fn wait_if_full(tx: &rusqlite::Transaction, agent: &Agent, project: &
     Ok(Some(Kept::Waits(super::waits::words(&agent.name, &why))))
 }
 
-/// A wait's press, as its route took it, pressed again now (AC-158).
+/// What a press from a wait is refused with when its wait went meanwhile.
+pub(super) const WAIT_GONE: &str = "its wait was called off meanwhile.";
+
+/// A schedule's standing press, as its route takes it, pressed now (terminum-schedules.md AC-162).
 pub(super) async fn press_again(app: &Shared, id: &str, body: Value) -> Result<Value, String> {
+    press_kept(app, id, body, false).await
+}
+
+/// A wait's press, as its route took it, pressed again now, only while the wait stands (AC-158).
+pub(super) async fn press_waited(app: &Shared, id: &str, body: Value) -> Result<Value, String> {
+    press_kept(app, id, body, true).await
+}
+
+async fn press_kept(app: &Shared, id: &str, body: Value, waited: bool) -> Result<Value, String> {
     let mut body: Press = serde_json::from_value(body).map_err(|e| format!("its kept press is not readable: {e}"))?;
     body.close = None;
     body.queue = true;                             // a wait, or a schedule's standing press: it waits again
+    body.waited = waited;
     pressed(app, id, body).await
 }
 
@@ -393,6 +418,7 @@ async fn first_run(app: &Shared, tasks: &[Task], body: Press, kept: Press, comme
     let (ag, f, project, at) = (a.clone(), dir.clone(), t.project.clone(), app.clone());
     let next = store(app, move |tx| {
         let now: Vec<Task> = all.iter().map(|t| ops::get(tx, &t.id)).collect::<Result<_, _>>()?;
+        kept.still_waits(tx, &now[0].key)?;
         for t in &now {
             way(t, runs::last_of(tx, &t.key)?, true, &|k| at.tmux.pane_state(k))?;
         }
@@ -433,3 +459,7 @@ async fn first_run(app: &Shared, tasks: &[Task], body: Press, kept: Press, comme
     }
     Ok(json!({"run": run}))
 }
+
+#[cfg(test)]
+#[path = "api_wait_tests.rs"]
+mod wait_tests;

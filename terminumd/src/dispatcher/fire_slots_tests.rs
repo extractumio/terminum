@@ -136,3 +136,38 @@ fn ac162_a_human_s_run_waiting_behind_a_firing_s_wait_still_skips_the_next() {
         Ok(())
     }).unwrap();
 }
+
+#[test]
+fn ac161_a_session_carrying_an_ordinary_task_too_is_never_closed_for_it() {
+    open("fire-not-several").with(|tx| {
+        let s = schedule(tx, 1, every_15());
+        let (first, _) = made(decide(tx, &s, NOW + 10 * 60, false)?);
+        let run = working(tx, &ops::get(tx, &first)?);
+        let other = ops::create(tx, HUMAN, NewTask { title: "API-12".into(), ..Default::default() }, NOW)?;
+        tx.execute("INSERT INTO run_tasks (run, task) VALUES (?1, ?2)", (&run, &other.key)).map_err(ops::sql)?;   // pressed with it
+        for id in [&first, &other.id] {
+            ops::move_to(tx, DISPATCHER, id, "DONE", NOW + 11 * 60)?;
+        }
+        runs::change(tx, &run, |r| { r.turn_ended = true; r.closing_for = 60; })?;
+        assert!(pool::closable(tx, &runs::by_id(tx, &run)?)?);
+        assert!(matches!(decide(tx, &s, NOW + 25 * 60, false)?, Next::Run(..)), "a run of several tasks is an ordinary run's: its task waits instead");
+        Ok(())
+    }).unwrap();
+}
+
+#[test]
+fn ac161_k_raised_over_ordinary_runs_never_runs_the_agent_past_its_at_once() {
+    open("fire-k-raised").with(|tx| {
+        let one = schedule(tx, 2, every_15());
+        schedule(tx, 2, every_15());   // two keep one slot of its two
+        let (first, _) = made(decide(tx, &one, NOW + 10 * 60, false)?);
+        working(tx, &ops::get(tx, &first)?);
+        working(tx, &ops::create(tx, HUMAN, NewTask { title: "API-12".into(), ..Default::default() }, NOW)?);
+        let third = schedule(tx, 2, every_15());   // K = 2 of its 2, one of them held by the ordinary run
+        let a = agent_a(tx);
+        let full = pool::Slots::read(tx)?.check_in(tx, &a, "default", Some(pool::Slot::Schedule), None)?.expect("no room: the agent runs 2 of its 2");
+        assert!(full.words.starts_with("Opus reviewer is at its limit of 2:"), "{}", full.words);
+        assert!(matches!(decide(tx, &third, NOW + 10 * 60, false)?, Next::Run(..)), "its task is made, and waits");
+        Ok(())
+    }).unwrap();
+}

@@ -139,6 +139,7 @@ pub fn queues(tx: &Transaction) -> Result<BTreeMap<String, Vec<Value>>, String> 
 /// a wait ahead of a schedule's task (terminum-schedules.md AC-161).
 pub fn reorder(tx: &Transaction, agent: &str, ids: &[String]) -> Result<(), String> {
     let mut mine: Vec<Wait> = of_agent(tx, agent)?;
+    mine.sort_by_key(|w| w.pos);
     let keys: Vec<String> = ids.iter().map(|id| ops::key_of(tx, id)).collect::<Result<_, _>>()?;
     let (mut had, mut wanted): (Vec<&str>, Vec<&str>) = (mine.iter().map(|w| w.task.as_str()).collect(), keys.iter().map(String::as_str).collect());
     had.sort_unstable();
@@ -150,9 +151,12 @@ pub fn reorder(tx: &Transaction, agent: &str, ids: &[String]) -> Result<(), Stri
     if let Some(at) = keys.iter().position(|k| !scheduled(k)) && let Some(late) = keys[at..].iter().find(|k| scheduled(k)) {
         return Err(format!("{} is a scheduled run: it stays ahead of the other waits.", ops::get(tx, late)?.id));
     }
-    mine.sort_by_key(|w| w.pos);
-    for (key, Wait { pos, .. }) in keys.iter().zip(&mine) {
-        tx.execute("UPDATE run_waits SET pos = ?1 WHERE task = ?2", (pos, key)).map_err(sql)?;
+    // each kind deals its own places, so a wait never takes the place of another kind and no other agent's moves
+    for kind in [true, false] {
+        let places = mine.iter().filter(|w| w.scheduled == kind).map(|w| w.pos);
+        for (key, pos) in keys.iter().filter(|k| scheduled(k) == kind).zip(places) {
+            tx.execute("UPDATE run_waits SET pos = ?1 WHERE task = ?2", (pos, key)).map_err(sql)?;
+        }
     }
     Ok(())
 }
@@ -257,9 +261,10 @@ pub async fn start_due(app: &Shared) {
         }).await;
         let id = match decided {
             Ok(Due::Press(id, body)) => {
-                if let Err(why) = super::api::press_again(app, &id, body).await {
+                if let Err(why) = super::api::press_waited(app, &id, body).await {
+                    // a wait called off meanwhile was said by what called it off (terminum-schedules.md AC-162)
                     let (task, words) = (w.task.clone(), format!("Did not start after its wait: {why}"));
-                    let _ = super::store(app, move |tx| call_off(tx, &task, &words)).await;
+                    let _ = super::store(app, move |tx| if of_task(tx, &task)?.is_some() { call_off(tx, &task, &words) } else { Ok(()) }).await;
                 }
                 id
             }

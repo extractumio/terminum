@@ -162,11 +162,13 @@ impl Slots {
         self.check_in(tx, agent, project, slot, but)
     }
 
-    /// `check_for` of a run that may stand in a kept slot for `slot`, when one is free.
+    /// `check_for` of a run that may stand in a kept slot for `slot`, when one is free. A schedules' slot is free only
+    /// while the agent runs fewer than its at once: K raised over ordinary runs already there waits for them to end.
     pub fn check_in(&self, tx: &Transaction, agent: &Agent, project: &str, slot: Option<Slot>, but: Option<&str>) -> Result<Option<Full>, String> {
+        let live = self.holding.iter().filter(|r| r.agent_id == agent.id && Some(r.id.as_str()) != but).count() as i64;
         let free = slot.filter(|s| {
             let used = self.in_kept.iter().filter(|(run, (of, kind))| kind == s && *of == agent.id && Some(run.as_str()) != but).count() as i64;
-            used < self.kept_of(&agent.id).of_slot(*s)
+            used < self.kept_of(&agent.id).of_slot(*s) && (*s == Slot::Integration || live < agent.at_once)
         });
         match free {
             Some(Slot::Integration) => Ok(None),

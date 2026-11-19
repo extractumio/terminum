@@ -217,3 +217,24 @@ fn ac162_a_wait_knows_whether_a_human_pressed_it() {
         Ok(())
     }).unwrap();
 }
+
+#[test]
+fn ac161_a_reorder_deals_each_kind_its_own_places() {
+    store("waits-reorder-kinds").with(|tx| {
+        tx.execute("UPDATE agents SET at_once = 3", []).map_err(sql)?;
+        let (other, mine, plain, late, again) = (task(tx, "api"), task(tx, "api"), task(tx, "api"), task(tx, "api"), task(tx, "api"));
+        add(tx, &other, "b", "api", &json!({}), 1)?;
+        for (t, at) in [(&mine, 2), (&plain, 3), (&late, 4), (&again, 5)] {
+            add(tx, t, "a", "api", &json!({}), at)?;
+        }
+        scheduled(tx, &mine, "a");
+        scheduled(tx, &again, "a");
+        let pos = |tx: &Transaction, t: &Task| of_task(tx, &t.key).unwrap().unwrap().pos;
+        let before = (pos(tx, &other), [pos(tx, &mine), pos(tx, &again)], [pos(tx, &plain), pos(tx, &late)]);
+        reorder(tx, "a", &[again.id.clone(), mine.id.clone(), late.id.clone(), plain.id.clone()])?;
+        assert_eq!((pos(tx, &again), pos(tx, &mine)), (before.1[0], before.1[1]), "the schedules' tasks swap their own places");
+        assert_eq!((pos(tx, &late), pos(tx, &plain)), (before.2[0], before.2[1]), "the others theirs");
+        assert_eq!(pos(tx, &other), before.0, "another agent's wait keeps its place");
+        Ok(())
+    }).unwrap();
+}
