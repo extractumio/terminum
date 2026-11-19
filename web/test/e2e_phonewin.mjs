@@ -4,7 +4,7 @@
 // its ways on in a bar at its top with × and the title, what is seldom pressed in a row under its fields, a text
 // field with no full-window key; a question stays a sheet; 601 px and wider keeps the sheets, and a window resized
 // between the two gets its keys back in their order; a row of keys filled anew (a task's) fills the bar anew.
-import { check, runningIn } from "./check.mjs";
+import { check, runningIn, until } from "./check.mjs";
 import { drawn, openPage, pause, PHONE, pressFoot, shot } from "./fake.mjs";
 
 /** Opens dialog `id` alone and measures it: its box, its head's parts, its bar's keys and what is left at its foot. */
@@ -137,15 +137,15 @@ export async function webPhoneWin(browser, name) {
   const order = () => f.page.evaluate(() => ({ foot: [...document.querySelectorAll("#runbox > form > .actions:not(.barkeys) > button")].map((b) => b.id || b.textContent), bar: [...document.querySelectorAll("#runbox .barkeys > button")].map((b) => b.id) }));
   const wide = await order();
   check("AC-173 a window 601 px or wider keeps the sheet: 16 px from the sides, its keys at its foot, none in its head", m.box.l === 16 && m.win[0] - m.box.r === 16 && !m.bar.length && m.foot.includes("Run") && m.foot.includes("Cancel"), JSON.stringify(m));
+  // the page lays the window out anew some frames after a resize, later on a loaded machine: wait for it, bounded
   await f.page.setViewportSize({ width: 390, height: 700 });
-  await pause(f.page, 200);
-  m = await f.page.evaluate(() => window.measure("runbox"));
+  await until(async () => { m = await f.page.evaluate(() => window.measure("runbox")); return covers(m) && m.bar.length > 0; }, 5000);
   const narrow = await order();
   await f.page.setViewportSize({ width: 700, height: 700 });
-  await pause(f.page, 200);
-  const back = await order();
+  let back;
+  await until(async () => { back = await order(); return !back.bar.length; }, 5000);
   check("AC-173 a window made narrow while open covers the screen, its way on in the bar; wide again, its keys stand at its foot in their order",
-    covers(m) && narrow.bar.join() === "runqueue,rungo" && narrow.foot.join() === "runadd,Cancel" && JSON.stringify(back) === JSON.stringify(wide) && !back.bar.length, JSON.stringify({ wide, narrow, back }));
+    covers(m) && narrow.bar.join() === "runqueue,rungo" && narrow.foot.join() === "runadd,Cancel" && JSON.stringify(back) === JSON.stringify(wide) && !back.bar.length, JSON.stringify({ m, wide, narrow, back }));
   check("no page errors", !f.errors.length, f.errors.join(" | "));
   await f.close();
 }
