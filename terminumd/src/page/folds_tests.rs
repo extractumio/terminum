@@ -97,6 +97,8 @@ fn blank_rows_fold_only_before_an_agents_next_line() {
     let boxes = rows(&["╭ ask ╮", "", "", "", "╭ ask ╮", "", "", "", "╭ ask ╮", "", "", "", "╭ ask ╮", "", "", "", "╭ ask ╮", "", "", "", "╭ ask ╮", "⏺ Done."]);
     let labels: Vec<String> = folds(&boxes, true).into_iter().map(|f| f.label).collect();
     assert_eq!(labels, ["⋯ 5 more copies of this line"], "the copies, not the blank rows");
+    let linux = rows(&["● Bash(ls)", "  ⎿  a", "", "", "", "● Done."]);
+    assert_eq!(spans(&folds(&linux, true)), one(2, 4, "⋯ 3 blank lines"), "before Claude Code's dot on Linux too");
     let file = rows(&["$ cat a.py", "import os", "", "", "", "def main():", "    pass", "$ "]);
     assert_eq!(folds(&file, true), vec![], "a file's own blank lines stay");
 }
@@ -125,6 +127,7 @@ fn a_running_tools_command_folds_with_its_dot_blinked_off() {
         "      -3)".into(), "  ⎿  build rc=0".into(), "     (4m 10s · timeout 10m)".into()]);
     let want = one(2, 3, "⋯ 2 more lines of the command");
     assert_eq!(spans(&folds(&run("⏺"), true)), want);
+    assert_eq!(spans(&folds(&run("●"), true)), want, "Claude Code's dot on Linux");
     assert_eq!(spans(&folds(&run(" "), true)), want, "the dot blinked off");
     let mut gap = run(" ");
     gap.insert(4, (String::new(), true));

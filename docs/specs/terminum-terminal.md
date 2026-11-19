@@ -163,7 +163,7 @@ Scenario Outline: AC-32 happy path — what folds
     | a file it wrote ("⎿ Wrote …", "Created")                                               | ⋯ 81 lines of the file               |
     | a tool's command after its line and one more (2 more or more)                          | ⋯ 85 more lines of the command       |
     | a tool's output after its first line and two more (3 more or more; its blank lines included) | ⋯ 753 more lines of output |
-    | 3 or more blank lines before an agent's next "⏺" or "⎿" line                           | ⋯ 10 blank lines                     |
+    | 3 or more blank lines before an agent's next "⏺" ("●") or "⎿" line                     | ⋯ 10 blank lines                     |
     | 3 or more rows of base64, base64url or hex (runs of 40+, digits and letters mixed)     | ⋯ 3.2 KB of base64 · 41 lines        |
     | one line 5 or more times with only blank or 1–3 character lines between (its first kept) | ⋯ 64 more copies of this line      |
     | 20 or more nearly equal lines (numbers, paths, long words aside), first 3 and last 2 kept; never a line saying something failed | ⋯ 4,386 similar lines |
@@ -179,8 +179,8 @@ Scenario: AC-32 edge — rendered output
   Then the widget stays, its lines hidden, and the fold gives way, also a fold that starts on lines before the widget's (a tool's output folded from its third line); only a fold of lines terminumd did not send (no text to draw) stays a fold
 
 Scenario: AC-32 edge — a running tool's dot blinks
-  Given Claude Code runs a tool whose command takes 4 rows: while it runs it shows its dot for 600 ms and a space for 600 ms ("⏺ Bash(…" and "  Bash(…")
-  Then the command folds alike in both phases ("⋯ 2 more lines of the command"), so the fold neither comes and goes nor moves the page, also on opening it; a row "  Name(" counts as a tool's only when the tool's result ("  ⎿") follows its command, so indented text that looks like a call never folds as one
+  Given Claude Code runs a tool whose command takes 4 rows: while it runs it shows its dot for 600 ms and a space for 600 ms ("⏺ Bash(…" and "  Bash(…"; its dot is "●" on Linux)
+  Then the command folds alike in both phases, with either dot ("⋯ 2 more lines of the command"), so the fold neither comes and goes nor moves the page, also on opening it; a row "  Name(" counts as a tool's only when the tool's result ("  ⎿") follows its command, so indented text that looks like a call never folds as one
 Scenario: AC-32 happy path — show and copy
   When the user presses a fold's line
   Then the page asks terminumd for those lines ("unfold") and shows them; the line says "Hide …"
