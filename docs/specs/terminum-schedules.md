@@ -171,6 +171,7 @@ Scenario: AC-161 happy path — its own idle session closed for it
   When SCH-1 fires, or is run now (AC-182)
   Then that session closes as AC-141 closes an idle holder, its screen kept, and S_TERM-42 starts in its slot at once
   And it is closed only when there is no room without it, and only when its close makes room
+  And a task of SCH-1 already waiting for room (AC-162's "a session of it still open") closes it the same way once it is idle, at the next walk, then starts
   But a session of another schedule, idle or not, or an ordinary run's, a run of several tasks among them, is never closed for it
 
 Scenario: AC-161 edge — no room: it waits, ahead of the others

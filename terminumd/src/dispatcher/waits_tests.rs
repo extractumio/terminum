@@ -238,3 +238,22 @@ fn ac161_a_reorder_deals_each_kind_its_own_places() {
         Ok(())
     }).unwrap();
 }
+
+#[test]
+fn ac161_a_schedule_s_waiting_task_closes_its_own_idle_session() {
+    store("waits-own-idle").with(|tx| {
+        let (old, new) = (task(tx, "api"), task(tx, "api"));
+        scheduled(tx, &old, "a");
+        let s = crate::tasks::schedules::of_task(tx, &old.key)?.unwrap();
+        crate::tasks::schedules::fired(tx, &s, (2, 0), Some(&new.key), "started", None, 2)?;
+        let id = runs::add(tx, &Run { agent_id: "a".into(), kind: "claude".into(), command: "claude".into(), folder: "/srv".into(), project: "api".into(), ..Default::default() }, std::slice::from_ref(&old.key), Default::default(), 1)?;
+        runs::change(tx, &id, |r| { r.state = Phase::Working; r.pane_key = Some(format!("tmux:local:t:%{id}")); })?;
+        ops::move_to(tx, HUMAN, &old.id, "DONE", 2)?;
+        add(tx, &new, "a", "api", &json!({"how": "schedule"}), 3)?;
+        let w = of_task(tx, &new.key)?.unwrap();
+        assert!(matches!(due(tx, &w)?, Due::Stays), "its agent still in its turn: it waits");
+        runs::change(tx, &id, |r| { r.turn_ended = true; r.closing_for = 60; })?;
+        assert!(matches!(due(tx, &w)?, Due::Close(run, key) if run == id && key == s.key), "idle: closed for it");
+        Ok(())
+    }).unwrap();
+}

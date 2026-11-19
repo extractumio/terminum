@@ -212,10 +212,11 @@ def main():
         check("AC-182 run_schedule makes the schedule's task and starts it now", rc == "0" and "SCH-1 ran now: its task S_" in out, out)
         ran = wait_for(lambda: call("/api/schedules")[1]["schedules"][0]["last"], lambda last: last and last["status"] == "DONE", 30, 0.3, last=True)
         check("AC-182 its task runs to its end on the schedule's agent, the cadence as it was", ran and ran["status"] == "DONE" and call("/api/schedules")[1]["schedules"][0]["cron"] == "0 3 * * *", ran)
-        # its last run's session, a minute quiet (terminum-dispatcher.md AC-141), is closed for the slot, and the press runs
-        st, said = wait_for(lambda: call(f"/api/schedules/{scheds[0]['id']}/run", "POST", {}), lambda got: got[0] == 200, 120, 3, last=True)
+        # its last run's session holds the one slot: the task waits, and once that session is a minute quiet
+        # (terminum-dispatcher.md AC-141) it is closed for it and the task runs (terminum-schedules.md AC-161)
+        st, said = call(f"/api/schedules/{scheds[0]['id']}/run", "POST", {})
         check("AC-182 Run now on its card does the same for a human", st == 200 and said.get("task", "").startswith("S_"), said)
-        wait_for(lambda: call("/api/schedules")[1]["schedules"][0]["last"], lambda last: last and last["task"] == said.get("task") and last["status"] == "DONE", 30, 0.3)
+        wait_for(lambda: call("/api/schedules")[1]["schedules"][0]["last"], lambda last: last and last["task"] == said.get("task") and last["status"] == "DONE", 150, 0.5)
         log = t.log()
         check("AC-174 each manager's call is a line of the log, with no argument", "manager.tool" in open(t.log_path).read() and "keep it short" not in open(t.log_path).read(), log[-300:])
     finally:

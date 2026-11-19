@@ -102,7 +102,7 @@ fn decide(tx: &rusqlite::Transaction, s: &Schedule, now: i64, closed: bool) -> R
 
 /// With no room for a task of `s` on its agent, an idle session of one of its tasks whose close makes room
 /// (AC-161; terminum-dispatcher.md AC-141's idle holder): never another schedule's, never an ordinary run's.
-fn own_idle(tx: &rusqlite::Transaction, s: &Schedule) -> Result<Option<runs::Run>, String> {
+pub(super) fn own_idle(tx: &rusqlite::Transaction, s: &Schedule) -> Result<Option<runs::Run>, String> {
     let Some(a) = agents::in_project(tx, &s.agent, &s.project)? else { return Ok(None) };   // its press says why it cannot start
     let slots = pool::Slots::read(tx)?;
     let slot = s.active().then_some(pool::Slot::Schedule);

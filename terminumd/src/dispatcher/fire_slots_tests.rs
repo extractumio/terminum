@@ -171,3 +171,21 @@ fn ac161_k_raised_over_ordinary_runs_never_runs_the_agent_past_its_at_once() {
         Ok(())
     }).unwrap();
 }
+
+#[test]
+fn ac161_a_waiting_task_of_a_schedule_closes_its_own_idle_session_once_it_is_idle() {
+    open("fire-wait-closes").with(|tx| {
+        let s = schedule(tx, 1, every_15());
+        let (old, _) = made(decide(tx, &s, NOW + 10 * 60, false)?);
+        let run = working(tx, &ops::get(tx, &old)?);
+        ops::move_to(tx, DISPATCHER, &old, "DONE", NOW + 11 * 60)?;   // its agent still in its turn: not idle
+        let (new, _) = made(decide(tx, &s, NOW + 25 * 60, false)?);
+        waiting(tx, &new, json!({"agent": "a", "how": "schedule"}));
+        let w = waits::of_task(tx, &ops::key_of(tx, &new)?)?.unwrap();
+        assert_eq!(own_idle(tx, &s)?, None, "busy: it waits");
+        runs::change(tx, &run, |r| { r.turn_ended = true; r.closing_for = 60; })?;
+        assert_eq!(own_idle(tx, &s)?.map(|r| r.id), Some(run), "idle now: its wait closes it at the next walk");
+        assert_eq!(w.task, ops::key_of(tx, &new)?);
+        Ok(())
+    }).unwrap();
+}

@@ -226,12 +226,14 @@ pub fn on_cards(tx: &Transaction, keys: &[&str]) -> Result<HashMap<String, CardW
         [super::runs::listed_keys(keys)], |r| Ok((r.get(0)?, CardWait { agent: r.get(1)?, position: r.get(2)?, task: r.get(3)? })))?.into_iter().collect())
 }
 
-/// What a wait comes to now: pressed again, still waiting, or called off with these words; the task's ID.
+/// What a wait comes to now: pressed again, still waiting, or called off with these words; the task's ID. Or, a
+/// schedule's task with no room, its schedule's idle session whose close makes room: the run, the schedule's key.
 #[derive(Debug)]
 enum Due {
     Press(String, Value),
     Stays,
     Off(String, String),
+    Close(String, String),
 }
 
 fn due(tx: &Transaction, w: &Wait) -> Result<Due, String> {
@@ -246,6 +248,11 @@ fn due(tx: &Transaction, w: &Wait) -> Result<Due, String> {
         return Ok(Due::Off(t.id, format!("Its wait for {} was called off: it moved to {}.", a.name, t.status)));
     }
     if pool::check_for(tx, &a, &w.project, Some(&w.task), None)?.is_some() {
+        // a schedule's task closes its own schedule's idle session for room, as its firing does (terminum-schedules.md AC-161)
+        if let Some(s) = crate::tasks::schedules::of_task(tx, &w.task)?.filter(|s| s.agent == w.agent)
+            && let Some(r) = super::fire::own_idle(tx, &s)? {
+            return Ok(Due::Close(r.id, s.key));
+        }
         return Ok(Due::Stays);
     }
     Ok(Due::Press(t.id, w.body.clone()))
@@ -273,6 +280,11 @@ pub async fn start_due(app: &Shared) {
                 id
             }
             Ok(Due::Off(id, _)) => id,
+            // closed, the next walk presses it, first of the line; one that stays open was said on its task
+            Ok(Due::Close(run, key)) => {
+                let _ = super::api::close_idle(app, &run, &key).await;
+                continue;
+            }
             Ok(Due::Stays) => continue,
             Err(e) => {
                 tracing::warn!(event = "dispatcher.wait", error = %e);
