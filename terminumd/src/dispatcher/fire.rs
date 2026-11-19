@@ -109,14 +109,14 @@ fn own_idle(tx: &rusqlite::Transaction, s: &Schedule) -> Result<Option<runs::Run
     if slots.check_in(tx, &a, &s.project, slot, None)?.is_none() {
         return Ok(None);
     }
-    let live: Vec<runs::Run> = runs::live(tx)?.into_iter().filter(|r| r.holds_slot() && r.agent_id == a.id).collect();
+    let live: Vec<&runs::Run> = slots.holding_of(&a.id).collect();
     let keys: Vec<&str> = live.iter().map(|r| r.id.as_str()).collect();
     // from its agent's live runs, a run of one task of `s` alone: one carrying an ordinary task too is never closed for it
     let ids: Vec<String> = ops::rows(tx, "SELECT m.run FROM run_tasks m JOIN schedule_fires f ON f.task = m.task WHERE f.schedule = ?1 AND m.run IN (SELECT value FROM json_each(?2))
                                            AND (SELECT count(*) FROM run_tasks x WHERE x.run = m.run) = 1", (&s.id, runs::listed_keys(&keys)), |r| r.get(0))?;
     for r in live.iter().filter(|r| ids.contains(&r.id)) {
         if pool::closable(tx, r)? && slots.check_in(tx, &a, &s.project, slot, Some(&r.id))?.is_none() {
-            return Ok(Some(r.clone()));
+            return Ok(Some((*r).clone()));
         }
     }
     Ok(None)
@@ -133,7 +133,7 @@ fn made(tx: &rusqlite::Transaction, s: &Schedule, (due, missed): (i64, i64), why
     let mut place = None;
     for w in super::waits::of_schedule(tx, &s.id)? {
         super::waits::call_off(tx, &w.task, &format!("Superseded by {}, a newer run of {}, while it waited for room.", t.id, s.key))?;
-        place = place.or(Some(w.pos));
+        place.get_or_insert(w.pos);
     }
     Ok((t.id, fire, place))
 }
@@ -186,7 +186,7 @@ fn not_started(tx: &rusqlite::Transaction, task: &str, fire: i64, why: &str) -> 
 /// its next firing tries again. `manager`: the project's manager's user, pressing by run_schedule; `place`: the
 /// place in the line its wait takes, should it wait: the one of the wait it superseded (AC-162).
 async fn start(app: &Shared, s: &Schedule, task: &str, fire: i64, (manager, place): (Option<&str>, Option<i64>)) {
-    let started = super::api::press_again(app, task, json!({"agent": s.agent, "how": super::runs::How::Schedule, "manager": manager})).await;
+    let started = super::api::press_again(app, task, json!({"agent": s.agent, "how": super::runs::How::Schedule, "manager": manager}), false).await;
     let (id, s_now, by_manager) = (task.to_string(), s.clone(), manager.is_some());
     let _ = store(app, move |tx| match started {
         Ok(_) => {
@@ -258,8 +258,7 @@ pub async fn due(app: &Shared) {
 
 /// A task of schedule `id` waiting for room is called off, `words` saying why (AC-160).
 pub fn called_off(tx: &rusqlite::Transaction, id: &str, words: &str) -> Result<(), String> {
-    let keys: Vec<String> = ops::rows(tx, "SELECT f.task FROM schedule_fires f JOIN run_waits w ON w.task = f.task WHERE f.schedule = ?1", [id], |r| r.get(0))?;
-    keys.iter().try_for_each(|k| super::waits::call_off(tx, k, words))
+    super::waits::of_schedule(tx, id)?.iter().try_for_each(|w| super::waits::call_off(tx, &w.task, words))
 }
 
 /// A schedule's task whose wait for room was called off with no run of it live is FAILED with `words`: nothing

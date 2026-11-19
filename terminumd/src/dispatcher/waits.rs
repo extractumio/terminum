@@ -33,10 +33,13 @@ pub struct Wait {
 }
 
 /// Whether the task of wait `w` is a schedule's.
-const SCHEDULED: &str = "EXISTS (SELECT 1 FROM schedule_fires f WHERE f.task = w.task)";
+macro_rules! scheduled {
+    () => { "EXISTS (SELECT 1 FROM schedule_fires f WHERE f.task = w.task)" };
+}
+const SCHEDULED: &str = scheduled!();
 
-/// The line's order: schedules' tasks first, then the place each was given.
-const ORDER: &str = "NOT EXISTS (SELECT 1 FROM schedule_fires f WHERE f.task = w.task), w.pos, w.rowid";
+/// The line's order: schedules' tasks first, then the place each was given; every reader of the line sorts by it.
+pub(crate) const ORDER: &str = concat!("NOT ", scheduled!(), ", w.pos, w.rowid");
 
 fn select() -> String {
     format!("SELECT w.task, w.agent_id, w.project, w.status, w.body, w.at, w.pos, {SCHEDULED} FROM run_waits w")
@@ -76,7 +79,7 @@ impl Wait {
 
     /// Whether it stands before a press of a task of that kind (`scheduled`) at `place` in the line.
     fn before(&self, scheduled: bool, place: i64) -> bool {
-        (self.scheduled && !scheduled) || (self.scheduled == scheduled && self.pos < place)
+        (!self.scheduled, self.pos) < (!scheduled, place)
     }
 }
 
@@ -97,9 +100,11 @@ pub fn remove(tx: &Transaction, task: &str) -> Result<bool, String> {
     tx.execute("DELETE FROM run_waits WHERE task = ?1", [task]).map(|n| n > 0).map_err(sql)
 }
 
-/// The wait of `task` is called off, `words` saying why on it.
+/// The wait of `task` is called off, `words` saying why on it; one gone already was said by what called it off.
 pub fn call_off(tx: &Transaction, task: &str, words: &str) -> Result<(), String> {
-    remove(tx, task)?;
+    if !remove(tx, task)? {
+        return Ok(());
+    }
     ops::log(tx, task, DISPATCHER, "told", words, None, ops::now())?;
     super::fire::wait_ended(tx, task, words)
 }
@@ -110,7 +115,7 @@ pub fn call_off(tx: &Transaction, task: &str, words: &str) -> Result<(), String>
 pub fn ahead(tx: &Transaction, agent: &str, project: &str, task: &str) -> Result<Option<String>, String> {
     let (scheduled, place) = match of_task(tx, task)? {
         Some(w) => (w.scheduled, w.pos),
-        None => (crate::tasks::schedules::of_task(tx, task)?.is_some(), i64::MAX),
+        None => (tx.query_row("SELECT EXISTS (SELECT 1 FROM schedule_fires WHERE task = ?1)", [task], |r| r.get(0)).map_err(sql)?, i64::MAX),
     };
     let slots = pool::Slots::read(tx)?;
     for w in all(tx)?.into_iter().filter(|w| w.task != task && w.before(scheduled, place) && (w.agent == agent || w.project == project)) {
@@ -261,10 +266,9 @@ pub async fn start_due(app: &Shared) {
         }).await;
         let id = match decided {
             Ok(Due::Press(id, body)) => {
-                if let Err(why) = super::api::press_waited(app, &id, body).await {
-                    // a wait called off meanwhile was said by what called it off (terminum-schedules.md AC-162)
+                if let Err(why) = super::api::press_again(app, &id, body, true).await {
                     let (task, words) = (w.task.clone(), format!("Did not start after its wait: {why}"));
-                    let _ = super::store(app, move |tx| if of_task(tx, &task)?.is_some() { call_off(tx, &task, &words) } else { Ok(()) }).await;
+                    let _ = super::store(app, move |tx| call_off(tx, &task, &words)).await;
                 }
                 id
             }

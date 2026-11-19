@@ -125,6 +125,11 @@ impl Slots {
         self.kept.get(agent).copied().unwrap_or_default()
     }
 
+    /// The runs of `agent` that hold one of its slots, kept or ordinary.
+    pub fn holding_of<'a>(&'a self, agent: &'a str) -> impl Iterator<Item = &'a Run> {
+        self.holding.iter().filter(move |r| r.agent_id == agent)
+    }
+
     /// The kept slot run `run` stands in, if one.
     #[cfg(test)]
     pub fn slot_of(&self, run: &str) -> Option<Slot> {
@@ -202,15 +207,16 @@ fn kept_slot(tx: &Transaction, agent: &str, task: &str) -> Result<Option<Slot>, 
     if integration.is_some() {
         return Ok(Some(Slot::Integration));
     }
-    let scheduled: Option<i64> = tx.query_row("SELECT 1 FROM schedule_fires f JOIN schedules s ON s.id = f.schedule WHERE f.task = ?1 AND s.agent_id = ?2 AND s.paused = 0 AND s.deleted_at IS NULL",
-        (task, agent), |r| r.get(0)).optional().map_err(ops::sql)?;
-    Ok(scheduled.map(|_| Slot::Schedule))
+    Ok(schedules::of_task(tx, task)?.filter(|s| s.active() && s.agent == agent).map(|_| Slot::Schedule))
 }
 
 /// The runs standing in kept slots, of the runs `ids`: of each agent's runs of one task of its schedules not paused,
 /// the oldest, as many as `kept` says it keeps, counted, never placed; of its integration tasks' runs the oldest (AC-161,
 /// terminum-integration.md AC-194). By run, its agent and slot.
 fn in_kept(tx: &Transaction, ids: &[&str], kept: &BTreeMap<String, Kept>) -> Result<HashMap<String, (String, Slot)>, String> {
+    if kept.values().all(|k| k.total() == 0) {
+        return Ok(HashMap::new());
+    }
     let scheduled: Vec<(String, String)> = rows(tx, "SELECT DISTINCT r.id, r.agent_id, r.rowid FROM runs r JOIN run_tasks rt ON rt.run = r.id JOIN schedule_fires f ON f.task = rt.task JOIN schedules s ON s.id = f.schedule
                  WHERE r.id IN (SELECT value FROM json_each(?1)) AND s.agent_id = r.agent_id AND s.paused = 0 AND s.deleted_at IS NULL
                    AND (SELECT count(*) FROM run_tasks x WHERE x.run = r.id) = 1 ORDER BY r.rowid",

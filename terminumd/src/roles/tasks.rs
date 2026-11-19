@@ -13,7 +13,7 @@ use crate::tasks::{agents, ops};
 pub async fn list_runs(app: &Shared, boss: &Boss) -> Result<String, String> {
     let project = boss.project.clone();
     let listed = store(app, move |tx| {
-        let waits: Vec<Value> = ops::rows(tx, "SELECT t.slug, a.name FROM run_waits w JOIN tasks t ON t.id = w.task LEFT JOIN agents a ON a.id = w.agent_id WHERE w.project = ?1 ORDER BY w.pos, w.rowid",
+        let waits: Vec<Value> = ops::rows(tx, &format!("SELECT t.slug, a.name FROM run_waits w JOIN tasks t ON t.id = w.task LEFT JOIN agents a ON a.id = w.agent_id WHERE w.project = ?1 ORDER BY {}", waits::ORDER),
                                           [&project], |r| Ok(json!({"task": r.get::<_, String>(0)?, "waits_for": r.get::<_, Option<String>>(1)?})))?;
         let live: Vec<Value> = runs::live(tx)?.into_iter().filter(|r| r.project == project && r.holds_slot()).map(|r| json!({
             "run": r.id, "kind": if r.ad_hoc() { "session" } else { "task" }, "tasks": r.ids, "open": r.open, "status": r.status, "agent": r.agent_name,

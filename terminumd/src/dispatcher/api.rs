@@ -233,17 +233,9 @@ pub(super) fn wait_if_full(tx: &rusqlite::Transaction, agent: &Agent, project: &
 /// What a press from a wait is refused with when its wait went meanwhile.
 pub(super) const WAIT_GONE: &str = "its wait was called off meanwhile.";
 
-/// A schedule's standing press, as its route takes it, pressed now (terminum-schedules.md AC-162).
-pub(super) async fn press_again(app: &Shared, id: &str, body: Value) -> Result<Value, String> {
-    press_kept(app, id, body, false).await
-}
-
-/// A wait's press, as its route took it, pressed again now, only while the wait stands (AC-158).
-pub(super) async fn press_waited(app: &Shared, id: &str, body: Value) -> Result<Value, String> {
-    press_kept(app, id, body, true).await
-}
-
-async fn press_kept(app: &Shared, id: &str, body: Value, waited: bool) -> Result<Value, String> {
+/// A kept press, as its route took it, pressed now: a schedule's standing press, or a wait's (AC-158), `waited`, which
+/// goes only while the wait stands.
+pub(super) async fn press_again(app: &Shared, id: &str, body: Value, waited: bool) -> Result<Value, String> {
     let mut body: Press = serde_json::from_value(body).map_err(|e| format!("its kept press is not readable: {e}"))?;
     body.close = None;
     body.queue = true;                             // a wait, or a schedule's standing press: it waits again

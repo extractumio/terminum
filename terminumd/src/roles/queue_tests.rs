@@ -102,6 +102,9 @@ async fn ac161_a_promotion_stops_behind_a_schedule_s_task() {
     let said = call(&app, BOSS, "promote_queued_task", json!({"id": second})).await.unwrap();
     assert!(said.contains("is now at the front of Opus's queue, behind its schedules' tasks"), "{said}");
     assert_eq!(order(&app), [mine.clone(), second.clone(), first.clone()]);
+    let listed = call(&app, BOSS, "list_runs", json!({})).await.unwrap();
+    let listed: Value = serde_json::from_str(listed.split_once('\n').unwrap().1).unwrap();
+    assert_eq!(listed["waiting_for_a_slot"].as_array().unwrap().iter().map(|w| w["task"].as_str().unwrap()).collect::<Vec<_>>(), [mine.as_str(), second.as_str(), first.as_str()], "list_runs reads the line's order");
     assert!(call(&app, BOSS, "promote_queued_task", json!({"id": second})).await.unwrap().contains("is already"));
     assert!(call(&app, BOSS, "promote_queued_task", json!({"id": mine})).await.unwrap().contains("is already at the front of Opus's queue."));
 }
