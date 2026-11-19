@@ -23,7 +23,7 @@ const SAME_HEAD: usize = 3;
 const SAME_TAIL: usize = 2;
 const BLOB_MIN: usize = 3; // rows of encoded data
 const REPEAT_MIN: usize = 5; // one line again and again (an input box redrawn into the history)
-const BLANK_MIN: usize = 3; // blank lines in a row before an agent's ⏺ (●) or ⎿ (rows its redraw left empty)
+const BLANK_MIN: usize = 3; // blank lines in a row before Claude Code's dot or ⎿ (rows its redraw left empty)
 /// Lines looked at around new ones: a fold may start or end there.
 pub const CONTEXT: i64 = 1000;
 /// Seconds between looks at lines that scrolled into the history.
@@ -52,11 +52,6 @@ pub struct Fold {
 
 /// Claude Code's mark in front of its messages and tool calls: "⏺" on macOS, "●" elsewhere.
 const DOTS: [char; 2] = ['⏺', '●'];
-
-/// Whether a line starts with Claude Code's mark.
-fn is_marked(t: &str) -> bool {
-    t.starts_with(DOTS)
-}
 
 /// `^[⏺●] [\w.-]+\(`: Claude Code's tool call, "⏺ Bash(…".
 fn is_tool(t: &str) -> bool {
@@ -328,7 +323,7 @@ fn line_folds(lines: &[&str], newest: bool) -> Vec<RowFold> {
     let mut i = 0; // one line again and again, maybe with blank or 1-3 character lines between
     while i < n {
         let t = py_strip(text[i]);
-        if chars(t) <= 3 || f.taken[i] || is_marked(text[i]) {
+        if chars(t) <= 3 || f.taken[i] || text[i].starts_with(DOTS) {
             i += 1;
             continue;
         }
@@ -354,7 +349,7 @@ fn line_folds(lines: &[&str], newest: bool) -> Vec<RowFold> {
             while j < n && !f.taken[j] && !py_strip(text[j]).is_empty() && shape(text[j]) == *s {
                 j += 1;
             }
-            if j - i >= SAME_MIN && (j < n || !newest) && !is_marked(text[i]) {
+            if j - i >= SAME_MIN && (j < n || !newest) && !text[i].starts_with(DOTS) {
                 let k = j - i - SAME_HEAD - SAME_TAIL;
                 f.fold(i + SAME_HEAD, j - 1 - SAME_TAIL, format!("⋯ {k} similar lines"));
             }
@@ -368,7 +363,7 @@ fn line_folds(lines: &[&str], newest: bool) -> Vec<RowFold> {
         while j < n && py_strip(text[j]).is_empty() && !f.taken[j] {
             j += 1;
         }
-        if j - i >= BLANK_MIN && j < n && (is_marked(text[j]) || is_result(text[j])) {
+        if j - i >= BLANK_MIN && j < n && (text[j].starts_with(DOTS) || is_result(text[j])) {
             f.fold(i, j - 1, format!("⋯ {} blank lines", j - i));
         }
         i = j.max(i + 1);
