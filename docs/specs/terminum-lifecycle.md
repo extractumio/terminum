@@ -25,7 +25,7 @@ A snapshot of what terminum must do, not a record of how it came to be: git hold
 In scope:
 - One-line install, launchd and systemd, signed packages, the upgrade, rollback, restart and uninstall commands, `terminum status`, `terminum folders`.
 - What survives: terminumd's restart (AC-14), a reboot or a killed tmux (AC-15, AC-96), an upgrade or rollback (AC-16).
-- The update notice (AC-17). Tidying before a release (AC-102, AC-103). Landing a worktree (AC-104); a release's full run on a quiet machine (AC-146); a release of a pinned commit in its own tree (AC-200); the full run's passes, retry, environment and record (AC-201); the nightly full run and the weekly review (AC-202).
+- The update notice (AC-17). Tidying before a release (AC-102, AC-103). Landing a worktree (AC-104); a release's full run on a quiet machine (AC-146); a release of a pinned commit in its own tree (AC-200); the full run's passes, retry, environment and record (AC-201); the nightly full run and the weekly review (AC-202); the kept trees' build cache under a bound (AC-206).
 
 Out of scope (explicit):
 - A native app (AC-11 dropped; terminum.md OQ-04). No notarization and no hardened runtime (`docs/RELEASING.md`).
@@ -73,6 +73,7 @@ Open questions: none open. Which clients exist (AC-11's drop) is terminum.md OQ-
 | AC-200 | [SHOULD / P1] | A release promotes a commit: `make release` pins the newest commit of origin/main that passed the full run in 48 hours, or differs from one only in docs, else origin/main, or `PIN=`, and runs its full run, the Mac test runner's checks, the build and the tag in a tree of its own detached at it, by that commit's own code, while landings, Afters and installs go on; a fix for a red release lands first and is pinned. |
 | AC-201 | [SHOULD / P1] | The full run keeps a pass per step and content, shared by every tree, and runs only the steps without one, or the scan alone after a docs-only change; its steps see only an allow-listed environment; a budget over under its own load is said and judged on a quiet machine; a red step of real programs runs its red checks once more, never for a check of code changed since the last full pass or one retried in 3 of the last 7 runs, said in red, in a task and in the release notes; each run and each release leaves a line in a record. |
 | AC-202 | [SHOULD / P1] | A nightly schedule rehearses origin/main with every step run and judges the budgets on the quiet machine after it, a red step making a task that names the commits since the last full pass; a weekly schedule runs /simplify and /docs-review over what landed since its last run, their findings ordinary tasks; a release asks neither. |
+| AC-206 | [SHOULD / P1] | The trees kept for warm builds (the integration candidate's, `.worktrees/release`, `.worktrees/rehearse`) keep `terminumd/target` under a bound of 20 GiB, kept where a build begins there: over it, the object files no executable of the current build names go first, the current build's stay so the next build is incremental, and only a target still over is cleaned; a build running there is never cleaned under it. |
 
 ## 5. BDD scenarios
 
@@ -1063,7 +1064,7 @@ Scenario Outline: AC-200 failure — a pin it refuses before any check
 Scenario: AC-200 edge — the kept trees
   Given .worktrees/release and .worktrees/rehearse stay between runs, detached
   Then scripts/worktree.py sweep never takes them, which takes branches only, and worktree.py list shows them "(detached)"
-  And a run moves its tree to its pin, keeping ui/node_modules and terminumd/target, which make and cargo rebuild for the pinned content, and its .checks with the passes kept there
+  And a run moves its tree to its pin, keeping ui/node_modules and terminumd/target, which make and cargo rebuild for the pinned content, and its .checks with the passes kept there; terminumd/target stays under its bound (AC-206)
   And make release and make rehearse each have their own tree, so a rehearsal and a release never share one; their full runs take turns (AC-146)
 
 Scenario: AC-200 edge — the pinned commit's own code runs
@@ -1177,6 +1178,43 @@ Scenario: AC-202 happy path — the weekly review
   Then its agent reads the commit last reviewed from git's common folder's terminum-reviewed, runs /simplify and /docs-review over what origin/main changed since, lands their fixes as ordinary tasks, and writes origin/main's commit there
   And with nothing changed since, it ends at once saying so
   And make release asks for neither: a release ships what main has (CLAUDE.md §10)
+```
+
+### AC-206 — The kept trees' build cache under a bound [SHOULD / P1]
+
+The bound is `BOUND_GIB` of `scripts/target_bound.py`, 20 GiB: a kept tree's own build (debug, release, the agents' targets) is about 10 GiB. It is kept at the integration candidate's Check's start (`land.py check` in the tree `TM_INTEGRATION_TREE` names, while `TM_INTEGRATION_BATCH` is set: one batch is checked at a time, so nothing else builds there), and when `make release` or `make rehearse` moves its tree to its pin (`release_tree.py`, under the tree's own turn). Not at Cleanup: it runs in the project's folder beside the next batch's Check in that tree. By hand: `python3 scripts/target_bound.py <tree>`. The primary checkout's own target is outside this case.
+
+```gherkin
+Scenario: AC-206 happy path — under the bound
+  Given the integration candidate's tree, its terminumd/target at 9.8 GiB, counted as du counts it
+  When batch 8's Check starts there
+  Then nothing is removed and the Check's log says "target: 9.8 GiB, under its bound of 20.0 GiB: nothing removed"
+
+Scenario: AC-206 happy path — over it, the objects no build uses go first
+  Given its terminumd/target at 31.0 GiB, most of it object files (deps/<unit>-<hash>.<…>.rcgu.o) that each incremental build on macOS leaves beside the next build's
+  When batch 8's Check starts there
+  Then each executable's objects that its debug map does not name are removed
+  And the executables, the objects they name, libraries, fingerprints and the incremental cache stay, so the next build is incremental and a debugger or a backtrace still finds the current build's lines
+  And the log says "target: 31.0 GiB, over its bound of 20.0 GiB: 21.4 GiB of objects no build uses removed, 9.6 GiB left"
+
+Scenario: AC-206 edge — still over after that
+  Given the target still over its bound once those objects went
+  Then `cargo clean` empties it and the dependencies' builds are cloned from the primary checkout again, as a new tree gets them, so only terminumd's own build is cold
+  And the log's line ends "still over: cargo clean; cloned terminumd/target/{release,debug} (their dependencies' builds; terminumd itself rebuilds)"
+
+Scenario: AC-206 edge — a build runs in the tree
+  Given cargo holds a lock of a build folder (target/debug's .cargo-lock, .cargo-build-lock or .cargo-artifact-lock) while it builds there
+  When the bound is kept
+  Then that folder is left as it is, the other folders are pruned, no cargo clean runs, and the line says "a build runs in debug: left as it is"
+  And while it prunes a folder it holds that folder's locks, so a build starting meanwhile waits for it as for another cargo
+
+Scenario: AC-206 edge — objects it cannot judge
+  Given a unit with no executable (its link failed), an executable whose debug map names no object (Linux keeps none, a stripped one), or nm failing
+  Then that unit keeps all of its objects
+
+Scenario: AC-206 failure — the bound cannot be kept
+  When reading or removing in the target fails, or cargo clean does
+  Then the line says "target: its bound was not kept: <the error>" and the Check, or the release, goes on
 ```
 
 ## 6. Flow and sequence diagrams
@@ -1377,6 +1415,7 @@ All cases are shipped; nothing is staged.
 - [x] AC-146 — `scripts/tests/test_load_gate.py`, `scripts/tests/test_release_turn.py`, `scripts/tests/test_check_changed.py`, `scripts/tests/test_check_live_slots.py`, `scripts/tests/test_access.py`, `scripts/e2e_access.py`
 - [ ] AC-200 — `scripts/tests/test_release_turn.py`, `scripts/tests/test_release_tree.py`, `scripts/tests/test_land_stages.py`, `scripts/tests/test_release.py`
 - [ ] AC-201 — `scripts/tests/test_check_all.py`, `scripts/tests/test_gate_retry.py`, `scripts/tests/test_gate_record.py`, `scripts/tests/test_e2e_ws.py`
+- [ ] AC-206 — `scripts/tests/test_target_bound.py`, `scripts/tests/test_land_stages.py`, `scripts/tests/test_release_tree.py`; on this Mac: the integration tree's next Check line and `du -sh`
 - [ ] AC-202 — the project's schedules "Nightly full run" and "Weekly review" (terminum's board), `scripts/tests/test_gate_record.py`
 - [x] AC-197 — `scripts/tests/test_check_changed.py` (`test_ac197_*`), `cargo test integrate::retry_notes`, `cargo test integrate::stages::tests::ac197` (Verify and Check histories, cleanup, a reused tree), `cargo test integrate::retry_live_tests` (real retry commands through private tmux, Verify and Check)
 - [x] AC-103 — `scripts/tests/test_check_docs.py`; `python3 scripts/check_docs.py`

@@ -7,6 +7,7 @@ import subprocess
 import sys
 import threading
 import unittest
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -170,6 +171,17 @@ class Stages(test_land.Repos, unittest.TestCase):
         with self.assertRaises(stages.Stop) as stop:
             stages.queue(tree, "API-12", "result.md", on=lambda *_: True, run=run, **QUIET)
         self.assertIn("uncommitted", str(stop.exception))
+
+    def test_check_bounds_the_build_cache_of_the_candidate_s_tree_alone(self):  # AC-206
+        tree, kept = self.ready(), []
+        green = lambda t: kept.append("smoke")
+        with mock.patch.object(stages.target_bound, "keep", kept.append), mock.patch.object(L, "smoke_green", green):
+            stages.run_stage("check", "one", self.primary, env={})
+            self.assertEqual(kept, ["smoke"], "a task's own tree: no bound")
+            stages.run_stage("check", "one", self.primary, env={"TM_INTEGRATION_BATCH": "7", "TM_INTEGRATION_TREE": str(self.tree("other"))})
+            self.assertEqual(kept, ["smoke", "smoke"], "another tree's batch: no bound here")
+            stages.run_stage("check", "one", self.primary, env={"TM_INTEGRATION_BATCH": "7", "TM_INTEGRATION_TREE": str(tree)})
+        self.assertEqual(kept, ["smoke", "smoke", tree, "smoke"], "the candidate's tree: its bound first, then the smoke set")
 
     def test_cleanup_is_worktree_py_sweep(self):  # AC-198
         calls = []

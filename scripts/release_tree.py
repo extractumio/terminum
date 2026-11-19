@@ -14,6 +14,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from check_all import FRESH_H, is_gate_doc  # noqa: E402
 import gate_record  # noqa: E402
+import target_bound  # noqa: E402
 from worktree import count, fetched, git, link, Refused, trees, Turn  # noqa: E402
 
 BASE = "origin/main"
@@ -72,6 +73,7 @@ def take(primary, name, commit):
     for line in link(path, primary):
         if line.startswith(("cloned", "linked", "ui/node_modules:", "terminumd/target:")):
             print(f"release: {line}")
+    target_bound.keep(path, say=lambda words: print(f"release: {words}"))   # under the run's own turn (AC-206)
     return path
 
 
