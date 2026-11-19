@@ -341,12 +341,13 @@ Routines, the board's word for them, are a strip over the columns; its + opens o
   the project's folder, and runs it on
   the schedule's agent; its result has Outcome, Summary, Details and For the human, or it asks you
   with `ask_human`. Its card says SCH-1.
-- **No run**: a firing while its last task is still IN PROGRESS is skipped (counted on the card);
-  one missed while the Mac slept is not run on wake; one that cannot start (no folder, no hooks,
+- **No run**: a firing while a task of it still runs is skipped (counted on the card); one while
+  a task of it waits for room replaces that wait, unless you ran that task yourself; one missed while the Mac slept is not run on wake; one that cannot start (no folder, no hooks,
   agent gone) fails its task and says why, and the next firing tries again.
 - **Run now** starts one at once; the cadence stays.
-- A schedule in Default runs in no project: its agent reaches only its own task. Each schedule
-  keeps one slot of its agent while not paused.
+- A schedule in Default runs in no project: its agent reaches only its own task. An agent keeps
+  one slot for every two of its schedules not paused, shared by them; with no room, a schedule's
+  task waits ahead of the agent's and project's other waits.
 - You and a project's manager make schedules; a worker cannot.
 - `/scheduled/` (Scheduled beside History): every firing, newest first, with the prompt that went
   in and the result that came out, or why nothing ran.

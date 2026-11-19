@@ -14,7 +14,7 @@ use super::runs::{self, Run};
 use crate::tasks::agents::{self, Agent};
 use crate::tasks::limits;
 use crate::tasks::ops::{self, rows};
-use crate::tasks::schedules;
+use crate::tasks::schedules::{self, Kept};
 
 /// A limit reached: what to say, and the idle holder whose closing would make room, if one would.
 #[derive(Debug, PartialEq, Serialize)]
@@ -78,12 +78,29 @@ fn victim<'a>(tx: &Transaction, full: &[(&[&'a Run], i64)]) -> Result<Option<&'a
     Ok(idle.into_iter().max_by_key(|r| r.closing_for))
 }
 
-/// What holds slots now, read once for every agent a window offers: the runs, the slots schedules keep by agent,
-/// and the run standing in each kept slot, by run, its schedule (terminum-schedules.md AC-161).
+/// What a kept slot is kept for (AC-161, terminum-integration.md AC-194).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Slot {
+    Schedule,
+    Integration,
+}
+
+impl Kept {
+    /// How many it keeps for `slot`.
+    fn of_slot(&self, slot: Slot) -> i64 {
+        match slot {
+            Slot::Schedule => self.slots,
+            Slot::Integration => i64::from(self.integration),
+        }
+    }
+}
+
+/// What holds slots now, read once for every agent a window offers: the runs, the slots each agent keeps, and the runs
+/// standing in kept slots, by run, its agent and slot (terminum-schedules.md AC-161).
 pub struct Slots {
     holding: Vec<Run>,
-    kept: BTreeMap<String, Vec<String>>,
-    in_kept: HashMap<String, String>,
+    kept: BTreeMap<String, Kept>,
+    in_kept: HashMap<String, (String, Slot)>,
     /// the runs of Auto-Dispatcher's rounds: live and shown, but no slot is theirs, so they are not in `holding` (AC-170)
     rounds: Vec<Run>,
     /// retained sessions whose work is in integration (AC-169), and an ended integration task's session, idle until its
@@ -100,21 +117,36 @@ impl Slots {
         // Integration owns handed-off work until it returns; a new process still reserves room during startup.
         let (integrating, holding): (Vec<Run>, Vec<Run>) = ordinary.into_iter().partition(|r| !r.is_starting() && (r.status == ops::INTEGRATION || ended.contains(&r.id)));
         let ids: Vec<&str> = holding.iter().map(|r| r.id.as_str()).collect();
-        Ok(Slots { in_kept: in_kept(tx, &ids)?, kept: schedules::kept_by_agent(tx)?, holding, rounds, integrating })
+        let kept = schedules::kept_by_agent(tx)?;
+        Ok(Slots { in_kept: in_kept(tx, &ids, &kept)?, kept, holding, rounds, integrating })
+    }
+
+    fn kept_of(&self, agent: &str) -> Kept {
+        self.kept.get(agent).copied().unwrap_or_default()
+    }
+
+    /// The runs of `agent` that hold one of its slots, kept or ordinary.
+    pub fn holding_of<'a>(&'a self, agent: &'a str) -> impl Iterator<Item = &'a Run> {
+        self.holding.iter().filter(move |r| r.agent_id == agent)
+    }
+
+    /// The kept slot run `run` stands in, if one.
+    #[cfg(test)]
+    pub fn slot_of(&self, run: &str) -> Option<Slot> {
+        self.in_kept.get(run).map(|(_, slot)| *slot)
     }
 
     /// Whether a process of `agent` (none: one deleted since, its slot no one's) can start in `project`, `but` run
     /// not counted: the one it goes on from.
     pub fn check(&self, tx: &Transaction, agent: Option<&Agent>, project: &str, but: Option<&str>) -> Result<Option<Full>, String> {
         let holding: Vec<&Run> = self.holding.iter().filter(|r| Some(r.id.as_str()) != but).collect();
-        let kept = agent.and_then(|a| self.kept.get(&a.id)).map_or(&[][..], Vec::as_slice);
-        judge(tx, &holding, agent, project, (kept, &self.in_kept))
+        judge(tx, &holding, agent.map(|a| (a, self.kept_of(&a.id))), project, &self.in_kept)
     }
 
     /// How many more processes of `agent` can start, as `judge` counts its slots.
     pub fn free_of(&self, agent: &Agent) -> i64 {
         let all: Vec<&Run> = self.holding.iter().collect();
-        (agent.at_once - (of_agent(&all, agent, &self.in_kept).len() + self.kept.get(&agent.id).map_or(0, Vec::len)) as i64).max(0)
+        (agent.at_once - of_agent(&all, agent, &self.in_kept).len() as i64 - self.kept_of(&agent.id).total()).max(0)
     }
 
     /// How many more can start in `project`; none: it has no limit.
@@ -123,20 +155,31 @@ impl Slots {
         Ok(limits::agent_limit(tx, project)?.map(|most| (most - there).max(0)))
     }
 
-    /// `check` for a run of task `task` alone (its key; none: several tasks): one of a schedule of `agent` takes the
-    /// slot kept for it while no other run, but `but`, stands there, only its project's limit holding it (AC-161); a
-    /// batch's integration task in the slot kept for integration not even that: a red batch never waits for room
+    /// `check` for a run of task `task` alone (its key; none: several tasks): one of `agent`'s schedules takes a kept
+    /// slot while fewer than its K stand in them, only its project's limit holding it, else an ordinary slot (AC-161); a
+    /// batch's integration task the slot kept for integration, not even that: a red batch never waits for room
     /// (terminum-integration.md AC-194).
     pub fn check_for(&self, tx: &Transaction, agent: &Agent, project: &str, task: Option<&str>, but: Option<&str>) -> Result<Option<Full>, String> {
-        let schedule = match task {
-            Some(t) => kept_schedule(tx, &agent.id, t)?,
+        let slot = match task {
+            Some(t) => kept_slot(tx, &agent.id, t)?,
             None => None,
         };
-        let free = schedule.filter(|s| !self.in_kept.iter().any(|(run, of)| of == s && Some(run.as_str()) != but));
-        if free.as_ref().is_some_and(|s| *s == schedules::integration_slot(&agent.id)) {
-            return Ok(None);
+        self.check_in(tx, agent, project, slot, but)
+    }
+
+    /// `check_for` of a run that may stand in a kept slot for `slot`, when one is free. A schedules' slot is free only
+    /// while the agent runs fewer than its at once: K raised over ordinary runs already there waits for them to end.
+    pub fn check_in(&self, tx: &Transaction, agent: &Agent, project: &str, slot: Option<Slot>, but: Option<&str>) -> Result<Option<Full>, String> {
+        let live = self.holding.iter().filter(|r| r.agent_id == agent.id && Some(r.id.as_str()) != but).count() as i64;
+        let free = slot.filter(|s| {
+            let used = self.in_kept.iter().filter(|(run, (of, kind))| kind == s && *of == agent.id && Some(run.as_str()) != but).count() as i64;
+            used < self.kept_of(&agent.id).of_slot(*s) && (*s == Slot::Integration || live < agent.at_once)
+        });
+        match free {
+            Some(Slot::Integration) => Ok(None),
+            Some(Slot::Schedule) => self.check(tx, None, project, but),
+            None => self.check(tx, Some(agent), project, but),
         }
-        self.check(tx, free.is_none().then_some(agent), project, but)
     }
 }
 
@@ -156,37 +199,44 @@ pub fn check_for(tx: &Transaction, agent: &Agent, project: &str, task: Option<&s
     Slots::read(tx)?.check_for(tx, agent, project, task, but)
 }
 
-/// The schedule of `agent` keeping a slot that task `task` (its key) was made by, if one (AC-161).
-fn kept_schedule(tx: &Transaction, agent: &str, task: &str) -> Result<Option<String>, String> {
-    // a batch's integration task on its project's integration agent takes the slot kept for integration (AC-194)
+/// The kept slot of `agent` a run of task `task` (its key) alone may stand in, if one: a task of one of its schedules
+/// not paused (AC-161), or a batch's integration task on its project's integration agent (AC-194).
+fn kept_slot(tx: &Transaction, agent: &str, task: &str) -> Result<Option<Slot>, String> {
     let integration: Option<i64> = tx.query_row("SELECT 1 FROM integration_batches b JOIN project_integration i ON i.project = b.project WHERE b.task = ?1 AND i.agent = ?2 AND i.is_on = 1",
-        (task, agent), |r| r.get(0)).optional().map_err(super::super::tasks::ops::sql)?;
+        (task, agent), |r| r.get(0)).optional().map_err(ops::sql)?;
     if integration.is_some() {
-        return Ok(Some(schedules::integration_slot(agent)));
+        return Ok(Some(Slot::Integration));
     }
-    Ok(rows(tx, "SELECT s.id FROM schedule_fires f JOIN schedules s ON s.id = f.schedule WHERE f.task = ?1 AND s.agent_id = ?2 AND s.paused = 0 AND s.deleted_at IS NULL",
-            (task, agent), |r| r.get(0))?.pop())
+    Ok(schedules::of_task(tx, task)?.filter(|s| s.active() && s.agent == agent).map(|_| Slot::Schedule))
 }
 
-/// The run standing in each kept slot, of the runs `ids`: a run of one task of its agent's schedule that keeps one, the
-/// oldest; a second, or a run of several tasks, counts as any run (AC-161). By run, its schedule.
-fn in_kept(tx: &Transaction, ids: &[&str]) -> Result<HashMap<String, String>, String> {
-    let found: Vec<(String, String)> = rows(tx, "SELECT r.id, s.id FROM runs r JOIN run_tasks rt ON rt.run = r.id JOIN schedule_fires f ON f.task = rt.task JOIN schedules s ON s.id = f.schedule
+/// The runs standing in kept slots, of the runs `ids`: of each agent's runs of one task of its schedules not paused,
+/// the oldest, as many as `kept` says it keeps, counted, never placed; of its integration tasks' runs the oldest (AC-161,
+/// terminum-integration.md AC-194). By run, its agent and slot.
+fn in_kept(tx: &Transaction, ids: &[&str], kept: &BTreeMap<String, Kept>) -> Result<HashMap<String, (String, Slot)>, String> {
+    if kept.values().all(|k| k.total() == 0) {
+        return Ok(HashMap::new());
+    }
+    let scheduled: Vec<(String, String)> = rows(tx, "SELECT DISTINCT r.id, r.agent_id, r.rowid FROM runs r JOIN run_tasks rt ON rt.run = r.id JOIN schedule_fires f ON f.task = rt.task JOIN schedules s ON s.id = f.schedule
                  WHERE r.id IN (SELECT value FROM json_each(?1)) AND s.agent_id = r.agent_id AND s.paused = 0 AND s.deleted_at IS NULL
                    AND (SELECT count(*) FROM run_tasks x WHERE x.run = r.id) = 1 ORDER BY r.rowid",
             [runs::listed_keys(ids)], |r| Ok((r.get(0)?, r.get(1)?)))?;
-    // the run of a batch's integration task on its integration agent stands in the slot kept for integration
-    let integrating: Vec<(String, String)> = rows(tx, "SELECT r.id, 'integration:' || r.agent_id FROM runs r JOIN run_tasks rt ON rt.run = r.id JOIN integration_batches b ON b.task = rt.task
+    let integrating: Vec<(String, String)> = rows(tx, "SELECT DISTINCT r.id, r.agent_id, r.rowid FROM runs r JOIN run_tasks rt ON rt.run = r.id JOIN integration_batches b ON b.task = rt.task
                  JOIN project_integration i ON i.project = b.project WHERE r.id IN (SELECT value FROM json_each(?1)) AND i.agent = r.agent_id AND i.is_on = 1 ORDER BY r.rowid",
             [runs::listed_keys(ids)], |r| Ok((r.get(0)?, r.get(1)?)))?;
-    let mut seen = HashSet::new();
-    Ok(found.into_iter().chain(integrating).filter(|(_, s)| seen.insert(s.clone())).collect())
-}
-
-/// The run standing in schedule `schedule`'s kept slot, of whichever of its tasks, if one (AC-161, AC-162).
-pub fn in_kept_of(tx: &Transaction, schedule: &str) -> Result<Option<Run>, String> {
-    let Slots { holding, in_kept, .. } = Slots::read(tx)?;
-    Ok(in_kept.into_iter().find(|(_, of)| of == schedule).and_then(|(run, _)| holding.into_iter().find(|r| r.id == run)))
+    let mut out = HashMap::new();
+    let mut used: HashMap<(String, Slot), i64> = HashMap::new();
+    for (slot, found) in [(Slot::Schedule, scheduled), (Slot::Integration, integrating)] {
+        for (run, agent) in found {
+            let most = kept.get(&agent).map_or(0, |k| k.of_slot(slot));
+            let n = used.entry((agent.clone(), slot)).or_default();
+            if *n < most && !out.contains_key(&run) {
+                *n += 1;
+                out.insert(run, (agent, slot));
+            }
+        }
+    }
+    Ok(out)
 }
 
 /// `check` of one agent, read now.
@@ -194,22 +244,22 @@ pub fn check(tx: &Transaction, agent: Option<&Agent>, project: &str, but: Option
     Slots::read(tx)?.check(tx, agent, project, but)
 }
 
-/// The runs of `holding` that take a slot of `agent`: its own, but one standing in a slot a schedule keeps (AC-161).
-fn of_agent<'a>(holding: &[&'a Run], agent: &Agent, in_kept: &HashMap<String, String>) -> Vec<&'a Run> {
+/// The runs of `holding` that take an ordinary slot of `agent`: its own, but those standing in kept slots (AC-161).
+fn of_agent<'a>(holding: &[&'a Run], agent: &Agent, in_kept: &HashMap<String, (String, Slot)>) -> Vec<&'a Run> {
     holding.iter().copied().filter(|r| r.agent_id == agent.id && !in_kept.contains_key(&r.id)).collect()
 }
 
-/// `kept`: the slots `agent`'s schedules keep, and the runs standing in kept slots: those count once (AC-161).
-fn judge(tx: &Transaction, holding: &[&Run], agent: Option<&Agent>, project: &str, (kept, in_kept): (&[String], &HashMap<String, String>)) -> Result<Option<Full>, String> {
-    let of_agent: Vec<&Run> = agent.map_or_else(Vec::new, |a| of_agent(holding, a, in_kept));
+/// `agent` with the slots it keeps; the runs standing in kept slots count once, as those slots (AC-161).
+fn judge(tx: &Transaction, holding: &[&Run], agent: Option<(&Agent, Kept)>, project: &str, in_kept: &HashMap<String, (String, Slot)>) -> Result<Option<Full>, String> {
+    let of_agent: Vec<&Run> = agent.map_or_else(Vec::new, |(a, _)| of_agent(holding, a, in_kept));
     let of_project: Vec<&Run> = holding.iter().copied().filter(|r| r.project == project).collect();
     let limit = limits::agent_limit(tx, project)?;
     let mut full: Vec<(&[&Run], i64)> = Vec::new();
     let mut words = None;
-    if let Some(a) = agent.filter(|a| (of_agent.len() + kept.len()) as i64 >= a.at_once) {
-        let held: Vec<String> = said(tx, &of_agent)?.into_iter().chain(kept.iter().map(|k| format!("{k} (kept)"))).collect();
+    if let Some((a, kept)) = agent.filter(|(a, kept)| of_agent.len() as i64 + kept.total() >= a.at_once) {
+        let held: Vec<String> = said(tx, &of_agent)?.into_iter().chain(kept.held()).collect();
         words = Some(format!("{} is at its limit of {}: {}.", a.name, a.at_once, held.join("; ")));
-        full.push((&of_agent, a.at_once - kept.len() as i64));
+        full.push((&of_agent, a.at_once - kept.total()));
     }
     if let Some(most) = limit.filter(|most| of_project.len() as i64 >= *most) {
         let name = ops::project_place(tx, project)?.0;
@@ -244,7 +294,7 @@ pub fn board(tx: &Transaction) -> Result<Value, String> {
     let mut tasks = in_runs(tx, &holding.iter().chain(&rounds).chain(&integrating).map(|r| r.id.as_str()).collect::<Vec<_>>())?;
     let mut of_agent: BTreeMap<&str, Vec<Value>> = BTreeMap::new();
     let mut in_project: HashMap<&str, i64> = HashMap::new();
-    // a slot its schedules keep counts once, whether its run is live or not (AC-161)
+    // a kept slot counts once, whether a run stands in it or not (AC-161)
     let mut others: HashMap<&str, usize> = HashMap::new();
     // rounds, integration waits and ended integration tasks' sessions stay visible on their agent without taking
     // ordinary slots (AC-138, AC-169, AC-170, terminum-integration.md AC-194)
@@ -263,220 +313,11 @@ pub fn board(tx: &Transaction) -> Result<Value, String> {
         *in_project.entry(&r.project).or_default() += 1;
     }
     let full: Vec<String> = agents::list(tx)?.into_iter()
-        .filter(|a| (others.get(a.id.as_str()).copied().unwrap_or(0) + kept.get(&a.id).map_or(0, Vec::len)) as i64 >= a.at_once).map(|a| a.id).collect();
+        .filter(|a| others.get(a.id.as_str()).copied().unwrap_or(0) as i64 + kept.get(&a.id).map_or(0, Kept::total) >= a.at_once).map(|a| a.id).collect();
     let full_projects: Vec<String> = limits::agent_limits(tx)?.into_iter().filter(|(p, most)| in_project.get(p.as_str()).copied().unwrap_or(0) >= *most).map(|(p, _)| p).collect();
     Ok(json!({"agents": of_agent, "kept": kept, "full": full, "full_projects": full_projects, "queue": super::waits::queues(tx)?}))
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::tasks::ops::{sql, NewTask};
-    use crate::tasks::store::{Store, HUMAN};
-
-    fn store(name: &str) -> Store {
-        Store::open(crate::testutil::fresh_dir(name).join("kanban.sqlite"))
-    }
-
-    fn agent(id: &str, at_once: i64) -> Agent {
-        Agent { id: id.into(), project: "default".into(), name: id.to_uppercase(), kind: "claude".into(), command: "claude".into(), effort: String::new(), color: 0, line: "claude".into(), at_once, week_limit: None, month_limit: None }
-    }
-
-    fn project(tx: &Transaction, id: &str, limit: Option<i64>) -> Result<(), String> {
-        tx.execute("INSERT INTO projects (id, name, color, dir, place, agent_limit) VALUES (?1, ?1, 0, '/srv', 0, ?2)", (id, limit)).map(drop).map_err(sql)
-    }
-
-    /// A run on `a` in `p`, working, its task open.
-    fn working(tx: &Transaction, a: &str, p: &str) -> (String, ops::Task) {
-        let t = ops::create(tx, HUMAN, NewTask { title: format!("t in {p}"), project: Some(p.into()), ..Default::default() }, 1).unwrap();
-        let id = runs::add(tx, &Run { agent_id: a.into(), kind: "claude".into(), command: "claude".into(), folder: "/srv".into(), project: p.into(), ..Default::default() }, std::slice::from_ref(&t.key), Default::default(), 1).unwrap();
-        runs::change(tx, &id, |r| { r.state = crate::dispatcher::runs::Phase::Working; r.pane_key = Some(format!("tmux:local:t:%{id}")); }).unwrap();
-        (id, t)
-    }
-
-    /// The same, finished and quiet.
-    fn idle(tx: &Transaction, a: &str, p: &str) -> (String, ops::Task) {
-        let (id, t) = working(tx, a, p);
-        ops::move_to(tx, HUMAN, &t.id, "DONE", 2).unwrap();
-        runs::change(tx, &id, |r| { r.turn_ended = true; r.closing_for = 60; }).unwrap();
-        (id, t)
-    }
-
-    #[test]
-    fn ac141_the_agent_s_limit_names_what_holds_it() {
-        store("pool-agent").with(|tx| {
-            project(tx, "api", None)?;
-            assert_eq!(check(tx, Some(&agent("a", 1)), "api", None)?, None);
-            let (_, t) = working(tx, "a", "api");
-            let full = check(tx, Some(&agent("a", 1)), "api", None)?.unwrap();
-            assert_eq!(full, Full { words: format!("A is at its limit of 1: {} is working.", t.id), close: None }, "working: nothing to close");
-            assert_eq!(check(tx, Some(&agent("a", 2)), "api", None)?, None, "two at once");
-            assert_eq!(check(tx, Some(&agent("b", 1)), "api", None)?, None, "another agent's slots are its own");
-            Ok(())
-        }).unwrap();
-    }
-
-    #[test]
-    fn ac141_a_run_of_several_tasks_is_one_holder() {
-        store("pool-several").with(|tx| {
-            project(tx, "api", None)?;
-            let (id, t) = working(tx, "a", "api");
-            let other = ops::create(tx, HUMAN, NewTask { title: "its second".into(), project: Some("api".into()), ..Default::default() }, 1)?;
-            tx.execute("INSERT INTO run_tasks (run, task) VALUES (?1, ?2)", (&id, &other.key)).map_err(ops::sql)?;
-            assert_eq!(check(tx, Some(&agent("a", 1)), "api", None)?.unwrap().words, format!("A is at its limit of 1: {}, {} are working.", t.id, other.id));
-            Ok(())
-        }).unwrap();
-    }
-
-    #[test]
-    fn ac141_the_project_s_limit_counts_every_agent_and_only_its_own_runs() {
-        store("pool-project").with(|tx| {
-            project(tx, "api", Some(2))?;
-            project(tx, "web", None)?;
-            let (_, one) = working(tx, "a", "api");
-            let (_, two) = working(tx, "b", "api");
-            let full = check(tx, Some(&agent("c", 1)), "api", None)?.unwrap();
-            assert_eq!(full.words, format!("api runs 2 agents at once, its limit: {} is working; {} is working.", one.id, two.id));
-            assert_eq!(check(tx, Some(&agent("c", 1)), "web", None)?, None, "another project's");
-            Ok(())
-        }).unwrap();
-    }
-
-    #[test]
-    fn ac141_an_idle_holder_can_be_closed_for_it_and_only_one() {
-        store("pool-idle").with(|tx| {
-            project(tx, "api", None)?;
-            let (old, t) = idle(tx, "a", "api");
-            let full = check(tx, Some(&agent("a", 1)), "api", None)?.unwrap();
-            assert_eq!(full.close, Some(Holder { run: old.clone(), tasks: t.id.clone() }));
-            assert_eq!(full.words, format!("A is at its limit of 1: {} is idle.", t.id));
-            let (_, w) = working(tx, "a", "api");
-            assert_eq!(check(tx, Some(&agent("a", 1)), "api", None)?.unwrap().words, format!("A is at its limit of 1: {} is idle; {} is working.", t.id, w.id), "each holder with what it does");
-            ops::move_to(tx, HUMAN, &w.id, "WAIT FOR HUMAN", 3)?;
-            assert!(check(tx, Some(&agent("a", 1)), "api", None)?.unwrap().words.ends_with(&format!("{} waits for a human.", w.id)));
-            assert_eq!(check(tx, Some(&agent("a", 1)), "api", None)?.unwrap().close, None, "over its limit: one closing would not do, a human may have typed");
-            assert!(check(tx, Some(&agent("a", 2)), "api", None)?.unwrap().close.is_some(), "at its limit of two, one idle");
-            Ok(())
-        }).unwrap();
-    }
-
-    #[test]
-    fn ac141_both_limits_need_one_holder_of_both() {
-        store("pool-both").with(|tx| {
-            project(tx, "api", Some(1))?;
-            project(tx, "web", None)?;
-            idle(tx, "a", "web");
-            working(tx, "b", "api");
-            assert_eq!(check(tx, Some(&agent("a", 1)), "api", None)?.unwrap().close, None, "closing web's frees nothing of api's");
-            Ok(())
-        }).unwrap();
-    }
-
-    #[test]
-    fn ac141_a_session_with_another_task_open_is_not_idle() {
-        store("pool-other").with(|tx| {
-            project(tx, "api", None)?;
-            let (id, _) = idle(tx, "a", "api");
-            let key = runs::change(tx, &id, |_| {})?.pane_key.unwrap();
-            let taken = ops::create(tx, HUMAN, NewTask { title: "taken".into(), project: Some("api".into()), session: Some(key), ..Default::default() }, 1)?;
-            assert_eq!(check(tx, Some(&agent("a", 1)), "api", None)?.unwrap().close, None, "{} stands on it by take_task", taken.id);
-            Ok(())
-        }).unwrap();
-    }
-
-    #[test]
-    fn ac141_what_it_goes_on_from_does_not_count_and_a_deleted_agent_has_no_slot() {
-        store("pool-but").with(|tx| {
-            project(tx, "api", None)?;
-            let (id, _) = working(tx, "a", "api");
-            assert_eq!(check(tx, Some(&agent("a", 1)), "api", Some(&id))?, None);
-            assert_eq!(check(tx, None, "api", None)?, None, "only the project's limit could stop it");
-            Ok(())
-        }).unwrap();
-    }
-
-    #[test]
-    fn ac141_what_is_over_or_gone_holds_nothing() {
-        store("pool-over").with(|tx| {
-            project(tx, "api", None)?;
-            for state in ["closed", "left", "gone"] {
-                let (id, _) = working(tx, "a", "api");
-                assert!(check(tx, Some(&agent("a", 1)), "api", None)?.is_some());
-                runs::change(tx, &id, |r| r.state = runs::Phase::of(state).unwrap())?;
-                assert_eq!(check(tx, Some(&agent("a", 1)), "api", None)?, None, "{state}");
-            }
-            Ok(())
-        }).unwrap();
-    }
-
-    /// AC-169, AC-198: integration waits must leave room for their own Verify prerequisites.
-    #[test]
-    fn ac169_four_integration_waits_free_slots_and_a_return_counts_again() {
-        let root = crate::testutil::fresh_dir("pool-integration");
-        let s = Store::open(root.join("kanban.sqlite"));
-        let returned = s.with(|tx| {
-            project(tx, "api", Some(3))?;
-            tx.execute("INSERT INTO agents (id, project, name, kind, command, color, at_once) VALUES ('a', 'api', 'A', 'codex', 'codex', 0, 3)", []).map_err(sql)?;
-            let mut queued = Vec::new();
-            for _ in 0..4 {
-                let (id, t) = working(tx, "a", "api");
-                ops::place(tx, HUMAN, &t, ops::INTEGRATION, 2)?;
-                // No Stop is needed: integrate itself hands the work off.
-                assert!(runs::by_id(tx, &id)?.holds_slot(), "session ownership and task protection remain");
-                queued.push(t);
-            }
-            let slots = Slots::read(tx)?;
-            assert_eq!((slots.free_of(&agent("a", 3)), slots.free_in(tx, "api")?), (3, Some(3)));
-            assert_eq!(check(tx, Some(&agent("a", 3)), "api", None)?, None);
-            let blocker = ops::create(tx, HUMAN, NewTask { title: "Verify prerequisite".into(), project: Some("api".into()), ..Default::default() }, 3)?;
-            super::super::waits::add(tx, &blocker, "a", "api", &json!({"agent": "a"}), 3)?;
-            assert_eq!(super::super::waits::ahead(tx, "a", "api", "newer-task")?, Some(blocker.id), "an already queued blocker has room ahead of new presses");
-            let shown = board(tx)?;
-            assert!(shown["full"].as_array().unwrap().is_empty() && shown["full_projects"].as_array().unwrap().is_empty());
-            let visible = shown["agents"]["a"].as_array().unwrap();
-            assert_eq!(visible.len(), 4, "AC-138: all retained sessions stay visible");
-            assert!(visible.iter().all(|r| r["integration"] == true && r["list"][0]["status"] == ops::INTEGRATION));
-            for _ in 0..3 { working(tx, "a", "api"); }
-            Ok(queued[0].id.clone())
-        }).unwrap();
-        // A restart derives occupancy from the same tasks; nothing transient owns the exemption.
-        Store::open(root.join("kanban.sqlite")).with(|tx| {
-            assert_eq!(Slots::read(tx)?.holding.len(), 3);
-            let t = ops::get(tx, &returned)?;
-            crate::integrate::store::give_back(tx, &t.key, "returned: red check", crate::integrate::store::Left::Red, 4)?;
-            assert_eq!(Slots::read(tx)?.holding.len(), 4, "a live return may exceed the limit under AC-141");
-            assert_eq!(runs::live(tx)?.len(), 7, "the integration sessions stayed watched and visible");
-            let shown = board(tx)?;
-            let visible = shown["agents"]["a"].as_array().unwrap();
-            assert_eq!(visible.len(), 7, "all sessions remain openable after a return");
-            assert_eq!(visible.iter().filter(|r| r["integration"] == true).count(), 3, "only the returned wait counts again");
-            let full = check(tx, Some(&agent("a", 3)), "api", None)?.unwrap();
-            assert!(full.words.contains(&returned) && full.close.is_none(), "later starts wait, no integration pane closed");
-            Ok(())
-        }).unwrap();
-    }
-
-    #[test]
-    fn ac169_only_runs_with_every_unfinished_task_in_integration_free_room() {
-        store("pool-integration-mixed").with(|tx| {
-            project(tx, "api", Some(1))?;
-            let (id, queued) = working(tx, "a", "api");
-            ops::place(tx, HUMAN, &queued, ops::INTEGRATION, 2)?;
-            for state in [runs::Phase::Starting, runs::Phase::Asking, runs::Phase::Typed] {
-                runs::change(tx, &id, |r| r.state = state)?;
-                assert!(check(tx, Some(&agent("a", 1)), "api", None)?.is_some(), "{state:?}: a new process keeps its reservation before accepting the task");
-            }
-            runs::change(tx, &id, |r| r.state = runs::Phase::Working)?;
-            assert!(check(tx, Some(&agent("a", 1)), "api", None)?.is_none(), "the handed-off work frees room after startup");
-            let other = ops::create(tx, HUMAN, NewTask { title: "another task".into(), project: Some("api".into()), ..Default::default() }, 1)?;
-            tx.execute("INSERT INTO run_tasks (run, task) VALUES (?1, ?2)", (&id, &other.key)).map_err(sql)?;
-            for status in ["IN PROGRESS", "WAIT FOR HUMAN", "TODO", "DONE", "FAILED"] {
-                ops::move_to(tx, HUMAN, &other.id, status, 3)?;
-                let finished = matches!(status, "DONE" | "FAILED");
-                assert_eq!(check(tx, Some(&agent("a", 1)), "api", None)?.is_none(), finished, "{status}");
-                assert_eq!(runs::by_id(tx, &id)?.status == ops::INTEGRATION, finished, "{status}: unfinished status wins");
-            }
-            Ok(())
-        }).unwrap();
-    }
-}
+#[path = "pool_tests.rs"]
+mod tests;

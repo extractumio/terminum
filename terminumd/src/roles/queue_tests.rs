@@ -83,3 +83,28 @@ async fn ac169_promotion_refuses_foreign_stale_and_non_primary_waits_without_cha
     app.tasks.with(|tx| waits::remove(tx, &ops::key_of(tx, &primary)?).map(drop)).unwrap();
     assert!(call(&app, BOSS, "promote_queued_task", json!({"id": primary})).await.unwrap_err().contains("no waiting run of its own"));
 }
+
+#[tokio::test]
+async fn ac161_a_promotion_stops_behind_a_schedule_s_task() {
+    let (app, _) = app("roles-queue-scheduled");
+    let (first, second, mine) = app.tasks.with(|tx| {
+        let ids: Vec<String> = ["first", "second", "scheduled"].iter().map(|title| task_in(tx, "api", title)).collect();
+        let v = json!({"title": "Nightly", "project": "api", "agent": "a1", "cron": "0 3 * * *", "budget_minutes": 5});
+        let (sid, _) = crate::tasks::schedules::add(tx, crate::tasks::store::HUMAN, &crate::tasks::schedules::Given::of(tx, &v, 1)?, 1)?;
+        let s = crate::tasks::schedules::by_id(tx, &sid)?;
+        crate::tasks::schedules::fired(tx, &s, (1, 0), Some(&ops::key_of(tx, &ids[2])?), "started", None, 1)?;
+        queue(tx, &ids[0], "a1", json!({}), 10);
+        queue(tx, &ids[1], "a1", json!({}), 11);
+        queue(tx, &ids[2], "a1", json!({"how": "schedule"}), 12);
+        Ok((ids[0].clone(), ids[1].clone(), ids[2].clone()))
+    }).unwrap();
+    assert_eq!(order(&app), [mine.clone(), first.clone(), second.clone()], "a schedule's task waits ahead");
+    let said = call(&app, BOSS, "promote_queued_task", json!({"id": second})).await.unwrap();
+    assert!(said.contains("is now at the front of Opus's queue, behind its schedules' tasks"), "{said}");
+    assert_eq!(order(&app), [mine.clone(), second.clone(), first.clone()]);
+    let listed = call(&app, BOSS, "list_runs", json!({})).await.unwrap();
+    let listed: Value = serde_json::from_str(listed.split_once('\n').unwrap().1).unwrap();
+    assert_eq!(listed["waiting_for_a_slot"].as_array().unwrap().iter().map(|w| w["task"].as_str().unwrap()).collect::<Vec<_>>(), [mine.as_str(), second.as_str(), first.as_str()], "list_runs reads the line's order");
+    assert!(call(&app, BOSS, "promote_queued_task", json!({"id": second})).await.unwrap().contains("is already"));
+    assert!(call(&app, BOSS, "promote_queued_task", json!({"id": mine})).await.unwrap().contains("is already at the front of Opus's queue."));
+}

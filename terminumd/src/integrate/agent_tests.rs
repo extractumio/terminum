@@ -226,7 +226,7 @@ fn ac194_each_integration_agent_keeps_a_slot_of_its_own() {
         let t = ops::create(tx, DISPATCHER, ops::NewTask { title: "Integration batch 1: WEB-1".into(), project: Some("web".into()), integration: true, ..Default::default() }, 5)?;
         tx.execute("INSERT INTO integration_batches (project, number, task, tasks, base_sha, state, created_at) VALUES ('web', 1, ?1, '[]', 'x', 'red', 5)", [&t.key]).map_err(sql)?;
         let kept = crate::tasks::schedules::kept_by_agent(tx)?;
-        assert_eq!(kept.get("a2").cloned().unwrap_or_default(), vec!["integration:a2".to_string()]);
+        assert_eq!(kept.get("a2").copied().unwrap_or_default(), crate::tasks::schedules::Kept { slots: 0, schedules: 0, integration: true });
         let a2 = crate::tasks::agents::chosen(tx, "a2", "web")?;
         assert_eq!(crate::dispatcher::pool::check_for(tx, &a2, "web", Some(&t.key), None)?, None, "a1's run stands in a1's slot, not a2's");
         Ok(())
@@ -261,7 +261,8 @@ fn ac194_an_ended_integration_task_s_closing_session_leaves_the_kept_slot() {
     w.s.with(|tx| {
         let a1 = crate::tasks::agents::chosen(tx, "a1", "api")?;
         let key = ops::key_of(tx, &second)?;
-        assert_eq!(pool::in_kept_of(tx, "integration:a1")?.map(|r| r.task), Some(key), "batch 2's run stands in the kept slot");
+        let run = crate::dispatcher::runs::last_of(tx, &key)?.unwrap();
+        assert_eq!(Slots::read(tx)?.slot_of(&run.id), Some(pool::Slot::Integration), "batch 2's run stands in the kept slot");
         assert_eq!(Slots::read(tx)?.free_of(&a1), 0);
         let shown = pool::board(tx)?;
         let rows = shown["agents"]["a1"].as_array().unwrap();

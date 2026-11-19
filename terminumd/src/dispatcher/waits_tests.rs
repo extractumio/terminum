@@ -159,3 +159,101 @@ fn ac158_a_task_in_a_queue_is_moved_or_finished_by_no_agent() {
     assert!(crate::tasks::tools::run(&s, &dir, &who, "add_comment", &json!({"id": t.id, "text": "blocked by TERM-9"})).is_ok(), "it can comment");
     s.with(|tx| { assert!(of_task(tx, &t.key)?.is_some(), "the press still waits"); assert_eq!(ops::get(tx, &t.id)?.status, "TODO"); Ok(()) }).unwrap();
 }
+
+/// Task `t` made a schedule's: a firing of a schedule on agent `agent` names it (terminum-schedules.md AC-162).
+fn scheduled(tx: &Transaction, t: &Task, agent: &str) {
+    let v = json!({"title": "Nightly", "project": t.project, "agent": agent, "cron": "0 3 * * *", "budget_minutes": 5});
+    let (id, _) = crate::tasks::schedules::add(tx, HUMAN, &crate::tasks::schedules::Given::of(tx, &v, 1).unwrap(), 1).unwrap();
+    let s = crate::tasks::schedules::by_id(tx, &id).unwrap();
+    crate::tasks::schedules::fired(tx, &s, (1, 0), Some(&t.key), "started", None, 1).unwrap();
+}
+
+#[test]
+fn ac161_a_schedule_s_task_waits_ahead_of_the_agent_s_other_waits() {
+    store("waits-scheduled").with(|tx| {
+        tx.execute("UPDATE agents SET at_once = 3 WHERE id = 'a'", []).map_err(sql)?;
+        let (ordinary, mine, newer) = (task(tx, "api"), task(tx, "api"), task(tx, "api"));
+        scheduled(tx, &mine, "a");
+        holding(tx, "a", "api");
+        holding(tx, "a", "api");   // with the one kept slot, its at once of 3 is full for ordinary runs
+        add(tx, &ordinary, "a", "api", &json!({}), 10)?;
+        add(tx, &mine, "a", "api", &json!({"how": "schedule"}), 20)?;
+        assert_eq!(all(tx)?.iter().map(|w| (w.task.as_str(), w.scheduled)).collect::<Vec<_>>(), [(mine.key.as_str(), true), (ordinary.key.as_str(), false)], "came later, stands first");
+        assert_eq!(queues(tx)?["a"].iter().map(|w| w["id"].as_str().unwrap()).collect::<Vec<_>>(), [mine.id.as_str(), ordinary.id.as_str()]);
+        assert_eq!((on_cards(tx, &[&mine.key])?[&mine.key].position, on_cards(tx, &[&ordinary.key])?[&ordinary.key].position), (1, 2), "the cards say the same places");
+        assert_eq!(ahead(tx, "a", "api", &newer.key)?, Some(mine.id.clone()), "its kept slot is free: a newer press goes behind it");
+        assert_eq!(reorder(tx, "a", &[ordinary.id.clone(), mine.id.clone()]).unwrap_err(), format!("{} is a scheduled run: it stays ahead of the other waits.", mine.id));
+        assert_eq!(all(tx)?[0].task, mine.key, "a refused reorder moves nothing");
+        reorder(tx, "a", &[mine.id.clone(), ordinary.id.clone()])?;
+        Ok(())
+    }).unwrap();
+}
+
+#[test]
+fn ac161_a_schedule_s_task_waits_ahead_of_its_project_s_other_waits() {
+    store("waits-scheduled-project").with(|tx| {
+        let (ordinary, mine, newer) = (task(tx, "api"), task(tx, "api"), task(tx, "api"));
+        scheduled(tx, &mine, "a");
+        add(tx, &ordinary, "b", "api", &json!({}), 10)?;   // Jones has room
+        assert_eq!(ahead(tx, "a", "api", &newer.key)?, Some(ordinary.id.clone()), "an older wait of its project with room goes first");
+        assert_eq!(ahead(tx, "a", "api", &mine.key)?, None, "but never before a schedule's task");
+        add(tx, &mine, "a", "api", &json!({"how": "schedule"}), 20)?;
+        assert!(all(tx)?[0].scheduled);
+        take_place(tx, &mine.key, 7)?;
+        assert_eq!(of_task(tx, &mine.key)?.unwrap().pos, 7, "a newer run of a schedule takes the place of the wait it superseded");
+        Ok(())
+    }).unwrap();
+}
+
+#[test]
+fn ac162_a_wait_knows_whether_a_human_pressed_it() {
+    store("waits-who").with(|tx| {
+        let t = task(tx, "api");
+        for (press, human) in [(json!({}), true), (json!({"how": "run"}), true), (json!({"how": "drop"}), true), (json!({"how": "schedule"}), false),
+                               (json!({"how": "run", "manager": "m"}), false), (json!({"how": "schedule", "manager": "m"}), false), (json!({"how": "auto"}), false)] {
+            add(tx, &t, "a", "api", &press, 1)?;
+            assert_eq!(of_task(tx, &t.key)?.unwrap().by_human(), human, "{press}");
+        }
+        Ok(())
+    }).unwrap();
+}
+
+#[test]
+fn ac161_a_reorder_deals_each_kind_its_own_places() {
+    store("waits-reorder-kinds").with(|tx| {
+        tx.execute("UPDATE agents SET at_once = 3", []).map_err(sql)?;
+        let (other, mine, plain, late, again) = (task(tx, "api"), task(tx, "api"), task(tx, "api"), task(tx, "api"), task(tx, "api"));
+        add(tx, &other, "b", "api", &json!({}), 1)?;
+        for (t, at) in [(&mine, 2), (&plain, 3), (&late, 4), (&again, 5)] {
+            add(tx, t, "a", "api", &json!({}), at)?;
+        }
+        scheduled(tx, &mine, "a");
+        scheduled(tx, &again, "a");
+        let pos = |tx: &Transaction, t: &Task| of_task(tx, &t.key).unwrap().unwrap().pos;
+        let before = (pos(tx, &other), [pos(tx, &mine), pos(tx, &again)], [pos(tx, &plain), pos(tx, &late)]);
+        reorder(tx, "a", &[again.id.clone(), mine.id.clone(), late.id.clone(), plain.id.clone()])?;
+        assert_eq!((pos(tx, &again), pos(tx, &mine)), (before.1[0], before.1[1]), "the schedules' tasks swap their own places");
+        assert_eq!((pos(tx, &late), pos(tx, &plain)), (before.2[0], before.2[1]), "the others theirs");
+        assert_eq!(pos(tx, &other), before.0, "another agent's wait keeps its place");
+        Ok(())
+    }).unwrap();
+}
+
+#[test]
+fn ac161_a_schedule_s_waiting_task_closes_its_own_idle_session() {
+    store("waits-own-idle").with(|tx| {
+        let (old, new) = (task(tx, "api"), task(tx, "api"));
+        scheduled(tx, &old, "a");
+        let s = crate::tasks::schedules::of_task(tx, &old.key)?.unwrap();
+        crate::tasks::schedules::fired(tx, &s, (2, 0), Some(&new.key), "started", None, 2)?;
+        let id = runs::add(tx, &Run { agent_id: "a".into(), kind: "claude".into(), command: "claude".into(), folder: "/srv".into(), project: "api".into(), ..Default::default() }, std::slice::from_ref(&old.key), Default::default(), 1)?;
+        runs::change(tx, &id, |r| { r.state = Phase::Working; r.pane_key = Some(format!("tmux:local:t:%{id}")); })?;
+        ops::move_to(tx, HUMAN, &old.id, "DONE", 2)?;
+        add(tx, &new, "a", "api", &json!({"how": "schedule"}), 3)?;
+        let w = of_task(tx, &new.key)?.unwrap();
+        assert!(matches!(due(tx, &w)?, Due::Stays), "its agent still in its turn: it waits");
+        runs::change(tx, &id, |r| { r.turn_ended = true; r.closing_for = 60; })?;
+        assert!(matches!(due(tx, &w)?, Due::Close(run, key) if run == id && key == s.key), "idle: closed for it");
+        Ok(())
+    }).unwrap();
+}

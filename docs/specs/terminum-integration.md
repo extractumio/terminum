@@ -620,7 +620,7 @@ Scenario: AC-194 failure — refused
 
 Scenario: AC-194 edge — its kept slot
   Given Billing's integration Agent Opus reviewer with 2 at once
-  Then it keeps one slot for integration, as a schedule keeps one (terminum-schedules.md AC-161): the agent's card shows "kept for integration" and a red batch never waits for room; an agent that several projects name keeps one slot for them all, as one batch is in work at a time
+  Then it keeps one slot for integration, besides the slots its schedules keep (terminum-schedules.md AC-161), counted with them against its at once: the agent's card shows one dashed ring "kept for integration" and a red batch never waits for room; an agent that several projects name keeps one slot for them all, as one batch is in work at a time
   And unlike a schedule's, its project's agent limit does not hold it: with Billing at its limit of 1, a task of it running, the red batch's agent starts at once in the kept slot, and while it runs it counts against that limit as any run, so Billing's next RUN waits for room
   And a project's integration turned off, or its Agent set to none, frees it
   When I_API-31 is DONE, its agent idle, and its session stays open until its close (terminum-dispatcher.md AC-125)

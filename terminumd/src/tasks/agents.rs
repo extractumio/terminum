@@ -262,11 +262,10 @@ pub(crate) fn add(tx: &Transaction, given: &Given) -> Result<String, String> {
 pub(crate) fn change(tx: &Transaction, id: &str, given: &Given) -> Result<(), String> {
     let Some(was) = by_id(tx, id)? else { return Err("That agent is gone.".into()) };
     given.fits(tx, &was.project, id)?;
-    // its schedules keep their slots (terminum-schedules.md AC-161)
-    let kept = super::schedules::kept_on(tx, id, None)?;
-    if kept.len() as i64 > given.at_once {
-        let n = kept.len();
-        return Err(format!("{} keeps {n} slot{} for {}: at once is at least {n}.", given.name, if n == 1 { "" } else { "s" }, kept.join(", ")));
+    // its schedules and integration keep their slots (terminum-schedules.md AC-161)
+    let (words, total) = super::schedules::kept_words(tx, id, &given.name, &super::schedules::kept_on(tx, id, None)?)?;
+    if total > given.at_once {
+        return Err(format!("{words}: at once is at least {total}."));
     }
     rename_user(tx, id, &given.name)?;
     tx.execute("UPDATE agents SET name = ?2, kind = ?3, command = ?4, effort = ?5, at_once = ?6, week_limit = ?7, month_limit = ?8 WHERE id = ?1",

@@ -13,7 +13,7 @@ use crate::tasks::{agents, ops};
 pub async fn list_runs(app: &Shared, boss: &Boss) -> Result<String, String> {
     let project = boss.project.clone();
     let listed = store(app, move |tx| {
-        let waits: Vec<Value> = ops::rows(tx, "SELECT t.slug, a.name FROM run_waits w JOIN tasks t ON t.id = w.task LEFT JOIN agents a ON a.id = w.agent_id WHERE w.project = ?1 ORDER BY w.pos, w.rowid",
+        let waits: Vec<Value> = ops::rows(tx, &format!("SELECT t.slug, a.name FROM run_waits w JOIN tasks t ON t.id = w.task LEFT JOIN agents a ON a.id = w.agent_id WHERE w.project = ?1 ORDER BY {}", waits::ORDER),
                                           [&project], |r| Ok(json!({"task": r.get::<_, String>(0)?, "waits_for": r.get::<_, Option<String>>(1)?})))?;
         let live: Vec<Value> = runs::live(tx)?.into_iter().filter(|r| r.project == project && r.holds_slot()).map(|r| json!({
             "run": r.id, "kind": if r.ad_hoc() { "session" } else { "task" }, "tasks": r.ids, "open": r.open, "status": r.status, "agent": r.agent_name,
@@ -54,7 +54,7 @@ pub async fn run_task(app: &Shared, boss: &Boss, args: &Value) -> Result<String,
 /// Moves an existing press, never starts one: scope, order and history share admission's store transaction (AC-169).
 pub async fn promote_queued_task(app: &Shared, boss: &Boss, args: &Value) -> Result<String, String> {
     let (b, id) = (boss.clone(), arg(args, "id")?.to_string());
-    let (id, name, moved) = store(app, move |tx| {
+    let (id, name, moved, behind) = store(app, move |tx| {
         let t = in_project(tx, &b, &id)?;
         let gone = || format!("{} waits no more: it started, or its wait was called off.", t.id);
         let w = waits::of_task(tx, &t.key)?.ok_or_else(|| format!("{} has no waiting run of its own: use a queued primary task from list_runs.", t.id))?;
@@ -63,18 +63,21 @@ pub async fn promote_queued_task(app: &Shared, boss: &Boss, args: &Value) -> Res
         }
         if t.archived_at.is_some() || t.status != w.status { return Err(gone()); }
         let a = agents::in_project(tx, &w.agent, &b.project)?.ok_or_else(gone)?;
-        let mut order: Vec<String> = ops::rows(tx, "SELECT task FROM run_waits WHERE agent_id = ?1 ORDER BY pos, rowid", [&w.agent], |r| r.get(0))?;
-        let moved = order.first() != Some(&t.key);
+        let line = waits::of_agent(tx, &w.agent)?;
+        // the front of its own kind: a wait that is no schedule's task stops behind those that are (terminum-schedules.md AC-161)
+        let front = if w.scheduled { 0 } else { line.iter().filter(|x| x.scheduled).count() };
+        let mut order: Vec<String> = line.into_iter().map(|x| x.task).collect();
+        let moved = order.get(front) != Some(&t.key);
         if moved {
             order.retain(|key| key != &t.key);
-            order.insert(0, t.key.clone());
+            order.insert(front, t.key.clone());
             waits::reorder(tx, &w.agent, &order)?;
             ops::log(tx, &t.key, &b.user, "why", &format!("{} moved it to the front of {}'s queue.", b.name, a.name), None, ops::now())?;
         }
-        Ok((t.id, a.name, moved))
+        Ok((t.id, a.name, moved, front > 0))
     }).await?;
     if moved { crate::tasks::api::told(app, &id); }
-    Ok(format!("{id} {} at the front of {name}'s queue. It starts when there is room.", if moved { "is now" } else { "is already" }))
+    Ok(format!("{id} {} at the front of {name}'s queue{}. It starts when there is room.", if moved { "is now" } else { "is already" }, if behind { ", behind its schedules' tasks" } else { "" }))
 }
 
 pub async fn stop_task(app: &Shared, boss: &Boss, args: &Value) -> Result<String, String> {

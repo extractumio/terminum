@@ -76,21 +76,63 @@ fn ac160_refused_in_the_field_s_words() {
 }
 
 #[test]
-fn ac161_a_slot_is_kept_per_schedule_and_refused_when_none_is_left() {
-    open("sched-slot").with(|tx| {
-        agent(tx, "a", 1);
-        let (one, _) = add(tx, HUMAN, &given(tx, body("a", "0 3 * * *"))?, NOW)?;
-        assert_eq!(kept_on(tx, "a", None)?, vec!["SCH-1"]);
-        assert_eq!(add(tx, HUMAN, &given(tx, body("a", "0 4 * * *"))?, NOW).unwrap_err(), "A runs 1 at once, kept for SCH-1: raise its at once, or choose another agent.");
+fn ac161_an_agent_keeps_one_slot_for_every_two_schedules() {
+    open("sched-count").with(|tx| {
+        agent(tx, "a", 5);
+        assert_eq!((0..=6).map(slots_for).collect::<Vec<_>>(), vec![0, 1, 1, 2, 2, 3, 3], "ceil(N / 2)");
+        for (n, slots) in [(1, 1), (2, 1), (3, 2), (4, 2), (5, 3)] {
+            add(tx, HUMAN, &given(tx, body("a", "0 3 * * *"))?, NOW)?;
+            assert_eq!(kept_by_agent(tx)?["a"], Kept { slots, schedules: n, integration: false }, "{n} schedules");
+        }
         let mut b = body("a", "0 4 * * *");
         b["paused"] = json!(true);
-        let (two, _) = add(tx, HUMAN, &given(tx, b)?, NOW)?;
-        assert_eq!(kept_on(tx, "a", None)?, vec!["SCH-1"], "a paused one keeps none");
+        add(tx, HUMAN, &given(tx, b)?, NOW)?;
+        assert_eq!(kept_by_agent(tx)?["a"].schedules, 5, "a paused one counts in no agent's N");
+        Ok(())
+    }).unwrap();
+}
+
+#[test]
+fn ac161_a_schedule_is_refused_when_its_agent_cannot_keep_the_slots() {
+    open("sched-slot").with(|tx| {
+        agent(tx, "a", 1);
+        agent(tx, "b", 1);
+        let (one, _) = add(tx, HUMAN, &given(tx, body("a", "0 3 * * *"))?, NOW)?;
+        add(tx, HUMAN, &given(tx, body("a", "0 3 * * *"))?, NOW)?;
+        assert_eq!(kept_on(tx, "a", None)?, vec!["SCH-1", "SCH-2"], "two keep one slot of its one");
+        assert_eq!(add(tx, HUMAN, &given(tx, body("a", "0 4 * * *"))?, NOW).unwrap_err(),
+                   "A keeps 1 slot for 2 schedules: SCH-1, SCH-2; with this one it would keep 2 of its 1 at once: raise its at once, or choose another agent.");
+        let mut b = body("a", "0 4 * * *");
+        b["paused"] = json!(true);
+        let (three, _) = add(tx, HUMAN, &given(tx, b)?, NOW)?;
+        assert_eq!(kept_on(tx, "a", None)?.len(), 2, "a paused one keeps none");
         change(tx, HUMAN, &one, &given(tx, body("a", "0 5 * * *"))?, NOW)?;
-        assert!(kept_on(tx, "a", Some(&one))?.is_empty(), "its own save does not count it");
-        assert_eq!(change(tx, HUMAN, &two, &given(tx, body("a", "0 4 * * *"))?, NOW).unwrap_err(), "A runs 1 at once, kept for SCH-1: raise its at once, or choose another agent.", "unpausing needs a slot");
+        assert_eq!(kept_on(tx, "a", Some(&one))?, vec!["SCH-2"], "its own save does not count it");
+        assert_eq!(change(tx, HUMAN, &three, &given(tx, body("a", "0 4 * * *"))?, NOW).unwrap_err(),
+                   "A keeps 1 slot for 2 schedules: SCH-1, SCH-2; with SCH-3 it would keep 2 of its 1 at once: raise its at once, or choose another agent.", "unpausing needs a slot");
+        let (other, _) = add(tx, HUMAN, &given(tx, body("b", "0 4 * * *"))?, NOW)?;
+        assert_eq!(change(tx, HUMAN, &other, &given(tx, body("a", "0 4 * * *"))?, NOW).unwrap_err(),
+                   "A keeps 1 slot for 2 schedules: SCH-1, SCH-2; with SCH-4 it would keep 2 of its 1 at once: raise its at once, or choose another agent.", "moving one onto it");
         remove(tx, &one, NOW)?;
-        assert!(kept_on(tx, "a", None)?.is_empty(), "a deleted one keeps none");
+        assert_eq!(kept_on(tx, "a", None)?, vec!["SCH-2"], "a deleted one keeps none");
+        change(tx, HUMAN, &other, &given(tx, body("a", "0 4 * * *"))?, NOW)?;
+        assert_eq!(kept_by_agent(tx)?.get("b"), None, "moved: its old agent keeps nothing for it");
+        Ok(())
+    }).unwrap();
+}
+
+#[test]
+fn ac161_integration_s_kept_slot_counts_against_its_at_once() {
+    open("sched-slot-integration").with(|tx| {
+        agent(tx, "a", 2);
+        let s = crate::tasks::integration::read(tx, "default")?;
+        crate::tasks::integration::keep(tx, "default", &crate::tasks::integration::Settings { on: true, agent: Some("a".into()), ..s })?;
+        assert_eq!(kept_by_agent(tx)?["a"], Kept { slots: 0, schedules: 0, integration: true });
+        add(tx, HUMAN, &given(tx, body("a", "0 3 * * *"))?, NOW)?;
+        add(tx, HUMAN, &given(tx, body("a", "0 3 * * *"))?, NOW)?;
+        assert_eq!(kept_by_agent(tx)?["a"].total(), 2);
+        assert_eq!(add(tx, HUMAN, &given(tx, body("a", "0 4 * * *"))?, NOW).unwrap_err(),
+                   "A keeps 1 slot for 2 schedules: SCH-1, SCH-2, and 1 for integration; with this one it would keep 3 of its 2 at once: raise its at once, or choose another agent.");
         Ok(())
     }).unwrap();
 }

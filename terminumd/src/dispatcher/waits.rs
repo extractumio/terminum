@@ -2,7 +2,7 @@
 //! A RUN at a slot's limit waits for it (`terminum-dispatcher.md` AC-158): the press is kept, oldest first, and
 //! pressed again once its agent and its project have room, every check of a press read anew then. A wait is no
 //! run: it holds no slot, no pane, no clock. The waits for one agent are its queue, in an order a human can change
-//! (AC-169).
+//! (AC-169), a schedule's task's ahead of every other (terminum-schedules.md AC-161).
 
 use std::collections::{BTreeMap, HashMap};
 
@@ -26,24 +26,61 @@ pub struct Wait {
     /// the press, as RUN's route takes it
     pub body: Value,
     pub at: i64,
-    /// its place in the line, lowest first
+    /// its place in the line, lowest first, among the waits of its kind
     pub pos: i64,
+    /// its task is a schedule's: it stands ahead of every wait that is not (terminum-schedules.md AC-161)
+    pub scheduled: bool,
 }
 
-const SELECT: &str = "SELECT w.task, w.agent_id, w.project, w.status, w.body, w.at, w.pos FROM run_waits w";
+/// Whether the task of wait `w` is a schedule's.
+macro_rules! scheduled {
+    () => { "EXISTS (SELECT 1 FROM schedule_fires f WHERE f.task = w.task)" };
+}
+const SCHEDULED: &str = scheduled!();
+
+/// The line's order: schedules' tasks first, then the place each was given; every reader of the line sorts by it.
+pub(crate) const ORDER: &str = concat!("NOT ", scheduled!(), ", w.pos, w.rowid");
+
+fn select() -> String {
+    format!("SELECT w.task, w.agent_id, w.project, w.status, w.body, w.at, w.pos, {SCHEDULED} FROM run_waits w")
+}
 
 fn of_row(r: &rusqlite::Row) -> rusqlite::Result<Wait> {
     let body: String = r.get(4)?;
-    Ok(Wait { task: r.get(0)?, agent: r.get(1)?, project: r.get(2)?, status: r.get(3)?, body: serde_json::from_str(&body).unwrap_or(Value::Null), at: r.get(5)?, pos: r.get(6)? })
+    Ok(Wait { task: r.get(0)?, agent: r.get(1)?, project: r.get(2)?, status: r.get(3)?, body: serde_json::from_str(&body).unwrap_or(Value::Null), at: r.get(5)?, pos: r.get(6)?, scheduled: r.get(7)? })
 }
 
 /// Every wait, in the line's order.
 pub fn all(tx: &Transaction) -> Result<Vec<Wait>, String> {
-    rows(tx, &format!("{SELECT} ORDER BY w.pos, w.rowid"), [], of_row)
+    rows(tx, &format!("{} ORDER BY {ORDER}", select()), [], of_row)
+}
+
+/// The waits of `agent`, in the line's order.
+pub fn of_agent(tx: &Transaction, agent: &str) -> Result<Vec<Wait>, String> {
+    rows(tx, &format!("{} WHERE w.agent_id = ?1 ORDER BY {ORDER}", select()), [agent], of_row)
 }
 
 pub fn of_task(tx: &Transaction, task: &str) -> Result<Option<Wait>, String> {
-    tx.query_row(&format!("{SELECT} WHERE w.task = ?1"), [task], of_row).optional().map_err(sql)
+    tx.query_row(&format!("{} WHERE w.task = ?1", select()), [task], of_row).optional().map_err(sql)
+}
+
+/// The waits of tasks of schedule `schedule`, in the line's order: its firings and Run now keep at most one, a
+/// human's RUN of an older task may add one (AC-162).
+pub fn of_schedule(tx: &Transaction, schedule: &str) -> Result<Vec<Wait>, String> {
+    rows(tx, &format!("{} JOIN schedule_fires f2 ON f2.task = w.task WHERE f2.schedule = ?1 ORDER BY {ORDER}", select()), [schedule], of_row)
+}
+
+impl Wait {
+    /// A human pressed it: no manager, no Dispatcher (terminum-dispatcher.md AC-183); a newer run of its schedule never
+    /// supersedes it (terminum-schedules.md AC-162).
+    pub fn by_human(&self) -> bool {
+        self.body["manager"].is_null() && !super::runs::How::of_word(self.body["how"].as_str().unwrap_or("run")).is_some_and(super::runs::How::automatic)
+    }
+
+    /// Whether it stands before a press of a task of that kind (`scheduled`) at `place` in the line.
+    fn before(&self, scheduled: bool, place: i64) -> bool {
+        (!self.scheduled, self.pos) < (!scheduled, place)
+    }
 }
 
 /// `task` waits for `agent` with `body`; one waiting already keeps its place in the line.
@@ -53,24 +90,35 @@ pub fn add(tx: &Transaction, task: &ops::Task, agent: &str, project: &str, body:
                (&task.key, agent, project, &task.status, body.to_string(), at)).map(drop).map_err(sql)
 }
 
+/// The wait of `task` takes place `pos` in the line: a newer run of a schedule takes its superseded wait's (AC-162).
+pub fn take_place(tx: &Transaction, task: &str, pos: i64) -> Result<(), String> {
+    tx.execute("UPDATE run_waits SET pos = ?2 WHERE task = ?1", (task, pos)).map(drop).map_err(sql)
+}
+
 /// The wait of `task` ends: it started, or was called off.
 pub fn remove(tx: &Transaction, task: &str) -> Result<bool, String> {
     tx.execute("DELETE FROM run_waits WHERE task = ?1", [task]).map(|n| n > 0).map_err(sql)
 }
 
-/// The wait of `task` is called off, `words` saying why on it.
+/// The wait of `task` is called off, `words` saying why on it; one gone already was said by what called it off.
 pub fn call_off(tx: &Transaction, task: &str, words: &str) -> Result<(), String> {
-    remove(tx, task)?;
+    if !remove(tx, task)? {
+        return Ok(());
+    }
     ops::log(tx, task, DISPATCHER, "told", words, None, ops::now())?;
     super::fire::wait_ended(tx, task, words)
 }
 
-/// An older wait of `agent` or `project` that could start now, but `task`'s own: a press for them goes behind it,
-/// so the walk's beat never lets a newer press take the slot an older one waited for.
+/// A wait of `agent` or `project` before `task`'s in the line that could start now, but `task`'s own: a press for
+/// them goes behind it, so the walk's beat never lets a newer press take the slot an older one waited for, nor any
+/// press a schedule's task's (terminum-schedules.md AC-161).
 pub fn ahead(tx: &Transaction, agent: &str, project: &str, task: &str) -> Result<Option<String>, String> {
-    let place = of_task(tx, task)?.map_or(i64::MAX, |w| w.pos);
+    let (scheduled, place) = match of_task(tx, task)? {
+        Some(w) => (w.scheduled, w.pos),
+        None => (tx.query_row("SELECT EXISTS (SELECT 1 FROM schedule_fires WHERE task = ?1)", [task], |r| r.get(0)).map_err(sql)?, i64::MAX),
+    };
     let slots = pool::Slots::read(tx)?;
-    for w in all(tx)?.into_iter().filter(|w| w.task != task && w.pos < place && (w.agent == agent || w.project == project)) {
+    for w in all(tx)?.into_iter().filter(|w| w.task != task && w.before(scheduled, place) && (w.agent == agent || w.project == project)) {
         if let Some(a) = agents::in_project(tx, &w.agent, &w.project)? && slots.check_for(tx, &a, &w.project, Some(&w.task), None)?.is_none() {
             return Ok(Some(ops::get(tx, &w.task)?.id));
         }
@@ -81,7 +129,7 @@ pub fn ahead(tx: &Transaction, agent: &str, project: &str, task: &str) -> Result
 /// Each agent's queue for the board (AC-169): its waiting presses in the line's order, each with its task's title and
 /// project, and the other tasks of a press for several (`also`).
 pub fn queues(tx: &Transaction) -> Result<BTreeMap<String, Vec<Value>>, String> {
-    let found: Vec<(String, Value)> = rows(tx, "SELECT w.agent_id, t.slug, t.shown, w.project, COALESCE(json_extract(w.body, '$.also'), '[]') FROM run_waits w JOIN tasks t ON t.id = w.task ORDER BY w.pos, w.rowid", [],
+    let found: Vec<(String, Value)> = rows(tx, &format!("SELECT w.agent_id, t.slug, t.shown, w.project, COALESCE(json_extract(w.body, '$.also'), '[]') FROM run_waits w JOIN tasks t ON t.id = w.task ORDER BY {ORDER}"), [],
         |r| Ok((r.get(0)?, serde_json::json!({"id": r.get::<_, String>(1)?, "title": r.get::<_, String>(2)?, "project": r.get::<_, String>(3)?,
                                                "also": serde_json::from_str::<Value>(&r.get::<_, String>(4)?).unwrap_or_default()}))))?;
     let mut out: BTreeMap<String, Vec<Value>> = BTreeMap::new();
@@ -92,18 +140,28 @@ pub fn queues(tx: &Transaction) -> Result<BTreeMap<String, Vec<Value>>, String> 
 }
 
 /// The queue of `agent` in the order `ids` (tasks' IDs), the human's: the places its waits held, dealt anew, so no
-/// other agent's wait moves. A queue that is not these tasks changed meanwhile: nothing moves.
+/// other agent's wait moves. A queue that is not these tasks changed meanwhile: nothing moves; nor does one that puts
+/// a wait ahead of a schedule's task (terminum-schedules.md AC-161).
 pub fn reorder(tx: &Transaction, agent: &str, ids: &[String]) -> Result<(), String> {
-    let mine: Vec<(String, i64)> = rows(tx, "SELECT task, pos FROM run_waits WHERE agent_id = ?1 ORDER BY pos, rowid", [agent], |r| Ok((r.get(0)?, r.get(1)?)))?;
+    let mut mine: Vec<Wait> = of_agent(tx, agent)?;
+    mine.sort_by_key(|w| w.pos);
     let keys: Vec<String> = ids.iter().map(|id| ops::key_of(tx, id)).collect::<Result<_, _>>()?;
-    let (mut had, mut wanted): (Vec<&str>, Vec<&str>) = (mine.iter().map(|(task, _)| task.as_str()).collect(), keys.iter().map(String::as_str).collect());
+    let (mut had, mut wanted): (Vec<&str>, Vec<&str>) = (mine.iter().map(|w| w.task.as_str()).collect(), keys.iter().map(String::as_str).collect());
     had.sort_unstable();
     wanted.sort_unstable();
     if had != wanted {
         return Err("The queue changed meanwhile: look at it again.".to_string());
     }
-    for (key, (_, pos)) in keys.iter().zip(&mine) {
-        tx.execute("UPDATE run_waits SET pos = ?1 WHERE task = ?2", (pos, key)).map_err(sql)?;
+    let scheduled = |key: &str| mine.iter().any(|w| w.task == key && w.scheduled);
+    if let Some(at) = keys.iter().position(|k| !scheduled(k)) && let Some(late) = keys[at..].iter().find(|k| scheduled(k)) {
+        return Err(format!("{} is a scheduled run: it stays ahead of the other waits.", ops::get(tx, late)?.id));
+    }
+    // each kind deals its own places, so a wait never takes the place of another kind and no other agent's moves
+    for kind in [true, false] {
+        let places = mine.iter().filter(|w| w.scheduled == kind).map(|w| w.pos);
+        for (key, pos) in keys.iter().filter(|k| scheduled(k) == kind).zip(places) {
+            tx.execute("UPDATE run_waits SET pos = ?1 WHERE task = ?2", (pos, key)).map_err(sql)?;
+        }
     }
     Ok(())
 }
@@ -161,19 +219,21 @@ pub fn on_cards(tx: &Transaction, keys: &[&str]) -> Result<HashMap<String, CardW
     if keys.is_empty() { return Ok(HashMap::new()); }
     Ok(rows(tx, &format!("WITH queue AS (
             SELECT w.task, t.slug, COALESCE(a.name, w.agent_id) agent,
-                row_number() OVER (PARTITION BY w.agent_id ORDER BY w.pos, w.rowid) position
+                row_number() OVER (PARTITION BY w.agent_id ORDER BY {ORDER}) position
             FROM run_waits w JOIN tasks t ON t.id = w.task LEFT JOIN agents a ON a.id = w.agent_id), members AS ({MEMBERS})
         SELECT m.task, q.agent, q.position, q.slug FROM members m JOIN queue q ON q.task = m.press
         WHERE m.task IN (SELECT value FROM json_each(?1))"),
         [super::runs::listed_keys(keys)], |r| Ok((r.get(0)?, CardWait { agent: r.get(1)?, position: r.get(2)?, task: r.get(3)? })))?.into_iter().collect())
 }
 
-/// What a wait comes to now: pressed again, still waiting, or called off with these words; the task's ID.
+/// What a wait comes to now: pressed again, still waiting, or called off with these words; the task's ID. Or, a
+/// schedule's task with no room, its schedule's idle session whose close makes room: the run, the schedule's key.
 #[derive(Debug)]
 enum Due {
     Press(String, Value),
     Stays,
     Off(String, String),
+    Close(String, String),
 }
 
 fn due(tx: &Transaction, w: &Wait) -> Result<Due, String> {
@@ -188,6 +248,11 @@ fn due(tx: &Transaction, w: &Wait) -> Result<Due, String> {
         return Ok(Due::Off(t.id, format!("Its wait for {} was called off: it moved to {}.", a.name, t.status)));
     }
     if pool::check_for(tx, &a, &w.project, Some(&w.task), None)?.is_some() {
+        // a schedule's task closes its own schedule's idle session for room, as its firing does (terminum-schedules.md AC-161)
+        if let Some(s) = crate::tasks::schedules::of_task(tx, &w.task)?.filter(|s| s.agent == w.agent)
+            && let Some(r) = super::fire::own_idle(tx, &s)? {
+            return Ok(Due::Close(r.id, s.key));
+        }
         return Ok(Due::Stays);
     }
     Ok(Due::Press(t.id, w.body.clone()))
@@ -208,13 +273,18 @@ pub async fn start_due(app: &Shared) {
         }).await;
         let id = match decided {
             Ok(Due::Press(id, body)) => {
-                if let Err(why) = super::api::press_again(app, &id, body).await {
+                if let Err(why) = super::api::press_again(app, &id, body, true).await {
                     let (task, words) = (w.task.clone(), format!("Did not start after its wait: {why}"));
                     let _ = super::store(app, move |tx| call_off(tx, &task, &words)).await;
                 }
                 id
             }
             Ok(Due::Off(id, _)) => id,
+            // closed, the next walk presses it, first of the line; one that stays open was said on its task
+            Ok(Due::Close(run, key)) => {
+                let _ = super::api::close_idle(app, &run, &key).await;
+                continue;
+            }
             Ok(Due::Stays) => continue,
             Err(e) => {
                 tracing::warn!(event = "dispatcher.wait", error = %e);
