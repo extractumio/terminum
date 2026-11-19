@@ -86,7 +86,7 @@ Open questions:
 | AC-205 | [MUST / P0] | A run Dispatcher started whose task was IN PROGRESS when its tmux server ended resumes by itself once the server is back, as RUN would, with fixed words that say so; a window closed by hand, a task not in progress, a run with nothing to resume, and a server that ends again within an hour of such a resume do not. |
 | AC-156 | [MUST / P0] | A run starts its agent's command as the operator wrote it, its permissions and model included; Dispatcher adds only the inline TUI in the agent's own process with Codex's update menu off (§9), the effort and, going on, the resume of its conversation; going on starts the agent's command as the pool has it then. |
 | AC-157 | [MUST / P0] | An agent that needs a human asks by `ask_human`: its questions, written for a newcomer as why a person is needed (one sentence), the recommended answers with why and the other options, then the whole issue (one paragraph), stay on the task, the task waits for the human, and once the agent's turn is over its session closes; the task keeps its agent and conversation, and RUN resumes that conversation with the human's answers. |
-| AC-158 | [MUST / P0] | A RUN at its agent's or project's limit that the human added to the queue (AC-169) waits for room, in the queue's order, and starts once there is room; it is called off by the human, or by the task moving, archived or its agent deleted. |
+| AC-158 | [MUST / P0] | A RUN at its agent's or project's limit that the human added to the queue (AC-169), or a schedule's task with no room (terminum-schedules.md AC-161), waits for room, schedules' tasks ahead of every other wait, else in the queue's order, and starts once there is room; it is called off by the human, or by the task moving, archived or its agent deleted. |
 | AC-169 | [MUST / P0] | A RUN at a limit is offered its agent's queue and waits only once the human agrees; the agent's card shows a pale dot for each queued task, a ring for each free slot and a dashed ring for each kept one, and a key that opens its window at the queue, where tasks are dragged or moved by arrows into another order and taken out, on a Mac and on a phone. |
 | AC-170 | [SHOULD / P1] | Auto-Dispatcher, off until a human turns it on for a project with the switch in the board's bar: it takes TODO tasks of the severities chosen that stand for the wait set; with free slots and such tasks Dispatcher starts a round, one more session of the chosen agent that takes no slot; that agent scores the candidates by RICE and starts the best, one a free slot, each on the agent named in the task or the setting's default, told only its ID; or, set to priority and saved order, terminumd starts them itself top down with no agent; a failing round or two failing tasks turn it off, said on the board. |
 | AC-185 | [MUST / P0] | A main task runs with its subtasks: a RUN of it, a human's, a manager's or Auto-Dispatcher's, takes its subtasks not DONE into the same session; the agent is told to do them all one after another in the order it decides, the main task last, done only when each subtask is; one held by a cause that can be removed waits for a human with the rest still in progress, one that cannot be done at all fails with what depends on it and its main task, and the main task's next RUN runs again what is not DONE. |
@@ -937,6 +937,7 @@ Scenario: AC-141 happy path — an idle holder
   Then API-12's pane closes as AC-125 closes one, its mark checked and its screen kept, and API-13 starts in the slot
   When the pane did not close, or API-13 cannot start
   Then that is said, and whatever closed stays closed: nothing else is closed for it
+  And a schedule's firing or Run now closes, by itself, only an idle holder of a task of its own schedule, and only when there is no room without it (terminum-schedules.md AC-161)
 
 Scenario: AC-141 edge — a draft after the close offer
   Given RUN offers to close an idle holder whose input box is empty
@@ -1314,6 +1315,7 @@ Scenario: AC-158 edge — in turn
   When a slot frees
   Then API-13 takes it: the first of the queue as the human ordered it (AC-169); a press while a wait before it has room goes behind it
   And a wait held by its project's limit holds no other agent's or project's wait
+  But a wait of a schedule's task, a firing's, a Run now's or a RUN's of it, stands ahead of every other wait of its agent and of its project, in the order such waits came (terminum-schedules.md AC-161)
 
 Scenario: AC-158 edge — pressed again
   When the user presses Run on API-13 again, on Opus reviewer or on another agent, or Run from scratch
@@ -1351,7 +1353,7 @@ Scenario: AC-169 happy path — integration frees room for its blockers
   And a press already queued becomes eligible in its existing order
   And the sessions remain watched, listed by list_runs and protected as their tasks' sessions; the current turns may finish, with no Stop hook needed to release room
   And AC-138 keeps every session's dot, task links and Open session in the agent's window; a quiet one says "waiting for integration" and stands pale, while actual foreground or background work still pulses; the count and free rings exclude integration waits
-  And slots kept by a schedule or for integration stay kept
+  And slots kept for schedules or for integration stay kept
 
 Scenario: AC-169 edge — a new process reserves room before its first prompt
   Given a RUN starts a new process for a task still in INTEGRATION
@@ -1379,6 +1381,7 @@ Scenario: AC-169 happy path — offered at a limit
   Then API-13 is the last of Opus reviewer's queue and waits for room (AC-158)
   When the user closes the window instead
   Then nothing waits and API-13 stays where it stood
+  And a RUN of a schedule's task, a human's or a manager's run_task, is offered the queue the same way; added, it waits ahead of the waits of tasks that are no schedule's (terminum-schedules.md AC-161)
 
 Scenario: AC-169 happy path — an answered question waits for its agent
   Given API-13 in WAIT FOR HUMAN with its session closed and API-12 first in Codex's queue
@@ -1395,11 +1398,12 @@ Scenario: AC-169 edge — no room found only at the press
   When the press finds no room
   Then nothing starts and nothing waits: POST /api/tasks/API-13/run answers {"full": {"words": "<what holds it>", "queue": "<what holds it> Add it to the queue: it starts when there is room.", "close": null}}, as its first read says of an agent with no room; the window says so and its key reads Add to queue
   And a wait before it that has room counts as no room: "API-13 waits for it first."
-  And only a press with "queue": true waits; a schedule's firing and a wait pressed again are such presses
+  And only a press with "queue": true waits; a schedule's firing, its Run now and a wait pressed again are such presses
 
 Scenario: AC-169 happy path — on the agent's card
-  Given Opus reviewer with 3 at once, one session working, SCH-1 keeping a slot (terminum-schedules.md AC-161), API-13 and API-15 in its queue
-  Then its dots read, in order: a dashed ring in its color for the kept slot, the session's dot, a plain grey ring for the free slot, "2/3"
+  Given Opus reviewer with 3 at once, one session working, SCH-1 and SCH-2 keeping one slot (terminum-schedules.md AC-161), API-13 and API-15 in its queue
+  Then its dots read, in order: a dashed ring in its color for the kept slot, "kept for 2 schedules" on hover, the session's dot, a plain grey ring for the free slot, "2/3"
+  And an agent keeping K slots for its schedules shows K such rings, none naming a schedule, and one more, "kept for integration", when it is a project's integration agent
   And a key after them holds a pale grey dot for each queued task and "2 queued", naming them on hover
   And an agent of more than 8 at once says its free slots by the count alone; a queue of more than 6 shows 6 dots and its count
   When the user presses that key
@@ -1428,6 +1432,7 @@ Scenario: AC-169 happy path — a manager promotes an urgent wait
   And the next eligible slot starts API-16 on its chosen agent with its saved message, answers and conversation
   And no running session is interrupted, no new run is made by the move, and agent and project limits still apply
   And new waits append; each repeated promotion deliberately bypasses older work, with no automatic aging
+  But a promotion of a wait that is no schedule's task stops behind the waits of schedules' tasks: with S_TERM-42 queued too, the queue is S_TERM-42, API-16, API-13, API-15 (terminum-schedules.md AC-161)
 
 Scenario: AC-169 edge — a manager promotes a grouped press
   Given API-16's queued press also carries API-17 and its unfinished subtask API-18
@@ -1811,6 +1816,10 @@ Scenario: AC-183 happy path — Dispatcher's own start
   When a schedule's firing starts its task (`terminum-schedules.md` AC-162), or Auto-Dispatcher starts a round or the task a round chose (AC-170)
   Then the run keeps Dispatcher's ID and the way: `schedule` or `auto`
   And a human's later Run of that same task is a run of its own, the human's
+
+Scenario: AC-183 edge — a wait keeps it
+  When a press waits for room (AC-158)
+  Then its wait keeps who pressed it and how, so a newer run of a schedule tells a human's RUN of its task, which it never supersedes, from its own presses (terminum-schedules.md AC-162)
 
 Scenario: AC-183 edge — what a page may say
   When a page's request names the way `schedule`, `auto` or `session` for a task's Run

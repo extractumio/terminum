@@ -16,20 +16,20 @@ A snapshot of what terminum must do, not a record of how it came to be: git hold
 
 **Who it affects.** One person running coding agents from a Mac that is often asleep at night.
 
-**Expected outcome.** A schedule holds a title, a text, a project, a severity, an agent of its project's pool, a cadence and a time budget. When it is due, terminumd makes a new task from it as it is then, IN PROGRESS, and runs it on its agent in the project's folder; that task waits for a human, is done or fails as any other, never standing in TODO, and its result is read on its card. The agent keeps one slot for each schedule, so a schedule is never late for want of room. Every firing is listed in the Message history's Scheduled page with what went in and what came out.
+**Expected outcome.** A schedule holds a title, a text, a project, a severity, an agent of its project's pool, a cadence and a time budget. When it is due, terminumd makes a new task from it as it is then, IN PROGRESS, and runs it on its agent in the project's folder; that task waits for a human, is done or fails as any other, never standing in TODO, and its result is read on its card. The agent keeps one slot for every two schedules, shared by them all; a schedule's task starts at once when there is room, and with none it waits ahead of every other wait. Every firing is listed in the Message history's Scheduled page with what went in and what came out.
 
 **Scenario.** Alex sets "Nightly deps check" in Billing, on Opus reviewer, every day at 03:00, 30 minutes. At 03:00 S_TERM-41 is made, runs, and stands in DONE with "Outcome: attention" and two outdated packages. The next night the Mac sleeps until 08:12: that firing is missed and says so, nothing runs on wake. The night after, S_TERM-44 asks which major version to take and waits in WAIT FOR HUMAN; the schedule goes on, and Alex answers and presses RUN when he reads it.
 
 ## 2. Scope and non-goals
 
 In scope:
-- Schedules: their window, cadence, kept slot, firing, the tasks they make, the board's section, the Scheduled page.
+- Schedules: their window, cadence, kept slots, firing, the tasks they make, the board's section, the Scheduled page.
 
 Out of scope (explicit):
 - A worker's agent making or changing a schedule: a signed-in page does, and its project's manager by its tools (terminum-agents.md AC-180); a worker has no tool for them (§9 Security).
 - Files on a schedule, subtasks of one, a schedule per host's own clock: no user need yet.
 - Runs closer than a minute apart: cron's fields name minutes.
-- A second run of a schedule while a task of it is IN PROGRESS: the firing is skipped and says so (AC-162).
+- A second run of a schedule while a task of it runs: the firing is skipped and says so; one waiting for room is superseded by the newer (AC-162).
 - A firing run later than its time: what the Mac slept through is missed (AC-162).
 - A default time budget for all schedules: each schedule holds its own.
 
@@ -56,11 +56,11 @@ Open questions: none.
 | ID | Priority | Case |
 |---|---|---|
 | AC-160 | [MUST / P0] | A human makes a schedule in its window: title, text, project, severity, an agent of that project's pool (terminum-dispatcher.md AC-137), a cadence picked by kind (every N minutes or hours, daily, weekdays, weekly on days, monthly on a day, once, or five cron fields) in the Mac's local time, and a time budget; the window shows its next runs and the prompt that will go; it can be changed, paused or deleted at any time; a project with schedules is kept until they move or are deleted. |
-| AC-161 | [MUST / P0] | A schedule not paused keeps one slot of its agent: other runs have the rest, every run of its own tasks takes the kept one; an agent with no slot left to keep is refused, as are an at once below its kept slots and deleting an agent with schedules. |
-| AC-162 | [MUST / P0] | When a schedule is due, terminumd makes a task from it as it is then, IN PROGRESS and named S_<its project's next ID>, and runs it on its agent in the project's folder, the agent told it is a scheduled run and how to give its result; such a task never stands in TODO; a firing while a task of it is IN PROGRESS is skipped; a firing over 2 minutes late is missed, never run later; a start that fails fails its task and the next firing tries again; each firing is written. |
+| AC-161 | [MUST / P0] | An agent keeps ceil(N / 2) slots for its N schedules not paused, one pool they share; a task of them takes a free kept slot, else a free ordinary one, else its own schedule's idle session closed for it, else waits for room ahead of every other wait of its agent and project; ordinary runs never take a kept slot; adding, unpausing or moving a schedule onto an agent, or lowering its at once, is refused when its kept slots and integration's would pass its at once, as is deleting an agent with schedules. |
+| AC-162 | [MUST / P0] | When a schedule is due, terminumd makes a task from it as it is then, IN PROGRESS and named S_<its project's next ID>, and runs it on its agent in the project's folder, the agent told it is a scheduled run and how to give its result; such a task never stands in TODO; a firing while a task of it runs is skipped; a firing while a task of it waits for room supersedes that wait, FAILED, and takes its place, unless a human's RUN pressed it: then the firing is skipped; a firing over 2 minutes late is missed, never run later; a start that fails fails its task and the next firing tries again; each firing is written. |
 | AC-163 | [MUST / P0] | The board's Routines section (the board's word for schedules) stands between the pool and the columns, folded to one strip by default, a press away; its cards stand four to a row on the board's tracks, each with its cadence, next run, agent, last task and why that one did not start, every card whole; a schedule's tasks carry its name. |
 | AC-164 | [SHOULD / P1] | The Message history's Scheduled page lists every firing, newest first: when, the schedule, its task and agent, status, when it went IN PROGRESS and ended, what went in and what came out, or why nothing ran. |
-| AC-182 | [SHOULD / P1] | Run now on a schedule's card, and a manager's run_schedule, make the schedule's task and start it at once, whatever its cadence and paused or not; the cadence stays as it is. |
+| AC-182 | [SHOULD / P1] | Run now on a schedule's card, and a manager's run_schedule, make the schedule's task and start it at once when there is room, else it waits as a firing's (AC-161), whatever its cadence and paused or not; the cadence stays as it is; refused while a task of it runs or a human's RUN of one waits. |
 
 ## 5. BDD scenarios
 
@@ -101,7 +101,7 @@ Scenario: AC-160 happy path — changed at any time
 
 Scenario: AC-160 happy path — paused and deleted
   When the user turns Paused on and presses Save
-  Then nothing fires, its kept slot is free (AC-161), and its card says "paused"
+  Then nothing fires, it no longer counts among its agent's schedules (AC-161), and its card says "paused"
   When the user presses Delete and confirms "Delete SCH-1? Its tasks stay."
   Then it is gone from the board, its tasks and its firings in the Scheduled page stay under its name
   And a task of it waiting for room (AC-158) is called off and FAILED, saying "Its schedule was paused." or "was deleted."
@@ -131,36 +131,93 @@ Scenario: AC-160 failure — refused
   And what the user typed stays in the window (terminum-kanban.md AC-133)
 ```
 
-### AC-161 — Its kept slot [MUST / P0]
+### AC-161 — Its kept slots [MUST / P0]
 
 ```gherkin
-Scenario: AC-161 happy path — kept
-  Given Opus reviewer with 2 at once and SCH-1 on it
-  Then the agent's card shows a dashed ring "kept for SCH-1" before its dots (terminum-dispatcher.md AC-169) and counts "1/2" with nothing running
-  When the user runs API-12 on it
-  Then it starts; API-13 next is told "Opus reviewer is at its limit of 2: API-12 is working; SCH-1 (kept)." and is offered the queue (terminum-dispatcher.md AC-169)
+Scenario: AC-161 happy path — kept by count
+  Given Opus reviewer with 4 at once and SCH-1 on it
+  Then it keeps 1 slot: its card shows one dashed ring "kept for 1 schedule" before its dots (terminum-dispatcher.md AC-169) and counts "1/4" with nothing running
+  When SCH-2 is set on it
+  Then it still keeps 1 slot, "kept for 2 schedules": K = ceil(N / 2), N its schedules not paused: 1 or 2 keep 1, 3 or 4 keep 2, 5 keep 3
+  When SCH-3 is saved on it, a paused SCH-3 on it is unpaused, or SCH-3 moves to it from another agent
+  Then it keeps 2 slots: two dashed rings "kept for 3 schedules", "2/4"
+  When SCH-3 is paused, deleted or moved to another agent
+  Then it keeps 1 again, and the agent SCH-3 moved to counts it among its own
+  And its kept slots are one pool of all its schedules: no ring, word or slot names a schedule
+  And a project's integration agent keeps its one slot for integration besides them (terminum-integration.md AC-194): one more dashed ring, "kept for integration"
 
-Scenario: AC-161 happy path — its own tasks take the kept slot
+Scenario: AC-161 happy path — ordinary runs have the rest
+  Given Opus reviewer with 2 at once and SCH-1 on it, nothing running
+  When the user runs API-12 on it
+  Then it starts; API-13 next is told "Opus reviewer is at its limit of 2: API-12 is working; 1 kept for 1 schedule." and is offered the queue (terminum-dispatcher.md AC-169)
+  And no ordinary run takes a kept slot, free or not
+
+Scenario: AC-161 happy path — a start in a kept slot
   Given Opus reviewer with 1 at once, SCH-1 on it, and API-12 running on it as a human's RUN before SCH-1 was set
   When SCH-1 fires
-  Then S_TERM-41 starts on Opus reviewer: the kept slot is its own
-  When S_TERM-41 asks a human and its session closes (AC-157), and the human answers and presses RUN
-  Then the resume starts at once in the kept slot, never waiting behind another run
-  And a human's RUN of a FAILED or DONE task of SCH-1 takes it the same way, its prompt's first line "The human ran task S_TERM-38 again: Nightly deps check. A task of terminum's schedule SCH-1 …"
-  But one run stands in a kept slot: while S_TERM-41 runs there, a RUN of S_TERM-38 counts against Opus reviewer's limit as any run, and so does a run of several tasks
+  Then S_TERM-41 starts on Opus reviewer at once in the kept slot, only its project's limit holding it
+  And a RUN of one task of the agent's schedules takes a free kept slot the same way: the human's resume after answering S_TERM-41 (AC-157), a human's RUN of a FAILED or DONE S_TERM-38, its prompt's first line "The human ran task S_TERM-38 again: Nightly deps check. A task of terminum's schedule SCH-1 …", a manager's run_task
+
+Scenario: AC-161 happy path — a start in an ordinary slot
+  Given Opus reviewer with 3 at once, SCH-1 and SCH-2 on it keeping 1 slot, and S_TERM-41 of SCH-1 running
+  When SCH-2 fires
+  Then S_TERM-42 starts at once in a free ordinary slot, and the card counts "2/3"
+  And the kept slots in use are counted, never placed: of the runs of one task of the agent's schedules, up to K stand in its kept slots, the oldest first, and the rest count as ordinary runs; no run moves, and K falling under them after a pause or a delete only makes the agent full sooner
+  And a run of several tasks counts as an ordinary run
+
+Scenario: AC-161 happy path — its own idle session closed for it
+  Given Opus reviewer with 1 at once, SCH-1 on it, and S_TERM-41 of SCH-1 DONE, its session open and idle in the kept slot (terminum-dispatcher.md AC-141's idle holder)
+  When SCH-1 fires, or is run now (AC-182)
+  Then that session closes as AC-141 closes an idle holder, its screen kept, and S_TERM-42 starts in its slot at once
+  And it is closed only when there is no room without it, and only when its close makes room
+  But a session of another schedule, idle or not, or an ordinary run's, is never closed for it
+
+Scenario: AC-161 edge — no room: it waits, ahead of the others
+  Given Opus reviewer with 2 at once, SCH-1 and SCH-2 on it keeping 1 slot, S_TERM-41 of SCH-2 working in it, API-12 working in the other, and API-13 and API-15 in its queue
+  When SCH-1 fires
+  Then S_TERM-42 is made IN PROGRESS and waits for room (terminum-dispatcher.md AC-158) with no question, first in Opus reviewer's queue, ahead of API-13 and API-15: its card says "queued for Opus reviewer, 1st"
+  When API-12's session closes
+  Then S_TERM-42 starts in that slot, before API-13
+  And waits of schedules' tasks stand among themselves in the order they came, all ahead of every other wait of their agent
+
+Scenario: AC-161 edge — no room in its project
+  Given Billing with Agents at once 2, two runs of it working on Codex, BILL-7 waiting for Codex in Billing's queue, and Opus reviewer with room
+  When SCH-1 of Billing fires on Opus reviewer
+  Then S_TERM-42 waits for room: "It waits for Opus reviewer: Billing runs 2 agents at once, its limit: …"
+  When a run of Billing ends
+  Then S_TERM-42 starts before BILL-7: a schedule's wait stands ahead of every other wait of its project too
+
+Scenario: AC-161 edge — a human's RUN of a schedule's task at a full agent
+  Given Opus reviewer full, and S_TERM-38 of SCH-1 answered by the human
+  When the human presses RUN on it, or the project's manager calls run_task on it
+  Then it is offered the queue as any RUN (terminum-dispatcher.md AC-169), and nothing waits until agreed
+  When the human presses Add to queue, or run_task says queue "yes"
+  Then S_TERM-38 waits ahead of every ordinary wait of its agent and project, as a firing's task
+
+Scenario: AC-161 edge — a promotion stops behind it
+  Given S_TERM-42 of SCH-1, then API-13 and API-16 waiting in Opus reviewer's queue
+  When the project's manager calls promote_queued_task {id: "API-16"} (terminum-dispatcher.md AC-169)
+  Then the queue is S_TERM-42, API-16, API-13: an ordinary wait moves to the front of the ordinary waits, never ahead of a schedule's task
+  When the human drags API-16 above S_TERM-42 in the agent's window
+  Then terminumd says "S_TERM-42 is a scheduled run: it stays ahead of the other waits." and nothing moves
+
+Scenario: AC-161 edge — no aging, and a bound
+  Then a wait of an ordinary run never ages past a schedule's task
+  But the firings and Run now of a schedule keep at most one task of it running or waiting (AC-162), so the ordinary runs of an agent always keep at least its at once − N slots, never fewer than one slot per schedule left them
 
 Scenario: AC-161 failure — no slot to keep
-  Given Opus reviewer with 1 at once and SCH-1 on it
-  When the user saves SCH-2 on it
-  Then the window says "Opus reviewer runs 1 at once, kept for SCH-1: raise its at once, or choose another agent." and nothing is kept
-  When the user sets Opus reviewer's at once below the slots its schedules keep
-  Then its window says "Opus reviewer keeps 1 slot for SCH-1: at once is at least 1."
+  Given Opus reviewer with 1 at once and SCH-1 and SCH-2 on it, keeping 1 slot
+  When the user saves SCH-3 on it, unpauses a paused SCH-3 on it, or moves SCH-3 to it
+  Then the window says "Opus reviewer keeps 1 slot for 2 schedules: SCH-1, SCH-2; with SCH-3 it would keep 2 of its 1 at once: raise its at once, or choose another agent." ("with this one" for a schedule not yet kept) and nothing is kept
+  And integration's kept slot counts: Opus reviewer with 2 at once, integration agent of Billing, SCH-1 and SCH-2 on it, says "Opus reviewer keeps 1 slot for 2 schedules: SCH-1, SCH-2, and 1 for integration; with SCH-3 it would keep 3 of its 2 at once: …"
+  When the user sets Opus reviewer's at once below the slots it keeps
+  Then its window says "Opus reviewer keeps 1 slot for 2 schedules: SCH-1, SCH-2: at once is at least 1."
   When the user deletes Opus reviewer
-  Then its window says "Opus reviewer runs schedules SCH-1: give them another agent first." and it stays
+  Then its window says "Opus reviewer runs schedules SCH-1, SCH-2: give them another agent first." and it stays
 
 Scenario: AC-161 edge — paused
   Given SCH-1 paused
-  Then it keeps no slot and the agent's card has no clock mark for it
+  Then it counts in no agent's N, and a task of it takes no kept slot: run now (AC-182), it starts in an ordinary slot or waits, ahead of ordinary waits as any schedule's task
 ```
 
 ### AC-162 — A firing [MUST / P0]
@@ -193,7 +250,7 @@ Scenario: AC-162 happy path — the result
   When the agent calls finish_task with its result
   Then S_TERM-41 is DONE with that comment, and the user reads it on its card's window in DONE
   When the agent asks a human (AC-157)
-  Then S_TERM-41 is WAIT FOR HUMAN, its session closes, and the user's RUN resumes it in SCH-1's kept slot (AC-161)
+  Then S_TERM-41 is WAIT FOR HUMAN, its session closes, and the user's RUN resumes it as AC-161 starts a schedule's task
   When its budget ends or its agent fails
   Then S_TERM-41 is FAILED as any task (AC-126, AC-123); SCH-1 is not paused
 
@@ -204,22 +261,33 @@ Scenario: AC-162 happy path — its ID and its columns
   When an agent calls move_task with to "TODO" for it
   Then it is told "S_BILL-41 is a run of schedule SCH-1: it does not go to TODO." and it stays
 
-Scenario: AC-162 edge — a task of it still in progress
-  Given S_TERM-44, or any older task of SCH-1, IN PROGRESS: its agent works, or it waits for room (AC-158)
+Scenario: AC-162 edge — a task of it still running
+  Given S_TERM-44, or any older task of SCH-1, IN PROGRESS with a run of it live, or made and its run not yet asked for
   When SCH-1 is due again
   Then no task is made, the firing is written "Skipped: S_TERM-44 is still in progress.", and SCH-1's card says "skipped 1"
   But S_TERM-44 in WAIT FOR HUMAN, DONE or FAILED skips nothing: S_TERM-45 is made and runs
   And skips one after another for one reason are one firing's row, counting each; the card counts each
-  And a task whose wait for room is called off with no run of it live is FAILED with the words that called it off
   And a task left IN PROGRESS with no run of it live and no wait skips nothing
 
-Scenario: AC-162 edge — a session of it still holds the slot
-  Given S_TERM-41 DONE, or any task of SCH-1 a human ran again and DONE, its session open and idle in SCH-1's kept slot (AC-161; terminum-dispatcher.md AC-141's idle holder)
+Scenario: AC-162 edge — a newer run supersedes a waiting one
+  Given S_TERM-44 of SCH-1 waiting for room (AC-161), pressed by a firing, by Run now or run_schedule, or by the manager's run_task
+  When SCH-1 is due again, or is run now (AC-182)
+  Then S_TERM-45 is made, and in the same transaction S_TERM-44's wait is called off (terminum-dispatcher.md AC-158) with "Superseded by S_TERM-45, a newer run of SCH-1, while it waited for room."
+  And S_TERM-44, IN PROGRESS with no run of it live, is FAILED with those words, as any task of a schedule whose wait is called off; one in another column stays there
+  And S_TERM-45 starts at once when there is room, else takes S_TERM-44's place in the queue
+
+Scenario: AC-162 edge — a human's RUN wait stays
+  Given S_TERM-44 of SCH-1 answered by the human and RUN, waiting for room (who pressed it kept: terminum-dispatcher.md AC-183)
   When SCH-1 is due
-  Then that session closes as AC-141 closes an idle holder, its screen kept, and S_TERM-42 starts in the slot at once
-  When that session is not idle (its agent works on, a draft stands in its box, a subagent runs)
-  Then nothing closes, no task is made, and the firing is written "Skipped: S_TERM-41's session is still busy." naming the task in the slot
-  And a paused schedule, which keeps no slot, looks at its last task's session the same way (AC-182)
+  Then no task is made, S_TERM-44 waits on, and the firing is written "Skipped: S_TERM-44 waits for room, run by a human."
+  When SCH-1 is run now, or by run_schedule
+  Then it is refused: "Not run: S_TERM-44 waits for room, run by a human."
+
+Scenario: AC-162 edge — a session of it still open
+  Given S_TERM-41 DONE, or any task of SCH-1 a human ran again and DONE, its session open and not idle yet (its agent works on, a draft stands in its box, a subagent runs)
+  When SCH-1 is due
+  Then S_TERM-42 is made and starts as AC-161 says: in a free slot at once, else it waits for room; the busy session is not closed
+  And an idle one is closed for it only when there is no room without it (AC-161)
 
 Scenario: AC-162 edge — a sleeping Mac
   Given SCH-1 daily at 03:00 and the Mac asleep from 01:00 to 08:12, or terminumd stopped
@@ -254,7 +322,7 @@ Scenario: AC-162 failure — terminumd stops between the two
 Scenario: AC-162 edge — Once
   Given SCH-3 once at Thu 12 Nov 09:00
   When it fires
-  Then it pauses itself, its card says "ran once", and its kept slot is free
+  Then it pauses itself, its card says "ran once", and it no longer counts among its agent's schedules (AC-161)
 ```
 
 ### AC-163 — On the board [MUST / P0]
@@ -328,7 +396,7 @@ Scenario: AC-164 failure — not read
 Scenario: AC-182 happy path
   Given SCH-1 "Nightly deps check", every day at 03:00, its last task DONE and its session closed
   When the human presses Run now, the play key at the right of its card's head, and confirms "Run SCH-1 now, on its agent? Its cadence stays as it is."
-  Then terminumd makes its task as a firing does (AC-162), S_TERM-42 IN PROGRESS, its history saying who ran the schedule now, and starts it on the schedule's agent in its kept slot
+  Then terminumd makes its task as a firing does (AC-162), S_TERM-42 IN PROGRESS, its history saying who ran the schedule now, and starts it on the schedule's agent as AC-161 starts a schedule's task: at once when there is room, else it waits
   And the firing is written and shows on the Scheduled page (AC-164); the card's next run is still 03:00
   And a toast says "SCH-1 runs now: S_TERM-42"
   When the project's manager calls run_schedule {schedule: "SCH-1"} (terminum-agents.md AC-180)
@@ -346,10 +414,10 @@ Scenario: AC-182 edge — paused, once
   Then it runs, and stays paused
 
 Scenario: AC-182 failure
-  When a task of it is IN PROGRESS, running or waiting for room
+  When a task of it runs, as a firing finds it (AC-162)
   Then nothing is made: "Not run: S_TERM-41 is still in progress."
-  When a session of it still holds its slot, as a firing finds it (AC-162), and is not idle a minute (terminum-dispatcher.md AC-141)
-  Then nothing is made: "Not run: S_TERM-41's session is still busy."; an idle one is closed for the slot first
+  When a task of it waits for room, pressed by a human's RUN (AC-162)
+  Then nothing is made: "Not run: S_TERM-41 waits for room, run by a human."; a wait of another press is superseded as a firing supersedes it
   When its start fails (no folder, agent gone)
   Then its task is FAILED saying why, as a firing's (AC-162)
 ```
@@ -362,11 +430,11 @@ sequenceDiagram
   participant DB as kanban.sqlite
   participant R as RUN (AC-121)
   W->>DB: schedules due since last_due
-  alt over 2 minutes late, a task of it IN PROGRESS, or its session busy
+  alt over 2 minutes late, a task of it running, or a human's RUN of one waiting
     W->>DB: firing: skipped, why
   else
-    W->>DB: one transaction: task from the schedule, firing "made", last_due
-    W->>R: run the task on the schedule's agent, its kept slot
+    W->>DB: one transaction: an older task's wait superseded, task from the schedule, firing "made", last_due
+    W->>R: run the task on the schedule's agent: a kept slot, an ordinary one, its own idle session closed, or a wait first in the queue
     alt started or waits for room
       R->>DB: firing: started
     else refused
@@ -403,9 +471,9 @@ A schedule is shown as `SCH-<number>`. Times are unix seconds. `cron` or `once_a
 
 **Cadence** (`terminumd/src/tasks/cron.rs`). Five fields: minute 0–59, hour 0–23, day 1–31, month 1–12, weekday 0–7 (0 and 7 Sunday); each `*`, `n`, `a-b`, `a-b/s`, `*/s`, `n/s`, lists by commas; names of days and months are refused. Both days named: either matches (Vixie cron). The next minute is found minute by minute in local time, skipping whole hours and days that cannot match, up to eight years. A candidate whose local date and time is not after that of the moment it follows (the last due time) is passed over, so a minute the clock passes twice comes once.
 
-**Firing** (`terminumd/src/dispatcher/fire.rs`), on each walk before the runs: every schedule not paused or deleted, due ≤ now; due over 120 s ago → skipped as missed; a task of it IN PROGRESS → skipped; its last run holding a slot → closed as AC-141's idle holder or skipped; else the task, IN PROGRESS, and the firing in one transaction, then the press of RUN's route (`api::press_again` with its agent), so every check of RUN holds; a press refused → the task FAILED, the firing `failed`. Made by Dispatcher, `by_agent` 0: its text is the human's. `ops::move_to` refuses TODO for a task a firing names.
+**Firing** (`terminumd/src/dispatcher/fire.rs`), on each walk before the runs: every schedule not paused or deleted, due ≤ now; due over 120 s ago → skipped as missed; a task of it IN PROGRESS with a live run or its firing `made` → skipped; a task of it waiting for room → skipped when a human's RUN pressed it (the wait's press keeps `how` and `manager`, terminum-dispatcher.md AC-183), else called off in the transaction that makes the next; no room (`pool::room_for`) and an idle run of one of its tasks whose close makes room → closed as AC-141's idle holder, then decided again; else the task, IN PROGRESS, and the firing in one transaction, then the press of RUN's route (`api::press_again` with its agent), so every check of RUN holds; a press refused → the task FAILED, the firing `failed`. Made by Dispatcher, `by_agent` 0: its text is the human's. `ops::move_to` refuses TODO for a task a firing names.
 
-**Slots** (`pool.rs`). `judge` counts, for an agent: its live runs whose tasks are no schedule's of it not paused, plus one per such schedule; a run whose task is a firing's of a schedule on that agent is checked against the project's limit only.
+**Slots** (`pool.rs`). An agent keeps K = ceil(N / 2) slots, N its schedules not paused, plus one for integration when a project names it (terminum-integration.md AC-194). Of its live runs of one task of its schedules not paused, the K oldest stand in its kept slots, and of its integration tasks' runs the oldest in integration's; `judge` counts the rest, plus every kept slot. A run of one such task is checked against the project's limit only while fewer than K stand in kept slots, else as any run. **Waits** (`waits.rs`): the line is ordered by whether the task is a schedule's, then `pos`; `ahead`, the board, the cards and a reorder read that order, and a reorder or promotion that puts another wait ahead of a schedule's task is refused or stops behind it.
 
 **Routes.**
 
@@ -431,8 +499,8 @@ Single stage.
 ## 11. Checklist with Definition of Done
 
 - [x] AC-160 — `cargo test tasks::cron`, `cargo test tasks::schedules`, `cargo test page::projects` (project deletion refuses existing schedules, keeps deleted schedules' history, rolls back on refusal), `web/test/e2e_liveschedules.mjs` (a choice in the page's own list clears the words it answered; project deletion before and after schedule deletion)
-- [x] AC-161 — `cargo test dispatcher::fire` (its task takes the kept slot), `cargo test tasks::schedules`, `cargo test tasks::agents`, `web/test/e2e_liveschedules.mjs`
-- [x] AC-162 — `cargo test dispatcher::fire` (made IN PROGRESS as S_<ID>, refused in TODO, a manager's schedule and runs said to be the manager's, missed, a start that fails, an older task's idle session in the kept slot closed), `web/test/e2e_liveschedules.mjs` (a firing on a fake agent)
+- [x] AC-161 — `cargo test dispatcher::pool` (`ac161_…`: K by count, kept slot, ordinary slot, overflow, integration's beside), `cargo test dispatcher::fire` (its task takes a kept slot, an ordinary one, its own idle session closed, never another schedule's, a wait), `cargo test dispatcher::waits` (ahead of ordinary waits by agent and project, a refused reorder, a promotion behind it), `cargo test tasks::schedules`, `cargo test tasks::agents` (the refusals with integration's slot), `web/test/e2e_livequeue.mjs` (the card's rings, the queue's order), `web/test/e2e_all.mjs` (`kanbankept`), `web/test/e2e_liveschedules.mjs`
+- [x] AC-162 — `cargo test dispatcher::fire` (made IN PROGRESS as S_<ID>, refused in TODO, a manager's schedule and runs said to be the manager's, missed, a start that fails, an older task's idle session closed, a waiting task superseded by a firing and by Run now, a human's RUN wait kept), `web/test/e2e_liveschedules.mjs` (a firing on a fake agent)
 - [x] AC-163 — `web/test/e2e_liveschedules.mjs` (Chromium and WebKit, wide and phone; an isolated pool and no waiting lines, whole cards over empty columns and over 40 tasks that overflow their column; both card links on the first and following firing, with the preceding task kept)
 - [x] AC-164 — `cargo test dispatcher::fire` (agent results and failure reasons survive session bookkeeping), `web/test/e2e_liveschedules.mjs` (a real later firing closes the finished session before Out is read)
 - [x] AC-182 — `cargo test roles` (`ac182_…`), `cargo test dispatcher::fire` (`ac162_a_manager_s_…`: run_schedule's words), `scripts/e2e_roles.py`; the card's play key: `web/test/e2e_liveschedules.mjs`
