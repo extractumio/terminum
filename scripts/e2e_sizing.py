@@ -116,7 +116,13 @@ def screens_off(t, pid, pane, work):
     time.sleep(0.5)
     collect(phone, 0.3)
     tmux("send-keys", "-t", pane, f"cd {work} && for i in $(seq 1 60); do echo row$i; sleep 0.03; done", "Enter")
+    def printed():
+        return "row60" in tmux("capture-pane", "-p", "-t", pane).split()
+
     got = collect(phone, 3)
+    end = time.time() + 30                                  # a loaded machine prints the 60 rows slower
+    while not printed() and time.time() < end:
+        got += collect(phone, 0.5)
     frames = [m["t"] for m in got if m["t"] in ("screen", "hist")]
     files = [m for m in got if m["t"] == "files"]
     check("AC-02 a terminal hidden behind Files gets no screen or history frames while its pane prints",
@@ -129,7 +135,8 @@ def screens_off(t, pid, pane, work):
     screen = phone.until(lambda m: m["t"] == "screen", 5)
     rows = text_of((screen or {}).get("ch", []))
     check("AC-02 shown again: a whole history and screen with what was printed meanwhile",
-          reset is not None and screen is not None and "row60" in rows + json.dumps((reset or {}).get("lines")), [bool(reset), bool(screen)])
+          reset is not None and screen is not None and "row60" in rows + json.dumps((reset or {}).get("lines")),
+          {"reset": bool(reset), "screen": bool(screen), "pane printed row60": printed()})
     phone.close()
     time.sleep(0.5)
 
