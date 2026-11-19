@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 //! Schedules (`terminum-schedules.md`): a human's task run on a cadence on one agent of the pool, each firing a
 //! new task. Only a signed-in page writes one (schedulesapi.rs); `terminum mcp` has no tool for them. A schedule
-//! not paused keeps a slot of its agent (AC-161); its firings are Dispatcher's (`dispatcher/fire.rs`).
+//! agent keeps one slot for every two of its schedules not paused (AC-161); its firings are Dispatcher's
+//! (`dispatcher/fire.rs`).
 
 use rusqlite::{OptionalExtension, Row, Transaction};
 use serde::Serialize;
@@ -100,14 +101,14 @@ impl Schedule {
         }
     }
 
-    /// Whether it keeps a slot of its agent (AC-161).
-    pub fn keeps_slot(&self) -> bool {
+    /// Whether it may fire, and counts among its agent's schedules that keep slots (AC-161).
+    pub fn active(&self) -> bool {
         !self.paused && self.deleted_at.is_none()
     }
 
     /// What is due by `now`: the last due time not after it, and how many due times before it passed unseen (AC-162).
     pub fn due(&self, now: i64) -> Option<(i64, i64)> {
-        if !self.keeps_slot() {
+        if !self.active() {
             return None;
         }
         let when = self.when().ok()?;
@@ -185,31 +186,92 @@ pub fn kept_on(tx: &Transaction, agent: &str, but: Option<&str>) -> Result<Vec<S
          (agent, but), |r| r.get(0))
 }
 
-/// The keys of the schedules keeping a slot, by agent.
-pub fn kept_by_agent(tx: &Transaction) -> Result<std::collections::BTreeMap<String, Vec<String>>, String> {
-    let mut by = std::collections::BTreeMap::<String, Vec<String>>::new();
-    for (agent, key) in rows(tx, "SELECT agent_id, 'SCH-' || number FROM schedules WHERE paused = 0 AND deleted_at IS NULL ORDER BY number", [], |r| Ok((r.get::<_, String>(0)?, r.get(1)?)))? {
-        by.entry(agent).or_default().push(key);
+/// The slots an agent keeps (AC-161): `slots` shared by its `schedules` not paused, and one for integration when a
+/// project names it its integration agent (terminum-integration.md AC-194).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize)]
+pub struct Kept {
+    pub slots: i64,
+    pub schedules: usize,
+    pub integration: bool,
+}
+
+impl Kept {
+    fn of(schedules: usize, integration: bool) -> Kept {
+        Kept { slots: slots_for(schedules), schedules, integration }
+    }
+
+    /// Every slot it keeps.
+    pub fn total(&self) -> i64 {
+        self.slots + i64::from(self.integration)
+    }
+
+    /// How they stand among the holders of a full agent: "2 kept for 3 schedules; 1 kept for integration".
+    pub fn held(&self) -> Vec<String> {
+        let mut out = Vec::new();
+        if self.slots > 0 {
+            out.push(format!("{} kept for {} schedule{}", self.slots, self.schedules, plural(self.schedules as i64)));
+        }
+        if self.integration {
+            out.push("1 kept for integration".to_string());
+        }
+        out
+    }
+}
+
+/// The slots `n` schedules not paused keep: one for every two (AC-161).
+pub fn slots_for(n: usize) -> i64 {
+    (n as i64 + 1) / 2
+}
+
+fn plural(n: impl Into<i64>) -> &'static str {
+    if n.into() == 1 { "" } else { "s" }
+}
+
+/// The slots each agent keeps, by agent.
+pub fn kept_by_agent(tx: &Transaction) -> Result<std::collections::BTreeMap<String, Kept>, String> {
+    let mut by = std::collections::BTreeMap::<String, Kept>::new();
+    for (agent, n) in rows(tx, "SELECT agent_id, count(*) FROM schedules WHERE paused = 0 AND deleted_at IS NULL GROUP BY agent_id", [], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))? {
+        by.insert(agent, Kept::of(n as usize, false));
     }
     // a project's integration agent keeps one slot for a red batch, however many projects name it (terminum-integration.md AC-194)
     for agent in rows(tx, "SELECT DISTINCT agent FROM project_integration WHERE is_on = 1 AND agent IS NOT NULL", [], |r| r.get::<_, String>(0))? {
-        let slot = integration_slot(&agent);
-        by.entry(agent).or_default().push(slot);
+        by.entry(agent).or_default().integration = true;
     }
     Ok(by)
 }
 
-/// What agent `agent`'s slot kept for integration is named among schedules' (theirs are their IDs).
-pub fn integration_slot(agent: &str) -> String {
-    format!("integration:{agent}")
+/// Whether a project names `agent` its integration agent: it keeps a slot for integration (AC-194).
+fn integrates(tx: &Transaction, agent: &str) -> Result<bool, String> {
+    Ok(tx.query_row("SELECT 1 FROM project_integration WHERE is_on = 1 AND agent = ?1", [agent], |_| Ok(())).optional().map_err(sql)?.is_some())
 }
 
-/// A slot to keep on its agent, unless it is paused (AC-161).
+/// What agent `agent` keeps, its schedules `keys` but one not counted: "Opus reviewer keeps 1 slot for 2 schedules:
+/// SCH-1, SCH-2, and 1 for integration", and how many slots that is.
+pub fn kept_words(tx: &Transaction, agent: &str, name: &str, keys: &[String]) -> Result<(String, i64), String> {
+    let k = Kept::of(keys.len(), integrates(tx, agent)?);
+    let mut parts = Vec::new();
+    if k.slots > 0 {
+        parts.push(format!("{} slot{} for {} schedule{}: {}", k.slots, plural(k.slots), keys.len(), plural(keys.len() as i64), keys.join(", ")));
+    }
+    if k.integration {
+        parts.push(if parts.is_empty() { "1 slot for integration" } else { "1 for integration" }.to_string());
+    }
+    Ok((format!("{name} keeps {}", parts.join(", and ")), k.total()))
+}
+
+/// The slots it would keep fit its agent's at once, unless it is paused (AC-161): ceil(N / 2) with it among N, and
+/// integration's.
 fn check_slot(tx: &Transaction, given: &Given, id: Option<&str>) -> Result<(), String> {
     let a = agents::chosen(tx, &given.agent, &given.project)?;
     let kept = kept_on(tx, &a.id, id)?;
-    if !given.paused && kept.len() as i64 >= a.at_once {
-        return Err(format!("{} runs {} at once, kept for {}: raise its at once, or choose another agent.", a.name, a.at_once, kept.join(", ")));
+    let with = Kept::of(kept.len() + 1, integrates(tx, &a.id)?).total();
+    if !given.paused && with > a.at_once {
+        let (words, _) = kept_words(tx, &a.id, &a.name, &kept)?;
+        let this = match id {
+            Some(id) => by_id(tx, id)?.key,
+            None => "this one".to_string(),
+        };
+        return Err(format!("{words}; with {this} it would keep {with} of its {} at once: raise its at once, or choose another agent.", a.at_once));
     }
     Ok(())
 }
@@ -361,13 +423,12 @@ pub fn never_started(tx: &Transaction, s: &Schedule) -> Result<Option<(String, S
     Ok(last.filter(|(_, _, failed)| *failed).map(|(id, why, _)| (id, why.unwrap_or_default())))
 }
 
-/// A task of `s` IN PROGRESS with something behind it, the newest, by its ID (AC-162): its run about to be asked
-/// for, its wait for room, or a run of it not over. One left IN PROGRESS with none of them stops no firing.
+/// A task of `s` IN PROGRESS that runs, the newest, by its ID (AC-162): its run about to be asked for, or a run of it
+/// not over. A wait for room is no run (`waits::of_schedule`); one left IN PROGRESS with neither stops no firing.
 pub fn running_task(tx: &Transaction, s: &Schedule) -> Result<Option<String>, String> {
     // from the few tasks IN PROGRESS to their firings, never through a schedule's whole history
     tx.query_row(&format!("SELECT t.slug FROM tasks t CROSS JOIN schedule_fires f ON f.task = t.id WHERE f.schedule = ?1 AND t.status = 'IN PROGRESS' AND t.archived_at IS NULL
-                  AND (f.state = 'made' OR EXISTS (SELECT 1 FROM run_waits w WHERE w.task = t.id)
-                       OR EXISTS (SELECT 1 FROM run_tasks m JOIN runs r ON r.id = m.run WHERE m.task = t.id AND {}))
+                  AND (f.state = 'made' OR EXISTS (SELECT 1 FROM run_tasks m JOIN runs r ON r.id = m.run WHERE m.task = t.id AND {}))
                   ORDER BY f.id DESC LIMIT 1", crate::dispatcher::runs::STILL), [&s.id], |r| r.get(0)).optional().map_err(sql)
 }
 

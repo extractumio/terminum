@@ -7,6 +7,7 @@ import { check, until } from "./check.mjs";
 import { boardKit, nap } from "./boardkit.mjs";
 import { liveQueuedAnswers } from "./e2e_livequeuewait.mjs";
 import { liveIntegrationSlots } from "./e2e_liveintegrationslots.mjs";
+import { liveKept } from "./e2e_livekept.mjs";
 
 export async function liveQueue(page, live) {
   const { j, card, open } = boardKit(page, live);
@@ -26,7 +27,7 @@ export async function liveQueue(page, live) {
 
   // offered, and nothing waits before the yes
   const asked = await j(`/api/tasks/${a}/run`, "POST", { agent });
-  check("AC-169 a press at a limit is offered the queue", /is at its limit of 1: SCH-\d+ \(kept\)\. Add it to the queue: it starts when there is room\./.test(asked.full?.queue ?? "") && asked.full.close === null, JSON.stringify(asked));
+  check("AC-169 a press at a limit is offered the queue", /is at its limit of 1: 1 kept for 1 schedule\. Add it to the queue: it starts when there is room\./.test(asked.full?.queue ?? "") && asked.full.close === null, JSON.stringify(asked));
   check("AC-169 and nothing waits before the human agrees", !(await j(`/api/tasks/${a}`)).waits && (await queue()).length === 0);
   check("AC-161 a kept slot is a dashed ring, a free one a plain ring, none of them a session's dot", await until(async () => await page.locator(`${owl} .agkept`).count() === 1 && await page.locator(`${owl} .agfree`).count() === 0
     && await page.locator(`#agentbar .agentcard[data-agent="${two}"] .agfree`).count() === 3) && await page.evaluate((s) => getComputedStyle(document.querySelector(s)).borderTopStyle, `${owl} .agkept`) === "dashed");
@@ -151,4 +152,5 @@ export async function liveQueue(page, live) {
   await j(`/api/schedules/${kept.id}`, "DELETE");
   for (const id of [agent, two]) await j(`/api/task-agents/${id}`, "DELETE");
   await liveIntegrationSlots(page, live);
+  await liveKept(page, live);
 }

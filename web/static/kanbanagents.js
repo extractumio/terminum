@@ -12,7 +12,7 @@ import { asTyped } from "./astyped.js";
 import { slotState } from "./cardstate.js";
 import { queueKey, queueList } from "./kanbanqueue.js";
 import { rail } from "./kanbanrail.js";
-import { $, agentColor, agentsOf, api, button, fillSelect, guardCancel, onlyProject, projectOptions, showError, slotsUsed } from "./kanbanutil.js";
+import { $, agentColor, agentsOf, api, button, fillSelect, guardCancel, keptRings, onlyProject, projectOptions, showError, slotsUsed } from "./kanbanutil.js";
 
 const KINDS = ["claude", "codex"];                 // their commands are their names: what a kind fills in
 
@@ -69,10 +69,11 @@ export function agentsSection({ getMeta, chosen, reload, refreshQueue, slots: co
     const [bar, line] = agentFace(a, slots(a).length > 0);
     b.style.setProperty("--ag", agentColor(a));
     const txt = el("span", "txt"), dots = el("span", "agdots");
-    // a dashed ring for each slot its schedules keep, before its sessions' dots (terminum-schedules.md AC-161); a plain
-    // ring for each slot still free; then a pale dot for each task of its queue, in the key that opens it (AC-169)
-    const kept = counted().kept?.[a.id] ?? [];
-    for (const k of kept) { const m = el("span", "agkept"); m.title = `kept for ${k}`; m.setAttribute("aria-label", `kept for ${k}`); dots.append(m); }
+    // a dashed ring for each slot it keeps, its schedules' K naming none of them, then integration's, before its
+    // sessions' dots (terminum-schedules.md AC-161); a plain ring for each slot still free; then a pale dot for each
+    // task of its queue, in the key that opens it (AC-169)
+    const kept = keptRings(counted().kept?.[a.id]);
+    for (const k of kept) { const m = el("span", "agkept"); m.title = k; m.setAttribute("aria-label", k); dots.append(m); }
     dots.append(...mine.map(dot));
     const used = slotsUsed(counted(), a);
     if (a.at_once <= MOST_FREE) for (let i = used; i < a.at_once; i++) { const m = el("span", "agfree"); m.title = "a free slot"; dots.append(m); }
@@ -81,7 +82,7 @@ export function agentsSection({ getMeta, chosen, reload, refreshQueue, slots: co
     if (queued.length) dots.append(queueKey(a, queued, () => open(a, true)));
     txt.append(line, metaLine([agentName(a.kind), ...(a.effort ? [a.effort] : []), ...of], false), stripes(a.kind, readings()[a.kind], Date.now() / 1000), dots);
     b.append(bar, txt);
-    b.title = [a.name, ...of, `${used} of ${a.at_once} at once`, ...(kept.length ? [`kept for ${kept.join(", ")}`] : []), a.line].join(" · ");
+    b.title = [a.name, ...of, `${used} of ${a.at_once} at once`, ...new Set(kept), a.line].join(" · ");
     return b;
   }
 

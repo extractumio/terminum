@@ -196,9 +196,16 @@ export function fillSelect(select, options, chosen) {
 /** `project`'s own pool: the agents it can run (terminum-dispatcher.md AC-137). */
 export const agentsOf = (meta, project) => meta.agents.filter((a) => a.project === project);
 
-/** How many of `a`'s slots are taken, by terminumd's `counted` slots: its sessions and the slots its schedules keep;
- *  Auto-Dispatcher rounds and integration waits take none (terminum-dispatcher.md AC-169, AC-170, terminum-schedules.md AC-161). */
-export const slotsUsed = (counted, a) => (counted.agents?.[a.id] ?? []).filter((s) => !s.kept && !s.round && !s.integration && !s.ended).length + (counted.kept?.[a.id]?.length ?? 0);
+/** The words of each slot an agent keeps, `kept` as terminumd counts them ({slots, schedules, integration}): one ring
+ *  "kept for 3 schedules" for each of its schedules' K slots, then one "kept for integration" (terminum-schedules.md AC-161). */
+export function keptRings(kept) {
+  const n = kept?.schedules ?? 0, rings = Array(kept?.slots ?? 0).fill(`kept for ${n} schedule${n === 1 ? "" : "s"}`);
+  return kept?.integration ? [...rings, "kept for integration"] : rings;
+}
+
+/** How many of `a`'s slots are taken, by terminumd's `counted` slots: its sessions and the slots it keeps; Auto-Dispatcher
+ *  rounds and integration waits take none (terminum-dispatcher.md AC-169, AC-170, terminum-schedules.md AC-161). */
+export const slotsUsed = (counted, a) => (counted.agents?.[a.id] ?? []).filter((s) => !s.kept && !s.round && !s.integration && !s.ended).length + keptRings(counted.kept?.[a.id]).length;
 
 /** A project's `agents` for `select`, a busy one said so by `busy` and chosen all the same: a run waits for its
  *  room (terminum-dispatcher.md AC-158); the first of `wanted`, else the first. `none`: the label of a choice of

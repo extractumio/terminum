@@ -2,7 +2,7 @@
 //! A RUN at a slot's limit waits for it (`terminum-dispatcher.md` AC-158): the press is kept, oldest first, and
 //! pressed again once its agent and its project have room, every check of a press read anew then. A wait is no
 //! run: it holds no slot, no pane, no clock. The waits for one agent are its queue, in an order a human can change
-//! (AC-169).
+//! (AC-169), a schedule's task's ahead of every other (terminum-schedules.md AC-161).
 
 use std::collections::{BTreeMap, HashMap};
 
@@ -26,24 +26,57 @@ pub struct Wait {
     /// the press, as RUN's route takes it
     pub body: Value,
     pub at: i64,
-    /// its place in the line, lowest first
+    /// its place in the line, lowest first, among the waits of its kind
     pub pos: i64,
+    /// its task is a schedule's: it stands ahead of every wait that is not (terminum-schedules.md AC-161)
+    pub scheduled: bool,
 }
 
-const SELECT: &str = "SELECT w.task, w.agent_id, w.project, w.status, w.body, w.at, w.pos FROM run_waits w";
+/// Whether the task of wait `w` is a schedule's.
+const SCHEDULED: &str = "EXISTS (SELECT 1 FROM schedule_fires f WHERE f.task = w.task)";
+
+/// The line's order: schedules' tasks first, then the place each was given.
+const ORDER: &str = "NOT EXISTS (SELECT 1 FROM schedule_fires f WHERE f.task = w.task), w.pos, w.rowid";
+
+fn select() -> String {
+    format!("SELECT w.task, w.agent_id, w.project, w.status, w.body, w.at, w.pos, {SCHEDULED} FROM run_waits w")
+}
 
 fn of_row(r: &rusqlite::Row) -> rusqlite::Result<Wait> {
     let body: String = r.get(4)?;
-    Ok(Wait { task: r.get(0)?, agent: r.get(1)?, project: r.get(2)?, status: r.get(3)?, body: serde_json::from_str(&body).unwrap_or(Value::Null), at: r.get(5)?, pos: r.get(6)? })
+    Ok(Wait { task: r.get(0)?, agent: r.get(1)?, project: r.get(2)?, status: r.get(3)?, body: serde_json::from_str(&body).unwrap_or(Value::Null), at: r.get(5)?, pos: r.get(6)?, scheduled: r.get(7)? })
 }
 
 /// Every wait, in the line's order.
 pub fn all(tx: &Transaction) -> Result<Vec<Wait>, String> {
-    rows(tx, &format!("{SELECT} ORDER BY w.pos, w.rowid"), [], of_row)
+    rows(tx, &format!("{} ORDER BY {ORDER}", select()), [], of_row)
+}
+
+/// The waits of `agent`, in the line's order.
+pub fn of_agent(tx: &Transaction, agent: &str) -> Result<Vec<Wait>, String> {
+    rows(tx, &format!("{} WHERE w.agent_id = ?1 ORDER BY {ORDER}", select()), [agent], of_row)
 }
 
 pub fn of_task(tx: &Transaction, task: &str) -> Result<Option<Wait>, String> {
-    tx.query_row(&format!("{SELECT} WHERE w.task = ?1"), [task], of_row).optional().map_err(sql)
+    tx.query_row(&format!("{} WHERE w.task = ?1", select()), [task], of_row).optional().map_err(sql)
+}
+
+/// The wait of a task of schedule `schedule`, if one: a schedule's firings and Run now keep at most one (AC-162).
+pub fn of_schedule(tx: &Transaction, schedule: &str) -> Result<Option<Wait>, String> {
+    tx.query_row(&format!("{} JOIN schedule_fires f2 ON f2.task = w.task WHERE f2.schedule = ?1 ORDER BY {ORDER} LIMIT 1", select()), [schedule], of_row).optional().map_err(sql)
+}
+
+impl Wait {
+    /// A human pressed it: no manager, no Dispatcher (terminum-dispatcher.md AC-183); a newer run of its schedule never
+    /// supersedes it (terminum-schedules.md AC-162).
+    pub fn by_human(&self) -> bool {
+        self.body["manager"].is_null() && !super::runs::How::of_word(self.body["how"].as_str().unwrap_or("run")).is_some_and(super::runs::How::automatic)
+    }
+
+    /// Whether it stands before a press of a task of that kind (`scheduled`) at `place` in the line.
+    fn before(&self, scheduled: bool, place: i64) -> bool {
+        (self.scheduled && !scheduled) || (self.scheduled == scheduled && self.pos < place)
+    }
 }
 
 /// `task` waits for `agent` with `body`; one waiting already keeps its place in the line.
@@ -51,6 +84,11 @@ pub fn add(tx: &Transaction, task: &ops::Task, agent: &str, project: &str, body:
     tx.execute("INSERT INTO run_waits (task, agent_id, project, status, body, at, pos) VALUES (?1, ?2, ?3, ?4, ?5, ?6, (SELECT COALESCE(MAX(pos), 0) + 1 FROM run_waits))
                 ON CONFLICT (task) DO UPDATE SET agent_id = excluded.agent_id, project = excluded.project, status = excluded.status, body = excluded.body",
                (&task.key, agent, project, &task.status, body.to_string(), at)).map(drop).map_err(sql)
+}
+
+/// The wait of `task` takes place `pos` in the line: a newer run of a schedule takes its superseded wait's (AC-162).
+pub fn take_place(tx: &Transaction, task: &str, pos: i64) -> Result<(), String> {
+    tx.execute("UPDATE run_waits SET pos = ?2 WHERE task = ?1", (task, pos)).map(drop).map_err(sql)
 }
 
 /// The wait of `task` ends: it started, or was called off.
@@ -65,12 +103,16 @@ pub fn call_off(tx: &Transaction, task: &str, words: &str) -> Result<(), String>
     super::fire::wait_ended(tx, task, words)
 }
 
-/// An older wait of `agent` or `project` that could start now, but `task`'s own: a press for them goes behind it,
-/// so the walk's beat never lets a newer press take the slot an older one waited for.
+/// A wait of `agent` or `project` before `task`'s in the line that could start now, but `task`'s own: a press for
+/// them goes behind it, so the walk's beat never lets a newer press take the slot an older one waited for, nor any
+/// press a schedule's task's (terminum-schedules.md AC-161).
 pub fn ahead(tx: &Transaction, agent: &str, project: &str, task: &str) -> Result<Option<String>, String> {
-    let place = of_task(tx, task)?.map_or(i64::MAX, |w| w.pos);
+    let (scheduled, place) = match of_task(tx, task)? {
+        Some(w) => (w.scheduled, w.pos),
+        None => (crate::tasks::schedules::of_task(tx, task)?.is_some(), i64::MAX),
+    };
     let slots = pool::Slots::read(tx)?;
-    for w in all(tx)?.into_iter().filter(|w| w.task != task && w.pos < place && (w.agent == agent || w.project == project)) {
+    for w in all(tx)?.into_iter().filter(|w| w.task != task && w.before(scheduled, place) && (w.agent == agent || w.project == project)) {
         if let Some(a) = agents::in_project(tx, &w.agent, &w.project)? && slots.check_for(tx, &a, &w.project, Some(&w.task), None)?.is_none() {
             return Ok(Some(ops::get(tx, &w.task)?.id));
         }
@@ -81,7 +123,7 @@ pub fn ahead(tx: &Transaction, agent: &str, project: &str, task: &str) -> Result
 /// Each agent's queue for the board (AC-169): its waiting presses in the line's order, each with its task's title and
 /// project, and the other tasks of a press for several (`also`).
 pub fn queues(tx: &Transaction) -> Result<BTreeMap<String, Vec<Value>>, String> {
-    let found: Vec<(String, Value)> = rows(tx, "SELECT w.agent_id, t.slug, t.shown, w.project, COALESCE(json_extract(w.body, '$.also'), '[]') FROM run_waits w JOIN tasks t ON t.id = w.task ORDER BY w.pos, w.rowid", [],
+    let found: Vec<(String, Value)> = rows(tx, &format!("SELECT w.agent_id, t.slug, t.shown, w.project, COALESCE(json_extract(w.body, '$.also'), '[]') FROM run_waits w JOIN tasks t ON t.id = w.task ORDER BY {ORDER}"), [],
         |r| Ok((r.get(0)?, serde_json::json!({"id": r.get::<_, String>(1)?, "title": r.get::<_, String>(2)?, "project": r.get::<_, String>(3)?,
                                                "also": serde_json::from_str::<Value>(&r.get::<_, String>(4)?).unwrap_or_default()}))))?;
     let mut out: BTreeMap<String, Vec<Value>> = BTreeMap::new();
@@ -92,17 +134,23 @@ pub fn queues(tx: &Transaction) -> Result<BTreeMap<String, Vec<Value>>, String> 
 }
 
 /// The queue of `agent` in the order `ids` (tasks' IDs), the human's: the places its waits held, dealt anew, so no
-/// other agent's wait moves. A queue that is not these tasks changed meanwhile: nothing moves.
+/// other agent's wait moves. A queue that is not these tasks changed meanwhile: nothing moves; nor does one that puts
+/// a wait ahead of a schedule's task (terminum-schedules.md AC-161).
 pub fn reorder(tx: &Transaction, agent: &str, ids: &[String]) -> Result<(), String> {
-    let mine: Vec<(String, i64)> = rows(tx, "SELECT task, pos FROM run_waits WHERE agent_id = ?1 ORDER BY pos, rowid", [agent], |r| Ok((r.get(0)?, r.get(1)?)))?;
+    let mut mine: Vec<Wait> = of_agent(tx, agent)?;
     let keys: Vec<String> = ids.iter().map(|id| ops::key_of(tx, id)).collect::<Result<_, _>>()?;
-    let (mut had, mut wanted): (Vec<&str>, Vec<&str>) = (mine.iter().map(|(task, _)| task.as_str()).collect(), keys.iter().map(String::as_str).collect());
+    let (mut had, mut wanted): (Vec<&str>, Vec<&str>) = (mine.iter().map(|w| w.task.as_str()).collect(), keys.iter().map(String::as_str).collect());
     had.sort_unstable();
     wanted.sort_unstable();
     if had != wanted {
         return Err("The queue changed meanwhile: look at it again.".to_string());
     }
-    for (key, (_, pos)) in keys.iter().zip(&mine) {
+    let scheduled = |key: &str| mine.iter().any(|w| w.task == key && w.scheduled);
+    if let Some(at) = keys.iter().position(|k| !scheduled(k)) && let Some(late) = keys[at..].iter().find(|k| scheduled(k)) {
+        return Err(format!("{} is a scheduled run: it stays ahead of the other waits.", ops::get(tx, late)?.id));
+    }
+    mine.sort_by_key(|w| w.pos);
+    for (key, Wait { pos, .. }) in keys.iter().zip(&mine) {
         tx.execute("UPDATE run_waits SET pos = ?1 WHERE task = ?2", (pos, key)).map_err(sql)?;
     }
     Ok(())
@@ -161,7 +209,7 @@ pub fn on_cards(tx: &Transaction, keys: &[&str]) -> Result<HashMap<String, CardW
     if keys.is_empty() { return Ok(HashMap::new()); }
     Ok(rows(tx, &format!("WITH queue AS (
             SELECT w.task, t.slug, COALESCE(a.name, w.agent_id) agent,
-                row_number() OVER (PARTITION BY w.agent_id ORDER BY w.pos, w.rowid) position
+                row_number() OVER (PARTITION BY w.agent_id ORDER BY {ORDER}) position
             FROM run_waits w JOIN tasks t ON t.id = w.task LEFT JOIN agents a ON a.id = w.agent_id), members AS ({MEMBERS})
         SELECT m.task, q.agent, q.position, q.slug FROM members m JOIN queue q ON q.task = m.press
         WHERE m.task IN (SELECT value FROM json_each(?1))"),

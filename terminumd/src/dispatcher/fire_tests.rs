@@ -4,26 +4,26 @@ use crate::tasks::schedules::Given;
 use crate::tasks::store::{Store, HUMAN};
 
 /// 2026-11-09 20:35:00 UTC.
-const NOW: i64 = 1_794_256_500;
+pub(super) const NOW: i64 = 1_794_256_500;
 
-fn open(name: &str) -> Store {
+pub(super) fn open(name: &str) -> Store {
     Store::open(crate::testutil::fresh_dir(name).join("kanban.sqlite"))
 }
 
 /// Agent `a` with `at_once`, and a schedule of it every 15 minutes, its body `text`.
-fn schedule(tx: &rusqlite::Transaction, at_once: i64, v: serde_json::Value) -> Schedule {
+pub(super) fn schedule(tx: &rusqlite::Transaction, at_once: i64, v: serde_json::Value) -> Schedule {
     tx.execute("INSERT OR IGNORE INTO agents (id, project, name, kind, command, color, at_once) VALUES ('a', 'default', 'Opus reviewer', 'claude', 'claude', 0, ?1)", [at_once]).unwrap();
     let (id, _) = schedules::add(tx, HUMAN, &Given::of(tx, &v, NOW).unwrap(), NOW).unwrap();
     schedules::by_id(tx, &id).unwrap()
 }
 
-fn every_15() -> serde_json::Value {
+pub(super) fn every_15() -> serde_json::Value {
     json!({"title": "Nightly deps check", "body": "Check the dependencies.", "agent": "a", "cron": "*/15 * * * *", "budget_minutes": 30, "severity": "P1"})
 }
 
-fn made(next: Next) -> (String, i64) {
+pub(super) fn made(next: Next) -> (String, i64) {
     match next {
-        Next::Run(task, fire) => (task, fire),
+        Next::Run(task, fire, _) => (task, fire),
         _ => panic!("no task made"),
     }
 }
@@ -146,7 +146,7 @@ async fn ac162_a_start_that_fails_fails_its_task_and_the_next_firing_tries_again
         let (task, fire) = made(decide(tx, &s, NOW + 10 * 60, false)?);
         Ok((s, task, fire))
     }).await.unwrap();
-    start(&app, &s, &task, fire, None).await;
+    start(&app, &s, &task, fire, (None, None)).await;
     let (sid, id) = (s.id.clone(), task.clone());
     let (status, after, listed, said) = store(&app, move |tx| {
         let listed = schedules::listed(tx, NOW + 11 * 60)?;
@@ -238,7 +238,7 @@ fn ac161_its_task_takes_the_kept_slot_and_others_have_the_rest() {
         let a = crate::tasks::agents::in_project(tx, "a", "default")?.unwrap();
         let other = ops::create(tx, HUMAN, NewTask { title: "API-12".into(), ..Default::default() }, NOW)?;
         let full = pool::check_for(tx, &a, "default", Some(&other.key), None)?.expect("its one slot is kept");
-        assert_eq!(full.words, "Opus reviewer is at its limit of 1: SCH-1 (kept).");
+        assert_eq!(full.words, "Opus reviewer is at its limit of 1: 1 kept for 1 schedule.");
         let (id, _) = made(decide(tx, &s, NOW + 10 * 60, false)?);
         let key = ops::key_of(tx, &id)?;
         assert_eq!(pool::check_for(tx, &a, "default", Some(&key), None)?, None, "its own task takes the kept slot");
@@ -249,14 +249,14 @@ fn ac161_its_task_takes_the_kept_slot_and_others_have_the_rest() {
 }
 
 /// A run of `task` on agent `a`, working.
-fn working(tx: &rusqlite::Transaction, task: &ops::Task) -> String {
+pub(super) fn working(tx: &rusqlite::Transaction, task: &ops::Task) -> String {
     let id = runs::add(tx, &runs::Run { agent_id: "a".into(), kind: "claude".into(), command: "claude".into(), folder: "/srv".into(), project: task.project.clone(), ..Default::default() }, std::slice::from_ref(&task.key), Default::default(), NOW).unwrap();
     runs::change(tx, &id, |r| { r.state = runs::Phase::Working; r.pane_key = Some(format!("tmux:local:t:%{id}")); }).unwrap();
     id
 }
 
 #[test]
-fn ac161_one_run_stands_in_a_kept_slot() {
+fn ac161_k_runs_stand_in_the_kept_slots_the_rest_are_ordinary() {
     open("fire-one-kept").with(|tx| {
         let s = schedule(tx, 1, every_15());
         let a = crate::tasks::agents::in_project(tx, "a", "default")?.unwrap();
@@ -265,8 +265,8 @@ fn ac161_one_run_stands_in_a_kept_slot() {
         let (new, _) = made(decide(tx, &s, NOW + 25 * 60, false)?);
         let (old_key, new_key) = (ops::key_of(tx, &old)?, ops::key_of(tx, &new)?);
         let run = working(tx, &ops::get(tx, &new)?);
-        let full = pool::check_for(tx, &a, "default", Some(&old_key), None)?.expect("the kept slot holds the new run");
-        assert_eq!(full.words, "Opus reviewer is at its limit of 1: SCH-1 (kept).");
+        let full = pool::check_for(tx, &a, "default", Some(&old_key), None)?.expect("the kept slot holds the new run, and no ordinary slot is left");
+        assert_eq!(full.words, "Opus reviewer is at its limit of 1: 1 kept for 1 schedule.");
         assert_eq!(pool::check_for(tx, &a, "default", Some(&new_key), Some(&run))?, None, "its own run goes on from itself");
         assert!(pool::check_for(tx, &a, "default", None, None)?.is_some(), "a run of several tasks takes no kept slot");
         Ok(())
@@ -288,7 +288,7 @@ fn ac162_any_task_of_it_in_progress_skips_the_firing() {
 }
 
 #[test]
-fn ac162_an_older_task_s_idle_session_in_the_kept_slot_is_closed_for_the_firing() {
+fn ac161_its_own_idle_session_is_closed_only_with_no_room_and_a_busy_one_never() {
     open("fire-older-idle").with(|tx| {
         let s = schedule(tx, 1, every_15());
         let (old, _) = made(decide(tx, &s, NOW + 10 * 60, false)?);
@@ -297,17 +297,19 @@ fn ac162_an_older_task_s_idle_session_in_the_kept_slot_is_closed_for_the_firing(
         ops::move_to(tx, DISPATCHER, &new, "DONE", NOW + 26 * 60)?;   // its session closed: no run of it holds a slot
         // a human ran the older one again; it finished, its session stays open in the kept slot
         let run = working(tx, &ops::get(tx, &old)?);
-        assert!(matches!(decide(tx, &s, NOW + 40 * 60, false)?, Next::Skipped), "working: skipped");
-        let fires = crate::tasks::schedulesapi::fires_of(tx, Some("SCH-1"), None, 10)?;
-        assert_eq!(fires[0]["why"].as_str(), Some(format!("Skipped: {old}'s session is still busy.").as_str()), "named by the task in the slot, not the last one");
+        let (busy, _) = made(decide(tx, &s, NOW + 40 * 60, false)?);
+        assert_eq!(runs::by_id(tx, &run)?.state, runs::Phase::Working, "a busy session is never closed: its task is made, and waits for room");
+        ops::move_to(tx, DISPATCHER, &busy, "DONE", NOW + 41 * 60)?;
         runs::change(tx, &run, |r| { r.turn_ended = true; r.closing_for = 60; })?;
         match decide(tx, &s, NOW + 55 * 60, false)? {
-            Next::Close(r) => assert_eq!(r, run, "the older task's idle session is closed for the slot"),
+            Next::Close(r) => assert_eq!(r, run, "with no room, the older task's idle session is closed for it"),
             _ => panic!("its idle session was not closed"),
         }
-        assert!(matches!(decide(tx, &s, NOW + 55 * 60, true)?, Next::Skipped), "closed once and still standing there: skipped, nothing closed again");
-        runs::change(tx, &run, |r| r.state = runs::Phase::Gone)?;
-        made(decide(tx, &s, NOW + 70 * 60, false)?);
+        let (closed, _) = made(decide(tx, &s, NOW + 55 * 60, true)?);
+        ops::move_to(tx, DISPATCHER, &closed, "DONE", NOW + 56 * 60)?;
+        tx.execute("UPDATE agents SET at_once = 2 WHERE id = 'a'", []).map_err(ops::sql)?;
+        let room = made(decide(tx, &s, NOW + 70 * 60, false)?);
+        assert_eq!(runs::by_id(tx, &run)?.state, runs::Phase::Working, "with room, nothing is closed: {room:?}");
         Ok(())
     }).unwrap();
 }
