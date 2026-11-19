@@ -139,8 +139,8 @@ export async function webPhoneWin(browser, name) {
   check("AC-173 a window 601 px or wider keeps the sheet: 16 px from the sides, its keys at its foot, none in its head", m.box.l === 16 && m.win[0] - m.box.r === 16 && !m.bar.length && m.foot.includes("Run") && m.foot.includes("Cancel"), JSON.stringify(m));
   // the page lays the window out anew some frames after a resize, later on a loaded machine: wait for it, bounded
   await f.page.setViewportSize({ width: 390, height: 700 });
-  let narrow;
-  await until(async () => { m = await f.page.evaluate(() => window.measure("runbox")); narrow = await order(); return covers(m) && narrow.bar.length > 0; }, 5000);
+  await until(async () => { m = await f.page.evaluate(() => window.measure("runbox")); return covers(m) && m.bar.length > 0; }, 5000);
+  const narrow = await order();
   await f.page.setViewportSize({ width: 700, height: 700 });
   let back;
   await until(async () => { back = await order(); return !back.bar.length; }, 5000);
