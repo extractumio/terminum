@@ -5,6 +5,7 @@ from pathlib import Path
 import subprocess
 import sys
 import unittest
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -76,6 +77,12 @@ class Tree(Repo, unittest.TestCase):
         self.assertEqual(self.head(release_tree.take(self.repo, "release", self.second)), self.second)
         self.assertEqual(worktree.sweep(self.repo), [], "a sweep never takes it")
         self.assertTrue(tree.is_dir())
+
+    def test_taking_the_kept_tree_keeps_its_build_cache_under_its_bound(self):  # AC-200, AC-206
+        kept = []
+        with mock.patch.object(release_tree.target_bound, "keep", lambda tree, say: kept.append(tree)):
+            tree = release_tree.take(self.repo, "rehearse", self.first)
+        self.assertEqual(kept, [tree], "after the move to the pin, under the run's own turn, before the full run builds")
 
     def test_a_kept_tree_with_uncommitted_changes_is_refused(self):  # AC-200
         tree = release_tree.take(self.repo, "release", self.first)

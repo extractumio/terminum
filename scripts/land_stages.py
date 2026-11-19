@@ -10,7 +10,8 @@ holds Prepare, Check and Publish in the landing turn.
                              Prepare merged into when origin/main changed none of its files; with
                              TM_INTEGRATION_RERUN, a red Verify's failed steps run on the target
   land.py queue   <slug>     with integration on: queued by terminum (TASK, RESULT); off: nothing to queue
-  land.py check   [<slug>]   the smoke set on HEAD, its green kept for that commit
+  land.py check   [<slug>]   the smoke set on HEAD, its green kept for that commit; in the integration candidate's
+                             tree, its build cache kept under its bound first (scripts/target_bound.py, AC-206)
   land.py publish <slug>     pushed, never forced, only a commit checked green that holds the target as it is now
   land.py after              the primary checkout on the fresh target; with TM_LAND_INSTALL=1, this build installed
   land.py cleanup            landed trees removed by worktree.py sweep, never one with work or a process in it
@@ -26,6 +27,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import land  # noqa: E402
+import target_bound  # noqa: E402
 from land import Stop, git  # noqa: E402
 from worktree import INSTALL_TURN, Turn  # noqa: E402
 
@@ -140,6 +142,12 @@ def cleanup(primary, run=None):
     return (run or subprocess.run)([sys.executable, str(Path(primary) / "scripts" / "worktree.py"), "sweep"], cwd=primary).returncode
 
 
+def kept_tree(tree, env=os.environ):
+    """Whether `tree` is the integration candidate's, kept between batches for warm builds: a batch's Check runs in it."""
+    kept = env.get("TM_INTEGRATION_BATCH") and env.get("TM_INTEGRATION_TREE")
+    return bool(kept) and Path(kept).resolve() == Path(tree).resolve()
+
+
 def run_stage(stage, slug, primary, env=os.environ):
     """One stage as `land.py <stage> [<slug>]` names it: its exit status."""
     tree = (primary / ".worktrees" / slug) if slug else Path.cwd()
@@ -152,6 +160,8 @@ def run_stage(stage, slug, primary, env=os.environ):
     elif stage == "queue":
         return queue(tree, env.get("TASK"), env.get("RESULT"))
     elif stage == "check":
+        if kept_tree(tree, env):
+            target_bound.keep(tree)
         land.smoke_green(tree)
     elif stage == "publish":
         not_while_queued(tree, stage, env)
