@@ -36,7 +36,7 @@ impl Line {
 #[derive(Default)]
 struct Waiting {
     lines: Vec<Line>,
-    sent: Option<(u64, Vec<Line>)>,
+    sent: Vec<(u64, Line)>,
 }
 
 /// Lines for panes' next contexts: each goes until the hook says it was heard (D15), so an
@@ -80,31 +80,33 @@ impl Lines {
 
     /// The pane's lines for its next context, those sent before and not heard first, and the
     /// number the hook says it heard them by.
-    pub(crate) fn offer(&self, key: &str) -> Option<(u64, Vec<String>)> {
+    pub(crate) fn offer(&self, key: &str, comments_only: bool) -> Option<(u64, Vec<String>)> {
         static SENT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
         let mut all = self.0.lock();
         let w = all.get_mut(key)?;
-        let mut lines = w.sent.take().map(|(_, l)| l).unwrap_or_default();
-        lines.append(&mut w.lines);
-        if lines.is_empty() {
+        let eligible = |line: &Line| !comments_only || line.is_notice();
+        if w.sent.is_empty() && w.lines.is_empty() {
             all.remove(key);
             return None;
         }
         let n = SENT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        let words = lines.iter().map(|l| l.text.clone()).collect();
-        w.sent = Some((n, lines));
-        Some((n, words))
+        let mut words: Vec<String> = w.sent.iter_mut().filter(|(_, line)| eligible(line)).map(|(batch, line)| {
+            *batch = n;
+            line.text.clone()
+        }).collect();
+        for line in w.lines.extract_if(.., |line| eligible(line)) {
+            words.push(line.text.clone());
+            w.sent.push((n, line));
+        }
+        (!words.is_empty()).then_some((n, words))
     }
 
     /// The hook printed the lines sent as `n`: they go, said.
     pub(crate) fn heard(&self, key: &str, n: u64) -> Vec<Line> {
         let mut all = self.0.lock();
         let Some(w) = all.get_mut(key) else { return Vec::new() };
-        if w.sent.as_ref().is_none_or(|(m, _)| *m != n) {
-            return Vec::new();
-        }
-        let lines = w.sent.take().map(|(_, l)| l).unwrap_or_default();
-        if w.lines.is_empty() {
+        let lines = w.sent.extract_if(.., |(batch, _)| *batch == n).map(|(_, line)| line).collect();
+        if w.sent.is_empty() && w.lines.is_empty() {
             all.remove(key);
         }
         lines
@@ -112,7 +114,7 @@ impl Lines {
 
     /// Every line of the pane, sent or not, which never reached it (its run ends).
     pub(crate) fn take(&self, key: &str) -> Vec<Line> {
-        self.0.lock().remove(key).map(|w| w.sent.map(|(_, l)| l).unwrap_or_default().into_iter().chain(w.lines).collect()).unwrap_or_default()
+        self.0.lock().remove(key).map(|w| w.sent.into_iter().map(|(_, line)| line).chain(w.lines).collect()).unwrap_or_default()
     }
 
     /// The pane's comment notices, sent or not, which never reached it (its agent's session ended, AC-209):
@@ -120,18 +122,13 @@ impl Lines {
     pub(crate) fn take_comments(&self, key: &str) -> Vec<Line> {
         let mut all = self.0.lock();
         let Some(w) = all.get_mut(key) else { return Vec::new() };
-        let mut gone = Vec::new();
-        for list in [Some(&mut w.lines), w.sent.as_mut().map(|(_, l)| l)].into_iter().flatten() {
-            let (comments, rest) = std::mem::take(list).into_iter().partition(Line::is_notice);
-            *list = rest;
-            gone.extend(comments);
-        }
-        gone
+        w.lines.extract_if(.., |line| line.is_notice())
+            .chain(w.sent.extract_if(.., |(_, line)| line.is_notice()).map(|(_, line)| line)).collect()
     }
 
     /// Every comment of `task` whose notice waits for its session (AC-209).
     pub(crate) fn waiting_comments(&self, task: &str) -> std::collections::HashSet<String> {
-        self.0.lock().values().flat_map(|w| w.lines.iter().chain(w.sent.iter().flat_map(|(_, l)| l)))
+        self.0.lock().values().flat_map(|w| w.lines.iter().chain(w.sent.iter().map(|(_, line)| line)))
             .filter(|l| l.task == task).flat_map(|l| l.comments.iter().map(|(e, _)| e.clone())).collect()
     }
 }
@@ -209,8 +206,8 @@ pub fn session_ended(app: &Shared, key: &str, ev: &Value) {
 }
 
 /// The pane's next context, joined to what else is due, and the number its lines are heard by.
-pub fn with_lines(app: &Shared, key: &str, remind: Option<String>) -> (Option<String>, Option<u64>) {
-    let Some((n, lines)) = app.task_lines.offer(key) else { return (remind, None) };
+pub fn with_lines(app: &Shared, key: &str, remind: Option<String>, comments_only: bool) -> (Option<String>, Option<u64>) {
+    let Some((n, lines)) = app.task_lines.offer(key, comments_only) else { return (remind, None) };
     let words: Vec<String> = remind.into_iter().chain(lines).collect();
     (Some(words.join("\n")), Some(n))
 }
@@ -342,10 +339,10 @@ mod tests {
         l.push("a", "T-1", "one".into());
         l.push("a", "T-2", "two".into());
         l.push("b", "T-3", "three".into());
-        let (n, words) = l.offer("a").unwrap();
+        let (n, words) = l.offer("a", false).unwrap();
         assert_eq!(words, ["one", "two"]);
         assert_eq!(l.heard("a", n).iter().map(|l| l.task.as_str()).collect::<Vec<_>>(), ["T-1", "T-2"]);
-        assert!(l.offer("a").is_none(), "heard: gone");
+        assert!(l.offer("a", false).is_none(), "heard: gone");
         assert_eq!(l.take("b")[0].text, "three");
     }
 
@@ -355,13 +352,31 @@ mod tests {
     fn ac114_lines_not_heard_go_again() {
         let l = Lines::default();
         l.push("a", "T-1", "one".into());
-        let (first, _) = l.offer("a").unwrap();
+        let (first, _) = l.offer("a", false).unwrap();
         l.push("a", "T-1", "two".into());
-        let (second, words) = l.offer("a").unwrap();
+        let (second, words) = l.offer("a", false).unwrap();
         assert_eq!(words, ["one", "two"], "the lost one again, then the new one");
         assert!(l.heard("a", first).is_empty(), "an older sending heard late takes nothing");
         assert_eq!(l.heard("a", second).len(), 2);
         assert!((0..KEPT).all(|i| l.push("b", "T-2", i.to_string()).is_none()) && l.push("b", "T-2", "over".into()).is_some_and(|g| g.text == "0"), "past the most, the oldest goes and that is said");
         assert_eq!(l.take("b").len(), KEPT);
+    }
+
+    #[test]
+    fn ac209_prompt_offers_only_comment_notices_and_leaves_other_lines_for_a_tool() {
+        let l = Lines::default();
+        l.push("a", "T-1", "dispatcher line".into());
+        let (first, _) = l.offer("a", false).unwrap();
+        assert!(l.offer("a", true).is_none(), "no comment means no new offer");
+        l.push_comment("a", "T-2", "c1", "a human".into());
+        l.push("a", "T-1", "integration line".into());
+        let (prompt, words) = l.offer("a", true).unwrap();
+        assert_eq!(words.len(), 1);
+        assert!(words[0].contains("T-2 has a new comment"));
+        assert_eq!(l.heard("a", first)[0].text, "dispatcher line", "a prompt preserves the other offer's acknowledgement");
+        assert_eq!(l.heard("a", prompt)[0].task, "T-2");
+        let (tool, words) = l.offer("a", false).unwrap();
+        assert_eq!(words, ["integration line"]);
+        assert_eq!(l.heard("a", tool).len(), 1);
     }
 }

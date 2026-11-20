@@ -10,7 +10,7 @@ import { expandable } from "./expand.js";
 
 const OPENS = "\n\n```\n", CLOSES = "\n```";   // round a screen quoted in a line of history
 // what became of a comment's notice to its task's session, as terminumd marks it (terminum-dispatcher.md AC-209)
-const TOLD = { told: "told the session", waiting: "the session hears of it at its next tool call", not: "not told the session" };
+const TOLD = { told: "told the session", waiting: "waiting to tell the session", not: "not told the session" };
 
 /** A field for Markdown. */
 export function editor(text, label) {

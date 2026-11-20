@@ -11,7 +11,7 @@ pub fn codex_remove(v: &Value, cmd: &str) -> Value {
             entries.retain_mut(|entry| {
                 let Some(commands) = entry.get_mut("hooks").and_then(Value::as_array_mut) else { return true };
                 let before = commands.len();
-                commands.retain(|hook| hook["command"] != cmd);
+                commands.retain(|hook| !super::owns_command(hook, cmd));
                 commands.len() == before || !commands.is_empty()
             });
         }

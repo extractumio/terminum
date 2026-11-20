@@ -48,11 +48,11 @@ fn ac209_comments_not_sent_go_in_one_notice_one_sent_stays_as_it_went() {
     l.push(KEY, "API-12", "Dispatcher's warning".into());
     l.push_comment(KEY, "API-12", "e2", "an agent".into());
     l.push_comment(KEY, "API-12", "e1", "a human".into());
-    let (n, said) = l.offer(KEY).unwrap();
+    let (n, said) = l.offer(KEY, false).unwrap();
     assert_eq!(said.len(), 2, "one notice and Dispatcher's line: {said:?}");
     assert!(said[0].contains("has 2 new comments"), "an edited comment waiting already is not counted twice: {}", said[0]);
     l.push_comment(KEY, "API-12", "e3", "a human".into());
-    let (m, again) = l.offer(KEY).unwrap();
+    let (m, again) = l.offer(KEY, false).unwrap();
     assert_eq!(again.len(), 3, "the sent notice goes again as it went, the new comment in a notice of its own: {again:?}");
     assert!(again[2].contains("has a new comment by a human"));
     assert!(l.heard(KEY, n).is_empty(), "an older sending heard late takes nothing");
@@ -67,7 +67,7 @@ fn ac209_comments_not_sent_go_in_one_notice_one_sent_stays_as_it_went() {
 fn ac209_an_ended_session_takes_only_the_notices() {
     let l = Lines::default();
     l.push_comment(KEY, "API-12", "e1", "a human".into());
-    l.offer(KEY);
+    l.offer(KEY, false);
     l.push(KEY, "API-12", "Dispatcher's warning".into());
     l.push_comment(KEY, "API-12", "e2", "a human".into());
     let gone = l.take_comments(KEY);
@@ -89,7 +89,7 @@ fn ac209_each_comment_is_marked_by_what_became_of_its_notice() {
     }).unwrap();
     let mut h = s.with(|tx| ops::history(tx, &id)).unwrap();
     let texts: Vec<&str> = h.as_array().unwrap().iter().filter(|r| r["kind"] == "told").map(|r| r["text"].as_str().unwrap()).collect();
-    assert_eq!(texts, ["Told the session of 2 new comments", "Not told the session of the new comment: its agent's session ended before its next tool call"]);
+    assert_eq!(texts, ["Told the session of 2 new comments", "Not told the session of the new comment: its agent's session ended before it heard the notice"]);
     marks(&mut h, &HashSet::from([c3.clone()]));
     let mark = |e: &str| h.as_array().unwrap().iter().find(|r| r["id"] == e).unwrap()["told"].clone();
     assert_eq!((mark(&c1), mark(&c2), mark(&c3)), (json!("told"), json!("not"), json!("waiting")), "the newest outcome counts; waiting from memory");
@@ -120,7 +120,7 @@ async fn ac209_a_human_s_comment_waits_for_its_session_s_next_context_and_is_sai
     comment_added(&app, &lone.id, &elsewhere, None);
     settle().await;
     assert_eq!(app.task_lines.waiting_comments(&t.id), HashSet::from([second.clone()]));
-    let (n, said) = app.task_lines.offer(KEY).unwrap();
+    let (n, said) = app.task_lines.offer(KEY, false).unwrap();
     assert!(said[0].starts_with(&format!("[terminum] {} has a new comment by a human", t.id)) && !said[0].contains("keep v1"), "{said:?}");
     crate::tasks::tell::heard(&app, KEY, n);
     settle().await;
