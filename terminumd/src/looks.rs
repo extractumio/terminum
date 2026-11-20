@@ -214,6 +214,27 @@ pub fn set_agent_exit(app: &Shared, page: &Page, msg: &Value) {
     }
 }
 
+/// `notices {on, kind?}` from a window's "Do not show again" or Settings' "Agent notices": that kind, or
+/// both, off or on again; kept in settings.json, which tells every page.
+pub fn set_agent_notices(app: &Shared, page: &Page, msg: &Value) {
+    let on = msg["on"] != false;
+    let kinds: Vec<&str> = match msg["kind"].as_str() {
+        None => crate::agentnotice::KINDS.to_vec(),
+        Some(k) => match crate::agentnotice::KINDS.into_iter().find(|x| *x == k) {
+            Some(k) => vec![k],
+            None => return crate::page::client::error(page, "Not a kind of notice", None),
+        },
+    };
+    let off = app.looks.settings.read().agent_notices_off.clone();
+    let keep: Vec<&str> = crate::agentnotice::KINDS.into_iter().filter(|k| if kinds.contains(k) { !on } else { off.iter().any(|o| o == k) }).collect();
+    let path = app.looks.home.join("settings.json");
+    match crate::settings::save_value(&path, "agentNoticesOff", json!(keep)) {
+        // at once, before the file's watcher reads it: a window the next ask would show stays away
+        Ok(()) => app.looks.settings.write().agent_notices_off = keep.iter().map(|k| k.to_string()).collect(),
+        Err(e) => crate::page::client::error(page, e, None),
+    }
+}
+
 /// `scheme {name}` from the page's Colors: one color scheme for every browser, kept in
 /// settings.json as page.colorScheme (none: the themes' own colors), told to every page (AC-12).
 pub fn set_scheme(app: &Shared, page: &Page, msg: &Value) {

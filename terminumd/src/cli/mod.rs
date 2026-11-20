@@ -7,9 +7,9 @@
 pub(crate) mod agentrefresh;
 pub mod agentsetup;
 pub(crate) mod commands;
-mod codexdaemon;
+pub mod codexdaemon;
 pub mod hook;
-mod hookargv;
+pub(crate) mod hookargv;
 mod hookopts;
 pub mod statusline;
 mod hookplan;
