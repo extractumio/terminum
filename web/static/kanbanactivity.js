@@ -9,6 +9,8 @@ import { api, button, renderInto, row, say, shortStamp, timeOf } from "./kanbanu
 import { expandable } from "./expand.js";
 
 const OPENS = "\n\n```\n", CLOSES = "\n```";   // round a screen quoted in a line of history
+// what became of a comment's notice to its task's session, as terminumd marks it (terminum-dispatcher.md AC-209)
+const TOLD = { told: "told the session", waiting: "the session hears of it at its next tool call", not: "not told the session" };
 
 /** A field for Markdown. */
 export function editor(text, label) {
@@ -65,6 +67,7 @@ export function activity(t, { refresh, confirmed, leads = true }) {
     // an agent's questions for the human: answered in a comment, then Run (terminum-dispatcher.md AC-157)
     if (e.questions) head.append(el("span", "evasks", "asks you"));
     if (e.edited_at) head.append(el("span", "evedited", `edited ${shortStamp(e.edited_at)}`));
+    if (e.kind === "comment" && TOLD[e.told]) head.append(el("span", `evtold ${e.told}`, TOLD[e.told]));
     li.append(head);
     if (e.kind === "comment") {
       const said = el("div", "markdown");

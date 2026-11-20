@@ -113,6 +113,9 @@ dialog .markdown img { max-width: 100%; }
 .subtext { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
 .sublist .icon { --ik: var(--icon-key-list); flex: none; }
 .evedited { font-style: italic; }
+/* whether its task's session was told of a comment (terminum-dispatcher.md AC-209): muted; not told in the danger color */
+.evtold { color: var(--muted); font-size: var(--fs-label); }
+.evtold.not { color: color-mix(in srgb, var(--danger) 75%, var(--t-fg)); }
 /* a comment's kind, by the bar at its left and its author's name (AC-149): a human's cornflower blue; an agent's and
    Dispatcher's muted and near each other, teal and slate; an agent's questions for the human in the waiting color
    (terminum-dispatcher.md AC-157) */
