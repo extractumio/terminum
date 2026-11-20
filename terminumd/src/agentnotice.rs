@@ -15,9 +15,9 @@ use parking_lot::Mutex;
 use serde_json::{json, Value};
 
 use crate::app::Shared;
-use crate::cli::codexdaemon::{self, NO_ATTACH, NO_DAEMON, OWN_OPTION, STOP_SERVER};
-use crate::cli::hookargv::{exact, program_at};
 use crate::page::Page;
+use crate::process::codex::{self, may_attach, NO_ATTACH, NO_DAEMON, OWN_OPTION, STOP_SERVER};
+use crate::process::{foreground, program_at, Foreground};
 use crate::screen::frame::Fields;
 use crate::tmux::Server;
 
@@ -35,31 +35,11 @@ const WAIT: Duration = Duration::from_secs(5);
 /// What is read of the pane, tab-separated; the option last (the user's tmux may hold anything there).
 const FIELDS: &str = "#{alternate_on}\t#{cursor_flag}\t#{pane_current_command}\t#{pane_tty}\t#{@tm-noticed}";
 
-/// The pane's foreground process (its tty's foreground group's leader).
-#[derive(Debug, Clone, PartialEq)]
-pub struct Run {
-    pub pid: u32,
-    pub words: Vec<String>,
-    /// seconds it has run
-    pub age: u64,
-    /// a process of its own under it (a Codex in its own process has its MCP servers there)
-    pub children: bool,
-}
-
 /// `claude` or `codex` when the pane's program is one (a `node` Codex too) and its foreground process's
 /// words name the same; anything else is no agent of this case (vim, mc, a shell, OpenCode).
 pub fn agent(command: &str, words: &[String]) -> Option<&'static str> {
     let named = crate::tmux::titles::agent_of(command);
     ["claude", "codex"].into_iter().find(|a| (named == Some(*a) || command == "node") && program_at(words, a).is_some())
-}
-
-/// Whether a Codex started with `words` attaches to a shared server when one runs: no `-c`, `--config` or
-/// `--no-daemon` (each keeps it in its own process, AS-128), and its TUI (not `codex exec`).
-pub fn may_attach(words: &[String]) -> bool {
-    let Some(at) = program_at(words, "codex") else { return false };
-    let rest = &words[at + 1..];
-    let own = rest.iter().any(|w| w.starts_with("-c") || w == "--config" || w.starts_with("--config=") || w == NO_DAEMON);
-    !own && !matches!(crate::cli::hookopts::codex_subcommand(rest), Some("exec" | "e"))
 }
 
 /// The kinds due for a run of `agent`: full screen on the alternate screen (Claude Code's with the
@@ -76,21 +56,6 @@ pub fn noticed(value: &str, pid: u32) -> Vec<&'static str> {
         Some((p, kinds)) if p.parse() == Ok(pid) => KINDS.into_iter().filter(|k| kinds.split(',').any(|s| s == *k)).collect(),
         _ => Vec::new(),
     }
-}
-
-/// The foreground run in `ps -o pid=,ppid=,tpgid=,etime=` rows of one tty.
-pub fn foreground_of(rows: &str) -> Option<(u32, u64, bool)> {
-    let rows: Vec<[&str; 4]> = rows.lines().filter_map(|l| <[&str; 4]>::try_from(l.split_whitespace().collect::<Vec<_>>()).ok()).collect();
-    let lead = rows.iter().find(|r| r[0] == r[2])?;
-    Some((lead[0].parse().ok()?, crate::dispatcher::procs::seconds(lead[3]) as u64, rows.iter().any(|r| r[1] == lead[0])))
-}
-
-/// The foreground run of terminal `tty` (`/dev/ttys004`), by `ps` and the kernel's words.
-fn foreground(tty: &str) -> Option<Run> {
-    let name = tty.strip_prefix("/dev/").filter(|n| !n.is_empty() && !n.contains(['/', ' ']))?;
-    let out = std::process::Command::new("ps").args(["-t", name, "-o", "pid=,ppid=,tpgid=,etime="]).output().ok()?;
-    let (pid, age, children) = foreground_of(&String::from_utf8_lossy(&out.stdout))?;
-    Some(Run { pid, words: exact(pid)?, age, children })
 }
 
 /// Whether a pane's frame `new` (after `old`, none when the pane just opened) is worth a look: a coding
@@ -124,7 +89,7 @@ async fn tmux(server: &Server, line: String) -> Result<Vec<String>, String> {
 }
 
 /// The pane's fields (alternate screen, cursor, program, tty, mark) and its foreground run, read now.
-async fn read(server: &Server, pane: &str) -> Result<(Vec<String>, Option<Run>), String> {
+async fn read(server: &Server, pane: &str) -> Result<(Vec<String>, Option<Foreground>), String> {
     let said = tmux(server, format!("display -p -t {pane} '{FIELDS}'")).await?;
     let f: Vec<String> = said.first().ok_or("no answer")?.splitn(5, '\t').map(str::to_string).collect();
     if f.len() < 5 {
@@ -156,7 +121,7 @@ async fn look(app: &Shared, page: &Page, server: &Server, pane: &str, key: &str)
     let skip = |k: &&str| noticed(&f[4], run.pid).contains(k) || app.looks.settings.read().agent_notices_off.iter().any(|o| o == k);
     let (alt, cursor_on) = (f[0] == "1", f[1] == "1");
     let shared = agent == "codex" && !skip(&CODEX_SHARED) && may_attach(&run.words) && !run.children;
-    let server_pid = if shared { tokio::task::spawn_blocking(codexdaemon::running).await.map_err(|e| e.to_string())? } else { None };
+    let server_pid = if shared { tokio::task::spawn_blocking(codex::running).await.map_err(|e| e.to_string())? } else { None };
     let kinds: Vec<&str> = due(agent, alt, cursor_on, server_pid.is_some()).into_iter().filter(|k| !skip(k)).collect();
     if kinds.is_empty() {
         return Ok(());
@@ -183,7 +148,7 @@ async fn look(app: &Shared, page: &Page, server: &Server, pane: &str, key: &str)
 /// How the run was started, to start it again: its program's name and its options, read as the idle exit's
 /// resume reads them (AC-153: no prompt, no session it picked); the name alone where they cannot be read or hold a secret.
 pub fn started(agent: &str, words: &[String]) -> Vec<String> {
-    let opts = program_at(words, agent).and_then(|at| crate::cli::hookopts::resumed(agent, &words[at + 1..])).unwrap_or_default();
+    let opts = program_at(words, agent).and_then(|at| crate::agentopts::resumed(agent, &words[at + 1..])).unwrap_or_default();
     std::iter::once(agent.to_string()).chain(opts).collect()
 }
 
@@ -192,7 +157,10 @@ pub fn window(key: &str, kind: &str, agent: &str, server_pid: Option<u32>, start
     let text = |t: String| json!({"text": t});
     let cmd = |c: &str| json!({"cmd": c});
     // the run's words with `more` after them, every word quoted alike
-    let again = |more: &str| json!({"cmd": crate::cli::commands::join(&[started, &more.split(' ').map(str::to_string).collect::<Vec<_>>()].concat())});
+    let again = |more: &str| {
+        let words = started.iter().map(String::as_str).chain(more.split(' '));
+        cmd(&crate::termtext::posix_line(words))
+    };
     let (title, parts) = match (kind, agent) {
         (CODEX_SHARED, _) => ("This Codex runs without terminum", vec![
             text(format!("This Codex attached to a shared codex app-server{}, which a Codex app or an earlier Codex started. \

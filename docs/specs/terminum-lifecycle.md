@@ -72,7 +72,7 @@ Open questions: none open. Which clients exist (AC-11's drop) is terminum.md OQ-
 | AC-197 | [SHOULD / P1] | A worktree's step that runs real programs (panel, page, critical, smoke, an e2e script) and fails runs once more, unchanged, while the run is otherwise green: passing then, the targeted checks or the smoke set count it, say the first run's last lines and say it in red last; red again, or a leftover, it is red; other steps have no retry, and the full run retries by AC-201. |
 | AC-200 | [SHOULD / P1] | A release promotes a commit: `make release` pins the newest commit of origin/main that passed the full run in 48 hours, or differs from one only in docs, else origin/main, or `PIN=`, and runs its full run, the Mac test runner's checks, the build and the tag in a tree of its own detached at it, by that commit's own code, while landings, Afters and installs go on; a fix for a red release lands first and is pinned. |
 | AC-201 | [SHOULD / P1] | The full run keeps a pass per step and content, shared by every tree, and runs only the steps without one, or the scan alone after a docs-only change; its steps see only an allow-listed environment; a budget over under its own load is said and judged on a quiet machine; a red step of real programs runs its red checks once more, never for a check of code changed since the last full pass or one retried in 3 of the last 7 runs, said in red, in a task and in the release notes; each run and each release leaves a line in a record. |
-| AC-202 | [SHOULD / P1] | A nightly schedule rehearses origin/main with every step run and judges the budgets on the quiet machine after it, a red step making a task that names the commits since the last full pass; a weekly schedule runs /simplify and /docs-review over what landed since its last run, their findings ordinary tasks; a release asks neither. |
+| AC-202 | [SHOULD / P1] | A nightly schedule runs every rehearsal step on origin/main, even after a pass on the same content, and judges the budgets on a quiet machine. A red step makes a task naming the commits since the last full pass. A weekly schedule runs /simplify and /docs-review over what landed since its last run, with findings filed as ordinary tasks. Releases require neither schedule. |
 | AC-206 | [SHOULD / P1] | The trees kept for warm builds (the integration candidate's, `.worktrees/release`, `.worktrees/rehearse`) keep `terminumd/target` under a bound of 20 GiB, kept where a build begins there: over it, the object files no executable of the current build names go first, the current build's stay so the next build is incremental, and only a target still over is cleaned; a build running there is never cleaned under it. |
 
 ## 5. BDD scenarios
@@ -1158,6 +1158,8 @@ Scenario: AC-201 happy path — the record
 
 ### AC-202 — A nightly full run, a weekly review [SHOULD / P1]
 
+The nightly runs a fresh full gate to catch intermittent failures in any step, even after another rehearsal passes.
+
 ```gherkin
 Scenario: AC-202 happy path — the nightly
   Given the project's schedule "Nightly full run", daily at 02:30 on an agent of its pool (terminum-schedules.md AC-160)
@@ -1166,6 +1168,13 @@ Scenario: AC-202 happy path — the nightly
   And green, the content's passes are what make release reuses the next day, and the result says the commit
   And red, it makes one task per red step, or comments on an open one of that title, "Bug: the nightly full run is red at <step> on <commit>", P1, naming the cause, the first run's last lines and the commits since the last full pass (git log --oneline <its commit>..<pin>); a red --timing makes one for each budget over
   And a check passed only on its retry is a task as AC-201 says
+
+Scenario: AC-202 edge — a rehearsal passes on the nightly's pin
+  Given a separate rehearsal holds .worktrees/rehearse at origin/main when the nightly fires
+  And the nightly's first make rehearse is refused because the tree is held (AC-200)
+  When that rehearsal records a full pass and releases the tree, with origin/main still at the same commit
+  Then the nightly's agent retries make rehearse and runs every gate step on that content
+  And the nightly runs make check CHECK_ARGS=--timing after the rehearsal
 
 Scenario: AC-202 — what a nightly red teaches the landing
   Given a nightly red step the landing's checks could have caught (its code changed by one landing, its check outside that landing's targeted checks and smoke set)
@@ -1416,7 +1425,7 @@ All cases are shipped; nothing is staged.
 - [ ] AC-200 — `scripts/tests/test_release_turn.py`, `scripts/tests/test_release_tree.py`, `scripts/tests/test_land_stages.py`, `scripts/tests/test_release.py`
 - [ ] AC-201 — `scripts/tests/test_check_all.py`, `scripts/tests/test_gate_retry.py`, `scripts/tests/test_gate_record.py`, `scripts/tests/test_e2e_ws.py`
 - [ ] AC-206 — `scripts/tests/test_target_bound.py`, `scripts/tests/test_land_stages.py`, `scripts/tests/test_release_tree.py`; on this Mac: the integration tree's next Check line and `du -sh`
-- [ ] AC-202 — the project's schedules "Nightly full run" and "Weekly review" (terminum's board), `scripts/tests/test_gate_record.py`
+- [ ] AC-202 — the project's schedules "Nightly full run" and "Weekly review" (terminum's board), `scripts/tests/test_check_all.py` (a rehearsal runs every step with a full pass already recorded), `scripts/tests/test_gate_record.py`
 - [x] AC-197 — `scripts/tests/test_check_changed.py` (`test_ac197_*`), `cargo test integrate::retry_notes`, `cargo test integrate::stages::tests::ac197` (Verify and Check histories, cleanup, a reused tree), `cargo test integrate::retry_live_tests` (real retry commands through private tmux, Verify and Check)
 - [x] AC-103 — `scripts/tests/test_check_docs.py`; `python3 scripts/check_docs.py`
 - [x] AC-196 — `cargo test logs::`, `cargo test cli::tests`, `cargo test sent::`, `scripts/tests/test_check_logs.py`, `scripts/e2e_logs.py`

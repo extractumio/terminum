@@ -94,7 +94,7 @@ pub fn main() -> i32 {
 /// The agent's environment as `get` reads it; under a shared Codex app-server no pane: the one
 /// there is not the caller's (AC-207).
 pub fn env_of(get: impl Fn(&str) -> Option<String>) -> Env {
-    let shared = super::codexdaemon::under_shared();
+    let shared = crate::process::codex::under_shared();
     let var = |k| get(k).filter(|_| !shared);
     Env { tmux: var("TMUX"), pane: var("TMUX_PANE"), shared, ..Default::default() }
 }
@@ -162,7 +162,7 @@ pub fn answer(line: &str, env: &Env, forward: Forward) -> Option<String> {
             let args = params.get("arguments").cloned().unwrap_or_else(|| json!({}));
             let session = params.pointer("/_meta/sessionId").and_then(Value::as_str);
             if env.shared && name == super::codexdaemon::TOOL {
-                return result(id, text_result(super::codexdaemon::SAID, false));
+                return result(id, text_result(super::codexdaemon::said(), false));
             }
             if super::mcp_meta::META.contains(&name) {
                 return result(id, meta(name, &args, session, env, forward));
@@ -228,13 +228,13 @@ fn initialize(params: &Value, in_pane: bool, manager: bool) -> Value {
 
 /// The one tool offered under a shared Codex app-server (AC-207): it answers why there are no others.
 fn shared_tool() -> Value {
-    json!({"name": super::codexdaemon::TOOL, "title": "Why terminum's tools are missing", "description": super::codexdaemon::SAID,
+    json!({"name": super::codexdaemon::TOOL, "title": "Why terminum's tools are missing", "description": super::codexdaemon::said(),
            "annotations": hints(true, true), "inputSchema": {"type": "object", "properties": {}, "required": []}})
 }
 
 /// What a call outside a pane answers: why, where it is known (AC-207).
 fn not_in_pane(env: &Env) -> &'static str {
-    if env.shared { super::codexdaemon::SAID } else { NOT_IN_PANE }
+    if env.shared { super::codexdaemon::said() } else { NOT_IN_PANE }
 }
 
 fn text_result(text: &str, is_error: bool) -> Value {

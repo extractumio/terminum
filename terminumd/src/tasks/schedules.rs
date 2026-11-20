@@ -241,14 +241,14 @@ pub fn kept_by_agent(tx: &Transaction) -> Result<std::collections::BTreeMap<Stri
 }
 
 /// Whether a project names `agent` its integration agent: it keeps a slot for integration (AC-194).
-fn integrates(tx: &Transaction, agent: &str) -> Result<bool, String> {
+pub(super) fn integrates(tx: &Transaction, agent: &str) -> Result<bool, String> {
     Ok(tx.query_row("SELECT 1 FROM project_integration WHERE is_on = 1 AND agent = ?1", [agent], |_| Ok(())).optional().map_err(sql)?.is_some())
 }
 
-/// What agent `agent` keeps, its schedules `keys` but one not counted: "Opus reviewer keeps 1 slot for 2 schedules:
+/// What the agent keeps for schedules `keys` and integration: "Opus reviewer keeps 1 slot for 2 schedules:
 /// SCH-1, SCH-2, and 1 for integration", and how many slots that is.
-pub fn kept_words(tx: &Transaction, agent: &str, name: &str, keys: &[String]) -> Result<(String, i64), String> {
-    let k = Kept::of(keys.len(), integrates(tx, agent)?);
+pub(super) fn kept_words(name: &str, keys: &[String], integration: bool) -> (String, i64) {
+    let k = Kept::of(keys.len(), integration);
     let mut parts = Vec::new();
     if k.slots > 0 {
         parts.push(format!("{} slot{} for {} schedule{}: {}", k.slots, plural(k.slots), keys.len(), plural(keys.len() as i64), keys.join(", ")));
@@ -256,7 +256,7 @@ pub fn kept_words(tx: &Transaction, agent: &str, name: &str, keys: &[String]) ->
     if k.integration {
         parts.push(if parts.is_empty() { "1 slot for integration" } else { "1 for integration" }.to_string());
     }
-    Ok((format!("{name} keeps {}", parts.join(", and ")), k.total()))
+    (format!("{name} keeps {}", parts.join(", and ")), k.total())
 }
 
 /// The slots it would keep fit its agent's at once, unless it is paused (AC-161): ceil(N / 2) with it among N, and
@@ -264,9 +264,10 @@ pub fn kept_words(tx: &Transaction, agent: &str, name: &str, keys: &[String]) ->
 fn check_slot(tx: &Transaction, given: &Given, id: Option<&str>) -> Result<(), String> {
     let a = agents::chosen(tx, &given.agent, &given.project)?;
     let kept = kept_on(tx, &a.id, id)?;
-    let with = Kept::of(kept.len() + 1, integrates(tx, &a.id)?).total();
+    let integration = integrates(tx, &a.id)?;
+    let with = Kept::of(kept.len() + 1, integration).total();
     if !given.paused && with > a.at_once {
-        let (words, _) = kept_words(tx, &a.id, &a.name, &kept)?;
+        let (words, _) = kept_words(&a.name, &kept, integration);
         let this = match id {
             Some(id) => by_id(tx, id)?.key,
             None => "this one".to_string(),

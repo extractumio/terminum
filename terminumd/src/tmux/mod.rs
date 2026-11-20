@@ -129,8 +129,8 @@ impl Tmux {
     pub fn pane_state(&self, key: &str) -> PaneState {
         let Some((server, _)) = self.resolve(key) else { return PaneState::Unwatched };
         let up = server.connected();
-        server.list.with_told(|t| match t {
-            Some(t) if t.ok && up => if t.every.iter().any(|k| k == key) { PaneState::Open } else { PaneState::Closed },
+        server.list.with_told(|t| match t.filter(|t| t.ok && up).and_then(|t| t.every.as_ref()) {
+            Some(every) => if every.iter().any(|k| k == key) { PaneState::Open } else { PaneState::Closed },
             _ => PaneState::Unread,
         })
     }

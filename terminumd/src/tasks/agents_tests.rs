@@ -246,11 +246,11 @@ fn ac161_an_agent_keeps_its_schedules_slots_and_is_not_deleted_under_them() {
         crate::tasks::schedules::add(tx, HUMAN, &given, 1_794_256_500)?;
         crate::tasks::schedules::add(tx, HUMAN, &given, 1_794_256_500)?;
         assert_eq!(change(tx, &id, &Given { at_once: 1, ..opus() }).unwrap_err(), "Opus reviewer keeps 2 slots for 3 schedules: SCH-1, SCH-2, SCH-3: at once is at least 2.");
+        change(tx, &id, &Given { at_once: 3, ..opus() })?;
         let mut i = crate::tasks::integration::read(tx, "default")?;
         (i.on, i.agent) = (true, Some(id.clone()));
         crate::tasks::integration::keep(tx, "default", &i)?;
         assert_eq!(change(tx, &id, &Given { at_once: 2, ..opus() }).unwrap_err(), "Opus reviewer keeps 2 slots for 3 schedules: SCH-1, SCH-2, SCH-3, and 1 for integration: at once is at least 3.");
-        change(tx, &id, &Given { at_once: 3, ..opus() })?;
         assert_eq!(remove(tx, &id).unwrap_err(), "Opus reviewer runs schedules SCH-1, SCH-2, SCH-3: give them another agent first.");
         Ok(())
     }).unwrap();
