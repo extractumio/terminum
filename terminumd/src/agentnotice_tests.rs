@@ -90,9 +90,13 @@ fn ac208_the_foreground_run_is_the_ttys_foreground_groups_leader() {
     assert_eq!(foreground_of(""), None);
 }
 
+/// A window's commands, as the page shows them to copy.
+fn cmds(v: &Value) -> Vec<String> {
+    v["parts"].as_array().unwrap().iter().filter_map(|p| p["cmd"].as_str().map(str::to_string)).collect()
+}
+
 #[test]
 fn ac208_each_window_names_what_is_lost_and_the_commands_to_copy() {
-    let cmds = |v: &Value| v["parts"].as_array().unwrap().iter().filter_map(|p| p["cmd"].as_str().map(str::to_string)).collect::<Vec<_>>();
     let plain = started("codex", &w("codex"));
     let shared = window("tmux:local:terminum:%4", CODEX_SHARED, "codex", Some(77), &plain);
     assert_eq!((shared["t"].as_str(), shared["id"].as_str(), shared["kind"].as_str()), (Some("notice"), Some("tmux:local:terminum:%4"), Some(CODEX_SHARED)));
@@ -113,20 +117,19 @@ fn ac208_each_window_names_what_is_lost_and_the_commands_to_copy() {
 
 #[test]
 fn ac208_the_commands_start_the_agent_again_as_this_run_was_started() {
-    let cmds = |v: Value| v["parts"].as_array().unwrap().iter().filter_map(|p| p["cmd"].as_str().map(str::to_string)).collect::<Vec<_>>();
     // the user's alias or function (codsp) runs the real program with its options: those, not a plain codex; its prompt left out
     let run = w("/opt/homebrew/lib/node_modules/@openai/codex/vendor/bin/codex --no-alt-screen --dangerously-bypass-approvals-and-sandbox -m gpt-5 fix the tests");
-    assert_eq!(cmds(window("k", CODEX_SHARED, "codex", None, &started("codex", &run)))[..2],
+    assert_eq!(cmds(&window("k", CODEX_SHARED, "codex", None, &started("codex", &run)))[..2],
                ["codex --no-alt-screen --dangerously-bypass-approvals-and-sandbox -m gpt-5 -c tui.alternate_screen=never",
                 "codex --no-alt-screen --dangerously-bypass-approvals-and-sandbox -m gpt-5 --no-daemon"]);
     // a node Codex, a resumed one (the session it picked is no option to repeat), a value that needs quoting
     assert_eq!(started("codex", &w("node /x/codex/bin/codex.js resume 3f2a --yolo")), ["codex", "--yolo"]);
     let quoted = vec!["claude".to_string(), "--append-system-prompt".into(), "be brief".into(), "--model".into(), "opus".into()];
-    assert_eq!(cmds(window("k", FULL_SCREEN, "claude", None, &started("claude", &quoted)))[1],
+    assert_eq!(cmds(&window("k", FULL_SCREEN, "claude", None, &started("claude", &quoted)))[1],
                r#"claude --append-system-prompt 'be brief' --model opus --settings '{"tui":"default"}'"#);
     // a run with --settings of its own: no line that would drop it, only /tui classic
     let own = started("claude", &w("claude --settings /Users/alex/s.json --verbose"));
-    assert_eq!(cmds(window("k", FULL_SCREEN, "claude", None, &own)), ["/tui classic"]);
+    assert_eq!(cmds(&window("k", FULL_SCREEN, "claude", None, &own)), ["/tui classic"]);
     // a secret among the options, or words that cannot be read: the program's name alone
     assert_eq!(started("codex", &w("codex --yolo --api-key=opensesame-value")), ["codex"]);
     assert_eq!(started("codex", &w("vim")), ["codex"]);

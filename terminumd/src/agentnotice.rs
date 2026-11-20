@@ -15,7 +15,7 @@ use parking_lot::Mutex;
 use serde_json::{json, Value};
 
 use crate::app::Shared;
-use crate::cli::codexdaemon::{self, NO_ATTACH, OWN_OPTION, STOP_SERVER};
+use crate::cli::codexdaemon::{self, NO_ATTACH, NO_DAEMON, OWN_OPTION, STOP_SERVER};
 use crate::cli::hookargv::{exact, program_at};
 use crate::page::Page;
 use crate::screen::frame::Fields;
@@ -58,7 +58,7 @@ pub fn agent(command: &str, words: &[String]) -> Option<&'static str> {
 pub fn may_attach(words: &[String]) -> bool {
     let Some(at) = program_at(words, "codex") else { return false };
     let rest = &words[at + 1..];
-    let own = rest.iter().any(|w| w.starts_with("-c") || w == "--config" || w.starts_with("--config=") || w == "--no-daemon");
+    let own = rest.iter().any(|w| w.starts_with("-c") || w == "--config" || w.starts_with("--config=") || w == NO_DAEMON);
     !own && !matches!(crate::cli::hookopts::codex_subcommand(rest), Some("exec" | "e"))
 }
 
@@ -172,9 +172,10 @@ async fn look(app: &Shared, page: &Page, server: &Server, pane: &str, key: &str)
     }
     let all: Vec<&str> = KINDS.into_iter().filter(|k| was.contains(k) || kinds.contains(k)).collect();
     tmux(server, format!("set-option -p -t {pane} @tm-noticed '{} {}'", run.pid, all.join(","))).await?;
+    let started = started(agent, &run.words);
     for kind in new {
         tracing::info!(event = "notice.shown", key, kind, pid = run.pid);
-        page.send_json(&window(key, kind, agent, server_pid, &started(agent, &run.words)));
+        page.send_json(&window(key, kind, agent, server_pid, &started));
     }
     Ok(())
 }
@@ -190,14 +191,15 @@ pub fn started(agent: &str, words: &[String]) -> Vec<String> {
 pub fn window(key: &str, kind: &str, agent: &str, server_pid: Option<u32>, started: &[String]) -> Value {
     let text = |t: String| json!({"text": t});
     let cmd = |c: &str| json!({"cmd": c});
-    let again = |more: &str| json!({"cmd": format!("{} {more}", started.iter().map(|w| crate::cli::commands::quote(w)).collect::<Vec<_>>().join(" "))});
+    // the run's words with `more` after them, every word quoted alike
+    let again = |more: &str| json!({"cmd": crate::cli::commands::join(&[started, &more.split(' ').map(str::to_string).collect::<Vec<_>>()].concat())});
     let (title, parts) = match (kind, agent) {
         (CODEX_SHARED, _) => ("This Codex runs without terminum", vec![
             text(format!("This Codex attached to a shared codex app-server{}, which a Codex app or an earlier Codex started. \
 That server runs terminum's tools and hooks away from this pane, so terminum cannot tell this pane's Codex: no state or plan on its row, \
 no task board, no terminum tools.", server_pid.map(|p| format!(" (process {p})")).unwrap_or_default())),
             text("Quit this Codex and start it again in its own process: as it was started, with one option more, either of:".into()),
-            again(OWN_OPTION), again("--no-daemon"),
+            again(OWN_OPTION), again(NO_DAEMON),
             text("Or keep plain codex from attaching, then stop the server; stopping it ends the conversations it serves, and an app may start it again:".into()),
             cmd(NO_ATTACH), cmd(STOP_SERVER),
             text("terminum stops neither and changes no setting of Codex's.".into()),
@@ -210,8 +212,8 @@ over earlier output, no copy of earlier lines, no side marks.".into()),
                 cmd("/tui classic"),
             ];
             // Claude Code keeps only the last --settings: one of the run's own would be lost (terminum-dispatcher.md AC-156)
-            if !started.iter().any(|w| w == "--settings" || w.starts_with("--settings=")) {
-                parts.extend([text("or quit it and start it again as it was started, in its normal mode:".into()), again(r#"--settings '{"tui":"default"}'"#)]);
+            if !crate::tasks::agents::names_settings(&started.join(" ")) {
+                parts.extend([text("or quit it and start it again as it was started, in its normal mode:".into()), again(r#"--settings {"tui":"default"}"#)]);
             }
             parts.push(text("or set \"tui\": \"default\" in ~/.claude/settings.json and start it again.".into()));
             ("Claude Code runs full screen", parts)
