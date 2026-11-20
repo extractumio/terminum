@@ -248,7 +248,8 @@ pub fn quote(word: &str) -> String {
     format!("'{}'", word.replace('\'', "'\"'\"'"))
 }
 
-fn join(words: &[String]) -> String {
+/// `words` as one line for a POSIX shell, each quoted where it must be.
+pub(crate) fn join(words: &[String]) -> String {
     words.iter().map(|w| quote(w)).collect::<Vec<_>>().join(" ")
 }
 

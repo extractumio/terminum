@@ -15,7 +15,7 @@ use parking_lot::Mutex;
 use serde_json::{json, Value};
 
 use crate::app::Shared;
-use crate::cli::codexdaemon::{self, NO_ATTACH, NO_DAEMON, OWN_PROCESS, STOP_SERVER};
+use crate::cli::codexdaemon::{self, NO_ATTACH, NO_DAEMON, OWN_OPTION, STOP_SERVER};
 use crate::cli::hookargv::{exact, program_at};
 use crate::page::Page;
 use crate::screen::frame::Fields;
@@ -58,7 +58,7 @@ pub fn agent(command: &str, words: &[String]) -> Option<&'static str> {
 pub fn may_attach(words: &[String]) -> bool {
     let Some(at) = program_at(words, "codex") else { return false };
     let rest = &words[at + 1..];
-    let own = rest.iter().any(|w| w.starts_with("-c") || w == "--config" || w.starts_with("--config=") || w == "--no-daemon");
+    let own = rest.iter().any(|w| w.starts_with("-c") || w == "--config" || w.starts_with("--config=") || w == NO_DAEMON);
     !own && !matches!(crate::cli::hookopts::codex_subcommand(rest), Some("exec" | "e"))
 }
 
@@ -172,40 +172,57 @@ async fn look(app: &Shared, page: &Page, server: &Server, pane: &str, key: &str)
     }
     let all: Vec<&str> = KINDS.into_iter().filter(|k| was.contains(k) || kinds.contains(k)).collect();
     tmux(server, format!("set-option -p -t {pane} @tm-noticed '{} {}'", run.pid, all.join(","))).await?;
+    let started = started(agent, &run.words);
     for kind in new {
         tracing::info!(event = "notice.shown", key, kind, pid = run.pid);
-        page.send_json(&window(key, kind, agent, server_pid));
+        page.send_json(&window(key, kind, agent, server_pid, &started));
     }
     Ok(())
 }
 
-/// The page's `notice` message: its words, each command a part of its own to copy.
-pub fn window(key: &str, kind: &str, agent: &str, server_pid: Option<u32>) -> Value {
+/// How the run was started, to start it again: its program's name and its options, read as the idle exit's
+/// resume reads them (AC-153: no prompt, no session it picked); the name alone where they cannot be read or hold a secret.
+pub fn started(agent: &str, words: &[String]) -> Vec<String> {
+    let opts = program_at(words, agent).and_then(|at| crate::cli::hookopts::resumed(agent, &words[at + 1..])).unwrap_or_default();
+    std::iter::once(agent.to_string()).chain(opts).collect()
+}
+
+/// The page's `notice` message: its words, each command a part of its own to copy, built on `started`.
+pub fn window(key: &str, kind: &str, agent: &str, server_pid: Option<u32>, started: &[String]) -> Value {
     let text = |t: String| json!({"text": t});
     let cmd = |c: &str| json!({"cmd": c});
+    // the run's words with `more` after them, every word quoted alike
+    let again = |more: &str| json!({"cmd": crate::cli::commands::join(&[started, &more.split(' ').map(str::to_string).collect::<Vec<_>>()].concat())});
     let (title, parts) = match (kind, agent) {
         (CODEX_SHARED, _) => ("This Codex runs without terminum", vec![
             text(format!("This Codex attached to a shared codex app-server{}, which a Codex app or an earlier Codex started. \
 That server runs terminum's tools and hooks away from this pane, so terminum cannot tell this pane's Codex: no state or plan on its row, \
 no task board, no terminum tools.", server_pid.map(|p| format!(" (process {p})")).unwrap_or_default())),
-            text("Quit this Codex and start it again in its own process, one of (leave out an option an alias of yours already has):".into()),
-            cmd(OWN_PROCESS), cmd(NO_DAEMON),
+            text("Quit this Codex and start it again in its own process: as it was started, with one option more, either of:".into()),
+            again(OWN_OPTION), again(NO_DAEMON),
             text("Or keep plain codex from attaching, then stop the server; stopping it ends the conversations it serves, and an app may start it again:".into()),
             cmd(NO_ATTACH), cmd(STOP_SERVER),
             text("terminum stops neither and changes no setting of Codex's.".into()),
         ]),
-        (_, "claude") => ("Claude Code runs full screen", vec![
-            text("In its full-screen TUI terminum shows only Claude Code's own screen: no history to scroll back, no widgets, folds or find \
+        (_, "claude") => {
+            let mut parts = vec![
+                text("In its full-screen TUI terminum shows only Claude Code's own screen: no history to scroll back, no widgets, folds or find \
 over earlier output, no copy of earlier lines, no side marks.".into()),
-            text("Switch it to its normal mode in Claude Code:".into()),
-            cmd("/tui classic"),
-            text("or set \"tui\": \"default\" in ~/.claude/settings.json and start it again.".into()),
-        ]),
+                text("Switch it to its normal mode in Claude Code:".into()),
+                cmd("/tui classic"),
+            ];
+            // Claude Code keeps only the last --settings: one of the run's own would be lost (terminum-dispatcher.md AC-156)
+            if !crate::tasks::agents::names_settings(&started.join(" ")) {
+                parts.extend([text("or quit it and start it again as it was started, in its normal mode:".into()), again(r#"--settings {"tui":"default"}"#)]);
+            }
+            parts.push(text("or set \"tui\": \"default\" in ~/.claude/settings.json and start it again.".into()));
+            ("Claude Code runs full screen", parts)
+        }
         _ => ("Codex runs full screen", vec![
             text("This Codex draws on tmux's alternate screen, where tmux keeps no scrollback: terminum cannot scroll back to, find or copy \
 its earlier output.".into()),
-            text("Quit it and start it inline (--no-alt-screen would attach it to a shared server where one runs):".into()),
-            cmd(OWN_PROCESS),
+            text("Quit it and start it again inline, as it was started with one option more (--no-alt-screen would attach it to a shared server where one runs):".into()),
+            again(OWN_OPTION),
             text("or set alternate_screen = \"never\" under [tui] in ~/.codex/config.toml.".into()),
         ]),
     };

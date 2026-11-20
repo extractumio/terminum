@@ -389,6 +389,10 @@ async function codexScreens(page, { tmux, work }) {
     const runs = await until(() => tmux("display", "-p", "-t", pane, "#{pane_current_command}") === "codex", 10000);
     const alt = () => tmux("display", "-p", "-t", pane, "#{alternate_on}");
     const got = title ? await until(async () => (await notice(page)) === title, 15000) : await noNotice(page, 8000);
+    // the window starts it again as this run was started: its own options, the fix's added (AC-208)
+    const again = await page.evaluate(() => [...document.querySelectorAll("#noticebox .noticecmd code")].map((c) => c.textContent));
+    if (title) check("AC-208 live: real Codex's window starts it again with its own options and the fix's",
+      again[0] === "codex --no-daemon -c check_for_update_on_startup=false -c tui.alternate_screen=never", JSON.stringify(again));
     check(`AC-208 live: real Codex (--no-daemon) ${how}: ${title ? "its window says so" : "no window"}`, runs && got && alt() === (title ? "1" : "0"),
       JSON.stringify({ runs, alt: alt(), shown: await notice(page), screen: tmux("capture-pane", "-p", "-t", pane).split("\n").filter((l) => l.trim()).slice(0, 4) }));
     await closeNotice(page);

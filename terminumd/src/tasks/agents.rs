@@ -63,9 +63,14 @@ const SEPARATORS: [char; 4] = [';', '|', '&', '#'];
 pub(crate) fn inline_words(kind: &str, command: &str) -> &'static str {
     match kind {
         "codex" => " -c tui.alternate_screen=never -c check_for_update_on_startup=false",
-        _ if command.contains("--settings") => "",
+        _ if names_settings(command) => "",
         _ => r#" --settings '{"tui":"default","env":{"CLAUDE_CODE_NO_FLICKER":"0"}}'"#,
     }
+}
+
+/// Whether a Claude Code command line names a `--settings` of its own, which one more would replace.
+pub(crate) fn names_settings(command: &str) -> bool {
+    command.contains("--settings")
 }
 
 fn command_line(kind: &str, command: &str, effort: &str) -> String {
