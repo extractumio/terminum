@@ -376,13 +376,20 @@ fn ac147_an_older_store_s_dispatcher_messages_take_their_tasks_from_the_input_lo
 fn ac195_a_write_that_waited_for_its_turn_names_its_caller_and_is_kept() {
     let s = std::sync::Arc::new(Store::open(fresh("store-slow")));
     let (held, go) = std::sync::mpsc::channel();
-    // another call's transaction, held 150 ms
-    let holder = { let s = s.clone(); std::thread::spawn(move || { let turn = s.state.lock(); held.send(()).unwrap(); std::thread::sleep(Duration::from_millis(150)); drop(turn) }) };
-    go.recv().unwrap();
+    // Queue the request while another call holds the store. Its caller may be scheduled after the lock is released.
+    let holder = {
+        let s = s.clone();
+        std::thread::spawn(move || {
+            let _turn = s.state.lock();
+            held.send(Instant::now()).unwrap();
+            std::thread::sleep(Duration::from_millis(150));
+        })
+    };
+    let asked = go.recv().unwrap();
     // the store's opening, slow on a loaded machine, may have said a line: its throttle would hold back the one looked for
     s.slow.reset();
     let (lines, guard) = crate::testutil::logs();
-    let made = s.with(|tx| crate::tasks::ops::create(tx, HUMAN, crate::tasks::ops::NewTask { title: "waited".into(), ..Default::default() }, 1));
+    let made = s.with_from(Location::caller(), asked, |tx| crate::tasks::ops::create(tx, HUMAN, crate::tasks::ops::NewTask { title: "waited".into(), ..Default::default() }, 1));
     drop(guard);
     holder.join().unwrap();
     assert!(made.is_ok(), "a write waits its turn, never refused: {made:?}");
