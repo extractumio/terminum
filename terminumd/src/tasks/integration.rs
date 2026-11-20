@@ -15,6 +15,7 @@ use serde_json::{json, Value};
 
 use super::api::{answer, store};
 use super::ops::{self, sql};
+use super::schedules;
 use crate::app::Shared;
 use crate::http::off;
 
@@ -170,12 +171,19 @@ pub fn read(tx: &Transaction, project: &str) -> Result<Settings, String> {
     })).optional().map_err(sql).map(Option::unwrap_or_default)
 }
 
-/// Kept as given, its agent one of the project's own pool.
+/// Kept as given, its agent one of the project's own pool with room for its kept slot (AC-194).
 pub fn keep(tx: &Transaction, project: &str, s: &Settings) -> Result<(), String> {
     ops::check_project(tx, project)?;
     check_fields(s)?;
-    if let Some(agent) = &s.agent {
-        super::agents::chosen(tx, agent, project)?;
+    if let Some(id) = &s.agent {
+        let agent = super::agents::chosen(tx, id, project)?;
+        if s.on {
+            let kept = schedules::kept_on(tx, id, None)?;
+            let (words, total) = schedules::kept_words(&agent.name, &kept, true);
+            if total > agent.at_once {
+                return Err(format!("{words}: raise its at once, or choose another agent."));
+            }
+        }
     }
     let prompt = if s.prompt.trim() == DEFAULT_PROMPT.trim() { "" } else { s.prompt.as_str() };   // the default stays the default
     tx.execute("INSERT INTO project_integration (project, is_on, target, check_line, publish_line, after_line, batch_most, check_minutes, agent, agent_budget_minutes, red_rounds_most, prompt,

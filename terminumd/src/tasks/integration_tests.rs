@@ -3,7 +3,7 @@
 use std::process::Command;
 
 use super::*;
-use crate::tasks::store::Store;
+use crate::tasks::{schedules, store::{Store, HUMAN}};
 
 fn store(name: &str) -> Store {
     let s = Store::open(crate::testutil::fresh_dir(name).join("kanban.sqlite"));
@@ -63,6 +63,41 @@ fn ac186_the_agent_is_one_of_its_own_pool() {
     s.with(|tx| tx.execute("DELETE FROM agents WHERE id = 'a1'", []).map_err(sql)).unwrap();
     assert_eq!(s.with(|tx| read(tx, "p1")).unwrap().agent, None, "an agent deleted leaves none");
     assert_eq!(s.with(|tx| keep(tx, "gone", &Settings::default())).unwrap_err(), "That project is gone.");
+}
+
+#[test]
+fn ac194_an_integration_agent_must_have_room_for_its_kept_slot() {
+    let s = store("integration-agent-capacity");
+    let no_agent = Settings { on: true, ..Settings::default() };
+    let with_agent = Settings { agent: Some("a1".into()), ..no_agent.clone() };
+    s.with(|tx| {
+        let now = 1_794_256_500;
+        let schedule = schedules::Given::of(tx, &json!({
+            "project": "p1", "agent": "a1", "title": "Nightly check",
+            "cron": "0 3 * * *", "budget_minutes": 30,
+        }), now)?;
+        assert_eq!(schedules::add(tx, HUMAN, &schedule, now)?.1, "SCH-1");
+        keep(tx, "p1", &no_agent)
+    }).unwrap();
+
+    let refused = "Opus reviewer keeps 1 slot for 1 schedule: SCH-1, and 1 for integration: raise its at once, or choose another agent.";
+    assert_eq!(s.with(|tx| keep(tx, "p1", &with_agent)).unwrap_err(), refused);
+    assert_eq!(s.with(|tx| read(tx, "p1")).unwrap(), no_agent);
+
+    let off = Settings { on: false, ..with_agent.clone() };
+    s.with(|tx| keep(tx, "p1", &off)).unwrap();
+    assert_eq!(s.with(|tx| schedules::kept_by_agent(tx)).unwrap()["a1"].total(), 1);
+    assert_eq!(s.with(|tx| keep(tx, "p1", &with_agent)).unwrap_err(), refused);
+    assert_eq!(s.with(|tx| read(tx, "p1")).unwrap(), off);
+
+    s.with(|tx| {
+        tx.execute("UPDATE agents SET at_once = 2 WHERE id = 'a1'", []).map_err(sql)?;
+        keep(tx, "p1", &with_agent)?;
+        keep(tx, "p1", &with_agent)?;
+        assert_eq!(read(tx, "p1")?, with_agent);
+        assert_eq!(schedules::kept_by_agent(tx)?["a1"].total(), 2);
+        Ok(())
+    }).unwrap();
 }
 
 #[test]

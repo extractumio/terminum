@@ -268,7 +268,8 @@ pub(crate) fn change(tx: &Transaction, id: &str, given: &Given) -> Result<(), St
     let Some(was) = by_id(tx, id)? else { return Err("That agent is gone.".into()) };
     given.fits(tx, &was.project, id)?;
     // its schedules and integration keep their slots (terminum-schedules.md AC-161)
-    let (words, total) = super::schedules::kept_words(tx, id, &given.name, &super::schedules::kept_on(tx, id, None)?)?;
+    let kept = super::schedules::kept_on(tx, id, None)?;
+    let (words, total) = super::schedules::kept_words(&given.name, &kept, super::schedules::integrates(tx, id)?);
     if total > given.at_once {
         return Err(format!("{words}: at once is at least {total}."));
     }
