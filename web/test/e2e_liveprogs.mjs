@@ -392,9 +392,7 @@ async function codexScreens(page, { tmux, work }) {
     check(`AC-208 live: real Codex (--no-daemon) ${how}: ${title ? "its window says so" : "no window"}`, runs && got && alt() === (title ? "1" : "0"),
       JSON.stringify({ runs, alt: alt(), shown: await notice(page), screen: tmux("capture-pane", "-p", "-t", pane).split("\n").filter((l) => l.trim()).slice(0, 4) }));
     await closeNotice(page);
-    for (let i = 0; i < 3 && !SHELLS.test(tmux("display", "-p", "-t", pane, "#{pane_current_command}")); i++) {
-      tmux("send-keys", "-t", pane, "C-c"); await new Promise((r) => setTimeout(r, 500));
-    }
+    check(`real Codex (--no-daemon) ${how}: Ctrl-C ends it`, await quit(tmux, pane));
     close(tmux, pane);
   }
   fs.rmSync(home, { recursive: true, force: true });
