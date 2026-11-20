@@ -30,7 +30,7 @@ pub(super) async fn window(State(app): State<Shared>, Path(id): Path<String>) ->
         v["text_rev"] = json!(text_rev(&body));
         v["text"] = json!(body);
         let mut history = history;
-        super::notify::marks(&mut history, &app.task_lines.waiting_comments());   // each comment says whether its session was told (AC-209)
+        super::notify::marks(&mut history, &app.task_lines.waiting_comments(&t.id));   // each comment says whether its session was told (AC-209)
         v["history"] = history;
         v["files"] = json!(attached);
         v["run_holds"] = json!(held);

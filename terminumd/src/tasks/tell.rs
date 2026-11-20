@@ -24,6 +24,13 @@ pub struct Line {
     pub comments: Vec<(String, String)>,
 }
 
+impl Line {
+    /// Whether it tells of comments (AC-209), not Dispatcher's or the integration queue's words.
+    pub fn is_notice(&self) -> bool {
+        !self.comments.is_empty()
+    }
+}
+
 /// One pane's lines: waiting for its next context, and those sent with one and not yet heard (the hook says
 /// so after printing them, `Heard`).
 #[derive(Default)]
@@ -59,7 +66,7 @@ impl Lines {
     pub(crate) fn push_comment(&self, key: &str, task: &str, event: &str, by: String) -> Option<Line> {
         {
             let mut all = self.0.lock();
-            if let Some(line) = all.get_mut(key).and_then(|w| w.lines.iter_mut().find(|l| l.task == task && !l.comments.is_empty())) {
+            if let Some(line) = all.get_mut(key).and_then(|w| w.lines.iter_mut().find(|l| l.task == task && l.is_notice())) {
                 if !line.comments.iter().any(|(e, _)| e == event) {
                     line.comments.push((event.to_string(), by));
                     line.text = super::notify::words(task, &line.comments);
@@ -115,17 +122,17 @@ impl Lines {
         let Some(w) = all.get_mut(key) else { return Vec::new() };
         let mut gone = Vec::new();
         for list in [Some(&mut w.lines), w.sent.as_mut().map(|(_, l)| l)].into_iter().flatten() {
-            let (comments, rest) = std::mem::take(list).into_iter().partition(|l: &Line| !l.comments.is_empty());
+            let (comments, rest) = std::mem::take(list).into_iter().partition(Line::is_notice);
             *list = rest;
             gone.extend(comments);
         }
         gone
     }
 
-    /// Every comment whose notice waits for its session (AC-209).
-    pub(crate) fn waiting_comments(&self) -> std::collections::HashSet<String> {
+    /// Every comment of `task` whose notice waits for its session (AC-209).
+    pub(crate) fn waiting_comments(&self, task: &str) -> std::collections::HashSet<String> {
         self.0.lock().values().flat_map(|w| w.lines.iter().chain(w.sent.iter().flat_map(|(_, l)| l)))
-            .flat_map(|l| l.comments.iter().map(|(e, _)| e.clone())).collect()
+            .filter(|l| l.task == task).flat_map(|l| l.comments.iter().map(|(e, _)| e.clone())).collect()
     }
 }
 
@@ -134,7 +141,7 @@ impl Lines {
 fn say_told(tx: &rusqlite::Transaction, lines: &[Line], at: i64) -> Result<HashSet<String>, String> {
     let mut said = HashSet::new();
     for l in lines {
-        let done = if l.comments.is_empty() {
+        let done = if !l.is_notice() {
             ops::key_of(tx, &l.task).and_then(|key| ops::log(tx, &key, DISPATCHER, "told", "Told the session", None, at))
         } else {
             super::notify::said(tx, l, None, at)

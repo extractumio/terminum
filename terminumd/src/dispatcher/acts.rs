@@ -186,9 +186,10 @@ pub(super) async fn do_later(app: &Shared, l: Later) {
             Ok(())
         }
         Act::End => {
-            let (comments, own): (Vec<_>, Vec<_>) = app.task_lines.take(&key).into_iter().partition(|l| !l.comments.is_empty());
-            crate::tasks::notify::lost(app, comments, crate::tasks::notify::RUN_ENDED);
-            if !own.is_empty() {
+            let taken = app.task_lines.take(&key);
+            let own = taken.iter().any(|l| !l.is_notice());
+            crate::tasks::notify::lost(app, taken, crate::tasks::notify::RUN_ENDED);
+            if own {
                 let r = l.run.clone();
                 let _ = store(app, move |tx| say(tx, &r, "The last warning could not reach the agent before the limit.")).await;
             }

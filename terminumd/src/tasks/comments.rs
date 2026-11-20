@@ -21,11 +21,17 @@ pub fn comment(tx: &Transaction, author: &str, id: &str, text: &str, at: i64) ->
     comment_with(tx, author, id, text, None, at)
 }
 
-/// A project's manager's comment (terminum-agents.md AC-174): marked so, as a fresh start says whose it is
-/// (terminum-dispatcher.md AC-209).
-pub fn manager_comment(tx: &Transaction, author: &str, id: &str, text: &str, at: i64) -> Result<String, String> {
-    comment_with(tx, author, id, text, Some(&json!({"by": "manager"})), at)
+/// A comment by `author`; a project's manager's (terminum-agents.md AC-174) marked so, as a fresh start and a notice
+/// say whose it is (terminum-dispatcher.md AC-209): the event's id.
+pub fn comment_as(tx: &Transaction, author: &str, manager: bool, id: &str, text: &str, at: i64) -> Result<String, String> {
+    comment_with(tx, author, id, text, manager.then(|| json!({"by": "manager"})).as_ref(), at)
 }
+
+/// The row of task ?1's last questions (AC-157): the humans' comments after it are their answers.
+const ASKED: &str = "SELECT MAX(rowid) FROM events WHERE task = ?1 AND kind = 'comment' AND json_extract(data, '$.questions') IS NOT NULL";
+
+/// Whether event `e` is a comment marked as a project's manager's by `comment_as`, as SQL.
+pub(crate) const BY_MANAGER: &str = "coalesce(json_extract(e.data, '$.by') = 'manager', 0)";
 
 /// What a fresh start carries of a task's comments (terminum-dispatcher.md AC-209): the humans' and the project's
 /// manager's, oldest first, each with its author's name and whether a manager wrote it; and how many agents wrote,
@@ -36,23 +42,26 @@ pub struct Carried {
     pub agents: usize,
 }
 
-/// The comments on task `id` a fresh start carries, but those whose text is in `said` (the press's message, the
-/// answers: said already).
-pub fn carried(tx: &Transaction, id: &str, said: &[&str]) -> Result<Carried, String> {
+/// The comments on task `id` a fresh start carries, but the press's own `message` (said as the message: its newest
+/// comment of those words, kept before the start read them) and, with `answered`, the humans' answers since the
+/// last questions (carried as answers, `answers`).
+pub fn carried(tx: &Transaction, id: &str, message: Option<&str>, answered: bool) -> Result<Carried, String> {
     let key = key_of(tx, id)?;
-    let all = rows(tx, "SELECT u.name, u.kind, coalesce(json_extract(e.data, '$.by') = 'manager', 0), coalesce(e.text, '') FROM events e
-                        JOIN users u ON u.id = e.author WHERE e.task = ?1 AND e.kind = 'comment' AND u.kind <> 'system' ORDER BY e.at, e.rowid",
-                   [&key], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, bool>(2)?, r.get::<_, String>(3)?)))?;
+    let asked: Option<i64> = if answered { tx.query_row(ASKED, [&key], |r| r.get(0)).map_err(sql)? } else { None };
+    // an agent's words are only counted: they are not read
+    let all = rows(tx, &format!("SELECT e.rowid, u.name, u.kind, {BY_MANAGER}, CASE WHEN u.kind = 'human' OR {BY_MANAGER} THEN coalesce(e.text, '') END
+                                 FROM events e JOIN users u ON u.id = e.author WHERE e.task = ?1 AND e.kind = 'comment' AND u.kind <> 'system' ORDER BY e.at, e.rowid"),
+                   [&key], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?, r.get::<_, bool>(3)?, r.get::<_, Option<String>>(4)?)))?;
     let mut out = Carried::default();
-    for (name, kind, manager, text) in all {
-        if said.iter().any(|s| s.trim() == text.trim()) {
-            continue;
+    for (row, name, kind, manager, text) in all {
+        match text {
+            Some(_) if kind == "human" && asked.is_some_and(|q| row > q) => {}
+            Some(text) => out.theirs.push((name, manager, text)),
+            None => out.agents += 1,
         }
-        if kind == "human" || manager {
-            out.theirs.push((name, manager, text));
-        } else {
-            out.agents += 1;
-        }
+    }
+    if let Some(m) = message.map(str::trim) && let Some(i) = out.theirs.iter().rposition(|(_, _, t)| t.trim() == m) {
+        out.theirs.remove(i);
     }
     Ok(out)
 }
@@ -116,7 +125,7 @@ pub fn keep_human_comment(tx: &Transaction, id: &str, text: &str, files: &[Strin
 /// The humans' comments since the agent's last questions, oldest first: their answers (AC-157); none asked: none.
 pub fn answers(tx: &Transaction, id: &str) -> Result<Option<Vec<String>>, String> {
     let key = key_of(tx, id)?;
-    let asked: Option<i64> = tx.query_row("SELECT MAX(rowid) FROM events WHERE task = ?1 AND kind = 'comment' AND json_extract(data, '$.questions') IS NOT NULL", [&key], |r| r.get(0)).map_err(sql)?;
+    let asked: Option<i64> = tx.query_row(ASKED, [&key], |r| r.get(0)).map_err(sql)?;
     let Some(at) = asked else { return Ok(None) };
     rows(tx, "SELECT e.text FROM events e JOIN users u ON u.id = e.author WHERE e.task = ?1 AND e.kind = 'comment' AND u.kind = 'human' AND e.text IS NOT NULL
               AND e.rowid > ?2 ORDER BY e.at, e.rowid", (&key, at), |r| r.get(0)).map(Some)
@@ -155,7 +164,7 @@ pub fn history(tx: &Transaction, id: &str) -> Result<Value, String> {
         files.entry(event).or_default().push(file);
     }
     let out = rows(tx, "SELECT e.id, e.at, e.author, u.name, u.kind, e.kind, e.text, e.edited_at, json_extract(e.data, '$.questions') IS NOT NULL,
-                        CASE WHEN e.kind = 'told' THEN json_extract(e.data, '$.comments') END, coalesce(json_extract(e.data, '$.not'), 0)
+                        CASE WHEN e.kind = 'told' THEN json_extract(e.data, '$.comments') END, CASE WHEN e.kind = 'told' THEN json_extract(e.data, '$.not') END
                         FROM events e JOIN users u ON u.id = e.author WHERE e.task = ?1 ORDER BY e.at, e.rowid", [&key], |r| {
         let event: String = r.get(0)?;
         let attached = files.remove(&event).unwrap_or_default();
@@ -168,7 +177,7 @@ pub fn history(tx: &Transaction, id: &str) -> Result<Value, String> {
         // a notice's outcome names the comments it told of (terminum-dispatcher.md AC-209)
         if let Some(ids) = r.get::<_, Option<String>>(9)?.and_then(|s| serde_json::from_str::<Value>(&s).ok()) {
             v["comments"] = ids;
-            v["not"] = json!(r.get::<_, bool>(10)?);
+            v["not"] = json!(r.get::<_, Option<bool>>(10)?.unwrap_or(false));
         }
         Ok(v)
     })?;

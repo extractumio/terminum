@@ -135,9 +135,10 @@ pub(super) fn facts(tx: &rusqlite::Transaction, tasks: &[Task], message: Option<
     }
     let mut comments = Vec::new();
     for t in tasks {
-        let answered = answers.iter().filter(|(id, _)| *id == t.id).flat_map(|(_, a)| a.iter().map(String::as_str));
-        let said: Vec<&str> = message.into_iter().chain(answered).collect();
-        comments.push((t.id.clone(), ops::carried(tx, &t.id, &said)?));
+        let c = ops::carried(tx, &t.id, message, answers.iter().any(|(id, _)| *id == t.id))?;
+        if c != ops::Carried::default() {
+            comments.push((t.id.clone(), c));
+        }
     }
     Ok(Facts {
         answers,
@@ -237,13 +238,15 @@ impl Facts {
             v
         });
         // the answers a main task's run brings are shown too (AC-185); with none, what a press saw before them holds (AC-158)
-        let mut facts = if self.answers.is_empty() { serde_json::json!([tasks, self.files, schedule, self.language]) } else { serde_json::json!([tasks, self.files, schedule, self.language, self.answers]) };
-        // the comments a fresh start carries (AC-209); with none, what a press saw before them holds (AC-158)
-        let comments: Vec<_> = self.comments.iter().filter(|(_, c)| *c != ops::Carried::default()).map(|(id, c)| (id, &c.theirs, c.agents)).collect();
-        if !comments.is_empty() && let Some(f) = facts.as_array_mut() {
-            f.push(serde_json::json!(comments));
+        let mut facts = vec![serde_json::json!(tasks), serde_json::json!(self.files), serde_json::json!(schedule), serde_json::json!(self.language)];
+        if !self.answers.is_empty() {
+            facts.push(serde_json::json!(self.answers));
         }
-        crate::auth::crypto::sha256_hex(facts.to_string().as_bytes())
+        // the comments a fresh start carries (AC-209); with none, what a press saw before them holds (AC-158)
+        if !self.comments.is_empty() {
+            facts.push(serde_json::json!(self.comments.iter().map(|(id, c)| (id, &c.theirs, c.agents)).collect::<Vec<_>>()));
+        }
+        crate::auth::crypto::sha256_hex(serde_json::Value::Array(facts).to_string().as_bytes())
     }
 }
 

@@ -154,10 +154,7 @@ impl Press {
     fn keep_on(&self, tx: &rusqlite::Transaction, tasks: &[Task], text: &str, files: &[String]) -> Result<(), String> {
         if self.keep(tx, &tasks[0].id, text, files)?.is_some() {
             for t in &tasks[1..] {
-                match &self.manager {
-                    None => ops::comment(tx, HUMAN, &t.id, text, ops::now())?,
-                    Some(user) => ops::manager_comment(tx, user, &t.id, text, ops::now())?,
-                };
+                ops::comment_as(tx, self.by(), self.manager.is_some(), &t.id, text, ops::now())?;
             }
         }
         Ok(())
@@ -167,7 +164,7 @@ impl Press {
     fn keep(&self, tx: &rusqlite::Transaction, task: &str, text: &str, files: &[String]) -> Result<Option<String>, String> {
         match &self.manager {
             None => ops::keep_human_comment(tx, task, text, files, ops::now()),
-            Some(user) => ops::manager_comment(tx, user, task, text, ops::now()).map(Some),
+            Some(user) => ops::comment_as(tx, user, true, task, text, ops::now()).map(Some),
         }
     }
 }

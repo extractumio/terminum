@@ -23,9 +23,14 @@ pub const NO_HOOKS: &str = "its agent's hooks do not reach terminum: run terminu
 /// The most of a name a notice says, and the characters it may hold: else it names the author's kind alone.
 const NAME_MOST: usize = 32;
 
+/// Who wrote a comment, by its author's kind: as a notice and a fresh start say it.
+pub fn kind_words(kind: &str, manager: bool) -> &'static str {
+    if manager { "the project's manager" } else if kind == "human" { "a human" } else { "an agent" }
+}
+
 /// Who wrote a comment, in a notice's words: the author's kind, and its name when it is a plain one.
 pub fn by_words(kind: &str, manager: bool, name: &str) -> String {
-    let who = if manager { "the project's manager" } else if kind == "human" { "a human" } else { "an agent" };
+    let who = kind_words(kind, manager);
     let plain = !name.is_empty() && name.chars().count() <= NAME_MOST
         && name.chars().all(|c| c.is_alphanumeric() || " ._-·".contains(c)) && name.trim() == name;
     if plain { format!("{who} \"{name}\"") } else { who.to_string() }
@@ -69,32 +74,33 @@ pub fn said(tx: &Transaction, line: &Line, why: Option<&str>, at: i64) -> Result
     ops::log(tx, &key, DISPATCHER, "told", &text, Some(&json!({"comments": ids, "not": why.is_some()})), at)
 }
 
-/// Notices that never reached their session are said so on their tasks; Dispatcher's lines among them are left.
+/// Notices that never reached their session are said so on their tasks, in one transaction; Dispatcher's lines
+/// among them are left.
 pub fn lost(app: &Shared, lines: Vec<Line>, why: &'static str) {
-    let lines: Vec<Line> = lines.into_iter().filter(|l| !l.comments.is_empty()).collect();
+    let lines: Vec<Line> = lines.into_iter().filter(Line::is_notice).collect();
     if lines.is_empty() {
         return;
     }
     let a = app.clone();
     tokio::task::spawn_blocking(move || {
         let at = ops::now();
-        for l in &lines {
-            match a.tasks.with(|tx| said(tx, l, Some(why), at)) {
-                Ok(_) => super::api::history_heard(&a, &l.task),
-                Err(e) => tracing::warn!(event = "tasks.notice", task = %l.task, error = %e),
-            }
-        }
+        let said = a.tasks.with(|tx| Ok(lines.iter().filter_map(|l| match said(tx, l, Some(why), at) {
+            Ok(_) => Some(l.task.clone()),
+            Err(e) => { tracing::warn!(event = "tasks.notice", task = %l.task, error = %e); None }
+        }).collect::<HashSet<String>>()));
+        said.unwrap_or_default().iter().for_each(|task| super::api::history_heard(&a, task));
     });
 }
 
-/// A comment's task's session and who wrote it, when a notice may go: a comment by no system user (AC-209).
-fn of_comment(tx: &Transaction, task: &str, event: &str) -> Result<Option<(String, String)>, String> {
+/// A comment's task's ID as it stands (`task` may be an old one), its session and who wrote it, when a notice may
+/// go: a comment by no system user (AC-209).
+fn of_comment(tx: &Transaction, task: &str, event: &str) -> Result<Option<(String, String, String)>, String> {
     let key = ops::key_of(tx, task)?;
-    let found: Option<(Option<String>, String, String, bool)> = tx.query_row(
-        "SELECT t.session_key, u.kind, u.name, coalesce(json_extract(e.data, '$.by') = 'manager', 0) FROM events e
-         JOIN users u ON u.id = e.author JOIN tasks t ON t.id = e.task WHERE e.id = ?1 AND e.task = ?2 AND e.kind = 'comment'",
-        (event, &key), |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))).optional().map_err(ops::sql)?;
-    Ok(found.and_then(|(session, kind, name, manager)| (kind != "system").then(|| session.map(|s| (s, by_words(&kind, manager, &name)))).flatten()))
+    let found: Option<(String, Option<String>, String, String, bool)> = tx.query_row(
+        &format!("SELECT t.slug, t.session_key, u.kind, u.name, {} FROM events e
+                  JOIN users u ON u.id = e.author JOIN tasks t ON t.id = e.task WHERE e.id = ?1 AND e.task = ?2 AND e.kind = 'comment'", super::comments::BY_MANAGER),
+        (event, &key), |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?))).optional().map_err(ops::sql)?;
+    Ok(found.and_then(|(id, session, kind, name, manager)| (kind != "system").then(|| session.map(|s| (id, s, by_words(&kind, manager, &name)))).flatten()))
 }
 
 /// What a new comment's notice comes to (AC-209), its session read from the list as it stands.
@@ -108,9 +114,13 @@ pub enum Goes {
     Waits,
 }
 
-/// Where a comment's notice goes: `row` the session's row in the list, `from` the pane whose agent wrote it.
-pub fn goes(key: &str, row: Option<&Value>, hooks: bool, from: Option<&str>) -> Goes {
-    let runs = row.is_some_and(|r| r["offline"] != true && r["agent"].as_str().is_some_and(|a| !a.is_empty()));
+/// Whether the session's row in the list shows its agent running on a server that is read.
+pub fn agent_runs(row: Option<&Value>) -> bool {
+    row.is_some_and(|r| r["offline"] != true && r["agent"].as_str().is_some_and(|a| !a.is_empty()))
+}
+
+/// Where a comment's notice goes: `runs` its session's agent (`agent_runs`), `from` the pane whose agent wrote it.
+pub fn goes(key: &str, runs: bool, hooks: bool, from: Option<&str>) -> Goes {
     match (from == Some(key), runs, hooks) {
         (true, _, _) | (_, false, _) => Goes::Nowhere,
         (_, true, false) => Goes::NoHooks,
@@ -123,17 +133,11 @@ pub fn goes(key: &str, row: Option<&Value>, hooks: bool, from: Option<&str>) -> 
 pub fn comment_added(app: &Shared, task: &str, event: &str, from: Option<&str>) {
     let (a, task, event, from) = (app.clone(), task.to_string(), event.to_string(), from.map(str::to_string));
     tokio::task::spawn_blocking(move || {
-        let Ok(Some((key, by))) = a.tasks.with(|tx| of_comment(tx, &task, &event)) else { return };
-        let row = crate::page::marks::find_item(&a.layout.read(), &key).cloned();
-        match goes(&key, row.as_ref(), a.hooks.has(&key), from.as_deref()) {
+        let Ok(Some((task, key, by))) = a.tasks.with(|tx| of_comment(tx, &task, &event)) else { return };
+        let runs = agent_runs(crate::page::marks::find_item(&a.layout.read(), &key));
+        match goes(&key, runs, a.hooks.has(&key), from.as_deref()) {
             Goes::Nowhere => {}
-            Goes::NoHooks => {
-                let line = Line { task: task.clone(), text: String::new(), comments: vec![(event, by)] };
-                match a.tasks.with(|tx| said(tx, &line, Some(NO_HOOKS), ops::now())) {
-                    Ok(_) => super::api::history_heard(&a, &task),
-                    Err(e) => tracing::warn!(event = "tasks.notice", task = %task, error = %e),
-                }
-            }
+            Goes::NoHooks => lost(&a, vec![Line { task, text: String::new(), comments: vec![(event, by)] }], NO_HOOKS),
             Goes::Waits => {
                 let dropped = a.task_lines.push_comment(&key, &task, &event, by);
                 lost(&a, dropped.into_iter().collect(), CROWDED);

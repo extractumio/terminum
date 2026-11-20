@@ -12,7 +12,6 @@ import json
 import os
 import subprocess
 import sys
-import time
 from functools import partial
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -82,9 +81,8 @@ def main():
             again = hook({"hook_event_name": carrier, "prompt_id": "p1", "tool_name": "Bash"})
             check(f"AC-209 {agent}: a notice heard is not told again", "[terminum]" not in again.stdout, again.stdout)
             # the agent's session ends with a notice waiting: not told, said on the task
-            call(f"/api/tasks/{tid}/comments", "POST", {"text": "one more"})
-            wait_for(lambda: told_of(tid), lambda _: True, 1, 0.1)
-            time.sleep(0.3)
+            more = call(f"/api/tasks/{tid}/comments", "POST", {"text": "one more"})[1]["event"]
+            wait_for(lambda: mark(tid, more), lambda m: m == "waiting", 5, 0.1)
             hook({"hook_event_name": "SessionEnd", "reason": "other"})
             lost = wait_for(lambda: told_of(tid), lambda ts: any(x["text"].startswith("Not told the session of the new comment: its agent's session ended") for x in ts), 5, 0.1, last=True)
             check(f"AC-209 {agent}: its session ends before it hears: not told, said", lost and any(x["text"].startswith("Not told") for x in lost), lost)

@@ -188,16 +188,21 @@ pub(super) fn text_of(tx: &Transaction, project: &str, raw: &str) -> Result<Stri
     Ok(text)
 }
 
-/// `run_noting` at the default limit: tests' calls.
+/// `run_with` at the default limit: tests' calls.
 #[cfg(test)]
 pub fn run(store: &Store, state_dir: &Path, who: &Who, tool: &str, args: &Value) -> Result<(String, Vec<String>), String> {
-    run_noting(store, state_dir, who, tool, args, crate::settings::DEFAULT_AGENT_OPEN_TASKS, &mut None)
+    run_with(store, state_dir, who, tool, args, crate::settings::DEFAULT_AGENT_OPEN_TASKS).map(|(text, changed, _)| (text, changed))
 }
 
-/// Runs one tool in one transaction: its answer and the tasks it changed; create_task is refused at `open_most` open
-/// tasks by agents in the project (settings.json's agentOpenTasks, AC-115). `noted`: the comment add_comment kept,
-/// its task and event, for its task's session to hear of (terminum-dispatcher.md AC-209).
-pub fn run_noting(store: &Store, state_dir: &Path, who: &Who, tool: &str, args: &Value, open_most: i64, noted: &mut Option<(String, String)>) -> Result<(String, Vec<String>), String> {
+/// Runs one tool in one transaction: its answer, the tasks it changed, and the comment add_comment kept (its task
+/// and event, for its task's session to hear of, terminum-dispatcher.md AC-209); create_task is refused at
+/// `open_most` open tasks by agents in the project (settings.json's agentOpenTasks, AC-115).
+pub fn run_with(store: &Store, state_dir: &Path, who: &Who, tool: &str, args: &Value, open_most: i64) -> Result<(String, Vec<String>, Option<(String, String)>), String> {
+    let mut noted = None;
+    run_in(store, state_dir, who, tool, args, open_most, &mut noted).map(|(text, changed)| (text, changed, noted))
+}
+
+fn run_in(store: &Store, state_dir: &Path, who: &Who, tool: &str, args: &Value, open_most: i64, noted: &mut Option<(String, String)>) -> Result<(String, Vec<String>), String> {
     if let Some((_, own)) = store.with(|tx| super::auto::round_in_pane(tx, &who.key))? && (!A_ROUNDS.contains(&tool) || (tool == "finish_task" && args["id"].as_str() != Some(&own.id))) {
         return Err(format!("Auto-Dispatcher's round reads tasks, starts them with dispatch_task and finishes its own, {}: {tool} is not its.", own.id));
     }
@@ -325,11 +330,7 @@ pub fn run_noting(store: &Store, state_dir: &Path, who: &Who, tool: &str, args: 
                 visible(tx, who, id)?;
                 // a project's manager's comment is marked so: a fresh start says whose it is (terminum-dispatcher.md AC-209)
                 let text = rules::clean(arg(args, "text")?);
-                let event = if crate::roles::managers(tx, &crate::dispatcher::runs::live(tx)?)?.contains(&who.key) {
-                    ops::manager_comment(tx, &me()?, id, &text, at)?
-                } else {
-                    ops::comment(tx, &me()?, id, &text, at)?
-                };
+                let event = ops::comment_as(tx, &me()?, crate::roles::manages(tx, &who.key)?.is_some(), id, &text, at)?;
                 *noted = Some((id.to_string(), event));
                 Ok((format!("Comment kept on {id}."), vec![id.to_string()]))
             }

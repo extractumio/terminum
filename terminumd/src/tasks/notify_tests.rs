@@ -30,13 +30,15 @@ fn ac209_a_name_that_is_no_plain_name_is_left_out() {
 #[test]
 fn ac209_who_hears_of_a_comment() {
     let row = |agent: Value, offline: bool| json!({"id": KEY, "agent": agent, "offline": offline});
-    assert_eq!(goes(KEY, Some(&row(json!("claude"), false)), true, None), Goes::Waits, "a human's comment, its agent running with hooks");
-    assert_eq!(goes(KEY, Some(&row(json!("codex"), false)), true, Some("tmux:local:t:%9")), Goes::Waits, "another session's agent wrote it");
-    assert_eq!(goes(KEY, Some(&row(json!("claude"), false)), true, Some(KEY)), Goes::Nowhere, "its own agent's comment is not echoed");
-    assert_eq!(goes(KEY, None, true, None), Goes::Nowhere, "its session is closed");
-    assert_eq!(goes(KEY, Some(&row(json!("claude"), true)), true, None), Goes::Nowhere, "its server is not read");
-    assert_eq!(goes(KEY, Some(&row(Value::Null, false)), true, None), Goes::Nowhere, "its agent ended: the shell stands");
-    assert_eq!(goes(KEY, Some(&row(json!("codex"), false)), false, None), Goes::NoHooks, "hooks that never spoke: a Codex under a shared app-server");
+    assert!(agent_runs(Some(&row(json!("claude"), false))));
+    assert!(!agent_runs(None), "its session is closed");
+    assert!(!agent_runs(Some(&row(json!("claude"), true))), "its server is not read");
+    assert!(!agent_runs(Some(&row(Value::Null, false))), "its agent ended: the shell stands");
+    assert_eq!(goes(KEY, true, true, None), Goes::Waits, "a human's comment, its agent running with hooks");
+    assert_eq!(goes(KEY, true, true, Some("tmux:local:t:%9")), Goes::Waits, "another session's agent wrote it");
+    assert_eq!(goes(KEY, true, true, Some(KEY)), Goes::Nowhere, "its own agent's comment is not echoed");
+    assert_eq!(goes(KEY, false, true, None), Goes::Nowhere, "no agent runs in its session");
+    assert_eq!(goes(KEY, true, false, None), Goes::NoHooks, "hooks that never spoke: a Codex under a shared app-server");
 }
 
 #[test]
@@ -54,10 +56,11 @@ fn ac209_comments_not_sent_go_in_one_notice_one_sent_stays_as_it_went() {
     assert_eq!(again.len(), 3, "the sent notice goes again as it went, the new comment in a notice of its own: {again:?}");
     assert!(again[2].contains("has a new comment by a human"));
     assert!(l.heard(KEY, n).is_empty(), "an older sending heard late takes nothing");
-    assert_eq!(l.waiting_comments(), HashSet::from(["e1".to_string(), "e2".to_string(), "e3".to_string()]));
+    assert_eq!(l.waiting_comments("API-12"), HashSet::from(["e1".to_string(), "e2".to_string(), "e3".to_string()]));
+    assert!(l.waiting_comments("API-13").is_empty(), "another task's");
     let gone = l.heard(KEY, m);
     assert_eq!(gone.iter().filter(|g| !g.comments.is_empty()).count(), 2);
-    assert!(l.waiting_comments().is_empty());
+    assert!(l.waiting_comments("API-12").is_empty());
 }
 
 #[test]
@@ -116,7 +119,7 @@ async fn ac209_a_human_s_comment_waits_for_its_session_s_next_context_and_is_sai
     comment_added(&app, &t.id, &by_system, None);
     comment_added(&app, &lone.id, &elsewhere, None);
     settle().await;
-    assert_eq!(app.task_lines.waiting_comments(), HashSet::from([second.clone()]));
+    assert_eq!(app.task_lines.waiting_comments(&t.id), HashSet::from([second.clone()]));
     let (n, said) = app.task_lines.offer(KEY).unwrap();
     assert!(said[0].starts_with(&format!("[terminum] {} has a new comment by a human", t.id)) && !said[0].contains("keep v1"), "{said:?}");
     crate::tasks::tell::heard(&app, KEY, n);
