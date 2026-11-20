@@ -106,7 +106,7 @@ const view = new TermView({ term: $("term"), hist: $("hist"), screen: $("screen"
   bottomBtn: $("bottom"), paused: $("paused"), send, notify: toast, keep: touch.matches ? 2000 : 5000 });
 // Sizing and full-screen programs (AC-04, AC-05, AC-13), settings.json's page defaults (AC-19): before anything draws.
 const sizing = paneSizing({ view, send, sid: () => st.sid, refit: () => view.keepBottom(syncControls), notify: (text) => toast(text, 9000),
-  copied: (pick) => bookmarks.picker.program(pick) });   // a full-screen program's own selection (AC-06)
+  copied: (pick) => bookmarks.picker.program(pick), copy: (text) => input.copySelection(text, true), agentOf: (id) => itemOf(id)?.agent });   // a full-screen program's own selection (AC-06)
 // another pane opened: the one shown stays until the new one has this view's grid, then it is drawn at once (AC-04)
 view.onOlder = (m) => widgets.folds.add(m.folds);
 const gate = switchGate({ release: (queue, reset) => { reset(); for (const m of queue) onMessage(m); } });
@@ -284,8 +284,7 @@ function onMessage(m) {
       widgets.folds.add(m.folds); view.onHist(m); break;
     case "folds": widgets.folds.add(m.items); widgets.keepPlace(() => widgets.update(false, true)); break;   // lines that scrolled off
     case "screen": if ("folds" in m) widgets.folds.screen(m.folds); view.onScreen(m); sizing.sync(); break;
-    case "sized": sizing.onSized(m); break;
-    case "copied": sizing.onCopied(m); break;   // what a full-screen program copied after our release (AC-06)
+    case "sized": case "copied": case "notice": sizing.onMessage(m); break;   // a size; a full-screen program's copy (AC-06); an agent's window (AC-208)
     case "settings": settings.apply(m); break;
     case "restore": if (!embedded) menu.showRestore(m.report); break;
     case "files": if (embedded) views.answered(m); else views.onFiles(m); break;   // a quick shell has no Files

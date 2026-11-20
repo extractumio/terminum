@@ -102,3 +102,9 @@ body.embed #app { grid-template-columns: 1fr; }
 #schemes .swatch[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--t-bg), 0 0 0 4px var(--accent); }
 @media (hover: none) { #schemes .swatch { height: 40px; } }
 :is(#histlines, #agentexit) { width: 104px; height: 32px; padding: 0 8px; text-align: right; border: 0; border-radius: var(--r-sm); background: var(--surface-2); color: var(--t-fg); font: inherit; }
+
+/* an agent's notice (agentnotices.js, AC-208): its words, each command a field on its own line with its Copy */
+#noticeparts p { margin: 0 0 var(--sp-2); }
+#noticeparts .noticecmd { display: flex; align-items: center; gap: var(--sp-2); margin: 0 0 var(--sp-2); }
+#noticeparts .noticecmd code { flex: 1; min-width: 0; padding: 6px 10px; overflow-wrap: anywhere; user-select: text; }
+#noticebox .actions .tick { display: inline-flex; align-items: center; gap: var(--sp-2); min-height: var(--key-h); }

@@ -73,7 +73,7 @@ fn ac208_the_foreground_run_is_the_ttys_foreground_groups_leader() {
 fn ac208_each_window_names_what_is_lost_and_the_commands_to_copy() {
     let cmds = |v: &Value| v["parts"].as_array().unwrap().iter().filter_map(|p| p["cmd"].as_str().map(str::to_string)).collect::<Vec<_>>();
     let shared = window("tmux:local:terminum:%4", CODEX_SHARED, "codex", Some(77));
-    assert_eq!((shared["t"].as_str(), shared["sid"].as_str(), shared["kind"].as_str()), (Some("notice"), Some("tmux:local:terminum:%4"), Some(CODEX_SHARED)));
+    assert_eq!((shared["t"].as_str(), shared["id"].as_str(), shared["kind"].as_str()), (Some("notice"), Some("tmux:local:terminum:%4"), Some(CODEX_SHARED)));
     assert_eq!(cmds(&shared), ["codex -c tui.alternate_screen=never", "codex --no-daemon", "codex features disable daemon_auto_start", "codex app-server daemon stop"]);
     let words = shared["parts"].to_string();
     assert!(words.contains("(process 77)") && words.contains("task board") && words.contains("start it again"), "{words}");

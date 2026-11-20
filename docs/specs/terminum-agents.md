@@ -761,7 +761,7 @@ sequenceDiagram
 | `GET /health` on the socket | adds `hooks: {claude\|codex: <Unix seconds last heard>}` |
 | `terminum mcp` | MCP over stdio, one JSON-RPC message a line, at most 1 MiB; protocol versions 2025-11-25, 2025-06-18, 2025-03-26 (default 2025-06-18); serverInfo name `terminum`; the pane from `TMUX` and `TMUX_PANE`, the session from `_meta.sessionId` |
 | WebSocket, page → terminumd | `unread {id, on}` (AC-93); `notice {id}`: the shown pane's windows, if any are due; `notices {on, kind?}`: a kind (`codexShared`, `fullScreen`) or, with none, both, on or off (AC-208) |
-| WebSocket `notice` | terminumd → the page that asked: `{sid, kind, title, parts: [{text} \| {cmd}]}`, one a kind (AC-208) |
+| WebSocket `notice` | terminumd → the page that asked: `{id, kind, title, parts: [{text} \| {cmd}]}`, one a kind, shown even when that page has moved to another pane (AC-208) |
 | The list's item | may carry `tool`, `why`, `subagents`, `plan`, `unread` |
 | WebSocket `plan` | page asks for a pane's plan; the answer's `plan` has title, doing, items, done, total, pct, eta and more, `hooks` and `finished` (AC-97) |
 
@@ -860,4 +860,5 @@ All cases are shipped; nothing is staged.
 - [x] AC-180 — `cargo test roles`, `scripts/e2e_roles.py`
 - [x] AC-181 — `cargo test roles`, `cargo test cli::tool`, `scripts/e2e_roles.py`
 - [x] AC-207 — `cargo test codexdaemon` (a shell with a shared server's words starts the real binary's checks, a pane in its environment), `cargo test cli::`
+- [x] AC-208 — `cargo test agentnotice`, `web/test/e2e_notices.mjs`, `web/test/e2e_liveprogs.mjs` (real Claude Code in both TUIs, real Codex `--no-daemon` on and off the alternate screen, vim)
 - [x] AC-153 — `cargo test idle_exit` (keys and the summary on a private tmux with a stand-in agent), `cargo test idle_summary`, `cargo test hookargv`, `cargo test hookopts`, `cargo test tmux::hookstate`, `cargo test settings`, `web/test/e2e_header.mjs`

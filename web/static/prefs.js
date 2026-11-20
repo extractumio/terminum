@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-// Five of the menu's settings (AC-19): rendered Markdown's text size (this browser's step on
+// Six of the menu's settings (AC-19): rendered Markdown's text size (this browser's step on
 // settings.json's page.markdownSize: widgets, sent history, reminders, and Files and View in
 // their frames), the terminal's history lines (settings.json's tmux.history, which tmux
 // keeps for the panes made from then on), the idle agents' exit days (settings.json's
-// agentExitDays, AC-153), the side marks on the terminal's right edge (on unless this browser
+// agentExitDays, AC-153), Agent notices (settings.json's agentNoticesOff, terminum-agents.md AC-208), the side marks on the terminal's right edge (on unless this browser
 // turned them off: body.nomarks, and a "sidemarks" event for the rail), and Follow the agent's
 // folder (follow.js).
 import { followSwitch, onFollow } from "./follow.js";
@@ -47,6 +47,8 @@ export function menuPrefs({ store, send, toast, redraw }) {
     send({ t: "agentexit", days: n });                      // under 1 is off: terminumd keeps 0
     toast(n < 1 ? "Idle agents are not asked to exit" : `Agents idle and not opened for ${n} day${n === 1 ? "" : "s"} are asked to exit`, 4000);
   });
+  // on: every kind of AC-208's windows; off: none (a window's "Do not show again" turns one off)
+  $("agentnotices").addEventListener("change", () => send({ t: "notices", on: $("agentnotices").checked }));
   return {
     /** settings.json's page part (settings.js). */
     page(p) {
@@ -54,6 +56,7 @@ export function menuPrefs({ store, send, toast, redraw }) {
       base = Number.isInteger(p.markdownSize) ? p.markdownSize : 14;
       if (Number.isInteger(p.history) && document.activeElement !== $("histlines")) $("histlines").value = String(p.history);
       if (Number.isInteger(p.agentExitDays) && document.activeElement !== $("agentexit")) $("agentexit").value = String(p.agentExitDays);
+      if (Array.isArray(p.agentNoticesOff)) $("agentnotices").checked = p.agentNoticesOff.length === 0;
       show();
     },
   };

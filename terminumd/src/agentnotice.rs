@@ -195,7 +195,7 @@ its earlier output.".into()),
             text("or set alternate_screen = \"never\" under [tui] in ~/.codex/config.toml.".into()),
         ]),
     };
-    json!({"t": "notice", "sid": key, "kind": kind, "title": title, "parts": parts})
+    json!({"t": "notice", "id": key, "kind": kind, "title": title, "parts": parts})
 }
 
 #[cfg(test)]
