@@ -11,7 +11,8 @@ use std::process::Command;
 
 /// The fix's commands, as Codex 0.170 takes them; a `-c` override keeps every Codex since 0.167 in its own
 /// process (`terminum-dispatcher.md` AS-128), and this one also keeps it inline (AC-208).
-macro_rules! own_process { () => { "codex -c tui.alternate_screen=never" }; }
+macro_rules! own_option { () => { "-c tui.alternate_screen=never" }; }
+macro_rules! own_process { () => { concat!("codex ", own_option!()) }; }
 macro_rules! no_attach { () => { "codex features disable daemon_auto_start" }; }
 macro_rules! stop_server { () => { "codex app-server daemon stop" }; }
 
@@ -24,10 +25,8 @@ plain codex from attaching, run \"", no_attach!(), "\", then \"", stop_server!()
     };
 }
 
-/// Starts a Codex in its own process, inline (AC-208's windows).
-pub const OWN_PROCESS: &str = own_process!();
-/// The same, in words Codex's own option says.
-pub const NO_DAEMON: &str = "codex --no-daemon";
+/// Keeps a Codex in its own process, inline: AC-208's windows add it to the run's own command line.
+pub const OWN_OPTION: &str = own_option!();
 /// Keeps plain `codex` from attaching, then stops the server (AC-208's window).
 pub const NO_ATTACH: &str = no_attach!();
 pub const STOP_SERVER: &str = stop_server!();

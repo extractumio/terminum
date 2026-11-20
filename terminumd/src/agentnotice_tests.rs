@@ -11,6 +11,8 @@ fn ac208_only_claude_code_and_codex_are_agents_here() {
     assert_eq!(agent("codex", &w("/opt/homebrew/bin/codex --no-alt-screen")), Some("codex"));
     // a Codex started through npm runs as node: its words name it
     assert_eq!(agent("node", &w("node /usr/local/lib/node_modules/@openai/codex/bin/codex resume")), Some("codex"));
+    assert_eq!(agent("node", &w("/usr/local/bin/node /usr/local/lib/node_modules/@openai/codex/bin/codex.js")), Some("codex"), "npm's script");
+    assert_eq!(agent("codex", &w("codex.js")), None, "a script's name counts only after its interpreter");
     // full-screen programs, shells, other agents and a node that is no Codex: no window
     for (command, words) in [("vim", "vim notes.md"), ("mc", "mc"), ("htop", "htop"), ("less", "less log"), ("tmux", "tmux attach"),
                              ("zsh", "-zsh"), ("opencode", "opencode"), ("node", "node server.js"), ("python3", "python3 tui.py")] {
@@ -91,9 +93,9 @@ fn ac208_the_foreground_run_is_the_ttys_foreground_groups_leader() {
 #[test]
 fn ac208_each_window_names_what_is_lost_and_the_commands_to_copy() {
     let cmds = |v: &Value| v["parts"].as_array().unwrap().iter().filter_map(|p| p["cmd"].as_str().map(str::to_string)).collect::<Vec<_>>();
-    let shared = window("tmux:local:terminum:%4", CODEX_SHARED, "codex", Some(77));
+    let plain = started("codex", &w("codex"));
+    let shared = window("tmux:local:terminum:%4", CODEX_SHARED, "codex", Some(77), &plain);
     assert_eq!((shared["t"].as_str(), shared["id"].as_str(), shared["kind"].as_str()), (Some("notice"), Some("tmux:local:terminum:%4"), Some(CODEX_SHARED)));
-    assert_eq!(cmds(&shared), [OWN_PROCESS, NO_DAEMON, NO_ATTACH, STOP_SERVER]);
     assert_eq!(cmds(&shared), ["codex -c tui.alternate_screen=never", "codex --no-daemon", "codex features disable daemon_auto_start", "codex app-server daemon stop"]);
     let words = shared["parts"].to_string();
     assert!(words.contains("(process 77)") && words.contains("task board") && words.contains("start it again"), "{words}");
@@ -101,12 +103,33 @@ fn ac208_each_window_names_what_is_lost_and_the_commands_to_copy() {
     for c in cmds(&shared).iter().filter(|c| !c.contains("--no-daemon")) {
         assert!(codexdaemon::SAID.contains(c.as_str()), "{c}");
     }
-    let claude = window("k", FULL_SCREEN, "claude", None);
-    assert_eq!((claude["title"].as_str(), cmds(&claude)), (Some("Claude Code runs full screen"), vec!["/tui classic".to_string()]));
+    let claude = window("k", FULL_SCREEN, "claude", None, &started("claude", &w("claude")));
+    assert_eq!((claude["title"].as_str(), cmds(&claude)), (Some("Claude Code runs full screen"), vec!["/tui classic".to_string(), r#"claude --settings '{"tui":"default"}'"#.to_string()]));
     assert!(claude["parts"].to_string().contains("\\\"tui\\\": \\\"default\\\""));
-    let codex = window("k", FULL_SCREEN, "codex", None);
-    assert_eq!((codex["title"].as_str(), cmds(&codex)), (Some("Codex runs full screen"), vec![OWN_PROCESS.to_string()]));
+    let codex = window("k", FULL_SCREEN, "codex", None, &plain);
+    assert_eq!((codex["title"].as_str(), cmds(&codex)), (Some("Codex runs full screen"), vec!["codex -c tui.alternate_screen=never".to_string()]));
     assert!(codex["parts"].to_string().contains("scrollback"));
+}
+
+#[test]
+fn ac208_the_commands_start_the_agent_again_as_this_run_was_started() {
+    let cmds = |v: Value| v["parts"].as_array().unwrap().iter().filter_map(|p| p["cmd"].as_str().map(str::to_string)).collect::<Vec<_>>();
+    // the user's alias or function (codsp) runs the real program with its options: those, not a plain codex; its prompt left out
+    let run = w("/opt/homebrew/lib/node_modules/@openai/codex/vendor/bin/codex --no-alt-screen --dangerously-bypass-approvals-and-sandbox -m gpt-5 fix the tests");
+    assert_eq!(cmds(window("k", CODEX_SHARED, "codex", None, &started("codex", &run)))[..2],
+               ["codex --no-alt-screen --dangerously-bypass-approvals-and-sandbox -m gpt-5 -c tui.alternate_screen=never",
+                "codex --no-alt-screen --dangerously-bypass-approvals-and-sandbox -m gpt-5 --no-daemon"]);
+    // a node Codex, a resumed one (the session it picked is no option to repeat), a value that needs quoting
+    assert_eq!(started("codex", &w("node /x/codex/bin/codex.js resume 3f2a --yolo")), ["codex", "--yolo"]);
+    let quoted = vec!["claude".to_string(), "--append-system-prompt".into(), "be brief".into(), "--model".into(), "opus".into()];
+    assert_eq!(cmds(window("k", FULL_SCREEN, "claude", None, &started("claude", &quoted)))[1],
+               r#"claude --append-system-prompt 'be brief' --model opus --settings '{"tui":"default"}'"#);
+    // a run with --settings of its own: no line that would drop it, only /tui classic
+    let own = started("claude", &w("claude --settings /Users/alex/s.json --verbose"));
+    assert_eq!(cmds(window("k", FULL_SCREEN, "claude", None, &own)), ["/tui classic"]);
+    // a secret among the options, or words that cannot be read: the program's name alone
+    assert_eq!(started("codex", &w("codex --yolo --api-key=opensesame-value")), ["codex"]);
+    assert_eq!(started("codex", &w("vim")), ["codex"]);
 }
 
 #[test]

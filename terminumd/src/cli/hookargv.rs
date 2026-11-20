@@ -50,10 +50,12 @@ pub fn started_as(agent: &str) -> Map<String, Value> {
     }
 }
 
-/// Where in `words` the agent's program is: first, or an interpreter's script.
+/// Where in `words` the agent's program is: first, or an interpreter's script (npm's Codex: `node …/bin/codex.js`,
+/// where an older Node does not replace itself with the native program).
 pub(crate) fn program_at(words: &[impl AsRef<str>], agent: &str) -> Option<usize> {
     let at = usize::from(words.len() > 1 && INTERPRETERS.contains(&name(words[0].as_ref())));
-    (name(words.get(at)?.as_ref()) == agent).then_some(at)
+    let program = name(words.get(at)?.as_ref());
+    (program == agent || (at == 1 && program.strip_suffix(".js") == Some(agent))).then_some(at)
 }
 
 /// The fields for an ancestor's words `words`, its program at `at` where it is the agent; `exact`:

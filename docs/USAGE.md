@@ -208,7 +208,8 @@ out.
   (`execute_tool("finish_task", {id, result})`). Outside a terminum pane the server offers no
   tools and costs nothing.
 - **Notices when an agent starts**: when Claude Code or Codex starts where terminum does less, the
-  first page that shows its pane opens a window once for that run, with the commands to copy:
+  first page that shows its pane opens a window once for that run, with the commands to copy (to
+  start the agent again they are its own command line, an alias expanded, with one option added):
   - *full screen* (Claude Code's `"tui": "fullscreen"`, Codex on the alternate screen): no history to
     scroll back, no widgets, folds, find or copy of earlier output. Switch Claude Code with `/tui
     classic` (or `"tui": "default"` in `~/.claude/settings.json`); start Codex with `codex -c
