@@ -122,9 +122,14 @@ pub async fn task_tool_of(app: &Shared, who: crate::tasks::tools::Who, host: Opt
     }
     let open_most = app.looks.settings.read().agent_open_tasks;
     let a = app.clone();
-    let (text, changed) = crate::http::off(move || crate::tasks::tools::run_with(&a.tasks, &a.cfg.dir, &who, &tool, &args, open_most)).await?;
+    let from = who.key.clone();
+    let (text, changed, noted) = crate::http::off(move || crate::tasks::tools::run_with(&a.tasks, &a.cfg.dir, &who, &tool, &args, open_most)).await?;
     for task in &changed {
         crate::tasks::api::told(app, task);
+    }
+    // a comment's task's session hears of it, unless its own agent wrote it (terminum-dispatcher.md AC-209)
+    if let Some((task, event)) = noted {
+        crate::tasks::notify::comment_added(app, &task, &event, Some(&from));
     }
     Ok(text)
 }

@@ -27,6 +27,7 @@ pub mod query;
 pub mod schedules;
 pub mod schedulesapi;
 pub mod slugs;
+pub mod notify;
 pub mod store;
 pub mod tell;
 pub mod template;

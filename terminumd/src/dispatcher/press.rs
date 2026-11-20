@@ -107,6 +107,8 @@ pub(super) struct Facts {
     /// the humans' answers to the questions asked on its tasks, by task: a run of several starts anew and brings
     /// them (AC-138, AC-185)
     answers: Vec<(String, Vec<String>)>,
+    /// each task's comments a fresh start carries, by task (AC-209)
+    comments: Vec<(String, ops::Carried)>,
     /// a round started it, no human: its words name the task and carry none of its text
     pub(super) auto: bool,
     /// the project's manager pressed, by its tool: the words say so
@@ -115,7 +117,8 @@ pub(super) struct Facts {
     pub(super) integration: Option<String>,
 }
 
-pub(super) fn facts(tx: &rusqlite::Transaction, tasks: &[Task]) -> Result<Facts, String> {
+/// `message`: the press's own, said as such, so its comment is not carried twice (AC-209).
+pub(super) fn facts(tx: &rusqlite::Transaction, tasks: &[Task], message: Option<&str>) -> Result<Facts, String> {
     let t = &tasks[0];
     let schedule = match crate::tasks::schedules::of_task(tx, &t.key)? {
         Some(s) => Some((s, runs::last_of(tx, &t.key)?.is_some())),
@@ -130,8 +133,16 @@ pub(super) fn facts(tx: &rusqlite::Transaction, tasks: &[Task]) -> Result<Facts,
             }
         }
     }
+    let mut comments = Vec::new();
+    for t in tasks {
+        let c = ops::carried(tx, &t.id, message, answers.iter().any(|(id, _)| *id == t.id))?;
+        if c != ops::Carried::default() {
+            comments.push((t.id.clone(), c));
+        }
+    }
     Ok(Facts {
         answers,
+        comments,
         tasks: tasks.to_vec(),
         texts: tasks.iter().map(|t| ops::text_of(tx, &t.id)).collect::<Result<_, _>>()?,
         files: files::of_task(tx, &t.id)?.into_iter().map(|f| f.name).collect(),
@@ -173,6 +184,7 @@ impl Facts {
             for (id, said) in &self.answers {
                 parts.push(format!("{id}: the human answered the questions asked on it before, in the comments below. Take them into account.\n\n{}", said.join("\n\n---\n\n")));
             }
+            parts.extend(self.comments.iter().flat_map(|(id, c)| super::carry::words(id, c)));
             return parts.join("\n\n");
         }
         // a schedule's task goes as the schedule's run, in its own words (terminum-schedules.md AC-162)
@@ -188,6 +200,7 @@ impl Facts {
         } else if !body.trim().is_empty() {
             parts.push(body.clone());
         }
+        parts.extend(self.comments.iter().flat_map(|(id, c)| super::carry::words(id, c)));
         if !self.files.is_empty() {
             parts.push(format!("Its files, by {GET_FILE}: {}", self.files.join(", ")));
         }
@@ -225,8 +238,15 @@ impl Facts {
             v
         });
         // the answers a main task's run brings are shown too (AC-185); with none, what a press saw before them holds (AC-158)
-        let facts = if self.answers.is_empty() { serde_json::json!([tasks, self.files, schedule, self.language]) } else { serde_json::json!([tasks, self.files, schedule, self.language, self.answers]) };
-        crate::auth::crypto::sha256_hex(facts.to_string().as_bytes())
+        let mut facts = vec![serde_json::json!(tasks), serde_json::json!(self.files), serde_json::json!(schedule), serde_json::json!(self.language)];
+        if !self.answers.is_empty() {
+            facts.push(serde_json::json!(self.answers));
+        }
+        // the comments a fresh start carries (AC-209); with none, what a press saw before them holds (AC-158)
+        if !self.comments.is_empty() {
+            facts.push(serde_json::json!(self.comments.iter().map(|(id, c)| (id, &c.theirs, c.agents)).collect::<Vec<_>>()));
+        }
+        crate::auth::crypto::sha256_hex(serde_json::Value::Array(facts).to_string().as_bytes())
     }
 }
 
@@ -245,7 +265,7 @@ pub(super) fn several_words(tasks: &[Task], language: &str) -> Vec<String> {
 
 #[cfg(test)]
 pub(super) fn prompt_of(tx: &rusqlite::Transaction, tasks: &[Task], message: Option<&str>) -> Result<String, String> {
-    Ok(facts(tx, tasks)?.prompt(message))
+    Ok(facts(tx, tasks, message)?.prompt(message))
 }
 
 pub(crate) fn budget_words(total: i64) -> String {
