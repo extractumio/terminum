@@ -270,6 +270,9 @@ pub(super) fn install_codex(ctx: &Ctx) -> Result<(), String> {
         ctx.say("Codex: config.toml has hooks too; Codex runs both.");
     }
     ctx.say("Codex: sessions already running keep what they started with: restart them to use terminum's hooks and MCP server.");
+    if let Some(line) = super::codexdaemon::warning() {
+        ctx.say(line);
+    }
     Ok(())
 }
 
@@ -338,6 +341,9 @@ pub fn run(ctx: &Ctx, action: &str, agent: Option<&str>) -> Result<(), String> {
                 } else { "found; terminum's hooks not installed (terminum hooks install)".to_string() };
                 let state = if found(ctx, a) { state + mcp } else { state };
                 ctx.say(format!("{:<13}{state}", format!("{}:", label(a))));
+            }
+            if found(ctx, "codex") && let Some(line) = super::codexdaemon::warning() {
+                ctx.say(line);
             }
         }
     }

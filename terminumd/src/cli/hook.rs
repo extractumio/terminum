@@ -6,8 +6,8 @@
 //! words: hookplan.rs), and posts them to every sink at once (the local terminumd's private
 //! socket, the Macs' links on a host: sinks.rs) with a budget of 150 ms; it prints at most terminumd's reminder after the agent's reminder event and always
 //! exits 0, so the agent goes on as without it.
-//! The pane is the one tmux names in the agent's environment (TMUX, TMUX_PANE); outside tmux
-//! nothing is sent.
+//! The pane is the one tmux names in the agent's environment (TMUX, TMUX_PANE); outside tmux,
+//! or under a shared Codex app-server (AC-207), nothing is sent.
 
 use std::io::{Read, Write};
 use std::time::Duration;
@@ -17,6 +17,13 @@ use serde_json::{json, Map, Value};
 /// The most of the event read (its rest is read and dropped).
 const KEEP: usize = 1 << 20;
 pub(super) const BUDGET: Duration = Duration::from_millis(150);
+
+/// TMUX and TMUX_PANE as `get` reads them; none for Codex under a shared app-server: the pane
+/// there is not the agent's (AC-207).
+pub(super) fn pane_env(agent: &str, get: impl Fn(&str) -> Option<String>) -> Option<(String, String)> {
+    let pane = (get("TMUX")?, get("TMUX_PANE")?);
+    (agent != "codex" || !super::codexdaemon::under_shared()).then_some(pane)
+}
 
 /// Runs the hook for `agent`; always 0 when an agent runs it. Run by a person (an unknown
 /// agent, or a terminal for stdin), it says what to run instead: it would wait for the keys.
@@ -38,7 +45,7 @@ pub fn main(agent: &str) -> i32 {
             kept.extend_from_slice(&buf[..n.min(KEEP - kept.len())]);
         }
     }
-    let (Ok(input), Ok(tmux), Ok(pane)) = (serde_json::from_slice::<Value>(&kept), std::env::var("TMUX"), std::env::var("TMUX_PANE")) else { return 0 };
+    let (Ok(input), Some((tmux, pane))) = (serde_json::from_slice::<Value>(&kept), pane_env(agent, |k| std::env::var(k).ok())) else { return 0 };
     if let Some(ev) = event(agent, &input, &tmux, &pane) {
         let sinks = super::sinks::all();
         let answers = super::sinks::post_all(&sinks, "/hook", &ev, BUDGET);

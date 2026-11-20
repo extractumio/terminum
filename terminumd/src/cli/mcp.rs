@@ -56,6 +56,8 @@ pub struct Env {
     pub manager: std::cell::Cell<bool>,
     /// tools whose card this session has read (get_tool_info) or been shown under a refusal
     pub carded: std::cell::RefCell<std::collections::HashSet<String>>,
+    /// started by a shared Codex app-server (AC-207): no pane, and why said instead of silence
+    pub shared: bool,
 }
 
 /// One POST /agent: (status, answer) or Down.
@@ -68,8 +70,7 @@ pub fn main() -> i32 {
         eprintln!("terminum mcp is the MCP server a coding agent starts; to set it up: terminum hooks install");
         return 2;
     }
-    let env = Env { tmux: std::env::var("TMUX").ok(), pane: std::env::var("TMUX_PANE").ok(), known: Default::default(), manager: Default::default(),
-                    carded: Default::default() };
+    let env = env_of(|k| std::env::var(k).ok());
     let forward = |body: &Value| {
         // listed at each call: a Mac's link may come up after the agent started
         let sinks = super::sinks::all();
@@ -88,6 +89,14 @@ pub fn main() -> i32 {
             }
     }
     0
+}
+
+/// The agent's environment as `get` reads it; under a shared Codex app-server no pane: the one
+/// there is not the caller's (AC-207).
+pub fn env_of(get: impl Fn(&str) -> Option<String>) -> Env {
+    let shared = super::codexdaemon::under_shared();
+    let var = |k| get(k).filter(|_| !shared);
+    Env { tmux: var("TMUX"), pane: var("TMUX_PANE"), shared, ..Default::default() }
 }
 
 /// The next line (lossy UTF-8, without its newline), None at EOF or a read error; a line over
@@ -144,11 +153,17 @@ pub fn answer(line: &str, env: &Env, forward: Forward) -> Option<String> {
             result(id, initialize(&params, in_pane, env.manager.get()))
         }
         "ping" => result(id, json!({})),
-        "tools/list" => result(id, json!({"tools": if knows(env, forward) { super::mcp_meta::listed(env.manager.get()) } else { vec![] }})),
+        "tools/list" => {
+            let tools = if knows(env, forward) { super::mcp_meta::listed(env.manager.get()) } else if env.shared { vec![shared_tool()] } else { vec![] };
+            result(id, json!({"tools": tools}))
+        }
         "tools/call" => {
             let name = params.get("name").and_then(Value::as_str).unwrap_or("");
             let args = params.get("arguments").cloned().unwrap_or_else(|| json!({}));
             let session = params.pointer("/_meta/sessionId").and_then(Value::as_str);
+            if env.shared && name == super::codexdaemon::TOOL {
+                return result(id, text_result(super::codexdaemon::SAID, false));
+            }
             if super::mcp_meta::META.contains(&name) {
                 return result(id, meta(name, &args, session, env, forward));
             }
@@ -198,7 +213,8 @@ fn socket_path(env: &Env) -> String {
     env.tmux.as_deref().and_then(|t| t.split(',').next()).unwrap_or("").chars().take(300).collect()
 }
 
-/// Outside a pane a sink knows (`in_pane` false) the session pays for no instructions and no tools.
+/// Outside a pane a sink knows (`in_pane` false) the session pays for no instructions and no tools
+/// (under a shared Codex app-server, one tool: AC-207).
 fn initialize(params: &Value, in_pane: bool, manager: bool) -> Value {
     let asked = params.get("protocolVersion").and_then(Value::as_str).unwrap_or("");
     let version = VERSIONS.iter().find(|v| **v == asked).copied().unwrap_or(DEFAULT_VERSION);
@@ -208,6 +224,17 @@ fn initialize(params: &Value, in_pane: bool, manager: bool) -> Value {
         r["instructions"] = if manager { json!(format!("{INSTRUCTIONS}{MANAGER_INSTRUCTIONS}")) } else { json!(INSTRUCTIONS) };
     }
     r
+}
+
+/// The one tool offered under a shared Codex app-server (AC-207): it answers why there are no others.
+fn shared_tool() -> Value {
+    json!({"name": super::codexdaemon::TOOL, "title": "Why terminum's tools are missing", "description": super::codexdaemon::SAID,
+           "annotations": hints(true, true), "inputSchema": {"type": "object", "properties": {}, "required": []}})
+}
+
+/// What a call outside a pane answers: why, where it is known (AC-207).
+fn not_in_pane(env: &Env) -> &'static str {
+    if env.shared { super::codexdaemon::SAID } else { NOT_IN_PANE }
 }
 
 fn text_result(text: &str, is_error: bool) -> Value {
@@ -227,7 +254,7 @@ pub fn pane_of(env: &Env) -> Option<(String, String)> {
 fn meta(name: &str, args: &Value, session: Option<&str>, env: &Env, forward: Forward) -> Value {
     use super::mcp_meta as m;
     if pane_of(env).is_none() {
-        return text_result(NOT_IN_PANE, true);
+        return text_result(not_in_pane(env), true);
     }
     // the role chooses what search and describe show; running a tool every session has asks nothing
     let asks = name != "execute_tool" || args.get("name").and_then(Value::as_str).is_some_and(super::mcp_catalog::manager_only);
@@ -255,7 +282,7 @@ pub fn call(tool: &str, args: &Value, session: Option<&str>, env: &Env, forward:
         Ok(a) => a,
         Err(why) => return refusal(tool, &why, env),
     };
-    let Some((socket, pane)) = pane_of(env) else { return text_result(NOT_IN_PANE, true) };
+    let Some((socket, pane)) = pane_of(env) else { return text_result(not_in_pane(env), true) };
     let mut body = json!({"socket": socket, "socket_path": socket_path(env), "pane": pane, "tool": tool, "args": args});
     if let Some(s) = session.map(|s| crate::termtext::clean(s, false).chars().take(100).collect::<String>()).filter(|s| !s.is_empty()) {
         body["session"] = json!(s);

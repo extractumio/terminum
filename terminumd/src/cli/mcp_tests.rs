@@ -11,8 +11,7 @@ fn in_pane() -> Env {
 }
 
 fn env(tmux: Option<&str>, pane: Option<&str>, known: Option<bool>) -> Env {
-    Env { tmux: tmux.map(str::to_string), pane: pane.map(str::to_string), known: std::cell::Cell::new(known), manager: Default::default(),
-          carded: Default::default() }
+    Env { tmux: tmux.map(str::to_string), pane: pane.map(str::to_string), known: std::cell::Cell::new(known), ..Default::default() }
 }
 
 fn no_call(_: &Value) -> Result<(u16, Option<Value>), Down> {
