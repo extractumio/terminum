@@ -32,7 +32,7 @@
 .footform .lead :is(input, select) { flex: 1; min-width: 0; font: inherit; line-height: 1.3; color: inherit; border: 0; background: none; outline: none; padding: 10px 12px 10px 6px; }
 #addtmuxticks { display: flex; flex-direction: column; gap: 4px; max-height: 30vh; overflow: auto; }
 #addtmuxticks:empty { display: none; }
-.footform .tick { display: flex; align-items: center; gap: 6px; font-size: 13.5px; flex-wrap: wrap; }
+:is(.footform, #noticebox .actions) .tick { display: flex; align-items: center; gap: 6px; font-size: 13.5px; flex-wrap: wrap; }
 .footform .tick span { color: var(--muted); font-size: 12.5px; }
 .footform .sets { margin: 0; color: var(--muted); font-size: 12.5px; }   /* what adding a host sets up on it */
 .footform .tick.ends span { flex-basis: 100%; padding-left: 22px; color: var(--danger-text); }   /* a session that can be lost */
@@ -107,4 +107,4 @@ body.embed #app { grid-template-columns: 1fr; }
 #noticeparts p { margin: 0 0 var(--sp-2); }
 #noticeparts .noticecmd { display: flex; align-items: center; gap: var(--sp-2); margin: 0 0 var(--sp-2); }
 #noticeparts .noticecmd code { flex: 1; min-width: 0; padding: 6px 10px; overflow-wrap: anywhere; user-select: text; }
-#noticebox .actions .tick { display: inline-flex; align-items: center; gap: var(--sp-2); min-height: var(--key-h); }
+#noticebox .actions .tick { min-height: var(--key-h); }

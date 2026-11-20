@@ -47,6 +47,25 @@ const CODEX: Table = Table {
     left_out: &["--last", "--all", "--include-non-interactive", "--worktree", "-i", "--image"],
 };
 
+/// Codex's subcommand among `words` (after the program): the first bare word that is no option's value
+/// (`codex -m gpt-5 exec`: `exec`); none before `--` or where only options are given.
+pub fn codex_subcommand(words: &[String]) -> Option<&str> {
+    let mut i = 0;
+    while let Some(w) = words.get(i) {
+        i += 1;
+        if w == "--" {
+            return None;
+        }
+        if !w.starts_with('-') {
+            return Some(w);
+        }
+        if CODEX.value.contains(&w.as_str()) || CODEX.many.contains(&w.as_str()) {
+            i += 1;
+        }
+    }
+    None
+}
+
 /// `words` (after the program) as `agent`'s options for its resume, None where that cannot be told
 /// or a secret is among them.
 pub fn resumed(agent: &str, words: &[String]) -> Option<Vec<String>> {

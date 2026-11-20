@@ -12,7 +12,6 @@
 // the last change): the text never shrinks to the old width and grows back (AC-04).
 import { banner } from "./banners.js";
 import { caretAt } from "./cursor.js";
-import { agentNotices } from "./agentnotices.js";
 
 const $ = (id) => document.getElementById(id);
 const SETTLE = 300;             // ms after the last change of the view before its size is sent
@@ -23,12 +22,9 @@ const HOLD = 2000;              // ms after the last change a pane may wait for 
 const bounded = (cols) => Math.max(45, Math.min(240, cols));   // the columns terminumd gives a grid (its sizing.rs)
 
 /** view: the TermView; sid(): the shown pane's id; refit(): the drawn size may have changed;
- *  notify(text): a toast; copied({text, row}): what a full-screen program copied (AC-06); copy(text): the page's Copy;
- *  agentOf(id): the coding agent the list names for a pane. */
-export function paneSizing({ view, send, sid, refit, notify, copied, copy, agentOf }) {
+ *  notify(text): a toast; copied({text, row}): what a full-screen program copied (AC-06). */
+export function paneSizing({ view, send, sid, refit, notify, copied }) {
   const term = $("term");
-  // the windows of an agent started full screen or under a shared Codex server (AC-208): asked as its TUI changes
-  const notices = agentNotices({ view, send, sid, copy, agentOf });
   let last = null, typedAt = -Infinity, settle = 0, elsewhere = null, full = false;
   let tuiWait = 0;                                     // syncTui's
   let holdUntil = 0, holdTimer = 0, heldFor = null;   // a hold, once for each size sent (heldFor)
@@ -55,9 +51,8 @@ export function paneSizing({ view, send, sid, refit, notify, copied, copy, agent
   // held for TUI_HOLD: a program hides its cursor while it redraws
   const ownTui = () => !!view.agent && fullscreen() && !view.screenEl.querySelector(".cur");
   function syncTui() {
-    notices.sync(term.classList.contains("agenttui"));
     if (tuiWait || ownTui() === term.classList.contains("agenttui")) return;
-    tuiWait = setTimeout(() => { tuiWait = 0; term.classList.toggle("agenttui", ownTui()); notices.sync(ownTui()); }, TUI_HOLD);
+    tuiWait = setTimeout(() => { tuiWait = 0; term.classList.toggle("agenttui", ownTui()); }, TUI_HOLD);
   }
 
   /** The program on the screen changed (alt): a full-screen one hides history and widgets. */
@@ -258,7 +253,7 @@ export function paneSizing({ view, send, sid, refit, notify, copied, copy, agent
   });
 
   return {
-    fullscreen, mouseOn, sync, syncTui, holding, reflow,
+    fullscreen, mouseOn, sync, syncTui, holding, reflow, onCopied,
     /** The grid that fits the terminal at the chosen text size, to send with "sub" ({} for none:
      *  hidden, or a sliver). */
     grid: () => { const g = grid(); return !term.hidden && term.clientWidth && g.cols >= SLIVER.cols && g.rows >= SLIVER.rows ? g : {}; },
@@ -280,11 +275,8 @@ export function paneSizing({ view, send, sid, refit, notify, copied, copy, agent
       typedAt = performance.now();
       sendSize(true);
     },
-    /** terminumd's `sized`, `copied` (AC-06) and `notice` (AC-208). */
-    onMessage(m) {
-      if (m.t === "copied") return onCopied(m);
-      if (m.t === "notice") return notices.show(m);
-      // another screen's size (or a refused resize) is said and drawn as it is
+    /** terminumd sized the pane: another screen's size (or a refused resize) is said and drawn as it is. */
+    onSized(m) {
       elsewhere = m.mine && !m.error ? null : { cols: m.cols, rows: m.rows, error: m.error };
       showSized();
       refit();

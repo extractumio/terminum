@@ -577,8 +577,8 @@ Scenario: AC-207 edge — servers that are no shared one
 Scenario: AC-208 happy path — a Codex under a shared app-server
   Given a shared `codex app-server` runs as the user (AS-190)
   And the user starts `codex` (or `codex --no-alt-screen`) in pane %4 of terminum's tmux, and it attaches to that server: terminum's MCP server and hooks run under the server, not in %4 (AC-207)
-  When a page shows %4 (it asks terminumd once it shows the pane, and again when its program or screen changes)
-  Then once that Codex has run 5 s, terminumd finds the pane's agent is Codex by its foreground process's words, that a shared server runs, and that the pane's Codex has no process of its own under it (one in its own process has its MCP servers there)
+  When a page shows %4 (terminumd looks when the page opens the pane, and again when its program or screen changes, or Claude Code's cursor on its alternate screen: the page's frames of it carry what it needs)
+  Then once that Codex has run 5 s (Claude Code's hidden cursor: once it held 400 ms), terminumd finds the pane's agent is Codex by its foreground process's words, that a shared server runs, and that the pane's Codex has no process of its own under it (one in its own process has its MCP servers there)
   And the page shows a window "This Codex runs without terminum": the board, its plan, its state from hooks and terminum's tools reach it not; quit Codex and start it again with `codex -c tui.alternate_screen=never` or `codex --no-daemon` (not twice where an alias has it), or keep plain `codex` from attaching with `codex features disable daemon_auto_start`, then `codex app-server daemon stop`, which ends the conversations that server serves (an app may start it again); terminum stops neither and changes no setting of Codex's
   And each command stands on its own line with a Copy key; the window has "Do not show again", unticked, and Close, which has the focus; Esc and × close it as Close does
 
@@ -760,8 +760,8 @@ sequenceDiagram
 | `POST /agent` on `terminumd.sock` | `{socket, socket_path, pane, tool, args, session?}` → always 200 `{text, error}`; the tool `probe` asks whether terminumd knows the pane |
 | `GET /health` on the socket | adds `hooks: {claude\|codex: <Unix seconds last heard>}` |
 | `terminum mcp` | MCP over stdio, one JSON-RPC message a line, at most 1 MiB; protocol versions 2025-11-25, 2025-06-18, 2025-03-26 (default 2025-06-18); serverInfo name `terminum`; the pane from `TMUX` and `TMUX_PANE`, the session from `_meta.sessionId` |
-| WebSocket, page → terminumd | `unread {id, on}` (AC-93); `notice {id}`: the shown pane's windows, if any are due; `notices {on, kind?}`: a kind (`codexShared`, `fullScreen`) or, with none, both, on or off (AC-208) |
-| WebSocket `notice` | terminumd → the page that asked: `{id, kind, title, parts: [{text} \| {cmd}]}`, one a kind, shown even when that page has moved to another pane (AC-208) |
+| WebSocket, page → terminumd | `unread {id, on}` (AC-93); `notices {on, kind?}`: a kind (`codexShared`, `fullScreen`) or, with none, both, on or off (AC-208) |
+| WebSocket `notice` | terminumd → the page whose frames of the pane made the look: `{id, kind, title, parts: [{text} \| {cmd}]}`, one a kind, shown even when that page has moved to another pane (AC-208) |
 | The list's item | may carry `tool`, `why`, `subagents`, `plan`, `unread` |
 | WebSocket `plan` | page asks for a pane's plan; the answer's `plan` has title, doing, items, done, total, pct, eta and more, `hooks` and `finished` (AC-97) |
 

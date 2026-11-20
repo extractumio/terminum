@@ -1,21 +1,24 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 //! Windows when an agent starts where terminum serves it less well (`terminum-agents.md` AC-208): a
-//! Codex under a shared app-server (AC-207) and Claude Code or Codex in its full-screen TUI. The page
-//! asks (`notice {id}`) when it shows a pane and when its program or screen changes; terminumd alone
-//! decides: the agent by the pane's program and its foreground process's words, the run by that
-//! process's id, what the run was shown by the pane's option `@tm-noticed` (it outlives terminumd and
-//! ends with the pane), what the user turned off by settings.json's `agentNoticesOff`. Only this Mac's
-//! panes: the run and the shared server are its processes.
+//! Codex under a shared app-server (AC-207) and Claude Code or Codex in its full-screen TUI. A page's
+//! frames of a pane (page/stream.rs) have terminumd look when the pane opens and when its program,
+//! screen or Claude Code's cursor changes; terminumd alone decides: the agent by the pane's program and
+//! its foreground process's words, the run by that process's id, what the run was shown by the pane's
+//! option `@tm-noticed` (it outlives terminumd and ends with the pane), what the user turned off by
+//! settings.json's `agentNoticesOff`. Only this Mac's panes: the run and the shared server are its processes.
 
+use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;
 
+use parking_lot::Mutex;
 use serde_json::{json, Value};
 
 use crate::app::Shared;
-use crate::cli::codexdaemon::{self, NO_ATTACH, OWN_PROCESS, STOP_SERVER};
+use crate::cli::codexdaemon::{self, NO_ATTACH, NO_DAEMON, OWN_PROCESS, STOP_SERVER};
 use crate::cli::hookargv::{exact, program_at};
 use crate::page::Page;
+use crate::screen::frame::Fields;
 use crate::tmux::Server;
 
 /// The kinds, as settings.json and the page name them.
@@ -23,12 +26,14 @@ pub const CODEX_SHARED: &str = "codexShared";
 pub const FULL_SCREEN: &str = "fullScreen";
 pub const KINDS: [&str; 2] = [CODEX_SHARED, FULL_SCREEN];
 
-/// A Codex younger than this may not have started its MCP servers yet: it is looked at once it is this old.
+/// A Codex younger than this may not have started its own MCP servers yet: it is looked at once it is this old.
 const SETTLED: u64 = 5;
+/// How long Claude Code's hidden cursor must hold: a program redrawing hides it too (the page's `!`, AC-05).
+const TUI_HOLD: Duration = Duration::from_millis(400);
+/// How long tmux is given to answer.
+const WAIT: Duration = Duration::from_secs(5);
 /// What is read of the pane, tab-separated; the option last (the user's tmux may hold anything there).
 const FIELDS: &str = "#{alternate_on}\t#{cursor_flag}\t#{pane_current_command}\t#{pane_tty}\t#{@tm-noticed}";
-/// Codex's subcommands without its TUI.
-const NO_TUI: [&str; 2] = ["exec", "e"];
 
 /// The pane's foreground process (its tty's foreground group's leader).
 #[derive(Debug, Clone, PartialEq)]
@@ -54,8 +59,7 @@ pub fn may_attach(words: &[String]) -> bool {
     let Some(at) = program_at(words, "codex") else { return false };
     let rest = &words[at + 1..];
     let own = rest.iter().any(|w| w.starts_with("-c") || w == "--config" || w.starts_with("--config=") || w == "--no-daemon");
-    let first = rest.iter().find(|w| !w.starts_with('-'));
-    !own && !first.is_some_and(|w| NO_TUI.contains(&w.as_str()))
+    !own && !matches!(crate::cli::hookopts::codex_subcommand(rest), Some("exec" | "e"))
 }
 
 /// The kinds due for a run of `agent`: full screen on the alternate screen (Claude Code's with the
@@ -74,21 +78,11 @@ pub fn noticed(value: &str, pid: u32) -> Vec<&'static str> {
     }
 }
 
-/// `[[dd-]hh:]mm:ss`, as `ps -o etime` says it, in seconds.
-fn seconds(etime: &str) -> Option<u64> {
-    let (days, rest) = etime.split_once('-').map_or(Ok((0, etime)), |(d, r)| d.parse().map(|d: u64| (d, r))).ok()?;
-    rest.split(':').try_fold(0u64, |s, part| part.parse::<u64>().ok().map(|n| s * 60 + n)).map(|s| s + days * 86_400)
-}
-
 /// The foreground run in `ps -o pid=,ppid=,tpgid=,etime=` rows of one tty.
 pub fn foreground_of(rows: &str) -> Option<(u32, u64, bool)> {
-    let rows: Vec<[&str; 4]> = rows.lines().filter_map(|l| {
-        let f: Vec<&str> = l.split_whitespace().collect();
-        <[&str; 4]>::try_from(f).ok()
-    }).collect();
+    let rows: Vec<[&str; 4]> = rows.lines().filter_map(|l| <[&str; 4]>::try_from(l.split_whitespace().collect::<Vec<_>>()).ok()).collect();
     let lead = rows.iter().find(|r| r[0] == r[2])?;
-    let pid = lead[0].parse().ok()?;
-    Some((pid, seconds(lead[3])?, rows.iter().any(|r| r[1] == lead[0])))
+    Some((lead[0].parse().ok()?, crate::dispatcher::procs::seconds(lead[3]) as u64, rows.iter().any(|r| r[1] == lead[0])))
 }
 
 /// The foreground run of terminal `tty` (`/dev/ttys004`), by `ps` and the kernel's words.
@@ -99,23 +93,41 @@ fn foreground(tty: &str) -> Option<Run> {
     Some(Run { pid, words: exact(pid)?, age, children })
 }
 
-/// What the page that asked about the shown pane `id` is to show: the pane's windows due, if any.
-pub fn ask(app: &Shared, page: &Arc<Page>, id: &str) {
-    let shown = page.state.lock().shown.as_ref().filter(|s| s.key == id).map(|s| (s.server.clone(), s.pane.clone()));
-    let Some((server, pane)) = shown.filter(|(s, _)| s.is_local()) else { return };
-    let (app, page, key) = (app.clone(), page.clone(), id.to_string());
+/// Whether a pane's frame `new` (after `old`, none when the pane just opened) is worth a look: a coding
+/// agent's program (or `node`) whose program or screen changed, or Claude Code's cursor on its alternate screen.
+pub fn worth_a_look(old: Option<&Fields>, new: &Fields) -> bool {
+    let candidate = |f: &Fields| crate::tmux::titles::agent_of(&f.command).is_some_and(|a| a == "claude" || a == "codex") || f.command == "node";
+    let tui = |f: &Fields| f.alt && f.cursor_on && f.command == "claude";
+    candidate(new) && old.is_none_or(|o| o.command != new.command || o.alt != new.alt || tui(o) != tui(new))
+}
+
+/// A look at the local pane `key` shown on `page` (its frames): the windows due, sent to that page. One at a
+/// time a pane: a look still waiting (a young Codex) takes the asks that come meanwhile.
+pub fn ask(app: &Shared, page: &Arc<Page>, server: &Arc<Server>, key: &str) {
+    static LOOKING: Mutex<Option<HashSet<String>>> = Mutex::new(None);
+    let Some(pane) = crate::page::trace::pane_of(key).filter(|_| server.is_local()) else { return };
+    if !LOOKING.lock().get_or_insert_default().insert(key.to_string()) {
+        return;
+    }
+    let (app, page, server, key) = (app.clone(), page.clone(), server.clone(), key.to_string());
     tokio::spawn(async move {
         if let Err(e) = look(&app, &page, &server, &pane, &key).await {
             tracing::debug!(event = "notice.unread", key, error = e);
         }
+        LOOKING.lock().get_or_insert_default().remove(&key);
     });
 }
 
-/// The pane's fields and its foreground run, read now.
+/// tmux's answer to `line`, within WAIT.
+async fn tmux(server: &Server, line: String) -> Result<Vec<String>, String> {
+    tokio::time::timeout(WAIT, server.run(line)).await.unwrap_or_else(|_| Err("tmux does not answer".into()))
+}
+
+/// The pane's fields (alternate screen, cursor, program, tty, mark) and its foreground run, read now.
 async fn read(server: &Server, pane: &str) -> Result<(Vec<String>, Option<Run>), String> {
-    let said = server.run(format!("display -p -t {pane} '{FIELDS}'")).await?;
+    let said = tmux(server, format!("display -p -t {pane} '{FIELDS}'")).await?;
     let f: Vec<String> = said.first().ok_or("no answer")?.splitn(5, '\t').map(str::to_string).collect();
-    if f.len() < 4 {
+    if f.len() < 5 {
         return Err("short answer".into());
     }
     let tty = f[3].clone();
@@ -125,39 +137,41 @@ async fn read(server: &Server, pane: &str) -> Result<(Vec<String>, Option<Run>),
 
 async fn look(app: &Shared, page: &Page, server: &Server, pane: &str, key: &str) -> Result<(), String> {
     let (mut f, mut run) = read(server, pane).await?;
-    let mut agent_now = run.as_ref().and_then(|r| agent(&f[2], &r.words));
-    // a young Codex may not have started its own MCP servers yet: looked at again once it settled
-    if let (Some("codex"), Some(r)) = (agent_now, &run) && r.age < SETTLED && may_attach(&r.words) {
-        let pid = r.pid;
-        tokio::time::sleep(Duration::from_secs(SETTLED - r.age)).await;
+    let wait = match run.as_ref().and_then(|r| agent(&f[2], &r.words).map(|a| (a, r))) {
+        // a young Codex may not have started its own MCP servers yet; Claude Code's hidden cursor must hold
+        Some(("codex", r)) if r.age < SETTLED && may_attach(&r.words) => Some(Duration::from_secs(SETTLED - r.age)),
+        Some(("claude", _)) if f[0] == "1" && f[1] == "0" => Some(TUI_HOLD),
+        _ => None,
+    };
+    if let Some(wait) = wait {
+        let pid = run.as_ref().map(|r| r.pid);
+        tokio::time::sleep(wait).await;
         (f, run) = read(server, pane).await?;
-        if run.as_ref().map(|r| r.pid) != Some(pid) {
+        if run.as_ref().map(|r| r.pid) != pid {
             return Ok(());
         }
-        agent_now = run.as_ref().and_then(|r| agent(&f[2], &r.words));
     }
-    let (Some(agent), Some(run)) = (agent_now, run) else { return Ok(()) };
-    let server_pid = if agent == "codex" && may_attach(&run.words) && !run.children {
-        tokio::task::spawn_blocking(codexdaemon::running).await.map_err(|e| e.to_string())?
-    } else {
-        None
-    };
-    let off = app.looks.settings.read().agent_notices_off.clone();
-    let kinds: Vec<&str> = due(agent, f[0] == "1", f[1] == "1", server_pid.is_some()).into_iter().filter(|k| !off.iter().any(|o| o == k)).collect();
+    let Some((agent, run)) = run.and_then(|r| agent(&f[2], &r.words).map(|a| (a, r))) else { return Ok(()) };
+    // what this run was shown and what the user turned off go first: the look for a shared server reads every process
+    let skip = |k: &&str| noticed(&f[4], run.pid).contains(k) || app.looks.settings.read().agent_notices_off.iter().any(|o| o == k);
+    let (alt, cursor_on) = (f[0] == "1", f[1] == "1");
+    let shared = agent == "codex" && !skip(&CODEX_SHARED) && may_attach(&run.words) && !run.children;
+    let server_pid = if shared { tokio::task::spawn_blocking(codexdaemon::running).await.map_err(|e| e.to_string())? } else { None };
+    let kinds: Vec<&str> = due(agent, alt, cursor_on, server_pid.is_some()).into_iter().filter(|k| !skip(k)).collect();
     if kinds.is_empty() {
         return Ok(());
     }
-    // the read, the choice and the mark one ask at a time: two pages asking at once get it once
+    // the mark read again, chosen and set one look at a time: two pages showing the pane get each window once
     static ONE: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
     let _one = ONE.lock().await;
-    let mark = server.run(format!("display -p -t {pane} '#{{@tm-noticed}}'")).await?;
+    let mark = tmux(server, format!("display -p -t {pane} '#{{@tm-noticed}}'")).await?;
     let was = noticed(mark.first().map_or("", String::as_str), run.pid);
-    let new: Vec<&str> = kinds.into_iter().filter(|k| !was.contains(k)).collect();
+    let new: Vec<&str> = kinds.iter().copied().filter(|k| !was.contains(k)).collect();
     if new.is_empty() {
         return Ok(());
     }
-    let all: Vec<&str> = KINDS.into_iter().filter(|k| was.contains(k) || new.contains(k)).collect();
-    server.run(format!("set-option -p -t {pane} @tm-noticed '{} {}'", run.pid, all.join(","))).await?;
+    let all: Vec<&str> = KINDS.into_iter().filter(|k| was.contains(k) || kinds.contains(k)).collect();
+    tmux(server, format!("set-option -p -t {pane} @tm-noticed '{} {}'", run.pid, all.join(","))).await?;
     for kind in new {
         tracing::info!(event = "notice.shown", key, kind, pid = run.pid);
         page.send_json(&window(key, kind, agent, server_pid));
@@ -175,7 +189,7 @@ pub fn window(key: &str, kind: &str, agent: &str, server_pid: Option<u32>) -> Va
 That server runs terminum's tools and hooks away from this pane, so terminum cannot tell this pane's Codex: no state or plan on its row, \
 no task board, no terminum tools.", server_pid.map(|p| format!(" (process {p})")).unwrap_or_default())),
             text("Quit this Codex and start it again in its own process, one of (leave out an option an alias of yours already has):".into()),
-            cmd(OWN_PROCESS), cmd("codex --no-daemon"),
+            cmd(OWN_PROCESS), cmd(NO_DAEMON),
             text("Or keep plain codex from attaching, then stop the server; stopping it ends the conversations it serves, and an app may start it again:".into()),
             cmd(NO_ATTACH), cmd(STOP_SERVER),
             text("terminum stops neither and changes no setting of Codex's.".into()),

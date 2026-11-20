@@ -26,6 +26,8 @@ plain codex from attaching, run \"", no_attach!(), "\", then \"", stop_server!()
 
 /// Starts a Codex in its own process, inline (AC-208's windows).
 pub const OWN_PROCESS: &str = own_process!();
+/// The same, in words Codex's own option says.
+pub const NO_DAEMON: &str = "codex --no-daemon";
 /// Keeps plain `codex` from attaching, then stops the server (AC-208's window).
 pub const NO_ATTACH: &str = no_attach!();
 pub const STOP_SERVER: &str = stop_server!();

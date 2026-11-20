@@ -44,7 +44,8 @@ impl Under {
     }
 }
 
-fn seconds(t: &str) -> f64 {
+/// `[[dd-]hh:]mm:ss`, as `ps -o etime` and `-o time` say it, in seconds.
+pub fn seconds(t: &str) -> f64 {
     let (days, rest) = t.split_once('-').map_or((0.0, t), |(d, r)| (d.parse().unwrap_or(0.0), r));
     rest.split(':').fold(0.0, |sum, part| sum * 60.0 + part.parse::<f64>().unwrap_or(0.0)) + days * 86400.0
 }

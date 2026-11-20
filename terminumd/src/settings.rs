@@ -14,7 +14,7 @@ use serde_json::{Map, Value, json};
 
 #[path = "settings_save.rs"]
 mod save;
-pub use save::{save_hosts, save_object, save_value, write_atomic};
+pub use save::{save_hosts, save_key, save_object, save_value, write_atomic};
 #[path = "settings_locate.rs"]
 mod locator;
 pub use locator::{line_of, locate, Seg};
@@ -306,7 +306,7 @@ fn apply(s: &mut Settings, key: &str, v: &Value, m: &mut Msgs) {
         },
         "agentNoticesOff" => match v.as_array().map(|a| a.iter().map(|k| k.as_str().filter(|k| crate::agentnotice::KINDS.contains(k))).collect::<Option<Vec<_>>>()) {
             Some(Some(kinds)) => s.agent_notices_off = kinds.into_iter().map(str::to_string).collect(),
-            _ => m.bad("agentNoticesOff must be a list of codexShared and fullScreen"),
+            _ => m.bad(format!("agentNoticesOff must be a list of {}", crate::agentnotice::KINDS.join(", "))),
         },
         "agentOpenTasks" => match v.as_i64() {
             Some(n @ 1..=MAX_AGENT_OPEN_TASKS) => s.agent_open_tasks = n,

@@ -27,8 +27,27 @@ fn ac208_a_codex_attaches_unless_its_words_keep_it_in_its_own_process() {
         assert!(may_attach(&w(words)), "{words}");
     }
     for words in ["codex -c tui.alternate_screen=never", "codex -ctui.alternate_screen=never", "codex --config x=1", "codex --config=x=1",
-                  "codex --no-daemon", "codex exec fix", "codex e fix", "claude", "vim"] {
+                  "codex --no-daemon", "codex exec fix", "codex e fix", "codex -m gpt-5 exec fix", "codex --model gpt-5 e", "claude", "vim"] {
         assert!(!may_attach(&w(words)), "{words}");
+    }
+}
+
+#[test]
+fn ac208_a_pane_is_looked_at_when_an_agent_starts_or_its_screen_changes() {
+    let f = |command: &str, alt: bool, cursor_on: bool| Fields { command: command.into(), alt, cursor_on, ..Default::default() };
+    // opened on an agent, an agent started in a shell's pane, its screen changed
+    assert!(worth_a_look(None, &f("claude", true, false)));
+    assert!(worth_a_look(Some(&f("zsh", false, true)), &f("codex", false, true)));
+    assert!(worth_a_look(Some(&f("codex", false, true)), &f("codex", true, true)));
+    assert!(worth_a_look(Some(&f("node", false, true)), &f("node", true, true)), "a node Codex: its words decide");
+    // Claude Code's Ctrl+G editor showed the cursor, then it is back in its own TUI
+    assert!(worth_a_look(Some(&f("claude", true, true)), &f("claude", true, false)));
+    // every other frame: nothing; Codex's cursor blinking in its box is no change; vim and shells never
+    assert!(!worth_a_look(Some(&f("claude", true, false)), &f("claude", true, false)));
+    assert!(!worth_a_look(Some(&f("codex", true, true)), &f("codex", true, false)));
+    assert!(!worth_a_look(Some(&f("claude", false, false)), &f("claude", false, true)), "the normal screen's cursor says nothing");
+    for p in ["vim", "mc", "htop", "zsh", "opencode", "tmux"] {
+        assert!(!worth_a_look(None, &f(p, true, false)), "{p}");
     }
 }
 
@@ -74,6 +93,7 @@ fn ac208_each_window_names_what_is_lost_and_the_commands_to_copy() {
     let cmds = |v: &Value| v["parts"].as_array().unwrap().iter().filter_map(|p| p["cmd"].as_str().map(str::to_string)).collect::<Vec<_>>();
     let shared = window("tmux:local:terminum:%4", CODEX_SHARED, "codex", Some(77));
     assert_eq!((shared["t"].as_str(), shared["id"].as_str(), shared["kind"].as_str()), (Some("notice"), Some("tmux:local:terminum:%4"), Some(CODEX_SHARED)));
+    assert_eq!(cmds(&shared), [OWN_PROCESS, NO_DAEMON, NO_ATTACH, STOP_SERVER]);
     assert_eq!(cmds(&shared), ["codex -c tui.alternate_screen=never", "codex --no-daemon", "codex features disable daemon_auto_start", "codex app-server daemon stop"]);
     let words = shared["parts"].to_string();
     assert!(words.contains("(process 77)") && words.contains("task board") && words.contains("start it again"), "{words}");

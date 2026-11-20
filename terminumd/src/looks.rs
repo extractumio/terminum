@@ -217,19 +217,21 @@ pub fn set_agent_exit(app: &Shared, page: &Page, msg: &Value) {
 /// `notices {on, kind?}` from a window's "Do not show again" or Settings' "Agent notices": that kind, or
 /// both, off or on again; kept in settings.json, which tells every page.
 pub fn set_agent_notices(app: &Shared, page: &Page, msg: &Value) {
-    let on = msg["on"] != false;
-    let kinds: Vec<&str> = match msg["kind"].as_str() {
-        None => crate::agentnotice::KINDS.to_vec(),
-        Some(k) => match crate::agentnotice::KINDS.into_iter().find(|x| *x == k) {
-            Some(k) => vec![k],
-            None => return crate::page::client::error(page, "Not a kind of notice", None),
-        },
-    };
-    let off = app.looks.settings.read().agent_notices_off.clone();
-    let keep: Vec<&str> = crate::agentnotice::KINDS.into_iter().filter(|k| if kinds.contains(k) { !on } else { off.iter().any(|o| o == k) }).collect();
+    use crate::agentnotice::KINDS;
+    let (on, kind) = (msg["on"] != false, msg["kind"].as_str());
+    if kind.is_some_and(|k| !KINDS.contains(&k)) {
+        return crate::page::client::error(page, "Not a kind of notice", None);
+    }
     let path = app.looks.home.join("settings.json");
-    match crate::settings::save_value(&path, "agentNoticesOff", json!(keep)) {
-        // at once, before the file's watcher reads it: a window the next ask would show stays away
+    let mut keep = Vec::new();
+    // merged with the file's own list under its writer's lock: two pages' choices at once both stay
+    let saved = crate::settings::save_key(&path, "agentNoticesOff", |old| {
+        let was = |k: &str| old.and_then(Value::as_array).is_some_and(|a| a.iter().any(|v| v == k));
+        keep = KINDS.into_iter().filter(|k| if kind.is_none_or(|x| x == *k) { !on } else { was(k) }).collect();
+        Ok(json!(keep))
+    });
+    match saved {
+        // at once, before the file's watcher reads it: a window the next look would show stays away
         Ok(()) => app.looks.settings.write().agent_notices_off = keep.iter().map(|k| k.to_string()).collect(),
         Err(e) => crate::page::client::error(page, e, None),
     }

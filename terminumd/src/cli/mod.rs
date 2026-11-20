@@ -10,7 +10,7 @@ pub(crate) mod commands;
 pub mod codexdaemon;
 pub mod hook;
 pub(crate) mod hookargv;
-mod hookopts;
+pub(crate) mod hookopts;
 pub mod statusline;
 mod hookplan;
 mod hooktokens;

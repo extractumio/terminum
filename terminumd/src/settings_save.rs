@@ -35,7 +35,7 @@ pub fn save_value(path: &Path, key: &str, value: Value) -> Result<(), String> {
 /// Sets the top-level `key` to what `f` makes of its value and writes the file atomically,
 /// replacing only the text of that value (or adding the key): the rest of the file stays byte for
 /// byte. A file that does not parse is left alone: its line is reported for the user to fix first.
-fn save_key(path: &Path, key: &str, f: impl FnOnce(Option<&Value>) -> Result<Value, String>) -> Result<(), String> {
+pub fn save_key(path: &Path, key: &str, f: impl FnOnce(Option<&Value>) -> Result<Value, String>) -> Result<(), String> {
     // one write at a time: "Add host" and "Attach tmux sessions" at once must not lose either
     static WRITING: std::sync::Mutex<()> = std::sync::Mutex::new(());
     let _one = WRITING.lock().unwrap_or_else(|e| e.into_inner());
