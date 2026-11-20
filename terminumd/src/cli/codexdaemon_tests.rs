@@ -1,5 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 //! AC-207: a shared Codex app-server is told apart, and under one no pane is taken from the environment.
+use serde_json::{json, Value};
+
+use super::super::mcp::{answer, Env, NOT_IN_PANE};
+use super::super::sockhttp::Down;
 use super::*;
 
 fn w(s: &str) -> Vec<&str> {
@@ -33,7 +37,7 @@ fn child_says_its_pane() {
     }
     let get = |k: &str| std::env::var(k).ok();
     let env = super::super::mcp::env_of(get);
-    let hook = |agent| super::super::hook::pane_env(agent, get).is_some();
+    let hook = |agent| super::super::hook::takes_pane(agent);
     println!("said: shared={} pane={} codex={} claude={}", env.shared, super::super::mcp::pane_of(&env).is_some(), hook("codex"), hook("claude"));
 }
 
@@ -64,11 +68,6 @@ fn ac207_the_tests_ancestors_are_no_shared_app_server() {
     assert_eq!(parent_of(me), Some(std::os::unix::process::parent_id()));
     assert_eq!(parent_of(u32::MAX), None, "no such process");
 }
-
-use serde_json::{json, Value};
-
-use super::super::mcp::{answer, Env, NOT_IN_PANE};
-use super::super::sockhttp::Down;
 
 fn no_call(_: &Value) -> Result<(u16, Option<Value>), Down> {
     panic!("nothing may be forwarded outside a pane")
@@ -114,9 +113,7 @@ fn ac207_outside_a_pane_otherwise_the_session_still_pays_for_nothing() {
 
 #[test]
 fn ac207_the_words_name_the_cause_and_every_fix() {
-    let line = format!("Codex: … {} …", fix!());
-    assert!(line.contains("-c tui.alternate_screen=never"), "{line}");
-    for part in ["app-server", "TMUX_PANE", "--no-daemon", "codex features disable daemon_auto_start", "codex app-server daemon stop"] {
+    for part in ["app-server", "codex -c tui.alternate_screen=never", "TMUX_PANE", "--no-daemon", "codex features disable daemon_auto_start", "codex app-server daemon stop"] {
         assert!(SAID.contains(part), "{part}");
     }
 }

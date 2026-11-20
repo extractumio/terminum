@@ -51,9 +51,9 @@ pub fn started_as(agent: &str) -> Map<String, Value> {
 }
 
 /// Where in `words` the agent's program is: first, or an interpreter's script.
-fn program_at(words: &[String], agent: &str) -> Option<usize> {
-    let at = usize::from(words.len() > 1 && INTERPRETERS.contains(&name(&words[0])));
-    (name(words.get(at)?) == agent).then_some(at)
+pub(super) fn program_at(words: &[impl AsRef<str>], agent: &str) -> Option<usize> {
+    let at = usize::from(words.len() > 1 && INTERPRETERS.contains(&name(words[0].as_ref())));
+    (name(words.get(at)?.as_ref()) == agent).then_some(at)
 }
 
 /// The fields for an ancestor's words `words`, its program at `at` where it is the agent; `exact`:

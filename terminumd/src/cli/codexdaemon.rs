@@ -9,8 +9,6 @@
 
 use std::process::Command;
 
-use crate::termtext::shell_name as name;
-
 /// The fix, as Codex 0.170 takes it; a `-c` override keeps every Codex since 0.167 in its own process
 /// (`terminum-dispatcher.md` AS-128).
 macro_rules! fix {
@@ -35,9 +33,9 @@ const UP: usize = 3;
 
 /// Whether `words` (a command line) are a Codex app-server listening where other Codex
 /// processes attach: `--listen unix://…` or `ws://…` (a stdio one is its client's alone).
-pub fn shared(words: &[impl AsRef<str>]) -> bool {
+fn shared(words: &[impl AsRef<str>]) -> bool {
     let w: Vec<&str> = words.iter().map(AsRef::as_ref).collect();
-    let program = w.first().map(|p| name(p)) == Some("codex") || (w.len() > 1 && name(w[0]) == "node" && name(w[1]) == "codex");
+    let program = super::hookargv::program_at(&w, "codex").is_some();
     let listens = |url: &str| url.starts_with("unix://") || url.starts_with("ws://");
     let listening = w.iter().enumerate().any(|(i, a)| match a.strip_prefix("--listen") {
         Some("") => w.get(i + 1).is_some_and(|u| listens(u)),
@@ -48,12 +46,12 @@ pub fn shared(words: &[impl AsRef<str>]) -> bool {
 }
 
 /// Whether a shared app-server started this process: one of its nearest ancestors' exact words
-/// (the kernel's, no `ps`: a hook pays microseconds).
+/// (the kernel's, no `ps`: a hook pays microseconds); a Codex of its own (the agent) ends the look.
 pub fn under_shared() -> bool {
     let mut pid = std::os::unix::process::parent_id();
     for _ in 0..UP {
-        if super::hookargv::exact(pid).is_some_and(|w| shared(&w)) {
-            return true;
+        if let Some(words) = super::hookargv::exact(pid) && super::hookargv::program_at(&words, "codex").is_some() {
+            return shared(&words);
         }
         match parent_of(pid) {
             Some(p) if p > 1 => pid = p,
@@ -86,7 +84,7 @@ fn parent_of(_pid: u32) -> Option<u32> {
 }
 
 /// The process id of a shared app-server of this user that runs, if one does (`ps`, once).
-pub fn running() -> Option<u32> {
+fn running() -> Option<u32> {
     // SAFETY: getuid has no preconditions
     let uid = unsafe { libc::getuid() }.to_string();
     let out = Command::new("ps").args(["-ww", "-U", &uid, "-o", "pid=,args="]).output().ok()?;

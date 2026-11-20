@@ -18,11 +18,10 @@ use serde_json::{json, Map, Value};
 const KEEP: usize = 1 << 20;
 pub(super) const BUDGET: Duration = Duration::from_millis(150);
 
-/// TMUX and TMUX_PANE as `get` reads them; none for Codex under a shared app-server: the pane
-/// there is not the agent's (AC-207).
-pub(super) fn pane_env(agent: &str, get: impl Fn(&str) -> Option<String>) -> Option<(String, String)> {
-    let pane = (get("TMUX")?, get("TMUX_PANE")?);
-    (agent != "codex" || !super::codexdaemon::under_shared()).then_some(pane)
+/// Whether the pane in the environment is the agent's: not for Codex under a shared app-server
+/// (AC-207); asked only once there is an event to send.
+pub(super) fn takes_pane(agent: &str) -> bool {
+    agent != "codex" || !super::codexdaemon::under_shared()
 }
 
 /// Runs the hook for `agent`; always 0 when an agent runs it. Run by a person (an unknown
@@ -45,8 +44,8 @@ pub fn main(agent: &str) -> i32 {
             kept.extend_from_slice(&buf[..n.min(KEEP - kept.len())]);
         }
     }
-    let (Ok(input), Some((tmux, pane))) = (serde_json::from_slice::<Value>(&kept), pane_env(agent, |k| std::env::var(k).ok())) else { return 0 };
-    if let Some(ev) = event(agent, &input, &tmux, &pane) {
+    let (Ok(input), Ok(tmux), Ok(pane)) = (serde_json::from_slice::<Value>(&kept), std::env::var("TMUX"), std::env::var("TMUX_PANE")) else { return 0 };
+    if let Some(ev) = event(agent, &input, &tmux, &pane) && takes_pane(agent) {
         let sinks = super::sinks::all();
         let answers = super::sinks::post_all(&sinks, "/hook", &ev, BUDGET);
         if let Some((i, line)) = first_reminder(&ev, &answers) {

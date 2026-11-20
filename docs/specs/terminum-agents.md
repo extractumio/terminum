@@ -548,7 +548,7 @@ Scenario: AC-181 failure
 Scenario: AC-207 happy path — the session is told why
   Given a Codex app or editor started a shared `codex app-server` (listening on `unix://` or `ws://`, AS-190)
   And the user starts plain `codex` in a pane of terminum, which attaches to it
-  When that server starts `terminum mcp` (one of its own three nearest ancestors' words, as the kernel keeps them, are that server's)
+  When that server starts `terminum mcp` (the nearest Codex among its three nearest ancestors is that server, by its words as the kernel keeps them)
   Then initialize gives no instructions, and tools/list lists one tool, `why_no_terminum_tools`, whose description, and its answer, say: terminum cannot see which terminal this Codex runs in, because a shared app-server starts its MCP server and hooks without the pane's TMUX and TMUX_PANE; start Codex in the pane with a `-c` override (`codex -c tui.alternate_screen=never`) or `--no-daemon`; to keep plain `codex` from attaching, `codex features disable daemon_auto_start`, then `codex app-server daemon stop`, which ends the conversations it serves
   And any other tool's call answers the same words as an error and nothing reaches terminumd
   And the Codex app's own conversations through that server see the one tool and no instructions
