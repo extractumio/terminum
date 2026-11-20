@@ -342,6 +342,12 @@ pub(super) fn by_id(tx: &Transaction, id: &str) -> Result<Run, String> {
 }
 
 /// The run as it stands, changed by `f` and written.
+/// Who started run `id` and how (AC-183): a going on that is no one's new press keeps them.
+pub(super) fn started(tx: &Transaction, id: &str) -> Result<(How, String), String> {
+    let (by, how): (Option<String>, Option<String>) = tx.query_row("SELECT started_by, started_how FROM runs WHERE id = ?1", [id], |x| Ok((x.get(0)?, x.get(1)?))).map_err(crate::tasks::ops::sql)?;
+    Ok((how.as_deref().and_then(How::of_word).unwrap_or_default(), by.unwrap_or_else(|| crate::tasks::store::HUMAN.to_string())))
+}
+
 pub fn change(tx: &Transaction, id: &str, f: impl FnOnce(&mut Run)) -> Result<Run, String> {
     let mut r = by_id(tx, id)?;
     f(&mut r);

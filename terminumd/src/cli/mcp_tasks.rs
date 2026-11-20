@@ -5,7 +5,7 @@
 use serde_json::{json, Map, Value};
 
 use crate::tasks::ops::{COLUMNS, COMMENT_MOST, INTEGRATION, SEVERITIES, TEXT_MOST};
-use crate::tasks::attrs::{LINK_MOST, LISTS as LISTS_OF, REASON_MOST, TARGET_MOST, TYPES};
+use crate::tasks::attrs::{LINK_MOST, LINKS_MOST, LISTS as LISTS_OF, REASON_MOST, TARGET_MOST, TYPES};
 use crate::tasks::tools::TEXT_FILE_MOST;
 
 pub(super) struct Tool {
@@ -40,8 +40,8 @@ const TOOLS: [Tool; 20] = [
     Tool { name: "take_task", read_only: false, description: "Takes a free task of your project: it becomes this session's, in its column.", fields: &[ID] },
     Tool { name: "move_task", read_only: false, description: "Moves a task of your project to another column (status): yours, or one no human's RUN holds elsewhere. To wait for a human, call ask_human instead.", fields: &[ID, ("to", true, 20)] },
     Tool { name: "ask_human", read_only: false, description: "Asks the human what only a person decides, on your task, then end your turn. The questions in three parts, in order, for a reader new to the task, labels in English: \"Why you are needed:\" one sentence; \"Recommended:\" each question numbered, its recommended default and why, its other options; \"Details:\" one paragraph on the whole issue.", fields: &[ID, ("questions", true, COMMENT_MOST)] },
-    Tool { name: "wait_for_task", read_only: false, description: "Your task cannot go on before other tasks of your project are DONE (a change that must land first, a prerequisite): on, their IDs; why, one sentence. They join its Blocked by, it waits in TODO, and Dispatcher goes on with it in this conversation once they are DONE, no human asked; then end your turn.",
-        fields: &[ID, ("on", true, 24 * 20 + 40), ("why", true, REASON_MOST * 4)] },
+    Tool { name: "wait_for_task", read_only: false, description: "Your task cannot go on before other tasks of your project are DONE (a prerequisite whose change it needs): on, their IDs; why, one sentence. They join its Blocked by, it waits in TODO, and Dispatcher goes on with it in this conversation once they are DONE, no human asked; then end your turn.",
+        fields: &[ID, ("on", true, 26 * LINKS_MOST), ("why", true, REASON_MOST * 4)] },
     Tool { name: "add_comment", read_only: false, description: "Adds a Markdown comment to a task you can reach.", fields: &[ID, ("text", true, COMMENT_MOST)] },
     Tool { name: "attach_file", read_only: false, description: "Attaches a file to a task: path in this session's folder; from a host name and text.", fields: &[TASK, ("path", false, 4096), ("name", false, 300), ("text", false, TEXT_FILE_MOST)] },
     Tool { name: "get_file", read_only: true, description: "Gets a task's file, by name: its path here.", fields: &[TASK, ("name", true, 300)] },

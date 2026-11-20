@@ -58,6 +58,16 @@ pub fn all(tx: &Transaction) -> Result<Vec<Wait>, String> {
     rows(tx, &format!("{} ORDER BY {ORDER}", select()), [], of_row)
 }
 
+/// Every wait for room alone (AC-158), in the line's order: one for other tasks holds no place (AC-210).
+fn for_room(tx: &Transaction) -> Result<Vec<Wait>, String> {
+    rows(tx, &format!("{} WHERE w.after IS NULL ORDER BY {ORDER}", select()), [], of_row)
+}
+
+/// The wait of `task` is for room alone from now on: the tasks it waited for are DONE (AC-210).
+fn room_alone(tx: &Transaction, task: &str) -> Result<(), String> {
+    tx.execute("UPDATE run_waits SET after = NULL WHERE task = ?1", [task]).map(drop).map_err(sql)
+}
+
 /// The waits of `agent`, in the line's order.
 pub fn of_agent(tx: &Transaction, agent: &str) -> Result<Vec<Wait>, String> {
     rows(tx, &format!("{} WHERE w.agent_id = ?1 ORDER BY {ORDER}", select()), [agent], of_row)
@@ -74,6 +84,11 @@ pub fn of_schedule(tx: &Transaction, schedule: &str) -> Result<Vec<Wait>, String
 }
 
 impl Wait {
+    /// It waits for other tasks to be DONE (AC-210): it holds no place in a queue until they are.
+    pub fn for_tasks(&self) -> bool {
+        !self.after.is_empty()
+    }
+
     /// A human pressed it: no manager, no Dispatcher (terminum-dispatcher.md AC-183); a newer run of its schedule never
     /// supersedes it (terminum-schedules.md AC-162).
     pub fn by_human(&self) -> bool {
@@ -127,8 +142,7 @@ pub fn ahead(tx: &Transaction, agent: &str, project: &str, task: &str) -> Result
         None => (tx.query_row("SELECT EXISTS (SELECT 1 FROM schedule_fires WHERE task = ?1)", [task], |r| r.get(0)).map_err(sql)?, i64::MAX),
     };
     let slots = pool::Slots::read(tx)?;
-    // a wait for other tasks holds no place until they are DONE (AC-210)
-    for w in all(tx)?.into_iter().filter(|w| w.task != task && w.after.is_empty() && w.before(scheduled, place) && (w.agent == agent || w.project == project)) {
+    for w in for_room(tx)?.into_iter().filter(|w| w.task != task && w.before(scheduled, place) && (w.agent == agent || w.project == project)) {
         if let Some(a) = agents::in_project(tx, &w.agent, &w.project)? && slots.check_for(tx, &a, &w.project, Some(&w.task), None)?.is_none() {
             return Ok(Some(ops::get(tx, &w.task)?.id));
         }
@@ -181,7 +195,7 @@ pub fn reorder(tx: &Transaction, agent: &str, ids: &[String]) -> Result<(), Stri
 pub fn take_out(tx: &Transaction, id: &str) -> Result<(), String> {
     let key = ops::key_of(tx, id)?;
     let Some(w) = of_task(tx, &key)? else { return Err(format!("{id} waits no more: it started, or its wait was called off.")) };
-    let name = if w.after.is_empty() { agents::name_of(tx, &w.agent)? } else { "the tasks it waited for".to_string() };
+    let name = if w.for_tasks() { "the tasks it waited for".to_string() } else { agents::name_of(tx, &w.agent)? };
     call_off(tx, &key, &format!("The human called off its wait for {name}."))
 }
 
@@ -236,7 +250,7 @@ pub fn on_cards(tx: &Transaction, keys: &[&str]) -> Result<HashMap<String, CardW
     Ok(rows(tx, &format!("WITH queue AS (
             SELECT w.task, t.slug, COALESCE(a.name, w.agent_id) agent,
                 row_number() OVER (PARTITION BY w.agent_id, w.after IS NULL ORDER BY {ORDER}) position,
-                (SELECT json_group_array(x.slug) FROM json_each(COALESCE(w.after, '[]')) j JOIN tasks x ON x.id = j.value) after
+                CASE WHEN w.after IS NULL THEN '[]' ELSE (SELECT json_group_array(x.slug) FROM json_each(w.after) j JOIN tasks x ON x.id = j.value) END after
             FROM run_waits w JOIN tasks t ON t.id = w.task LEFT JOIN agents a ON a.id = w.agent_id), members AS ({MEMBERS})
         SELECT m.task, q.agent, q.position, q.slug, q.after FROM members m JOIN queue q ON q.task = m.press
         WHERE m.task IN (SELECT value FROM json_each(?1))"),
@@ -267,12 +281,12 @@ fn due(tx: &Transaction, w: &Wait) -> Result<Due, String> {
     if t.status != w.status {
         return Ok(Due::Off(t.id, format!("Its wait for {} was called off: it moved to {}.", a.name, t.status)));
     }
-    if !w.after.is_empty() {
+    if w.for_tasks() {
         match super::after::blockers(tx, &t.id, &w.after)? {
             super::after::Blockers::Open => return Ok(Due::Stays),
             super::after::Blockers::Gone(words) => return Ok(Due::Asks(t.id, words)),
             // all DONE: from now on it is a wait for room alone, in its place in the line
-            super::after::Blockers::Done => { tx.execute("UPDATE run_waits SET after = NULL WHERE task = ?1", [&w.task]).map_err(sql)?; }
+            super::after::Blockers::Done => room_alone(tx, &w.task)?,
         }
     }
     if pool::check_for(tx, &a, &w.project, Some(&w.task), None)?.is_some() {

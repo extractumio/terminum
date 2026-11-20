@@ -12,7 +12,7 @@ import { taskBoxes } from "./taskboxes.js";
 import { activity, editor } from "./kanbanactivity.js";
 import { family } from "./kanbansubs.js";
 import { expandable } from "./expand.js";
-import { queuedWords, waitsForWords } from "./cardstate.js";
+import { waitWords } from "./cardstate.js";
 import { detailsPane } from "./taskattrs.js";
 
 // a text or a comment being edited; one saved or cancelled is off (refresh) and holds nothing
@@ -121,8 +121,7 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
     const value = el("span", "fieldvalue");
     value.append(statusTag(t));
     if (t.agent) value.append(agentChip(t.agent));
-    if (t.waits_for?.length) value.append(el("span", "cstate waiting", waitsForWords(t)));
-    else if (t.waits) value.append(el("span", "cstate waiting", queuedWords(t)));
+    if (waitWords(t)) value.append(el("span", "cstate waiting", waitWords(t)));
     else if (t.session?.closed) value.append(el("span", "cstate closed", "session closed"));
     // the conversation RUN resumes, by its ID (terminum-dispatcher.md AC-157)
     if (t.agent?.conversation) value.append(el("span", "cconv", `conversation ${t.agent.conversation}`));
@@ -357,8 +356,8 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
     const giveUp = t.run_holds ? button("danger", "Give up", () => confirmed(`Give up on this run? ${t.run_holds} go to FAILED. Dispatcher lets go of its window, which stays open, and an agent in it may go on.`, "Give up",
       () => api(`/api/tasks/${t.id}/give-up`, { method: "POST" }))) : null;
     // a RUN waiting for its agent's room is called off by this; the task stays where it is (AC-158)
-    const stopWaiting = t.waits || t.waits_for?.length ? button(null, "Stop waiting", () => api(`/api/tasks/${t.wait_task ?? t.id}/leave-queue`, { method: "POST" }).then(() => refresh(), (e) => say(e.message))) : null;
-    if (stopWaiting) stopWaiting.title = t.waits_for?.length ? `It waits for ${t.waits_for.join(", ")}: call it off, Dispatcher will not go on with it` : `Run waits for ${t.waits}: call it off, nothing starts`;
+    const stopWaiting = waitWords(t) ? button(null, "Stop waiting", () => api(`/api/tasks/${t.wait_task ?? t.id}/leave-queue`, { method: "POST" }).then(() => refresh(), (e) => say(e.message))) : null;
+    if (stopWaiting) stopWaiting.title = `${waitWords(t)}: call it off, ${t.waits_for ? "Dispatcher will not go on with it" : "nothing starts"}`;
     // a task nobody needs leaves the board by this (AC-118); it stands where it stood when it comes back
     const shelve = button(null, t.archived_at ? "Bring back" : "Archive", () => api(`/api/tasks/${t.id}/archive`, { method: "POST", body: { on: !t.archived_at } }).then(() => refresh(), (e) => say(e.message)));
     // its keys at the window's foot, in sight while the task scrolls above them

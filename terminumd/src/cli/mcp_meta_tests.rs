@@ -44,7 +44,7 @@ const GOLDEN: [(&str, &str); 46] = [
     ("start working on a task", "take_task"),
     ("I need a human", "ask_human"),
     ("wait until another task is done", "wait_for_task"),
-    ("land after the overlapping change of TERM-9", "wait_for_task"),
+    ("it needs the change of TERM-9 first", "wait_for_task"),
     ("block the task waiting for a person", "move_task"),
     ("move my task to another column", "move_task"),
     ("change a task's status to failed", "move_task"),

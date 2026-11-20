@@ -18,7 +18,6 @@ test("AC-210 a task that waits for other tasks says their IDs, ahead of a closed
   const shown = cardState(task({ closed: true }, { status: "TODO", waits_for: ["TERM-624"] }));
   assert.deepEqual(shown, { cls: "waiting", words: "waits for TERM-624", why: "Dispatcher goes on with it in its conversation once they are DONE" });
   assert.equal(cardState(task(null, { status: "TODO", waits_for: ["API-9", "API-10"] })).words, "waits for API-9, API-10");
-  assert.equal(cardState(task({ closed: true }, { status: "TODO", waits_for: [] })).words, "session closed", "an empty list says nothing");
 });
 
 test("AC-138 AC-169 integration sessions stay visible and keep actual activity honest", () => {

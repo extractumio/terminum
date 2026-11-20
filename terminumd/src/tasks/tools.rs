@@ -67,7 +67,7 @@ pub(super) fn visible(tx: &Transaction, who: &Who, id: &str) -> Result<Task, Str
 }
 
 /// The session's own task: the one its agent asks the human on.
-fn own(tx: &Transaction, who: &Who, id: &str) -> Result<Task, String> {
+pub(super) fn own(tx: &Transaction, who: &Who, id: &str) -> Result<Task, String> {
     let t = ops::get(tx, id)?;
     match &t.session {
         Some(s) if s == &who.key => Ok(t),
@@ -89,11 +89,11 @@ pub(super) fn movable(tx: &Transaction, who: &Who, id: &str) -> Result<Task, Str
 
 /// Refused while a press waits for `t` in an agent's queue (terminum-dispatcher.md AC-158, AC-169): that press is a
 /// human's or a manager's, and a move would call it off.
-fn not_queued(tx: &Transaction, t: &Task) -> Result<(), String> {
+pub(super) fn not_queued(tx: &Transaction, t: &Task) -> Result<(), String> {
     let Some(w) = crate::dispatcher::waits::of_task(tx, &t.key)? else {
         return Ok(());
     };
-    if !w.after.is_empty() {
+    if w.for_tasks() {
         return Err(format!("{} waits for other tasks: Dispatcher goes on with it once they are DONE. You can read it and comment.", t.id));
     }
     Err(format!("{} waits in {}'s queue: it starts when there is room. You can read it and comment.", t.id, super::agents::name_of(tx, &w.agent)?))
@@ -123,7 +123,7 @@ fn after_its_subtasks(tx: &Transaction, t: &Task) -> Result<(), String> {
 
 /// Why an agent's own move to WAIT FOR HUMAN is refused: a card there with no question tells the human nothing.
 fn not_without_questions(id: &str) -> String {
-    format!("A task waits for a human only with what it asks: call execute_tool(\"ask_human\", {{\"id\": \"{id}\", \"questions\": ...}}). Waiting for another task to be DONE? Call execute_tool(\"wait_for_task\", {{\"id\": \"{id}\", \"on\": \"TERM-9\", \"why\": ...}}): Dispatcher goes on with it then, no human asked. {id} stays where it was.")
+    format!("A task waits for a human only with what it asks: call execute_tool(\"ask_human\", {{\"id\": \"{id}\", \"questions\": ...}}). {} {id} stays where it was.", super::closeout::waits_for_task!())
 }
 
 /// The agent's own word that its task waits for a human, or no longer does, kept on its run; what it does next
@@ -332,11 +332,7 @@ fn run_in(store: &Store, state_dir: &Path, who: &Who, tool: &str, args: &Value, 
                 Ok((format!("{id} waits for the human, with your questions.{then}"), cards))
             }
             // another task must be DONE first: Dispatcher goes on with it then, no human asked (terminum-dispatcher.md AC-210)
-            "wait_for_task" => {
-                let t = own(tx, who, arg(args, "id")?)?;
-                not_queued(tx, &t)?;
-                Ok((super::waitfor::wait(tx, who, &me()?, &t, args, at)?, vec![t.id]))
-            }
+            "wait_for_task" => super::waitfor::wait(tx, who, args, at),
             "add_comment" => {
                 let id = arg(args, "id")?;
                 visible(tx, who, id)?;

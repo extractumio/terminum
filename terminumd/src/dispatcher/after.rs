@@ -6,9 +6,9 @@
 use rusqlite::Transaction;
 
 use super::api::Press;
-use super::runs::{How, Run};
-use crate::tasks::ops::{self, sql, Task};
-use crate::tasks::store::{DISPATCHER, HUMAN};
+use super::runs::Run;
+use crate::tasks::ops::{self, rows, Task};
+use crate::tasks::store::DISPATCHER;
 
 /// Where the tasks a wait names stand.
 #[derive(Debug, PartialEq)]
@@ -21,18 +21,27 @@ pub enum Blockers {
     Gone(String),
 }
 
-/// Where the tasks of store keys `keys`, which task `id` waits for, stand.
+/// How task `t` ended without being DONE, if it did: it never will be.
+pub(crate) fn ended(status: &str, archived: bool) -> Option<&'static str> {
+    if archived { Some("archived") } else if status == "FAILED" { Some("FAILED") } else { None }
+}
+
+/// "is" or "are", for `n` tasks.
+pub(crate) fn is_are(n: usize) -> &'static str {
+    if n == 1 { "is" } else { "are" }
+}
+
+/// Where the tasks of store keys `keys`, which task `id` waits for, stand: one narrow read a walk, of status alone.
 pub(super) fn blockers(tx: &Transaction, id: &str, keys: &[String]) -> Result<Blockers, String> {
-    let mut open = false;
-    for key in keys {
-        let Ok(t) = ops::get(tx, key) else { return Ok(Blockers::Gone(gone(id, "a task that was deleted", "deleted"))) };
-        let ended = if t.archived_at.is_some() { Some("archived") } else if t.status == "FAILED" { Some("FAILED") } else { None };
-        if let Some(how) = ended {
-            return Ok(Blockers::Gone(gone(id, &t.id, how)));
-        }
-        open |= t.status != "DONE";
+    let found: Vec<(String, String, bool)> = rows(tx, "SELECT slug, status, archived_at IS NOT NULL FROM tasks WHERE id IN (SELECT value FROM json_each(?1))",
+        [serde_json::json!(keys).to_string()], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
+    if found.len() < keys.len() {
+        return Ok(Blockers::Gone(gone(id, "a task that was deleted", "deleted")));
     }
-    Ok(if open { Blockers::Open } else { Blockers::Done })
+    if let Some((slug, how)) = found.iter().find_map(|(slug, status, archived)| ended(status, *archived).map(|how| (slug, how))) {
+        return Ok(Blockers::Gone(gone(id, slug, how)));
+    }
+    Ok(if found.iter().all(|(_, status, _)| status == "DONE") { Blockers::Done } else { Blockers::Open })
 }
 
 /// The questions when `blocker`, which `id` waited for, ended `how`, in AC-157's three parts.
@@ -52,23 +61,26 @@ pub(super) fn ask(tx: &Transaction, key: &str, id: &str, words: &str) -> Result<
 
 /// What the agent hears through the gate once the tasks `after` it waited for are DONE: fixed words with IDs.
 pub(super) fn go_on(id: &str, after: &[String]) -> String {
-    let (them, are) = if after.len() == 1 { (after[0].clone(), "is") } else { (after.join(", "), "are") };
-    format!("[terminum Dispatcher] {id}: {them}, which it waited for, {are} DONE, and Dispatcher resumed this conversation. \
-        Go on with {id}: bring in their work (merge the project's branch where they landed), run your checks again, then finish it as you were asked.")
+    format!("[terminum Dispatcher] {id}: {}, which it waited for, {} DONE, and Dispatcher resumed this conversation. \
+        Go on with {id}: bring in their work (merge the project's branch where they landed), run your checks again, then finish it as you were asked.", after.join(", "), is_are(after.len()))
 }
 
 /// The words of a session closed while its task waits for other tasks.
 pub const CLOSED: &str = "Session closed: it waits for other tasks. Dispatcher resumes this conversation once they are DONE.";
 
-/// Task `t`, which `run` holds, now waits for `blockers` (tasks of its project, none DONE, FAILED or archived): its
-/// press is kept, as who started the run and how (AC-183), to go on once they are DONE.
-pub(crate) fn keep(tx: &Transaction, run: &Run, t: &Task, blockers: &[Task], at: i64) -> Result<(), String> {
-    let (by, how): (Option<String>, Option<String>) = tx.query_row("SELECT started_by, started_how FROM runs WHERE id = ?1", [&run.id], |x| Ok((x.get(0)?, x.get(1)?))).map_err(sql)?;
+/// Task `id`, which `run` holds, now waits for `blockers` (tasks of its project, none DONE, FAILED or archived), moved
+/// to TODO by `author`: its press is kept, as who started the run and how (AC-183), to go on once they are DONE, and its
+/// session closes as after a question. The wait remembers TODO, the column a move away from calls it off (AC-158).
+pub(crate) fn keep(tx: &Transaction, run: &Run, author: &str, id: &str, blockers: &[Task], at: i64) -> Result<(), String> {
+    ops::move_to(tx, author, id, "TODO", at)?;
+    super::runs::change(tx, &run.id, |r| r.asked = true)?;
+    let (how, by) = super::runs::started(tx, &run.id)?;
     let ids: Vec<String> = blockers.iter().map(|b| b.id.clone()).collect();
-    let press = Press::after(how.as_deref().and_then(How::of_word).unwrap_or_default(), by.as_deref().unwrap_or(HUMAN), &ids);
-    let body = serde_json::to_value(press).map_err(|e| e.to_string())?;
+    let body = serde_json::to_value(Press::after(how, &by, &ids)).map_err(|e| e.to_string())?;
+    // store keys, which stay when a task moves to another project and its ID changes
     let keys: Vec<String> = blockers.iter().map(|b| b.key.clone()).collect();
-    super::waits::add_after(tx, t, &run.agent_id, &t.project, &body, &keys, at)?;
+    let t = ops::get(tx, id)?;
+    super::waits::add_after(tx, &t, &run.agent_id, &t.project, &body, &keys, at)?;
     ops::log(tx, &t.key, DISPATCHER, "told", &format!("It waits for {}: Dispatcher goes on with it in its conversation once {} DONE.", ids.join(", "), if ids.len() == 1 { "that is" } else { "they are" }), None, at).map(drop)
 }
 

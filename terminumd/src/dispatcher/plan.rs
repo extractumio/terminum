@@ -232,8 +232,7 @@ pub fn step(run: &mut Run, f: &Facts) -> Vec<Act> {
             run.closing_for += f.dt;
         }
         if run.closing_for >= ASKED_QUIET && !f.others_open && f.program.is_none() {
-            let words = if run.status == "TODO" { super::after::CLOSED } else { "Session closed: it waits for the human. RUN resumes this conversation." };
-            acts.push(Act::Close { words: words.into(), keep: false });
+            acts.push(Act::Close { words: closed_words(run).into(), keep: false });
         }
     } else if !finished(&run.status) {
         run.closing_for = 0;
@@ -296,6 +295,11 @@ pub fn step(run: &mut Run, f: &Facts) -> Vec<Act> {
 /// conversation is known: closing it loses nothing RUN, or Dispatcher's press once they are DONE, cannot resume (AC-157).
 pub fn asked_human(run: &Run) -> bool {
     run.asked && matches!(run.status.as_str(), "WAIT FOR HUMAN" | "TODO") && run.state == Phase::Working && !run.ad_hoc() && run.agent_session.is_some()
+}
+
+/// The words of a session closed for its agent's own wait: for the human's answers, or for other tasks in TODO (AC-210).
+fn closed_words(run: &Run) -> &'static str {
+    if run.status == "TODO" { super::after::CLOSED } else { "Session closed: it waits for the human. RUN resumes this conversation." }
 }
 
 /// Whether a close of either kind may come once `dt` more passes: then the walk reads whether another task of

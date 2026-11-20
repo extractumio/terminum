@@ -1428,9 +1428,9 @@ Scenario: AC-158 edge — a restart
 ### AC-210 — Waiting for another task [MUST / P0]
 
 ```gherkin
-Scenario: AC-210 happy path — a change that must land after another
-  Given API-12 IN PROGRESS in a session Dispatcher started on Codex, its work committed and checked, and API-9 IN PROGRESS, which changes the same files and lands first
-  When the agent calls wait_for_task {id: "API-12", on: "API-9", why: "API-9 changes the same queue; API-12 merges it and checks again"}
+Scenario: AC-210 happy path — a prerequisite still in work
+  Given API-12 IN PROGRESS in a session Dispatcher started on Codex, which needs the store column API-9 adds, and API-9 IN PROGRESS
+  When the agent calls wait_for_task {id: "API-12", on: "API-9", why: "API-12 reads the store column API-9 adds"}
   Then API-9 is in API-12's Blocked by with that reason (terminum-kanban.md AC-199), API-12 is TODO, and Dispatcher says on it "It waits for API-9: Dispatcher goes on with it in its conversation once that is DONE."
   And the call answers "API-12 waits for API-9: Dispatcher goes on with it in this conversation once it is DONE; nobody needs to be asked. End your turn now, with no more tool calls: Dispatcher closes this session."
   And its card and window say "waits for API-9", with Stop waiting; it holds no place in Codex's queue and no slot, its idle and budget clocks stand (AC-126), the human's count of what waits for them does not change, and Auto-Dispatcher does not take it (AC-170)
@@ -1462,7 +1462,7 @@ Scenario: AC-210 edge — a human or a restart
 
 Scenario: AC-210 edge — what agents are told
   Then RUN's prompt (AC-157), the request at a quiet stop (AC-123) and the refusal of a result of work not done (AC-123) say that a task held by another task of the board waits by wait_for_task, and a human is asked only for what a person decides or a cause that is no task
-  And terminum mcp's search finds wait_for_task for "wait until another task is done" and "land after the overlapping change of TERM-9"
+  And terminum mcp's search finds wait_for_task for "wait until another task is done" and "it needs the change of TERM-9 first"; work that only overlaps another task's integrates as soon as it is ready (terminum-integration.md AC-192)
 ```
 
 ### AC-169 — An agent's queue [MUST / P0]

@@ -2,6 +2,8 @@
 //! What a run that waits for other tasks hears (AC-210): fixed words with IDs only.
 
 use super::*;
+use crate::dispatcher::runs::How;
+use crate::tasks::store::HUMAN;
 
 #[test]
 fn ac210_the_words_going_on_are_fixed_and_name_only_ids() {

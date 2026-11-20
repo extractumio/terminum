@@ -7,11 +7,11 @@
 use rusqlite::OptionalExtension;
 
 use super::api::Press;
-use super::runs::{self, How, Phase, Run};
+use super::runs::{self, Phase, Run};
 use super::{fail, say, store};
 use crate::app::Shared;
 use crate::tasks::ops::{self, sql, Task};
-use crate::tasks::{agents, store::HUMAN};
+use crate::tasks::agents;
 
 /// After a resume, how long another end of the same server resumes nothing.
 const AGAIN_WITHIN: i64 = 3600;
@@ -73,15 +73,15 @@ pub(super) async fn after_restart(app: &Shared, r: Run, identity: String) {
         }
         // the hour counts from this end's first resume, not from a run that could not be resumed
         tx.execute("INSERT OR REPLACE INTO meta (key, value) VALUES (?1, ?2)", [&key, &serde_json::to_string(&now_kept).map_err(|e| e.to_string())?]).map_err(sql)?;
-        let started: (Option<String>, Option<String>) = tx.query_row("SELECT started_by, started_how FROM runs WHERE id = ?1", [&run.id], |x| Ok((x.get(0)?, x.get(1)?))).map_err(sql)?;
+        let started = runs::started(tx, &run.id)?;
         say(tx, &run, RESUMES)?;
         Ok(Some((tasks, started)))
     }).await;
     match ready {
-        Ok(Some((tasks, (by, how)))) => {
+        Ok(Some((tasks, (how, by)))) => {
             let ids: Vec<String> = tasks.iter().map(|t| t.id.clone()).collect();
             // who started it and how stay its own (AC-183): the server's end was no one's press
-            let press = Press::resumed(how.as_deref().and_then(How::of_word).unwrap_or_default(), by.as_deref().unwrap_or(HUMAN));
+            let press = Press::resumed(how, &by);
             // no room is no queue: no human agreed to wait (AC-169); the limit's words say why
             let missed = match super::goes_on::resume(app, r.clone(), &tasks, words(&ids), press).await {
                 Ok(v) => v["full"]["words"].as_str().map(str::to_string),
