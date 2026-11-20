@@ -6,8 +6,8 @@
 //! words: hookplan.rs), and posts them to every sink at once (the local terminumd's private
 //! socket, the Macs' links on a host: sinks.rs) with a budget of 150 ms; it prints at most terminumd's reminder after the agent's reminder event and always
 //! exits 0, so the agent goes on as without it.
-//! The pane is the one tmux names in the agent's environment (TMUX, TMUX_PANE); outside tmux
-//! nothing is sent.
+//! The pane is the one tmux names in the agent's environment (TMUX, TMUX_PANE); outside tmux,
+//! or under a shared Codex app-server (AC-207), nothing is sent.
 
 use std::io::{Read, Write};
 use std::time::Duration;
@@ -17,6 +17,12 @@ use serde_json::{json, Map, Value};
 /// The most of the event read (its rest is read and dropped).
 const KEEP: usize = 1 << 20;
 pub(super) const BUDGET: Duration = Duration::from_millis(150);
+
+/// Whether the pane in the environment is the agent's: not for Codex under a shared app-server
+/// (AC-207); asked only once there is an event to send.
+pub(super) fn takes_pane(agent: &str) -> bool {
+    agent != "codex" || !super::codexdaemon::under_shared()
+}
 
 /// Runs the hook for `agent`; always 0 when an agent runs it. Run by a person (an unknown
 /// agent, or a terminal for stdin), it says what to run instead: it would wait for the keys.
@@ -39,7 +45,7 @@ pub fn main(agent: &str) -> i32 {
         }
     }
     let (Ok(input), Ok(tmux), Ok(pane)) = (serde_json::from_slice::<Value>(&kept), std::env::var("TMUX"), std::env::var("TMUX_PANE")) else { return 0 };
-    if let Some(ev) = event(agent, &input, &tmux, &pane) {
+    if let Some(ev) = event(agent, &input, &tmux, &pane) && takes_pane(agent) {
         let sinks = super::sinks::all();
         let answers = super::sinks::post_all(&sinks, "/hook", &ev, BUDGET);
         if let Some((i, line)) = first_reminder(&ev, &answers) {

@@ -47,6 +47,7 @@ Assumptions:
 | AS-71 | Claude Code's and Codex's screens and titles carry the words `tmux/agentstate.rs` reads. | Claude | measured on Claude Code 2.1 and Codex 0.162; §7 says what a changed wording does |
 | AS-72 | Claude Code does not deliver an async hook's output in an interactive session; Codex delivers its async PostToolUse's. | Claude | measured; the reason for the synchronous PostToolBatch (AC-39) |
 | AS-73 | A subagent interrupted, closed, killed or failed fires no SubagentStop in either program. | Claude | read from both programs' source (AC-39) |
+| AS-190 | A shared Codex app-server is a `codex app-server` listening on `unix://` or `ws://`; the MCP servers it starts are its children, with its environment, not a client's; Codex 0.170 takes `--no-daemon`, and `codex features disable daemon_auto_start` and `codex app-server daemon stop` exist. | Claude | measured on Codex 0.170 with a Codex app's app-server 0.171 (`terminum mcp`'s parent: `codex app-server --listen unix://`); whether a daemon a pane's Codex started keeps that pane's TMUX_PANE not measured (AC-207) |
 
 Dependencies:
 
@@ -71,6 +72,7 @@ Open questions: none.
 | AC-179 | [MUST / P0] | A manager starts its project's tasks on the pool's agents through Dispatcher, answers and goes on with them, stops them, reads what runs and the project's numbers, and lists, reads, types into and closes its project's other sessions, never another manager's; its words reach an agent as the manager's, never as a human's. |
 | AC-180 | [MUST / P0] | A manager adds, changes and removes its project's pool's agents and its project's schedules by the board's own rules, in force at once, each under its name. |
 | AC-181 | [MUST / P0] | Every tool of `terminum mcp` runs from a shell by `terminum tool`, as the session of the pane it runs in or, outside a pane, as a token's role and project; a token is made and removed only outside terminum's panes and kept as its hash. |
+| AC-207 | [MUST / P0] | Under a shared Codex app-server terminum takes no pane from the environment, so no session reports into another's pane or gets its role; `terminum mcp` there offers one tool saying why and how to start Codex instead, and `terminum hooks` says when such a server runs. |
 | AC-153 | [SHOULD / P1] | Claude Code or Codex left idle in a row no page has shown for the days set in Settings (0: off, the default) gets Ctrl+C twice, then `/exit` while it still runs; its shell and session stay, and the pane says which agent ended and how to resume it. |
 
 ## 5. BDD scenarios
@@ -540,6 +542,34 @@ Scenario: AC-181 failure
   And a token is never an argument of a command, and no route over TCP takes one
 ```
 
+### AC-207 — Codex under a shared app-server [MUST / P0]
+
+```gherkin
+Scenario: AC-207 happy path — the session is told why
+  Given a Codex app or editor started a shared `codex app-server` (listening on `unix://` or `ws://`, AS-190)
+  And the user starts plain `codex` in a pane of terminum, which attaches to it
+  When that server starts `terminum mcp` (the nearest Codex among its three nearest ancestors is that server, by its words as the kernel keeps them)
+  Then initialize gives no instructions, and tools/list lists one tool, `why_no_terminum_tools`, whose description, and its answer, say: terminum cannot see which terminal this Codex runs in, because a shared app-server starts its MCP server and hooks without the pane's TMUX and TMUX_PANE; start Codex in the pane with a `-c` override (`codex -c tui.alternate_screen=never`) or `--no-daemon`; to keep plain `codex` from attaching, `codex features disable daemon_auto_start`, then `codex app-server daemon stop`, which ends the conversations it serves
+  And any other tool's call answers the same words as an error and nothing reaches terminumd
+  And the Codex app's own conversations through that server see the one tool and no instructions
+
+Scenario: AC-207 happy path — the user is told at setup
+  Given such a server runs as the user
+  When the user runs `terminum hooks` or `terminum hooks install` with Codex found
+  Then after Codex's line it says "Codex: a shared codex app-server runs (process <pid>); a Codex started in a pane may attach to it, and terminum then gets no hooks, tools, state or plan from that Codex.", the same fix, and "terminum stops neither."
+  And terminum never stops that server and never changes Codex's configuration for it
+
+Scenario: AC-207 failure — a pane in the server's environment is not the caller's
+  Given the shared server's environment holds TMUX and TMUX_PANE (a pane's Codex started it)
+  When it starts `terminum mcp`, runs `terminum hook codex`, or a command of its runs `terminum tool`
+  Then none takes that pane: `terminum mcp` answers as above, the hook sends nothing and exits 0, `terminum tool` calls only with a token (AC-181)
+  And so no session through that server writes another pane's plan or state or gets its manager's tools (AC-174)
+
+Scenario: AC-207 edge — servers that are no shared one
+  Given an editor's own `codex app-server` over stdio, a Codex started with a `-c` override (its own process, terminum-dispatcher.md AS-128), or Claude Code
+  Then the pane in the environment is taken as before; outside a pane `terminum mcp` still offers no tools and no instructions, and `terminum hooks` says nothing of a server when none listens
+```
+
 ### AC-153 — Idle agents exit [SHOULD / P1]
 
 ```gherkin
@@ -657,6 +687,7 @@ sequenceDiagram
 | AC-39 | An error still in the last 25 rows after a later finished turn reads as failed. | `terminumd/src/tmux/agentstate.rs:325` |
 | AC-178 | A host's manager is known by the pane its call names alone: the Mac reads no process behind a link. | `terminumd/src/agentapi.rs`, `terminumd/src/roles/peer.rs` |
 | AC-174 | Whether a real Claude Code or Codex in a manager's session takes up its tools from the instructions was not run. | `scripts/e2e_roles.py` (a shell stands in) |
+| AC-207 | A real Codex attached to a real shared app-server is not run in a test: a shell with the server's words stands in for it; the session list shows nothing for such a Codex but its screen's state. | `terminumd/src/cli/codexdaemon.rs` |
 
 ## 8. Recommendation and ownership
 
@@ -751,6 +782,7 @@ Limits a scenario states are not repeated.
 - A manager's text reaches tmux only as a buffer's paste, never on a command line, with no control character but a tab and line ends; a session, schedule and agent it names are found among its project's own, never put into a tmux command (AC-179).
 - Plan items, the current step, titles and records, and what an agent writes on tasks (`terminum-kanban.md` AC-115), are model-written text: kept 0600; control characters, and what hides what a line reads (bidi controls, zero-width characters, the soft hyphen, word joiners, line separators, tag characters), dropped; redacted as sent history is; limited in length and number; sent only to signed-in pages; shown as plain text (a plan) or as Markdown with raw HTML off (a task), as AC-97 and AC-98 say, never run.
 - `terminum mcp` listens on no port: it speaks MCP over the agent's stdin and stdout and forwards each call to terminumd's private socket, or on a host to a Mac's link. A worker's tools write only terminumd's plan and the store, never tmux or the pane. What terminumd tells a session (a stale plan, a human's move of its task) is fixed words with numbers, a column and a user name, given through the hook's answer, never typed. Left: `terminum mcp` names the pane from the agent's environment (`TMUX_PANE`), and a process of the same user can name another.
+- Under a shared Codex app-server (AC-207) the environment's TMUX_PANE names no caller: `terminum mcp`, `terminum hook codex` and `terminum tool` take no pane there, so one pane's role never passes to the server's other clients.
 - The idle exit (AC-153) types only Ctrl+C, `/exit` and Enter, fixed by terminumd, and only as that scenario allows; it is off until the user sets the days.
 - Its summary is written to `#{pane_tty}` by `run-shell` on the tmux server's host, through its `/bin/sh`: output, never input; a fixed `printf '%s\n'`, each line one POSIX-quoted argument (never the format) with `#` doubled for run-shell's format, control and invisible characters shown as escapes; `terminum hook` reads the agent's command line with `ps` from its own ancestors, redacted, and terminumd keeps at most 300 characters of it.
 
@@ -778,4 +810,5 @@ All cases are shipped; nothing is staged.
 - [x] AC-179 — `cargo test roles`, `cargo test dispatcher::press`, `scripts/e2e_roles.py`
 - [x] AC-180 — `cargo test roles`, `scripts/e2e_roles.py`
 - [x] AC-181 — `cargo test roles`, `cargo test cli::tool`, `scripts/e2e_roles.py`
+- [x] AC-207 — `cargo test codexdaemon` (a shell with a shared server's words starts the real binary's checks, a pane in its environment), `cargo test cli::`
 - [x] AC-153 — `cargo test idle_exit` (keys and the summary on a private tmux with a stand-in agent), `cargo test idle_summary`, `cargo test hookargv`, `cargo test hookopts`, `cargo test tmux::hookstate`, `cargo test settings`, `web/test/e2e_header.mjs`

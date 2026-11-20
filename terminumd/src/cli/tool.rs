@@ -28,7 +28,7 @@ pub(super) enum Caller {
 
 /// In a pane the pane's session calls, whatever token its environment holds: a token is for outside.
 pub(super) fn caller(ctx: &Ctx) -> Result<Caller, String> {
-    let env = Env { tmux: ctx.var("TMUX").map(str::to_string), pane: ctx.var("TMUX_PANE").map(str::to_string), ..Default::default() };
+    let env = mcp::env_of(|k| ctx.var(k).map(str::to_string));
     if mcp::pane_of(&env).is_some() {
         return Ok(Caller::Pane(env));
     }

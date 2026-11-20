@@ -51,9 +51,9 @@ pub fn started_as(agent: &str) -> Map<String, Value> {
 }
 
 /// Where in `words` the agent's program is: first, or an interpreter's script.
-fn program_at(words: &[String], agent: &str) -> Option<usize> {
-    let at = usize::from(words.len() > 1 && INTERPRETERS.contains(&name(&words[0])));
-    (name(words.get(at)?) == agent).then_some(at)
+pub(super) fn program_at(words: &[impl AsRef<str>], agent: &str) -> Option<usize> {
+    let at = usize::from(words.len() > 1 && INTERPRETERS.contains(&name(words[0].as_ref())));
+    (name(words.get(at)?.as_ref()) == agent).then_some(at)
 }
 
 /// The fields for an ancestor's words `words`, its program at `at` where it is the agent; `exact`:
@@ -74,7 +74,7 @@ fn said(agent: &str, words: &[String], at: Option<usize>, exact: bool) -> Map<St
 
 /// Process `pid`'s argument vector as the kernel keeps it.
 #[cfg(target_os = "linux")]
-fn exact(pid: u32) -> Option<Vec<String>> {
+pub(super) fn exact(pid: u32) -> Option<Vec<String>> {
     let raw = std::fs::read(format!("/proc/{pid}/cmdline")).ok()?;
     Some(raw.split(|b| *b == 0).filter(|w| !w.is_empty()).map(|w| String::from_utf8_lossy(w).into_owned()).collect())
 }
@@ -82,7 +82,7 @@ fn exact(pid: u32) -> Option<Vec<String>> {
 /// Process `pid`'s argument vector as the kernel keeps it (`KERN_PROCARGS2`: argc, the program's
 /// path, padding, then argc words, each ending in NUL).
 #[cfg(target_os = "macos")]
-fn exact(pid: u32) -> Option<Vec<String>> {
+pub(super) fn exact(pid: u32) -> Option<Vec<String>> {
     let mut mib = [libc::CTL_KERN, libc::KERN_ARGMAX];
     let mut most: libc::c_int = 0;
     let mut size = std::mem::size_of::<libc::c_int>();
@@ -104,7 +104,7 @@ fn exact(pid: u32) -> Option<Vec<String>> {
 }
 
 #[cfg(not(any(target_os = "linux", target_os = "macos")))]
-fn exact(_pid: u32) -> Option<Vec<String>> {
+pub(super) fn exact(_pid: u32) -> Option<Vec<String>> {
     None
 }
 
