@@ -86,7 +86,7 @@ fn ac194_an_integration_agent_must_have_room_for_its_kept_slot() {
 
     let off = Settings { on: false, ..with_agent.clone() };
     s.with(|tx| keep(tx, "p1", &off)).unwrap();
-    assert_eq!(s.with(|tx| schedules::kept_by_agent(tx)).unwrap()["a1"].total(), 1);
+    assert_eq!(s.with(schedules::kept_by_agent).unwrap()["a1"].total(), 1);
     assert_eq!(s.with(|tx| keep(tx, "p1", &with_agent)).unwrap_err(), refused);
     assert_eq!(s.with(|tx| read(tx, "p1")).unwrap(), off);
 
