@@ -19,7 +19,8 @@ const KEEP: usize = 1 << 20;
 pub(super) const BUDGET: Duration = Duration::from_millis(150);
 pub const PROMPT_CONTEXT: &str = "--prompt-context";
 /// Leave time to acknowledge a reachable sink's notice even if another sink stalls.
-const PROMPT_REPLY: Duration = Duration::from_millis(125);
+const PROMPT_HEARD: Duration = Duration::from_millis(25);
+const PROMPT_REPLY: Duration = BUDGET.saturating_sub(PROMPT_HEARD);
 
 /// Whether the pane in the environment is the agent's: not for Codex under a shared app-server
 /// (AC-207); asked only once there is an event to send.
@@ -65,10 +66,8 @@ pub fn main(agent: &str, prompt_context: bool) -> i32 {
             if printed && let Ok((_, Some(answer))) = &answers[i] && let Some(n) = answer["lines"].as_u64() {
                 let heard = json!({"event": "Heard", "socket": ev["socket"], "socket_path": ev["socket_path"],
                     "pane": ev["pane"], "lines": n});
-                let budget = remaining();
-                if !budget.is_zero() {
-                    let _ = super::sockhttp::call(&sinks[i], "POST", "/hook", Some(&heard), budget);
-                }
+                let budget = if prompt { PROMPT_HEARD } else { BUDGET };
+                let _ = super::sockhttp::call(&sinks[i], "POST", "/hook", Some(&heard), budget);
             }
         }
         // Codex's account's windows, at each turn's end, after it has gone (terminum-dispatcher.md AC-168)
@@ -76,7 +75,7 @@ pub fn main(agent: &str, prompt_context: bool) -> i32 {
             let _ = super::sinks::post_all(&sinks, "/hook", &limits_event(&ev, &windows), BUDGET);
         }
         // the agent's command line, once a session: when a terminumd asks, after the event has gone (AC-153)
-        if !remaining().is_zero() && answers.iter().any(|a| matches!(a, Ok((200, Some(answer))) if answer["argv"] == true)) {
+        if remaining() > PROMPT_HEARD && answers.iter().any(|a| matches!(a, Ok((200, Some(answer))) if answer["argv"] == true)) {
             let mut said = ev.clone();
             said["event"] = json!("Argv");
             if let Some(said) = said.as_object_mut() {

@@ -35,7 +35,8 @@ def main():
                        headers={"Content-Type": "application/json", "Origin": f"http://127.0.0.1:{PORT}"})
 
         def pane_for(agent, session):
-            pane = tmux("new-window", "-d", "-P", "-F", "#{pane_id}", "-t", "main", "sleep", "600").strip()
+            # Once Stop releases Codex's hook state, its named window still identifies the agent.
+            pane = tmux("new-window", "-d", "-P", "-F", "#{pane_id}", "-t", "main", "-n", agent, "sleep", "600").strip()
             sock = tmux("display", "-p", "-t", pane, "#{socket_path}").strip()
             env = {**t.env, "TMUX": f"{sock},1,0", "TMUX_PANE": pane}
 
@@ -63,7 +64,8 @@ def main():
             key, hook = pane_for(agent, f"s-{agent}")
             hook({"hook_event_name": "SessionStart", "cwd": "/"})
             hook({"hook_event_name": "UserPromptSubmit", "prompt_id": "p1", "prompt": "work"})
-            shown = wait_layout(ws, lambda gs: any(i["id"] == key and i.get("agent") == agent for g in gs for i in g["items"]), 8)
+            shown = wait_layout(ws, lambda gs: any(i["id"] == key and i.get("agent") == agent and i.get("state") == "working"
+                                                    for g in gs for i in g["items"]), 8)
             check(f"setup: the list shows {agent} in its pane, by its hooks", shown is not None)
             st, task = call("/api/tasks", "POST", {"title": f"notice {agent}", "session": key})
             check(f"setup: a task linked to the {agent} pane", st == 200 and task.get("session", {}).get("key") == key, task)
@@ -87,6 +89,9 @@ def main():
             check(f"AC-209 {agent}: a notice heard is not told again", "[terminum]" not in again.stdout, again.stdout)
 
             hook({"hook_event_name": "Stop", "prompt_id": "p2"})
+            idle = wait_layout(ws, lambda gs: any(i["id"] == key and i.get("agent") == agent and i.get("state") != "working"
+                                                   for g in gs for i in g["items"]), 8)
+            check(f"AC-209 {agent}: the pane still has its agent after it stops working", idle is not None)
             event = comment(tid, SECRET_WORDS)
             prompt = {"hook_event_name": "UserPromptSubmit", "prompt_id": "p3", "prompt": "Answer in words alone"}
             sub = hook({**prompt, "agent_id": "sub"}, "--prompt-context")
