@@ -194,10 +194,13 @@ pub fn run(store: &Store, state_dir: &Path, who: &Who, tool: &str, args: &Value)
     run_with(store, state_dir, who, tool, args, crate::settings::DEFAULT_AGENT_OPEN_TASKS).map(|(text, changed, _)| (text, changed))
 }
 
-/// Runs one tool in one transaction: its answer, the tasks it changed, and the comment add_comment kept (its task
-/// and event, for its task's session to hear of, terminum-dispatcher.md AC-209); create_task is refused at
-/// `open_most` open tasks by agents in the project (settings.json's agentOpenTasks, AC-115).
-pub fn run_with(store: &Store, state_dir: &Path, who: &Who, tool: &str, args: &Value, open_most: i64) -> Result<(String, Vec<String>, Option<(String, String)>), String> {
+/// What a tool call came to: its answer, the tasks it changed, and the comment add_comment kept (its task and event,
+/// for its task's session to hear of, terminum-dispatcher.md AC-209).
+pub type Ran = (String, Vec<String>, Option<(String, String)>);
+
+/// Runs one tool in one transaction; create_task is refused at `open_most` open tasks by agents in the project
+/// (settings.json's agentOpenTasks, AC-115).
+pub fn run_with(store: &Store, state_dir: &Path, who: &Who, tool: &str, args: &Value, open_most: i64) -> Result<Ran, String> {
     let mut noted = None;
     run_in(store, state_dir, who, tool, args, open_most, &mut noted).map(|(text, changed)| (text, changed, noted))
 }
