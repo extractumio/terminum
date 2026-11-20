@@ -21,6 +21,42 @@ pub fn comment(tx: &Transaction, author: &str, id: &str, text: &str, at: i64) ->
     comment_with(tx, author, id, text, None, at)
 }
 
+/// A project's manager's comment (terminum-agents.md AC-174): marked so, as a fresh start says whose it is
+/// (terminum-dispatcher.md AC-209).
+pub fn manager_comment(tx: &Transaction, author: &str, id: &str, text: &str, at: i64) -> Result<String, String> {
+    comment_with(tx, author, id, text, Some(&json!({"by": "manager"})), at)
+}
+
+/// What a fresh start carries of a task's comments (terminum-dispatcher.md AC-209): the humans' and the project's
+/// manager's, oldest first, each with its author's name and whether a manager wrote it; and how many agents wrote,
+/// whose words it never carries. Dispatcher's lines are neither.
+#[derive(Debug, Default, PartialEq)]
+pub struct Carried {
+    pub theirs: Vec<(String, bool, String)>,
+    pub agents: usize,
+}
+
+/// The comments on task `id` a fresh start carries, but those whose text is in `said` (the press's message, the
+/// answers: said already).
+pub fn carried(tx: &Transaction, id: &str, said: &[&str]) -> Result<Carried, String> {
+    let key = key_of(tx, id)?;
+    let all = rows(tx, "SELECT u.name, u.kind, coalesce(json_extract(e.data, '$.by') = 'manager', 0), coalesce(e.text, '') FROM events e
+                        JOIN users u ON u.id = e.author WHERE e.task = ?1 AND e.kind = 'comment' AND u.kind <> 'system' ORDER BY e.at, e.rowid",
+                   [&key], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, bool>(2)?, r.get::<_, String>(3)?)))?;
+    let mut out = Carried::default();
+    for (name, kind, manager, text) in all {
+        if said.iter().any(|s| s.trim() == text.trim()) {
+            continue;
+        }
+        if kind == "human" || manager {
+            out.theirs.push((name, manager, text));
+        } else {
+            out.agents += 1;
+        }
+    }
+    Ok(out)
+}
+
 /// An agent's questions for a human (terminum-dispatcher.md AC-157): a comment the task's window shows as such.
 pub fn questions(tx: &Transaction, author: &str, id: &str, text: &str, at: i64) -> Result<String, String> {
     comment_with(tx, author, id, text, Some(&json!({"questions": true})), at)
@@ -87,10 +123,10 @@ pub fn answers(tx: &Transaction, id: &str) -> Result<Option<Vec<String>>, String
 }
 
 /// A human's own comment changed or deleted: a new event holds it, and the old text leaves the
-/// shown history (AC-108). Those of agents and Dispatcher stay as written.
-pub fn change_comment(tx: &Transaction, author: &str, id: &str, event: &str, text: Option<&str>, at: i64) -> Result<(), String> {
+/// shown history (AC-108). Those of agents and Dispatcher stay as written. Whether its text changed.
+pub fn change_comment(tx: &Transaction, author: &str, id: &str, event: &str, text: Option<&str>, at: i64) -> Result<bool, String> {
     let key = key_of(tx, id)?;
-    let (kind, by): (String, String) = tx.query_row("SELECT kind, author FROM events WHERE id = ?1 AND task = ?2", (event, &key), |r| Ok((r.get(0)?, r.get(1)?)))
+    let (kind, by, was): (String, String, Option<String>) = tx.query_row("SELECT kind, author, text FROM events WHERE id = ?1 AND task = ?2", (event, &key), |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
         .optional().map_err(sql)?.ok_or("That comment is gone.")?;
     if kind != "comment" || by != author {
         return Err("Only its human author can change a comment.".into());
@@ -107,7 +143,8 @@ pub fn change_comment(tx: &Transaction, author: &str, id: &str, event: &str, tex
             log(tx, &key, author, "edit", &format!("{who} deleted a comment"), None, at)?;
         }
     }
-    touch(tx, &key, at)
+    touch(tx, &key, at)?;
+    Ok(text.is_some_and(|t| was.as_deref() != Some(t)))
 }
 
 /// A task's comments and history, oldest first, with its files by event.
@@ -117,7 +154,9 @@ pub fn history(tx: &Transaction, id: &str) -> Result<Value, String> {
     for (event, file) in rows(tx, "SELECT event, id, name, bytes, mime FROM files WHERE task = ?1 AND event IS NOT NULL", [&key], |r| Ok((r.get(0)?, File::of_row(r, 1)?)))? {
         files.entry(event).or_default().push(file);
     }
-    let out = rows(tx, "SELECT e.id, e.at, e.author, u.name, u.kind, e.kind, e.text, e.edited_at, json_extract(e.data, '$.questions') IS NOT NULL FROM events e JOIN users u ON u.id = e.author WHERE e.task = ?1 ORDER BY e.at, e.rowid", [&key], |r| {
+    let out = rows(tx, "SELECT e.id, e.at, e.author, u.name, u.kind, e.kind, e.text, e.edited_at, json_extract(e.data, '$.questions') IS NOT NULL,
+                        CASE WHEN e.kind = 'told' THEN json_extract(e.data, '$.comments') END, coalesce(json_extract(e.data, '$.not'), 0)
+                        FROM events e JOIN users u ON u.id = e.author WHERE e.task = ?1 ORDER BY e.at, e.rowid", [&key], |r| {
         let event: String = r.get(0)?;
         let attached = files.remove(&event).unwrap_or_default();
         let mut v = json!({"id": event, "at": r.get::<_, i64>(1)?, "author": r.get::<_, String>(2)?,
@@ -125,6 +164,11 @@ pub fn history(tx: &Transaction, id: &str) -> Result<Value, String> {
             "kind": r.get::<_, String>(5)?, "text": r.get::<_, Option<String>>(6)?, "edited_at": r.get::<_, Option<i64>>(7)?, "files": attached});
         if r.get::<_, bool>(8)? {
             v["questions"] = json!(true);
+        }
+        // a notice's outcome names the comments it told of (terminum-dispatcher.md AC-209)
+        if let Some(ids) = r.get::<_, Option<String>>(9)?.and_then(|s| serde_json::from_str::<Value>(&s).ok()) {
+            v["comments"] = ids;
+            v["not"] = json!(r.get::<_, bool>(10)?);
         }
         Ok(v)
     })?;

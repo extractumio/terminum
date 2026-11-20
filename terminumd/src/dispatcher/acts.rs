@@ -147,7 +147,7 @@ pub(super) async fn tell(app: &Shared, run: &Run, server: &Arc<Server>, pane: &s
     let words = match sent {
         Ok(()) => format!("{what} was given."),
         Err(why) => {
-            let dropped = app.task_lines.push(&key, run.ids.first().map_or("", String::as_str), text);
+            let dropped = crate::tasks::tell::push(app, &key, run.ids.first().map_or("", String::as_str), text);
             let waits = match why {
                 Some(why) => format!("{what} waits for the agent's next tool call: {why}."),
                 None => format!("{what} waits for the agent's next tool call."),
@@ -186,7 +186,9 @@ pub(super) async fn do_later(app: &Shared, l: Later) {
             Ok(())
         }
         Act::End => {
-            if !app.task_lines.take(&key).is_empty() {
+            let (comments, own): (Vec<_>, Vec<_>) = app.task_lines.take(&key).into_iter().partition(|l| !l.comments.is_empty());
+            crate::tasks::notify::lost(app, comments, crate::tasks::notify::RUN_ENDED);
+            if !own.is_empty() {
                 let r = l.run.clone();
                 let _ = store(app, move |tx| say(tx, &r, "The last warning could not reach the agent before the limit.")).await;
             }

@@ -65,7 +65,7 @@ async fn offer(State(app): State<Shared>, Path(id): Path<String>, axum::extract:
             _ => None,
         };
         let last = runs::last_agent(tx, &t.project)?.filter(|l| all.iter().any(|a| a.id == *l));
-        let shown = facts(tx, &tasks)?;
+        let shown = facts(tx, &tasks, None)?;
         Ok(json!({"first": w.first_words(), "agents": offered, "last": last, "dir": dir, "host": host, "project": t.project, "no_folder": lacks,
                   "prompt_rev": shown.rev(), "prompt": shown.shown(), "moved": moved, "by_agent": tasks.iter().any(|t| t.by_agent), "ids": tasks.iter().map(|t| &t.id).collect::<Vec<_>>()}))
     }).await)
@@ -107,7 +107,7 @@ impl Press {
     /// The words a first run's agent hears, from the tasks as they stand: refused when they are not what the human
     /// saw, as an agent may have changed a task meanwhile (AC-121).
     fn first_words(&self, tx: &rusqlite::Transaction, tasks: &[Task]) -> Result<Facts, String> {
-        let mut goes = facts(tx, tasks)?;
+        let mut goes = facts(tx, tasks, self.comment.as_deref().map(str::trim).filter(|c| !c.is_empty()))?;
         // a batch's integration task speaks the project's Prompt with the batch's facts (terminum-integration.md AC-194)
         if self.how == How::Integration {
             goes.integration = crate::integrate::agent::prompt_of(tx, &tasks[0].key)?;
@@ -154,7 +154,10 @@ impl Press {
     fn keep_on(&self, tx: &rusqlite::Transaction, tasks: &[Task], text: &str, files: &[String]) -> Result<(), String> {
         if self.keep(tx, &tasks[0].id, text, files)?.is_some() {
             for t in &tasks[1..] {
-                ops::comment(tx, self.by(), &t.id, text, ops::now())?;
+                match &self.manager {
+                    None => ops::comment(tx, HUMAN, &t.id, text, ops::now())?,
+                    Some(user) => ops::manager_comment(tx, user, &t.id, text, ops::now())?,
+                };
             }
         }
         Ok(())
@@ -164,7 +167,7 @@ impl Press {
     fn keep(&self, tx: &rusqlite::Transaction, task: &str, text: &str, files: &[String]) -> Result<Option<String>, String> {
         match &self.manager {
             None => ops::keep_human_comment(tx, task, text, files, ops::now()),
-            Some(user) => ops::comment(tx, user, task, text, ops::now()).map(Some),
+            Some(user) => ops::manager_comment(tx, user, task, text, ops::now()).map(Some),
         }
     }
 }

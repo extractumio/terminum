@@ -88,7 +88,7 @@ async fn deliver(app: &Shared, last: &mut Option<i64>) {
         if let Some(words) = notices::gate_words(&n) && crate::dispatcher::tell_task_run(app, &n.task, words).await {
             continue;
         }
-        if let Some(key) = &n.session && app.task_lines.push(key, &n.id, notices::hook_line(&n)) {
+        if let Some(key) = &n.session && crate::tasks::tell::push(app, key, &n.id, notices::hook_line(&n)) {
             tracing::info!(event = "integration.notice", task = %n.id, "the oldest line waiting for its session went: at most 20 wait");
         }
     }

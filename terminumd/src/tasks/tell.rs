@@ -14,12 +14,22 @@ use super::store::DISPATCHER;
 use crate::app::Shared;
 use crate::tmux::agentstate::State;
 
-/// One pane's lines, with their tasks: waiting for its next context, and those sent with one
-/// and not yet heard (the hook says so after printing them, `Heard`).
+/// A line for a pane's next context: its task, its words, and the comments it tells of (AC-209), none for
+/// Dispatcher's and the integration queue's words.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Line {
+    pub task: String,
+    pub text: String,
+    /// each comment's event and who wrote it, in a notice's fixed words ("a human (alex)")
+    pub comments: Vec<(String, String)>,
+}
+
+/// One pane's lines: waiting for its next context, and those sent with one and not yet heard (the hook says
+/// so after printing them, `Heard`).
 #[derive(Default)]
 struct Waiting {
-    lines: Vec<(String, String)>,
-    sent: Option<(u64, Vec<(String, String)>)>,
+    lines: Vec<Line>,
+    sent: Option<(u64, Vec<Line>)>,
 }
 
 /// Lines for panes' next contexts: each goes until the hook says it was heard (D15), so an
@@ -31,16 +41,34 @@ pub struct Lines(Mutex<HashMap<String, Waiting>>);
 const KEPT: usize = 20;
 
 impl Lines {
-    /// A line waits for the pane's next context; true when an older one went to make room.
-    pub(crate) fn push(&self, key: &str, task: &str, line: String) -> bool {
+    /// A line waits for the pane's next context; the older one that went to make room, if any.
+    pub(crate) fn push(&self, key: &str, task: &str, line: String) -> Option<Line> {
+        self.add(key, Line { task: task.to_string(), text: line, comments: Vec::new() })
+    }
+
+    fn add(&self, key: &str, line: Line) -> Option<Line> {
         let mut all = self.0.lock();
         let w = all.entry(key.to_string()).or_default();
-        w.lines.push((task.to_string(), line));
-        let dropped = w.lines.len() > KEPT;
-        if dropped {
-            w.lines.remove(0);
+        w.lines.push(line);
+        (w.lines.len() > KEPT).then(|| w.lines.remove(0))
+    }
+
+    /// A new comment on `task` waits for the pane's next context (AC-209): with the comments on it not sent yet, in
+    /// one notice that counts them; one sent and not heard yet stays as it went, and an edited comment waiting
+    /// already is not counted twice. The line that went to make room, if any.
+    pub(crate) fn push_comment(&self, key: &str, task: &str, event: &str, by: String) -> Option<Line> {
+        {
+            let mut all = self.0.lock();
+            if let Some(line) = all.get_mut(key).and_then(|w| w.lines.iter_mut().find(|l| l.task == task && !l.comments.is_empty())) {
+                if !line.comments.iter().any(|(e, _)| e == event) {
+                    line.comments.push((event.to_string(), by));
+                    line.text = super::notify::words(task, &line.comments);
+                }
+                return None;
+            }
         }
-        dropped
+        let comments = vec![(event.to_string(), by)];
+        self.add(key, Line { task: task.to_string(), text: super::notify::words(task, &comments), comments })
     }
 
     /// The pane's lines for its next context, those sent before and not heard first, and the
@@ -56,41 +84,64 @@ impl Lines {
             return None;
         }
         let n = SENT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        let words = lines.iter().map(|(_, l)| l.clone()).collect();
+        let words = lines.iter().map(|l| l.text.clone()).collect();
         w.sent = Some((n, lines));
         Some((n, words))
     }
 
-    /// The hook printed the lines sent as `n`: they go; their tasks.
-    pub(crate) fn heard(&self, key: &str, n: u64) -> Vec<String> {
+    /// The hook printed the lines sent as `n`: they go, said.
+    pub(crate) fn heard(&self, key: &str, n: u64) -> Vec<Line> {
         let mut all = self.0.lock();
         let Some(w) = all.get_mut(key) else { return Vec::new() };
         if w.sent.as_ref().is_none_or(|(m, _)| *m != n) {
             return Vec::new();
         }
-        let tasks = w.sent.take().map(|(_, l)| l.into_iter().map(|(t, _)| t).collect()).unwrap_or_default();
+        let lines = w.sent.take().map(|(_, l)| l).unwrap_or_default();
         if w.lines.is_empty() {
             all.remove(key);
         }
-        tasks
+        lines
     }
 
     /// Every line of the pane, sent or not, which never reached it (its run ends).
-    pub(crate) fn take(&self, key: &str) -> Vec<(String, String)> {
+    pub(crate) fn take(&self, key: &str) -> Vec<Line> {
         self.0.lock().remove(key).map(|w| w.sent.map(|(_, l)| l).unwrap_or_default().into_iter().chain(w.lines).collect()).unwrap_or_default()
+    }
+
+    /// The pane's comment notices, sent or not, which never reached it (its agent's session ended, AC-209):
+    /// Dispatcher's lines stay for the next agent of its run.
+    pub(crate) fn take_comments(&self, key: &str) -> Vec<Line> {
+        let mut all = self.0.lock();
+        let Some(w) = all.get_mut(key) else { return Vec::new() };
+        let mut gone = Vec::new();
+        for list in [Some(&mut w.lines), w.sent.as_mut().map(|(_, l)| l)].into_iter().flatten() {
+            let (comments, rest) = std::mem::take(list).into_iter().partition(|l: &Line| !l.comments.is_empty());
+            *list = rest;
+            gone.extend(comments);
+        }
+        gone
+    }
+
+    /// Every comment whose notice waits for its session (AC-209).
+    pub(crate) fn waiting_comments(&self) -> std::collections::HashSet<String> {
+        self.0.lock().values().flat_map(|w| w.lines.iter().chain(w.sent.iter().flat_map(|(_, l)| l)))
+            .flat_map(|l| l.comments.iter().map(|(e, _)| e.clone())).collect()
     }
 }
 
-/// Each line that went is said on its task, in one transaction; a task gone costs only its line.
-fn say_told(tx: &rusqlite::Transaction, tasks: &[String], at: i64) -> Result<HashSet<String>, String> {
+/// Each line that went is said on its task, in one transaction: Dispatcher's as told, a notice with the comments
+/// it told of (AC-209); a task gone costs only its line.
+fn say_told(tx: &rusqlite::Transaction, lines: &[Line], at: i64) -> Result<HashSet<String>, String> {
     let mut said = HashSet::new();
-    for id in tasks {
-        match ops::key_of(tx, id) {
-            Ok(key) => {
-                ops::log(tx, &key, DISPATCHER, "told", "Told the session", None, at)?;
-                said.insert(id.clone());
-            }
-            Err(e) => tracing::warn!(event = "tasks.told", task = %id, error = %e),
+    for l in lines {
+        let done = if l.comments.is_empty() {
+            ops::key_of(tx, &l.task).and_then(|key| ops::log(tx, &key, DISPATCHER, "told", "Told the session", None, at))
+        } else {
+            super::notify::said(tx, l, None, at)
+        };
+        match done {
+            Ok(_) => { said.insert(l.task.clone()); }
+            Err(e) => tracing::warn!(event = "tasks.told", task = %l.task, error = %e),
         }
     }
     Ok(said)
@@ -142,10 +193,11 @@ pub fn turn_ended(app: &Shared, key: &str, background: Option<bool>) {
     }
 }
 
-/// A pane's agent session ended; /clear goes on.
+/// A pane's agent session ended; /clear goes on. Its comment notices never reach it (AC-209).
 pub fn session_ended(app: &Shared, key: &str, ev: &Value) {
     if ev["event"] == "SessionEnd" && ev["reason"] != "clear" {
         said_stopped(app, key, "The agent's session ended with this task open".to_string());
+        super::notify::lost(app, app.task_lines.take_comments(key), super::notify::ENDED);
     }
 }
 
@@ -156,14 +208,23 @@ pub fn with_lines(app: &Shared, key: &str, remind: Option<String>) -> (Option<St
     (Some(words.join("\n")), Some(n))
 }
 
+/// A line waits for pane `key`'s next context; a comment's notice that went to make room is said not to have
+/// reached it (AC-209). Whether one went.
+pub fn push(app: &Shared, key: &str, task: &str, line: String) -> bool {
+    let dropped = app.task_lines.push(key, task, line);
+    let went = dropped.is_some();
+    super::notify::lost(app, dropped.into_iter().collect(), super::notify::CROWDED);
+    went
+}
+
 /// The hook printed the lines sent as `n` (`Heard`): each is said on its task.
 pub fn heard(app: &Shared, key: &str, n: u64) {
-    let tasks = app.task_lines.heard(key, n);
-    if tasks.is_empty() {
+    let lines = app.task_lines.heard(key, n);
+    if lines.is_empty() {
         return;
     }
     let a = app.clone();
-    tokio::task::spawn_blocking(move || match a.tasks.with(|tx| say_told(tx, &tasks, ops::now())) {
+    tokio::task::spawn_blocking(move || match a.tasks.with(|tx| say_told(tx, &lines, ops::now())) {
         Ok(said) => said.iter().for_each(|id| super::api::history_heard(&a, id)),   // an open window shows it
         Err(e) => tracing::warn!(event = "tasks.told", error = %e),
     });
@@ -261,7 +322,8 @@ mod tests {
         use crate::tasks::store::{Store, HUMAN};
         let s = Store::open(crate::testutil::fresh_dir("tell-lines").join("kanban.sqlite"));
         let t = s.with(|tx| create(tx, HUMAN, NewTask { title: "a".into(), ..Default::default() }, 1)).unwrap();
-        let said = s.with(|tx| say_told(tx, &[t.id.clone(), t.id.clone(), "T-9999".to_string()], 2)).unwrap();
+        let line = |task: &str| Line { task: task.to_string(), text: "w".into(), comments: Vec::new() };
+        let said = s.with(|tx| say_told(tx, &[line(&t.id), line(&t.id), line("T-9999")], 2)).unwrap();
         assert_eq!(said, HashSet::from([t.id.clone()]), "each task once, the one gone not");
         let told: i64 = s.with(|tx| tx.query_row("SELECT count(*) FROM events WHERE text = 'Told the session'", [], |r| r.get(0)).map_err(ops::sql)).unwrap();
         assert_eq!(told, 2, "one event per line");
@@ -275,9 +337,9 @@ mod tests {
         l.push("b", "T-3", "three".into());
         let (n, words) = l.offer("a").unwrap();
         assert_eq!(words, ["one", "two"]);
-        assert_eq!(l.heard("a", n), ["T-1", "T-2"]);
+        assert_eq!(l.heard("a", n).iter().map(|l| l.task.as_str()).collect::<Vec<_>>(), ["T-1", "T-2"]);
         assert!(l.offer("a").is_none(), "heard: gone");
-        assert_eq!(l.take("b")[0].1, "three");
+        assert_eq!(l.take("b")[0].text, "three");
     }
 
     /// AC-114 failure (D15): lines whose answer never reached the agent (not heard) go again
@@ -292,7 +354,7 @@ mod tests {
         assert_eq!(words, ["one", "two"], "the lost one again, then the new one");
         assert!(l.heard("a", first).is_empty(), "an older sending heard late takes nothing");
         assert_eq!(l.heard("a", second).len(), 2);
-        assert!((0..KEPT).all(|i| !l.push("b", "T-2", i.to_string())) && l.push("b", "T-2", "over".into()), "past the most, the oldest goes and that is said");
+        assert!((0..KEPT).all(|i| l.push("b", "T-2", i.to_string()).is_none()) && l.push("b", "T-2", "over".into()).is_some_and(|g| g.text == "0"), "past the most, the oldest goes and that is said");
         assert_eq!(l.take("b").len(), KEPT);
     }
 }
