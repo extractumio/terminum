@@ -14,7 +14,7 @@ fn missing_or_empty_gives_every_default_and_no_message() {
     assert_eq!((s.port, s.tmux_socket.as_str(), s.tmux_history, s.restore), (48080, "terminum", 12000, true));
     assert_eq!(s.themes.default, "local");
     assert_eq!(s.themes.hosts.get("*").map(String::as_str), Some("remote"));
-    assert_eq!(s.page_json(), json!({"textSize": 13, "markdownSize": 14, "history": 12000, "lastLines": 300, "widgets": true, "folds": true, "colorScheme": null, "followAgent": true, "agentExitDays": 0, "messages": []}));
+    assert_eq!(s.page_json(), json!({"textSize": 13, "markdownSize": 14, "history": 12000, "lastLines": 300, "widgets": true, "folds": true, "colorScheme": null, "followAgent": true, "agentExitDays": 0, "agentNoticesOff": [], "messages": []}));
     let (s, m) = load(Path::new("/nonexistent/terminum/settings.json"));
     assert_eq!((s, m), (Settings::default(), vec![]));
 }
