@@ -21,15 +21,15 @@ const TASK = {
   history: [
     { id: "e1", kind: "event", author_kind: "system", author_name: "Dispatcher", at: AT, text: `Session did not start: no Enter\n\n\`\`\`\n${SCREEN}\n\`\`\`` },
     { id: "e3", kind: "event", author_kind: "human", author_name: "alex", at: AT + 30, text: "alex changed its title\n\n```\nnot a screen\n``` and more" },
-    { id: "e2", kind: "comment", author_kind: "human", author_name: "alex", at: AT + 60, text: "Both windows." },
+    { id: "e2", kind: "comment", author_kind: "human", author_name: "alex", at: AT + 60, text: "Both windows.", told: "told" },
   ],
 };
 // a task that waits with its agent's questions: every kind of comment before them
 const said = (id, author_kind, author_name, at, text, more = {}) => ({ id, kind: "comment", author_kind, author_name, at, text, ...more });
 const ASKED = { ...TASK, id: "API-14", files: [], history: [
   { id: "a1", kind: "event", author_kind: "human", author_name: "alex", at: AT - 86400 * 400, text: "alex made it" },
-  said("a2", "human", "alex", AT - 40, "Start with v1."),
-  said("a3", "agent", "Claude Opus", AT - 30, "On it."),
+  said("a2", "human", "alex", AT - 40, "Start with v1.", { told: "not" }),
+  said("a3", "agent", "Claude Opus", AT - 30, "On it.", { told: "waiting" }),
   said("a4", "system", "Dispatcher", AT - 20, "Session started."),
   said("a5", "agent", "Claude Opus", AT - 10, "v1 or v2?", { questions: true }),
 ] };
@@ -70,11 +70,14 @@ const conversation = (page) => page.evaluate(async () => {
   const asked = { parts: parts(), lead: [...body.querySelectorAll(".leads .history > li")].map((li) => li.className), heading: body.querySelector(".leads h3").textContent, rest: lines(),
     bars: [".by-human", ".by-agent:not(.ev-questions)", ".by-system", ".ev-questions"].map(bar), field: body.querySelector(".newcomment textarea").placeholder,
     times: [...body.querySelectorAll(".activity time")].map((t) => [t.textContent, t.title]), named: body.querySelectorAll(".activity .ev-event strong").length,
+    // what became of each comment's notice to its session (terminum-dispatcher.md AC-209), in its head
+    told: [...body.querySelectorAll(".activity .ev-comment")].map((li) => li.querySelector(".evhead .evtold")?.textContent ?? ""),
+    toldColors: [".evtold.waiting", ".evtold.not"].map((s) => getComputedStyle(body.querySelector(s)).color),
     // the scrollbar's room: nothing that scrolls reaches into it, at either side
     room: pad >= 12 && [...body.children].every((e) => { const r = e.getBoundingClientRect(); return r.left >= edge.left + pad - 1 && r.right <= edge.right - pad + 1; }) };
   await window.taskwin.tryClose();
   await window.taskwin.open("API-12");
-  const read = { parts: parts(), first: lines()[0] };
+  const read = { parts: parts(), first: lines()[0], told: body.querySelector(".ev-comment .evtold")?.textContent };
   window.agentAsked = true;                            // its agent asks while the window is open
   await window.taskwin.refresh();
   return { asked, read, stays: { parts: parts(), last: lines().at(-1) } };
@@ -165,6 +168,9 @@ export async function webTaskWin(browser, name) {
     check("AC-149 questions asked while the window is open turn nothing round: they stand last, over the comment field",
       c.stays.parts.join() === "taskown,subtasks,activity,newcomment" && c.stays.last === "v1 or v2?", told);
     check("AC-173 what scrolls keeps clear of the scrollbar's room at the window's edge", c.asked.room, told);
+    check("AC-209 each comment's head says whether its session was told of it: told, waiting for its next tool call, not told in the danger color; none with no mark",
+      c.asked.told.join("|") === "|the session hears of it at its next tool call|not told the session" && c.read.told === "told the session"
+      && c.asked.toldColors[0] !== c.asked.toldColors[1], told);
     await f.page.click("#taskbody .tasktext .markdown");
     const ring = await f.page.$eval("#taskbody .tasktext .markdown", (text) => [document.activeElement === text, getComputedStyle(text).outlineStyle]);
     check("AC-149 a text pressed to read takes the keys and shows no focus ring", ring[0] && ring[1] === "none", String(ring));

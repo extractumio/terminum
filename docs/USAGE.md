@@ -261,6 +261,16 @@ PROGRESS, WAIT FOR HUMAN, FAILED or DONE.
   failure) comes first.
 - **Keys**: Save keeps your comment; Run starts the agent with it; Run from scratch is on the
   Status line.
+- **Comments reach the working agent**: a comment you save, or one another session's agent adds
+  (the project's manager's too), reaches the agent of the task's open session at its next tool
+  call, through its hooks: a short notice with the task's ID and who wrote it, never the
+  comment's words, which it reads with `get_task`. Nothing is typed: an idle agent hears it at its
+  next turn, and Run has it act now. Each comment says "told the session", "the session hears of
+  it at its next tool call" or "not told the session" (the history line says why). A session's
+  own agent hears nothing of its own comments.
+- **A fresh start** (the first Run, Run from scratch, a manager's `run_task`) carries the humans'
+  and the project's manager's comments in its words; agents' comments only by a count, to read
+  with `get_task`.
 - **Details**: Type (Feature, Bug, Debt, Story; also set by the title's first word), an External
   link (http or https), a Target, Blocked by and Follow-ups (tasks of the same project, each with
   a reason; kept and shown, nothing waits on them).

@@ -417,18 +417,26 @@ async fn add_comment(State(app): State<Shared>, Path(id): Path<String>, Json(bod
         files::attach(tx, &attached, &wanted, Some(&event))?;
         Ok(json!({"event": event}))
     }).await;
+    // its session hears of it at its agent's next tool call (terminum-dispatcher.md AC-209)
+    if let Ok(v) = &done && let Some(event) = v["event"].as_str() {
+        super::notify::comment_added(&app, &id, event, None);
+    }
     told_answer(&app, &id, done)
 }
 
 async fn edit_comment(State(app): State<Shared>, Path((id, event)): Path<(String, String)>, Json(body): Json<Value>) -> Response {
-    let (wanted, said) = (id.clone(), text(&body, "text").unwrap_or_default());
-    let done = store(&app, move |tx| ops::change_comment(tx, HUMAN, &wanted, &event, Some(&said), ops::now()).map(|()| json!({"ok": true}))).await;
-    told_answer(&app, &id, done)
+    let (wanted, said, changed) = (id.clone(), text(&body, "text").unwrap_or_default(), event.clone());
+    let done = store(&app, move |tx| ops::change_comment(tx, HUMAN, &wanted, &event, Some(&said), ops::now())).await;
+    // a changed text is a new comment to its session (terminum-dispatcher.md AC-209)
+    if done == Ok(true) {
+        super::notify::comment_added(&app, &id, &changed, None);
+    }
+    told_answer(&app, &id, done.map(|_| json!({"ok": true})))
 }
 
 async fn drop_comment(State(app): State<Shared>, Path((id, event)): Path<(String, String)>) -> Response {
     let wanted = id.clone();
-    let done = store(&app, move |tx| ops::change_comment(tx, HUMAN, &wanted, &event, None, ops::now()).map(|()| json!({"ok": true}))).await;
+    let done = store(&app, move |tx| ops::change_comment(tx, HUMAN, &wanted, &event, None, ops::now()).map(|_| json!({"ok": true}))).await;
     if done.is_ok() {
         scrub(&app).await;
     }

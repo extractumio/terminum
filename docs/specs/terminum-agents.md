@@ -34,7 +34,7 @@ Out of scope (explicit):
 - Sent history: `terminum-terminal.md` AC-90.
 - States for other agents: OpenCode gets only a mark (`terminum.md` AC-01).
 - Tasks and agents' task tools: `terminum-kanban.md`.
-- Typing into a pane for an agent's hook or tool: a hook only observes, a reminder reaches the agent as context. What types: this spec's AC-153 (fixed keys only), `terminum-kanban.md` AC-114 and `terminum-dispatcher.md`.
+- Typing into a pane for an agent's hook or tool: a hook only observes, a reminder and a comment's notice (`terminum-dispatcher.md` AC-209) reach the agent as context. What types: this spec's AC-153 (fixed keys only), `terminum-kanban.md` AC-114 and `terminum-dispatcher.md`.
 
 ## 3. Assumptions, dependencies, open questions
 
