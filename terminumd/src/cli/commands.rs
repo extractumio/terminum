@@ -6,6 +6,8 @@ use std::time::Duration;
 
 use serde_json::{json, Value};
 
+use crate::termtext::posix_line;
+
 use super::ctx::Ctx;
 use super::{importer, install, launch, sockhttp};
 
@@ -239,20 +241,6 @@ pub fn password(ctx: &Ctx) -> Result<(), String> {
 
 // ── hosts ───────────────────────────────────────────────────────────────────
 
-/// A word as a POSIX shell reads it back (Python's shlex.quote).
-pub fn quote(word: &str) -> String {
-    let safe = |c: char| c.is_alphanumeric() || "_@%+=:,./-".contains(c);
-    if !word.is_empty() && word.chars().all(safe) {
-        return word.to_string();
-    }
-    format!("'{}'", word.replace('\'', "'\"'\"'"))
-}
-
-/// `words` as one line for a POSIX shell, each quoted where it must be.
-pub(crate) fn join(words: &[String]) -> String {
-    words.iter().map(|w| quote(w)).collect::<Vec<_>>().join(" ")
-}
-
 pub fn hosts_list(ctx: &Ctx) -> Result<(), String> {
     let answer = checked(ctx, "GET", "/hosts", None)?;
     let hosts = answer["hosts"].as_array().cloned().unwrap_or_default();
@@ -261,7 +249,7 @@ pub fn hosts_list(ctx: &Ctx) -> Result<(), String> {
     }
     for x in hosts {
         let recipe = match x["ssh"].as_array() {
-            Some(a) => join(&a.iter().map(text).collect::<Vec<_>>()),
+            Some(a) => posix_line(a.iter().map(text)),
             None => x["ssh"].as_str().filter(|s| !s.is_empty()).unwrap_or("?").to_string(),
         };
         let files = x["files"].as_str().filter(|f| !f.is_empty()).unwrap_or("not enabled");
@@ -278,7 +266,7 @@ pub fn hosts_add(ctx: &Ctx, name: Option<&str>, recipe: &[String]) -> Result<(),
     if recipe.is_empty() {
         return Err("usage: terminum hosts add [<name>] '<ssh destination and options>'".into());
     }
-    let text = if recipe.len() == 1 { recipe[0].clone() } else { join(recipe) };
+    let text = if recipe.len() == 1 { recipe[0].clone() } else { posix_line(recipe) };
     let answer = checked(ctx, "POST", "/hosts/add", Some(json!({"name": name.unwrap_or(""), "recipe": text})))?;
     let added = answer["name"].as_str().or(name).unwrap_or("the host");
     ctx.say(answer["message"].as_str().map_or_else(|| format!("Added {added}; it attaches within seconds (terminum hosts); its files and agents' progress are set up once it attaches"), str::to_string));
