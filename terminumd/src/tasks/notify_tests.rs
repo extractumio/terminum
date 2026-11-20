@@ -76,6 +76,27 @@ fn ac209_an_ended_session_takes_only_the_notices() {
 }
 
 #[test]
+fn ac209_a_closed_pane_takes_pending_notices_once() {
+    let l = Lines::default();
+    let live = "tmux:local:t:%8";
+    let other_server = "tmux:local:tt:%7";
+    l.push_comment(KEY, "API-12", "offered", "a human".into());
+    let (n, _) = l.offer(KEY).unwrap();
+    l.push_comment(KEY, "API-12", "waiting", "a human".into());
+    l.push(KEY, "API-12", "Dispatcher's warning".into());
+    l.push_comment(live, "API-12", "live", "a human".into());
+    l.push_comment(other_server, "API-12", "elsewhere", "a human".into());
+
+    let gone = l.take_closed_comments("tmux:local:t:", &[live.into()]);
+    let comments: HashSet<&str> = gone.iter().flat_map(|line| line.comments.iter().map(|(id, _)| id.as_str())).collect();
+    assert_eq!(comments, HashSet::from(["offered", "waiting"]));
+    assert_eq!(l.waiting_comments("API-12"), HashSet::from(["live".into(), "elsewhere".into()]));
+    assert!(l.heard(KEY, n).is_empty(), "a late acknowledgement cannot record a second outcome");
+    assert!(l.take_closed_comments("tmux:local:t:", &[live.into()]).is_empty());
+    assert_eq!(l.take(KEY).iter().map(|line| line.text.as_str()).collect::<Vec<_>>(), ["Dispatcher's warning"]);
+}
+
+#[test]
 fn ac209_each_comment_is_marked_by_what_became_of_its_notice() {
     let s = crate::tasks::store::Store::open(crate::testutil::fresh_dir("notify-marks").join("kanban.sqlite"));
     let (id, c1, c2, c3) = s.with(|tx| {

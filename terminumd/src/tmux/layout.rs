@@ -31,8 +31,17 @@ pub struct Read {
 /// Reads `server`'s panes; `theme(session)` names the theme a session wears (its dot); `ending`:
 /// the panes whose hooks ended a turn that waits (page/turns.rs).
 pub async fn read(server: &Arc<Server>, states: &Mutex<States>, hooks: &Hooks, ending: &HashMap<String, bool>, home: &str, theme: impl Fn(&str) -> String) -> Result<Read, String> {
-    let lines = server.run(format!("list-panes -a -F '{LIST_PANES_FORMAT}'")).await?;
-    let all: Vec<PaneFields> = lines.iter().filter_map(|l| titles::parse_list_panes(l)).collect();
+    let lines = server.run(format!("list-panes -a -F '#{{pane_id}}\\t{LIST_PANES_FORMAT}'")).await?;
+    let mut every = Vec::new();
+    let mut all = Vec::new();
+    for (id, fields) in lines.iter().filter_map(|line| line.split_once('\t')) {
+        // A row's title or path can prevent its fields from parsing; its pane ID still counts.
+        let key = server.key(id);
+        if super::parse_key(&key).is_some() {
+            every.push(key);
+        }
+        all.extend(titles::parse_list_panes(fields));
+    }
     let mut sessions: Vec<(String, String)> = Vec::new();
     for p in &all {
         if !sessions.iter().any(|(n, _)| *n == p.session) {
@@ -41,7 +50,6 @@ pub async fn read(server: &Arc<Server>, states: &Mutex<States>, hooks: &Hooks, e
     }
     // a host shows the session terminumd holds there and those the user attached, never the
     // host's others (OQ-81, AC-89)
-    let every: Vec<String> = all.iter().map(|p| server.key(&p.pane_id)).collect();
     let panes: Vec<PaneFields> = all.into_iter().filter(|p| server.shows(&p.session)).collect();
     let (agents, views, behind) = agent_states(server, states, hooks, ending, &panes).await;
     // a restored pane's title (AC-15) gives way once a coding agent runs there again: its own
