@@ -18,6 +18,9 @@ export function queuedWords(t) {
   return `queued for ${t.waits}${n ? `, ${n}${suffix}` : ""}`;
 }
 
+/** The words of a task that waits for other tasks (terminum-dispatcher.md AC-210): their IDs, no queue place. */
+export const waitsForWords = (t) => `waits for ${t.waits_for.join(", ")}`;
+
 /** What a session in an agent's slot does now (terminum-dispatcher.md AC-138), by terminumd's slot `s` and its live
  *  row: quiet "idle" or "integration", otherwise "starting", "waits" or "working". */
 export function slotState(s, row) {
@@ -30,6 +33,7 @@ export function slotState(s, row) {
 export function cardState(t) {
   const s = t.session;
   const line = (cls, words, why) => ({ cls, words, why });
+  if (t.waits_for?.length) return line("waiting", waitsForWords(t), "Dispatcher goes on with it in its conversation once they are DONE");
   if (t.waits) return line("waiting", queuedWords(t), "Run waits for that agent's room, then starts");
   if (!s && !t.run) return null;
   const open = t.status === "IN PROGRESS";

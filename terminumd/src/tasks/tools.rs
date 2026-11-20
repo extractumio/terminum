@@ -16,7 +16,7 @@ use super::query::{self, Query};
 use super::store::{Store, DEFAULT_PROJECT};
 use crate::plans::rules;
 
-pub const NAMES: [&str; 19] = ["list_tasks", "get_task", "create_task", "update_task", "link_task", "take_task", "move_task", "ask_human", "add_comment", "attach_file", "get_file", "finish_task", "integrate", "withdraw_integration", "integration_status", "integration_return", "integration_recheck", "integration_add_fix", "dispatch_task"];
+pub const NAMES: [&str; 20] = ["list_tasks", "get_task", "create_task", "update_task", "link_task", "take_task", "move_task", "ask_human", "wait_for_task", "add_comment", "attach_file", "get_file", "finish_task", "integrate", "withdraw_integration", "integration_status", "integration_return", "integration_recheck", "integration_add_fix", "dispatch_task"];
 /// All Auto-Dispatcher's round may call (terminum-dispatcher.md AC-170): it reads, starts by dispatch_task and finishes
 /// its own; a tool added later is not its until named here.
 const A_ROUNDS: [&str; 4] = ["list_tasks", "get_task", "get_file", "finish_task"];
@@ -93,6 +93,9 @@ fn not_queued(tx: &Transaction, t: &Task) -> Result<(), String> {
     let Some(w) = crate::dispatcher::waits::of_task(tx, &t.key)? else {
         return Ok(());
     };
+    if !w.after.is_empty() {
+        return Err(format!("{} waits for other tasks: Dispatcher goes on with it once they are DONE. You can read it and comment.", t.id));
+    }
     Err(format!("{} waits in {}'s queue: it starts when there is room. You can read it and comment.", t.id, super::agents::name_of(tx, &w.agent)?))
 }
 
@@ -120,7 +123,7 @@ fn after_its_subtasks(tx: &Transaction, t: &Task) -> Result<(), String> {
 
 /// Why an agent's own move to WAIT FOR HUMAN is refused: a card there with no question tells the human nothing.
 fn not_without_questions(id: &str) -> String {
-    format!("A task waits for a human only with what it asks: call execute_tool(\"ask_human\", {{\"id\": \"{id}\", \"questions\": ...}}). Waiting for another task? Say so there, as \"RUN {id} again once TERM-9 is DONE\". {id} stays where it was.")
+    format!("A task waits for a human only with what it asks: call execute_tool(\"ask_human\", {{\"id\": \"{id}\", \"questions\": ...}}). Waiting for another task to be DONE? Call execute_tool(\"wait_for_task\", {{\"id\": \"{id}\", \"on\": \"TERM-9\", \"why\": ...}}): Dispatcher goes on with it then, no human asked. {id} stays where it was.")
 }
 
 /// The agent's own word that its task waits for a human, or no longer does, kept on its run; what it does next
@@ -226,7 +229,7 @@ fn run_in(store: &Store, state_dir: &Path, who: &Who, tool: &str, args: &Value, 
     let at = ops::now();
     store.with(|tx| {
         // A task tool can overtake its queued first-prompt hook: its status must follow taking the run (AC-157).
-        let started = if matches!(tool, "move_task" | "ask_human" | "finish_task") { crate::dispatcher::taking(tx, &who.key)? } else { Vec::new() };
+        let started = if matches!(tool, "move_task" | "ask_human" | "wait_for_task" | "finish_task") { crate::dispatcher::taking(tx, &who.key)? } else { Vec::new() };
         // only what writes makes the agent's user: reading leaves no row; a run's is its agent of the pool
         let me = || author(tx, who);
         let (text, mut changed) = match tool {
@@ -327,6 +330,12 @@ fn run_in(store: &Store, state_dir: &Path, who: &Who, tool: &str, args: &Value, 
                     cards.extend(crate::dispatcher::wait_with(tx, &run, id)?);
                 }
                 Ok((format!("{id} waits for the human, with your questions.{then}"), cards))
+            }
+            // another task must be DONE first: Dispatcher goes on with it then, no human asked (terminum-dispatcher.md AC-210)
+            "wait_for_task" => {
+                let t = own(tx, who, arg(args, "id")?)?;
+                not_queued(tx, &t)?;
+                Ok((super::waitfor::wait(tx, who, &me()?, &t, args, at)?, vec![t.id]))
             }
             "add_comment" => {
                 let id = arg(args, "id")?;

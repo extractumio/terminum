@@ -101,6 +101,9 @@ pub(super) struct Press {
     /// pressed again from its wait (AC-158): it goes only while that wait stands; never read from a request or a kept wait
     #[serde(skip)]
     waited: bool,
+    /// the IDs of the tasks its run waited for (AC-210), Dispatcher's own: kept with its wait, never taken from a page's request
+    #[serde(default)]
+    after: Vec<String>,
 }
 
 impl Press {
@@ -125,6 +128,12 @@ impl Press {
     pub(super) fn resumed(how: How, by: &str) -> Press {
         let manager = (by != HUMAN && by != crate::tasks::store::DISPATCHER).then(|| by.to_string());
         Press { how, manager, auto: how == How::Auto, ..Default::default() }
+    }
+
+    /// The press a run that waits for the tasks `ids` goes on with once they are DONE (AC-210): who started the run
+    /// and how stay its own (AC-183), and it waits for room in its agent's queue.
+    pub(super) fn after(how: How, by: &str, ids: &[String]) -> Press {
+        Press { after: ids.to_vec(), queue: true, ..Press::resumed(how, by) }
     }
 
     /// A press from a wait goes only while the wait stands, read in the transaction that takes the slot: a newer run of
@@ -259,6 +268,7 @@ pub(crate) async fn press_integration(app: &Shared, id: &str, agent: &str) -> Re
 /// The press on RUN: a comment is kept whatever follows (AC-122).
 async fn press(State(app): State<Shared>, Path(id): Path<String>, Json(mut body): Json<Press>) -> Response {
     body.manager = None;
+    body.after.clear();
     // a page presses for the human alone: it never starts a run as Dispatcher's own (AC-183)
     body.how = body.how.of_page();
     answer(pressed(&app, &id, body).await)
@@ -321,8 +331,11 @@ async fn pressed(app: &Shared, id: &str, body: Press) -> Result<Value, String> {
                 if let (Some(a), Some(c), true) = (&mut answers, &said, by.manager.is_some()) {
                     a.push(c.clone());
                 }
+                // the tasks it waited for are DONE: Dispatcher's fixed words with their IDs, nothing of a task's text (AC-210)
+                if !by.after.is_empty() {
+                    with_open(super::after::go_on(&tasks[0].id, &by.after), &tasks)
                 // a later red round of a batch: its own words, the same session deciding as before (terminum-integration.md AC-194)
-                if by.how == How::Integration && let Some(words) = crate::integrate::agent::red_again(tx, &tasks[0].key, &crate::config::tm_home(), answers.as_deref())? {
+                } else if by.how == How::Integration && let Some(words) = crate::integrate::agent::red_again(tx, &tasks[0].key, &crate::config::tm_home(), answers.as_deref())? {
                     words
                 } else {
                     with_open(again_words(&tasks[0].id, &ops::user_name(tx, by.by())?, said.as_deref(), answers.as_deref(), by.manager.is_some()), &tasks)

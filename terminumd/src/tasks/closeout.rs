@@ -19,6 +19,13 @@ macro_rules! removable {
 }
 pub(crate) use removable;
 
+/// When that cause is another task of the board (terminum-dispatcher.md AC-210): Dispatcher waits for it, no human. A
+/// macro, as `removable!`.
+macro_rules! waits_for_task {
+    () => { "If what holds it is another task of the board that must be DONE first, call execute_tool(\"wait_for_task\", {id, on, why}) instead, then end your turn: Dispatcher goes on with it in this conversation once that task is DONE, and no human is asked." };
+}
+pub(crate) use waits_for_task;
+
 /// How a question for the human is written (terminum-dispatcher.md AC-157): QUESTIONS' parts in order, each said
 /// with what it holds, for a reader new to the task. A macro for the prompts' `concat!` and the tools' answers.
 macro_rules! questions_shape {
@@ -170,7 +177,7 @@ pub fn not_done(result: &str) -> bool {
 /// What finishing answers on such a result: its words stay a comment, the task where it was, and the agent's turn goes
 /// on to ask or fail it.
 pub fn not_done_words(id: &str, status: &str) -> String {
-    format!("Not finished: its Outcome says the work is not done, and a result is for done work. Your text is kept as a comment and {id} stays {status}; give its result again only once its work is done. If a cause that can be removed {} holds it, ask by execute_tool(\"ask_human\", {{id, questions}}): it waits for a human. If it cannot be done at all, move it to FAILED by execute_tool(\"move_task\", {{id, to}}) with a comment saying why.", removable!())
+    format!("Not finished: its Outcome says the work is not done, and a result is for done work. Your text is kept as a comment and {id} stays {status}; give its result again only once its work is done. If a cause that can be removed {} holds it, ask by execute_tool(\"ask_human\", {{id, questions}}): it waits for a human. {} If it cannot be done at all, move it to FAILED by execute_tool(\"move_task\", {{id, to}}) with a comment saying why.", removable!(), waits_for_task!())
 }
 
 /// The language a project's agents write in on the board.

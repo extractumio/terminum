@@ -257,3 +257,63 @@ fn ac161_a_schedule_s_waiting_task_closes_its_own_idle_session() {
         Ok(())
     }).unwrap();
 }
+
+#[test]
+fn ac210_a_wait_for_other_tasks_goes_on_once_they_are_done_and_holds_no_place_meanwhile() {
+    store("waits-after").with(|tx| {
+        let (waiter, blocker, later) = (task(tx, "api"), task(tx, "api"), task(tx, "api"));
+        ops::move_to(tx, HUMAN, &blocker.id, "IN PROGRESS", 1)?;
+        add_after(tx, &waiter, "a", "api", &json!({"after": [blocker.id]}), std::slice::from_ref(&blocker.key), 2)?;
+        add(tx, &later, "a", "api", &json!({}), 3)?;
+        let w = of_task(tx, &waiter.key)?.unwrap();
+        assert!(matches!(due(tx, &w)?, Due::Stays), "its blocker works: it waits, with room or not");
+        assert_eq!(ahead(tx, "a", "api", &later.key)?, None, "a wait for other tasks holds no place before a later press");
+        assert_eq!(queues(tx)?["a"].iter().map(|v| v["id"].as_str().unwrap()).collect::<Vec<_>>(), [later.id.as_str()], "nor in the agent's queue");
+        assert_eq!(on_cards(tx, &[&later.key])?[&later.key].position, 1, "nor a queue place");
+        ops::move_to(tx, HUMAN, &blocker.id, "DONE", 4)?;
+        assert!(matches!(due(tx, &w)?, Due::Press(id, body) if id == waiter.id && body["after"] == json!([blocker.id])), "DONE: pressed with its words' IDs");
+        assert!(of_task(tx, &waiter.key)?.unwrap().after.is_empty(), "from then on a wait for room alone, in its place in the line");
+        Ok(())
+    }).unwrap();
+}
+
+#[test]
+fn ac210_a_task_waited_for_that_will_not_be_done_asks_a_human() {
+    for (how, end) in [("FAILED", "FAILED"), ("archived", "archived"), ("deleted", "deleted")] {
+        store(&format!("waits-after-{how}")).with(|tx| {
+            let (waiter, blocker) = (task(tx, "api"), task(tx, "api"));
+            add_after(tx, &waiter, "a", "api", &json!({"after": [blocker.id]}), std::slice::from_ref(&blocker.key), 2)?;
+            let mut w = of_task(tx, &waiter.key)?.unwrap();
+            match how {
+                "FAILED" => ops::move_to(tx, HUMAN, &blocker.id, "FAILED", 3)?,
+                "archived" => { tx.execute("UPDATE tasks SET archived_at = 3 WHERE id = ?1", [&blocker.key]).map_err(sql)?; }
+                _ => w.after = vec!["no-such-key".into()],
+            }
+            let Due::Asks(id, words) = due(tx, &w)? else { panic!("{how}: a human decides") };
+            assert_eq!(id, waiter.id);
+            let named = if how == "deleted" { "a task that was deleted".to_string() } else { blocker.id.clone() };
+            assert!(words.starts_with(&format!("Why you are needed: {} waited for {named}, which is {end}", waiter.id)), "{words}");
+            assert_eq!(crate::tasks::closeout::unshaped(&id, &words), None, "in AC-157's three parts");
+            super::super::after::ask(tx, &waiter.key, &id, &words)?;
+            assert_eq!(ops::get(tx, &waiter.id)?.status, "WAIT FOR HUMAN");
+            assert!(of_task(tx, &waiter.key)?.is_none(), "its wait ends");
+            let history = ops::history(tx, &waiter.id)?;
+            assert!(history.as_array().unwrap().iter().any(|e| e["author"] == "dispatcher" && e["questions"] == true && e["text"] == words.as_str()), "{history}");
+            Ok(())
+        }).unwrap();
+    }
+}
+
+#[test]
+fn ac210_a_human_s_move_calls_off_a_wait_for_other_tasks() {
+    store("waits-after-moved").with(|tx| {
+        let (waiter, blocker) = (task(tx, "api"), task(tx, "api"));
+        add_after(tx, &waiter, "a", "api", &json!({}), std::slice::from_ref(&blocker.key), 2)?;
+        ops::move_to(tx, HUMAN, &waiter.id, "IN PROGRESS", 3)?;
+        let w = of_task(tx, &waiter.key)?.unwrap();
+        assert!(matches!(due(tx, &w)?, Due::Off(id, words) if id == waiter.id && words.contains("moved to IN PROGRESS")));
+        add(tx, &waiter, "a", "api", &json!({}), 4)?;
+        assert!(of_task(tx, &waiter.key)?.unwrap().after.is_empty(), "a human's RUN that waits for room replaces it");
+        Ok(())
+    }).unwrap();
+}

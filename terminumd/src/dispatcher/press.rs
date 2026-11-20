@@ -8,7 +8,7 @@ use super::runs::{self, Phase, Run};
 use crate::tmux::PaneState;
 use crate::tasks::{closeout, files};
 use crate::tasks::ops::{self, Task};
-use crate::tasks::closeout::{questions_shape, removable};
+use crate::tasks::closeout::{questions_shape, removable, waits_for_task};
 use crate::tasks::schedules::Schedule;
 
 /// How an agent of a run gives its result (terminum-agents.md AC-155: not listed, run through execute_tool).
@@ -19,7 +19,7 @@ pub(super) const ASK_HUMAN: &str = "execute_tool(\"ask_human\", {id, questions})
 
 /// How an agent asks a human while it works (AC-157): in words, never in its window; a task held by a cause that can be
 /// removed waits for a human the same way, never DONE or FAILED.
-pub(crate) const ASK: &str = concat!("If you need a human's decision, call execute_tool(\"ask_human\", {id, questions}), then end your turn: the session closes, and the human's RUN brings the answers back into this conversation. Do not wait for an answer in this window. Write the questions ", questions_shape!(), ". If the task cannot be finished now for a cause that can be removed ", removable!(), ", ask the same way: Details say what is done and committed and what holds it, Recommended what unblocks it (such as \"RUN it again once TERM-9 is DONE\"): it waits for a human; give it no result by execute_tool(\"finish_task\", {id, result}). FAILED is only for a task that cannot be done at all, with a comment saying why.");
+pub(crate) const ASK: &str = concat!("If you need a human's decision, call execute_tool(\"ask_human\", {id, questions}), then end your turn: the session closes, and the human's RUN brings the answers back into this conversation. Do not wait for an answer in this window. Write the questions ", questions_shape!(), ". If the task cannot be finished now for a cause that can be removed ", removable!(), ", ask the same way: Details say what is done and committed and what holds it, Recommended what unblocks it (such as \"grant access to the staging database\"): it waits for a human; give it no result by execute_tool(\"finish_task\", {id, result}). ", waits_for_task!(), " FAILED is only for a task that cannot be done at all, with a comment saying why.");
 
 /// What RUN types when it goes on (AC-122, AC-157): after the agent asked, the humans' answers since, else the
 /// press's comment; never "read the comments": an agent's comment there would stand as an instruction.
