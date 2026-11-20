@@ -45,7 +45,8 @@ export async function webLook(browser, name) {
       marks["%8"] === "agents/claude.svg:true" && marks["%9"] === "agents/codex.svg:true" && marks["%10"] === "agents/opencode.svg:true"
         && marks["%11"] === "terminal" && marks["%1"] === "terminal" && !!header, JSON.stringify({ marks, header }));
 
-    check("look: every dialog's primary button is filled apart from its Cancel", dialogs.length >= 3 && dialogs.every(([, p, c]) => c && p !== c),
+    check("look: a dialog with Cancel gives its primary button a different fill", dialogs.length >= 3
+      && dialogs.every(([id, p, c]) => id === "noticebox" ? c === null : c && p !== c),
       JSON.stringify(dialogs));
     // one kind (UI-GUIDELINES §5): every dialog and foot form has a title and × in its head, its fields
     // one look, Cancel before the primary; the primary in the hue of what opened it
