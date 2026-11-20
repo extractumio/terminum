@@ -29,11 +29,17 @@ export async function webLook(browser, name) {
     const { page } = f;
     await drawn(page);
 
-    const dialogs = await page.evaluate(() => [...document.querySelectorAll("dialog")].filter((d) => d.querySelector(".actions .primary")).map((d) => {
+    const { dialogs, notice } = await page.evaluate(() => {
       const fill = (b) => getComputedStyle(b).backgroundColor;
-      const primary = d.querySelector(".actions .primary"), other = d.querySelector(".actions button:not(.primary)");
-      return [d.id, fill(primary), other && fill(other)];
-    }));
+      const dialogs = [...document.querySelectorAll("dialog:not(#noticebox)")].filter((d) => d.querySelector(".actions .primary")).map((d) => {
+        const primary = d.querySelector(".actions .primary"), other = d.querySelector(".actions button:not(.primary)");
+        return [d.id, fill(primary), other && fill(other)];
+      });
+      // AC-208's notice has a single Close action with the default primary fill.
+      const [close, extra] = document.querySelectorAll("#noticebox .actions button");
+      const notice = close?.matches("#noticeclose.primary") && !extra ? [fill(close), fill(document.querySelector("#newsess .primary"))] : [];
+      return { dialogs, notice };
+    });
     // what runs in a pane: a coding agent's mark (an image of web/static/agents), else the terminal icon; the header says it too
     await page.waitForFunction(() => [...document.querySelectorAll("#sessions .agmark img")].every((i) => i.complete), null, { timeout: 5000 }).catch(() => {});
     const marks = await page.evaluate(() => Object.fromEntries([...document.querySelectorAll("#sessions .item")].map((b) => {
@@ -45,8 +51,9 @@ export async function webLook(browser, name) {
       marks["%8"] === "agents/claude.svg:true" && marks["%9"] === "agents/codex.svg:true" && marks["%10"] === "agents/opencode.svg:true"
         && marks["%11"] === "terminal" && marks["%1"] === "terminal" && !!header, JSON.stringify({ marks, header }));
 
-    check("look: every dialog's primary button is filled apart from its Cancel", dialogs.length >= 3 && dialogs.every(([, p, c]) => c && p !== c),
+    check("look: dialogs with Cancel distinguish it from the primary button", dialogs.length >= 3 && dialogs.every(([, p, c]) => c && p !== c),
       JSON.stringify(dialogs));
+    check("look: the agent notice has one filled Close button", notice.length === 2 && notice[0] === notice[1] && notice[0] !== "rgba(0, 0, 0, 0)", JSON.stringify(notice));
     // one kind (UI-GUIDELINES §5): every dialog and foot form has a title and × in its head, its fields
     // one look, Cancel before the primary; the primary in the hue of what opened it
     const kind = await page.evaluate(() => {
