@@ -54,7 +54,7 @@ export async function webCodex(browser, name) {
       await page.mouse.wheel(0, -400);
       await pause(page, 200);
       const note = await page.evaluate(() => !document.getElementById("toast").hidden && document.getElementById("toast").textContent);
-      check("Codex: scrolling up on its alternate screen (no scrollback) says why and how", typeof note === "string" && note.includes("--no-alt-screen"), String(note));
+      check("Codex: scrolling up on its alternate screen (no scrollback) says why and how", typeof note === "string" && note.includes("codex -c tui.alternate_screen=never"), String(note));
       // a selection in its input (an emoji in it) and Backspace: ← to its end, a backspace a character
       const typed = "fix the 😀 parser bug", G = (t) => [...new Intl.Segmenter().segment(t)].map((x) => x.segment);
       frame(codex(typed));
