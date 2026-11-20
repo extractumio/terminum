@@ -254,10 +254,14 @@ fn agent_changed(old: &str, now: &str) -> bool {
 
 /// Keeps the pane's last fields; when its folder changed (a cd, by Enter, a hot key or a script),
 /// or its agent's, Files follows it (AC-51).
-async fn follow(app: &Shared, page: &Page, server: &Arc<Server>, key: &str, ctl: &Ctl, f: Fields, agent_dir: &mut Option<String>) {
+async fn follow(app: &Shared, page: &Arc<Page>, server: &Arc<Server>, key: &str, ctl: &Ctl, f: Fields, agent_dir: &mut Option<String>) {
     // a coding agent came or went: the list says so now, not at its next read (its box, its keys)
     if ctl.fields.lock().as_ref().is_some_and(|old| agent_changed(&old.command, &f.command)) {
         crate::lists::request(app, server);
+    }
+    // an agent started, or its screen changed: its windows, if due (terminum-agents.md AC-208)
+    if crate::agentnotice::worth_a_look(ctl.fields.lock().as_ref(), &f) {
+        crate::agentnotice::ask(app, page, server, key);
     }
     let agent_now = app.hooks.cwd(key);
     let agent_moved = agent_now != *agent_dir;

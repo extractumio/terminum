@@ -9,15 +9,28 @@
 
 use std::process::Command;
 
-/// The fix, as Codex 0.170 takes it; a `-c` override keeps every Codex since 0.167 in its own process
-/// (`terminum-dispatcher.md` AS-128).
+/// The fix's commands, as Codex 0.170 takes them; a `-c` override keeps every Codex since 0.167 in its own
+/// process (`terminum-dispatcher.md` AS-128), and this one also keeps it inline (AC-208).
+macro_rules! own_process { () => { "codex -c tui.alternate_screen=never" }; }
+macro_rules! no_attach { () => { "codex features disable daemon_auto_start" }; }
+macro_rules! stop_server { () => { "codex app-server daemon stop" }; }
+
+/// The fix, in words.
 macro_rules! fix {
     () => {
-        "start Codex in the pane with a -c override (codex -c tui.alternate_screen=never) or --no-daemon; to keep \
-plain codex from attaching, run \"codex features disable daemon_auto_start\", then \"codex app-server daemon stop\" \
-(it ends the conversations that server serves)"
+        concat!("start Codex in the pane with a -c override (", own_process!(), ") or --no-daemon; to keep \
+plain codex from attaching, run \"", no_attach!(), "\", then \"", stop_server!(), "\" \
+(it ends the conversations that server serves)")
     };
 }
+
+/// Starts a Codex in its own process, inline (AC-208's windows).
+pub const OWN_PROCESS: &str = own_process!();
+/// The same, in words Codex's own option says.
+pub const NO_DAEMON: &str = "codex --no-daemon";
+/// Keeps plain `codex` from attaching, then stops the server (AC-208's window).
+pub const NO_ATTACH: &str = no_attach!();
+pub const STOP_SERVER: &str = stop_server!();
 
 /// The description of the one tool a session under a shared app-server is offered, and its answer.
 pub const SAID: &str = concat!("terminum cannot see which terminal this Codex runs in: it runs under a shared \
@@ -84,7 +97,7 @@ fn parent_of(_pid: u32) -> Option<u32> {
 }
 
 /// The process id of a shared app-server of this user that runs, if one does (`ps`, once).
-fn running() -> Option<u32> {
+pub fn running() -> Option<u32> {
     // SAFETY: getuid has no preconditions
     let uid = unsafe { libc::getuid() }.to_string();
     let out = Command::new("ps").args(["-ww", "-U", &uid, "-o", "pid=,args="]).output().ok()?;

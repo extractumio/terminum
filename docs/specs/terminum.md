@@ -318,6 +318,7 @@ Scenario: AC-05 happy path — mc on a phone
 Scenario: AC-05 edge — Claude Code's fullscreen TUI
   Given the shown pane runs Claude Code with "tui": "fullscreen", on the alternate screen
   Then the full-screen mark has an orange ! beside it, saying on hover, and as a toast for 6 s on a press (a phone), "terminum does more with fullscreen mode off: the history and widgets show only then. Turn it off in the agent's settings."; a program's full screen (mc, vim) has no !
+  And the first page that shows a run of it shows a window of what is lost and how to switch (terminum-agents.md AC-208)
 Scenario: AC-05 edge — a program Claude Code starts in its pane (its Ctrl+G editor)
   Given Claude Code's fullscreen TUI is shown with the !
   When the user presses Ctrl+G and vim opens in the pane (tmux still names the pane's program Claude Code: vim is in its process group)

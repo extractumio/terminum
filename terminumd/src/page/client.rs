@@ -127,6 +127,7 @@ pub async fn handle(app: &Shared, page: &Arc<Page>, msg: Value) {
         "history" => crate::looks::set_history(app, page, &msg),
         "scheme" => crate::looks::set_scheme(app, page, &msg),
         "agentexit" => crate::looks::set_agent_exit(app, page, &msg),
+        "notices" => crate::looks::set_agent_notices(app, page, &msg),
         "restoreseen" => crate::restore::seen(app),
         "unread" => super::unread::set(app, &s("id"), msg["on"].as_bool().unwrap_or(true)),
         "lastlines" => {

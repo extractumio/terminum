@@ -73,6 +73,7 @@ Open questions: none.
 | AC-180 | [MUST / P0] | A manager adds, changes and removes its project's pool's agents and its project's schedules by the board's own rules, in force at once, each under its name. |
 | AC-181 | [MUST / P0] | Every tool of `terminum mcp` runs from a shell by `terminum tool`, as the session of the pane it runs in or, outside a pane, as a token's role and project; a token is made and removed only outside terminum's panes and kept as its hash. |
 | AC-207 | [MUST / P0] | Under a shared Codex app-server terminum takes no pane from the environment, so no session reports into another's pane or gets its role; `terminum mcp` there offers one tool saying why and how to start Codex instead, and `terminum hooks` says when such a server runs. |
+| AC-208 | [SHOULD / P1] | A run of Claude Code or Codex in a pane that terminum serves less well (a Codex under a shared app-server, an agent in its full-screen TUI) gets a window saying what is lost and how to start it otherwise, once per run on the first page that shows it; "Do not show again" turns that kind off for every browser, and Settings turns them back on. |
 | AC-153 | [SHOULD / P1] | Claude Code or Codex left idle in a row no page has shown for the days set in Settings (0: off, the default) gets Ctrl+C twice, then `/exit` while it still runs; its shell and session stay, and the pane says which agent ended and how to resume it. |
 
 ## 5. BDD scenarios
@@ -144,7 +145,7 @@ Scenario: AC-39 edge — Codex
   Given Codex, which keeps its title while it works and marks it "[ ! ] Action Required | " (blinking "[ . ]") only when it asks
   Then its question waits although its footer says "esc to interrupt"; a turn the user cancelled ("Conversation interrupted") is done, not failed; the list's title leaves out the mark, so the row does not blink
   And Codex started through npm runs as `node`: a `node` pane is Codex while its screen, read as an agent's is, shows Codex's own words ("OpenAI Codex (v", "Ask Codex to do anything", "tell Codex what to do differently", "enter to submit answer", "tab to add notes"); the title never makes it Codex (a killed Codex can leave its mark to the next program); another `node` program, a dev server asking "(Y/n)" too, shows no state and no reminder, also right after Codex in the same pane
-  And Codex started without "--no-alt-screen" (as "codex resume" is) draws on tmux's alternate screen, where tmux keeps no scrollback: scrolling up there says so once a pane, naming "codex --no-alt-screen" and Codex's setting alternate_screen = "never" under [tui]
+  And Codex started without "--no-alt-screen" (as "codex resume" is) draws on tmux's alternate screen, where tmux keeps no scrollback: scrolling up there says so once a pane, naming "codex -c tui.alternate_screen=never" (`--no-alt-screen` alone attaches to a shared app-server, AC-208) and Codex's setting alternate_screen = "never" under [tui]
 
 Scenario: AC-39 edge — shared hook matchers
   Given one Codex matcher contains both terminum's hook and another command
@@ -570,6 +571,51 @@ Scenario: AC-207 edge — servers that are no shared one
   Then the pane in the environment is taken as before; outside a pane `terminum mcp` still offers no tools and no instructions, and `terminum hooks` says nothing of a server when none listens
 ```
 
+### AC-208 — Notices when an agent starts [SHOULD / P1]
+
+```gherkin
+Scenario: AC-208 happy path — a Codex under a shared app-server
+  Given a shared `codex app-server` runs as the user (AS-190)
+  And the user starts `codex` (or `codex --no-alt-screen`) in pane %4 of terminum's tmux, and it attaches to that server: terminum's MCP server and hooks run under the server, not in %4 (AC-207)
+  When a page shows %4 (terminumd looks when the page opens the pane, and again when its program or screen changes, or Claude Code's cursor on its alternate screen: the page's frames of it carry what it needs)
+  Then once that Codex has run 5 s (Claude Code's hidden cursor: once it held 400 ms), terminumd finds the pane's agent is Codex by its foreground process's words, that a shared server runs, and that the pane's Codex has no process of its own under it (one in its own process has its MCP servers there)
+  And the page shows a window "This Codex runs without terminum": the board, its plan, its state from hooks and terminum's tools reach it not; quit Codex and start it again with `codex -c tui.alternate_screen=never` or `codex --no-daemon` (not twice where an alias has it), or keep plain `codex` from attaching with `codex features disable daemon_auto_start`, then `codex app-server daemon stop`, which ends the conversations that server serves (an app may start it again); terminum stops neither and changes no setting of Codex's
+  And each command stands on its own line with a Copy key; the window has "Do not show again", unticked, and Close, which has the focus; Esc and × close it as Close does
+
+Scenario: AC-208 happy path — an agent in its full-screen TUI
+  Given the user starts Claude Code with "tui": "fullscreen" (its own TUI on tmux's alternate screen, the terminal's cursor hidden: the header's orange ! of AC-05), or Codex on the alternate screen (plain `codex`, `codex resume`)
+  When a page shows its pane
+  Then a window says what terminum loses there and how to switch: Claude Code ("Claude Code runs full screen"): no history to scroll, no widgets, folds, find or copy of earlier output, no side marks; run `/tui classic` in Claude Code, or set "tui": "default" in ~/.claude/settings.json and start it again; Codex ("Codex runs full screen"): tmux keeps no scrollback there, so earlier output cannot be scrolled to, found or copied; start it with `codex -c tui.alternate_screen=never` (`--no-alt-screen` would attach it to a shared server), or set alternate_screen = "never" under [tui] in ~/.codex/config.toml
+  And a Codex both under a shared server and full screen gets both windows, one after the other
+
+Scenario: AC-208 happy path — once per run
+  Given the window for %4's Codex was shown on one page
+  When the user switches panes and back, reloads the page, or opens %4 on another browser or the iPhone, while that same process runs
+  Then no window shows again: terminumd keeps the run that saw it as the pane's tmux option `@tm-noticed` (the agent's process id and the kinds shown), which outlives a restart of terminumd and ends with the pane
+  And two pages asking at once get it once: terminumd takes the asks for one pane one at a time
+  When that agent ends and another starts in %4 (another process id)
+  Then that run gets its windows as a new one
+
+Scenario: AC-208 happy path — Do not show again, and back
+  When the user ticks "Do not show again" and closes the window (Close, ×, Esc)
+  Then terminumd keeps that kind off in settings.json (`agentNoticesOff`), and no page shows that kind again, for any run, on any browser; the other kind still shows
+  When the user turns "Agent notices" on in Settings
+  Then both kinds show again for the runs that start from then on; turning it off turns both off
+
+Scenario: AC-208 failure — the choice is not kept
+  Given settings.json cannot be written
+  When the user closes a window with "Do not show again" ticked
+  Then terminumd's message shows as an error on the page and the kind stays on
+
+Scenario: AC-208 edge — what gets no window
+  Then no window shows for: vim, mc, htop, less, a tmux inside, an unknown program on the alternate screen, a shell, OpenCode; any program terminum does not take for Claude Code or Codex by the pane's program and its foreground process's words
+  And none for Claude Code or Codex in its inline mode (Claude Code's "tui": "default"; Codex with `-c tui.alternate_screen=never`), nor for a Codex started with `-c`, `--config` or `--no-daemon` or while no shared server runs, nor for `codex exec`
+  And none for the editor Claude Code opens with Ctrl+G over its default TUI: the terminal's cursor shows there, as AC-05 says
+  And so none for what Dispatcher starts (terminum-dispatcher.md AC-156 starts both inline, Codex with `-c`)
+  And none for a host's pane: the run and the shared server are processes of this Mac
+  And a run no page showed while it ran gets its window when a page first shows it, however long it has run
+```
+
 ### AC-153 — Idle agents exit [SHOULD / P1]
 
 ```gherkin
@@ -687,7 +733,8 @@ sequenceDiagram
 | AC-39 | An error still in the last 25 rows after a later finished turn reads as failed. | `terminumd/src/tmux/agentstate.rs:325` |
 | AC-178 | A host's manager is known by the pane its call names alone: the Mac reads no process behind a link. | `terminumd/src/agentapi.rs`, `terminumd/src/roles/peer.rs` |
 | AC-174 | Whether a real Claude Code or Codex in a manager's session takes up its tools from the instructions was not run. | `scripts/e2e_roles.py` (a shell stands in) |
-| AC-207 | A real Codex attached to a real shared app-server is not run in a test: a shell with the server's words stands in for it; the session list shows nothing for such a Codex but its screen's state. | `terminumd/src/cli/codexdaemon.rs` |
+| AC-207 | A real Codex attached to a real shared app-server is not run in a test: a shell with the server's words stands in for it; the session list shows nothing for such a Codex but its screen's state (the user is told by AC-208's window). | `terminumd/src/cli/codexdaemon.rs` |
+| AC-208 | A Codex with no MCP server configured, not attached, while a shared server runs and `daemon_auto_start` is off, has no process under it either and gets the window. A Codex's own Ctrl+G editor over its inline TUI, before its run's window showed, reads as its full screen. | `terminumd/src/agentnotice.rs` |
 
 ## 8. Recommendation and ownership
 
@@ -713,7 +760,8 @@ sequenceDiagram
 | `POST /agent` on `terminumd.sock` | `{socket, socket_path, pane, tool, args, session?}` → always 200 `{text, error}`; the tool `probe` asks whether terminumd knows the pane |
 | `GET /health` on the socket | adds `hooks: {claude\|codex: <Unix seconds last heard>}` |
 | `terminum mcp` | MCP over stdio, one JSON-RPC message a line, at most 1 MiB; protocol versions 2025-11-25, 2025-06-18, 2025-03-26 (default 2025-06-18); serverInfo name `terminum`; the pane from `TMUX` and `TMUX_PANE`, the session from `_meta.sessionId` |
-| WebSocket, page → terminumd | `unread {id, on}` (AC-93) |
+| WebSocket, page → terminumd | `unread {id, on}` (AC-93); `notices {on, kind?}`: a kind (`codexShared`, `fullScreen`) or, with none, both, on or off (AC-208) |
+| WebSocket `notice` | terminumd → the page whose frames of the pane made the look: `{id, kind, title, parts: [{text} \| {cmd}]}`, one a kind, shown even when that page has moved to another pane (AC-208) |
 | The list's item | may carry `tool`, `why`, `subagents`, `plan`, `unread` |
 | WebSocket `plan` | page asks for a pane's plan; the answer's `plan` has title, doing, items, done, total, pct, eta and more, `hooks` and `finished` (AC-97) |
 
@@ -753,8 +801,9 @@ Commands (AC-181): `terminum tools [search <words> | info <name>…]`, `terminum
 | Key (settings.json) | Default | Example | Effect |
 |---|---|---|---|
 | `agentExitDays` | `0` (off) | `3` | days an idle agent's row may stay unopened before it is asked to exit (AC-153); a whole number up to 3650, under 1 is off; the menu's field writes it (WebSocket `agentexit {days}`) |
+| `agentNoticesOff` | `[]` | `["fullScreen"]` | the kinds of AC-208's windows the user turned off: `codexShared`, `fullScreen`; the windows' "Do not show again" and Settings' "Agent notices" write it (WebSocket `notices`) |
 
-The time a page last showed a pane is the tmux pane option `@terminum-seen` (Unix seconds by terminumd's clock, on a remote host's tmux too). `CODEX_HOME` (default `~/.codex`), `TMUX`, `TMUX_PANE` and `TM_APP_DIR` are read.
+The time a page last showed a pane is the tmux pane option `@terminum-seen` (Unix seconds by terminumd's clock, on a remote host's tmux too). The run whose windows were shown is the pane option `@tm-noticed` (`<process id> <kind>[,<kind>]`, AC-208), set on terminum's tmux and on the user's own attached servers (AC-89). `CODEX_HOME` (default `~/.codex`), `TMUX`, `TMUX_PANE` and `TM_APP_DIR` are read.
 
 ### Limits
 
@@ -792,7 +841,7 @@ An older Codex SessionEnd entry: AC-39.
 
 ### Logging and observability
 
-`hook.turn_end {key, by}`, `manager.tool {tool, by, project, ok}`, `manager.not_from_pane {tool, key}`, `manager.closed {key, by}`, `tokens.from_pane {action}`, `idleexit.ended {key, kind, days, session, folder, argv, title}`, `idleexit.unsaid {pane, error}`, `idleexit.stayed {key, kind, why}`, `plans.unsaved`, `unread.unsaved`, `bookmark.deleted_by_agent`, `bookmark.changed_by_agent`, `record.closed_by_other_session {id, pane, of}`, `notes.import`.
+`hook.turn_end {key, by}`, `manager.tool {tool, by, project, ok}`, `manager.not_from_pane {tool, key}`, `manager.closed {key, by}`, `tokens.from_pane {action}`, `idleexit.ended {key, kind, days, session, folder, argv, title}`, `idleexit.unsaid {pane, error}`, `idleexit.stayed {key, kind, why}`, `plans.unsaved`, `unread.unsaved`, `bookmark.deleted_by_agent`, `bookmark.changed_by_agent`, `record.closed_by_other_session {id, pane, of}`, `notes.import`, `notice.shown {key, kind, pid}`.
 
 ## 10. Delivery stages
 
@@ -811,4 +860,5 @@ All cases are shipped; nothing is staged.
 - [x] AC-180 — `cargo test roles`, `scripts/e2e_roles.py`
 - [x] AC-181 — `cargo test roles`, `cargo test cli::tool`, `scripts/e2e_roles.py`
 - [x] AC-207 — `cargo test codexdaemon` (a shell with a shared server's words starts the real binary's checks, a pane in its environment), `cargo test cli::`
+- [x] AC-208 — `cargo test agentnotice`, `web/test/e2e_notices.mjs`, `web/test/e2e_liveprogs.mjs` (real Claude Code in both TUIs, real Codex `--no-daemon` on and off the alternate screen, vim)
 - [x] AC-153 — `cargo test idle_exit` (keys and the summary on a private tmux with a stand-in agent), `cargo test idle_summary`, `cargo test hookargv`, `cargo test hookopts`, `cargo test tmux::hookstate`, `cargo test settings`, `web/test/e2e_header.mjs`

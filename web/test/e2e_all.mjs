@@ -12,6 +12,7 @@ import { webApp } from "./e2e_app.mjs";
 import { webBoxNav } from "./e2e_boxnav.mjs";
 import { webClip } from "./e2e_clip.mjs";
 import { webCodex } from "./e2e_codex.mjs";
+import { webNotices } from "./e2e_notices.mjs";
 import { webCtxTrace } from "./e2e_ctxtrace.mjs";
 import { webEdit } from "./e2e_edit.mjs";
 import { webLook } from "./e2e_look.mjs";
@@ -93,7 +94,7 @@ import { webBoardType } from "./e2e_boardtype.mjs";
 import { webPhoneWin } from "./e2e_phonewin.mjs";
 
 const CHECKS = { webTaskText, webBoardPhone, webBoardPanel, webBoardType, webPhoneWin, webRequestOwners, webRequests, webTerm, webApp, webMove, webTrace, webCtxTrace, webClip, webWidgets, webWidgetFolds, webWidgetTables, webWidgetPng, webWidgetSteady, webTableForms, webDialogCenter, webMarks, webProgCopy, webTouch, webEdit, webBoxNav,
-  webSignin, webTmux, webScreen, webLook, webMotion, webCodex, webSplit, webSent, webIdeKeys, webScreenFolds, webProjects, webListDrag, webPhoneRow, webRows, webResize, webOpenEnd, webSwitch, webDock, webSheets, webFold, webHeader, webNotes, webFoot, webMarksScope, webListOrder, webPlans, webLastLines, webPlansFind, webPathFold, webMarkNav, webPaneWin, webReview, webTips, webHold, webListPlace, webIsolation, webSections, webDialogSize, webTaskWin, webTaskRun, webTaskClose, webExpand, webKanbanSort, webSwitches, webNewTask, webQueueOrder, webIntegrationSlots, webKanbanKept, webCardKeys, webTaskLines, webBannerProj, webNavSession, webBoardRail, webSessBox, webAskFold, webTouchKeys, webTabHead, webDraftFiles };
+  webSignin, webTmux, webScreen, webLook, webMotion, webCodex, webNotices, webSplit, webSent, webIdeKeys, webScreenFolds, webProjects, webListDrag, webPhoneRow, webRows, webResize, webOpenEnd, webSwitch, webDock, webSheets, webFold, webHeader, webNotes, webFoot, webMarksScope, webListOrder, webPlans, webLastLines, webPlansFind, webPathFold, webMarkNav, webPaneWin, webReview, webTips, webHold, webListPlace, webIsolation, webSections, webDialogSize, webTaskWin, webTaskRun, webTaskClose, webExpand, webKanbanSort, webSwitches, webNewTask, webQueueOrder, webIntegrationSlots, webKanbanKept, webCardKeys, webTaskLines, webBannerProj, webNavSession, webBoardRail, webSessBox, webAskFold, webTouchKeys, webTabHead, webDraftFiles };
 const BROWSERS = ["chromium", "webkit"], KNOWN = [...BROWSERS, "firefox"];
 // Checks a user saw fail in Firefox and that need no touch screen (Firefox has no isMobile).
 const FIREFOX_TOO = ["webProgCopy"];

@@ -14,7 +14,7 @@ use serde_json::{Map, Value, json};
 
 #[path = "settings_save.rs"]
 mod save;
-pub use save::{save_hosts, save_object, save_value, write_atomic};
+pub use save::{save_hosts, save_key, save_object, save_value, write_atomic};
 #[path = "settings_locate.rs"]
 mod locator;
 pub use locator::{line_of, locate, Seg};
@@ -95,6 +95,8 @@ pub struct Settings {
     pub agent_open_tasks: i64,
     /// Each agent kind's usage command, a line for `sh -c` (terminum-dispatcher.md AC-168); empty: not asked.
     pub usage_commands: BTreeMap<String, String>,
+    /// The kinds of AC-208's windows the user turned off (`terminum-agents.md`).
+    pub agent_notices_off: Vec<String>,
     /// The messages of the last parse, for the page (`page_json`).
     pub messages: Vec<String>,
 }
@@ -121,6 +123,7 @@ impl Default for Settings {
             agent_exit_days: 0,
             agent_open_tasks: DEFAULT_AGENT_OPEN_TASKS,
             usage_commands: default_usage_commands(),
+            agent_notices_off: Vec::new(),
             messages: Vec::new(),
         }
     }
@@ -132,7 +135,7 @@ impl Settings {
         let p = &self.page;
         json!({"textSize": p.text_size, "markdownSize": p.markdown_size, "history": self.tmux_history, "lastLines": if self.restore { self.last_lines } else { 0 },
                "widgets": p.widgets, "folds": p.folds, "colorScheme": p.color_scheme, "followAgent": p.follow_agent,
-               "agentExitDays": self.agent_exit_days, "messages": self.messages})
+               "agentExitDays": self.agent_exit_days, "agentNoticesOff": self.agent_notices_off, "messages": self.messages})
     }
 }
 
@@ -300,6 +303,10 @@ fn apply(s: &mut Settings, key: &str, v: &Value, m: &mut Msgs) {
         "agentExitDays" => match v.as_i64() {
             Some(n @ ..=MAX_EXIT_DAYS) => s.agent_exit_days = n.max(0) as u32,
             _ => m.bad(format!("agentExitDays must be a whole number of days up to {MAX_EXIT_DAYS}, 0 for off")),
+        },
+        "agentNoticesOff" => match v.as_array().map(|a| a.iter().map(|k| k.as_str().filter(|k| crate::agentnotice::KINDS.contains(k))).collect::<Option<Vec<_>>>()) {
+            Some(Some(kinds)) => s.agent_notices_off = kinds.into_iter().map(str::to_string).collect(),
+            _ => m.bad(format!("agentNoticesOff must be a list of {}", crate::agentnotice::KINDS.join(", "))),
         },
         "agentOpenTasks" => match v.as_i64() {
             Some(n @ 1..=MAX_AGENT_OPEN_TASKS) => s.agent_open_tasks = n,

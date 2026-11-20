@@ -207,6 +207,19 @@ out.
   `update_session_plan`; every other tool is found by its action and run through `execute_tool`
   (`execute_tool("finish_task", {id, result})`). Outside a terminum pane the server offers no
   tools and costs nothing.
+- **Notices when an agent starts**: when Claude Code or Codex starts where terminum does less, the
+  first page that shows its pane opens a window once for that run, with the commands to copy:
+  - *full screen* (Claude Code's `"tui": "fullscreen"`, Codex on the alternate screen): no history to
+    scroll back, no widgets, folds, find or copy of earlier output. Switch Claude Code with `/tui
+    classic` (or `"tui": "default"` in `~/.claude/settings.json`); start Codex with `codex -c
+    tui.alternate_screen=never`.
+  - *Codex without terminum* (plain `codex` attached to a shared `codex app-server`): no state,
+    plan, board or tools; restart it as the window says (also under "When the Plan pane is empty or
+    wrong").
+
+  Tick **Do not show again** to turn that kind off on every browser; **Agent notices** in Settings
+  turns both back on (settings.json's `agentNoticesOff`). vim, mc and other programs never get one;
+  nor do a host's panes.
 
 ## Tasks
 
@@ -643,7 +656,7 @@ its default and is said once in the page.
 
 | File | What |
 |---|---|
-| `settings.json` | `port`, `tmux.socket`, `tmux.history`, `restore`, `lastLines`, `agentExitDays` (idle agents' exit, also in Settings), `agentOpenTasks` (open tasks by agents a project may hold before create_task is refused: 10000, 1–1000000), `themes` rules (by host and session), `page` defaults (`textSize`, `markdownSize`, `colorScheme`, `widgets`, `folds`, `followAgent`), `midi.soundfont` (the .sf2 MIDI files play with), `dispatcher` (memory limits, `usageCommands`), `hosts` (each with `attach`: sessions of its tmux), `attach` (sessions of your own tmux by socket) |
+| `settings.json` | `port`, `tmux.socket`, `tmux.history`, `restore`, `lastLines`, `agentExitDays` (idle agents' exit, also in Settings), `agentNoticesOff` (`codexShared`, `fullScreen`: the notices turned off, also in Settings), `agentOpenTasks` (open tasks by agents a project may hold before create_task is refused: 10000, 1–1000000), `themes` rules (by host and session), `page` defaults (`textSize`, `markdownSize`, `colorScheme`, `widgets`, `folds`, `followAgent`), `midi.soundfont` (the .sf2 MIDI files play with), `dispatcher` (memory limits, `usageCommands`), `hosts` (each with `attach`: sessions of its tmux), `attach` (sessions of your own tmux by socket) |
 | `themes/*.json` | colors, ANSI palette, font; `local.json` and `remote.json` ship as defaults |
 | `hotkeys.json` | the hot keys panel's rows (`"F5"`, `"C-r"`, `"text:git status"`, `"Paste"`) |
 | `custom.css` | your stylesheet, loaded after the page's own |

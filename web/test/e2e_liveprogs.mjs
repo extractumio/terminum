@@ -26,6 +26,10 @@ const SHELLS = /^-?(zsh|bash|sh|fish|dash)$/;
 const inSight = (page, id) => page.evaluate((id) => document.getElementById(id).getBoundingClientRect().width > 0, id);
 const marked = (page) => inSight(page, "curscreen");
 const why = (page) => inSight(page, "curscreenwhy");
+// AC-208's window: its title while open, else ""; closed by its Close
+const notice = (page) => page.evaluate(() => (document.getElementById("noticebox").open ? document.getElementById("noticetitle").textContent : ""));
+const noNotice = async (page, ms = 2500) => { await page.waitForTimeout(ms); return (await notice(page)) === ""; };
+async function closeNotice(page) { await page.click("#noticeclose").catch(() => {}); await page.waitForTimeout(300); }
 
 /** `cmd` in a new window of the private tmux, shown on the page as the user opens it: its pane. */
 async function open(page, tmux, work, name, cmd) {
@@ -46,6 +50,7 @@ async function vim(page, { tmux, work }) {
   const up = await waitText(page, "first line in vim");
   check("real vim: its full-screen grid is on the page", up && tmux("display", "-p", "-t", pane, "#{alternate_on}") === "1", (await text(page)).slice(0, 80));
   check("AC-05 live: the header marks vim's full screen, with no agent's !", await until(() => marked(page)) && !(await why(page)));
+  check("AC-208 live: no window for vim on the alternate screen", await noNotice(page));
   // AC-100: the row's menu shows what terminumd and tmux see of the pane, here vim's; its Copy copies it
   await page.evaluate(() => { window.copied = []; navigator.clipboard.writeText = async (t) => { window.copied.push(t); }; });
   await page.click(`#sessions .item[data-id$=":${pane}"]`, { button: "right" });
@@ -291,6 +296,7 @@ async function claudeDefault(page, ctx) {
     ready && tmux("display", "-p", "-t", pane, "#{alternate_on}#{mouse_any_flag}") === "00", tmux("capture-pane", "-p", "-t", pane).slice(-200));
   if (!ready) return quit(tmux, pane).then(() => close(tmux, pane));
   check("AC-05 live: no full-screen mark for Claude Code's default TUI", !(await marked(page)));
+  check("AC-208 live: no window for Claude Code in its default TUI", await noNotice(page));
   // AC-31 a table in Claude Code's own output, by its shell mode (no model call): a widget, its head whole, no frame of its rows
   fs.writeFileSync(path.join(dir, "claude-table.txt"), ["┌───┬────────┐", "│ # │ Server │", "│   │ name   │", "├───┼────────┤", "│ 1 │ alpha  │", "└───┴────────┘", "between them",
     "│ gamma │ a first │", "│       │ part    │", "├───────┼─────────┤", "│ delta │ two     │", "└───────┴─────────┘"].join("\n") + "\n");
@@ -335,6 +341,16 @@ async function claudeFullscreen(page, ctx) {
     ready && tmux("display", "-p", "-t", pane, "#{alternate_on}#{mouse_any_flag}") === "11", tmux("capture-pane", "-p", "-t", pane).slice(-200));
   if (!ready) return quit(tmux, pane).then(() => close(tmux, pane));
   check("AC-05 live: the header marks Claude Code's fullscreen TUI, an orange ! beside the mark", await until(() => marked(page)) && await until(() => why(page)));
+  const said = await until(async () => (await notice(page)) === "Claude Code runs full screen", 10000);
+  const mark = tmux("show-options", "-pv", "-t", pane, "@tm-noticed");
+  await closeNotice(page);
+  check("AC-208 live: Claude Code's fullscreen TUI gets its window once its page shows it, the run kept in the pane's @tm-noticed",
+    said && /^\d+ fullScreen$/.test(mark), JSON.stringify({ said, mark }));
+  const row = `#sessions .item[data-id$=":${pane}"]`;
+  await page.evaluate((r) => [...document.querySelectorAll("#sessions .item")].find((i) => !i.matches(r))?.click(), row);
+  await page.waitForTimeout(800);
+  await page.click(row);
+  check("AC-208 live: back on the same run's pane, no window again", await noNotice(page));
   // its Ctrl+G editor, a program in its pane that tmux still names Claude Code: the terminal's cursor shows, no !
   tmux("send-keys", "-t", pane, "C-g");
   const editing = await until(() => tmux("display", "-p", "-t", pane, "#{cursor_flag}") === "1", 10000) && await until(async () => !(await why(page)));
@@ -363,6 +379,25 @@ async function claudeFullscreen(page, ctx) {
   fs.rmSync(path.dirname(stubLog), { recursive: true, force: true });
 }
 
+/** Codex in its own process (`--no-daemon`), its home this call's (no login, no model call; the user's shared server untouched):
+ *  on the alternate screen its window says so, inline nothing (AC-208). */
+async function codexScreens(page, { tmux, work }) {
+  const home = fs.realpathSync(fs.mkdtempSync(path.join(work, "cx-")));
+  for (const [how, words, title] of [["on the alternate screen", "", "Codex runs full screen"], ["inline", " --no-alt-screen", ""]]) {
+    const pane = await open(page, tmux, home, `codex${words ? "-inline" : ""}`,
+      `CODEX_HOME='${home}' codex --no-daemon${words} -c check_for_update_on_startup=false`);
+    const runs = await until(() => tmux("display", "-p", "-t", pane, "#{pane_current_command}") === "codex", 10000);
+    const alt = () => tmux("display", "-p", "-t", pane, "#{alternate_on}");
+    const got = title ? await until(async () => (await notice(page)) === title, 15000) : await noNotice(page, 8000);
+    check(`AC-208 live: real Codex (--no-daemon) ${how}: ${title ? "its window says so" : "no window"}`, runs && got && alt() === (title ? "1" : "0"),
+      JSON.stringify({ runs, alt: alt(), shown: await notice(page), screen: tmux("capture-pane", "-p", "-t", pane).split("\n").filter((l) => l.trim()).slice(0, 4) }));
+    await closeNotice(page);
+    check(`real Codex (--no-daemon) ${how}: Ctrl-C ends it`, await quit(tmux, pane));
+    close(tmux, pane);
+  }
+  fs.rmSync(home, { recursive: true, force: true });
+}
+
 export async function livePrograms(page, ctx) {
   const back = await page.evaluate(() => document.querySelector("#sessions .item.on")?.dataset.id);
   if (found("vim")) await vim(page, ctx); else skip("vim", "not on PATH");
@@ -374,5 +409,8 @@ export async function livePrograms(page, ctx) {
     await selectionCut(page, ctx);
     await claudeFullscreen(page, ctx);
   }
+  if (process.env.TM_TEST_NO_CODEX === "1") skip("codex", "TM_TEST_NO_CODEX=1");
+  else if (!found("codex")) skip("codex", "not on PATH");
+  else await codexScreens(page, ctx);
   if (back) await page.click(`#sessions .item[data-id="${back}"]`).catch(() => {});
 }

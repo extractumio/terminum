@@ -275,7 +275,7 @@ function onMessage(m) {
   if (answer(m)) return;
   bookmarks.seen(m);
   rail?.seen(m);
-  asked.seen(m); rowMenu.seen(m); tools.seen(m);
+  asked.seen(m); rowMenu.seen(m); tools.seen(m); prefs.seen(m);
   switch (m.t) {
     case "layout": st.groups = m.groups; tasks.layout(m.groups); place.note(); seeWaits(st.groups, st.sid); st.ran = false; if (!embedded) reminders.layout(m.groups); drawNav(); reminded.draw(); ask.sync(); tools.layoutCame(m.groups); views.forget(m.groups); break;
     case "theme": themeSent = m.theme; applyTheme(schemes.over(m.theme)); break;
@@ -396,7 +396,7 @@ const { openDrawer, closeDrawer } = sessionDrawer({ narrow, store, drawNav, focu
 // ---------- theme ----------
 
 let shownTheme = "", shownFont = "", themeSent = null;
-const prefs = menuPrefs({ store, send, toast, redraw: drawNav });       // Markdown size, history lines (AC-19)
+const prefs = menuPrefs({ store, send, toast, redraw: drawNav, copy: (text) => input.copySelection(text, true) });       // Markdown size, history lines (AC-19)
 // a color scheme picked in the menu goes over the session's theme at once (AC-12)
 const schemes = colorSchemes({ box: $("schemes"), send, onPick: () => { if (themeSent) applyTheme(schemes.over(themeSent)); }, say: toast });
 function applyTheme(theme) {

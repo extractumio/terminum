@@ -14,7 +14,7 @@ document.addEventListener("click", (e) => {
 
 // One box shows one question: a second asked while it is open waits for the first's answer (AC-165).
 const queues = new Map();
-function inTurn(id, open) {
+export function inTurn(id, open) {
   const turn = (queues.get(id) ?? Promise.resolve()).then(open);
   queues.set(id, turn.catch(() => {}));           // one that throws does not stop the next
   return turn;

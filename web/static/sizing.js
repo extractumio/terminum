@@ -101,13 +101,14 @@ export function paneSizing({ view, send, sid, refit, notify, copied }) {
   };
   new ResizeObserver(changed).observe(term);
 
-  // Codex on tmux's alternate screen (started without --no-alt-screen) has no scrollback to load:
+  // Codex on tmux's alternate screen (started without --no-alt-screen) has no scrollback to load
+  // (the note names -c: --no-alt-screen alone attaches Codex to a shared app-server where one runs, AC-208):
   // scrolling up there says why and how, once a pane (AC-39)
   const toldAlt = new Set();
   term.addEventListener("wheel", (e) => {
     if (e.deltaY >= 0 || term.scrollTop > 0 || !view.alt || view.agent !== "codex" || view.mouse || toldAlt.has(sid())) return;
     toldAlt.add(sid());
-    notify('This Codex runs on the alternate screen, where tmux keeps no scrollback. Start it with "codex --no-alt-screen", or set alternate_screen = "never" under [tui] in ~/.codex/config.toml.');
+    notify('This Codex runs on the alternate screen, where tmux keeps no scrollback. Start it with "codex -c tui.alternate_screen=never", or set alternate_screen = "never" under [tui] in ~/.codex/config.toml.');
   }, { passive: true });
 
   // said over a full-screen program, whose grid is drawn as it is, and for a refused resize
