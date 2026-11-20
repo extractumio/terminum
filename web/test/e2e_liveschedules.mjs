@@ -2,6 +2,8 @@
 // The board's folded cards and its rows on the columns' tracks against a real private terminumd
 // (terminum-kanban.md AC-159, terminum-dispatcher.md AC-138), and schedules (terminum-schedules.md AC-160 to
 // AC-164): `node web/test/e2e_live.mjs schedules chromium`.
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { check, coversWindow, until } from "./check.mjs";
 import { boardKit, hold, intoStore, nap, ring, startOf, tabKey } from "./boardkit.mjs";
 
@@ -359,20 +361,34 @@ export async function liveSchedules(page, live) {
 
   // AC-164: a later firing closes this finished session before its result is read: with no other room, its own
   // schedule's idle session is closed for it (AC-161), so the agent runs one at once for this step
-  const nightOwl = { project, name: "Night owl", kind: "claude", command: `python3 -I ${FAKE} ${cli} --kind claude` };
+  const prompts = join(live.app, `prompts-${agent}`);
+  const nightOwl = { project, name: "Night owl", kind: "claude", command: `python3 -I ${FAKE} ${cli} --kind claude --prompts ${prompts}` };
   await j(`/api/task-agents/${agent}`, "PATCH", { ...nightOwl, at_once: 1 });
-  let next;
-  const reran = await until(async () => (next = await j(`/api/schedules/${s.id}/run`, "POST")).code === 200, 15000);
-  check("AC-164 a later firing closes the finished session", reran && next.task !== task && await until(async () =>
+  await page.click(run);
+  await page.waitForSelector("#confirmbox[open]");
+  const asked = page.waitForResponse(response => response.url().endsWith(`/api/schedules/${s.id}/run`) && response.request().method() === "POST");
+  await page.click("#confirmok");
+  const next = await (await asked).json();
+  check("AC-164 a later firing closes the finished session", next.task && next.task !== task && await until(async () =>
     (await j(`/api/tasks/${task}`)).history.some((e) => e.kind === "told" && e.text === `Session ended: closed for ${s.key}.`), 90000), JSON.stringify(next));
   await j(`/api/task-agents/${agent}`, "PATCH", { ...nightOwl, at_once: 2 });
+  let sent;
+  check("AC-182 the first line sent to the agent says a human started Run now", await until(() => {
+    if (!existsSync(prompts)) return false;
+    sent = readFileSync(prompts, "utf8").split("\n").find(line => line.startsWith(`Task ${next.task}:`));
+    return Boolean(sent);
+  }, 15000) && /, started now by a human\. +FINISHES the check of dependencies\./.test(sent), sent);
 
   // AC-164: the Scheduled page, this firing rather than the newer one
   const fire = `#fires .fire:has(.stbox[aria-label^="${task} · "])`;
   await page.goto(`${live.base}/scheduled/?schedule=${s.key}`);
   check("AC-164 the Scheduled page lists the firing with its task and status", await until(async () => /DONE/.test(await page.textContent("#fires").catch(() => "")) && (await page.textContent("#fires")).includes(task)), await page.textContent("#fires").catch(() => ""));
+  const runNow = `#fires .fire:has(.stbox[aria-label^="${next.task} · "])`;
+  await page.click(`${runNow} .fireline`);
+  const shown = (await page.locator(`${runNow} .fio`).first().textContent()).split("\n", 1)[0];
+  check("AC-182 the Scheduled page shows the human's Run now prompt", shown.endsWith(", started now by a human.") && sent?.startsWith(`${shown} `), shown);
   await page.click(`${fire} .fireline`);
-  check("AC-164 a row opens to what went in and came out", await until(async () => { const b = await page.textContent(`${fire} .firebody`); return b.includes("A scheduled run of terminum's schedule") && b.includes("All done."); }), await page.textContent(`${fire} .firebody`));
+  check("AC-164 a row opens to what went in and came out", await until(async () => { const b = await page.textContent(`${fire} .firebody`); return b.includes("A scheduled run of terminum's schedule") && b.includes("no human started this run or watches it now.") && b.includes("All done."); }), await page.textContent(`${fire} .firebody`));
   // a firing's In, its key pressed, covers the window; Esc gives it back (terminum.md AC-184)
   await page.click(`${fire} .firebody .xbox:has(> .fio) > .xkey`);
   const inFull = (await coversWindow(page, `${fire} .xbox.full`)).covers;

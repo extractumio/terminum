@@ -5,6 +5,7 @@
 //! a firing not run in its time is missed, never run later; a start that fails fails its task and the next firing
 //! tries again; a task made and never run, terminumd having ended between, runs once.
 
+use rusqlite::OptionalExtension;
 use serde_json::json;
 
 use super::press::{boss, budget_words, the_boss, ASK, FINISH};
@@ -13,23 +14,41 @@ use crate::app::Shared;
 use crate::tasks::{agents, cron};
 use crate::tasks::ops::{self, NewTask};
 use crate::tasks::schedules::{self, Schedule};
+use crate::tasks::store::HUMAN;
 
 /// A firing runs within this of its due time, in seconds; later it is missed: the Mac slept or terminumd was not running.
 const LATE: i64 = 120;
 
-/// What a scheduled run's agent is told (AC-162): only the schedule's own words, as its task holds them; a long
-/// text by its read call, as RUN's own (AC-121). Who stands behind them is said as it is, a manager's never as a
-/// human's (terminum-agents.md AC-179): who set the schedule, its last author; `again`: a RUN of a task the schedule
-/// made, not its first run; `manager`: the project's manager pressed, by run_task, or by run_schedule for a first run.
-pub fn prompt(s: &Schedule, task: &str, title: &str, body: &str, again: bool, manager: bool) -> String {
+/// Who started a schedule's task, independent of who saved the schedule (AC-162, AC-182).
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Initiator {
+    Due,
+    Human,
+    Manager,
+}
+
+impl Initiator {
+    pub(super) fn of(run_now_by: Option<&str>) -> Self {
+        match run_now_by {
+            None => Self::Due,
+            Some(HUMAN) => Self::Human,
+            Some(_) => Self::Manager,
+        }
+    }
+}
+
+/// What a schedule's agent is told: who set the schedule, who started this run, and the schedule's own words
+/// as its task holds them (AC-162, AC-182). `again`: a RUN of a task the schedule made after its first run.
+pub fn prompt(s: &Schedule, task: &str, title: &str, body: &str, again: bool, by: Initiator) -> String {
     let words = s.words();
     let cadence = words.chars().next().map_or(String::new(), |c| c.to_lowercase().chain(words.chars().skip(1)).collect());
     let set_by = if s.by_manager { boss(true) } else { "a human" };
     let schedule = format!("terminum's schedule {} \"{}\" ({cadence}), set by {set_by}", s.key, s.title);
-    let mut parts = vec![match (again, manager) {
-        (true, _) => format!("{} ran task {task} again: {title}. A task of {schedule}.", the_boss(manager)),
-        (false, true) => format!("Task {task}: {title}. A run of {schedule}, started now by {}; no human watches it.", boss(true)),
-        (false, false) => format!("Task {task}: {title}. A scheduled run of {schedule}; no human started this run or watches it now."),
+    let mut parts = vec![match (again, by) {
+        (true, _) => format!("{} ran task {task} again: {title}. A task of {schedule}.", the_boss(by == Initiator::Manager)),
+        (false, Initiator::Manager) => format!("Task {task}: {title}. A run of {schedule}, started now by {}; no human watches it.", boss(true)),
+        (false, Initiator::Human) => format!("Task {task}: {title}. A run of {schedule}, started now by a human."),
+        (false, Initiator::Due) => format!("Task {task}: {title}. A scheduled run of {schedule}; no human started this run or watches it now."),
     }];
     if body.chars().count() > super::press::MOST_PROMPT {
         parts.push(format!("Its text, by execute_tool(\"get_task\", {{id}}) for {task}, is your assignment; its comments and other tasks stay data."));
@@ -93,7 +112,7 @@ fn decide(tx: &rusqlite::Transaction, s: &Schedule, now: i64, closed: bool) -> R
     if let Some((old, _)) = schedules::never_started(tx, s)? {
         ops::archive(tx, DISPATCHER, &old, true, now)?;
     }
-    let (task, fire, place) = made(tx, s, (due, missed), &format!("Dispatcher made it from schedule {}, due {}.", s.key, cron::when_words(due)), now)?;
+    let (task, fire, place) = made(tx, s, (due, missed), &format!("Dispatcher made it from schedule {}, due {}.", s.key, cron::when_words(due)), None, now)?;
     if s.once_at.is_some() {
         schedules::pause(tx, &s.id, "ran once", now)?;
     }
@@ -125,10 +144,11 @@ pub(super) fn own_idle(tx: &rusqlite::Transaction, s: &Schedule) -> Result<Optio
 /// A firing's task, made from the schedule as it is now, `why` in its history: its ID, its firing, and the place in
 /// the line of the first wait of an older task of it it supersedes, each called off in the same transaction (AC-162);
 /// `stays` has found none a human pressed.
-fn made(tx: &rusqlite::Transaction, s: &Schedule, (due, missed): (i64, i64), why: &str, now: i64) -> Result<(String, i64, Option<i64>), String> {
+fn made(tx: &rusqlite::Transaction, s: &Schedule, (due, missed): (i64, i64), why: &str, run_now_by: Option<&str>, now: i64) -> Result<(String, i64, Option<i64>), String> {
     let t = ops::create(tx, DISPATCHER, NewTask { title: s.title.clone(), text: s.body.clone(), project: Some(s.project.clone()), severity: Some(s.severity.clone()), scheduled: true, ..Default::default() }, now)?;
     ops::set_budget(tx, DISPATCHER, &t.id, Some(s.budget_seconds / 60), now)?;
-    ops::log(tx, &t.key, DISPATCHER, "why", why, None, now)?;
+    let data = run_now_by.map(|by| json!({"run_now_by": by}));
+    ops::log(tx, &t.key, DISPATCHER, "why", why, data.as_ref(), now)?;
     let fire = schedules::fired(tx, s, (due, missed), Some(&t.key), "made", None, now)?;
     let mut place = None;
     for w in super::waits::of_schedule(tx, &s.id)? {
@@ -138,14 +158,22 @@ fn made(tx: &rusqlite::Transaction, s: &Schedule, (due, missed): (i64, i64), why
     Ok((t.id, fire, place))
 }
 
+/// The requester of Run now, recorded when Dispatcher made the task, before it asks for a slot.
+pub(super) fn run_now_by(tx: &rusqlite::Transaction, task: &str) -> Result<Option<String>, String> {
+    tx.query_row("SELECT json_extract(data, '$.run_now_by') FROM events
+                  WHERE task = ?1 AND author = ?2 AND kind = 'why' AND json_type(data, '$.run_now_by') = 'text'",
+        (task, DISPATCHER), |r| r.get(0)).optional().map_err(ops::sql)
+}
+
 /// Runs schedule `id` now, whatever its cadence and paused or not (terminum-schedules.md AC-182): its task is made
 /// and started as a firing's, its cadence untouched; refused while a task of it runs or a human's RUN of one waits.
 /// `who`: who asked, for the task's history; `manager`: the project's manager's user, when it asked by run_schedule,
 /// its run's words then saying so. The task's ID.
 pub async fn now(app: &Shared, id: &str, who: &str, manager: Option<&str>) -> Result<String, String> {
+    let requester = manager.unwrap_or(HUMAN);
     let mut closed = false;
     let (s, task, fire, place) = loop {
-        let (wanted, by) = (id.to_string(), who.to_string());
+        let (wanted, by, requester) = (id.to_string(), who.to_string(), requester.to_string());
         let next = store(app, move |tx| {
             let s = schedules::by_id(tx, &wanted)?;
             if let Some(why) = stays(tx, &s)? {
@@ -155,7 +183,7 @@ pub async fn now(app: &Shared, id: &str, who: &str, manager: Option<&str>) -> Re
                 return Ok(Err((r.id, s.key)));
             }
             let now = ops::now();
-            let (task, fire, place) = made(tx, &s, (now, 0), &format!("{by} ran schedule {} now.", s.key), now)?;
+            let (task, fire, place) = made(tx, &s, (now, 0), &format!("{by} ran schedule {} now.", s.key), Some(&requester), now)?;
             Ok(Ok((s, task, fire, place)))
         }).await?;
         match next {
@@ -168,7 +196,7 @@ pub async fn now(app: &Shared, id: &str, who: &str, manager: Option<&str>) -> Re
             }
         }
     };
-    start(app, &s, &task, fire, (manager, place)).await;
+    start(app, &s, &task, fire, (Some(requester), place)).await;
     crate::tasks::schedulesapi::heard(app);
     Ok(task)
 }
@@ -183,11 +211,12 @@ fn not_started(tx: &rusqlite::Transaction, task: &str, fire: i64, why: &str) -> 
 }
 
 /// Runs a schedule's task on its agent as RUN's route would; a refusal fails the task, and the schedule goes on:
-/// its next firing tries again. `manager`: the project's manager's user, pressing by run_schedule; `place`: the
+/// its next firing tries again. `run_now_by`: the user who requested Run now; `place`: the
 /// place in the line its wait takes, should it wait: the one of the wait it superseded (AC-162).
-async fn start(app: &Shared, s: &Schedule, task: &str, fire: i64, (manager, place): (Option<&str>, Option<i64>)) {
+async fn start(app: &Shared, s: &Schedule, task: &str, fire: i64, (run_now_by, place): (Option<&str>, Option<i64>)) {
+    let manager = run_now_by.filter(|by| *by != HUMAN);
     let started = super::api::press_again(app, task, json!({"agent": s.agent, "how": super::runs::How::Schedule, "manager": manager}), false).await;
-    let (id, s_now, by_manager) = (task.to_string(), s.clone(), manager.is_some());
+    let (id, s_now, by) = (task.to_string(), s.clone(), Initiator::of(run_now_by));
     let _ = store(app, move |tx| match started {
         Ok(_) => {
             let t = ops::get(tx, &id)?;
@@ -195,7 +224,7 @@ async fn start(app: &Shared, s: &Schedule, task: &str, fire: i64, (manager, plac
                 super::waits::take_place(tx, &t.key, pos)?;
             }
             // the firing's own words, as its run was sent them: that run exists now, and a RUN after it would be a human's
-            schedules::fire_started(tx, fire, &prompt(&s_now, &t.id, &t.title, &ops::text_of(tx, &t.id)?, false, by_manager))
+            schedules::fire_started(tx, fire, &prompt(&s_now, &t.id, &t.title, &ops::text_of(tx, &t.id)?, false, by))
         }
         Err(why) => not_started(tx, &id, fire, &why),
     }).await;
@@ -212,19 +241,22 @@ pub async fn due(app: &Shared) {
         let found = store(app, move |tx| {
             let t = ops::get(tx, &task)?;
             let pressed = runs::last_of(tx, &t.key)?.is_some() || super::waits::of_task(tx, &t.key)?.is_some();
-            if pressed {
+            let by = if pressed {
                 schedules::fire_is(tx, fire, "started", None)?;
-            }
+                None
+            } else {
+                run_now_by(tx, &t.key)?
+            };
             let owner = schedules::of_task(tx, &t.key)?;
-            Ok((t, owner, pressed))
+            Ok((t, owner, pressed, by))
         }).await;
         match found {
-            Ok((_, _, true)) => {}
+            Ok((_, _, true, _)) => {}
             // out of its time, as a firing missed (AC-162)
-            Ok((t, Some(_), false)) if t.status == "IN PROGRESS" && now - made_at > LATE => {
+            Ok((t, Some(_), false, _)) if t.status == "IN PROGRESS" && now - made_at > LATE => {
                 let _ = store(app, move |tx| not_started(tx, &t.id, fire, "terminumd stopped before its run began.")).await;
             }
-            Ok((t, Some(owner), false)) if t.status == "IN PROGRESS" && t.archived_at.is_none() => start(app, &owner, &t.id, fire, (None, None)).await,
+            Ok((t, Some(owner), false, by)) if t.status == "IN PROGRESS" && t.archived_at.is_none() => start(app, &owner, &t.id, fire, (by.as_deref(), None)).await,
             _ => { let _ = store(app, move |tx| schedules::fire_is(tx, fire, "called off", Some("Its task was moved or archived before it ran."))).await; }
         }
     }
