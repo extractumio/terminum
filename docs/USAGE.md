@@ -260,7 +260,8 @@ PROGRESS, WAIT FOR HUMAN, FAILED or DONE.
 - **Layout**: the task, its subtasks (+, Add existing, Make it a subtask, ×), then comments and
   history as a conversation, the comment field last. What waits for you (a question, a result, a
   failure) comes first.
-- **Keys**: Save keeps your comment; Run starts the agent with it; Run from scratch is on the
+- **Keys**: Save keeps your comment. When Run continues a task, it sends your saved comments since
+  the previous Run, followed by the comment in the field. Run from scratch is on the
   Status line.
 - **Comments reach the working agent**: a comment you save, or one another session's agent adds
   (the project's manager's too), reaches the agent of the task's open session at its next tool

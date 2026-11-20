@@ -83,13 +83,19 @@ pub(super) async fn after_restart(app: &Shared, r: Run, identity: String) {
             // who started it and how stay its own (AC-183): the server's end was no one's press
             let press = Press::resumed(how.as_deref().and_then(How::of_word).unwrap_or_default(), by.as_deref().unwrap_or(HUMAN));
             // no room is no queue: no human agreed to wait (AC-169); the limit's words say why
-            let missed = match super::goes_on::resume(app, r.clone(), &tasks, words(&ids), press).await {
+            let missed = match super::goes_on::resume(app, r.clone(), &tasks, words(&ids).into(), press).await {
                 Ok(v) => v["full"]["words"].as_str().map(str::to_string),
                 Err(why) => Some(why),
             };
             let Some(why) = missed else { return super::told_all(app, &r) };   // its resume closed the old run
             let (run, words) = (r.clone(), not_resumed(&why));
-            let _ = store(app, move |tx| fail(tx, &run, &words)).await;
+            let _ = store(app, move |tx| {
+                let current = runs::by_id(tx, &run.id)?;
+                if current.is_over() {
+                    return Ok(());
+                }
+                fail(tx, &current, &words)
+            }).await;
         }
         Ok(None) => {}
         Err(e) => return tracing::warn!(event = "dispatcher.resume", run = %r.id, error = %e),

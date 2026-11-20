@@ -284,6 +284,13 @@ pub(super) enum Way {
 }
 
 impl Way {
+    pub(super) fn run_id(&self) -> Option<&str> {
+        match self {
+            Self::Live(run) | Self::Shell(run) | Self::Resume(run) | Self::Anew(run) => Some(&run.id),
+            Self::First => None,
+        }
+    }
+
     /// Its agent hears the task as a first run's (AC-121): RUN's window shows the words.
     pub(super) fn first_words(&self) -> bool {
         matches!(self, Way::First | Way::Anew(_))

@@ -9,11 +9,12 @@ use serde_json::{json, Value};
 use super::files::File;
 use super::ops::{check_comment, key_of, log, rows, sql, touch, user_name};
 
-/// Whether a human's last comment on it says just this: a press tried again keeps it once.
-pub fn last_comment_is(tx: &Transaction, id: &str, text: &str) -> Result<bool, String> {
+/// The latest comment's event if the human already kept these words (a retried Run).
+fn same_human_comment(tx: &Transaction, id: &str, text: &str) -> Result<Option<String>, String> {
     let key = key_of(tx, id)?;
-    let last: Option<String> = tx.query_row("SELECT text FROM events WHERE task = ?1 AND kind = 'comment' ORDER BY at DESC, rowid DESC LIMIT 1", [&key], |r| r.get(0)).optional().map_err(sql)?;
-    Ok(last.as_deref() == Some(text))
+    tx.query_row("SELECT CASE WHEN text = ?2 AND author = ?3 THEN id END FROM events
+                  WHERE task = ?1 AND kind = 'comment' ORDER BY at DESC, rowid DESC LIMIT 1",
+                 (&key, text, super::store::HUMAN), |r| r.get(0)).optional().map(Option::flatten).map_err(sql)
 }
 
 /// A comment (AC-108): the event's id.
@@ -29,6 +30,10 @@ pub fn comment_as(tx: &Transaction, author: &str, manager: bool, id: &str, text:
 
 /// The row of task ?1's last questions (AC-157): the humans' comments after it are their answers.
 const ASKED: &str = "SELECT MAX(rowid) FROM events WHERE task = ?1 AND kind = 'comment' AND json_extract(data, '$.questions') IS NOT NULL";
+
+pub(crate) fn last_question(tx: &Transaction, key: &str) -> Result<Option<i64>, String> {
+    tx.query_row(ASKED, [key], |r| r.get(0)).map_err(sql)
+}
 
 /// Whether event `e` is a comment marked as a project's manager's by `comment_as`, as SQL.
 pub(crate) const BY_MANAGER: &str = "coalesce(json_extract(e.data, '$.by') = 'manager', 0)";
@@ -47,7 +52,7 @@ pub struct Carried {
 /// last questions (carried as answers, `answers`).
 pub fn carried(tx: &Transaction, id: &str, message: Option<&str>, answered: bool) -> Result<Carried, String> {
     let key = key_of(tx, id)?;
-    let asked: Option<i64> = if answered { tx.query_row(ASKED, [&key], |r| r.get(0)).map_err(sql)? } else { None };
+    let asked: Option<i64> = if answered { last_question(tx, &key)? } else { None };
     // an agent's words are only counted: they are not read
     let all = rows(tx, &format!("SELECT e.rowid, u.name, u.kind, {BY_MANAGER}, CASE WHEN u.kind = 'human' OR {BY_MANAGER} THEN coalesce(e.text, '') END
                                  FROM events e JOIN users u ON u.id = e.author WHERE e.task = ?1 AND e.kind = 'comment' AND u.kind <> 'system' ORDER BY e.at, e.rowid"),
@@ -113,19 +118,19 @@ fn comment_with(tx: &Transaction, author: &str, id: &str, text: &str, data: Opti
 
 /// The human's comment of a press, with its files, once: a press tried again, or pressed again by its wait
 /// (terminum-dispatcher.md AC-158), adds it no second time. Its event, when it was kept now.
-pub fn keep_human_comment(tx: &Transaction, id: &str, text: &str, files: &[String], at: i64) -> Result<Option<String>, String> {
-    if last_comment_is(tx, id, text)? {
-        return Ok(None);
+pub fn keep_human_comment(tx: &Transaction, id: &str, text: &str, files: &[String], at: i64) -> Result<(String, bool), String> {
+    if let Some(event) = same_human_comment(tx, id, text)? {
+        return Ok((event, false));
     }
     let event = comment(tx, super::store::HUMAN, id, text, at)?;
     super::files::attach(tx, files, id, Some(&event))?;
-    Ok(Some(event))
+    Ok((event, true))
 }
 
 /// The humans' comments since the agent's last questions, oldest first: their answers (AC-157); none asked: none.
 pub fn answers(tx: &Transaction, id: &str) -> Result<Option<Vec<String>>, String> {
     let key = key_of(tx, id)?;
-    let asked: Option<i64> = tx.query_row(ASKED, [&key], |r| r.get(0)).map_err(sql)?;
+    let asked: Option<i64> = last_question(tx, &key)?;
     let Some(at) = asked else { return Ok(None) };
     rows(tx, "SELECT e.text FROM events e JOIN users u ON u.id = e.author WHERE e.task = ?1 AND e.kind = 'comment' AND u.kind = 'human' AND e.text IS NOT NULL
               AND e.rowid > ?2 ORDER BY e.at, e.rowid", (&key, at), |r| r.get(0)).map(Some)

@@ -10,6 +10,7 @@ pub mod api;
 mod goes_on;
 pub(crate) mod letgo;
 mod press;
+mod recent;
 mod carry;
 mod places;
 mod firstprompt;
@@ -86,6 +87,8 @@ pub struct Dispatcher {
     starting: Mutex<HashSet<String>>,
     /// runs whose End is under way (acts.rs)
     ending: Mutex<HashSet<String>>,
+    /// Tasks and runs with a Run press preparing or delivering a prompt.
+    pressing: Mutex<HashSet<String>>,
     /// a walk is due now (a session ended)
     soon: Notify,
     /// what a walk or a hook learned of each pane it watches

@@ -15,6 +15,7 @@ use super::gate::{self, Miss};
 use super::runs::{self, How, Phase, Run, Started};
 use super::press::{again_words, also_of, answers_of, bring_back, facts, members, way, ways, with_open, Asked, Facts, Way};
 use super::pool;
+use super::recent::{self, Again};
 use super::screen::Screen;
 use super::goes_on::{from_shell, resume, went_on};
 use super::places::{ad_hoc, launch, no_folder, place};
@@ -101,6 +102,9 @@ pub(super) struct Press {
     /// pressed again from its wait (AC-158): it goes only while that wait stands; never read from a request or a kept wait
     #[serde(skip)]
     waited: bool,
+    /// The draft events the queue already kept. A page cannot supply them.
+    #[serde(default)]
+    kept_comments: Vec<String>,
 }
 
 impl Press {
@@ -151,20 +155,22 @@ impl Press {
 
     /// Keeps the presser's message on each of `tasks`, the first with its files (AC-138, AC-185); a wait kept it when it
     /// began (AC-158), and nothing is kept twice.
-    fn keep_on(&self, tx: &rusqlite::Transaction, tasks: &[Task], text: &str, files: &[String]) -> Result<(), String> {
-        if self.keep(tx, &tasks[0].id, text, files)?.is_some() {
+    fn keep_on(&self, tx: &rusqlite::Transaction, tasks: &[Task], text: &str, files: &[String]) -> Result<Vec<String>, String> {
+        let (event, added) = self.keep(tx, &tasks[0].id, text, files)?;
+        let mut events = vec![event];
+        if added {
             for t in &tasks[1..] {
-                ops::comment_as(tx, self.by(), self.manager.is_some(), &t.id, text, ops::now())?;
+                events.push(ops::comment_as(tx, self.by(), self.manager.is_some(), &t.id, text, ops::now())?);
             }
         }
-        Ok(())
+        Ok(events)
     }
 
     /// Keeps the presser's message on `task`: a human's as theirs, with its files; a manager's as its comment.
-    fn keep(&self, tx: &rusqlite::Transaction, task: &str, text: &str, files: &[String]) -> Result<Option<String>, String> {
+    fn keep(&self, tx: &rusqlite::Transaction, task: &str, text: &str, files: &[String]) -> Result<(String, bool), String> {
         match &self.manager {
             None => ops::keep_human_comment(tx, task, text, files, ops::now()),
-            Some(user) => ops::comment_as(tx, user, true, task, text, ops::now()).map(Some),
+            Some(user) => ops::comment_as(tx, user, true, task, text, ops::now()).map(|event| (event, true)),
         }
     }
 }
@@ -223,8 +229,9 @@ pub(super) fn wait_if_full(tx: &rusqlite::Transaction, agent: &Agent, project: &
         return Ok(Some(Kept::Offered(full)));
     }
     let why = full.words;
-    if let Some(c) = comment {
-        body.keep(tx, &task.id, c, files)?;
+    let mut body = body.clone();
+    if let Some(c) = comment && body.kept_comments.is_empty() {
+        body.kept_comments.push(body.keep(tx, &task.id, c, files)?.0);
     }
     super::waits::add(tx, task, &agent.id, project, &serde_json::to_value(body).map_err(|e| e.to_string())?, ops::now())?;
     Ok(Some(Kept::Waits(super::waits::words(&agent.name, &why))))
@@ -259,6 +266,7 @@ pub(crate) async fn press_integration(app: &Shared, id: &str, agent: &str) -> Re
 /// The press on RUN: a comment is kept whatever follows (AC-122).
 async fn press(State(app): State<Shared>, Path(id): Path<String>, Json(mut body): Json<Press>) -> Response {
     body.manager = None;
+    body.kept_comments.clear();
     // a page presses for the human alone: it never starts a run as Dispatcher's own (AC-183)
     body.how = body.how.of_page();
     answer(pressed(&app, &id, body).await)
@@ -304,37 +312,30 @@ async fn pressed(app: &Shared, id: &str, body: Press) -> Result<Value, String> {
     }
     let (wanted, said, attached, fresh, also, agent) = (id.to_string(), comment.clone(), body.files.clone(), body.fresh, body.also.clone(), body.agent.clone());
     let pane = linked_panes(app, &wanted, &also).await;
-    let (kept, by) = (body.clone(), body.clone());
-    let (tasks, w, again) = store(app, move |tx| {
+    let (a, mut kept) = (app.clone(), body.clone());
+    let (tasks, prepared, kept, show_comment) = store(app, move |tx| {
         let (tasks, w, _) = ways(tx, &wanted, &also, agent.as_deref(), fresh, &pane)?;
-        // a run that starts keeps its comment with it, in the transaction that adds it; going on, or refused, it stays, once
-        if !matches!(w, Ok(Way::First)) && let Some(c) = &said {
-            by.keep_on(tx, &tasks, c, &attached)?;
+        let human = !kept.how.automatic() && kept.manager.is_none();
+        let before = human.then(|| recent::before_draft(tx)).transpose()?;
+        // A start from scratch keeps its draft where it starts. A continuation or a refusal keeps it here.
+        if !matches!(w, Ok(Way::First)) && let Some(c) = &said && kept.kept_comments.is_empty() {
+            kept.kept_comments = kept.keep_on(tx, &tasks, c, &attached)?;
         }
-        let again = match &w {
-            Ok(Way::Anew(_)) => by.first_words(tx, &tasks)?.prompt(said.as_deref()),
-            _ => {
-                // its agent asked: what the humans answered since goes, theirs alone (AC-157), and the pressing manager's
-                // own message (terminum-agents.md AC-179), never another agent's comment
-                let asked = matches!(&w, Ok(Way::Live(r) | Way::Shell(r) | Way::Resume(r)) if r.asked);
-                let mut answers = if asked { answers_of(tx, &tasks)? } else { None };
-                if let (Some(a), Some(c), true) = (&mut answers, &said, by.manager.is_some()) {
-                    a.push(c.clone());
-                }
-                // a later red round of a batch: its own words, the same session deciding as before (terminum-integration.md AC-194)
-                if by.how == How::Integration && let Some(words) = crate::integrate::agent::red_again(tx, &tasks[0].key, &crate::config::tm_home(), answers.as_deref())? {
-                    words
-                } else {
-                    with_open(again_words(&tasks[0].id, &ops::user_name(tx, by.by())?, said.as_deref(), answers.as_deref(), by.manager.is_some()), &tasks)
-                }
-            }
-        };
-        Ok((tasks, w, again))
+        let show_comment = said.is_some() && !matches!(w, Ok(Way::First));
+        let prepared = w.and_then(|way| {
+            // A grouped Run and a Run on any of its tasks must not prepare overlapping prompts.
+            let keys = tasks.iter().map(|t| format!("task:{}", t.key)).chain(way.run_id().map(|id| format!("run:{id}")));
+            let held = keys.map(|key| super::Held::take(&a, |d| &d.pressing, &key).ok_or("A Run is already being prepared.")).collect::<Result<Vec<_>, _>>()?;
+            let again = continuation(tx, &way, &tasks, &kept, said.as_deref(), before)?;
+            Ok((way, again, held))
+        });
+        Ok((tasks, prepared, kept, show_comment))
     }).await?;
-    if comment.is_some() && !matches!(w, Ok(Way::First)) {
+    if show_comment {
         told(app, id);
     }
-    match w? {
+    let (way, again, _held) = prepared?;
+    match way {
         Way::First => first_run(app, &tasks, body, kept, comment).await,
         Way::Live(r) => {
             let (server, pane) = pane_of(app, &r)?;
@@ -348,9 +349,17 @@ async fn pressed(app: &Shared, id: &str, body: Press) -> Result<Value, String> {
             }
             // its turn is taken for the words about to be typed, so nothing reads it idle meanwhile; no limit stops it:
             // it starts no process (AC-141)
-            let (id, asked) = (r.id.clone(), std::time::Instant::now());
-            store(app, move |tx| runs::change(tx, &id, |now| now.turn_ended = false).map(drop)).await?;
-            if let Err(miss) = gate::deliver(app, &r, &server, &pane, &again, false).await {
+            let (id, asked, phase) = (r.id.clone(), std::time::Instant::now(), r.state);
+            store(app, move |tx| {
+                let mut now = runs::by_id(tx, &id)?;
+                if now.state != phase || !now.turn_ended {
+                    return Err("The session is working or changed while Run was being prepared.".to_string());
+                }
+                now.turn_ended = false;
+                runs::save(tx, &now)
+            }).await?;
+            let r = Run { turn_ended: true, ..r };
+            if let Err(miss) = gate::deliver(app, &r, &server, &pane, &again.words, false).await {
                 // what it was, unless a human's prompt came meanwhile: its turn is theirs (a Stop says it ended)
                 if !app.inputs.human_since(&server.key(&pane), asked) {
                     let (id, was) = (r.id.clone(), r.turn_ended);
@@ -361,7 +370,7 @@ async fn pressed(app: &Shared, id: &str, body: Press) -> Result<Value, String> {
                     Miss::Other(why) => format!("Not delivered: {why}"),
                 });
             }
-            went_on(app, &r, &tasks, kept.manager.is_some()).await
+            went_on(app, &r, &tasks, kept.manager.is_some(), again.through).await
         }
         Way::Shell(r) | Way::Anew(r) => {
             let (server, pane) = pane_of(app, &r)?;
@@ -369,6 +378,33 @@ async fn pressed(app: &Shared, id: &str, body: Press) -> Result<Value, String> {
         }
         Way::Resume(r) => resume(app, r, &tasks, again, kept).await,
     }
+}
+
+/// Prepare a continuation and its exact cutoff in the transaction that keeps the draft.
+fn continuation(tx: &rusqlite::Transaction, way: &Way, tasks: &[Task], press: &Press, draft: Option<&str>, before: Option<i64>) -> Result<Again, String> {
+    if matches!(way, Way::First) {
+        return Ok(String::new().into());
+    }
+    if matches!(way, Way::Anew(_)) {
+        return Ok(Again { words: press.first_words(tx, tasks)?.prompt(draft), through: recent::through(tx, tasks)? });
+    }
+    let asked = matches!(way, Way::Live(r) | Way::Shell(r) | Way::Resume(r) if r.asked);
+    let id = &tasks[0].id;
+    if let Some(before) = before {
+        let saved = recent::saved(tx, tasks, before, &press.kept_comments, asked)?;
+        let words = saved.words(id, &ops::user_name(tx, press.by())?, draft)?;
+        return Ok(Again { words: with_open(words, tasks), through: recent::through(tx, tasks)? });
+    }
+    let mut answers = if asked { answers_of(tx, tasks)? } else { None };
+    if let (Some(a), Some(c), true) = (&mut answers, draft, press.manager.is_some()) {
+        a.push(c.to_string());
+    }
+    // A later red round goes on in the integration task's own words (terminum-integration.md AC-194).
+    if press.how == How::Integration && let Some(words) = crate::integrate::agent::red_again(tx, &tasks[0].key, &crate::config::tm_home(), answers.as_deref())? {
+        return Ok(words.into());
+    }
+    let words = with_open(again_words(id, &ops::user_name(tx, press.by())?, draft, answers.as_deref(), press.manager.is_some()), tasks);
+    Ok(words.into())
 }
 
 /// What a press types may hold line ends, nothing else unseen: tmux would refuse it after the run was written.
@@ -424,7 +460,7 @@ async fn first_run(app: &Shared, tasks: &[Task], body: Press, kept: Press, comme
             return Ok(Next::Kept(kept));
         }
         let prompt = goes.prompt(said.as_deref());
-        if let Some(c) = &said {
+        if let Some(c) = &said && kept.kept_comments.is_empty() {
             kept.keep_on(tx, &now, c, &attached)?;
         }
         for t in &now {
@@ -438,6 +474,7 @@ async fn first_run(app: &Shared, tasks: &[Task], body: Press, kept: Press, comme
             }
         }
         super::waits::remove(tx, &keys[0])?;
+        recent::record(tx, &recent::through(tx, &now)?)?;
         runs::add(tx, &Run::of(&ag, host, f, project, Some(prompt)), &keys, kept.started(), ops::now()).map(Next::Run)
     }).await?;
     let run = match next {
