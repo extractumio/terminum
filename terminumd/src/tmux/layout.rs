@@ -31,7 +31,7 @@ pub struct Read {
 /// Reads `server`'s panes; `theme(session)` names the theme a session wears (its dot); `ending`:
 /// the panes whose hooks ended a turn that waits (page/turns.rs).
 pub async fn read(server: &Arc<Server>, states: &Mutex<States>, hooks: &Hooks, ending: &HashMap<String, bool>, home: &str, theme: impl Fn(&str) -> String) -> Result<Read, String> {
-    let lines = server.run(format!("list-panes -a -F '#{{pane_id}}\\t{LIST_PANES_FORMAT}'")).await?;
+    let lines = server.run(format!("list-panes -a -F '#{{pane_id}}\t{LIST_PANES_FORMAT}'")).await?;
     let mut every = Vec::new();
     let mut all = Vec::new();
     for (id, fields) in lines.iter().filter_map(|line| line.split_once('\t')) {
