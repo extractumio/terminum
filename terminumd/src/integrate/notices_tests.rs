@@ -170,7 +170,7 @@ fn ac192_two_trees_whose_commits_do_not_merge_are_each_told_once() {
     walk(&w.s, &w.root.join("home"), &[a.clone(), b.clone(), other.clone()], &[], 11).unwrap();
     let to_a = said(&w, &a.id);
     assert_eq!(to_a.len(), 1, "once for that overlap: {to_a:?}");
-    assert_eq!(to_a[0], format!("{}: its commits and {}'s (IN PROGRESS) change the same files: a.txt. They cannot be in one batch. Agree with its session who goes first; the other merges origin/main after the first lands, then queues.", a.id, b.id));
+    assert_eq!(to_a[0], format!("{}: its commits and {}'s (IN PROGRESS) change the same files: a.txt. They cannot be in one batch. Do not wait for {}: integrate as soon as your work is ready. The first queued lands first; the queue returns the other with the files to merge.", a.id, b.id, b.id));
     assert_eq!(said(&w, &b.id).len(), 1);
     assert!(said(&w, &other.id).is_empty(), "another file: nothing to tell");
 }
@@ -207,9 +207,9 @@ fn ac192_a_tree_with_no_task_is_only_the_other_side_named_by_its_session_or_fold
     let mut told = said(&w, &a.id);
     told.sort();
     assert_eq!(told, [
-        format!("{}: its commits and detached {} (folder {}), a tree with no task, change the same files: a.txt. Whichever lands second merges origin/main first: once it lands, merge origin/main before you queue.",
+        format!("{}: its commits and detached {} (folder {}), a tree with no task, change the same files: a.txt. Do not wait for it: integrate when your work is ready; if it lands first, the queue returns yours with the files to merge.",
                 a.id, git::short(&sh(&bare, &["rev-parse", "HEAD"])), real.display()),
-        format!("{}: its commits and fix/retry (session \"ops\"), a tree with no task, change the same files: a.txt. Whichever lands second merges origin/main first: once it lands, merge origin/main before you queue.", a.id),
+        format!("{}: its commits and fix/retry (session \"ops\"), a tree with no task, change the same files: a.txt. Do not wait for it: integrate when your work is ready; if it lands first, the queue returns yours with the files to merge.", a.id),
     ], "once per tree and conflict set; a session named without control characters or quotes; terminum's own tree, a waiting task's and one changing other files said nothing");
     assert!(said(&w, &asks.id).is_empty(), "a task not in work is not compared");
     assert!(overlaps_of(&a.task, 11).is_empty(), "a tree with no task has no card to open: no mark");
@@ -245,7 +245,7 @@ fn ac192_a_tree_overlapping_a_queued_task_is_told_its_place() {
     let q = queued(&w, 1, "a.txt", "queued\n");
     let a = working(&w, 2, "a.txt", "ours\n");
     walk(&w.s, &w.root.join("home"), std::slice::from_ref(&a), &[], 10).unwrap();
-    assert_eq!(said(&w, &a.id), [format!("{}: its commits and {q}'s change the same files: a.txt. {q} is queued for integration (1st). Go on; merge origin/main once {q} lands, before you queue.", a.id)]);
+    assert_eq!(said(&w, &a.id), [format!("{}: its commits and {q}'s change the same files: a.txt. {q} is queued for integration (1st). Do not wait for it: integrate when your work is ready; the queue holds yours until {q}'s batch ends and returns it with the files to merge if it no longer merges.", a.id)]);
     assert!(said(&w, &q).is_empty(), "a queued task learns of it when its batch is built");
 }
 

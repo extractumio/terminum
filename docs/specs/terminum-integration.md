@@ -428,10 +428,10 @@ Scenario: AC-191 failure — After's window is lost
 Scenario: AC-192 happy path — an overlap while both work
   Given API-12 and API-13 IN PROGRESS in worktrees of Billing's checkout, each with commits not in origin/main
   When a walk finds that their HEADs do not merge cleanly with each other
-  Then each agent is told once for that other task, the conflicting files and lines, and whether the other task works or is queued: "[terminum] API-12: its commits and API-13's (IN PROGRESS) change the same files: src/retry.rs. They cannot be in one batch. Agree with its session who goes first; the other merges origin/main after the first lands, then queues."
+  Then each agent is told once for that other task, the conflicting files and lines, and whether the other task works or is queued: "[terminum] API-12: its commits and API-13's (IN PROGRESS) change the same files: src/retry.rs. They cannot be in one batch. Do not wait for API-13: integrate as soon as your work is ready. The first queued lands first; the queue returns the other with the files to merge."
   And each card in IN PROGRESS says "overlaps API-13" (AC-193)
   When API-13 is already queued or in a batch
-  Then API-12 is told instead "… API-13 is queued for integration (2nd). Go on; merge origin/main once API-13 lands, before you queue."
+  Then API-12 is told instead "… API-13 is queued for integration (2nd). Do not wait for it: integrate when your work is ready; the queue holds yours until API-13's batch ends and returns it with the files to merge if it no longer merges."
 
 Scenario: AC-192 edge — new commits with the same advice
   Given API-12 and API-13 told of their overlap in src/retry.rs
@@ -466,7 +466,7 @@ Scenario: AC-192 edge — what is compared
   Then only commits are compared, each tree's HEAD against the others' and the target: uncommitted work is not seen, and a notice says "commits"
   And a pair is judged again only when one of its commits or the target changed
   When a worktree of the project's checkout has commits of its own and no task (a maintainer's own, a session off the board)
-  Then it is only the other side: a task whose commits do not merge with it is told once for that tree and the conflicting files and lines "[terminum] API-12: its commits and fix/retry (session "ops"), a tree with no task, change the same files: src/retry.rs. Whichever lands second merges origin/main first: once it lands, merge origin/main before you queue."
+  Then it is only the other side: a task whose commits do not merge with it is told once for that tree and the conflicting files and lines "[terminum] API-12: its commits and fix/retry (session "ops"), a tree with no task, change the same files: src/retry.rs. Do not wait for it: integrate when your work is ready; if it lands first, the queue returns yours with the files to merge."
   And the tree's resolved folder identifies it: another commit, branch name or session name alone does not repeat the advice, and two trees named alike remain distinct
   And the tree is named by its branch, or "detached" and its commit, and by the session working in it, else "folder" and its path; it is told nothing and no card says it
   And a tree holding the folder of any task's session, whatever its status, is that task's, never one with no task; terminum's own trees are not compared
@@ -904,8 +904,8 @@ Overlap notices remember the other task's key or the other tree's resolved folde
 
 | Notice | Words |
 |---|---|
-| overlap | "API-12: its commits and API-13's (session web-2, IN PROGRESS) change the same lines: <files and lines>. They cannot be in one batch. Agree with that session who goes first; the other merges origin/main after the first lands, then queues." |
-| overlap, the other queued | "… API-13 is queued for integration (2nd). Go on; merge origin/main once API-13 lands, before you queue." |
+| overlap | "API-12: its commits and API-13's (session web-2, IN PROGRESS) change the same lines: <files and lines>. They cannot be in one batch. Do not wait for API-13: integrate as soon as your work is ready. The first queued lands first; the queue returns the other with the files to merge." |
+| overlap, the other queued | "… API-13 is queued for integration (2nd). Do not wait for it: integrate when your work is ready; the queue holds yours until API-13's batch ends and returns it with the files to merge if it no longer merges." |
 | target moved | "API-12: origin/main moved to <sha> (batch 7: <tasks>) in files you changed: <files>. Merge origin/main now, before you queue." |
 | queued | "API-12 is queued 3rd for integration into origin/main. Expected batch: with API-9 and API-10, after batch 7 ends. Conflicts foreseen: none." |
 | held back | "API-12 is held back: it does not merge with API-9 of batch 8 in <files and lines>. Nothing to do until API-9's batch ends; it is judged again then." |
