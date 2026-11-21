@@ -87,6 +87,8 @@ pub struct Dispatcher {
     starting: Mutex<HashSet<String>>,
     /// runs whose End is under way (acts.rs)
     ending: Mutex<HashSet<String>>,
+    /// runs with deferred walk actions still in flight
+    deferred: Mutex<HashSet<String>>,
     /// a walk is due now (a session ended)
     soon: Notify,
     /// what a walk or a hook learned of each pane it watches

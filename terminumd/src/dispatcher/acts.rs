@@ -2,8 +2,11 @@
 //! What a walk leaves to do outside its transaction (`terminum-dispatcher.md` AC-131): typing, ending
 //! an agent, closing a pane, and what is said of them.
 
+use std::panic::AssertUnwindSafe;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+
+use futures_util::FutureExt;
 
 use super::plan::{self, Act};
 use super::runs::{self, Phase, Run};
@@ -17,6 +20,44 @@ pub(super) struct Later {
     pub(super) run: Run,
     pub(super) act: Act,
     pub(super) at: Instant,
+}
+
+pub(super) struct SubagentWatch {
+    pub(super) run: Run,
+    pub(super) server: Arc<Server>,
+    pub(super) pane: String,
+    pub(super) busy: bool,
+}
+
+#[derive(Default)]
+pub(super) struct Deferred {
+    pub(super) acts: Vec<Later>,
+    pub(super) subagents: Option<SubagentWatch>,
+}
+
+impl Deferred {
+    /// One ordered set of actions per run. A paste or close reaches its cleanup and records its
+    /// result before Dispatcher plans the run again, even after the walk stops waiting for it.
+    pub(super) fn start(self, app: &Shared, id: String) -> Option<tokio::task::JoinHandle<()>> {
+        let held = super::Held::take(app, |d| &d.deferred, &id)?;
+        let app = app.clone();
+        Some(tokio::spawn(async move {
+            let done = AssertUnwindSafe(async {
+                for act in self.acts {
+                    do_later(&app, act).await;
+                }
+                if let Some(s) = self.subagents {
+                    let key = s.server.key(&s.pane);
+                    watch_subagents(&app, &s.run, &s.server, &s.pane, &key, s.busy).await;
+                }
+            }).catch_unwind().await;
+            if done.is_err() {
+                tracing::error!(event = "dispatcher.act", run = %id, "deferred action panicked");
+                note(&app, "A Dispatcher action failed: see terminumd's log.".into());
+            }
+            drop(held);
+        }))
+    }
 }
 
 /// Closes the pane: its mark checked just before; `keep`: the screen's last 200 rows stay on the task. Last of all,
