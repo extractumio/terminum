@@ -22,42 +22,23 @@ pub(super) struct Later {
     pub(super) at: Instant,
 }
 
-pub(super) struct SubagentWatch {
-    pub(super) run: Run,
-    pub(super) server: Arc<Server>,
-    pub(super) pane: String,
-    pub(super) busy: bool,
-}
-
-#[derive(Default)]
-pub(super) struct Deferred {
-    pub(super) acts: Vec<Later>,
-    pub(super) subagents: Option<SubagentWatch>,
-}
-
-impl Deferred {
-    /// One ordered set of actions per run. A paste or close reaches its cleanup and records its
-    /// result before Dispatcher plans the run again, even after the walk stops waiting for it.
-    pub(super) fn start(self, app: &Shared, id: String) -> Option<tokio::task::JoinHandle<()>> {
-        let held = super::Held::take(app, |d| &d.deferred, &id)?;
-        let app = app.clone();
-        Some(tokio::spawn(async move {
-            let done = AssertUnwindSafe(async {
-                for act in self.acts {
-                    do_later(&app, act).await;
-                }
-                if let Some(s) = self.subagents {
-                    let key = s.server.key(&s.pane);
-                    watch_subagents(&app, &s.run, &s.server, &s.pane, &key, s.busy).await;
-                }
-            }).catch_unwind().await;
-            if done.is_err() {
-                tracing::error!(event = "dispatcher.act", run = %id, "deferred action panicked");
-                note(&app, "A Dispatcher action failed: see terminumd's log.".into());
+/// One ordered set of actions per run. A paste or close reaches its cleanup and records its
+/// result before Dispatcher plans the run again, even after the walk stops waiting for it.
+pub(super) fn start_deferred(app: &Shared, id: String, actions: Vec<Later>) -> Option<tokio::task::JoinHandle<()>> {
+    let held = super::Held::take(app, |d| &d.deferred, &id)?;
+    let app = app.clone();
+    Some(tokio::spawn(async move {
+        let done = AssertUnwindSafe(async {
+            for action in actions {
+                do_later(&app, action).await;
             }
-            drop(held);
-        }))
-    }
+        }).catch_unwind().await;
+        if done.is_err() {
+            tracing::error!(event = "dispatcher.act", run = %id, "deferred action panicked");
+            note(&app, "A Dispatcher action failed: see terminumd's log.".into());
+        }
+        drop(held);
+    }))
 }
 
 /// Closes the pane: its mark checked just before; `keep`: the screen's last 200 rows stay on the task. Last of all,
@@ -210,6 +191,10 @@ pub(super) async fn do_later(app: &Shared, l: Later) {
     if let Act::Resume { identity } = l.act {
         return super::resume::after_restart(app, l.run, identity).await;
     }
+    if let Act::SubagentFailed(words) = &l.act {
+        note(app, format!("{}: {words}", l.run.names()));
+        return super::told_all(app, &l.run);
+    }
     let Some((server, pane)) = l.run.place(app) else { return };
     let (task, key) = (l.run.names(), server.key(&pane));
     let done = match l.act {
@@ -244,6 +229,7 @@ pub(super) async fn do_later(app: &Shared, l: Later) {
             }
             Ok(())
         }
+        Act::SubagentTell(ids) => subagent_tell(app, &l.run, &server, &pane, &key, ids).await,
         Act::Nudge => {
             let text = plan::nudge_words(&task);
             // its hour starts once it went; a miss (a draft, a mode, a turn begun) is asked again by a later walk, and
@@ -268,37 +254,37 @@ pub(super) async fn do_later(app: &Shared, l: Later) {
     super::told_all(app, &l.run);
 }
 
-/// A subagent silent and idle: one request to the main agent, then, as it cannot be ended alone inside the
-/// agent, its task FAILED, its session kept (AC-127, OQ-122). A busy tree runs neither clock.
-pub(super) async fn watch_subagents(app: &Shared, run: &Run, server: &Arc<Server>, pane: &str, key: &str, busy: bool) {
-    let due: Vec<(String, plan::SubStep)> = {
-        let mut watch = app.dispatcher.watch.lock();
-        let Some(w) = watch.get_mut(key) else { return };
-        if busy || run.open_tools > 0 {
-            for sub in w.subs.values_mut() {
-                sub.last = Instant::now();
+/// A wait or a subagent event may have arrived since the walk decided to warn (AC-127).
+async fn subagent_tell(app: &Shared, run: &Run, server: &Arc<Server>, pane: &str, key: &str, ids: Vec<String>) -> Result<(), String> {
+    let (id, watched, a) = (run.id.clone(), key.to_string(), app.clone());
+    let pending = store(app, move |tx| {
+        let mut current = runs::by_id(tx, &id)?;
+        if current.state != Phase::Working || current.status != "IN PROGRESS" || current.open_tools > 0 || current.pane_key.as_deref() != Some(&watched) {
+            return Ok(None);
+        }
+        current.open = runs::in_progress(tx, &id)?;
+        current.ids.clone_from(&current.open);
+        let mut watch = a.dispatcher.watch.lock();
+        let Some(watch) = watch.get_mut(&watched) else { return Ok(None) };
+        let mut count = 0;
+        let scale = scale();
+        for id in ids {
+            if let Some(sub) = watch.subs.get_mut(&id)
+                && plan::subagent_step(sub.last.elapsed().as_secs() as i64 * scale, sub.told) == Some(plan::SubStep::Tell)
+            {
+                sub.told = plan::SubStep::Tell;
+                count += 1;
             }
-            return;
         }
-        w.subs.iter_mut().filter_map(|(id, sub)| {
-            let step = plan::subagent_step(sub.last.elapsed().as_secs() as i64 * scale(), sub.told)?;
-            sub.told = step;
-            Some((id.clone(), step))
-        }).collect()
-    };
-    for (id, step) in due {
-        if step == plan::SubStep::Tell {
-            let text = format!("[terminum Dispatcher] A subagent of {} has been silent for 10 minutes. End it if it is stuck.", run.names());
-            tell(app, run, server, pane, text, "The request about a silent subagent").await;
-        } else {
-            // it runs inside the agent and cannot be ended alone: the task fails, its session stays, and RUN
-            // goes on in it (OQ-122, AC-122)
-            let (r, words) = (run.clone(), format!("Subagent {id} has been silent for 20 minutes and cannot be ended alone: it runs inside the agent. RUN goes on in this session."));
-            note(app, format!("{}: {words}", run.names()));
-            let _ = store(app, move |tx| super::fail(tx, &r, &words)).await;
+        Ok((count > 0).then_some((current, count)))
+    }).await?;
+    if let Some((current, count)) = pending {
+        let text = format!("[terminum Dispatcher] A subagent of {} has been silent for 10 minutes. End it if it is stuck.", current.names());
+        for _ in 0..count {
+            tell(app, &current, server, pane, text.clone(), "The request about a silent subagent").await;
         }
-        super::told_all(app, run);
     }
+    Ok(())
 }
 
 #[cfg(test)]

@@ -149,24 +149,21 @@ pub fn set_prefix(tx: &Transaction, project: &str, prefix: &str) -> Result<(), S
 /// A task's number (the store's order) from what a person or an agent calls it: its ID now, one it had,
 /// or its key's first 8 hex characters or the whole key. None when nothing, or more than one, answers.
 pub fn resolve(tx: &Transaction, id: &str) -> Result<Option<i64>, String> {
-    let said = id.trim();
-    let upper = said.to_ascii_uppercase();
-    let now: Option<i64> = tx.query_row("SELECT number FROM tasks WHERE slug = ?1", [&upper], |r| r.get(0)).optional().map_err(sql)?;
-    if now.is_some() {
-        return Ok(now);
-    }
-    let was: Option<i64> = tx.query_row("SELECT t.number FROM task_slugs s JOIN tasks t ON t.id = s.task WHERE s.slug = ?1", [&upper], |r| r.get(0)).optional().map_err(sql)?;
-    if was.is_some() {
-        return Ok(was);
-    }
-    let lower = said.to_ascii_lowercase();
-    // the shown start of its key, or the whole key
-    if (lower.len() == UID_LEN || lower.len() == 32) && lower.chars().all(|c| c.is_ascii_hexdigit()) {
-        // a range the key's index walks: the keys are lower-case hex, and 'g' follows them all
-        let found = rows(tx, "SELECT number FROM tasks WHERE id >= ?1 AND id < ?2 LIMIT 2", (&lower, format!("{lower}g")), |r| r.get::<_, i64>(0))?;
-        return Ok(if found.len() == 1 { Some(found[0]) } else { None });
-    }
-    Ok(None)
+    let query = format!("SELECT number FROM tasks WHERE id = {}", key_named("?1"));
+    tx.prepare_cached(&query).map_err(sql)?.query_row([id], |r| r.get(0)).optional().map_err(sql)
+}
+
+/// The key of a task named by a SQL parameter or column. RUN and its saved presses resolve the same IDs.
+pub(crate) fn key_named(id: &str) -> String {
+    // The trim set is Unicode White_Space, as in str::trim. SQLite's upper and lower fold only ASCII.
+    // The key's index walks the prefix range: the keys are lower-case hex, and 'g' follows them all.
+    format!("(SELECT coalesce(
+        (SELECT id FROM tasks WHERE slug = upper(named.value)),
+        (SELECT task FROM task_slugs WHERE slug = upper(named.value)),
+        (SELECT min(id) FROM (SELECT id FROM tasks
+            WHERE length(named.value) IN ({UID_LEN}, 32) AND named.value NOT GLOB '*[^0-9A-Fa-f]*'
+                AND id >= lower(named.value) AND id < lower(named.value) || 'g' LIMIT 2) HAVING count(*) = 1))
+      FROM (SELECT trim({id}, char(9,10,11,12,13,32,133,160,5760,8192,8193,8194,8195,8196,8197,8198,8199,8200,8201,8202,8232,8233,8239,8287,12288)) AS value) named)")
 }
 
 #[cfg(test)]

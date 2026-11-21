@@ -8,10 +8,10 @@ use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use super::acts::{self, Deferred, Later, SubagentWatch};
+use super::acts::{self, Later};
 use super::plan::{self, Act, Facts};
 use super::runs::{self, Run};
-use super::{move_task, procs, say, scale, start, store, BEAT, GAP};
+use super::{move_task, procs, say, scale, start, store, Dispatcher, PaneWatch, BEAT, GAP};
 use crate::app::Shared;
 use crate::tasks::ops;
 use crate::tmux::hookstate::Hooks;
@@ -61,6 +61,7 @@ struct Read {
     id: String,
     facts: Facts,
     ended: bool,
+    busy: bool,
     key: String,
 }
 
@@ -69,13 +70,13 @@ type Walked = (Vec<Later>, Vec<String>, HashMap<String, (i64, i64)>);
 
 /// In one transaction: every run as it stands now, its clocks, what `plan` says. Moves and words are
 /// done here; what is not written is not done (AC-131). A run that cannot be written costs only itself, and says so.
-fn walk_store(tx: &rusqlite::Transaction, hooks: &Hooks, reads: Vec<Read>, now: i64, at: Instant) -> Result<Walked, String> {
+fn walk_store(tx: &rusqlite::Transaction, hooks: &Hooks, dispatcher: &Dispatcher, reads: Vec<Read>, now: i64, at: Instant) -> Result<Walked, String> {
     let (mut later, mut changed, mut used) = (Vec::new(), Vec::new(), HashMap::new());
     let live: HashMap<String, Run> = runs::live(tx)?.into_iter().map(|r| (r.id.clone(), r)).collect();
     for read in reads {
         let Some(r) = live.get(&read.id).cloned() else { continue };
         tx.execute_batch("SAVEPOINT one_run").map_err(ops::sql)?;
-        let walked = walk_one(tx, hooks, r.clone(), read, now, at);
+        let walked = walk_one(tx, hooks, dispatcher, r.clone(), read, now, at);
         tx.execute_batch(if walked.is_ok() { "RELEASE one_run" } else { "ROLLBACK TO one_run; RELEASE one_run" }).map_err(ops::sql)?;
         match walked {
             Ok((l, c, u)) => {
@@ -103,7 +104,7 @@ fn said_once(tx: &rusqlite::Transaction, r: &Run, words: &str) -> Result<bool, S
     say(tx, r, words).map(|()| true)
 }
 
-fn walk_one(tx: &rusqlite::Transaction, hooks: &Hooks, mut r: Run, read: Read, now: i64, at: Instant) -> Result<Walked, String> {
+fn walk_one(tx: &rusqlite::Transaction, hooks: &Hooks, dispatcher: &Dispatcher, mut r: Run, read: Read, now: i64, at: Instant) -> Result<Walked, String> {
     let (mut later, mut changed, mut used) = (Vec::new(), Vec::new(), HashMap::new());
     if r.is_starting() {
         return Ok((later, changed, used));
@@ -154,7 +155,58 @@ fn walk_one(tx: &rusqlite::Transaction, hooks: &Hooks, mut r: Run, read: Read, n
             act => later.push(Later { run: r.clone(), act, at }),
         }
     }
+    // A wait recorded by a tool, a human or this very walk takes precedence over the watchdog.
+    if facts.alive && facts.marked && facts.subs && r.state == runs::Phase::Working && !r.ad_hoc()
+        && let Some(watch) = dispatcher.watch.lock().get_mut(&read.key)
+        && let Some((run, act)) = watch_subagents(tx, watch, &r, read.busy, Instant::now())?
+    {
+        later.push(Later { run, act, at });
+    }
     Ok((later, changed, used))
+}
+
+/// Only observed working time counts. An event during a wait starts fresh; otherwise the
+/// subagent keeps the idle time it had when the wait began (AC-127).
+fn subagent_steps(watch: &mut PaneWatch, run: &Run, busy: bool, at: Instant) -> Vec<(String, plan::SubStep)> {
+    if run.status != "IN PROGRESS" {
+        watch.subs_paused_at.get_or_insert(at);
+        return Vec::new();
+    }
+    let paused = watch.subs_paused_at.take();
+    let busy = busy || run.open_tools > 0;
+    let scale = scale();
+    watch.subs.iter_mut().filter_map(|(id, sub)| {
+        if busy {
+            sub.last = at;
+            return None;
+        }
+        if let Some(paused) = paused {
+            sub.last += at.saturating_duration_since(paused.max(sub.last));
+        }
+        let silent = at.saturating_duration_since(sub.last).as_secs() as i64 * scale;
+        plan::subagent_step(silent, sub.told).map(|step| (id.clone(), step))
+    }).collect()
+}
+
+/// Decide with the run's current status and fail its active tasks in the same transaction (AC-127).
+pub(super) fn watch_subagents(tx: &rusqlite::Transaction, watch: &mut PaneWatch, run: &Run, busy: bool, at: Instant) -> Result<Option<(Run, Act)>, String> {
+    let due = subagent_steps(watch, run, busy, at);
+    if due.is_empty() {
+        return Ok(None);
+    }
+    if let Some((id, _)) = due.iter().find(|(_, step)| *step == plan::SubStep::Fail) {
+        let mut active = run.clone();
+        active.open = runs::in_progress(tx, &run.id)?;
+        active.ids.clone_from(&active.open);
+        let words = format!("Subagent {id} has been silent for 20 minutes and cannot be ended alone: it runs inside the agent. RUN goes on in this session.");
+        super::move_task(tx, &active, "FAILED", &words)?;
+        for (id, step) in due {
+            watch.subs.get_mut(&id).unwrap().told = step;
+        }
+        Ok(Some((active, Act::SubagentFailed(words))))
+    } else {
+        Ok(Some((run.clone(), Act::SubagentTell(due.into_iter().map(|(id, _)| id).collect()))))
+    }
 }
 
 /// What one walk read of a server: its panes, and what runs under them, if asked and answered.
@@ -294,7 +346,7 @@ impl<'a> RunPane<'a> {
         }
     }
 
-    fn into_read(self, app: &Shared, background: bool) -> (Read, Option<SubagentWatch>) {
+    fn into_read(self, app: &Shared, background: bool) -> Read {
         let (p, under) = (self.p, self.under);
         // after its agent, what runs in front is a human's: it stays theirs. A job behind the shell keeps
         // the 5 minutes from running: a prompt's own helpers come and go, and must not leave it open for good
@@ -315,12 +367,7 @@ impl<'a> RunPane<'a> {
             identity: self.seen.identity.clone(),
             ..Default::default()
         };
-        // + Session's is the human's: nothing is typed in it, about its subagents either (AC-142).
-        let subagents = (facts.alive && facts.marked && facts.subs && !self.run.ad_hoc()).then(|| SubagentWatch {
-            run: self.run.clone(), server: self.server, pane: self.pane, busy: self.busy,
-        });
-        let read = Read { id: self.run.id.clone(), facts, ended: self.ended, key: self.key };
-        (read, subagents)
+        Read { id: self.run.id.clone(), facts, ended: self.ended, key: self.key, busy: self.busy }
     }
 }
 
@@ -364,28 +411,22 @@ async fn walk(app: &Shared) {
         RunPane::read(app, r, place, seen, limits)
     }).collect();
     let backgrounds = futures_util::future::join_all(panes.iter().map(RunPane::background)).await;
-    let mut deferred: HashMap<String, Deferred> = HashMap::new();
-    let reads = panes.into_iter().zip(backgrounds).map(|(pane, background)| {
-        let (read, subagents) = pane.into_read(app, background);
-        if let Some(subagents) = subagents {
-            deferred.entry(read.id.clone()).or_default().subagents = Some(subagents);
-        }
-        read
-    }).collect();
+    let reads = panes.into_iter().zip(backgrounds).map(|(pane, background)| pane.into_read(app, background)).collect();
     let a = app.clone();
-    let (later, changed, used) = match store(app, move |tx| walk_store(tx, &a.hooks, reads, now, at)).await {
+    let (later, changed, used) = match store(app, move |tx| walk_store(tx, &a.hooks, &a.dispatcher, reads, now, at)).await {
         Ok(done) => done,
         Err(e) => return tracing::warn!(event = "dispatcher.walk", error = %e),
     };
     for task in changed.into_iter().collect::<HashSet<_>>() {
         crate::tasks::api::told(app, &task);
     }
+    let mut deferred: HashMap<String, Vec<Later>> = HashMap::new();
     for action in later {
-        deferred.entry(action.run.id.clone()).or_default().acts.push(action);
+        deferred.entry(action.run.id.clone()).or_default().push(action);
     }
     // A deadline stops waiting for the task. The ordered actions can still finish and record their result.
     futures_util::future::join_all(deferred.into_iter().filter_map(|(id, work)| {
-        work.start(app, id).map(|task| tokio::time::timeout(LIST_WAIT, task))
+        acts::start_deferred(app, id, work).map(|task| tokio::time::timeout(LIST_WAIT, task))
     })).await;
     // what a card shows of every linked live session; for others' sessions only the numbers (AC-128)
     let mut items = serde_json::Map::new();

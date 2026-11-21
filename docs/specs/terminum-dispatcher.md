@@ -71,7 +71,7 @@ Open questions:
 | AC-124 | [MUST / P0] | An agent that waits for a human for 2 minutes puts its task in WAIT FOR HUMAN, and it returns once the agent goes on. |
 | AC-125 | [MUST / P0] | Dispatcher closes a session it started 5 minutes after DONE or FAILED, only with the agent idle, keeps the screen's last rows when there is no result, writes each session's start and end on the task, and acts only on sessions it started and marked. |
 | AC-126 | [MUST / P0] | A task's optional time budget counts only IN PROGRESS; the agent hears it at the start and 3% before its end, at least 2 minutes; at the limit Dispatcher ends the agent and what it can reach of its subagents and the task is FAILED. |
-| AC-127 | [SHOULD / P1] | A subagent silent and idle for 10 minutes gets the main agent one request to deal with it; at 20 minutes Dispatcher ends it where it can; where it cannot, the task is FAILED and RUN goes on in its session. |
+| AC-127 | [SHOULD / P1] | A subagent silent and idle for 10 minutes gets the main agent one request to deal with it; at 20 minutes Dispatcher ends it where it can; where it cannot, the task is FAILED and RUN goes on in its session. Both clocks pause while the run waits for a human or a prerequisite task. |
 | AC-128 | [SHOULD / P1] | A card shows the session's CPU, memory and running time; memory over 4 GiB warns the agent, over 8 GiB ends the session as FAILED, set globally and per project, and the window that sets them says what is measured and that nothing stops a process between two readings. |
 | AC-129 | [SHOULD / P1] | A card shows the tokens its session used; what a task's session spent stays on the task when it ends, in tokens and, where the price is known, an estimate in dollars. |
 | AC-130 | [SHOULD / P1] | All of the above hold for sessions on remote hosts; a host out of reach is said, and a lost link adds nothing to any clock. |
@@ -87,7 +87,7 @@ Open questions:
 | AC-205 | [MUST / P0] | A run Dispatcher started whose task was IN PROGRESS when its tmux server ended resumes by itself once the server is back, as RUN would, with fixed words that say so; a window closed by hand, a task not in progress, a run with nothing to resume, and a server that ends again within an hour of such a resume do not. |
 | AC-156 | [MUST / P0] | A run starts its agent's command as the operator wrote it, its permissions and model included; Dispatcher adds only the inline TUI in the agent's own process with Codex's update menu off (§9), the effort and, going on, the resume of its conversation; going on starts the agent's command as the pool has it then. |
 | AC-157 | [MUST / P0] | An agent that needs a human asks by `ask_human`: its questions, written for a newcomer as why a person is needed (one sentence), the recommended answers with why and the other options, then the whole issue (one paragraph), stay on the task, the task waits for the human, and once the agent's turn is over its session closes; the task keeps its agent and conversation, and RUN resumes that conversation with the human's answers. |
-| AC-158 | [MUST / P0] | A RUN at its agent's or project's limit that the human added to the queue (AC-169), or a schedule's task with no room (terminum-schedules.md AC-161), waits for room, schedules' tasks ahead of every other wait, else in the queue's order, and starts once there is room; it is called off by the human, or by the task moving, archived or its agent deleted. |
+| AC-158 | [MUST / P0] | A RUN the human queued at an agent or project limit (AC-169), or a schedule's task with no room (terminum-schedules.md AC-161), waits for a slot, schedules first, then in queue order. A human can cancel it. Moving or archiving its primary task or deleting its agent also cancels it. While it waits, agents can read and comment on every task it carries, and requests to move or finish any member are refused. |
 | AC-210 | [MUST / P0] | An agent whose task cannot go on before other tasks of its project are DONE says so by `wait_for_task`, never by asking a human: they join its Blocked by with its reason, the task waits in TODO with no clock and no queue place, its session closes once the turn is over, and Dispatcher goes on with it in the same conversation, as who started the run, once every one is DONE; one of them FAILED, archived or deleted asks a human instead. |
 | AC-169 | [MUST / P0] | A RUN at a limit is offered its agent's queue and waits only once the human agrees; the agent's card shows a pale dot for each queued task, a ring for each free slot and a dashed ring for each kept one, and a key that opens its window at the queue, where tasks are dragged or moved by arrows into another order and taken out, on a Mac and on a phone. |
 | AC-170 | [SHOULD / P1] | Auto-Dispatcher, off until a human turns it on for a project with the switch in the board's bar: it takes TODO tasks of the severities chosen that stand for the wait set; with free slots and such tasks Dispatcher starts a round, one more session of the chosen agent that takes no slot; that agent scores the candidates by RICE and starts the best, one a free slot, each on the agent named in the task or the setting's default, told only its ID; or, set to priority and saved order, terminumd starts them itself top down with no agent; a failing round or two failing tasks turn it off, said on the board. |
@@ -759,6 +759,12 @@ Scenario: AC-127 edge — busy and silent
   Given a subagent in a long build, above the threshold
   Then neither clock runs
 
+Scenario: AC-127 edge — the run waits
+  Given a run with a silent subagent whose open tasks wait for a human (AC-157) or for prerequisite tasks (AC-210)
+  When 20 minutes pass while its session is still open
+  Then its tasks stay in WAIT FOR HUMAN or in TODO with the kept press, respectively
+  And Dispatcher neither advances the silence clock nor sends a request about that subagent
+
 Scenario: AC-127 failure — cannot be ended alone
   When a subagent runs inside the agent's process (OQ-122)
   Then API-12 is FAILED with "Subagent <id> has been silent for 20 minutes and cannot be ended alone: it runs inside the agent. RUN goes on in this session."
@@ -1408,6 +1414,7 @@ Scenario: AC-158 happy path — a press at a limit
   And while it waits, an agent's move_task or finish_task on it is refused, "API-13 waits in Opus reviewer's queue: it starts when there is room. You can read it and comment.": no other session calls off a human's or a manager's press; a human's move still does
   When API-12's session closes, its agent goes or it is given up
   Then within a walk API-13's press goes again as RUN would go now: every check of a press read anew, the folder, hooks, the host's link, the text the human saw
+  And once it starts, the run's permissions apply to every task it carries (terminum-kanban.md AC-115)
 
 Scenario: AC-158 edge — in turn
   Given API-13 waiting for Opus reviewer, and API-15 pressed on it after
@@ -1415,6 +1422,13 @@ Scenario: AC-158 edge — in turn
   Then API-13 takes it: the first of the queue as the human ordered it (AC-169); a press while a wait before it has room goes behind it
   And a wait held by its project's limit holds no other agent's or project's wait
   But a wait of a schedule's task, a firing's, a Run now's or a RUN's of it, stands ahead of every other wait of its agent and of its project, in the order such waits came (terminum-schedules.md AC-161)
+
+Scenario: AC-158 error — an agent moves or finishes a queued member
+  Given the queued press for API-13 also carries API-14 and API-14's unfinished subtask API-15 (AC-169)
+  When an agent of the project calls move_task or finish_task on API-14 or API-15
+  Then each call is refused with "<task ID> waits in Opus reviewer's queue: it starts when there is room. You can read it and comment."
+  And no status or result is saved, and the press still waits
+  And get_task and add_comment still work
 
 Scenario: AC-158 edge — pressed again
   When the user presses Run on API-13 again, on Opus reviewer or on another agent, or Run from scratch
@@ -1425,6 +1439,7 @@ Scenario: AC-158 edge — pressed again
 Scenario: AC-158 edge — called off
   When the user presses Stop waiting in API-13's window
   Then the wait goes, "The human called off its wait for Opus reviewer." is on API-13, and it stays where it stood
+  And the task tools' ordinary permissions apply again to every task the press carried (terminum-kanban.md AC-115)
   When API-13 moves, is archived, or Opus reviewer is deleted
   Then the wait goes at the next walk, saying why on API-13
 
@@ -1620,8 +1635,16 @@ Scenario: AC-169 edge — another agent's waits
   And where a project's limit holds them all, the one line decides: a task moved up in Opus reviewer's queue may start before API-20
 
 Scenario: AC-169 edge — a press for several tasks
-  Given API-13 and API-14 run together on Opus reviewer at its limit, added to the queue
-  Then they are one row and one dot, "API-13, API-14", and take out calls off the press for both
+  Given a RUN of API-13 also names API-14, which has an unfinished subtask API-15, and waits for Opus reviewer
+  Then API-13 and API-14 have one queue row and one dot, "API-13, API-14"
+  And all three task cards share the same place and primary task, with the same agent permissions (AC-158)
+  And taking out the press clears the wait for every member
+
+Scenario: AC-169 edge — a scheduled task's subtask
+  Given a schedule's task with an unfinished subtask
+  When the schedule's task waits for room
+  Then the subtask is outside that press, as the schedule's task runs alone (AC-185)
+  And the task tools' ordinary permissions apply to the subtask
 ```
 
 ### AC-170 — Auto-Dispatcher [SHOULD / P1]
@@ -2254,7 +2277,7 @@ Depends on `terminum-kanban.md`'s Stage 1. All three stages belong to terminum's
 - [x] AC-124 — `cargo test dispatcher::plan`, `web/test/e2e_livedispatcher.mjs`
 - [x] AC-125 — `cargo test dispatcher::plan`, `cargo test dispatcher::acts` (a close decided before a human's input; a draft in the box), `web/test/e2e_livedispatcher.mjs` (a draft typed by tmux)
 - [x] AC-126 — `cargo test dispatcher::plan`, `cargo test tasks::tell` (words not heard go again), `cargo test dispatcher::acts` (an end decided before a human's input), `web/test/e2e_livedispatcher.mjs`, `SECURITY.md` carries Dispatcher's signals
-- [x] AC-127 — `cargo test dispatcher::plan`, `cargo test dispatcher::hooks`, `cargo test tmux::hookstate`, `web/test/e2e_livedispatcher.mjs`
+- [x] AC-127 — `cargo test dispatcher::plan`, `cargo test dispatcher::hooks`, `cargo test tmux::hookstate`, `cargo test ac127` (clock pause and mixed run), `web/test/e2e_livedispatcher.mjs` (active run), `web/test/e2e_livesubagents.mjs` (human and prerequisite waits)
 - [x] AC-128 — `cargo test dispatcher`, `cargo test tasks::agents`, `web/test/e2e_livedispatcher.mjs`, its window's words and global placeholders in `web/test/e2e_liveboardagents.mjs`
 - [x] AC-129 — `cargo test cli::hooktokens` with fixtures of both agents' files, `cargo test dispatcher::usage` (a late read counts nothing), `web/test/e2e_livedispatcher.mjs`
 - [x] AC-130 — `scripts/e2e_remote_tasks.py`
@@ -2267,7 +2290,7 @@ Depends on `terminum-kanban.md`'s Stage 1. All three stages belong to terminum's
 - [x] AC-168 — `cargo test subscriptions`, `cargo test usageask`, `cargo test usageread`, `cargo test settings::tests::ac168`, `cargo test cli::statusline`, `cargo test cli::hooktokens`, `scripts/e2e_hooks.py`, `web/test/e2e_liveboardsubs.mjs` (a stripe under 40% green, over 90% red)
 - [ ] AC-156 — `cargo test tasks::agents`, `cargo test dispatcher::press`, `web/test/e2e_liveboardagents.mjs`, `web/test/e2e_livedispatcher.mjs` (the inline words), `SECURITY.md` carries the operator's command
 - [ ] AC-157 — `cargo test dispatcher::plan`, `cargo test dispatcher::press`, `cargo test dispatcher::hooks` (held initial event, early tools and mixed outcomes), `cargo test dispatcher::start` (stale start watcher), `cargo test tasks::tools`, `cargo test tasks::integration_queue` (early integration), `cargo test cli::mcp`, `web/test/e2e_livedispatcher.mjs`
-- [ ] AC-158 — `cargo test dispatcher::waits`, `web/test/e2e_liveboardagents.mjs`
+- [ ] AC-158 — `cargo test dispatcher::waits` (move and result refusals for all queued members, reading, commenting, cancellation, and handoff to the live run), `web/test/e2e_liveboardagents.mjs`
 - [x] AC-169 — `cargo test dispatcher::pool` (four integration waits free agent and project room while every retained session stays visible, startup reservations, a live return above the limit, mixed tasks and restart), `cargo test dispatcher::waits`, `cargo test roles::tests::queue_tests` (manager promotion, saved press, grouped positions, persistence and refusals), `scripts/e2e_roles.py` (P2/P2/P0 promotion and the same agent conversation), `cargo test ac169` (filtered counts, queued members and unanswered subtasks), `web/test/e2e_integrationslots.mjs` (retained dots and Open session in both themes and sizes), `node web/test/e2e_live.mjs chromium webkit integration-slots` (a queued blocker starts; retained sessions open; a return blocks later starts), `web/test/e2e_livequeue.mjs`, `web/test/e2e_livequeuewait.mjs` (a wide and a phone size: answered WAIT FOR HUMAN, positions, counts, reordering, cancellation), `web/test/e2e_liveboardagents.mjs`
 - [x] AC-170 — `cargo test dispatcher::auto`, `cargo test tasks::auto`, `cargo test tasks::tools` (a round's pane), `web/test/e2e_liveauto.mjs` on `scripts/fake_agent.py` (its tab in the project's window, the cog, several projects shown); no test of its own: two dispatch_task calls at once through the socket, a new place among the cards leaving the wait as it was, a candidate with an earlier conversation started anew; not run on a real model: whether a real agent follows the round's words
 - [x] AC-185 — `cargo test ac185` (dispatcher::press, tasks::tools), `cargo test dispatcher::auto` (a main task as a candidate, its agent's words), `web/test/e2e_livemain.mjs` on `scripts/fake_agent.py` (a human's RUN, a subtask failed, run again); no test of its own: Auto-Dispatcher's start of a main task through the page, the ask and its answers through the page, a manager's run_task; not run on a real model: whether a real agent follows the words
