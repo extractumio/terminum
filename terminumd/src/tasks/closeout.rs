@@ -19,10 +19,10 @@ macro_rules! removable {
 }
 pub(crate) use removable;
 
-/// When that cause is another task of the board (terminum-dispatcher.md AC-210): Dispatcher waits for it, no human. A
+/// When that cause is another task (terminum-dispatcher.md AC-210): Dispatcher waits for it, no human. A
 /// macro, as `removable!`.
 macro_rules! waits_for_task {
-    () => { "If what holds it is another task of the board that must be DONE first, call execute_tool(\"wait_for_task\", {id, on, why}) instead, then end your turn: Dispatcher goes on with it in this conversation once that task is DONE, and no human is asked." };
+    () => { "If what holds it is another task that must be DONE first, call execute_tool(\"wait_for_task\", {id, on, why}) instead, then end your turn: Dispatcher goes on with it in this conversation once that task is DONE, and no human is asked." };
 }
 pub(crate) use waits_for_task;
 
