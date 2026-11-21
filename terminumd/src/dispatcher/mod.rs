@@ -89,6 +89,8 @@ pub struct Dispatcher {
     ending: Mutex<HashSet<String>>,
     /// runs with deferred walk actions still in flight
     deferred: Mutex<HashSet<String>>,
+    /// restart recovery releases or reserves shared agent and project slots in turn (AC-205)
+    restart_recovery: tokio::sync::Mutex<()>,
     /// a walk is due now (a session ended)
     soon: Notify,
     /// what a walk or a hook learned of each pane it watches

@@ -47,6 +47,8 @@ fn meta_key(r: &Run) -> String {
 
 /// Run `r`, cut off by its server's end and back as `identity`, resumes, or is FAILED with why it does not.
 pub(super) async fn after_restart(app: &Shared, r: Run, identity: String) {
+    // A refused resume releases its old run's slot before the next recovery checks the pool.
+    let _turn = app.dispatcher.restart_recovery.lock().await;
     let (run, now) = (r.clone(), ops::now());
     let ready = store(app, move |tx| {
         let key = meta_key(&run);
