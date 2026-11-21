@@ -4,6 +4,7 @@
 
 use serde::Deserialize;
 
+use super::fire::{self, Initiator};
 use super::runs::{self, Phase, Run};
 use crate::tmux::PaneState;
 use crate::tasks::{closeout, files};
@@ -101,6 +102,8 @@ pub(super) struct Facts {
     files: Vec<String>,
     /// the first task's schedule, and whether a run of it was before
     schedule: Option<(Schedule, bool)>,
+    /// who requested a schedule's launch when the press came from the schedule itself
+    pub(super) schedule_initiator: Initiator,
     language: String,
     /// the first task is Auto-Dispatcher's round (AC-170)
     round: Option<crate::tasks::auto::Round>,
@@ -147,6 +150,7 @@ pub(super) fn facts(tx: &rusqlite::Transaction, tasks: &[Task], message: Option<
         texts: tasks.iter().map(|t| ops::text_of(tx, &t.id)).collect::<Result<_, _>>()?,
         files: files::of_task(tx, &t.id)?.into_iter().map(|f| f.name).collect(),
         schedule,
+        schedule_initiator: Initiator::Due,
         language: closeout::language_of(tx, &t.project)?,
         round: crate::tasks::auto::round_of(tx, &t.key)?,
         auto: false,
@@ -190,7 +194,8 @@ impl Facts {
         // a schedule's task goes as the schedule's run, in its own words (terminum-schedules.md AC-162)
         if let Some((s, again)) = &self.schedule {
             // its first run is the firing's or a Run now's; any after is a RUN, the human's or the manager's
-            let run = super::fire::prompt(s, &t.id, &t.title, body, *again, self.manager);
+            let by = if self.manager { Initiator::Manager } else if *again { Initiator::Human } else { self.schedule_initiator };
+            let run = fire::prompt(s, &t.id, &t.title, body, *again, by);
             return match said { Some(m) => format!("{m}\n\n{run}"), None => run };
         }
         let mut parts = vec![format!("{who} ran task {}: {}", t.id, t.title)];
