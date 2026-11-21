@@ -1,22 +1,75 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 use super::*;
 
+fn pending_scan(c: &Cache, path: &Path) -> (watch::Sender<Option<ReadResult>>, Pending, Arc<AtomicBool>) {
+    let (tx, rx) = watch::channel(None);
+    let pending = Pending { rx, fallback: None };
+    let dirty = Arc::new(AtomicBool::new(false));
+    c.slots.lock().insert(path.to_path_buf(), (Slot::Loading(pending.clone(), dirty.clone()), Instant::now()));
+    (tx, pending, dirty)
+}
+
 #[tokio::test]
 async fn invalidation_during_a_scan_keeps_waiters_until_fresh_publication() {
     let c = Cache::new(64 << 20);
     let path = PathBuf::from("/synthetic-folder");
-    let (tx, rx) = watch::channel(None);
-    let dirty = Arc::new(AtomicBool::new(false));
-    c.slots.lock().insert(path.clone(), (Slot::Loading(rx.clone(), dirty.clone()), Instant::now()));
-    let mut second = c.start_read(path.clone());
+    let (tx, first, dirty) = pending_scan(&c, &path);
+    let second = c.start_read(path.clone());
+    let mut rereads_left = DIRTY_REREADS;
     c.invalidate(&path);
-    assert!(!c.finish_read(&path, &dirty, &tx, Err("obsolete scan".into())));
-    assert!(rx.borrow().is_none());
+    assert!(!c.finish_read(&path, &dirty, &tx, Err("obsolete scan".into()), &mut rereads_left));
+    assert!(first.rx.borrow().is_none());
     assert!(matches!(c.slots.lock().get(&path), Some((Slot::Loading(..), _))));
     assert_eq!(c.generation.load(AO::Relaxed), 1, "no duplicate worker started");
-    assert!(c.finish_read(&path, &dirty, &tx, Err("fresh scan".into())));
-    assert_eq!(second.wait_for(|v| v.is_some()).await.unwrap().as_ref().unwrap().as_ref().err().unwrap(), "fresh scan");
-    assert_eq!(rx.borrow().as_ref().unwrap().as_ref().err().unwrap(), "fresh scan");
+    assert!(c.finish_read(&path, &dirty, &tx, Err("fresh scan".into()), &mut rereads_left));
+    assert_eq!(second.wait().await.unwrap().err().unwrap(), "fresh scan");
+    assert_eq!(first.wait().await.unwrap().err().unwrap(), "fresh scan");
+}
+
+#[tokio::test]
+async fn continuously_invalidated_scans_publish_for_all_waiters_and_reread() {
+    // AC-61: a change during each pass must not keep Files waiting for a quiet pass.
+    let dir = crate::testutil::fresh_dir("changing-listing");
+    fs::write(dir.join("first.txt"), "").unwrap();
+    let c = Cache::new(64 << 20);
+    let (tx, first, dirty) = pending_scan(&c, &dir);
+    let second = c.start_read(dir.clone());
+    let mut rereads_left = DIRTY_REREADS;
+    c.invalidate(&dir);
+    let initial = Arc::new(read_dir_sorted(&dir, 100).unwrap());
+    assert!(!c.finish_read(&dir, &dirty, &tx, Ok(initial), &mut rereads_left));
+    assert!(first.rx.borrow().is_none());
+
+    c.invalidate(&dir);
+    let last = Arc::new(read_dir_sorted(&dir, 101).unwrap());
+    assert!(c.finish_read(&dir, &dirty, &tx, Ok(last.clone()), &mut rereads_left));
+    for waiter in [first, second] {
+        assert!(Arc::ptr_eq(&waiter.wait().await.unwrap().unwrap(), &last));
+    }
+
+    fs::write(dir.join("second.txt"), "").unwrap();
+    let page = c.page(&dir, 0, 10, "", true, Sort::Name, None).await;
+    assert_eq!((page.status, page.total), ("ready", 2));
+    assert_ne!(page.generation, last.generation);
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_result_completed_between_polls_is_available_if_the_next_read_times_out() {
+    // AC-61: the previous request timed out, leaving only the slot's receiver.
+    let dir = crate::testutil::fresh_dir("listing-between-polls");
+    let c = Cache::new(64 << 20);
+    let (tx, _, dirty) = pending_scan(&c, &dir);
+    let last = Arc::new(read_dir_sorted(&dir, 100).unwrap());
+    c.invalidate(&dir);
+    let mut rereads_left = 0;
+    assert!(c.finish_read(&dir, &dirty, &tx, Ok(last.clone()), &mut rereads_left));
+    c.invalidate(&dir);
+
+    let mut next = c.start_read(dir);
+    // Hold the new read open to exercise the wait limit independently of disk speed.
+    let (_unfinished, rx) = watch::channel(None);
+    next.rx = rx;
+    assert!(Arc::ptr_eq(&next.wait().await.unwrap().unwrap(), &last));
 }
 
 #[test]
@@ -29,9 +82,9 @@ fn lossy_names_are_refused_instead_of_aliasing_another_file() {
 #[test]
 fn errors_and_empty_folders_are_evicted_with_their_slot_overhead() {
     let c = Cache::new(1);
-    c.slots.lock().insert(PathBuf::from("/missing"), (Slot::Done(Err("missing".into()), Instant::now()), Instant::now()));
+    c.slots.lock().insert(PathBuf::from("/missing"), (Slot::Done(Err("missing".into()), Some(Instant::now())), Instant::now()));
     let empty = Listing { entries: vec![], dir_mtime: 0, generation: 1, read_at: Instant::now(), bytes: 0, filtered: Mutex::new(None), filtered_bytes: Default::default(), recent: OnceLock::new(), by_ext: OnceLock::new() };
-    c.slots.lock().insert(PathBuf::from("/empty"), (Slot::Done(Ok(Arc::new(empty)), Instant::now()), Instant::now()));
+    c.slots.lock().insert(PathBuf::from("/empty"), (Slot::Done(Ok(Arc::new(empty)), Some(Instant::now())), Instant::now()));
     assert!(c.stats().0 > 1);
     c.evict();
     assert_eq!(c.stats(), (0, 0));
