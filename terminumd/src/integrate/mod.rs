@@ -25,8 +25,12 @@ use std::time::Duration;
 use crate::app::Shared;
 use crate::tmux::server::Link;
 
-/// How often the engine looks.
-const BEAT: Duration = Duration::from_secs(10);
+/// How often the engine looks: 10 s; a test gives it a beat of its own (`TM_TEST_INTEGRATION_BEAT_MS`, read once, only with a
+/// test's `TM_APP_DIR`).
+fn beat() -> Duration {
+    static BEAT: std::sync::OnceLock<Duration> = std::sync::OnceLock::new();
+    *BEAT.get_or_init(|| Duration::from_millis(crate::dispatcher::of_test("TM_TEST_INTEGRATION_BEAT_MS").map_or(10_000, |ms| ms as u64)))
+}
 /// How many beats between two walks over the trees in work (AC-192).
 const WALK_EVERY: u32 = 6;
 
@@ -54,7 +58,7 @@ pub async fn run(app: Shared) {
         beat = beat.wrapping_add(1);
         deliver(&app, &mut last).await;
         crate::page::projects::tell(&app);
-        tokio::time::sleep(BEAT).await;
+        tokio::time::sleep(beat()).await;
     }
 }
 
