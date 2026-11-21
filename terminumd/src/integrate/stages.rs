@@ -12,7 +12,7 @@ use rusqlite::Transaction;
 
 use super::engine::{place, window, worktree, Place, Window, OVER};
 use super::git;
-use super::red_target;
+use super::{red_recheck, red_target};
 use super::retry_notes;
 use super::runner::Runner;
 use super::store::{self as bs, Left};
@@ -64,7 +64,8 @@ pub fn verify_step(store: &Store, runner: &dyn Runner, home: &Path, now: i64) ->
     let (runs, next) = store.with(|tx| {
         red_target::release(tx, now)?;
         let runs = ops::rows(tx, "SELECT v.task, t.slug, t.number, v.project, v.commit_sha, v.pane, v.started,
-                EXISTS (SELECT 1 FROM integration_entries e WHERE e.task = v.task AND e.commit_sha = v.commit_sha AND e.stage = 'verifying'),
+                EXISTS (SELECT 1 FROM integration_entries e WHERE e.task = v.task AND e.commit_sha = v.commit_sha AND e.stage = 'verifying')
+                    OR (v.red_attempt = 'recheck' AND t.status NOT IN ('DONE', 'FAILED') AND t.archived_at IS NULL),
                 coalesce(i.check_minutes, 90), v.attempt, v.target_sha, v.steps, v.red_attempt
             FROM integration_verifies v JOIN tasks t ON t.id = v.task LEFT JOIN project_integration i ON i.project = v.project ORDER BY v.started", [],
             |r| Ok(Run { task: r.get(0)?, id: r.get(1)?, number: r.get(2)?, project: r.get(3)?, commit: r.get(4)?, pane: r.get(5)?, started: r.get(6)?, wanted: r.get(7)?,
@@ -86,6 +87,8 @@ pub fn verify_step(store: &Store, runner: &dyn Runner, home: &Path, now: i64) ->
             running += 1;
         }
     }
+    // a red target run again by itself frees the tasks held behind it (AC-198): before new tasks' Verifies
+    running += red_recheck::start_due(store, runner, home, VERIFY_MOST.saturating_sub(running), now)?;
     for (task, project, commit) in next.into_iter().take(VERIFY_MOST.saturating_sub(running)) {
         start(store, runner, home, &task, &project, &commit, now)?;
     }
@@ -102,6 +105,11 @@ fn follow(store: &Store, runner: &dyn Runner, home: &Path, run: &Run, now: i64) 
     let log = integration::verify_log_in(home, &run.project, run.number, &run.attempt);
     let code = match window(runner, pane, &log, now - run.started > run.minutes * 60) {
         Window::Running => return Ok(true),
+        // a red target's own run lost: forgotten, the next look starts it again
+        Window::Lost if red_recheck::is_recheck(run) => {
+            finish(store, home, run)?;
+            return Ok(false);
+        }
         // lost with its window: the run on the target started again, the task's own forgotten, so the next beat starts it again
         Window::Lost if run.target.is_some() && red_target::start(store, runner, home, run, &run.steps, &run.red_attempt, now)? => return Ok(true),
         Window::Lost => {
@@ -114,7 +122,7 @@ fn follow(store: &Store, runner: &dyn Runner, home: &Path, run: &Run, now: i64) 
     // the run on the target: its notes are the target's, its failed steps what is red there
     if let Some(target) = &run.target {
         let red = retry_notes::failed(&tree);
-        store.with(|tx| red_target::judge(tx, home, run, target, code, red, now))?;
+        store.with(|tx| if red_recheck::is_recheck(run) { red_recheck::judge(tx, home, run, target, code, now) } else { red_target::judge(tx, home, run, target, code, red, now) })?;
         finish(store, home, run)?;
         return Ok(false);
     }

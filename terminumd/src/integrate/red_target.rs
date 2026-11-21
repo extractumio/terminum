@@ -104,6 +104,8 @@ fn hold(tx: &Transaction, run: &Run, name: &str, target: &str, failed: &str, log
             let bug = ops::create(tx, DISPATCHER, NewTask { title: format!("Bug: {name} is red: {failed} fail at {short}"), text, project: Some(run.project.clone()),
                 severity: Some("P1".into()), ..Default::default() }, now)?;
             tx.execute("UPDATE project_integration SET red_bug = ?2 WHERE project = ?1", (&run.project, &bug.key)).map_err(sql)?;
+            // terminumd runs the steps on the target again by itself, so a red of a busy moment holds no one (red_recheck)
+            super::red_recheck::keep(tx, &run.project, &run.steps, &run.commit, target, now)?;
             bug.id
         }
     };
