@@ -87,7 +87,7 @@ pub fn hook_event(app: &Shared, key: &str, ev: &Value, whose: Whose) -> Option<S
     remind
 }
 
-/// Whether the main agent reads `ev`'s answer as context: the one event that may carry words to it.
+/// Whether the main agent's tool hook can carry plan reminders and task lines as context.
 pub fn carries_context(ev: &Value, whose: Whose) -> bool {
     whose == Whose::Main && ev["event"].as_str() == Some(remind_event(ev["agent"].as_str().unwrap_or("")))
 }

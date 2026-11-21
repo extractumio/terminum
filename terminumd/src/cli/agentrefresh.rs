@@ -20,8 +20,8 @@ fn warn(ctx: &Ctx, agent: &str, what: &str, e: &str) {
 }
 
 /// After an install or upgrade came up: Claude Code's plugin installed again when it was made by
-/// another build, lacks its MCP server or its hooks file is not this build's (a new entry: PostToolBatch);
-/// Codex's MCP block made current (hooks.json untouched but for codex_end).
+/// another build, lacks its MCP server or its hooks file is not this build's.
+/// Codex's MCP block and the synchronous hooks' settings are made current.
 pub fn refresh(ctx: &Ctx) {
     if installed(ctx, "claude") {
         let made = std::fs::read_to_string(marker(ctx)).unwrap_or_default();
@@ -35,27 +35,27 @@ pub fn refresh(ctx: &Ctx) {
     if installed(ctx, "codex") && let Err(e) = codex_mcp(ctx) {
         warn(ctx, "codex", "terminum's MCP server was not refreshed", &e);
     }
-    if installed(ctx, "codex") && let Err(e) = codex_end(ctx) {
-        warn(ctx, "codex", "terminum's SessionEnd hook was not made synchronous", &e);
+    if installed(ctx, "codex") && let Err(e) = refresh_codex_hooks(ctx) {
+        warn(ctx, "codex", "terminum's synchronous hooks were not updated", &e);
     }
 }
 
-/// hooks.json's one change a refresh makes: terminum's SessionEnd entry without `async`, only
-/// in a file as terminum writes it (every other byte kept); otherwise untouched.
-fn codex_end(ctx: &Ctx) -> Result<(), String> {
+/// Refresh terminum's synchronous entries only in a file as terminum writes it.
+fn refresh_codex_hooks(ctx: &Ctx) -> Result<(), String> {
     let path = resolved(&codex_home(ctx).join("hooks.json"))?;
     let text = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
     let mut v: serde_json::Value = serde_json::from_str(&text).map_err(|e| e.to_string())?;
     let pretty = |v: &serde_json::Value| serde_json::to_string_pretty(v).map(|t| t + "\n").map_err(|e| e.to_string());
     let was = pretty(&v)?;
-    if !codex_sync_end(&mut v, &agentsetup::command(ctx, "codex")) {
+    let changed = codex_sync_hooks(&mut v, &agentsetup::command(ctx, "codex"));
+    if changed.is_empty() {
         return Ok(());
     }
     if was != text {
         return Err(format!("{} is laid out by hand, so it was left as it is", ctx.shown(&path)));
     }
     replace_checked(&path, Some(&text), &pretty(&v)?)?;
-    ctx.say(CODEX_RETRUST);
+    changed.into_iter().for_each(|line| ctx.say(line));
     Ok(())
 }
 
@@ -97,14 +97,31 @@ pub fn remove(ctx: &Ctx) {
     }
 }
 
-/// Codex runs an async SessionEnd hook synchronously and warns at each start: terminum's
-/// SessionEnd entry loses its `async` (only that entry). True when it had one.
-pub fn codex_sync_end(v: &mut Value, cmd: &str) -> bool {
+/// Only terminum's prompt and session-end commands run in the foreground.
+pub fn codex_sync_hooks(v: &mut Value, cmd: &str) -> Vec<&'static str> {
+    let prompt_cmd = agentsetup::prompt_command(cmd);
+    let mut messages = Vec::new();
+    if codex_sync_hook(v, "SessionEnd", cmd, None) {
+        messages.push(CODEX_RETRUST);
+    }
+    if codex_sync_hook(v, "UserPromptSubmit", cmd, Some(&prompt_cmd)) {
+        messages.push("Codex: trust terminum's changed UserPromptSubmit hook in /hooks once.");
+    }
+    messages
+}
+
+fn codex_sync_hook(v: &mut Value, event: &str, cmd: &str, prompt_cmd: Option<&str>) -> bool {
     let mut changed = false;
-    let ends = v.get_mut("hooks").and_then(|h| h.get_mut("SessionEnd")).and_then(Value::as_array_mut);
-    for e in ends.into_iter().flatten() {
-        for h in e.get_mut("hooks").and_then(Value::as_array_mut).into_iter().flatten().filter(|h| h["command"] == cmd) {
+    let entries = v.get_mut("hooks").and_then(|h| h.get_mut(event)).and_then(Value::as_array_mut);
+    for e in entries.into_iter().flatten() {
+        for h in e.get_mut("hooks").and_then(Value::as_array_mut).into_iter().flatten()
+            .filter(|h| h["command"] == cmd || (prompt_cmd.is_some() && agentsetup::owns_command(h, cmd))) {
             changed |= h.as_object_mut().and_then(|o| o.remove("async")).is_some();
+            if let Some(p) = prompt_cmd && (h["command"] != p || h["timeout"] != agentsetup::FOREGROUND_TIMEOUT) {
+                h["command"] = serde_json::json!(p);
+                h["timeout"] = serde_json::json!(agentsetup::FOREGROUND_TIMEOUT);
+                changed = true;
+            }
         }
     }
     changed

@@ -15,10 +15,10 @@ use super::tell::Line;
 use crate::app::Shared;
 
 /// Why a notice did not reach its session.
-pub const ENDED: &str = "its agent's session ended before its next tool call";
+pub const ENDED: &str = "its agent's session ended before it heard the notice";
 const PANE_CLOSED: &str = "its session closed before its agent's next tool call";
 pub const CROWDED: &str = "more than 20 lines waited for its agent";
-pub const RUN_ENDED: &str = "its agent was ended before its next tool call";
+pub const RUN_ENDED: &str = "its agent was ended before it heard the notice";
 pub const NO_HOOKS: &str = "its agent's hooks do not reach terminum: run terminum hooks install, and see terminum hooks for a Codex under a shared app-server";
 
 /// The most of a name a notice says, and the characters it may hold: else it names the author's kind alone.

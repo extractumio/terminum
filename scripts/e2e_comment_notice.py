@@ -1,11 +1,9 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-"""A new comment reaches the agent working on its task (terminum-dispatcher.md AC-209), against a private terminumd
-and a private tmux server (never the user's): a human's comment on a task linked to a pane whose agent's hooks
-spoke comes out of the real `terminum hook claude` on the agent's PostToolBatch, the event that carries context
-(AC-97), as Claude Code runs it, and of `terminum hook codex` on Codex's PostToolUse; in fixed words, never the
-comment's; Heard says it told the session, on the task and on the comment. A pane closed without SessionEnd
-leaves a delivery outcome; a terminumd restart drops the waiting mark and keeps the comment. No model call.
+"""A new comment reaches the agent of its task (terminum-dispatcher.md AC-209), against a private terminumd
+and tmux. Run the real hook commands on synthetic Claude Code and Codex events: a tool call during
+work or a synchronous prompt after Stop. Check what the hook prints and what Heard records.
+Check the outcomes when a pane closes without SessionEnd or terminumd restarts. No model call.
 
     python3 scripts/e2e_comment_notice.py      (needs terminumd built: cd terminumd && cargo build)
 """
@@ -39,16 +37,24 @@ def main():
 
         def pane_for(agent, session, pane):
             if pane is None:
-                pane = tmux("new-window", "-d", "-P", "-F", "#{pane_id}", "-t", "main", "sleep", "600").strip()
+                # Once Stop releases Codex's hook state, its named window still identifies the agent.
+                pane = tmux("new-window", "-d", "-P", "-F", "#{pane_id}", "-t", "main", "-n", agent, "sleep", "600").strip()
             sock = tmux("display", "-p", "-t", pane, "#{socket_path}").strip()
             env = {**t.env, "TMUX": f"{sock},1,0", "TMUX_PANE": pane}
 
-            def hook(ev):
-                return subprocess.run([BIN, "hook", agent], input=json.dumps({"session_id": session, **ev}), capture_output=True, text=True, env=env)
+            def hook(ev, *flags):
+                return subprocess.run([BIN, "hook", agent, *flags], input=json.dumps({"session_id": session, **ev}), capture_output=True, text=True, env=env)
             key = f"tmux:local:{SOCKET}:{pane}"
             # a pane terminumd does not list yet takes no hook's event
             wait_layout(ws, lambda gs: any(i["id"] == key for g in gs for i in g["items"]), 8)
             return key, hook
+
+        def waiting_comment(tid, words):
+            st, kept = call(f"/api/tasks/{tid}/comments", "POST", {"text": words})
+            event = kept and kept.get("event")
+            assert st == 200 and event, kept
+            wait_for(lambda: mark(tid, event), lambda m: m == "waiting", 5, 0.1)
+            return event
 
         def told_of(tid):
             return [e for e in call(f"/api/tasks/{tid}")[1]["history"] if e["kind"] == "told"]
@@ -60,28 +66,22 @@ def main():
             key, hook = pane_for(agent, session, pane)
             hook({"hook_event_name": "SessionStart", "cwd": "/"})
             hook({"hook_event_name": "UserPromptSubmit", "prompt_id": "p1", "prompt": "work"})
-            shown = wait_layout(ws, lambda gs: any(i["id"] == key and i.get("agent") == agent for g in gs for i in g["items"]), 8)
+            shown = wait_layout(ws, lambda gs: any(i["id"] == key and i.get("agent") == agent and i.get("state") == "working"
+                                                    for g in gs for i in g["items"]), 8)
             check(f"setup: the list shows {agent} in its pane, by its hooks", shown is not None)
             st, task = call("/api/tasks", "POST", {"title": f"notice {session}", "session": key})
             check(f"setup: a task linked to the {agent} pane", st == 200 and task.get("session", {}).get("key") == key, task)
             return key, hook, task["id"]
 
-        def waiting_comment(tid, text):
-            st, kept = call(f"/api/tasks/{tid}/comments", "POST", {"text": text})
-            assert st == 200, kept
-            event = kept["event"]
-            wait_for(lambda: mark(tid, event), lambda m: m == "waiting", 5, 0.1)
-            return event
-
         for agent, carrier in (("claude", "PostToolBatch"), ("codex", "PostToolUse")):
             key, hook, tid = link_task(agent, f"s-{agent}")
-            st, kept = call(f"/api/tasks/{tid}/comments", "POST", {"text": SECRET_WORDS})
-            event = kept and kept.get("event")
-            waiting = wait_for(lambda: mark(tid, event), lambda m: m == "waiting", 5, 0.1, last=True)
-            check(f"AC-209 a human's SAVE on a task whose {agent} works: the comment says its session hears of it next", st == 200 and waiting == "waiting", waiting)
-            before = hook({"hook_event_name": "PreToolUse", "prompt_id": "p1", "tool_name": "Bash", "tool_input": {"command": "ls"}})
+            event = waiting_comment(tid, SECRET_WORDS)
+            old_prompt = hook({"hook_event_name": "UserPromptSubmit", "prompt_id": "p2", "prompt": "old prompt hook"})
+            check(f"AC-209 {agent}: the old prompt hook leaves the notice waiting for a tool",
+                  old_prompt.returncode == 0 and old_prompt.stdout == "" and mark(tid, event) == "waiting", old_prompt)
+            before = hook({"hook_event_name": "PreToolUse", "prompt_id": "p2", "tool_name": "Bash", "tool_input": {"command": "ls"}})
             check(f"AC-209 {agent}: an event that carries no context prints nothing", before.returncode == 0 and before.stdout == "", before)
-            out = hook({"hook_event_name": carrier, "prompt_id": "p1", "tool_name": "Bash"})
+            out = hook({"hook_event_name": carrier, "prompt_id": "p2", "tool_name": "Bash"})
             line = json.loads(out.stdout) if out.stdout.strip() else {}
             context = line.get("hookSpecificOutput", {}).get("additionalContext", "")
             check(f"AC-209 {agent}'s {carrier} hook prints the notice as context: fixed words, the ID, who wrote it",
@@ -90,8 +90,30 @@ def main():
             check(f"AC-209 {agent}: never the comment's words", SECRET_WORDS not in out.stdout, out.stdout)
             said = wait_for(lambda: told_of(tid), lambda ts: any(x["text"] == "Told the session of the new comment" for x in ts), 5, 0.1, last=True)
             check(f"AC-209 {agent}: once heard the task says it told the session, and the comment says so", said and mark(tid, event) == "told", (said, mark(tid, event)))
-            again = hook({"hook_event_name": carrier, "prompt_id": "p1", "tool_name": "Bash"})
+            again = hook({"hook_event_name": carrier, "prompt_id": "p2", "tool_name": "Bash"})
             check(f"AC-209 {agent}: a notice heard is not told again", "[terminum]" not in again.stdout, again.stdout)
+
+            hook({"hook_event_name": "Stop", "prompt_id": "p2"})
+            idle = wait_layout(ws, lambda gs: any(i["id"] == key and i.get("agent") == agent and i.get("state") != "working"
+                                                   for g in gs for i in g["items"]), 8)
+            check(f"AC-209 {agent}: the pane still has its agent after it stops working", idle is not None)
+            event = waiting_comment(tid, SECRET_WORDS)
+            prompt = {"hook_event_name": "UserPromptSubmit", "prompt_id": "p3", "prompt": "Answer in words alone"}
+            sub = hook({**prompt, "agent_id": "sub"}, "--prompt-context")
+            check(f"AC-209 {agent}: a subagent's prompt leaves the notice waiting",
+                  sub.returncode == 0 and sub.stdout == "" and mark(tid, event) == "waiting", sub)
+            out = hook(prompt, "--prompt-context")
+            line = json.loads(out.stdout) if out.stdout.strip() else {}
+            context = line.get("hookSpecificOutput", {})
+            check(f"AC-209 {agent}: the idle agent receives fixed notice words on its next prompt, before any tool",
+                  out.returncode == 0 and context.get("hookEventName") == "UserPromptSubmit"
+                  and f"[terminum] {tid} has a new comment by a human" in context.get("additionalContext", "")
+                  and SECRET_WORDS not in out.stdout, out)
+            heard = wait_for(lambda: mark(tid, event), lambda m: m == "told", 5, 0.1, last=True)
+            check(f"AC-209 {agent}: the prompt's Heard marks the comment told", heard == "told", heard)
+            again = hook({"hook_event_name": carrier, "prompt_id": "p3", "tool_name": "Bash"})
+            check(f"AC-209 {agent}: the tool hook does not repeat the prompt notice", f"{tid} has a new comment" not in again.stdout, again.stdout)
+
             # the agent's session ends with a notice waiting: not told, said on the task
             waiting_comment(tid, "one more")
             hook({"hook_event_name": "SessionEnd", "reason": "other"})

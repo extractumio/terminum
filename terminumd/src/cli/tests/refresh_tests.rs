@@ -223,3 +223,25 @@ fn hooks_install_writes_codexs_session_end_without_async() {
     assert!(v["hooks"]["SessionEnd"][0]["hooks"][0]["timeout"].as_u64().unwrap() <= 3);
     assert_eq!(v["hooks"]["Stop"][0]["hooks"][0]["async"], true);
 }
+
+#[test]
+fn ac209_refreshes_codexs_prompt_hook_and_removes_it_without_touching_its_neighbour() {
+    let (s, ctx) = setup(0);
+    let cmd = agentsetup::command(&ctx, "codex");
+    let mut old = agentsetup::codex_add(None, &cmd).unwrap();
+    let other = serde_json::json!({"type": "command", "command": "say submitted", "async": true});
+    old["hooks"]["UserPromptSubmit"] = serde_json::json!([{"hooks": [
+        {"type": "command", "command": cmd, "async": true, "timeout": 3}, other
+    ]}]);
+    let path = s.codex.join("hooks.json");
+    std::fs::write(&path, serde_json::to_string_pretty(&old).unwrap() + "\n").unwrap();
+    agentrefresh::refresh(&ctx);
+    let text = std::fs::read_to_string(&path).unwrap();
+    let new: serde_json::Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(new["hooks"]["UserPromptSubmit"][0]["hooks"], serde_json::json!([
+        {"type": "command", "command": format!("{cmd} --prompt-context"), "timeout": 2}, other
+    ]));
+    assert!(said(&ctx).iter().any(|l| l.contains("changed UserPromptSubmit hook in /hooks")));
+    assert_eq!(agentsetup::codex_add(Some(&text), &cmd).unwrap(), new, "install again keeps one prompt hook");
+    assert_eq!(agentsetup::codex_remove(&new, &cmd)["hooks"]["UserPromptSubmit"][0]["hooks"], serde_json::json!([other]));
+}

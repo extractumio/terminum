@@ -262,12 +262,12 @@ PROGRESS, WAIT FOR HUMAN, FAILED or DONE.
   failure) comes first.
 - **Keys**: Save keeps your comment; Run starts the agent with it; Run from scratch is on the
   Status line.
-- **Comments reach the working agent**: a comment you save, or one another session's agent adds
-  (the project's manager's too), reaches the agent of the task's open session at its next tool
-  call, through its hooks: a short notice with the task's ID and who wrote it, never the
-  comment's words, which it reads with `get_task`. Nothing is typed: an idle agent hears it at its
-  next turn, and Run has it act now. Each comment says "told the session", "the session hears of
-  it at its next tool call" or "not told the session" (the history line says why). A session's
+- **Comment notices** reach the open session's agent through its hooks. The next prompt or tool
+  call carries the task ID and who wrote the comment. The agent reads the comment in `get_task`.
+  With older hooks, the notice waits for a tool call. Restart Claude Code or Codex to load updated
+  hooks, and trust the changed UserPromptSubmit hook in Codex's `/hooks`. Run has the agent act now.
+  Each comment says "told the session", "waiting to tell the session" or "not told the session"
+  (the history line says why). A session's
   own agent hears nothing of its own comments.
 - **A fresh start** (the first Run, Run from scratch, a manager's `run_task`) carries the humans'
   and the project's manager's comments in its words; agents' comments only by a count, to read
