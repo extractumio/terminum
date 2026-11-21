@@ -3,7 +3,7 @@
 //! folder, a row in the store. A file dropped in a window not yet saved has no task; such a file
 //! goes after 7 days. Nothing here runs or is opened on the page's origin.
 
-use std::io::{Read, Write};
+use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 
 use rusqlite::{OptionalExtension, Row, Transaction};
@@ -152,18 +152,26 @@ pub fn of_task(tx: &Transaction, task: &str) -> Result<Vec<File>, String> {
     rows(tx, "SELECT id, name, bytes, mime FROM files WHERE task = ?1 ORDER BY at, rowid", [&key], |r| File::of_row(r, 0))
 }
 
-/// A file's row, its bytes opened, and how it may show inline: by its first bytes alone.
-pub fn open(store: &Store, dir: &Path, id: &str) -> Result<(File, std::fs::File, Option<&'static str>), String> {
+pub(super) struct Opened {
+    pub name: String,
+    pub bytes: std::fs::File,
+    pub inline: Option<&'static str>,
+    pub len: u64,
+}
+
+/// A file's name, its open bytes and their length, and how it may show inline: by its first bytes alone.
+pub(super) fn open(store: &Store, dir: &Path, id: &str) -> io::Result<Opened> {
     use std::os::unix::fs::FileExt;
-    let path = path_of(dir, id)?;
-    let file = store.with(|tx| {
-        tx.query_row("SELECT id, name, bytes, mime FROM files WHERE id = ?1", [id], |r| File::of_row(r, 0))
-            .optional().map_err(sql)?.ok_or_else(|| "No such file".to_string())
-    })?;
-    let bytes = std::fs::File::open(&path).map_err(|e| format!("{}: {e}", file.name))?;
-    let mut head = [0u8; 12];
-    let got = bytes.read_at(&mut head, 0).map_err(|e| format!("{}: {e}", file.name))?;
-    Ok((file, bytes, raster_mime(&head[..got])))
+    let path = path_of(dir, id).map_err(|message| io::Error::new(io::ErrorKind::NotFound, message))?;
+    let name: String = store.with(|tx| {
+        tx.query_row("SELECT name FROM files WHERE id = ?1", [id], |r| r.get(0)).optional().map_err(sql)
+    }).map_err(io::Error::other)?.ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "No such file"))?;
+    let with_name = |e: io::Error| io::Error::new(e.kind(), format!("{name}: {e}"));
+    let bytes = std::fs::File::open(&path).map_err(with_name)?;
+    let mut head = [0u8; MIME_HEAD as usize];
+    let got = bytes.read_at(&mut head, 0).map_err(with_name)?;
+    let len = bytes.metadata().map_err(with_name)?.len();
+    Ok(Opened { name, bytes, inline: raster_mime(&head[..got]), len })
 }
 
 /// A human's purge (AC-109): the bytes go for good; the history keeps who did it and the name.
@@ -272,7 +280,7 @@ mod tests {
         s.with(|tx| attach(tx, std::slice::from_ref(&f.id), &id, None)).unwrap();
         assert_eq!(s.with(|tx| of_task(tx, &id)).unwrap(), vec![f.clone()]);
         assert_eq!(std::fs::read(&path).unwrap(), b"\x89PNG\r\n\x1a\nrest");
-        assert_eq!(open(&s, &dir, &f.id).unwrap().2, Some("image/png"), "as its first bytes say");
+        assert_eq!(open(&s, &dir, &f.id).unwrap().inline, Some("image/png"), "as its first bytes say");
         assert!(s.with(|tx| attach(tx, std::slice::from_ref(&f.id), &id, None)).is_err(), "attached once");
     }
 
@@ -337,7 +345,7 @@ mod tests {
         let f = keep(&s, &dir, "notes.txt", b"kept", 1).unwrap();
         s.with(|tx| attach(tx, std::slice::from_ref(&f.id), &id, None)).unwrap();
         assert!(delete(&s, &dir, &f.id, "nobody", 2).is_err(), "no such user: the purge fails");
-        let (_, mut bytes, _) = open(&s, &dir, &f.id).expect("row and bytes stay");
+        let mut bytes = open(&s, &dir, &f.id).expect("row and bytes stay").bytes;
         let mut text = String::new();
         std::io::Read::read_to_string(&mut bytes, &mut text).unwrap();
         assert_eq!(text, "kept");
