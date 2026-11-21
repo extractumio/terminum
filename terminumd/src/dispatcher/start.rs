@@ -304,7 +304,7 @@ pub async fn respawn(app: &Shared, server: &Arc<Server>, pane: &str, old: &str, 
     is_marked(server, pane, old).await?;
     mark(server, pane, new).await?;
     if let Some(w) = app.dispatcher.watch.lock().get_mut(&server.key(pane)) {
-        w.subs.clear();                                // a new agent: none of the last one's
+        w.clear_subagents();                                // a new agent: none of the last one's
     }
     server.run(format!("respawn-pane -k -t {pane} {}", window_command(folder, command, &tmux_of(server)))).await.map(drop).map_err(|e| format!("tmux did not start it: {e}"))
 }

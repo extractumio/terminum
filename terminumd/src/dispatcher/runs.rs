@@ -316,6 +316,11 @@ pub fn live(tx: &Transaction) -> Result<Vec<Run>, String> {
     rows(tx, &format!("{SELECT} WHERE {STILL} ORDER BY r.rowid"), [], of_row)
 }
 
+/// Members of a mixed run that can be moved by the silent-subagent watchdog (AC-127).
+pub(super) fn in_progress(tx: &Transaction, run: &str) -> Result<Vec<String>, String> {
+    rows(tx, "SELECT t.slug FROM run_tasks m JOIN tasks t ON t.id = m.task WHERE m.run = ?1 AND t.status = 'IN PROGRESS' ORDER BY t.number", [run], |r| r.get(0))
+}
+
 /// The run in pane `key`, if any.
 pub fn in_pane(tx: &Transaction, key: &str) -> Result<Option<Run>, String> {
     one(tx, &format!("r.pane_key = ?1 AND {STILL} ORDER BY r.rowid DESC LIMIT 1"), key).optional().map_err(sql)

@@ -71,7 +71,7 @@ Open questions:
 | AC-124 | [MUST / P0] | An agent that waits for a human for 2 minutes puts its task in WAIT FOR HUMAN, and it returns once the agent goes on. |
 | AC-125 | [MUST / P0] | Dispatcher closes a session it started 5 minutes after DONE or FAILED, only with the agent idle, keeps the screen's last rows when there is no result, writes each session's start and end on the task, and acts only on sessions it started and marked. |
 | AC-126 | [MUST / P0] | A task's optional time budget counts only IN PROGRESS; the agent hears it at the start and 3% before its end, at least 2 minutes; at the limit Dispatcher ends the agent and what it can reach of its subagents and the task is FAILED. |
-| AC-127 | [SHOULD / P1] | A subagent silent and idle for 10 minutes gets the main agent one request to deal with it; at 20 minutes Dispatcher ends it where it can; where it cannot, the task is FAILED and RUN goes on in its session. |
+| AC-127 | [SHOULD / P1] | A subagent silent and idle for 10 minutes gets the main agent one request to deal with it; at 20 minutes Dispatcher ends it where it can; where it cannot, the task is FAILED and RUN goes on in its session. Both clocks pause while the run waits for a human or a prerequisite task. |
 | AC-128 | [SHOULD / P1] | A card shows the session's CPU, memory and running time; memory over 4 GiB warns the agent, over 8 GiB ends the session as FAILED, set globally and per project, and the window that sets them says what is measured and that nothing stops a process between two readings. |
 | AC-129 | [SHOULD / P1] | A card shows the tokens its session used; what a task's session spent stays on the task when it ends, in tokens and, where the price is known, an estimate in dollars. |
 | AC-130 | [SHOULD / P1] | All of the above hold for sessions on remote hosts; a host out of reach is said, and a lost link adds nothing to any clock. |
@@ -758,6 +758,12 @@ Scenario: AC-127 edge — a subagent's events are its own
 Scenario: AC-127 edge — busy and silent
   Given a subagent in a long build, above the threshold
   Then neither clock runs
+
+Scenario: AC-127 edge — the run waits
+  Given a run with a silent subagent whose open tasks wait for a human (AC-157) or for prerequisite tasks (AC-210)
+  When 20 minutes pass while its session is still open
+  Then its tasks stay in WAIT FOR HUMAN or in TODO with the kept press, respectively
+  And Dispatcher neither advances the silence clock nor sends a request about that subagent
 
 Scenario: AC-127 failure — cannot be ended alone
   When a subagent runs inside the agent's process (OQ-122)
@@ -2285,7 +2291,7 @@ Depends on `terminum-kanban.md`'s Stage 1. All three stages belong to terminum's
 - [x] AC-124 — `cargo test dispatcher::plan`, `web/test/e2e_livedispatcher.mjs`
 - [x] AC-125 — `cargo test dispatcher::plan`, `cargo test dispatcher::acts` (a close decided before a human's input; a draft in the box), `web/test/e2e_livedispatcher.mjs` (a draft typed by tmux)
 - [x] AC-126 — `cargo test dispatcher::plan`, `cargo test tasks::tell` (words not heard go again), `cargo test dispatcher::acts` (an end decided before a human's input), `web/test/e2e_livedispatcher.mjs`, `SECURITY.md` carries Dispatcher's signals
-- [x] AC-127 — `cargo test dispatcher::plan`, `cargo test dispatcher::hooks`, `cargo test tmux::hookstate`, `web/test/e2e_livedispatcher.mjs`
+- [x] AC-127 — `cargo test dispatcher::plan`, `cargo test dispatcher::hooks`, `cargo test tmux::hookstate`, `cargo test ac127` (clock pause and mixed run), `web/test/e2e_livedispatcher.mjs` (active run), `web/test/e2e_livesubagents.mjs` (human and prerequisite waits)
 - [x] AC-128 — `cargo test dispatcher`, `cargo test tasks::agents`, `web/test/e2e_livedispatcher.mjs`, its window's words and global placeholders in `web/test/e2e_liveboardagents.mjs`
 - [x] AC-129 — `cargo test cli::hooktokens` with fixtures of both agents' files, `cargo test dispatcher::usage` (a late read counts nothing), `web/test/e2e_livedispatcher.mjs`
 - [x] AC-130 — `scripts/e2e_remote_tasks.py`

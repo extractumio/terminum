@@ -198,6 +198,89 @@ fn ac190_a_check_over_its_time_is_ended_and_red() {
     assert_eq!(w.s.with(|tx| tx.query_row("SELECT why FROM integration_rounds WHERE batch = ?1", [bt.id], |r| r.get::<_, String>(0)).map_err(sql)).unwrap(), "The check ran over 1 minutes.");
 }
 
+/// Drive the real runner with a test clock while the command itself remains running in tmux.
+fn hung_line(w: &World, runner: &dyn Runner, state: &str, marker: &str) -> Batch {
+    let home = w.root.join("home");
+    for now in 100..110 {
+        step(&w.s, runner, &home, now).unwrap();
+        let b = batch(w);
+        if b.state == state && let Some(pane) = &b.pane {
+            let until = std::time::Instant::now() + std::time::Duration::from_secs(10);
+            while !runner.output(pane).contains(marker) {
+                assert!(std::time::Instant::now() < until, "{state} did not print {marker}");
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+            assert_eq!(runner.status(pane), Ok(None));
+            return b;
+        }
+    }
+    panic!("no window for {state}");
+}
+
+#[test]
+fn ac191_publish_timeout_releases_work_and_publish_again_recognizes_a_completed_push() {
+    let w = world("ie-publish-over", Settings {
+        publish: "git push -q origin \"$TM_INTEGRATION_SHA:main\" && { echo publish-hung; exec sleep 120; }".into(),
+        check_minutes: 1, ..Settings::default()
+    });
+    let tmux = crate::testutil::Tmux::start("publish-over", (120, 30), "sleep 120").expect("tmux is required");
+    let runner = super::super::runner::Tmux { tmux: "tmux".into(), socket: tmux.socket.clone(), conf: "/dev/null".into() };
+    let task = queued(&w, 1, "b.txt", "b\n");
+    let b = hung_line(&w, &runner, "publishing", "publish-hung");
+    let home = w.root.join("home");
+    let started = b.step_started.unwrap();
+    step(&w.s, &runner, &home, started + 59).unwrap();
+    assert_eq!(batch(&w).pane, b.pane, "still within its minute");
+    step(&w.s, &runner, &home, started + 61).unwrap();
+    let failed = batch(&w);
+    assert_eq!(failed.state, "not published");
+    assert!(failed.why.unwrap().contains("Publish ran over 1 minutes."));
+    assert!(failed.pane.is_none() && runner.status(b.pane.as_deref().unwrap()).is_err());
+    assert!(w.s.with(bs::busy).unwrap().is_none(), "the machine's work lane is free");
+    assert_eq!(status(&w, &task), INTEGRATION);
+    let batch_task = w.s.with(|tx| bs::task_of(tx, &b)).unwrap().unwrap();
+    assert_eq!(status(&w, &batch_task), "WAIT FOR HUMAN");
+    let log = integration::log_in(&home, "api", b.number, b.round, "publish");
+    assert!(std::fs::read_to_string(&log).unwrap().contains("publish-hung"));
+    assert!(said(&w, &batch_task).contains(&log.display().to_string()));
+
+    w.s.with(|tx| super::super::keys::publish_again(tx, b.id, started + 62)).unwrap();
+    step(&w.s, &runner, &home, started + 63).unwrap();
+    assert_eq!(status(&w, &task), "DONE", "the push is confirmed without starting Publish again");
+}
+
+#[test]
+fn ac198_cleanup_timeout_releases_tail_without_undoing_publication() {
+    let w = world("ie-cleanup-over", Settings {
+        cleanup: "if [ \"$TM_INTEGRATION_BATCH\" = 1 ]; then echo cleanup-hung; exec sleep 120; fi".into(),
+        check_minutes: 1, ..Settings::default()
+    });
+    let tmux = crate::testutil::Tmux::start("cleanup-over", (120, 30), "sleep 120").expect("tmux is required");
+    let runner = super::super::runner::Tmux { tmux: "tmux".into(), socket: tmux.socket.clone(), conf: "/dev/null".into() };
+    let task = queued(&w, 1, "b.txt", "b\n");
+    let b = hung_line(&w, &runner, "cleanup", "cleanup-hung");
+    let home = w.root.join("home");
+    let started = b.step_started.unwrap();
+    let next = queued(&w, 2, "c.txt", "c\n");
+    step(&w.s, &runner, &home, started + 58).unwrap();
+    step(&w.s, &runner, &home, started + 59).unwrap();
+    assert_eq!(batch(&w).state, bs::PUBLISHED, "batch 2 is published and waits for the tail");
+    step(&w.s, &runner, &home, started + 61).unwrap();
+    let ended = w.s.with(|tx| bs::by_id(tx, b.id)).unwrap();
+    assert_eq!(ended.state, "ended");
+    assert!(ended.pane.is_none() && runner.status(b.pane.as_deref().unwrap()).is_err());
+    assert!(w.s.with(bs::in_tail).unwrap().is_none(), "the machine's tail lane is free");
+    let batch_task = w.s.with(|tx| bs::task_of(tx, &b)).unwrap().unwrap();
+    for id in [&task, &next, &batch_task] { assert_eq!(status(&w, id), "DONE"); }
+    assert_eq!(on_origin(&w), "a.txt\nb.txt\nc.txt");
+    let log = integration::log_in(&home, "api", b.number, b.round, "cleanup");
+    assert!(std::fs::read_to_string(&log).unwrap().contains("cleanup-hung"));
+    let notice = said(&w, &batch_task);
+    assert!(notice.contains("Cleanup ran over 1 minutes") && notice.contains(&log.display().to_string()), "{notice}");
+    step(&w.s, &runner, &home, started + 62).unwrap();
+    assert_eq!(batch(&w).state, "cleanup", "batch 2 takes its turn in the tail");
+}
+
 #[test]
 fn ac191_the_target_moved_builds_it_anew_and_checks_again() {
     let w = world("ie-moved", Settings { check: "true".into(), ..Settings::default() });
