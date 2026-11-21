@@ -426,6 +426,19 @@ Scenario: AC-132 edge — a turn while another server is down
   Given a pane's turn waits to settle on one server (AC-91) and another server is down or slow
   Then it settles by its own server's reads alone, as soon as they say so: another's list never ends it, nor holds it
 
+Scenario: AC-132 failure — a host lists its panes but stalls during the Dispatcher walk
+  Given two Claude runs on a host whose pane list answered but whose screen captures do not answer
+  And another host's tmux answers
+  When Dispatcher walks the runs
+  Then its captures start together and the screen reads finish within one two-second deadline
+  And the answering host's runs are walked, while an unread screen gives no evidence of idleness
+
+Scenario: AC-132 failure — a deferred Dispatcher action stalls
+  Given one run's deferred action is still waiting for its tmux after two seconds
+  When another run's deferred action can finish
+  Then the answering run's action and the walk go on
+  And the stalled run's actions can still finish in their own order when tmux answers
+
 Scenario: AC-132 failure — a page closes during an action
   Given the page closes while a window, a move or a restore waits on a server
   Then the action finishes in order on that server; only reads (history, unfolds, the folder) end with their page
@@ -566,4 +579,4 @@ All cases are shipped; nothing is staged.
 - [x] AC-86 — `scripts/tests/test_release.py`, `scripts/tests/test_package.py`
 - [x] AC-87 — `scripts/e2e_remote.py`, `scripts/e2e_review.py host`, `cargo test hosts::`, `cargo test hosts_list`
 - [x] AC-99 — `scripts/e2e_remote_agents.py`, `scripts/e2e_remote_turns.py`, `scripts/e2e_remote_cancel.py`, `scripts/e2e_remote_sshd_agents.py`, `cargo test hosts::agents`, `cargo test hosts::turns`, `cargo test hosts::link`, `cargo test hosts::bounded`, `cargo test links`, `cargo test runlink`, `cargo test hostmode`
-- [x] AC-132 — `scripts/e2e_isolation.py`, `web/test/e2e_isolation.mjs`, `cargo test tmux::control`, `cargo test lists`, `cargo test page::turns`, `cargo test page::typing`, `cargo test page::reads`, `cargo test tmux::agentstate`
+- [x] AC-132 — `cargo test dispatcher::walk::tests::ac132`, `scripts/e2e_isolation.py`, `web/test/e2e_isolation.mjs`, `cargo test tmux::control`, `cargo test lists`, `cargo test page::turns`, `cargo test page::typing`, `cargo test page::reads`, `cargo test tmux::agentstate`

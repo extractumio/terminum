@@ -34,6 +34,7 @@ pub mod waits;
 use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
 
+use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
 
 use parking_lot::Mutex;
@@ -87,6 +88,10 @@ pub struct Dispatcher {
     starting: Mutex<HashSet<String>>,
     /// runs whose End is under way (acts.rs)
     ending: Mutex<HashSet<String>>,
+    /// runs with deferred walk actions still in flight
+    deferred: Mutex<HashSet<String>>,
+    /// restart recovery releases or reserves a project's slots in turn (AC-205)
+    restart_recovery: Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
     /// a walk is due now (a session ended)
     soon: Notify,
     /// what a walk or a hook learned of each pane it watches

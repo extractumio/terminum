@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-//! What a walk's transaction does with what it read (terminum-dispatcher.md AC-123, AC-131).
+//! Walk transactions (terminum-dispatcher.md AC-123, AC-131) and remote stalls (terminum-remote.md AC-132).
 
 use super::*;
 use std::time::Duration;
@@ -27,6 +27,148 @@ fn ac123_an_open_tool_is_forgotten_only_when_no_hook_says_it_works() {
     assert_eq!((r.turn_ended, r.open_tools), (true, 1), "its hook says it works: the tool is open");
     let r = walk(&Hooks::default());
     assert_eq!(r.open_tools, 0, "no hook says it works: a tool an interrupt cut off is not open");
+}
+
+/// A control connection over a local ssh stand-in. It can read commands without ever answering
+/// a selected kind, even after it successfully listed its panes.
+struct WalkHost {
+    root: std::path::PathBuf,
+    server: Arc<Server>,
+}
+
+impl WalkHost {
+    fn new(app: &Shared, name: &str, stalled: &str) -> Self {
+        use std::os::unix::fs::PermissionsExt;
+
+        let root = crate::testutil::fresh_dir(name);
+        let ssh = root.join("ssh");
+        std::fs::write(&ssh, r#"#!/bin/sh
+cd "${0%/*}" || exit 1
+printf '%%begin 1 0 0\n%%end 1 0 0\n'
+n=0
+stalled=$(cat stall)
+while IFS= read -r cmd; do
+    kind=${cmd%% *}
+    printf '%s\n' "$kind" >> commands
+    if [ "$kind" = "$stalled" ] && [ "$kind" = capture-pane ]; then continue; fi
+    if [ "$kind" = "$stalled" ] && [ "$kind" = display ]; then
+        IFS= read -r release || break
+        printf '%%begin 1 %s 1\n%%end 1 %s 1\n' "$n" "$n"
+        n=$((n + 1))
+    fi
+    n=$((n + 1))
+    printf '%%begin 1 %s 1\n' "$n"
+    case "$kind" in
+        list-panes) cat panes ;;
+        capture-pane) printf '%s\n' '✻ Worked for 2m · 1 shell still running' '────' '❯ ' '────' '1 shell' ;;
+    esac
+    printf '%%end 1 %s 1\n' "$n"
+done
+"#).unwrap();
+        std::fs::set_permissions(&ssh, std::fs::Permissions::from_mode(0o755)).unwrap();
+        std::fs::write(root.join("stall"), stalled).unwrap();
+        std::fs::write(root.join("panes"), "").unwrap();
+        let server = Server::new(name, "default", crate::tmux::server::Link::Ssh { ssh, args: Vec::new() }, Default::default());
+        app.tmux.add_host(server.clone());
+        Self { root, server }
+    }
+
+    fn add_run(&self, app: &Shared, pane: &str, kind: &str, budget_minutes: Option<i64>) -> String {
+        let last_walk = ops::now() - 5;
+        let id = app.tasks.with(|tx| {
+            let task = ops::create(tx, HUMAN, ops::NewTask { title: "run".into(), ..Default::default() }, last_walk)?;
+            if budget_minutes.is_some() {
+                ops::set_budget(tx, HUMAN, &task.key, budget_minutes, last_walk)?;
+            }
+            ops::move_to(tx, HUMAN, &task.key, "IN PROGRESS", last_walk)?;
+            let like = Run { kind: kind.into(), host: Some(self.server.name.clone()), ..Default::default() };
+            let id = runs::add(tx, &like, &[task.key], Default::default(), last_walk)?;
+            runs::change(tx, &id, |r| {
+                r.state = runs::Phase::Working;
+                r.pane_key = Some(self.server.key(pane));
+                r.turn_ended = true;
+                r.idle_for = 45;
+                r.budget_used = 500;
+            })?;
+            Ok(id)
+        }).unwrap();
+        use std::io::Write;
+        let mut rows = std::fs::OpenOptions::new().append(true).open(self.root.join("panes")).unwrap();
+        writeln!(rows, "{pane}\t{id}\t\t1\t{kind}\ttest-server").unwrap();
+        id
+    }
+
+    fn start(&self) {
+        self.server.sync_clients(&[]).unwrap();
+    }
+
+    fn count(&self, command: &str) -> usize {
+        std::fs::read_to_string(self.root.join("commands")).unwrap_or_default().lines().filter(|line| *line == command).count()
+    }
+}
+
+impl Drop for WalkHost {
+    fn drop(&mut self) {
+        self.server.disconnect();
+    }
+}
+
+/// AC-132: a host that listed its panes but hung on capture cannot serially hold the walk.
+#[tokio::test]
+async fn ac132_hung_captures_share_one_deadline_and_the_other_host_is_walked() {
+    let (_, app) = crate::testutil::app_with_tasks("walk-captures");
+    let slow = WalkHost::new(&app, "slow-capture", "capture-pane");
+    let good = WalkHost::new(&app, "good-capture", "");
+    let first = slow.add_run(&app, "%1", "claude", None);
+    let second = slow.add_run(&app, "%2", "claude", None);
+    let healthy = good.add_run(&app, "%1", "claude", None);
+    slow.start();
+    good.start();
+
+    tokio::time::timeout(LIST_WAIT.mul_f32(1.75), walk(&app)).await.expect("the walk finishes within one capture deadline");
+    assert_eq!(slow.count("capture-pane"), 2, "both requests were sent before the deadline");
+    assert_eq!(good.count("capture-pane"), 1);
+    app.tasks.with(|tx| {
+        assert_eq!(runs::by_id(tx, &healthy)?.idle_for, 0, "the healthy run saw its background work");
+        for id in [first, second] {
+            assert_eq!(runs::by_id(tx, &id)?.idle_for, 0, "an unread screen supplied no idle time");
+        }
+        Ok(())
+    }).unwrap();
+}
+
+/// AC-132: a deferred action may outlive the beat, but its completion must still be recorded.
+#[tokio::test]
+async fn ac132_stalled_action_does_not_hold_the_other_hosts_watchdog() {
+    let (_, app) = crate::testutil::app_with_tasks("walk-deferred");
+    let slow = WalkHost::new(&app, "slow-deferred", "display");
+    let good = WalkHost::new(&app, "good-deferred", "");
+    let slow_run = slow.add_run(&app, "%1", "codex", Some(10));
+    let good_run = good.add_run(&app, "%1", "codex", None);
+    let key = good.server.key("%1");
+    let last = Instant::now() - Duration::from_secs((plan::SUB_TELL / scale() + 1) as u64);
+    app.dispatcher.watch.lock().entry(key).or_default().subs.insert("sub-1".into(), super::super::Sub {
+        kind: "reviewer".into(), last, told: plan::SubStep::Nothing,
+    });
+    slow.start();
+    good.start();
+
+    tokio::time::timeout(LIST_WAIT.mul_f32(1.75), walk(&app)).await.expect("the stalled action did not hold the beat");
+    assert_eq!(slow.count("display"), 1);
+    assert_eq!(good.count("display"), 1, "the healthy host's watchdog also tried to deliver");
+    let warned = || app.tasks.with(|tx| Ok(runs::by_id(tx, &slow_run)?.warned)).unwrap();
+    assert!(!warned(), "the first warning is still in flight");
+    assert!(app.dispatcher.deferred.lock().contains(&slow_run));
+    let history = app.tasks.with(|tx| ops::history(tx, &runs::by_id(tx, &good_run)?.task)).unwrap().to_string();
+    assert!(history.contains("The request about a silent subagent waits"), "{history}");
+
+    tokio::time::timeout(Duration::from_secs(1), async {
+        slow.server.run("release").await.unwrap();
+        while app.dispatcher.deferred.lock().contains(&slow_run) {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    }).await.expect("the deferred warning finished after the beat");
+    assert!(warned(), "the warning recorded its result");
 }
 
 #[test]

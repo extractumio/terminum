@@ -20,7 +20,7 @@ use crate::tmux::Server;
 
 /// CPU seconds in a beat over which an agent's tree counts as active (§9 Activity, AS-127).
 const CPU_ACTIVE: f64 = 3.0;
-/// How long one server's list is waited for: a slow host delays only itself.
+/// How long this walk waits for a tmux read or deferred work on one run.
 const LIST_WAIT: Duration = Duration::from_secs(2);
 
 #[derive(Clone, Debug, Default)]
@@ -34,7 +34,7 @@ struct Pane {
 /// The server's panes, and its identity (`@terminum-id`) as the same list says it: one read, so a server started anew
 /// between two reads is never judged by the old one's list (AC-205); none set yet, none.
 async fn panes_of(server: &Server) -> Option<(HashMap<String, Pane>, Option<String>)> {
-    let lines = tokio::time::timeout(LIST_WAIT, server.run("list-panes -a -F '#{pane_id}\t#{@terminum-run}\t#{@terminum-exit}\t#{pane_pid}\t#{pane_current_command}\t#{@terminum-id}'")).await.ok()?.ok()?;
+    let lines = tokio::time::timeout(LIST_WAIT, server.reader()?.run("list-panes -a -F '#{pane_id}\t#{@terminum-run}\t#{@terminum-exit}\t#{pane_pid}\t#{pane_current_command}\t#{@terminum-id}'")).await.ok()?.ok()?;
     let rows: Vec<Vec<&str>> = lines.iter().map(|l| l.split('\t').collect()).filter(|f: &Vec<&str>| f.len() == 6).collect();
     // a server option: every row says the same
     let identity = rows.first().map(|f| f[5].to_string()).filter(|i| !i.is_empty());
@@ -240,7 +240,7 @@ async fn read_servers(app: &Shared, wanted: &[String], with_run: &HashSet<String
         let tree = if wants && due { procs::read(app, &server).await } else { None };
         // none set yet on a new server, or no pane to say it: terminumd's own read sets it
         let identity = match (&panes, listed_id.flatten()) {
-            (Some(_), None) => server.identity().await,
+            (Some(_), None) => tokio::time::timeout(LIST_WAIT, server.identity()).await.ok().flatten(),
             (_, listed) => listed,
         };
         (server.id(), Seen { panes, tree, skipped: wants && !due, identity })
@@ -282,6 +282,95 @@ fn usage_line(app: &Shared, key: &str, seen: &Seen, pane: &str) -> serde_json::V
     v
 }
 
+/// What the pane list, process tree and hooks say before any per-run screen reads.
+struct RunPane<'a> {
+    run: &'a Run,
+    server: Arc<Server>,
+    pane: String,
+    key: String,
+    seen: &'a Seen,
+    p: Option<&'a Pane>,
+    waiting: Option<String>,
+    failed: Option<String>,
+    ended: bool,
+    under: bool,
+    busy: bool,
+    memory: Option<plan::Memory>,
+    subs: bool,
+}
+
+impl<'a> RunPane<'a> {
+    fn read(app: &Shared, run: &'a Run, (server, pane): (Arc<Server>, String), seen: &'a Seen, limits: (f64, f64)) -> Option<Self> {
+        // Out of reach: nothing is known of its pane, and no clock runs (AC-130).
+        let list = seen.panes.as_ref()?;
+        let key = server.key(&pane);
+        let p = list.get(&pane);
+        // Its pane gone or another's while the server's identity is unknown: wait for it (AC-205).
+        if !p.is_some_and(|p| p.mark == run.id) && seen.identity.is_none() {
+            return None;
+        }
+        let measured = seen.tree.as_ref().zip(p).map(|(t, p)| procs::under(t, &p.pid));
+        // ps did not answer: the agent stands while tmux says no exit, and no limit fires on missing numbers
+        let under = measured.as_ref().map_or(p.is_some_and(|p| p.exit.is_none()), |u| u.any);
+        let (busy, memory, under, subs) = {
+            let mut watch = app.dispatcher.watch.lock();
+            let w = watch.entry(key.clone()).or_default();
+            // gone with no exit recorded: only a second reading says so, the wrapper records it a moment after
+            let unsure = !under && p.is_some_and(|p| p.exit.is_none()) && !std::mem::replace(&mut w.agent_missed, !under);
+            if unsure {
+                app.dispatcher.soon.notify_one();
+            }
+            let under = under || unsure;
+            let busy = measured.as_ref().is_some_and(|u| w.cpu.is_some_and(|(was, _)| u.cpu - was >= CPU_ACTIVE / scale() as f64));
+            let memory = measured.as_ref().map(|u| {
+                let (warn, end) = limits;
+                plan::Memory::read(u.gib(), warn, end, &mut w.over)
+            });
+            (busy, memory, under, !w.subs.is_empty())
+        };
+        let (waiting, failed, ended) = listed(app, &key);
+        Some(Self { run, server, pane, key, seen, p, waiting, failed, ended, under, busy, memory, subs })
+    }
+
+    /// A Claude turn may have ended while its checks or other background work still run (AC-123).
+    async fn background(&self) -> bool {
+        if self.run.kind != "claude" || !(self.run.turn_ended || self.ended) || !self.under || !self.p.is_some_and(|p| p.mark == self.run.id && p.exit.is_none()) {
+            return false;
+        }
+        let Some(client) = self.server.reader() else { return true };
+        match tokio::time::timeout(LIST_WAIT, client.run(format!("capture-pane -p -J -t {}", self.pane))).await {
+            Ok(Ok(rows)) => background_tasks(&rows) != Background::None,
+            Ok(Err(error)) => client.no_answer(&error),
+            // A stalled capture cannot establish that the agent has gone idle.
+            Err(_) => true,
+        }
+    }
+
+    fn into_read(self, app: &Shared, background: bool) -> Read {
+        let (p, under) = (self.p, self.under);
+        // after its agent, what runs in front is a human's: it stays theirs. A job behind the shell keeps
+        // the 5 minutes from running: a prompt's own helpers come and go, and must not leave it open for good
+        let program = p.filter(|p| p.exit.is_some() && !crate::tmux::titles::is_shell(&p.command)).map(|p| p.command.clone());
+        let job = under && p.is_some_and(|p| p.exit.is_some());
+        let facts = Facts {
+            pane: p.is_some(),
+            marked: p.is_some_and(|p| p.mark == self.run.id),
+            exit: p.and_then(|p| p.exit),
+            alive: under && p.is_some_and(|p| p.exit.is_none()),
+            waiting: self.waiting,
+            failed: self.failed,
+            active: app.dispatcher.take_active(&self.key) || self.busy || job || background,
+            program,
+            watched: app.pages.watched(&self.key),
+            memory: self.memory,
+            subs: self.subs,
+            identity: self.seen.identity.clone(),
+            ..Default::default()
+        };
+        Read { id: self.run.id.clone(), facts, ended: self.ended, key: self.key, busy: self.busy }
+    }
+}
+
 /// One beat.
 async fn walk(app: &Shared) {
     let a = app.clone();
@@ -307,67 +396,22 @@ async fn walk(app: &Shared) {
     let at = Instant::now();
     let seen = read_servers(app, &wanted, &with_run, &dropped.values().cloned().collect::<Vec<_>>()).await;
     let now = ops::now();
-    let mut reads = Vec::new();
-    for r in &all {
+    let panes: Vec<_> = all.iter().filter_map(|r| {
         if r.is_starting() {
             start::watch(app, &r.id);
-            continue;
+            return None;
         }
-        // no server for its key, or out of reach: nothing is known of its pane, and no clock runs (AC-130)
-        let Some((server, pane)) = r.place(app).or_else(|| dropped.get(&r.id).map(|s| (s.clone(), String::new()))) else { continue };
-        let Some(s) = seen.get(&server.id()) else { continue };
-        let Some(list) = &s.panes else { continue };
-        let key = server.key(&pane);
-        let p = list.get(&pane);
-        // its pane gone or another's while the server's identity is not read: nothing is decided until it is (AC-205)
-        if !p.is_some_and(|p| p.mark == r.id) && s.identity.is_none() {
-            continue;
+        // Planning mutates clocks and nudge flags, so it waits for this run's previous actions.
+        if app.dispatcher.deferred.lock().contains(&r.id) {
+            return None;
         }
-        let measured = s.tree.as_ref().zip(p).map(|(t, p)| procs::under(t, &p.pid));
-        // ps did not answer: the agent stands while tmux says no exit, and no limit fires on missing numbers
-        let under = measured.as_ref().map_or(p.is_some_and(|p| p.exit.is_none()), |u| u.any);
-        let (busy, memory, under, subs) = {
-            let mut watch = app.dispatcher.watch.lock();
-            let w = watch.entry(key.clone()).or_default();
-            // gone with no exit recorded: only a second reading says so, the wrapper records it a moment after
-            let unsure = !under && p.is_some_and(|p| p.exit.is_none()) && !std::mem::replace(&mut w.agent_missed, !under);
-            if unsure {
-                app.dispatcher.soon.notify_one();
-            }
-            let under = under || unsure;
-            let busy = measured.as_ref().is_some_and(|u| w.cpu.is_some_and(|(was, _)| u.cpu - was >= CPU_ACTIVE / scale() as f64));
-            let memory = measured.as_ref().map(|u| {
-                let (warn, end) = limits.get(&r.project).copied().unwrap_or((global_warn, global_end));
-                plan::Memory::read(u.gib(), warn, end, &mut w.over)
-            });
-            (busy, memory, under, !w.subs.is_empty())
-        };
-        let (waiting, failed, ended) = listed(app, &key);
-        // its turn is over and its background work still runs (its checks, a landing): the row's footer parser says so,
-        // no hook does; that is work, as an open tool is (AC-123)
-        let background = r.kind == "claude" && (r.turn_ended || ended) && under && p.is_some_and(|p| p.exit.is_none())
-            && server.run(format!("capture-pane -p -J -t {pane}")).await.is_ok_and(|rows| background_tasks(&rows) != Background::None);
-        // after its agent, what runs in front is a human's: it stays theirs. A job behind the shell keeps
-        // the 5 minutes from running: a prompt's own helpers come and go, and must not leave it open for good
-        let program = p.filter(|p| p.exit.is_some() && !crate::tmux::titles::is_shell(&p.command)).map(|p| p.command.clone());
-        let job = under && p.is_some_and(|p| p.exit.is_some());
-        let facts = Facts {
-            pane: p.is_some(),
-            marked: p.is_some_and(|p| p.mark == r.id),
-            exit: p.and_then(|p| p.exit),
-            alive: under && p.is_some_and(|p| p.exit.is_none()),
-            waiting,
-            failed,
-            active: app.dispatcher.take_active(&key) || busy || job || background,
-            program,
-            watched: app.pages.watched(&key),
-            memory,
-            subs,
-            identity: s.identity.clone(),
-            ..Default::default()
-        };
-        reads.push(Read { id: r.id.clone(), facts, ended, key, busy });
-    }
+        let place = r.place(app).or_else(|| dropped.get(&r.id).map(|s| (s.clone(), String::new())))?;
+        let seen = seen.get(&place.0.id())?;
+        let limits = limits.get(&r.project).copied().unwrap_or((global_warn, global_end));
+        RunPane::read(app, r, place, seen, limits)
+    }).collect();
+    let backgrounds = futures_util::future::join_all(panes.iter().map(RunPane::background)).await;
+    let reads = panes.into_iter().zip(backgrounds).map(|(pane, background)| pane.into_read(app, background)).collect();
     let a = app.clone();
     let (later, changed, used) = match store(app, move |tx| walk_store(tx, &a.hooks, &a.dispatcher, reads, now, at)).await {
         Ok(done) => done,
@@ -376,9 +420,14 @@ async fn walk(app: &Shared) {
     for task in changed.into_iter().collect::<HashSet<_>>() {
         crate::tasks::api::told(app, &task);
     }
-    for l in later {
-        acts::do_later(app, l).await;
+    let mut deferred: HashMap<String, Vec<Later>> = HashMap::new();
+    for action in later {
+        deferred.entry(action.run.id.clone()).or_default().push(action);
     }
+    // A deadline stops waiting for the task. The ordered actions can still finish and record their result.
+    futures_util::future::join_all(deferred.into_iter().filter_map(|(id, work)| {
+        acts::start_deferred(app, id, work).map(|task| tokio::time::timeout(LIST_WAIT, task))
+    })).await;
     // what a card shows of every linked live session; for others' sessions only the numbers (AC-128)
     let mut items = serde_json::Map::new();
     let mut lines: HashMap<String, serde_json::Value> = HashMap::new();   // one reading a session, its tasks sharing it
