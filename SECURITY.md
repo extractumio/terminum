@@ -151,6 +151,41 @@ is empty there. **Left**: a check runs the queued code as you, and the check is 
 candidate's own, so a task can change what checks it: **read the batches and the published
 history.**
 
+### Project Supervisor
+
+The Supervisor is off per project until the owner enables it. Its caller kind has a separate
+project-scoped allow-list for Observer, Advisor and Operator, checked at discovery and at
+execution for pane and token callers. Observer reads evidence and records findings and
+reports. Advisor can write authorized tasks, comments, cards and proposals. Operator can
+also start or promote tasks and apply or release the specified reversible holds. No level
+can type into or close a pane, edit the pool or schedules, run an arbitrary command,
+publish, delete work, read secrets or transcripts, or change protected settings or past
+evidence. Code checks the scope, signal level, evidence IDs, claimed numbers and budgets
+before acting. Incidents are produced by code at every level. The switch stops Supervisor
+rounds and lists active holds for the owner to release
+(`terminum-supervisor.md` AC-231, AC-232, AC-235, AC-245, AC-258).
+
+- **Rounds and Talk**: Dispatcher writes a fixed case-file ID prompt to the marked round
+  pane, through its existing typing gate. Talk requires the human's press and pastes its
+  fixed ID prompt once into the pane the press started. Task text stays in bounded data
+  fields in the case file. The round reports through typed tools. Outside prose goes
+  only to a tool-free reader, whose closed categories and counts can inform a marked
+  task. Auto-Dispatcher excludes that task until a human moves it
+  (`terminum-supervisor.md` AC-234, AC-244, AC-262).
+- **Command channels and probes**: confirming a channel in the signed-in project tab
+  authorizes its command to send the fixed incident templates off the machine. terminumd
+  puts approved IDs, counts and an optional owner-configured link on standard input.
+  It uses a fixed environment and deadline and reads only the exit status. Incident
+  actions and replies require the signed-in page. Probe commands also require owner
+  confirmation, with bounded, checked metric output. Import never enables a command.
+  The tab shows each imported command in full and the owner sets it separately. Export
+  excludes commands and secrets by default (`terminum-supervisor.md` AC-220, AC-227,
+  AC-260).
+- **Left**: a process running as the same user can change the local store, tmux or the
+  commands the owner configured. The scoped tools bound model actions through terminumd.
+  An owner-configured command runs with that user's OS access. Keep the private charter,
+  register, case files, ledger and baselines out of tracked files.
+
 ### Idle agents' exit
 
 Off until you set its days in Settings. Then terminumd types only Ctrl+C twice and `/exit` with
