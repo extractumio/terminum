@@ -21,3 +21,26 @@ fn ac162_a_press_from_a_wait_called_off_meanwhile_is_refused() {
         Ok(())
     }).unwrap();
 }
+
+#[test]
+fn ac170_order_press_rechecks_the_selected_project_at_run_admission() {
+    use crate::tasks::auto;
+    Store::open(crate::testutil::fresh_dir("api-order").join("kanban.sqlite")).with(|tx| {
+        let mut press: Press = serde_json::from_value(json!({"order_project": "default"})).unwrap();
+        assert!(press.order_project.is_none(), "a page or kept press cannot supply an order project");
+        press.order_project = Some("default".into());
+
+        tx.execute("UPDATE projects SET dir = '/srv' WHERE id = 'default'", []).map_err(ops::sql)?;
+        let before = auto::setting(tx, "default")?.with(&json!({"on": true, "mode": "order"}))?;
+        auto::set(tx, "default", &before, 1)?;
+        assert!(press.order_allows(tx, "default")?);
+        assert!(!press.order_allows(tx, "other")?, "a pick cannot run after moving projects");
+
+        let off = before.with(&json!({"on": false}))?;
+        auto::set(tx, "default", &off, 2)?;
+        assert!(!press.order_allows(tx, "default")?);
+        assert!(Press::default().order_allows(tx, "default")?, "a human's start is independent of the switch");
+        assert!(Press::resumed(How::Auto, crate::tasks::store::DISPATCHER).order_allows(tx, "default")?, "a recorded run can resume");
+        Ok(())
+    }).unwrap();
+}
