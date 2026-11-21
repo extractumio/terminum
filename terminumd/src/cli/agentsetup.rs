@@ -62,7 +62,7 @@ pub fn program(ctx: &Ctx) -> String {
 
 /// The command a hook runs: the stable `terminum` command, as a shell word.
 pub fn command(ctx: &Ctx, agent: &str) -> String {
-    format!("{} hook {agent}", super::commands::quote(&program(ctx)))
+    format!("{} hook {agent}", crate::termtext::posix_word(&program(ctx)))
 }
 
 /// One hook that runs `cmd` in the background, past terminumd's budget at most 3 s (Codex's most for its end events).

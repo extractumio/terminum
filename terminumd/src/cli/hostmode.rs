@@ -66,7 +66,7 @@ pub fn prepare(ctx: &mut Ctx, args: &HostArgs) {
 
 /// The host's own terminum's command for `agent` (a terminum installed there, not the helper).
 fn own_command(ctx: &Ctx, agent: &str) -> String {
-    format!("{} hook {agent}", super::commands::quote(&ctx.bin().join("terminum").display().to_string()))
+    format!("{} hook {agent}", crate::termtext::posix_word(&ctx.bin().join("terminum").display().to_string()))
 }
 
 /// Whether the host has its own terminum with hooks in `agent`.

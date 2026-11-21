@@ -736,7 +736,7 @@ sequenceDiagram
 | AC-178 | A host's manager is known by the pane its call names alone: the Mac reads no process behind a link. | `terminumd/src/agentapi.rs`, `terminumd/src/roles/peer.rs` |
 | AC-174 | Whether a real Claude Code or Codex in a manager's session takes up its tools from the instructions was not run. | `scripts/e2e_roles.py` (a shell stands in) |
 | AC-207 | A real Codex attached to a real shared app-server is not run in a test: a shell with the server's words stands in for it; the session list shows nothing for such a Codex but its screen's state (the user is told by AC-208's window). | `terminumd/src/cli/codexdaemon.rs` |
-| AC-208 | A Codex with no MCP server configured, not attached, while a shared server runs and `daemon_auto_start` is off, has no process under it either and gets the window. A Codex's own Ctrl+G editor over its inline TUI, before its run's window showed, reads as its full screen. | `terminumd/src/agentnotice.rs` |
+| AC-208 | A Codex with no MCP server configured, not attached, while a shared server runs and `daemon_auto_start` is off, has no process under it either and gets the window. A Codex's own Ctrl+G editor over its inline TUI, before its run's window showed, reads as its full screen. | `terminumd/src/agentnotice.rs`, `terminumd/src/process.rs`, `terminumd/src/process/codex.rs` |
 
 ## 8. Recommendation and ownership
 
@@ -862,5 +862,5 @@ All cases are shipped; nothing is staged.
 - [x] AC-180 — `cargo test roles`, `scripts/e2e_roles.py`
 - [x] AC-181 — `cargo test roles`, `cargo test cli::tool`, `scripts/e2e_roles.py`
 - [x] AC-207 — `cargo test codexdaemon` (a shell with a shared server's words starts the real binary's checks, a pane in its environment), `cargo test cli::`
-- [x] AC-208 — `cargo test agentnotice`, `web/test/e2e_notices.mjs`, `web/test/e2e_liveprogs.mjs` (real Claude Code in both TUIs, real Codex `--no-daemon` on and off the alternate screen, vim)
+- [x] AC-208 — `cargo test agentnotice`, `cargo test process::tests`, `web/test/e2e_notices.mjs`, `web/test/e2e_liveprogs.mjs` (real Claude Code in both TUIs, real Codex `--no-daemon` on and off the alternate screen, vim)
 - [x] AC-153 — `cargo test idle_exit` (keys and the summary on a private tmux with a stand-in agent), `cargo test idle_summary`, `cargo test hookargv`, `cargo test hookopts`, `cargo test tmux::hookstate`, `cargo test settings`, `web/test/e2e_header.mjs`

@@ -16,6 +16,7 @@ use crate::app::Shared;
 
 /// Why a notice did not reach its session.
 pub const ENDED: &str = "its agent's session ended before it heard the notice";
+const PANE_CLOSED: &str = "its session closed before its agent's next tool call";
 pub const CROWDED: &str = "more than 20 lines waited for its agent";
 pub const RUN_ENDED: &str = "its agent was ended before it heard the notice";
 pub const NO_HOOKS: &str = "its agent's hooks do not reach terminum: run terminum hooks install, and see terminum hooks for a Codex under a shared app-server";
@@ -92,6 +93,11 @@ pub fn lost(app: &Shared, lines: Vec<Line>, why: &'static str) {
     });
 }
 
+/// Settle waiting notices when a new tmux inventory confirms their pane has closed (AC-209).
+pub fn panes_seen(app: &Shared, prefix: &str, every: &[String]) {
+    lost(app, app.task_lines.take_closed_comments(prefix, every), PANE_CLOSED);
+}
+
 /// A comment's task's ID as it stands (`task` may be an old one), its session and who wrote it, when a notice may
 /// go: a comment by no system user (AC-209).
 fn of_comment(tx: &Transaction, task: &str, event: &str) -> Result<Option<(String, String, String)>, String> {
@@ -134,7 +140,9 @@ pub fn comment_added(app: &Shared, task: &str, event: &str, from: Option<&str>) 
     let (a, task, event, from) = (app.clone(), task.to_string(), event.to_string(), from.map(str::to_string));
     tokio::task::spawn_blocking(move || {
         let Ok(Some((task, key, by))) = a.tasks.with(|tx| of_comment(tx, &task, &event)) else { return };
-        let runs = agent_runs(crate::page::marks::find_item(&a.layout.read(), &key));
+        // Hold the layout through enqueue: the inventory sweep and replacement use its write lock.
+        let layout = a.layout.read();
+        let runs = agent_runs(crate::page::marks::find_item(&layout, &key));
         match goes(&key, runs, a.hooks.has(&key), from.as_deref()) {
             Goes::Nowhere => {}
             Goes::NoHooks => lost(&a, vec![Line { task, text: String::new(), comments: vec![(event, by)] }], NO_HOOKS),

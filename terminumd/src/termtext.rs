@@ -84,6 +84,20 @@ pub fn quote_word(job: &str, s: &str) -> Option<String> {
     }
 }
 
+/// A word as a POSIX shell reads it back (Python's shlex.quote).
+pub(crate) fn posix_word(word: &str) -> String {
+    let safe = |c: char| c.is_alphanumeric() || "_@%+=:,./-".contains(c);
+    if !word.is_empty() && word.chars().all(safe) {
+        return word.to_string();
+    }
+    format!("'{}'", word.replace('\'', "'\"'\"'"))
+}
+
+/// A line for a POSIX shell, with each of its words quoted where it must be.
+pub(crate) fn posix_line(words: impl IntoIterator<Item = impl AsRef<str>>) -> String {
+    words.into_iter().map(|word| posix_word(word.as_ref())).collect::<Vec<_>>().join(" ")
+}
+
 /// The text typed for `insert` (paths, then a space) or `cd` (the folder), or the reason
 /// it is not typed.
 pub fn line(job: &str, action: &str, paths: &[String], path: Option<&str>) -> Result<String, String> {

@@ -51,6 +51,8 @@ struct State {
     told: Option<Told>,
     last_good: Arc<Vec<Value>>,
     read_at: Option<Instant>,
+    /// tmux's identity on the last complete inventory, kept through a disconnected read
+    identity: Option<String>,
     /// `told` holds `last_good` dimmed: nothing to do again while it goes on unread
     dimmed: bool,
 }
@@ -62,8 +64,8 @@ pub struct Told {
     /// shown after every server's rows
     pub absent: Vec<Value>,
     pub keys: Vec<String>,
-    /// every pane key of the server, of a session not shown too: a pane not here closed
-    pub every: Vec<String>,
+    /// every pane key, including those not shown; None when no pane inventory was taken
+    pub every: Option<Vec<String>>,
     /// nothing in it failed
     pub ok: bool,
 }
@@ -93,6 +95,14 @@ impl ServerList {
     /// A read of it finished, whatever it found.
     pub fn tried(&self) -> bool {
         self.state.lock().tried
+    }
+
+    /// Pane IDs can be reused when a different tmux answers on the same socket.
+    fn replaced(&self, identity: String) -> bool {
+        let mut state = self.state.lock();
+        let replaced = state.identity.as_ref().is_some_and(|last| last != &identity);
+        state.identity = Some(identity);
+        replaced
     }
 
     /// Keeps what a read found; true when it is this server's own list, fresh (a turn may settle by it).
@@ -193,8 +203,14 @@ async fn run(app: Shared, server: Weak<Server>) {
         let Some(s) = server.upgrade() else { return };
         let target = s.list.state.lock().requested;
         let got = crate::manager::read_one(&app, &s).await;
-        let fresh = s.list.store(got, Instant::now());
-        crate::manager::publish(&app, &s, fresh).await;
+        {
+            // A different server's publication must not see these rows before this read's pane cleanup.
+            let _publish = app.refreshing.lock().await;
+            let replaced = matches!(&got, Got::Read(t) if t.ok && t.every.is_some())
+                && s.identity_known().is_some_and(|id| s.list.replaced(id));
+            let fresh = s.list.store(got, Instant::now());
+            crate::manager::publish(&app, &s, fresh, replaced).await;
+        }
         s.list.done.send_replace(target);
         let mut st = s.list.state.lock();
         if st.requested == target {

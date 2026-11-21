@@ -39,6 +39,17 @@ struct Waiting {
     sent: Vec<(u64, Line)>,
 }
 
+impl Waiting {
+    fn take_comments(&mut self) -> Vec<Line> {
+        self.lines.extract_if(.., |line| line.is_notice())
+            .chain(self.sent.extract_if(.., |(_, line)| line.is_notice()).map(|(_, line)| line)).collect()
+    }
+
+    fn is_empty(&self) -> bool {
+        self.lines.is_empty() && self.sent.is_empty()
+    }
+}
+
 /// Lines for panes' next contexts: each goes until the hook says it was heard (D15), so an
 /// answer lost on its way, or a hook that printed nothing, sends it again.
 #[derive(Default)]
@@ -85,7 +96,7 @@ impl Lines {
         let mut all = self.0.lock();
         let w = all.get_mut(key)?;
         let eligible = |line: &Line| !comments_only || line.is_notice();
-        if w.sent.is_empty() && w.lines.is_empty() {
+        if w.is_empty() {
             all.remove(key);
             return None;
         }
@@ -106,7 +117,7 @@ impl Lines {
         let mut all = self.0.lock();
         let Some(w) = all.get_mut(key) else { return Vec::new() };
         let lines = w.sent.extract_if(.., |(batch, _)| *batch == n).map(|(_, line)| line).collect();
-        if w.sent.is_empty() && w.lines.is_empty() {
+        if w.is_empty() {
             all.remove(key);
         }
         lines
@@ -122,8 +133,29 @@ impl Lines {
     pub(crate) fn take_comments(&self, key: &str) -> Vec<Line> {
         let mut all = self.0.lock();
         let Some(w) = all.get_mut(key) else { return Vec::new() };
-        w.lines.extract_if(.., |line| line.is_notice())
-            .chain(w.sent.extract_if(.., |(_, line)| line.is_notice()).map(|(_, line)| line)).collect()
+        let gone = w.take_comments();
+        if w.is_empty() {
+            all.remove(key);
+        }
+        gone
+    }
+
+    /// Comment notices of panes that a server's full inventory says have closed (AC-209).
+    pub(crate) fn take_closed_comments(&self, prefix: &str, live: &[String]) -> Vec<Line> {
+        let mut all = self.0.lock();
+        if all.is_empty() {
+            return Vec::new();
+        }
+        let live: HashSet<&str> = live.iter().map(String::as_str).collect();
+        let mut gone = Vec::new();
+        all.retain(|key, waiting| {
+            if !key.starts_with(prefix) || live.contains(key.as_str()) {
+                return true;
+            }
+            gone.extend(waiting.take_comments());
+            !waiting.is_empty()
+        });
+        gone
     }
 
     /// Every comment of `task` whose notice waits for its session (AC-209).

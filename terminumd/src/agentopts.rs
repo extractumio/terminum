@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-//! Which of an agent's launch words its resume takes again (`terminum-agents.md` AC-153's summary):
+//! Which of an agent's launch words its restart takes again (`terminum-agents.md` AC-153's summary):
 //! its options (`--dangerously-skip-permissions`, `--model opus`), never its prompt, which would be
 //! sent again, nor the options that pick or start a session. A word is a value or the prompt by the
 //! agent's own options (`claude --help` of 2.1, `codex --help` and `codex resume --help` of 0.167);
@@ -108,7 +108,7 @@ pub fn resumed(agent: &str, words: &[String]) -> Option<Vec<String>> {
 }
 
 #[cfg(test)]
-mod tests {
+mod hookopts_tests {
     use super::*;
 
     fn r(agent: &str, line: &str) -> Option<String> {
