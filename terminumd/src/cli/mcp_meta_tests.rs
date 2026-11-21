@@ -14,7 +14,7 @@ fn misses(cases: &[(&str, &str)], found: impl Fn(&[String], &str) -> bool) -> St
 
 /// What an agent asks, and the tool it must get first: the search's specification. A new tool
 /// adds its phrasings here.
-const GOLDEN: [(&str, &str); 44] = [
+const GOLDEN: [(&str, &str); 46] = [
     ("change a task's priority", "update_task"),
     ("bump the severity of a ticket", "update_task"),
     ("reprioritize an issue", "update_task"),
@@ -43,6 +43,8 @@ const GOLDEN: [(&str, &str); 44] = [
     ("assign the task to me", "take_task"),
     ("start working on a task", "take_task"),
     ("I need a human", "ask_human"),
+    ("wait until another task is done", "wait_for_task"),
+    ("it needs the change of TERM-9 first", "wait_for_task"),
     ("block the task waiting for a person", "move_task"),
     ("move my task to another column", "move_task"),
     ("change a task's status to failed", "move_task"),

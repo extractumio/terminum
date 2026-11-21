@@ -33,4 +33,5 @@ pub mod tell;
 pub mod template;
 pub mod tools;
 pub mod users;
+mod waitfor;
 mod windowapi;

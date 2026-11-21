@@ -535,7 +535,7 @@ Scenario: AC-181 failure
   Then it says "terminum tool runs in a session of terminum, or with a token in TERMINUM_TOKEN (terminum tokens add)." and calls nothing
   When the token is unknown, ended or removed, or its project is gone
   Then the call is refused: "terminum does not know this token: …"
-  When a token's call names take_task, ask_human, dispatch_task or a plan tool
+  When a token's call names take_task, ask_human, wait_for_task, dispatch_task or a plan tool
   Then it answers "… is a session's own: a token has no session."
   When `terminum tokens add` or `remove` runs in any pane of terminum, a manager's too
   Then terminumd refuses: "Tokens are made and removed in a terminal outside terminum: a session in terminum cannot."
