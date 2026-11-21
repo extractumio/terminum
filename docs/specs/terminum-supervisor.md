@@ -38,7 +38,7 @@ Open questions: none. §9 defines the defaults.
 | ID | Priority | Case |
 |---|---|---|
 | AC-211 | [MUST / P0] | A named engine query records a signal with verifiable evidence, a baseline, a fingerprint and a state; repeats update one signal. |
-| AC-212 | [MUST / P0] | Store-only detectors use project thresholds, report unmet needs and start in shadow when enabled after attach. |
+| AC-212 | [MUST / P0] | Every catalog detector is a named query tested firing and not firing on fixtures; detectors use project thresholds, report unmet needs and start in shadow when enabled after attach. |
 | AC-213 | [MUST / P0] | Code measures impact in additive project units, applies recurrence and sample floors and records the resulting level and response. |
 | AC-214 | [MUST / P0] | The scoreboard compares seven guarded indicators across two four-week windows without combining them. |
 | AC-215 | [MUST / P0] | A read-only, model-free replay ranks evidence and reports unavailable detectors. |
@@ -106,6 +106,11 @@ Scenario: AC-211 edge — a repeat updates one record
   When it fires again for API
   Then the original signal keeps its ID and first seen time and records the later evidence, last seen time and count 2
 
+Scenario: AC-211 edge — a signal resolves and recurs
+  Given API's raised signal for API-41 has count 2
+  When a sweep finds its measure back under the threshold, and a later sweep finds it over again
+  Then the signal's state is resolved after the first sweep and recurred after the second, on the same ID with count 3
+
 Scenario: AC-211 failure — queries are an engine catalog
   Given a pack or round supplies an unregistered query name or SQL text
   When the engine validates the detector
@@ -115,6 +120,14 @@ Scenario: AC-211 failure — queries are an engine catalog
 ### AC-212 — Detector catalog [MUST / P0]
 
 ```gherkin
+Scenario Outline: AC-212 happy path — each catalog detector fires and stays quiet
+  Given a fixture where <detector>'s condition holds and one where it does not
+  When the engine runs <detector>'s named query on each
+  Then it fires on the first fixture only
+  Examples:
+    | detector |
+    | each row of the §9 detector catalog |
+
 Scenario: AC-212 happy path — three kinds of thresholds
   Given API has the event and usage history for its store-only checks
   When the engine loads a baseline percentile with a floor, an absolute limit and a change threshold
@@ -139,16 +152,32 @@ Scenario: AC-213 happy path — sustained harm
   When code scores that signal
   Then it records impact 2 and the level and response for the maximum of impact, blast radius and reversibility
 
-Scenario: AC-213 edge — two quantities or an exceptional breach
-  Given one current problem consumes 6% each of owner hours and tokens and another breaks a charter never
-  When code scores them independently
-  Then the first has impact 2 and the second impact 3 even if its measured share is small
+Scenario: AC-213 edge — two quantities
+  Given one current problem consumes 6% each of owner hours and tokens
+  When code scores it
+  Then it has impact 2
 
-Scenario: AC-213 failure — sparse and stale evidence
-  Given an event-based share has only two events in a week, or the cause last fired three weeks ago
-  When the register's ranking is computed
-  Then the sparse share cannot establish high impact and the stale cause is omitted
-  And for a current single-indicator cause the recurring high threshold is at least 10%, respects its noise and is capped at 25%; a single high week is impact 1. If noise is 28%, a sustained share of 25% meets the high mark
+Scenario: AC-213 edge — a charter "never" is broken
+  Given a problem breaks one of the charter's "never" rules with a measured share of 1%
+  When code scores it
+  Then it has impact 3
+
+Scenario: AC-213 edge — a round argues for a lower level
+  Given a signal at level 2
+  When a round proposes level 1 for it
+  Then code refuses the proposal and the signal stays at level 2
+
+Scenario Outline: AC-213 failure — floors and thresholds
+  Given a single-indicator cause with a <share> share in <weeks> of the last eight weeks, <events> events in each such week, <noise> weekly noise, last firing <last>
+  When code scores it
+  Then its impact is <impact>
+  Examples:
+    | share | weeks | events | noise | last          | impact      |
+    | 14%   | 3     | 2      | 8%    | this week     | 1           |
+    | 14%   | 3     | 8      | 8%    | 3 weeks ago   | not ranked  |
+    | 14%   | 1     | 8      | 8%    | this week     | 1           |
+    | 12%   | 3     | 8      | 15%   | this week     | 1           |
+    | 25%   | 3     | 8      | 28%   | this week     | 2           |
 ```
 
 ### AC-214 — Improvement scoreboard [MUST / P0]
@@ -158,6 +187,7 @@ Scenario: AC-214 happy path — seven guarded verdicts
   Given API has eight weeks of measures with sufficient data
   When the scoreboard compares the last four weeks with the four before
   Then it shows each of the seven measures, its guard, its number and whether it is better, flat or worse against its own weekly noise
+  And the period is improved when at least one measure is better and none is worse
 
 Scenario: AC-214 edge — a guard breaks
   Given releases per month rise beyond noise and stability worsens beyond noise
@@ -215,6 +245,7 @@ Scenario: AC-217 happy path — run outside Dispatcher's walk
   Given API is enabled and an event crosses a detector threshold
   When the independent read-only collector reads the new range off the async workers
   Then the signal appears within one minute and its write is batched into one small transaction
+  And while a detector read is held open, the read holds no store write turn and Dispatcher's walk keeps its beat
 
 Scenario: AC-217 edge — same-time events and restart
   Given three events share a timestamp and have nonmonotonic IDs
@@ -234,16 +265,22 @@ Scenario: AC-218 happy path — data at the time of observation
   Given the collector samples current queue waits and receives hook event names
   When sweeps and hooks record their measurements
   Then metric points retain the observed values and counts are grouped by session for failures, repeats, subagents and compactions
+  And store points are taken every 15 minutes and baselines are recomputed daily
 
 Scenario: AC-218 edge — history begins at collection
   Given the first queue snapshot is collected on a project with old tasks
   When a trend asks for an earlier period
   Then the series starts at the first point and earlier observations are unavailable
 
-Scenario: AC-218 failure — retention and hook latency
-  Given a session counter ages past retention and a hook contains free-form output
-  When the maintenance sweep prunes counters and the hook runs
-  Then the expired counters are removed, output is discarded and the hook does no analysis
+Scenario: AC-218 failure — retention
+  Given a session counter ages past retention
+  When the maintenance sweep prunes counters
+  Then the expired counters are removed
+
+Scenario: AC-218 failure — hook output
+  Given a hook event carries free-form output
+  When the hook counts it
+  Then only the event name is counted, the output is discarded and the hook does no analysis
 ```
 
 ### AC-219 — Collector watchdog [MUST / P0]
@@ -516,20 +553,35 @@ Scenario: AC-232 failure — automatic level change attempted
 ### AC-233 — Investigation trigger [MUST / P0]
 
 ```gherkin
-Scenario: AC-233 happy path — qualifying automatic signals and owner press
-  Given API has a medium-tier agent, budget and a free slot
-  When a level 2 or 3 signal arrives, a causeless level 1 signal fires in three of eight weeks, or the owner presses Investigate on a signal or incident
-  Then an investigation is admitted through Dispatcher's gate and active fingerprints deduplicate
+Scenario Outline: AC-233 happy path — qualifying triggers
+  Given API has a medium-tier agent, budget and a free slot, and no round is open for the fingerprint
+  When <trigger>
+  Then an investigation is admitted through Dispatcher's gate, on the tier its level calls for (§9)
+  Examples:
+    | trigger |
+    | a level 2 or 3 signal arrives |
+    | a level 1 signal fires in three of eight weeks with no cause in the register |
+    | the owner presses Investigate on a signal or an incident |
 
 Scenario: AC-233 edge — low-confidence high stakes
   Given a heuristic puts a signal at level 2 or 3 with confidence 0.5
   When code schedules verification
   Then verification has at most 15 minutes and an interim hold applies only if it costs less than waiting; a deterministic critical page never waits for a model
 
-Scenario: AC-233 failure — no room
-  Given the budget is exhausted, the tier has no agent or the fingerprint already has an active round
-  When another trigger arrives
-  Then no duplicate or out-of-budget round starts; eligible queued rounds with capacity are considered by impact and the unavailable reason is visible
+Scenario Outline: AC-233 failure — no room
+  Given <condition>
+  When another trigger arrives for API
+  Then no round starts and <reason> is visible
+  Examples:
+    | condition | reason |
+    | the judgment budget is spent | the budget notice |
+    | the tier has no agent in the pool | the missing tier |
+    | the fingerprint already has an active round | the active round's ID |
+
+Scenario: AC-233 failure — waiters by impact
+  Given two eligible rounds wait for one freed slot
+  When the slot frees
+  Then the round of the higher-impact signal starts first
 ```
 
 ### AC-234 — Round protocol [MUST / P0]
@@ -549,6 +601,11 @@ Scenario: AC-234 failure — wrong pane or deadline
   Given a pane does not meet the gate, or the round spends its time limit without a typed result
   When Dispatcher handles the failure
   Then it refuses the paste or ends the marked round, frees the slot and records the failure without accepting a transcript as a result
+
+Scenario: AC-234 failure — a sub-agent's result fails its schema
+  Given a round's investigator returns a result without its cause, evidence, confidence or disproof field, or after its deadline
+  When code checks the result
+  Then it is refused, recorded, and raises self.round_failed
 ```
 
 ### AC-235 — Evidence verification [MUST / P0]
@@ -587,6 +644,11 @@ Scenario: AC-236 failure — weakened yardstick
   Given a landed fix has been below threshold for less than its required observation window
   When a round seeks to mark it resolved by shortening the window
   Then code rejects the weaker yardstick and keeps the problem watching; recurrence reopens its evidence trail
+
+Scenario: AC-236 failure — a problem with no signal
+  Given a round calls open_problem without a signal fingerprint
+  When terminumd checks the call
+  Then the call is refused and no problem is opened
 ```
 
 ### AC-237 — Judgment governor [MUST / P0]
@@ -600,12 +662,12 @@ Scenario: AC-237 happy path — reserve for investigations
 Scenario: AC-237 edge — degraded operation
   Given the ceiling is reached
   When new deterministic signals and a review request arrive
-  Then signals, pages, holds and digest continue; the next owner message starts with the budget notice, and a review that cannot run becomes a decision card
+  Then signals, pages, holds and digest continue, judgment rounds and new Supervisor tasks wait; the next owner message starts with the budget notice, and a review that cannot run becomes a decision card
 
 Scenario: AC-237 failure — round or finding fails
-  Given a round exceeds its token cap, ends without a result, or submits a false number
+  Given a round exceeds its token cap, or ends without a result
   When code checks the round
-  Then the governor ends an overrunning round, records the failed round or refused finding and raises the applicable self signal
+  Then the governor ends an overrunning round, records the failed round and raises self.round_failed or self.budget
 ```
 
 ### AC-238 — Fix spend [MUST / P0]
@@ -614,7 +676,8 @@ Scenario: AC-237 failure — round or finding fails
 Scenario: AC-238 happy path — importance before count
   Given API has two high-impact problems and a low-impact one under the fixes ceiling
   When the Supervisor creates or starts fixes
-  Then it uses impact order, attributes spend once for each run it made or started, and shows both spends; the low-impact problem stays in the register
+  Then it uses impact order, attributes spend once for each run it made or started, and the Supervisor screen and the weekly review show fix spend beside judgment spend; the low-impact problem stays in the register
+  And each task's severity follows the project's severity rule for its type and impact
 
 Scenario: AC-238 edge — critical exception
   Given the fixes ceiling is reached and a charter never is breached
@@ -624,7 +687,7 @@ Scenario: AC-238 edge — critical exception
 Scenario: AC-238 failure — important work remains at the ceiling
   Given three eligible problems compete for a budget that can pay for one
   When it pays for the highest ranked one
-  Then one decision card lists the remaining problems, their impact, and the choice to fund them or wait; there is no task-count quota
+  Then one decision card lists the remaining problems, their impact, and the choice to raise the ceiling for them or let them wait a week; there is no task-count quota
 ```
 
 ### AC-239 — Marks, rank and override [MUST / P0]
@@ -637,8 +700,9 @@ Scenario: AC-239 happy path — advisory rank and eligibility
 
 Scenario: AC-239 edge — human or manager wins
   Given a human or project manager overrides a Supervisor action on API-41
-  When the same rule proposes another action on API-41 within 24 hours
+  When any Supervisor rule proposes another action on API-41 within 24 hours
   Then it takes no action on that task and records self.fights with the override and actor
+  And an action proposed after the 24 hours is allowed again
 
 Scenario: AC-239 failure — rewrite another author's task
   Given the Supervisor requests a new severity, title or text for an owner's task
@@ -657,7 +721,17 @@ Scenario: AC-240 happy path — high-impact owner decision
 Scenario: AC-240 edge — owner load
   Given several lesser decisions are pending
   When code prepares the weekly review
-  Then it groups them into one list and compares cards added with questions removed by accepted standing rules
+  Then it groups them into one list
+
+Scenario: AC-240 edge — standing rules weighed
+  Given the owner accepted a standing rule last week
+  When code prepares the weekly review
+  Then it shows the cards added beside the questions that rule removed
+
+Scenario: AC-240 edge — drift worth mining
+  Given session counters for two API sessions are above their drift threshold
+  When the Supervisor reports it
+  Then a decision card names the sessions and proposes that the owner run `/retro` on them, and no transcript is read
 
 Scenario: AC-240 failure — decision does not belong to the owner
   Given a round asks to page or open an immediate card for a routine choice below the high-impact gate
@@ -668,20 +742,30 @@ Scenario: AC-240 failure — decision does not belong to the owner
 ### AC-241 — Nudges [SHOULD / P1]
 
 ```gherkin
-Scenario: AC-241 happy path — fixed first line and existing notice
-  Given API-41's active session drifts, a known problem applies or a hold stops its run
+Scenario Outline: AC-241 happy path — fixed first line and existing notice
+  Given <trigger> on API-41's active session, at level 1 or above
   When the Supervisor comments
-  Then the fixed first line identifies the reason, evidence and any undo; the linked agent receives the notice at its normal hook opportunity under terminum-dispatcher.md AC-209
+  Then the fixed first line names <reason> with its evidence and any undo; the linked agent receives the notice at its normal hook opportunity under terminum-dispatcher.md AC-209; design-first and missing-review notices are AC-251's
+  Examples:
+    | trigger | reason |
+    | a drift signal | the drift |
+    | a known register problem applies | the problem |
+    | a hold stops its run | the hold |
 
 Scenario: AC-241 edge — repeat or idle agent
   Given there is already a comment on this task for that signal and its agent has no new hook activity
   When the signal repeats
   Then the existing comment is updated without stacking a second or claiming the agent has heard
 
-Scenario: AC-241 failure — low impact or no link
-  Given a level 0 signal fires, or a nudge-worthy task has no linked open agent
+Scenario: AC-241 failure — level 0
+  Given a level 0 signal fires on API-41
   When the nudge rule runs
-  Then level 0 gets no comment; if commentary is warranted the unlinked task has a visible comment and no claimed delivery
+  Then API-41 gets no comment
+
+Scenario: AC-241 failure — no linked agent
+  Given a nudge-worthy signal on API-42, which has no linked open agent
+  When the nudge rule runs
+  Then API-42 has a visible comment and no delivery is claimed
 ```
 
 ### AC-242 — Weekly review and verdicts [MUST / P0]
@@ -744,10 +828,21 @@ Scenario: AC-244 failure — pane changed or caller is a model
 ### AC-245 — Holds [MUST / P0]
 
 ```gherkin
-Scenario: AC-245 happy path — apply and undo
+Scenario Outline: AC-245 happy path — apply and undo
   Given API's Operator has a qualifying signal at level 2 or above and its rule is live for holds
-  When it stops one run, pauses Auto-Dispatcher, pauses integration or takes a task out of the queue
-  Then each hold appears with its signal, reason and one-key undo; a project-wide pause opens an incident with Keep the hold and Release the hold
+  When it applies <hold>
+  Then the hold appears with its signal, reason and <undo>
+  Examples:
+    | hold | undo |
+    | stop one marked run | RUN resumes the task |
+    | pause Auto-Dispatcher | its project switch |
+    | pause integration | the queue's key that resumes it (terminum-integration.md AC-193) |
+    | take a task out of the queue | the queue's key that queues it again (terminum-integration.md AC-193) |
+
+Scenario: AC-245 happy path — a project-wide hold opens an incident
+  Given API's Operator pauses Auto-Dispatcher or integration
+  When the hold applies
+  Then an incident opens with Keep the hold and Release the hold
 
 Scenario: AC-245 edge — shadow and off
   Given a shadow hold is proposed and a different hold is already active
@@ -1207,17 +1302,17 @@ terminumd owns the engine, evidence, permissions, governor and state. Dispatcher
 
 ### State, collection and replay
 
-Keep public engine code and defaults in `terminumd/src/supervisor/». Store settings, signals, register, ledger, case files and the baseline series with the project in the tasks store. Project-specific settings are the pack. The pack comprises the charter, parameters and mutes, probes, surface map, model tiers, budgets, language and communication settings. The private charter records mission, users, indicators, never list, priorities, allocation, surfaces and risk appetite. At a priority or allocation review date, ask once. A charter grants no tool access. Project memory holds indexed owner rulings, traps and lasting facts under the project's own rules. Signals and working state stay in the store.
+Keep public engine code and defaults in `terminumd/src/supervisor/`. Store settings, signals, register, ledger, case files and the baseline series with the project in the tasks store. Project-specific settings are the pack. The pack comprises the charter, parameters and mutes, probes, surface map, model tiers, budgets, language and communication settings. The private charter records mission, users, indicators, never list, priorities, allocation, surfaces and risk appetite. At a priority or allocation review date, ask once. A charter grants no tool access. Project memory holds indexed owner rulings, traps and lasting facts under the project's own rules. Signals and working state stay in the store.
 
 | Record | Fields |
 |---|---|
-| Signal | Project, detector, subject kind and ID, fingerprint, evidence references, measure with baseline and window, impact, blast, reversibility, confidence, level, response, first and last seen, count and state. States are `new», `shadow», `raised», `held», `resolved», `recurred», `muted», `rejected». |
+| Signal | Project, detector, subject kind and ID, fingerprint, evidence references, measure with baseline and window, impact, blast, reversibility, confidence, level, response, first and last seen, count and state. States are `new`, `shadow`, `raised`, `held`, `resolved`, `recurred`, `muted`, `rejected`. |
 | Round | Project, case file, kind, model, token usage, typed result, and self-check with assumptions, disconfirming evidence and confidence. |
-| Problem | Title, lens, signal fingerprints, indicator and measured share, hypothesis and what would disprove it, state, fix options with layer and effort, linked tasks and yardstick. States are `suspected», `confirmed», `fix in work», `watching», `resolved», `recurred», `accepted as is». |
+| Problem | Title, lens, signal fingerprints, indicator and measured share, hypothesis and what would disprove it, state, fix options with layer and effort, linked tasks and yardstick. States are `suspected`, `confirmed`, `fix in work`, `watching`, `resolved`, `recurred`, `accepted as is`. |
 | Action and outcome | Rule (detector and response), action, undo, actor, override and its actor, due checks, later outcomes, first evidence of a miss and the owner's verdict when present. Append outcome and verdict events to the ledger. |
 | Configuration | Project scope, version, diff, class, replay evidence, author and revert reference. Mutes also carry reason and expiry. |
 
-A detector names a schema-pinned engine query plus typed parameters: `measure», `threshold», `group_by», `score», `escalate», `needs» and `mode». Validate names and conditions before reading data. A baseline threshold uses a project statistic and floor, an absolute threshold uses a charter limit, and a change threshold compares windows. For example, `flow.wait_human_age» uses `open_waits» and can apply the greater of a trailing p90 and a configured age floor. `live» can act, `shadow» records only, and `digest» controls reporting. An unavailable dependency disables the detector and shows the reason.
+A detector names a schema-pinned engine query plus typed parameters: `measure`, `threshold`, `group_by`, `score`, `escalate`, `needs` and `mode`. Validate names and conditions before reading data. A baseline threshold uses a project statistic and floor, an absolute threshold uses a charter limit, and a change threshold compares windows. For example, `flow.wait_human_age` uses `open_waits` and can apply the greater of a trailing p90 and a configured age floor. `live` can act, `shadow` records only, and `digest` controls reporting. An unavailable dependency disables the detector and shows the reason.
 
 | Source | Read path and cadence |
 |---|---|
@@ -1234,34 +1329,34 @@ The collector runs off the async workers through a read-only store connection. A
 
 | Rule | Measurement and input |
 |---|---|
-| `flow.wait_human_age» | Wait over the age threshold or blocking other tasks. Store. |
-| `flow.failed_no_reason», `flow.failed_repeat», `flow.rerun_after_done» | Reasonless failures above baseline, two or more failed runs on one task, and reruns after DONE. Store. |
-| `flow.returned» | Returned tasks above baseline, red rounds or a red target. Integration. |
-| `flow.starved» | P0 or P1 TODO age beyond its limit while slots are free. Store. |
-| `flow.lead_time_shift», `flow.backlog_growth» | Median or p90 lead time shift, and created tasks outnumbering closed tasks for the configured number of weeks. Store. |
-| `flow.cost_outlier», `flow.schedule_health» | Dispatcher run spend above the type's p95 or failed-run spend above baseline, and skipped or failed firings or a routine failing twice. Store. |
-| `flow.queue_growth», `flow.limit_near» | Increasing waits over configured samples and predicted subscription limit at current use. Snapshots. |
-| `flow.flaky», `flow.main_red» | A retried check or nightly red, and target CI failing. Gate and CI probes. |
-| `drift.ask_rate», `drift.agent_scorecard» | Questions per task and agent failure, question and cost bands by task type. Store. |
-| `drift.verify_red», `drift.diff_outlier», `drift.misrouted» | Own Verify fails, unusually large diffs by type, and model tier out of proportion to the work or repeated failures. Integration. |
-| `drift.loop», `drift.subagents», `drift.stale_plan» | Tool failure or repetition, compaction or extra subagents above baseline, and an ETA that only grows. Hook counters for the first two; snapshots for the last. |
-| `drift.rule_break», `drift.scope» | Project lint failure, and work outside the task's scope. Probe for lint; a medium judgment round for scope only on a card opened by the owner or a diff outlier. |
-| `arch.surface_touched», `arch.migration_edited», `arch.dependency» | T2 or T3 matches, edits to an existing migration or format, and a dependency added in a lockfile. Integration or git for surface touches; git probe for the other two. |
-| `arch.hotspot», `arch.spec_drift», `arch.bug_cluster», `arch.review_missing» | Churn × size × fix count or nearing a file cap, behavior changed without its mapped spec, clustered Bug fixes and Verify missing review. Git for the first two, integration for fixes and a review record for Verify. |
-| `improve.involvement», `improve.operations», `improve.guard_broken» | Involvement or owner operations or strategic acts outside their bands, and a guard worsening despite a favorable move. Store with the required question and guard inputs. |
-| `improve.release_time», `improve.releases» | Change in creation-to-release time, release cadence or patches within three days. Tags plus task commits for time; git probe for cadence and patches. |
-| `product.allocation», `product.user_bug_age» | Spend by type versus target, untyped share and over-age P0 or P1 Bugs. Store. |
-| `product.external», `product.feedback_age» | Outside metric beyond its band and over-age unanswered issues. Optional probes. |
-| `owner.answer_latency», `owner.priority_churn», `owner.load» | Median or pending answers, changed priorities and stopped runs, and session switching, concurrency and off-hours. Store. |
-| `process.handoff_overdue», `process.rules_growth» | Handoff or consolidation due and growth of rules without a check. Indexed project files and git probe respectively. |
-| `owner.rubber_stamp», `process.rule_recurs» | Same recommended option chosen for a configured streak in one kind; a recurrence of a fix in a prose retrospective. Recorded options and choice for the deterministic streak; budgeted judgment for prose. |
-| `self.collector_dead», `self.budget», `self.line_dead», `self.round_failed», `self.fights», `self.unjudged» | Missed beats, excess spend, channel failure, absent or refused results, overrides in 24 hours and mostly unjudgeable outcomes. Code. |
+| `flow.wait_human_age` | Wait over the age threshold or blocking other tasks. Store. |
+| `flow.failed_no_reason`, `flow.failed_repeat`, `flow.rerun_after_done` | Reasonless failures above baseline, two or more failed runs on one task, and reruns after DONE. Store. |
+| `flow.returned` | Returned tasks above baseline, red rounds or a red target. Integration. |
+| `flow.starved` | P0 or P1 TODO age beyond its limit while slots are free. Store. |
+| `flow.lead_time_shift`, `flow.backlog_growth` | Median or p90 lead time shift, and created tasks outnumbering closed tasks for the configured number of weeks. Store. |
+| `flow.cost_outlier`, `flow.schedule_health` | Dispatcher run spend above the type's p95 or failed-run spend above baseline, and skipped or failed firings or a routine failing twice. Store. |
+| `flow.queue_growth`, `flow.limit_near` | Increasing waits over configured samples and predicted subscription limit at current use. Snapshots. |
+| `flow.flaky`, `flow.main_red` | A retried check or nightly red, and target CI failing. Gate and CI probes. |
+| `drift.ask_rate`, `drift.agent_scorecard` | Questions per task and agent failure, question and cost bands by task type. Store. |
+| `drift.verify_red`, `drift.diff_outlier`, `drift.misrouted` | Own Verify fails, unusually large diffs by type, and model tier out of proportion to the work or repeated failures. Integration. |
+| `drift.loop`, `drift.subagents`, `drift.stale_plan` | Tool failure or repetition, compaction or extra subagents above baseline, and an ETA that only grows. Hook counters for the first two; snapshots for the last. |
+| `drift.rule_break`, `drift.scope` | Project lint failure, and work outside the task's scope. Probe for lint; a medium judgment round for scope only on a card opened by the owner or a diff outlier. |
+| `arch.surface_touched`, `arch.migration_edited`, `arch.dependency` | T2 or T3 matches, edits to an existing migration or format, and a dependency added in a lockfile. Integration or git for surface touches; git probe for the other two. |
+| `arch.hotspot`, `arch.spec_drift`, `arch.bug_cluster`, `arch.review_missing` | Churn × size × fix count or nearing a file cap, behavior changed without its mapped spec, clustered Bug fixes and Verify missing review. Git for the first two, integration for fixes and a review record for Verify. |
+| `improve.involvement`, `improve.operations`, `improve.guard_broken` | Involvement or owner operations or strategic acts outside their bands, and a guard worsening despite a favorable move. Store with the required question and guard inputs. |
+| `improve.release_time`, `improve.releases` | Change in creation-to-release time, release cadence or patches within three days. Tags plus task commits for time; git probe for cadence and patches. |
+| `product.allocation`, `product.user_bug_age` | Spend by type versus target, untyped share and over-age P0 or P1 Bugs. Store. |
+| `product.external`, `product.feedback_age` | Outside metric beyond its band and over-age unanswered issues. Optional probes. |
+| `owner.answer_latency`, `owner.priority_churn`, `owner.load` | Median or pending answers, changed priorities and stopped runs, and session switching, concurrency and off-hours. Store. |
+| `process.handoff_overdue`, `process.rules_growth` | Handoff or consolidation due and growth of rules without a check. Indexed project files and git probe respectively. |
+| `owner.rubber_stamp`, `process.rule_recurs` | Same recommended option chosen for a configured streak in one kind; a recurrence of a fix in a prose retrospective. Recorded options and choice for the deterministic streak; budgeted judgment for prose. |
+| `self.collector_dead`, `self.budget`, `self.line_dead`, `self.round_failed`, `self.fights`, `self.unjudged` | Missed beats, excess spend, channel failure, absent or refused results, overrides in 24 hours and mostly unjudgeable outcomes. Code. |
 
-`terminum supervisor replay» reads kept history without writing or starting an agent, even before the project is attached. It prints impact order, measures, input provenance and reasons for skips. Full event, run and usage history supports the store queries and recorded integration history. Probe, snapshot and counter replay starts with its first point. A stored model case can be rerun on request at a token cost. Replay reports possible firings across available history and tests quality only in labelled weeks with verdicts, misses or resolved problems. For example, an output line can read `flow.failed_repeat API-41, 2 runs, threshold 2; impact 1» and a skipped line can read `flow.main_red: CI probe unavailable». Attaching uses the replay to populate high-impact problems. The read-only replay command prints its list without a quota or a pass threshold based on owner votes.
+`terminum supervisor replay` reads kept history without writing or starting an agent, even before the project is attached. It prints impact order, measures, input provenance and reasons for skips. Full event, run and usage history supports the store queries and recorded integration history. Probe, snapshot and counter replay starts with its first point. A stored model case can be rerun on request at a token cost. Replay reports possible firings across available history and tests quality only in labelled weeks with verdicts, misses or resolved problems. For example, an output line can read `flow.failed_repeat API-41, 2 runs, threshold 2; impact 1` and a skipped line can read `flow.main_red: CI probe unavailable`. Attaching uses the replay to populate high-impact problems. The read-only replay command prints its list without a quota or a pass threshold based on owner votes.
 
 ### Impact, response and the improvement scoreboard
 
-Impact scores use shares of additive quantities: owner hours, events, tokens, task-days of delay, tasks, switches, operations or weekly spend. A rate is sized through its counts or other additive inputs. Measure impact 2 for a share of at least 10% in three of the last eight weeks. When weekly noise exceeds 10%, the share must clear that noise, with 25% sufficient. A share of at least 5% of two quantities at once also qualifies. A charter never gives impact 3. Impact 1 covers 3% up to the high threshold or one high week. Impact 0 covers under 3%. Event shares need at least three events in their week and a problem must still fire in the last two weeks to rank. Short history caps ordinary impact at 1. Confidence landmarks are 1.0 for facts, 0.7 for strong heuristics and 0.5 for unchecked judgment.
+Impact scores use shares of additive quantities: owner hours, events, tokens, task-days of delay, tasks, switches, operations or weekly spend. A rate is sized through its counts or other additive inputs. Measure impact 2 for a share of at least 10% in three of the last eight weeks. When weekly noise exceeds 10%, the share must clear that noise, with 25% sufficient. A share of at least 5% of two quantities at once also qualifies. Breaking one of the charter's "never" rules is impact 3, whatever its measured share. Impact 1 covers 3% up to the high threshold or one high week. Impact 0 covers under 3%. Event shares need at least three events in their week and a problem must still fire in the last two weeks to rank. Short history caps ordinary impact at 1. Confidence landmarks are 1.0 for facts, 0.7 for strong heuristics and 0.5 for unchecked judgment.
 
 | Score | Blast radius | Reversibility |
 |---|---|---|
@@ -1270,7 +1365,7 @@ Impact scores use shares of additive quantities: owner hours, events, tokens, ta
 | 2 | Target, store or all project agents | Days or a costly migration |
 | 3 | Users, public repository, other projects or credentials | Irreversible |
 
-A detector sets blast radius and reversibility; measured escalation rules may raise them. A round can propose raising a level with evidence. The level is the maximum of the three scores. Level 0 records (R0), with repeated findings in the review (R1). Level 1 can propose a fix through the high-impact task gate (R2) or nudge (R3) and appears in the digest. Level 2 calls for a reversible hold, if authorized, a card and diagnosis (R4). Level 3 opens the incident, applies an eligible hold and then diagnoses (R5). Confidence below 0.7 at level 2 or 3 invokes bounded verification; a deterministic critical page runs independently. Use stronger judgment and an independent critic at the highest stakes and before recommendations at levels 2 or 3 reach the owner.
+A detector sets blast radius and reversibility; its measured `escalate` rules may raise any of the three scores, and the signal records which rule raised which score. A round can propose raising a level with evidence; a proposal to lower one is refused. The level is the maximum of the three scores. Level 0 records (R0), with repeated findings in the review (R1). Level 1 can propose a fix through the high-impact task gate (R2) or nudge (R3) and appears in the digest. Level 2 calls for a reversible hold, if authorized, a card and diagnosis (R4). Level 3 opens the incident, applies an eligible hold and then diagnoses (R5). Confidence below 0.7 at level 2 or 3 starts a verifying investigation capped at 15 minutes; a hold goes on meanwhile only when it costs less than the wait, and a deterministic critical page runs independently. Depth follows level: level 1 uses the small tier or no round, level 2 the medium tier, level 3 the strong tier and the independent critic before a recommendation reaches the owner.
 
 | Indicator | Measure | Guard |
 |---|---|---|
@@ -1292,7 +1387,7 @@ Compare the latest four weeks to the preceding four and show changes against the
 | Tier agents | None selected, so code only; choose the project's pool agents for the small, medium, strong and independent roles. |
 | Judgment and fixes | 3% and 10% of trailing weekly project spend respectively. Judgment has a floor and a reserved investigation share. Configure ceilings in project settings. |
 | Charter | Never list and priorities empty; project-type template may suggest values. Seven indicators enabled, with no outside indicators required. |
-| Surface map | Empty, so no gate. Preview prior-month task count; size the T3 map toward three to four owner sign-offs per month. |
+| Surface map | Empty, so no gate. Preview prior-month task count; size the T3 map toward a few owner sign-offs a month. |
 | Critical line | No command or link base. Local bar and card work without them. Default repeats after 10 minutes, 30 minutes, then hourly; quiet hours 23:00–08:00 once a channel is configured. |
 | Detectors | Enable applicable library detectors; calculate thresholds from history, with per-project overrides and off, shadow or live settings. |
 | Probes | Applicable standard probes. Owner confirms additional commands. |
@@ -1305,10 +1400,10 @@ A signed-in switch starts a scan within seconds: read available integrations, co
 | Authority | Allowed |
 |---|---|
 | Observer | Read its project signals, metrics and tasks, and record scoped findings and reports. Record a proposal concerning project rules or settings for review. Code delivers incidents. |
-| Advisor | Observer plus `open_problem», `update_problem», `propose_decision», `propose_rank», `request_review» and `propose_config_change». Create authorized high-impact tasks and comment; mark design first under AC-251. |
-| Operator | Advisor plus `hold», `release_hold», `run_task», `promote_queued_task», `stop_task», `list_runs» and `get_dashboard», under their scope, rule, signal and budget checks. |
+| Advisor | Observer plus `open_problem`, `update_problem`, `propose_decision`, `propose_rank`, `request_review` and `propose_config_change`. Create authorized high-impact tasks and comment; mark design first under AC-251. |
+| Operator | Advisor plus `hold`, `release_hold`, `run_task`, `promote_queued_task`, `stop_task`, `list_runs` and `get_dashboard`, under their scope, rule, signal and budget checks. |
 
-`list_signals», `get_signal», `get_metric» and `record_finding» use the project's data and checked IDs. A live round can fetch its case file by ID. Tool discovery and each execution use the server's current role, project, level and round authority, including token callers. The Supervisor cannot impersonate a manager. Talk creates a Supervisor caller even though a human starts it. Comments and case-file text confer no additional authority. It cannot type, close sessions, change pool agents, schedules, commands or other protected settings, delete tasks, data or trees, read secrets or transcripts, publish, tag or release, or send a page directly. A project rule may sanction asking the owner to run `/retro» when counters warrant it.
+`list_signals`, `get_signal`, `get_metric` and `record_finding` use the project's data and checked IDs. A live round can fetch its case file by ID. Tool discovery and each execution use the server's current role, project, level and round authority, including token callers. The Supervisor cannot impersonate a manager. Talk creates a Supervisor caller even though a human starts it. Comments and case-file text confer no additional authority. It cannot type, close sessions, change pool agents, schedules, commands or other protected settings, delete tasks, data or trees, read secrets or transcripts, publish, tag or release, or send a page directly. When session counters point at drift worth mining, it opens a decision card proposing that the owner run `/retro` on the named sessions (AC-240).
 
 | Kind | Trigger and tier | Limit and result |
 |---|---|---|
@@ -1320,13 +1415,13 @@ A signed-in switch starts a scan within seconds: read available integrations, co
 
 Investigations and triggered reflections are requested by code, through Dispatcher's gate, on kept slots. Investigate accepts any signal or incident subject to slot and budget. Weekly review can nominate an investigation. A round with an active fingerprint suppresses duplicate launches; waiters go in impact order. Review priority is by tier. The case file includes the relevant charter excerpt, signal or question, evidence rows and measures, baselines, matching register problems, rulings and indexed memory, tool scope and remaining budget. Task excerpts are capped and marked as data. Only quarantined closed-list fields may be included from outside the project.
 
-A bootstrap prompt can read `Supervisor case case_0042. Read the case file and report through the Supervisor tools.» The case ID is the only variable data pasted. A role tool never types the prompt. Dispatcher starts, checks the marked pane, records the paste, enforces the time budget and releases the slot at exit. The result is a typed finding or review, never a transcript. A subagent has a brief, typed result, deadline and budget. Use read-only investigation, architecture critic, product analyst, tool-free quarantined reader, and independent critic where their questions require judgment. Keep no standing subordinates.
+A bootstrap prompt can read `Supervisor case case_0042. Read the case file and report through the Supervisor tools.` The case ID is the only variable data pasted. A role tool never types the prompt. Dispatcher starts, checks the marked pane, records the paste, enforces the time budget and releases the slot at exit. The result is a typed finding or review, never a transcript. A subagent has a brief, typed result, deadline and budget. Use read-only investigation, architecture critic, product analyst, tool-free quarantined reader, and independent critic where their questions require judgment. Keep no standing subordinates.
 
 ### Budgets, register and holds
 
-The governor charges estimated room before admitting work and tracks actual use. Judgment spends on rounds, keeps 30% for level 2 and 3 investigations, enforces round and daily ceilings and ends overrunning rounds. Fixes attribute spend for work made or started by the Supervisor, including Auto-Dispatcher starts. A task the Supervisor both makes and starts counts each run's spend once. Use high-impact priority, never a task quota. Code keeps measuring, paging, reporting and applying eligible holds when budgets run out. The next owner message leads with the limit reached. A charter never can generate its fix task even at the fixes ceiling; the exception is visible.
+The governor charges estimated room before admitting work and tracks actual use. Judgment spends on rounds, keeps 30% for level 2 and 3 investigations, enforces round and daily ceilings and ends overrunning rounds. Fixes attribute spend for work made or started by the Supervisor, including Auto-Dispatcher starts. A task the Supervisor both makes and starts counts each run's spend once. Use high-impact priority, never a task quota. When a budget is spent, judgment rounds and new Supervisor tasks wait; code keeps measuring, paging, reporting and applying eligible holds. The next owner message leads with the limit reached. At the fixes ceiling, the high-impact problems left are listed on one decision card with their impact: raise the ceiling for them, or let them wait a week. A breach of a charter "never" gets its fix task at once, even at the fixes ceiling, and the exception is visible.
 
-Rank problems by impact level and, within it, `share × weeks standing × confidence ÷ effort class». A fix uses the cheapest effective layer: script or check, test, hook or permission, setting, scoped doc rule, then memory note. Link tasks as Follow-ups. The firing detector specifies the threshold and K-week observation window. Round proposals may add a stricter check. Resolution needs the yardstick or an owner ruling. Reopen on recurrence or new evidence and retain the ledger. Fix links and rank are inputs to Auto-Dispatcher under terminum-dispatcher.md AC-170; the Supervisor has no second queue. An owner or project manager action overrides it on that task for 24 hours.
+Rank problems by impact level and, within it, `share × weeks standing × confidence ÷ effort class`. A fix uses the cheapest effective layer: script or check, test, hook or permission, setting, scoped doc rule, then memory note. Link tasks as Follow-ups. The firing detector specifies the threshold and K-week observation window. Round proposals may add a stricter check. Resolution needs the yardstick or an owner ruling. Reopen on recurrence or new evidence and retain the ledger. Fix links and rank are inputs to Auto-Dispatcher under terminum-dispatcher.md AC-170; the Supervisor has no second queue. An owner or project manager action overrides it on that task for 24 hours.
 
 | Hold | Undo |
 |---|---|
@@ -1341,7 +1436,7 @@ An Operator hold names a level 2 or higher signal, the rule and undo. A human or
 
 Group related signals on a subject into one active incident, within a window measured in minutes. The pinned card carries thread and timeline; the bar remains until acknowledged. The fixed text orders what happened, what is held, what is needed, by when and what happens without an answer. The action set is selected by code for the incident: Acknowledge, Snooze one hour, Investigate now, Keep the hold, Release the hold and This is wrong as applicable. Acknowledgment stops repeats. Snoozing delays repeats. Both leave the hold in force.
 
-The owner configures ordered command channels in the signed-in tab. A send uses the configured command with a fixed environment and deadline, template on standard input and exit status as the only result. Example: `API · incident 27 · level 3. Target red, 2 batches blocked. Integration paused. No answer: pause stays.» Updates, all-clear and answer notices use their own fixed templates. Only approved IDs, counts and a link from the owner's optional base appear. Never insert task prose, home paths or secrets. Quiet hours defer notices except a charter-never breach or reversibility 3. Repeat per incident, escalate to the next configured channel and apply cooldown; there is no daily count cap. An owner test alert and weekly silent self-test exercise the path. Failed delivery shows on the bar and screen, and produces `self.line_dead». A configured link base contains no credentials. Commands have send-only authority. All answers, including release of a hold, go through the signed-in page.
+The owner configures ordered command channels in the signed-in tab. A send uses the configured command with a fixed environment and deadline, template on standard input and exit status as the only result. Example: `API · incident 27 · level 3. Target red, 2 batches blocked. Integration paused. No answer: pause stays.` Updates, all-clear and answer notices use their own fixed templates. Only approved IDs, counts and a link from the owner's optional base appear. Never insert task prose, home paths or secrets. Quiet hours defer notices except a charter-never breach or reversibility 3. Repeat per incident, escalate to the next configured channel and apply cooldown; there is no daily count cap. An owner test alert and weekly silent self-test exercise the path. Failed delivery shows on the bar and screen, and produces `self.line_dead`. A configured link base contains no credentials. Commands have send-only authority. All answers, including release of a hold, go through the signed-in page.
 
 Decision cards use terminum-dispatcher.md AC-157 and appear on the board and in the review. High-impact owner choices include fix options, standing rules, exhausted fix budgets, T3 sign-off, hold disposition and rules with open breakers. A card names the evidence and cost of waiting. For AC-230, keep the question's original text and optional structured fields: stable option IDs and labels, one recommended ID and operational or strategic kind. Choosing a listed option saves a human answer on that question with its option ID. Free text saves a human answer without an option ID; old questions keep their original text and an unknown kind. Answer only the current question. The same RUN continuation consumes the answer in either form.
 
@@ -1397,11 +1492,11 @@ Version every accepted change and record its one-key revert. Mutes name an owner
 
 ### Probes, isolation and logging
 
-An owner-set probe is read-only, idempotent and bounded by time and output size. Run with a fixed environment and parse only metric lines matching name, numeric value, unit, timestamp and allowed dimensions. For example, `{"metric":"product.active_workspaces","value":63,"unit":"count","at":1800000120,"dims":{"plan":"standard"}}». Malformed output, failure and timeout raise a signal. Standard probes use git and the gate record, and can query code-host metrics where configured. Optional project probes can supply guarded product series.
+An owner-set probe is read-only, idempotent and bounded by time and output size. Run with a fixed environment and parse only metric lines matching name, numeric value, unit, timestamp and allowed dimensions. For example, `{"metric":"product.active_workspaces","value":63,"unit":"count","at":1800000120,"dims":{"plan":"standard"}}`. Malformed output, failure and timeout raise a signal. Standard probes use git and the gate record, and can query code-host metrics where configured. Optional project probes can supply guarded product series.
 
 Raw outside text goes to a tool-free reader. Accept only closed categories such as theme, kind and sentiment, plus counts and a validated reference link. No outside prose passes into tasks, comments or case files. An outside-marked task cannot enter Auto-Dispatcher until moved by a human. For project reuse, only general detector definitions and lessons cross to the engine board. The owner can share the line and quiet hours across projects, with incidents ordered by level. Private charter, ledger, register, case files and baselines stay scoped to the project and out of tracked files. The threat model in [SECURITY.md](../../SECURITY.md) describes the residual access of a process running as the same user.
 
-The ledger is the audit record. Log stable event names with project and record IDs, decision, counts and reason codes; omit task bodies, command input, credentials and transcripts. For example, `level=warn event=supervisor.channel_failed project=API incident=27 channel=2 reason=timeout». Operator-visible health is the last successful beat, skipped sources, refused findings, active incidents and holds, and both budgets. Bound collection batches and probe output, keep detector work off the async workers, enforce the minute incident target with an independent clock and use private seeded stores, tmux and command stand-ins for tests.
+The ledger is the audit record. Log stable event names with project and record IDs, decision, counts and reason codes; omit task bodies, command input, credentials and transcripts. For example, `level=warn event=supervisor.channel_failed project=API incident=27 channel=2 reason=timeout`. Operator-visible health is the last successful beat, skipped sources, refused findings, active incidents and holds, and both budgets. Bound collection batches and probe output, keep detector work off the async workers, enforce the minute incident target with an independent clock and use private seeded stores, tmux and command stand-ins for tests.
 
 ## 10. Delivery stages
 
