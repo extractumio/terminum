@@ -90,7 +90,7 @@ pub(super) fn movable(tx: &Transaction, who: &Who, id: &str) -> Result<Task, Str
 /// Refused while a press waits for `t` in an agent's queue (terminum-dispatcher.md AC-158, AC-169): that press is a
 /// human's or a manager's, and a move would call it off.
 pub(super) fn not_queued(tx: &Transaction, t: &Task) -> Result<(), String> {
-    let Some(w) = crate::dispatcher::waits::of_task(tx, &t.key)? else {
+    let Some(w) = crate::dispatcher::waits::protecting(tx, &t.key)? else {
         return Ok(());
     };
     if w.for_tasks() {

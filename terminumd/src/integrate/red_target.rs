@@ -9,11 +9,11 @@ use std::path::Path;
 
 use rusqlite::{OptionalExtension, Transaction};
 
-use super::engine::{place, target_now, worktree, Place};
+use super::engine::{how_ended, place, target_now, worktree, Place};
 use super::git;
 use super::retry_notes;
 use super::runner::Runner;
-use super::stages::{how, line_of, vars, Run};
+use super::stages::{line_of, vars, Run};
 use super::store::{self as bs, Left};
 use crate::tasks::integration;
 use crate::tasks::integration_queue::and_list;
@@ -94,7 +94,7 @@ pub(super) fn judge(tx: &Transaction, home: &Path, run: &Run, target: &str, code
                     and_list(&passed), if passed.len() == 1 { "it" } else { "them" })
         }
         None => {
-            let how = if code == 1 { "ended with status 1 naming no failed step".to_string() } else { how(code, run.minutes) };
+            let how = if code == 1 { "ended with status 1 naming no failed step".to_string() } else { how_ended(code, run.minutes) };
             format!("{id} returned: red check: its Verify failed {failed}; its run on {at} {how}, so whether the target is red too is not known. {logs}")
         }
     };
