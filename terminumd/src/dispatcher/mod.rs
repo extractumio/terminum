@@ -114,10 +114,19 @@ struct PaneWatch {
     agent_missed: bool,
     /// its subagents as its hooks said (AC-127); bounded: a hook's fields are data
     subs: HashMap<String, Sub>,
+    /// When the watchdog saw this run stop working (AC-127).
+    subs_paused_at: Option<Instant>,
     /// the tokens of its last turn's end; null: not known (AC-129)
     tokens: Option<serde_json::Value>,
     /// the last line pages were told of it: a host read less often keeps it
     line: Option<serde_json::Value>,
+}
+
+impl PaneWatch {
+    fn clear_subagents(&mut self) {
+        self.subs.clear();
+        self.subs_paused_at = None;
+    }
 }
 
 /// A subagent as its hooks said.
@@ -224,7 +233,7 @@ impl Dispatcher {
         let mut watch = self.watch.lock();
         let pane = watch.entry(key.to_string()).or_default();
         if ev["event"] == "SessionStart" {
-            pane.subs.clear();
+            pane.clear_subagents();
         }
         let Some(id) = ev["sub"].as_str().filter(|id| id.len() <= 100 && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')) else { return };
         if ev["event"] == "SubagentStop" {

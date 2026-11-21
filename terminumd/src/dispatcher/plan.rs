@@ -81,6 +81,10 @@ pub enum Act {
     Say(String),
     /// Asks the agent for its result, through the gate: once a quiet stop, NUDGES a run at most.
     Nudge,
+    /// One request per subagent that reached the first silence threshold (AC-127).
+    SubagentTell(Vec<String>),
+    /// A watchdog failure was written; show its reason (AC-127).
+    SubagentFailed(String),
     /// Gives the agent the last warning: seconds left of the budget (AC-126).
     Warn(i64),
     /// Ends the agent: the task was moved first, so its end counts for nothing (AC-123).
