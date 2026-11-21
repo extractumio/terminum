@@ -67,7 +67,7 @@ Open questions: none.
 | AC-97 | [SHOULD / P1] | A coding agent's plan (its own plan tool through the hooks, or terminum's MCP tools) shows as a percent and a track on its session's row and in the header, and in a Plan pane with the items, the current step and the agent's ETA; a plan not updated for a while is asked for through the hooks. |
 | AC-98 | [SHOULD / P1] | Agents make no bookmarks or reminders; the records they kept stay for the user to read, close, delete or make into tasks. |
 | AC-155 | [SHOULD / P1] | `terminum mcp` lists search_tools, get_tool_info, execute_tool and update_session_plan; an agent finds any other tool of the catalog by the action it needs, synonyms counted, and runs it through execute_tool, as terminum's own words write each call. |
-| AC-174 | [MUST / P0] | A tool's caller is a worker or a manager, decided by terminumd from its own records at each call: the session a human's + Session started, and a session the human opened in a project, are its project's managers; every other session is a worker, with today's tools. A worker neither finds nor runs a manager's tool. |
+| AC-174 | [MUST / P0] | A tool's caller is a worker or a manager, decided by terminumd from its own records at each call: the session a human's + Session started, and a session the human opened in a project, are its project's managers; a Supervisor round's or Talk's session is its project's Supervisor caller (terminum-supervisor.md AC-231); every other session is a worker, with today's tools. A worker neither finds nor runs a manager's tool. |
 | AC-178 | [SHOULD / P1] | A manager's call is run only when it comes from under the pane it names, and what writes only from that pane's main agent. |
 | AC-179 | [MUST / P0] | A manager starts its project's tasks on the pool's agents through Dispatcher, answers and goes on with them, stops them, reads what runs and the project's numbers, and lists, reads, types into and closes its project's other sessions, never another manager's; its words reach an agent as the manager's, never as a human's. |
 | AC-180 | [MUST / P0] | A manager adds, changes and removes its project's pool's agents and its project's schedules by the board's own rules, in force at once, each under its name. |
@@ -396,6 +396,10 @@ Scenario: AC-174 happy path — who is a worker
   Or a session in no project (Default), a pane a tmux command made, a + Session's session the human let go
   Then it is a worker: its tools, instructions and search are those of AC-155 and terminum-kanban.md AC-115, and name no manager's tool or area
   And it stays a worker when its task ends
+
+Scenario: AC-174 edge — a Supervisor round or Talk
+  Given Dispatcher started a session for Billing's Supervisor round, or for a human's Talk press on Billing's incident
+  Then that session is neither worker nor manager: it is Billing's Supervisor caller, with its level's tools alone (terminum-supervisor.md AC-231)
 
 Scenario: AC-174 failure — a worker calls a manager's tool
   When a worker calls search_tools for "start a task on an agent", get_tool_info or execute_tool with run_task, or a tools/call of run_task
@@ -734,6 +738,7 @@ sequenceDiagram
 | AC-39 | Codex's startup prompts (trust, update) show no state; nor does a `node` Codex with a typed draft and no other mark, until it is sent; nor does a custom `[tui].terminal_title` mark a question. | `terminumd/src/tmux/agentstate.rs:37`, `terminumd/src/tmux/agentstate.rs:62` |
 | AC-39 | An error still in the last 25 rows after a later finished turn reads as failed. | `terminumd/src/tmux/agentstate.rs:325` |
 | AC-178 | A host's manager is known by the pane its call names alone: the Mac reads no process behind a link. | `terminumd/src/agentapi.rs`, `terminumd/src/roles/peer.rs` |
+| AC-174 | The Supervisor caller of a round's or Talk's session is not built (terminum-supervisor.md AC-231). | `terminumd/src/roles/` |
 | AC-174 | Whether a real Claude Code or Codex in a manager's session takes up its tools from the instructions was not run. | `scripts/e2e_roles.py` (a shell stands in) |
 | AC-207 | A real Codex attached to a real shared app-server is not run in a test: a shell with the server's words stands in for it; the session list shows nothing for such a Codex but its screen's state (the user is told by AC-208's window). | `terminumd/src/cli/codexdaemon.rs` |
 | AC-208 | A Codex with no MCP server configured, not attached, while a shared server runs and `daemon_auto_start` is off, has no process under it either and gets the window. A Codex's own Ctrl+G editor over its inline TUI, before its run's window showed, reads as its full screen. | `terminumd/src/agentnotice.rs`, `terminumd/src/process.rs`, `terminumd/src/process/codex.rs` |
