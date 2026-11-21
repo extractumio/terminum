@@ -6,33 +6,27 @@
 //! few ms each; the whole table costs tens), once a session, when terminumd asks. Its words are
 //! read exactly (the kernel's argument vector: `ps` joins them with spaces), its program named by
 //! the agent (`codex --yolo`, not a vendor binary's path); secrets' values are left out. The options
-//! its resume takes again go with it (`hookopts`), only from the agent's own exact words: a process
+//! its resume takes again go with it (`agentopts`), only from the agent's own exact words: a process
 //! of another name may be a wrapper the agent runs hooks under.
-
-use std::process::Command;
 
 use serde_json::{json, Map, Value};
 
-use crate::termtext::shell_name as name;
+use crate::process::{argv, parent_and_words, program_at};
+use crate::termtext::{posix_word, shell_name as name};
 
 /// The ancestors looked at: the hook's shells, a sandbox, the agent, an interpreter.
 const UP: usize = 4;
 /// Programs passed over besides shells: what runs the hook.
 const RUNNERS: [&str; 3] = ["env", "terminum", "terminumd"];
-/// Programs whose script is the program (`node …/codex`).
-const INTERPRETERS: [&str; 3] = ["node", "bun", "deno"];
 
 /// The `Argv` event's fields for `agent`: `argv` (shown; "" where no ancestor is the agent or `ps`
 /// does not answer) and, where known, `opts`.
 pub fn started_as(agent: &str) -> Map<String, Value> {
     let (mut other, mut pid) = (None, std::os::unix::process::parent_id());
     for _ in 0..UP {
-        let Some(out) = Command::new("ps").args(["-ww", "-o", "ppid=,args=", "-p", &pid.to_string()]).output().ok() else { break };
-        let row = String::from_utf8_lossy(&out.stdout);
-        let Some((ppid, args)) = row.trim().split_once(char::is_whitespace) else { break };
-        let words: Vec<String> = args.split_whitespace().map(str::to_string).collect();
+        let Some((ppid, words)) = parent_and_words(pid) else { break };
         if let Some(at) = program_at(&words, agent) {
-            return match exact(pid).and_then(|e| Some((program_at(&e, agent)?, e))) {
+            return match argv(pid).and_then(|e| Some((program_at(&e, agent)?, e))) {
                 Some((at, exact)) => said(agent, &exact, Some(at), true),
                 None => said(agent, &words, Some(at), false),
             };
@@ -41,21 +35,15 @@ pub fn started_as(agent: &str) -> Map<String, Value> {
         if other.is_none() && !crate::tmux::titles::is_shell(first) && !RUNNERS.contains(&name(first)) {
             other = Some((pid, words));
         }
-        let Some(next) = ppid.trim().parse().ok().filter(|p| *p > 1) else { break };
-        pid = next;
+        if ppid <= 1 {
+            break;
+        }
+        pid = ppid;
     }
     match other {
-        Some((pid, words)) => said(agent, &exact(pid).filter(|e| !e.is_empty()).unwrap_or(words), None, false),
+        Some((pid, words)) => said(agent, &argv(pid).filter(|e| !e.is_empty()).unwrap_or(words), None, false),
         None => Map::from_iter([("argv".to_string(), json!(""))]),
     }
-}
-
-/// Where in `words` the agent's program is: first, or an interpreter's script (npm's Codex: `node …/bin/codex.js`,
-/// where an older Node does not replace itself with the native program).
-pub(crate) fn program_at(words: &[impl AsRef<str>], agent: &str) -> Option<usize> {
-    let at = usize::from(words.len() > 1 && INTERPRETERS.contains(&name(words[0].as_ref())));
-    let program = name(words.get(at)?.as_ref());
-    (program == agent || (at == 1 && program.strip_suffix(".js") == Some(agent))).then_some(at)
 }
 
 /// The fields for an ancestor's words `words`, its program at `at` where it is the agent; `exact`:
@@ -65,49 +53,13 @@ fn said(agent: &str, words: &[String], at: Option<usize>, exact: bool) -> Map<St
         Some(at) => (agent, &words[at + 1..]),
         None => (name(words.first().map_or("", String::as_str)), words.get(1..).unwrap_or_default()),
     };
-    let shown = std::iter::once(program.to_string()).chain(rest.iter().map(|w| super::commands::quote(w))).collect::<Vec<_>>().join(" ");
+    let shown = std::iter::once(program.to_string()).chain(rest.iter().map(|w| posix_word(w))).collect::<Vec<_>>().join(" ");
     let argv: String = crate::sent::redact(&shown).chars().take(crate::tmux::hookstate::ARGV_MOST).collect();
     let mut out = Map::from_iter([("argv".to_string(), json!(argv))]);
-    if exact && let Some(opts) = super::hookopts::resumed(agent, rest) {
+    if exact && let Some(opts) = crate::agentopts::resumed(agent, rest) {
         out.insert("opts".into(), json!(opts));
     }
     out
-}
-
-/// Process `pid`'s argument vector as the kernel keeps it.
-#[cfg(target_os = "linux")]
-pub(crate) fn exact(pid: u32) -> Option<Vec<String>> {
-    let raw = std::fs::read(format!("/proc/{pid}/cmdline")).ok()?;
-    Some(raw.split(|b| *b == 0).filter(|w| !w.is_empty()).map(|w| String::from_utf8_lossy(w).into_owned()).collect())
-}
-
-/// Process `pid`'s argument vector as the kernel keeps it (`KERN_PROCARGS2`: argc, the program's
-/// path, padding, then argc words, each ending in NUL).
-#[cfg(target_os = "macos")]
-pub(crate) fn exact(pid: u32) -> Option<Vec<String>> {
-    let mut mib = [libc::CTL_KERN, libc::KERN_ARGMAX];
-    let mut most: libc::c_int = 0;
-    let mut size = std::mem::size_of::<libc::c_int>();
-    // SAFETY: mib names an int, `most` is one, `size` its size
-    if unsafe { libc::sysctl(mib.as_mut_ptr(), 2, (&raw mut most).cast(), &mut size, std::ptr::null_mut(), 0) } != 0 || most <= 0 {
-        return None;
-    }
-    let mut buf = vec![0u8; most as usize];
-    let mut size = buf.len();
-    let mut mib = [libc::CTL_KERN, libc::KERN_PROCARGS2, libc::c_int::try_from(pid).ok()?];
-    // SAFETY: buf holds `size` bytes, which the kernel fills and sets `size` to
-    if unsafe { libc::sysctl(mib.as_mut_ptr(), 3, buf.as_mut_ptr().cast(), &mut size, std::ptr::null_mut(), 0) } != 0 || size < 4 {
-        return None;
-    }
-    let argc = usize::try_from(i32::from_ne_bytes(buf[..4].try_into().ok()?)).ok()?;
-    let mut parts = buf[4..size].split(|b| *b == 0).skip(1).skip_while(|w| w.is_empty());
-    let words: Vec<String> = parts.by_ref().take(argc).map(|w| String::from_utf8_lossy(w).into_owned()).collect();
-    (words.len() == argc).then_some(words)
-}
-
-#[cfg(not(any(target_os = "linux", target_os = "macos")))]
-pub(crate) fn exact(_pid: u32) -> Option<Vec<String>> {
-    None
 }
 
 #[cfg(test)]
@@ -167,7 +119,7 @@ mod tests {
     #[test]
     fn ac153_this_processs_parent_is_read_exactly() {
         let parent = std::os::unix::process::parent_id();
-        let words = exact(parent).expect("the kernel's vector");
+        let words = argv(parent).expect("the kernel's vector");
         assert!(!words.is_empty() && !words[0].is_empty(), "{words:?}");
     }
 }

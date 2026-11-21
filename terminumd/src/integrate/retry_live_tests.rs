@@ -12,7 +12,7 @@ fn ac197_real_retry_in_verify_and_check_reaches_durable_history() {
     let tmux = crate::testutil::Tmux::start("retry-history", (120, 30), "sleep 120").expect("tmux is required for AC-197's real-runner check");
     let runner = super::runner::Tmux { tmux: "tmux".into(), socket: tmux.socket.clone(), conf: "/dev/null".into() };
     let scripts = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap().join("scripts");
-    let command = format!("ln -s {} scripts && python3 retry.py", crate::cli::commands::quote(&scripts.to_string_lossy()));
+    let command = format!("ln -s {} scripts && python3 retry.py", crate::termtext::posix_word(&scripts.to_string_lossy()));
     let w = world("retry-live", Settings { verify: command.clone(), check: command, ..Settings::default() });
     let script = r#"import sys
 from pathlib import Path

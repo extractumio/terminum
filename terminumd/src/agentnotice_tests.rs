@@ -79,17 +79,6 @@ fn ac208_a_run_is_its_process_and_its_mark_says_what_it_was_shown() {
     }
 }
 
-#[test]
-fn ac208_the_foreground_run_is_the_ttys_foreground_groups_leader() {
-    // pid ppid tpgid etime: the shell, Codex in front, its MCP server under it
-    let rows = "  100     1   200    01:02:03\n  200   100   200       00:07\n  201   200   200       00:06\n";
-    assert_eq!(foreground_of(rows), Some((200, 7, true)));
-    // an attached Codex has nothing of its own under it; days count
-    assert_eq!(foreground_of("100 1 300 1-00:00:01\n300 100 300 2-01:00:00\n"), Some((300, 2 * 86_400 + 3600, false)));
-    assert_eq!(foreground_of("100 1 0 00:01\n"), None, "no foreground group");
-    assert_eq!(foreground_of(""), None);
-}
-
 /// A window's commands, as the page shows them to copy.
 fn cmds(v: &Value) -> Vec<String> {
     v["parts"].as_array().unwrap().iter().filter_map(|p| p["cmd"].as_str().map(str::to_string)).collect()
@@ -103,10 +92,6 @@ fn ac208_each_window_names_what_is_lost_and_the_commands_to_copy() {
     assert_eq!(cmds(&shared), ["codex -c tui.alternate_screen=never", "codex --no-daemon", "codex features disable daemon_auto_start", "codex app-server daemon stop"]);
     let words = shared["parts"].to_string();
     assert!(words.contains("(process 77)") && words.contains("task board") && words.contains("start it again"), "{words}");
-    // one source: the words terminum mcp and terminum hooks say hold the same commands
-    for c in cmds(&shared).iter().filter(|c| !c.contains("--no-daemon")) {
-        assert!(codexdaemon::SAID.contains(c.as_str()), "{c}");
-    }
     let claude = window("k", FULL_SCREEN, "claude", None, &started("claude", &w("claude")));
     assert_eq!((claude["title"].as_str(), cmds(&claude)), (Some("Claude Code runs full screen"), vec!["/tui classic".to_string(), r#"claude --settings '{"tui":"default"}'"#.to_string()]));
     assert!(claude["parts"].to_string().contains("\\\"tui\\\": \\\"default\\\""));

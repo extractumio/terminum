@@ -8,6 +8,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crate::app::Shared;
+use crate::process::seconds;
 use crate::tmux::Server;
 
 /// How long a `ps` or `kill` is waited for: past it, nothing is known of that machine this walk.
@@ -42,12 +43,6 @@ impl Under {
     pub fn gib(&self) -> f64 {
         self.rss_kib as f64 / 1_048_576.0
     }
-}
-
-/// `[[dd-]hh:]mm:ss`, as `ps -o etime` and `-o time` say it, in seconds.
-pub fn seconds(t: &str) -> f64 {
-    let (days, rest) = t.split_once('-').map_or((0.0, t), |(d, r)| (d.parse().unwrap_or(0.0), r));
-    rest.split(':').fold(0.0, |sum, part| sum * 60.0 + part.parse::<f64>().unwrap_or(0.0)) + days * 86400.0
 }
 
 /// `ps`'s lines; what is not of its shape (a `ps` that took other options) makes no row.

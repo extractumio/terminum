@@ -167,7 +167,7 @@ async fn read_server(app: &Shared, server: Arc<Server>) -> Got {
                 crate::page::plans::tell(&app.pages, &changed);
             }
             server.set_panes(read.panes);
-            Got::Read(Told { groups: Arc::new(gs), keys: read.keys, every: read.every, ok: true, ..Default::default() })
+            Got::Read(Told { groups: Arc::new(gs), keys: read.keys, every: Some(read.every), ok: true, ..Default::default() })
         }
         Err(e) => {
             tracing::warn!(event = "tmux.error", server = %server.name, cmd = "list-panes", msg = e);
@@ -204,8 +204,8 @@ fn unread_groups(app: &Shared, server: &Arc<Server>) -> Vec<Value> {
 
 /// Tells the pages the list when it changed, each server's part as last read. `server` was just
 /// read; `fresh`: its own list came, so its turns settle by it, and only by it (AC-132).
-pub async fn publish(app: &Shared, server: &Arc<Server>, fresh: bool) {
-    let _one = app.refreshing.lock().await;
+/// `replaced`: a different tmux answered, so any reused pane IDs name different panes.
+pub async fn publish(app: &Shared, server: &Arc<Server>, fresh: bool, replaced: bool) {
     if !app.tmux.local.list.tried() {
         return;                                  // a page reconnecting keeps its list until its own Mac's was asked
     }
@@ -239,6 +239,13 @@ pub async fn publish(app: &Shared, server: &Arc<Server>, fresh: bool) {
     crate::roles::mark(app, &mut groups);                            // which sessions are managers (AC-174)
     let ended = {
         let mut last = app.layout.write();
+        if fresh {
+            server.list.with_told(|told| {
+                if let Some(every) = told.and_then(|t| t.every.as_deref()) {
+                    crate::tasks::notify::panes_seen(app, &server.key(""), if replaced { &[] } else { every });
+                }
+            });
+        }
         if last.as_array() != Some(&groups) {
             let told = json!({"t": "layout", "groups": groups}).to_string();
             let old = std::mem::replace(&mut *last, Value::Array(groups));

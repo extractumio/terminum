@@ -4,7 +4,7 @@
 // AC-164): `node web/test/e2e_live.mjs schedules chromium`.
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { check, coversWindow, until } from "./check.mjs";
+import { check, coversWindow, slack, until } from "./check.mjs";
 import { boardKit, hold, intoStore, nap, ring, startOf, tabKey } from "./boardkit.mjs";
 
 export async function liveFolded(page, live) {
@@ -82,16 +82,23 @@ export async function liveFolded(page, live) {
   // a task card's play key, pressed, takes no focus: its RUN window closed or a key typed after lights no ring; Tab
   // still reaches it, ringed (docs/UI-GUIDELINES.md "Focus"); a phone's window has no Cancel, × closes it
   // (terminum.md AC-173)
-  const run = `${card(a)} .crun`;
-  for (const [how, close] of [...(phone ? [] : [["Cancel, pressed,", () => page.click('#runbox button[value="cancel"]')]]),
-    ["×, pressed,", () => page.click("#runbox .dhead .x")], ["Esc", () => page.keyboard.press("Escape")]]) {
+  const run = `${card(a)} .crun`, cancel = '#runbox button[value="cancel"]', cross = "#runbox .dhead .x";
+  const heading = `Run ${await page.textContent(`${card(a)} .cid`)}`;
+  for (const [how, close] of [...(phone ? [] : [["Cancel, pressed,", () => page.click(cancel)]]),
+    ["×, pressed,", () => page.click(cross)], ["Esc", () => page.keyboard.press("Escape")]]) {
     await page.click(run);
-    const opened = await until(() => page.isVisible("#runbox[open]"));
+    await page.waitForSelector("#runbox[open]", { timeout: slack(8000) });
+    const [title, cancelShown, crossShown] = await Promise.all([page.textContent("#runhead"), page.isVisible(cancel), page.isVisible(cross)]);
+    const controls = `${title}, Cancel ${cancelShown ? "visible" : "hidden"}, × ${crossShown ? "visible" : "hidden"}`;
+    if (title !== heading || cancelShown === phone || !crossShown) {
+      throw new Error(`AC-138 AC-173 expected ${heading} with × and ${phone ? "hidden" : "visible"} Cancel, got ${controls}`);
+    }
+    check("AC-138 AC-173 a press opens the task's RUN window with the viewport's close controls", true, controls);
     await close();
     const shut = await until(async () => !(await page.isVisible("#runbox[open]")));
     await page.keyboard.press("Shift+ArrowRight");   // a key after the press: Chrome lights a focused key's ring by it
     const r = await ring(page, run);
-    check(`AC-138 ${how} on RUN's window, a key typed after, leaves no focus ring on the card's play key`, opened && shut && !r.lit && !r.focused, JSON.stringify(r));
+    check(`AC-138 ${how} on RUN's window, a key typed after, leaves no focus ring on the card's play key`, shut && !r.lit && !r.focused, JSON.stringify(r));
   }
   await page.focus(card(a));
   await tabKey(page);
