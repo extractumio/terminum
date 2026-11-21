@@ -364,9 +364,9 @@ pub fn change(tx: &Transaction, id: &str, f: impl FnOnce(&mut Run)) -> Result<Ru
 /// but its id and clocks; `started`: who asked for it and how, kept with it (AC-183). Its id.
 pub fn add(tx: &Transaction, like: &Run, tasks: &[String], started: Started, at: i64) -> Result<String, String> {
     let id = crate::auth::crypto::random_hex::<8>();
-    tx.execute("INSERT INTO runs (id, task, project, agent_id, agent_name, agent_color, kind, command, host, folder, agent_session, state, prompt, last_walk, started_by, started_how)
-                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, 'starting', ?12, ?13, ?14, ?15)",
-               rusqlite::params![id, tasks.first(), like.project, like.agent_id, like.agent_name, like.agent_color, like.kind, like.command, like.host, like.folder, like.agent_session, like.prompt, at, started.by, started.how]).map_err(sql)?;
+    tx.execute("INSERT INTO runs (id, task, project, agent_id, agent_name, agent_color, kind, command, host, folder, agent_session, state, prompt, last_walk, started_by, started_how, asked)
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, 'starting', ?12, ?13, ?14, ?15, ?16)",
+               rusqlite::params![id, tasks.first(), like.project, like.agent_id, like.agent_name, like.agent_color, like.kind, like.command, like.host, like.folder, like.agent_session, like.prompt, at, started.by, started.how, like.asked]).map_err(sql)?;
     for task in tasks {
         tx.execute("INSERT INTO run_tasks (run, task) VALUES (?1, ?2)", (&id, task)).map_err(sql)?;
     }

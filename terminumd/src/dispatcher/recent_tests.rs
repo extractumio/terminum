@@ -162,3 +162,140 @@ fn ac122_queued_answer_keeps_its_draft_last_and_respects_the_prepared_cutoff() {
         Ok(())
     }).unwrap();
 }
+
+fn codex_run(tm: &crate::testutil::Tmux, script: &Path, saved: &str) -> (crate::app::Shared, Router, Task) {
+    tm.read(&["set-environment", "-g", "SHELL", "/bin/sh"]);
+    tm.read(&["set-environment", "-g", "HOME", tm.dir.to_str().unwrap()]);
+    let tmux = crate::config::find_program("tmux", "TM_TMUX").expect("tmux on PATH");
+    let link = Link::Local { tmux, socket: tm.socket.clone(), conf: "/dev/null".into() };
+    let (root, mut app) = crate::testutil::app_linked(&tm.socket, link);
+    Arc::get_mut(&mut app).unwrap().tasks = Arc::new(Store::open(root.join("kanban.sqlite")));
+    app.tmux.local.sync_clients(&["main".to_string()]).unwrap();
+    let api = crate::tasks::api::routes().with_state(app.clone());
+    let task = app.tasks.with(|tx| {
+        let task = ops::create(tx, HUMAN, ops::NewTask { title: "Continue after answering".into(), ..Default::default() }, 1)?;
+        let like = Run {
+            project: task.project.clone(), agent_id: "test-agent".into(), kind: "codex".into(),
+            command: format!("exec /bin/sh {}", quote(script.to_str().unwrap())),
+            folder: tm.dir.display().to_string(), agent_session: Some(saved.into()), ..Default::default()
+        };
+        let id = runs::add(tx, &like, std::slice::from_ref(&task.key), Default::default(), 1)?;
+        let agent = ops::pool_user(tx, "test-agent", "Agent")?;
+        ops::questions(tx, &agent, &task.id, "Which route should stay?", 2)?;
+        ops::move_to(tx, DISPATCHER, &task.id, "WAIT FOR HUMAN", 2)?;
+        runs::change(tx, &id, |r| { r.state = Phase::Closed; r.asked = true; })?;
+        Ok(task)
+    }).unwrap();
+    (app, api, task)
+}
+
+#[tokio::test]
+async fn ac122_ac157_codex_run_reuses_the_conversation_after_hook_review() {
+    use super::super::hooks;
+    use crate::tmux::hookstate::Whose;
+
+    let tm = crate::testutil::Tmux::start("codex-resume", (120, 24), "/bin/sh").expect("private tmux");
+    let log = tm.dir.join("arguments");
+    let script = tm.dir.join("codex.sh");
+    std::fs::write(&script, format!(r#"printf '%s %s\n' "$1" "$2" >> {}
+printf '› 1. Review hooks\n'
+read -r reply
+exit 1
+"#, quote(log.to_str().unwrap()))).unwrap();
+    let (app, api, task) = codex_run(&tm, &script, "saved-id");
+    let hearing = tokio::spawn(hooks::hearing(app.clone()));
+
+    let (status, value) = post(&api, &task, "run", json!({"comment": "Keep the old route"})).await;
+    assert_eq!(status, StatusCode::OK, "{value}");
+    let id = value["run"].as_str().unwrap();
+    let read = || app.tasks.with(|tx| runs::by_id(tx, id)).unwrap();
+    let key = read().pane_key.unwrap();
+    let pane = key.rsplit(':').next().unwrap();
+    let event = |name, prompt| hooks::heard(&app, &key, &json!({"agent": "codex", "event": name, "session": "unsaved-id", "prompt": prompt}), Whose::Main);
+    event("SessionStart", "");
+    tokio::time::timeout(Duration::from_secs(6), async {
+        while read().state != Phase::Asking {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    }).await.expect("Dispatcher saw hook review");
+    assert_eq!(prompts(&log, 1).await, ["resume saved-id"]);
+    event("SessionEnd", "");
+    tokio::time::timeout(Duration::from_secs(6), app.dispatcher.soon.notified()).await.expect("Dispatcher drained through SessionEnd");
+    assert_eq!(read().agent_session.as_deref(), Some("saved-id"));
+
+    tm.read(&["send-keys", "-t", pane, "Enter"]);
+    tokio::time::timeout(Duration::from_secs(6), async {
+        while read().state != Phase::Gone {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    }).await.expect("Dispatcher saw the exit");
+    let (status, value) = post(&api, &task, "run", json!({})).await;
+    assert_eq!(status, StatusCode::OK, "{value}");
+    assert_eq!(prompts(&log, 2).await, ["resume saved-id", "resume saved-id"]);
+    let retried = app.tasks.with(|tx| runs::by_id(tx, value["run"].as_str().unwrap())).unwrap();
+    let prompt = retried.prompt.unwrap();
+    assert!(prompt.contains("the human answered your questions"), "{prompt}");
+    assert_eq!(prompt.matches("Keep the old route").count(), 1, "{prompt}");
+    event("UserPromptSubmit", &prompt);
+    tokio::time::timeout(Duration::from_secs(6), async {
+        loop {
+            let row = app.tasks.with(|tx| runs::by_id(tx, &retried.id)).unwrap();
+            if row.state == Phase::Working {
+                assert_eq!(row.agent_session.as_deref(), Some("unsaved-id"));
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    }).await.expect("Dispatcher accepted the prompt under the new ID");
+    hearing.abort();
+    let _ = hearing.await;
+}
+
+#[tokio::test]
+async fn ac122_codex_run_reports_a_missing_conversation_on_the_task() {
+    const MISSING: &str = "a1111111-2222-4333-8444-555555555555";
+    let tm = crate::testutil::Tmux::start("codex-missing", (80, 24), "/bin/sh").expect("private tmux");
+    let script = tm.dir.join("codex.sh");
+    std::fs::write(&script, r#"printf 'ERROR: No saved session found with ID %s. Run `codex resume` without an ID to choose from existing sessions.\n' "$2"
+exit 1
+"#).unwrap();
+    let (app, api, task) = codex_run(&tm, &script, MISSING);
+    app.tasks.with(|tx| ops::move_to(tx, DISPATCHER, &task.id, "IN PROGRESS", 3).map(drop)).unwrap();
+    let (status, value) = post(&api, &task, "run", json!({"comment": "My saved answer"})).await;
+    assert_eq!(status, StatusCode::OK, "{value}");
+    let id = value["run"].as_str().unwrap();
+    tokio::time::timeout(Duration::from_secs(6), async {
+        loop {
+            let run = app.tasks.with(|tx| runs::by_id(tx, id)).unwrap();
+            if !run.is_starting() {
+                assert_eq!(run.state, Phase::Closed);
+                assert_eq!(run.agent_session.as_deref(), Some(MISSING));
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    }).await.expect("Dispatcher handled Codex's refusal");
+    let old_pane = app.tasks.with(|tx| {
+        let card = ops::get(tx, &task.id)?;
+        assert_eq!(card.status, "WAIT FOR HUMAN");
+        let pane = card.session.unwrap();
+        assert_eq!(runs::by_id(tx, id)?.pane_key.as_deref(), Some(pane.as_str()));
+        tx.execute("INSERT INTO projects (id, name, color, dir, place) VALUES ('resume-demo', 'Resume demo', 2, '', 1)", []).map_err(ops::sql)?;
+        tx.execute("INSERT INTO project_members (project, pane_key, place) VALUES ('resume-demo', ?1, 0)", [&pane]).map_err(ops::sql)?;
+        assert!(crate::roles::manages(tx, &pane)?.is_none());
+        let history = ops::history(tx, &task.id)?;
+        let texts: Vec<_> = history.as_array().unwrap().iter().filter_map(|event| event["text"].as_str()).collect();
+        assert!(texts.contains(&"My saved answer"));
+        assert!(texts.contains(&format!("Codex could not find saved conversation {MISSING}. Restore it and press RUN to try again, or choose Run from scratch.").as_str()));
+        Ok(pane)
+    }).unwrap();
+    let (status, retry) = post(&api, &task, "run", json!({})).await;
+    assert_eq!(status, StatusCode::OK, "{retry}");
+    app.tasks.with(|tx| {
+        assert!(crate::roles::manages(tx, &old_pane)?.is_none());
+        let retried = runs::by_id(tx, retry["run"].as_str().unwrap())?;
+        assert_eq!(retried.agent_session.as_deref(), Some(MISSING));
+        assert_ne!(retried.pane_key.as_deref(), Some(old_pane.as_str()));
+        Ok(())
+    }).unwrap();
+}

@@ -136,13 +136,48 @@ pub async fn open(app: &Shared, o: Opening<'_>) -> Result<String, String> {
     Ok(key)
 }
 
-/// A run's start goes wrong: FAILED, with the screen's last rows, redacted; the window stays (AC-121).
-async fn did_not_start(app: &Shared, r: &Run, at: Option<(&Server, &str)>, why: &str) {
+enum StartMiss<'a> {
+    Exit(i32),
+    Other(&'a str),
+}
+
+fn missing_codex_session<'a>(run: &'a Run, code: i32, rows: &[String]) -> Option<&'a str> {
+    if run.kind != "codex" || code <= 0 {
+        return None;
+    }
+    let id = run.agent_session.as_deref().filter(|id| hooks::good_id(id))?;
+    let error = format!("ERROR: No saved session found with ID {id}");
+    rows.iter().any(|row| {
+        row.trim().strip_prefix(&error).is_some_and(|tail| tail.is_empty() || tail.starts_with(['.', ' ']))
+    }).then_some(id)
+}
+
+/// Keep the conversation available for a retry. The exited pane stays open for inspection.
+fn codex_resume_missing(tx: &rusqlite::Transaction, run: &mut Run, words: &str) -> Result<(), String> {
+    let at = ops::now();
+    for task in &run.open {
+        if matches!(ops::get(tx, task)?.status.as_str(), "TODO" | "IN PROGRESS") {
+            ops::move_to(tx, DISPATCHER, task, "WAIT FOR HUMAN", at)?;
+        }
+    }
+    run.state = Phase::Closed;
+    run.prompt = None;
+    runs::save(tx, run)?;
+    say(tx, run, words)
+}
+
+/// Report a start error with the screen's last rows, redacted; the window stays (AC-121, AC-122).
+async fn did_not_start(app: &Shared, r: &Run, at: Option<(&Server, &str)>, miss: StartMiss<'_>) {
     let rows = match at {
-        Some((s, pane)) => s.run(format!("capture-pane -p -t {pane}")).await.unwrap_or_default(),
+        Some((s, pane)) => s.run(format!("capture-pane -p -J -t {pane}")).await.unwrap_or_default(),
         None => Vec::new(),
     };
     let tail: Vec<&str> = rows.iter().map(String::as_str).rev().skip_while(|l| l.trim().is_empty()).take(20).collect::<Vec<_>>().into_iter().rev().collect();
+    let (exit, why) = match miss {
+        StartMiss::Exit(NO_FOLDER) => (None, format!("The folder {} does not exist there", r.folder)),
+        StartMiss::Exit(code) => (Some(code), format!("the program ended with exit {code}")),
+        StartMiss::Other(why) => (None, why.to_string()),
+    };
     let shown = crate::sent::redact(&tail.join("\n"));
     let words = if shown.is_empty() { format!("Session did not start: {why}") } else { format!("Session did not start: {why}\n\n```\n{shown}\n```") };
     if r.ad_hoc() {                                    // no task to say it on: the pages say it (AC-142)
@@ -150,11 +185,21 @@ async fn did_not_start(app: &Shared, r: &Run, at: Option<(&Server, &str)>, why: 
     }
     let id = r.id.clone();
     let done = store(app, move |tx| {
-        if !runs::by_id(tx, &id)?.is_starting() {
+        let mut now = runs::by_id(tx, &id)?;
+        if !now.is_starting() {
             return Ok(());                            // its first hook or task tool accepted it while the screen was read
         }
-        // its task never went in: no conversation of it to go on with, whatever session its agent opened (AC-122)
-        let now = runs::change(tx, &id, |r| { r.state = Phase::Gone; r.prompt = None; r.agent_session = None; })?;
+        if let Some(session) = exit.and_then(|code| missing_codex_session(&now, code, &rows)) {
+            let words = format!("Codex could not find saved conversation {session}. Restore it and press RUN to try again, or choose Run from scratch.");
+            return codex_resume_missing(tx, &mut now, &words);
+        }
+        now.gone();
+        now.prompt = None;
+        // Codex stores only a conversation carried into this run or confirmed by a prompt.
+        if now.kind != "codex" {
+            now.agent_session = None;
+        }
+        runs::save(tx, &now)?;
         super::fail(tx, &now, &words)
     }).await;
     if let Err(e) = done {
@@ -206,7 +251,10 @@ async fn now_asking(app: &Shared, r: &Run) {
 async fn type_prompt(app: &Shared, r: &Run, server: &Server, pane: &str, prompt: &str) -> Result<(), gate::Miss> {
     let _held = super::Held::take(app, |d| &d.pressing, &format!("run:{}", r.id))
         .ok_or_else(|| gate::Miss::Other("A Run is already being prepared.".to_string()))?;
-    let (id, was, session) = (r.id.clone(), r.state, app.hooks.session(&server.key(pane)).map(|(_, s)| s).filter(|s| hooks::good_id(s)));
+    let (id, was) = (r.id.clone(), r.state);
+    let session = if r.kind == "codex" { None } else {
+        app.hooks.session(&server.key(pane)).map(|(_, s)| s).filter(|s| hooks::good_id(s))
+    };
     let wrote = store(app, move |tx| runs::change(tx, &id, |now| {
         if now.is_starting() {
             now.state = Phase::Typed;
@@ -248,17 +296,16 @@ async fn watching(app: &Shared, id: &str) {
                 tokio::time::sleep(Duration::from_millis(200)).await;
                 continue;
             }
-            return did_not_start(app, &r, None, "its window is gone").await;
+            return did_not_start(app, &r, None, StartMiss::Other("its window is gone")).await;
         };
         if let Some(code) = exit_of(&server, &pane).await {
-            let why = if code == NO_FOLDER { format!("The folder {} does not exist there", r.folder) } else { format!("the program ended with exit {code}") };
-            return did_not_start(app, &r, Some((&server, &pane)), &why).await;
+            return did_not_start(app, &r, Some((&server, &pane)), StartMiss::Exit(code)).await;
         }
         if r.state == Phase::Typed {
             let at = *typed_at.get_or_insert_with(Instant::now);
             if at.elapsed() >= start_scaled(TAKEN_WITHIN) {
                 let why = if r.kind == "codex" { "the prompt was not taken in 30 s; hooks not trusted: open /hooks in Codex, or Codex runs in a shared app-server (AC-156)" } else { "the prompt was not taken in 30 s" };
-                return did_not_start(app, &r, Some((&server, &pane)), why).await;
+                return did_not_start(app, &r, Some((&server, &pane)), StartMiss::Other(why)).await;
             }
         } else {
             match gate::read(&server, &pane, &r.kind).await.unwrap_or(Screen::Unknown) {
@@ -275,14 +322,14 @@ async fn watching(app: &Shared, id: &str) {
                         && let Err(m) = type_prompt(app, &r, &server, &pane, prompt).await {
                         miss = Some(m.to_string());
                         if r.state == Phase::Starting && began.elapsed() >= start_scaled(BOX_WITHIN) {
-                            return did_not_start(app, &r, Some((&server, &pane)), &box_within(&miss)).await;
+                            return did_not_start(app, &r, Some((&server, &pane)), StartMiss::Other(&box_within(&miss))).await;
                         }
                     }
                 }
                 _ => {
                     empty_since = None;
                     if r.state == Phase::Starting && began.elapsed() >= start_scaled(BOX_WITHIN) {
-                        return did_not_start(app, &r, Some((&server, &pane)), &box_within(&miss)).await;
+                        return did_not_start(app, &r, Some((&server, &pane)), StartMiss::Other(&box_within(&miss))).await;
                     }
                 }
             }
@@ -337,7 +384,7 @@ mod tests {
         tools::run(&app.tasks, &root, &who, "ask_human", &serde_json::json!({"id": task, "questions": crate::tasks::closeout::ASKED})).unwrap();
         let accepted = app.tasks.with(|tx| runs::by_id(tx, &stale.id)).unwrap();
         now_asking(&app, &stale).await;
-        did_not_start(&app, &stale, None, "the earlier timeout expired").await;
+        did_not_start(&app, &stale, None, StartMiss::Other("the earlier timeout expired")).await;
         app.tasks.with(|tx| {
             assert_eq!(runs::by_id(tx, &stale.id)?, accepted);
             assert_eq!(ops::get(tx, &task)?.status, "WAIT FOR HUMAN");
