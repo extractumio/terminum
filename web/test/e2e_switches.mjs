@@ -18,7 +18,7 @@ export async function webSwitches(browser, name) {
     runningIn(`${name} ${size}`);
     const f = await openPage(browser, { device });
     await drawn(f.page);
-    const menu = ["#followagent", "#sidemarks", "#tipson", "#appcur", "#bracket", "#insclip"];
+    const menu = ["#followagent", "#sidemarks", "#tipson", "#appcur", "#bracket", "#insclip", "#shiftclip"];
     const page = await looks(f.page, menu);
     const b = await openPage(browser, { device, url: "/kanban.html" });
     // a phone's board holds Auto-Dispatch's switch in the sheet its line opens (terminum-kanban.md AC-105): opened, so it is drawn

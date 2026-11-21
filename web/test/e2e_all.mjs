@@ -40,6 +40,7 @@ import { webWidgetSteady } from "./e2e_widgetsteady.mjs";
 import { webTableForms } from "./e2e_tableforms.mjs";
 import { webDialogCenter } from "./e2e_dialogcenter.mjs";
 import { webIdeKeys } from "./e2e_idekeys.mjs";
+import { webClipboardKeys } from "./e2e_clipboardkeys.mjs";
 import { webScreenFolds } from "./e2e_screenfolds.mjs";
 import { webProjects } from "./e2e_projects.mjs";
 import { webListDrag } from "./e2e_listdrag.mjs";
@@ -93,7 +94,7 @@ import { webBoardPanel } from "./e2e_boardpanel.mjs";
 import { webBoardType } from "./e2e_boardtype.mjs";
 import { webPhoneWin } from "./e2e_phonewin.mjs";
 
-const CHECKS = { webTaskText, webBoardPhone, webBoardPanel, webBoardType, webPhoneWin, webRequestOwners, webRequests, webTerm, webApp, webMove, webTrace, webCtxTrace, webClip, webWidgets, webWidgetFolds, webWidgetTables, webWidgetPng, webWidgetSteady, webTableForms, webDialogCenter, webMarks, webProgCopy, webTouch, webEdit, webBoxNav,
+const CHECKS = { webClipboardKeys, webTaskText, webBoardPhone, webBoardPanel, webBoardType, webPhoneWin, webRequestOwners, webRequests, webTerm, webApp, webMove, webTrace, webCtxTrace, webClip, webWidgets, webWidgetFolds, webWidgetTables, webWidgetPng, webWidgetSteady, webTableForms, webDialogCenter, webMarks, webProgCopy, webTouch, webEdit, webBoxNav,
   webSignin, webTmux, webScreen, webLook, webMotion, webCodex, webNotices, webSplit, webSent, webIdeKeys, webScreenFolds, webProjects, webListDrag, webPhoneRow, webRows, webResize, webOpenEnd, webSwitch, webDock, webSheets, webFold, webHeader, webNotes, webFoot, webMarksScope, webListOrder, webPlans, webLastLines, webPlansFind, webPathFold, webMarkNav, webPaneWin, webReview, webTips, webHold, webListPlace, webIsolation, webSections, webDialogSize, webTaskWin, webTaskRun, webTaskClose, webExpand, webKanbanSort, webSwitches, webNewTask, webQueueOrder, webIntegrationSlots, webKanbanKept, webCardKeys, webTaskLines, webBannerProj, webNavSession, webBoardRail, webSessBox, webAskFold, webTouchKeys, webTabHead, webDraftFiles };
 const BROWSERS = ["chromium", "webkit"], KNOWN = [...BROWSERS, "firefox"];
 // Checks a user saw fail in Firefox and that need no touch screen (Firefox has no isMobile).
