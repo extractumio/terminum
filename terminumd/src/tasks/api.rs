@@ -417,7 +417,7 @@ async fn add_comment(State(app): State<Shared>, Path(id): Path<String>, Json(bod
         files::attach(tx, &attached, &wanted, Some(&event))?;
         Ok(json!({"event": event}))
     }).await;
-    // its session hears of it at its agent's next tool call (terminum-dispatcher.md AC-209)
+    // its session hears of it on its next prompt or tool call (terminum-dispatcher.md AC-209)
     if let Ok(v) = &done && let Some(event) = v["event"].as_str() {
         super::notify::comment_added(&app, &id, event, None);
     }

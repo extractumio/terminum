@@ -168,8 +168,8 @@ export async function webTaskWin(browser, name) {
     check("AC-149 questions asked while the window is open turn nothing round: they stand last, over the comment field",
       c.stays.parts.join() === "taskown,subtasks,activity,newcomment" && c.stays.last === "v1 or v2?", told);
     check("AC-173 what scrolls keeps clear of the scrollbar's room at the window's edge", c.asked.room, told);
-    check("AC-209 each comment's head says whether its session was told of it: told, waiting for its next tool call, not told in the danger color; none with no mark",
-      c.asked.told.join("|") === "|the session hears of it at its next tool call|not told the session" && c.read.told === "told the session"
+    check("AC-209 each comment's head says whether its session was told of it: told, waiting, not told in the danger color; none with no mark",
+      c.asked.told.join("|") === "|waiting to tell the session|not told the session" && c.read.told === "told the session"
       && c.asked.toldColors[0] !== c.asked.toldColors[1], told);
     await f.page.click("#taskbody .tasktext .markdown");
     const ring = await f.page.$eval("#taskbody .tasktext .markdown", (text) => [document.activeElement === text, getComputedStyle(text).outlineStyle]);

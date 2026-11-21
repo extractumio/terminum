@@ -135,6 +135,11 @@ fn of_turn(name: &str) -> bool {
     matches!(name, "Stop" | "StopFailure" | "Interrupt" | "PreToolUse" | "PostToolUse" | "PostToolUseFailure" | "PostToolBatch" | "PermissionRequest" | "Notification")
 }
 
+/// A prompt hook installed in the foreground opts in to receiving context.
+pub fn prompt_context(ev: &Value) -> bool {
+    ev["event"] == "UserPromptSubmit" && ev["prompt_context"] == true
+}
+
 /// The coding agents with hooks (`terminum hooks`), by the name they come with.
 pub const AGENTS: [&str; 2] = ["claude", "codex"];
 
