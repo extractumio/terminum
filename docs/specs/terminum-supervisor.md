@@ -16,7 +16,7 @@ For example, project API repeatedly returns changes from integration. The replay
 
 One Supervisor per project, with four lenses: delivery flow, architecture, product outcomes and how the owner and agents work. Detectors, triage, paging, budgets and outcome checks run in code. Short rounds buy judgment when the evidence needs interpretation. The board, Dashboard, Dispatcher, Auto-Dispatcher and integration queue retain their responsibilities.
 
-The Supervisor delegates fixes. It has no release, publishing or shell authority, no transcript access and no standing model session. Telegram and replies through external channels belong to a separate notification feature. Project data stays within its project, with the owner-configured outbound line described in §9.
+The Supervisor delegates fixes. Its tools carry no release, publishing or shell authority and no transcript access, and it keeps no standing model session; a round's agent keeps its pool command's own permissions (terminum-dispatcher.md AC-156). Telegram and replies through external channels belong to a separate notification feature. Project data stays within its project, with the owner-configured outbound line described in §9.
 
 ## 3. Assumptions, dependencies, open questions
 
@@ -67,7 +67,7 @@ Open questions: none. §9 defines the defaults.
 | AC-238 | [MUST / P0] | Only high-impact fixes get tasks, ranked under a spend ceiling with a charter breach exception. |
 | AC-239 | [MUST / P0] | Marks, advisory ranks and a 24-hour human or manager override govern Supervisor tasks. |
 | AC-240 | [MUST / P0] | A high-impact owner decision opens a waiting task; lesser decisions are grouped in the weekly review. |
-| AC-241 | [SHOULD / P1] | A task receives one Supervisor comment per signal, with a fixed first line and the usual hook notice. |
+| AC-241 | [SHOULD / P1] | A task receives one Supervisor comment per signal and task, with a fixed first line and the usual hook notice. |
 | AC-242 | [MUST / P0] | The scheduled weekly review leads with decisions and ends with at most ten verdict items. |
 | AC-243 | [SHOULD / P1] | Code publishes a daily-at-most exception digest only on news and shows the collector's last run. |
 | AC-244 | [SHOULD / P1] | The incident card carries its thread; Talk opens a human-requested session with one fixed ID prompt. |
@@ -80,8 +80,8 @@ Open questions: none. §9 defines the defaults.
 | AC-251 | [SHOULD / P1] | Design-first notices and Verify enforce a recorded review and reuse a review the project already requires. |
 | AC-252 | [SHOULD / P1] | The hardest designs get budgeted review first, with owner sign-off at T3 and an escalation when review cannot finish. |
 | AC-253 | [MUST / P0] | Versioned configuration changes follow their class, carry replay evidence and support one-key revert. |
-| AC-254 | [MUST / P0] | A mute records the owner, reason and end date; only the owner can mute T3 or level 3. |
-| AC-255 | [MUST / P0] | Code detects unraised problems from independent store evidence and records their earliest evidence. |
+| AC-254 | [MUST / P0] | A mute records the owner, reason and end date; quieting a detector is a mute; T3, level 3 and mutes over two weeks are the owner's. |
+| AC-255 | [MUST / P0] | Code detects unraised problems from owner Bugs, red targets and watchdog pages and records their earliest evidence. |
 | AC-256 | [SHOULD / P1] | The Supervisor screen shows its own measured outcomes, spend and burden on the owner. |
 | AC-257 | [SHOULD / P1] | Unacted-on detectors move to the weekly review and may be proposed for removal, with T3 and level 3 exempt. |
 | AC-258 | [MUST / P0] | The Supervisor cannot change its authority, protected settings, evidence or yardsticks. |
@@ -230,7 +230,7 @@ Scenario: AC-216 happy path — owner enables one project
 Scenario: AC-216 edge — switch off during work
   Given API has a round and a paused queue
   When the human switches it off
-  Then its rounds stop, no further collection or action runs for API and the hold remains visible with its release control
+  Then Dispatcher ends the running round and frees its slot, no further round, collection or action runs for API, and the hold remains visible with its release control
 
 Scenario: AC-216 failure — unauthorized change
   Given a round or imported settings attempts to enable Web
@@ -328,6 +328,7 @@ Scenario: AC-221 happy path — project-specific bootstrap
   Given API has kept history and no tier agents selected
   When the owner enables the project
   Then the scan lists usable and unavailable detectors, derives thresholds, replays and seeds high-impact findings in the register; code operates with no rounds
+  And the scan opens no card or question for the owner
 
 Scenario: AC-221 edge — young project and protected signal
   Given Web has two weeks of history
@@ -347,7 +348,7 @@ Scenario: AC-221 failure — insufficient hold evidence
 Scenario: AC-222 happy path — edit the project
   Given the owner opens project API on a Mac or phone
   When the Supervisor tab is displayed
-  Then it shows switch, level, tier agents, budgets, charter priorities and never list, indicators, surface map and preview, detectors, probes, channels, quiet hours, repeat ladder, import, export and Send a test alert
+  Then it shows switch, level, tier agents, budgets, charter priorities, never list, allocation target and review dates, indicators, surface map and preview, detectors with their mutes, probes, channels, link base, quiet hours, repeat ladder, import, export and Send a test alert
 
 Scenario: AC-222 edge — unconfigured tiers and channels
   Given API is attached using defaults
@@ -388,9 +389,9 @@ Scenario: AC-224 happy path — critical and health triggers
   Then it opens an incident even with no round agents selected
 
 Scenario: AC-224 edge — nearby firings on one subject
-  Given two related target signals arrive minutes apart
-  When the second is triaged
-  Then one incident, card and timeline carry both signals and their updates
+  Given API's grouping window is the default 15 minutes
+  When a second target signal arrives 10 minutes after the first and a third 40 minutes after the second
+  Then one incident, card and timeline carry the first two signals and their updates, and the third opens a new incident
 
 Scenario: AC-224 failure — critical cause recurs or clears
   Given a signal updates an active incident, or the guarded measurement returns to normal
@@ -461,7 +462,8 @@ Scenario: AC-227 failure — timeout and reply attempt
 Scenario: AC-228 happy path — unacknowledged incident
   Given API has a first and second channel and the default ladder
   When an incident remains unacknowledged outside quiet hours
-  Then it first sends promptly, repeats at 10 and 30 minutes and hourly thereafter under the configured cooldown, and escalates to the second command at the ladder's escalation point
+  Then it first sends promptly, repeats at 10 and 30 minutes and hourly thereafter, never sooner than the ladder's next step
+  And from the 30-minute repeat on it also goes to the second command, and not before
 
 Scenario: AC-228 edge — urgent exception
   Given quiet hours are active
@@ -490,7 +492,7 @@ Scenario: AC-229 edge — weekly check fails
 Scenario: AC-229 failure — no functioning outbound path
   Given the active notifier exits unsuccessfully on an incident
   When the line handles the failure
-  Then the bar and Supervisor screen show the failure, the card remains pinned and the local incident can still be acted on
+  Then self.line_dead is recorded with the channel and exit status, the next channel in order is tried, the bar and Supervisor screen show the failure, the card remains pinned and the local incident can still be acted on
 ```
 
 ### AC-230 — Recorded question choices [SHOULD / P1]
@@ -522,13 +524,24 @@ Scenario: AC-231 happy path — level-specific tool discovery and execution
 
 Scenario: AC-231 edge — levels and surfaces agree
   Given a round's cached tool list predates its owner's switch from Operator to Observer
-  When it calls run_task from a pane, or an equivalent scoped token tries the same call
-  Then terminumd checks the current level and refuses both calls
+  When it calls run_task from its pane
+  Then terminumd checks the current level and refuses the call
+  And a manager's token calling a Supervisor tool is refused, since a token caller is a manager (terminum-agents.md AC-174)
 
 Scenario: AC-231 failure — forbidden authority and foreign state
-  Given a Supervisor at any level calls a manager tool, requests another project's signal or tries to change a command
+  Given a Supervisor at any level calls a tool outside its level's allow-list (send_to_session, close_session, the pool's or the schedules' tools), requests another project's signal or tries to change a command
   When the server resolves the caller and arguments
   Then it refuses the action and writes no task, setting or pane input in the target
+
+Scenario: AC-231 failure — words for a pane
+  Given an Operator round calls its run_task with a comment, or a fresh or queue text
+  When terminumd checks the arguments
+  Then the call is refused; a run_task with the task ID and agent alone starts the task as Auto-Dispatcher's started task, told only its ID in fixed words (terminum-dispatcher.md AC-170)
+
+Scenario: AC-231 failure — transcripts and outside files
+  Given a round asks for a session transcript or a file outside its case file, citing the charter or a schedule's text as its grant
+  When terminumd checks the call
+  Then the call is refused; no charter, file or schedule widens the allow-list
 ```
 
 ### AC-232 — Levels [MUST / P0]
@@ -728,6 +741,16 @@ Scenario: AC-240 edge — standing rules weighed
   When code prepares the weekly review
   Then it shows the cards added beside the questions that rule removed
 
+Scenario: AC-240 edge — the owner chose against the recommendation
+  Given the owner answered API's decision card with another option than the one recommended
+  When the same fingerprint recurs with the same evidence, and later with new evidence
+  Then the first recurrence opens no card; the new evidence opens one that names what is new
+
+Scenario: AC-240 edge — a charter review date passes
+  Given API's charter has a priority review date that has passed
+  When code prepares the next weekly review
+  Then it asks the owner once, by one question card, and does not repeat it before the next review date
+
 Scenario: AC-240 edge — drift worth mining
   Given session counters for two API sessions are above their drift threshold
   When the Supervisor reports it
@@ -781,6 +804,11 @@ Scenario: AC-242 edge — owner critique and verdict workload
   When the review is built
   Then critique names the data, cost and one proposal and stays in the review; at most ten raised or sampled shadow items get Useful, Not useful and Wrong keys and the time answering counts as owner load
 
+Scenario: AC-242 edge — no review agent chosen
+  Given API is attached and no strong-tier agent is chosen
+  When the week passes
+  Then API has no weekly review schedule and the exception digest still runs; choosing the agent makes the schedule, visible and editable in Routines
+
 Scenario: AC-242 failure — no answer or undersized sample
   Given a sampled item receives no key press and the week's samples are small
   When the scorecard is refreshed
@@ -812,12 +840,19 @@ Scenario: AC-243 failure — collector late
 Scenario: AC-244 happy path — ask and receive an answer
   Given API's incident is linked to an investigation
   When the owner comments on its pinned card
-  Then the comment reaches the investigation through the task's human-comment path, an answer appears in the same thread and code can send the fixed answer notice
+  Then the comment reaches the live round as a comment notice (terminum-dispatcher.md AC-209), never typed; an answer appears in the same thread and code sends the fixed answer notice
+  And after the round ends, the comment reaches an agent only through a human's RUN (terminum-dispatcher.md AC-122)
 
 Scenario: AC-244 edge — owner's Talk press
   Given the owner presses Talk on the incident from a signed-in page
   When Dispatcher's first-prompt gate admits the pane that press started
-  Then the pane gets the fixed words with the incident case-file ID once under terminum-dispatcher.md AC-204; the conversation can record the owner's ruling
+  Then the pane gets the fixed words with the incident case-file ID once under terminum-dispatcher.md AC-204, and the session is the project's Supervisor caller (AC-231)
+  And a ruling the owner makes there is saved as an owner ruling on the incident, and its fingerprint is not raised again on the same evidence
+
+Scenario: AC-244 edge — a conversation with the Supervisor's skill
+  Given the owner opens a session in API and starts it with the Supervisor's skill
+  When the skill loads its context
+  Then the session is API's manager (terminum-agents.md AC-174) and reads API's charter, register and open signals through the Supervisor's read tools; it reads no other project's
 
 Scenario: AC-244 failure — pane changed or caller is a model
   Given the target pane is no longer the marked pane, or a round tries to invoke Talk itself
@@ -1001,6 +1036,11 @@ Scenario: AC-253 edge — extend, owner and engine classes
   When code classifies the proposals
   Then the added rule runs in shadow until an owner key makes it live, the map change needs an owner card, and the new query becomes an engine task
 
+Scenario: AC-253 edge — a change that pages or amends the charter
+  Given a proposal makes a detector page, or amends the charter
+  When code classifies it
+  Then it needs an owner card with its replay and applies only on the owner's key
+
 Scenario: AC-253 failure — unsafe tuning or overstated replay
   Given a tune targets an open breaker, drops firings by more than 30% or claims quality on unlabelled weeks
   When code validates the proposal
@@ -1030,7 +1070,7 @@ Scenario: AC-254 failure — protected detector
 
 ```gherkin
 Scenario: AC-255 happy path — independent evidence
-  Given the owner opens a P0 or P1 Bug about API and the target later turns red on a different subject
+  Given the owner opens a P0 or P1 Bug about API, the target later turns red on a different subject, and a self timer's level 3 page fires (AC-219)
   When code looks for previous signals
   Then for each subject with earlier evidence still unraised it records a miss with the first evidence time
 
@@ -1153,6 +1193,11 @@ Scenario: AC-261 edge — compatibility with old questions
   When the report computes the split
   Then it shows the unknown and untyped shares without classifying them from prose
 
+Scenario: AC-261 edge — no allocation target
+  Given API's charter sets no allocation target
+  When the review computes effort allocation
+  Then it shows the actual shares by type and gives no verdict against a target
+
 Scenario: AC-261 failure — release not found
   Given a task's commit is absent from all reachable release tags, or integration is off
   When code runs the release metric
@@ -1184,7 +1229,7 @@ Scenario: AC-262 failure — unexpected free text or tool request
 Scenario: AC-263 happy path — template and shared line
   Given one owner attaches API and Store using different project-type templates
   When both raise incidents of different levels
-  Then their settings and baselines stay separate and one owner line delivers the higher level first under one quiet-hours setting
+  Then their settings and baselines stay separate, both tabs show the same owner-wide line and quiet hours, and that one line delivers the higher level first
 
 Scenario: AC-263 edge — general lesson
   Given a round proposes a new reusable named query
@@ -1386,14 +1431,16 @@ Compare the latest four weeks to the preceding four and show changes against the
 | Supervisor switch and level | Off; Operator when enabled. |
 | Tier agents | None selected, so code only; choose the project's pool agents for the small, medium, strong and independent roles. |
 | Judgment and fixes | 3% and 10% of trailing weekly project spend respectively. Judgment has a floor and a reserved investigation share. Configure ceilings in project settings. |
-| Charter | Never list and priorities empty; project-type template may suggest values. Seven indicators enabled, with no outside indicators required. |
-| Surface map | Empty, so no gate. Preview prior-month task count; size the T3 map toward a few owner sign-offs a month. |
-| Critical line | No command or link base. Local bar and card work without them. Default repeats after 10 minutes, 30 minutes, then hourly; quiet hours 23:00–08:00 once a channel is configured. |
+| Charter | Never list, priorities, allocation target by type and review dates empty; project-type template may suggest values. Seven indicators enabled, with no outside indicators required. |
+| Surface map | Empty, so no gate. Preview prior-month task count; size the T3 map toward three to four owner sign-offs per month. |
+| Critical line | The owner's, one set for all their projects: every project's tab shows and edits it and says so, and per-project export and import leave it out. No command or link base. Local bar and card work without them. Default repeats after 10 minutes, 30 minutes, then hourly, and from the 30-minute repeat on also the next channel; a 15-minute grouping window; quiet hours 23:00–08:00 once a channel is configured. |
 | Detectors | Enable applicable library detectors; calculate thresholds from history, with per-project overrides and off, shadow or live settings. |
 | Probes | Applicable standard probes. Owner confirms additional commands. |
-| Marked tasks | Deterministic Supervisor tasks eligible by default, subject to Auto-Dispatcher's gates. Outside-marked tasks need a human move. |
+| Marked tasks | Eligibility is Auto-Dispatcher's setting (AC-239), shown here: deterministic Supervisor tasks eligible by default, subject to Auto-Dispatcher's gates. Outside-marked tasks need a human move. |
+| Weekly review | A project schedule made once a strong-tier agent is chosen, weekly, visible and editable in Routines. |
+| Guardrail bands | Each detector's threshold may be tuned within ±50% of its calibrated value; the decisions-right band is a rule's trailing rate ±2 standard errors, judged only from 30 decisions. Only the owner changes them. |
 
-A signed-in switch starts a scan within seconds: read available integrations, code host, pool and schedules, list unmet needs, calibrate and replay. With fewer than three weeks of data report limited history. On attach, a live detector raises findings immediately, but holds shadow until replay shows at least two-thirds right over at least three prior firings, or seven days elapse. Breaches of a charter never bypass shadow. A detector enabled later shadows all actions. The tab exports a text file with commands and secrets excluded by default. Explicit selection can include those fields in an export. Import displays proposed commands unset and leaves the live switch and command authority to separate human presses; show each command in full before confirmation.
+A signed-in switch starts a scan within seconds: read available integrations, code host, pool and schedules, list unmet needs, calibrate and replay. With fewer than three weeks of data report limited history. On attach, a live detector raises findings immediately, but holds shadow until replay shows at least two-thirds right over at least three prior firings, or seven days elapse. A breach of a charter "never" bypasses shadow. A detector enabled later shadows all actions. The tab exports a text file with commands and secrets excluded by default. Explicit selection can include those fields in an export. Import displays proposed commands unset and leaves the live switch and command authority to separate human presses; show each command in full before confirmation.
 
 ### Caller, rounds and case files
 
@@ -1401,9 +1448,9 @@ A signed-in switch starts a scan within seconds: read available integrations, co
 |---|---|
 | Observer | Read its project signals, metrics and tasks, and record scoped findings and reports. Record a proposal concerning project rules or settings for review. Code delivers incidents. |
 | Advisor | Observer plus `open_problem`, `update_problem`, `propose_decision`, `propose_rank`, `request_review` and `propose_config_change`. Create authorized high-impact tasks and comment; mark design first under AC-251. |
-| Operator | Advisor plus `hold`, `release_hold`, `run_task`, `promote_queued_task`, `stop_task`, `list_runs` and `get_dashboard`, under their scope, rule, signal and budget checks. |
+| Operator | Advisor plus `hold`, `release_hold`, `run_task`, `promote_queued_task`, `stop_task`, `list_runs` and `get_dashboard`, under their scope, rule, signal and budget checks. Its `run_task` takes the task ID and agent alone and starts the task as Auto-Dispatcher's started task, told only its ID in fixed words (terminum-dispatcher.md AC-170); its `stop_task` is a Give up (terminum-dispatcher.md AC-138). No word of the caller reaches a pane. |
 
-`list_signals`, `get_signal`, `get_metric` and `record_finding` use the project's data and checked IDs. A live round can fetch its case file by ID. Tool discovery and each execution use the server's current role, project, level and round authority, including token callers. The Supervisor cannot impersonate a manager. Talk creates a Supervisor caller even though a human starts it. Comments and case-file text confer no additional authority. It cannot type, close sessions, change pool agents, schedules, commands or other protected settings, delete tasks, data or trees, read secrets or transcripts, publish, tag or release, or send a page directly. When session counters point at drift worth mining, it opens a decision card proposing that the owner run `/retro` on the named sessions (AC-240).
+`list_signals`, `get_signal`, `get_metric` and `record_finding` use the project's data and checked IDs. A live round can fetch its case file by ID. Tool discovery and each execution use the server's current role, project, level and round authority. A round's session and a Talk press's session are the project's Supervisor caller, neither worker nor manager (terminum-agents.md AC-174), though a human starts Talk's. There is no Supervisor token: a token caller is a manager and is offered no Supervisor tool. The Supervisor cannot impersonate a manager. A session the owner opens with the Supervisor's skill is the owner's own, a manager under AC-174, which may also call the Supervisor's read tools for its project. Comments and case-file text confer no additional authority. Its tools cannot type, close sessions, change pool agents, schedules, commands or other protected settings, delete tasks, data or trees, read secrets or transcripts, publish, tag or release, or send a page directly. When session counters point at drift worth mining, it opens a decision card proposing that the owner run `/retro` on the named sessions (AC-240).
 
 | Kind | Trigger and tier | Limit and result |
 |---|---|---|
@@ -1421,11 +1468,11 @@ A bootstrap prompt can read `Supervisor case case_0042. Read the case file and r
 
 The governor charges estimated room before admitting work and tracks actual use. Judgment spends on rounds, keeps 30% for level 2 and 3 investigations, enforces round and daily ceilings and ends overrunning rounds. Fixes attribute spend for work made or started by the Supervisor, including Auto-Dispatcher starts. A task the Supervisor both makes and starts counts each run's spend once. Use high-impact priority, never a task quota. When a budget is spent, judgment rounds and new Supervisor tasks wait; code keeps measuring, paging, reporting and applying eligible holds. The next owner message leads with the limit reached. At the fixes ceiling, the high-impact problems left are listed on one decision card with their impact: raise the ceiling for them, or let them wait a week. A breach of a charter "never" gets its fix task at once, even at the fixes ceiling, and the exception is visible.
 
-Rank problems by impact level and, within it, `share × weeks standing × confidence ÷ effort class`. A fix uses the cheapest effective layer: script or check, test, hook or permission, setting, scoped doc rule, then memory note. Link tasks as Follow-ups. The firing detector specifies the threshold and K-week observation window. Round proposals may add a stricter check. Resolution needs the yardstick or an owner ruling. Reopen on recurrence or new evidence and retain the ledger. Fix links and rank are inputs to Auto-Dispatcher under terminum-dispatcher.md AC-170; the Supervisor has no second queue. An owner or project manager action overrides it on that task for 24 hours.
+Rank problems by impact level and, within it, `share × weeks standing × confidence ÷ effort class`. A fix uses the cheapest effective layer: script or check, test, hook or permission, setting, scoped doc rule, then memory note. Link tasks as Follow-ups. The firing detector specifies the threshold and the observation window of K weeks, a detector parameter, 4 by default. Round proposals may add a stricter check, never a weaker one. A rule that restates an existing rule is no fix; the round says why the existing rule failed. Resolution needs the yardstick or an owner ruling. Reopen on recurrence or new evidence and retain the ledger. Fix links and rank are inputs to Auto-Dispatcher under terminum-dispatcher.md AC-170; the Supervisor has no second queue. An owner or project manager action overrides it on that task for 24 hours.
 
 | Hold | Undo |
 |---|---|
-| Stop a marked run and fail its task with a reason | RUN resumes the task. |
+| Stop a marked run as a Give up (terminum-dispatcher.md AC-138): its task FAILED with a reason, its window kept, nothing typed | RUN resumes the task. |
 | Pause Auto-Dispatcher | Its project switch. |
 | Pause integration or take a queued task out | The corresponding queue action (terminum-integration.md AC-193). |
 | Design first (Advisor) | Unlink the review blocker. This is distinct from an Operator's runtime hold. |
@@ -1434,19 +1481,19 @@ An Operator hold names a level 2 or higher signal, the rule and undo. A human or
 
 ### Incident line, decisions and reports
 
-Group related signals on a subject into one active incident, within a window measured in minutes. The pinned card carries thread and timeline; the bar remains until acknowledged. The fixed text orders what happened, what is held, what is needed, by when and what happens without an answer. The action set is selected by code for the incident: Acknowledge, Snooze one hour, Investigate now, Keep the hold, Release the hold and This is wrong as applicable. Acknowledgment stops repeats. Snoozing delays repeats. Both leave the hold in force.
+Group related signals on a subject into one active incident, within the line's grouping window (15 minutes by default). The pinned card carries thread and timeline; the bar remains until acknowledged. The fixed text orders what happened, what is held, what is needed, by when and what happens without an answer. The action set is selected by code for the incident: Acknowledge, Snooze one hour, Investigate now, Keep the hold, Release the hold and This is wrong as applicable. Acknowledgment stops repeats. Snoozing delays repeats. Both leave the hold in force.
 
-The owner configures ordered command channels in the signed-in tab. A send uses the configured command with a fixed environment and deadline, template on standard input and exit status as the only result. Example: `API · incident 27 · level 3. Target red, 2 batches blocked. Integration paused. No answer: pause stays.` Updates, all-clear and answer notices use their own fixed templates. Only approved IDs, counts and a link from the owner's optional base appear. Never insert task prose, home paths or secrets. Quiet hours defer notices except a charter-never breach or reversibility 3. Repeat per incident, escalate to the next configured channel and apply cooldown; there is no daily count cap. An owner test alert and weekly silent self-test exercise the path. Failed delivery shows on the bar and screen, and produces `self.line_dead`. A configured link base contains no credentials. Commands have send-only authority. All answers, including release of a hold, go through the signed-in page.
+The owner configures ordered command channels in the signed-in tab. A send uses the configured command with a fixed environment and deadline, template on standard input and exit status as the only result. Example: `API · incident 27 · level 3. Target red, 2 batches blocked. Integration paused. No answer: pause stays.` Updates, all-clear and answer notices use their own fixed templates. Only approved IDs, counts and a link from the owner's optional base appear. Never insert task prose, home paths or secrets. Quiet hours defer notices except a charter-never breach or reversibility 3. Repeat per incident on the ladder, never sooner than its next step, and from the 30-minute repeat on also send to the next configured channel; there is no daily count cap. An owner test alert and weekly silent self-test exercise the path. Failed delivery shows on the bar and screen, produces `self.line_dead` and tries the next channel in order. A configured link base contains no credentials. Commands have send-only authority. All answers, including release of a hold, go through the signed-in page.
 
 Decision cards use terminum-dispatcher.md AC-157 and appear on the board and in the review. High-impact owner choices include fix options, standing rules, exhausted fix budgets, T3 sign-off, hold disposition and rules with open breakers. A card names the evidence and cost of waiting. For AC-230, keep the question's original text and optional structured fields: stable option IDs and labels, one recommended ID and operational or strategic kind. Choosing a listed option saves a human answer on that question with its option ID. Free text saves a human answer without an option ID; old questions keep their original text and an unknown kind. Answer only the current question. The same RUN continuation consumes the answer in either form.
 
-Agent nudges use the comment path in terminum-dispatcher.md AC-209. Human incident comments use terminum-dispatcher.md AC-122. Talk uses terminum-dispatcher.md AC-204 with the case ID as its fixed first prompt. The owner can also open a conversation with the Supervisor's skill and its charter, register and open signals. A ruling goes into project memory; the Supervisor makes its argument once per evidence set.
+Agent nudges use the comment path in terminum-dispatcher.md AC-209. A human's incident comment reaches a live round as a comment notice (terminum-dispatcher.md AC-209), never typed, and after the round only through a human's RUN (terminum-dispatcher.md AC-122). Talk uses terminum-dispatcher.md AC-204 with the case ID as its fixed first prompt. The owner can also open a conversation with the Supervisor's skill and its charter, register and open signals (AC-244). A ruling there or on a card goes into project memory as an owner ruling; the Supervisor makes its argument once per evidence set.
 
 The weekly review's sections, in order:
 
 1. Decisions by cost of waiting.
 2. Three highest-ranked problems with evidence, cost per week, cause, options and recommendation.
-3. Resolved and recurred signals.
+3. Problems that stayed resolved and those that recurred.
 4. Effort allocation by type against target.
 5. Agents' rates by task type, sample sizes and routing proposals.
 6. Owner bottlenecks above baseline, with data, cost and one proposal each.
