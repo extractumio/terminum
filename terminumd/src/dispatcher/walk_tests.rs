@@ -2,6 +2,7 @@
 //! What a walk's transaction does with what it read (terminum-dispatcher.md AC-123, AC-131).
 
 use super::*;
+use std::time::Duration;
 use crate::tasks::store::{Store, HUMAN};
 
 /// A list read before a tool's hook came says the turn ended: the tool stays open while a hook says it works; only
@@ -19,7 +20,7 @@ fn ac123_an_open_tool_is_forgotten_only_when_no_hook_says_it_works() {
     let now = std::time::Instant::now();
     hooks.apply(key, &serde_json::json!({"agent": "claude", "event": "PreToolUse", "session": "s1", "tool": "Bash: sleep"}), now);
     let walk = |hooks: &Hooks| store.with(|tx| {
-        walk_store(tx, hooks, vec![Read { id: id.clone(), facts: Facts { pane: true, marked: true, alive: true, ..Default::default() }, ended: true, key: key.into() }], 2, now)?;
+        walk_store(tx, hooks, &Dispatcher::default(), vec![Read { id: id.clone(), facts: Facts { pane: true, marked: true, alive: true, ..Default::default() }, ended: true, busy: false, key: key.into() }], 2, now)?;
         runs::by_id(tx, &id)
     }).unwrap();
     let r = walk(&hooks);
@@ -89,7 +90,7 @@ fn red_verify_return(last_walk: i64) {
     let said = store.with(|tx| ops::history(tx, &task)).unwrap().to_string();
     assert!(said.contains("returned: red check: its Prepare or Verify ended with status 1"), "{said}");
     let walk = |now| store.with(|tx| {
-        walk_store(tx, &Hooks::default(), vec![Read { id: id.clone(), facts: Facts { pane: true, marked: true, alive: true, ..Default::default() }, ended: true, key: key.into() }], now, Instant::now())
+        walk_store(tx, &Hooks::default(), &Dispatcher::default(), vec![Read { id: id.clone(), facts: Facts { pane: true, marked: true, alive: true, ..Default::default() }, ended: true, busy: false, key: key.into() }], now, Instant::now())
     }).unwrap();
     assert!(walk(7310).0.is_empty(), "ten seconds after return: no immediate failure or request");
     assert_eq!(store.with(|tx| runs::by_id(tx, &id)).unwrap().budget_used, 610, "only the ten seconds after return count");
@@ -108,4 +109,57 @@ fn red_verify_return(last_walk: i64) {
     assert_eq!(r.status, "FAILED");
     let said = store.with(|tx| ops::history(tx, &task)).unwrap().to_string();
     assert!(said.contains("No result from the agent within an hour of Dispatcher's request."), "{said}");
+}
+
+/// AC-127: the watchdog retains silence from before a wait, and ignores time and hooks during it.
+#[test]
+fn ac127_silence_resumes_from_the_time_before_a_wait() {
+    let start = Instant::now();
+    let paused = start + Duration::from_secs(420);
+    let resumed = paused + Duration::from_secs(2400);
+    for status in ["WAIT FOR HUMAN", "TODO"] {
+        let mut watch = PaneWatch::default();
+        for id in ["quiet", "heard"] {
+            watch.subs.insert(id.into(), super::super::Sub { kind: "reviewer".into(), last: start, told: plan::SubStep::Nothing });
+        }
+        let mut run = Run { status: status.into(), asked: true, ..Default::default() };
+        assert!(subagent_steps(&mut watch, &run, false, paused).is_empty());
+        assert!(subagent_steps(&mut watch, &run, false, resumed).is_empty());
+        assert_eq!(watch.subs["quiet"].last, start);
+        watch.subs.get_mut("heard").unwrap().last = paused + Duration::from_secs(1);
+        run.status = "IN PROGRESS".into();
+        subagent_steps(&mut watch, &run, false, resumed);
+        assert_eq!(resumed.duration_since(watch.subs["quiet"].last), Duration::from_secs(420));
+        assert_eq!(watch.subs["heard"].last, resumed);
+    }
+}
+
+/// AC-127, AC-123: an active sibling can still fail, but the task that waits keeps its status.
+#[test]
+fn ac127_a_watchdog_failure_moves_only_active_tasks_in_a_mixed_run() {
+    let root = crate::testutil::fresh_dir("walk-subagents");
+    let store = Store::open(root.join("kanban.sqlite"));
+    let mut watch = PaneWatch::default();
+    let start = Instant::now();
+    watch.subs.insert("sub-1".into(), super::super::Sub {
+        kind: "reviewer".into(),
+        last: start,
+        told: plan::SubStep::Tell,
+    });
+    store.with(|tx| {
+        let task = |title: &str| ops::create(tx, HUMAN, ops::NewTask { title: title.into(), ..Default::default() }, 1);
+        let (active, waiting) = (task("active")?, task("waiting sibling")?);
+        let id = runs::add(tx, &Run::default(), &[active.key.clone(), waiting.key.clone()], Default::default(), 1)?;
+        ops::move_to(tx, HUMAN, &active.key, "IN PROGRESS", 2)?;
+        ops::move_to(tx, HUMAN, &waiting.key, "WAIT FOR HUMAN", 2)?;
+        let run = runs::by_id(tx, &id)?;
+        let at = start + Duration::from_secs(plan::SUB_END as u64);
+        let (_, act) = watch_subagents(tx, &mut watch, &run, false, at)?.expect("failure decided");
+        assert!(matches!(act, Act::SubagentFailed(_)));
+        assert_eq!(ops::get(tx, &active.key)?.status, "FAILED");
+        assert_eq!(ops::get(tx, &waiting.key)?.status, "WAIT FOR HUMAN");
+        Ok(())
+    }).unwrap();
+    drop(store);
+    std::fs::remove_dir_all(root).unwrap();
 }

@@ -8,6 +8,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { boardKit, cardInSight, intoStore, lastRunOf, nap, paneAlive, pressRun } from "./boardkit.mjs";
 import { check, slack, until } from "./check.mjs";
+import { subagentWaits } from "./e2e_livesubagents.mjs";
 
 const FAKE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../scripts/fake_agent.py");
 
@@ -283,6 +284,8 @@ export async function liveDispatcher(page, opts) {
   check("AC-127 one that runs inside the agent cannot be ended alone: said, and the task FAILED, its session kept (OQ-122)", await said(silentSub, "Subagent sub-1 has been silent for 20 minutes and cannot be ended alone", 15000)
     && await hasStatus(silentSub, "FAILED", 15000) && tmux("display", "-p", "-t", await paneOf(silentSub), "#{pane_dead}").trim() === "0", await history(silentSub));
   check("AC-127 the card shows its kind and ID, as idle", await idleShown, await page.textContent(card(silentSub)));
+
+  await subagentWaits({ task, agent, run, history, paneOf, status, said, tmux });
 
   // AC-128 what it consumes: shown on its card; limits by project; a limit of 0 is off
   const badLimits = await j(`/api/task-projects/${project}/limits`, "PUT", { warn: 9, end: 3 });
