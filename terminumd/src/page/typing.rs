@@ -18,7 +18,7 @@ use crate::tmux::server::OnCopy;
 use crate::tmux::{args, keys, Server};
 
 /// Largest paste (AC-03 limits).
-const PASTE_MAX: usize = 1 << 20;
+pub(crate) const PASTE_MAX: usize = 1 << 20;
 /// Most bytes of one set-buffer command (a host's paste).
 const BUFFER_PART: usize = 64 << 10;
 /// How long the part of a long run of keys waits for the pane to print before the next goes.

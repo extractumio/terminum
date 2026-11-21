@@ -18,7 +18,7 @@ pub(super) fn words(id: &str, c: &Carried) -> Vec<String> {
     let mut parts = Vec::new();
     if !c.theirs.is_empty() {
         let each: Vec<String> = c.theirs.iter().map(|(name, manager, text)| format!("{name} ({}): {text}", kind_words("human", *manager))).collect();
-        let all = each.join("\n\n---\n\n");
+        let all = each.join(super::press::COMMENT_SEPARATOR);
         let (many, them) = counted(c.theirs.len());
         parts.push(if all.chars().count() > MOST_PROMPT {
             format!("{id} has {many} by humans and the project's manager, too long to carry here: read {them} with {GET_TASK} and take {them} into account.")

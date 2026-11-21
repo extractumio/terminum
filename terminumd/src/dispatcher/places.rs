@@ -2,6 +2,7 @@
 //! Where a run starts and its window opens (`terminum-dispatcher.md` AC-140, AC-142): a project's place, what
 //! refuses it before any slot is asked, and + Session, with its first prompt (AC-204).
 
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use axum::extract::{Path, State};
@@ -10,6 +11,7 @@ use axum::Json;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
+use super::press::members;
 use super::runs::{self, Phase, Run};
 use super::{firstprompt, pool, start, store, Held};
 use crate::app::Shared;
@@ -18,7 +20,7 @@ use crate::tasks::api::answer;
 use crate::tasks::ops;
 pub(super) use crate::tasks::ops::no_folder;
 use crate::tasks::store::DEFAULT_PROJECT;
-use crate::tmux::Server;
+use crate::tmux::{PaneState, Server};
 
 /// Whether terminum's hooks are in place for `kind` on this Mac (AC-121).
 pub(super) fn hooks_there(kind: &str) -> bool {
@@ -39,6 +41,34 @@ pub(super) fn server_of(app: &Shared, host: Option<&str>) -> Result<Arc<Server>,
         None => Ok(app.tmux.local.clone()),
         Some(h) => app.tmux.host(h).filter(|s| s.connected()).ok_or_else(|| format!("The host {h} is out of reach.")),
     }
+}
+
+/// The longest a press waits for a linked pane's server to be read again.
+const REREAD_WAIT: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// A linked pane its server's list lacks may be newer than that list (an agent's take_task): that server is
+/// read once more before the press judges it closed (AC-113). The press's judge of a linked pane: one whose
+/// server was not read again in time stays Unread, never Closed by the older list.
+pub(super) async fn linked_panes(app: &Shared, id: &str, also: &[String]) -> impl Fn(&str) -> PaneState + Send + 'static {
+    let (ids, more) = (id.to_string(), also.to_vec());
+    let keys = store(app, move |tx| Ok(members(tx, &ids, &more)?.into_iter().filter_map(|t| t.session).collect::<Vec<_>>())).await.unwrap_or_default();
+    let mut late = HashSet::new();
+    for key in keys.into_iter().filter(|k| app.tmux.pane_state(k) == PaneState::Closed) {
+        let read = match app.tmux.resolve(&key) {
+            Some((server, _)) => tokio::time::timeout(REREAD_WAIT, crate::lists::refresh_server(app, &server)).await.is_ok(),
+            None => true,
+        };
+        if !read {
+            late.insert(key);
+        }
+    }
+    let a = app.clone();
+    move |k: &str| if late.contains(k) { PaneState::Unread } else { a.tmux.pane_state(k) }
+}
+
+/// Where a run's pane is.
+pub(super) fn pane_of(app: &Shared, r: &Run) -> Result<(Arc<Server>, String), String> {
+    r.place(app).ok_or_else(|| "Its session is gone.".to_string())
 }
 
 /// A project's id and name for its sessions' place in the list; Default stands for none.

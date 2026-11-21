@@ -44,3 +44,21 @@ fn ac170_order_press_rechecks_the_selected_project_at_run_admission() {
         Ok(())
     }).unwrap();
 }
+
+#[test]
+fn ac122_a_group_run_retry_excludes_the_draft_copy_on_each_task() {
+    Store::open(crate::testutil::fresh_dir("run-group-draft").join("kanban.sqlite")).with(|tx| {
+        let main = ops::create(tx, HUMAN, NewTask { title: "Main task".into(), ..Default::default() }, 1)?;
+        let sub = ops::create(tx, HUMAN, NewTask { title: "Subtask".into(), ..Default::default() }, 1)?;
+        let tasks = [main, sub];
+        let press = Press::default();
+        let first = press.keep_on(tx, &tasks, "A grouped draft", &[])?;
+        let retried = press.keep_on(tx, &tasks, "A grouped draft", &[])?;
+        assert_eq!(first.len(), 2);
+        assert_eq!(retried, first);
+        let saved = recent::saved(tx, &tasks, &retried, false)?;
+        let words = saved.words(&tasks[0].id, "Human", Some("A grouped draft"))?;
+        assert_eq!(words.matches("A grouped draft").count(), 1, "{words}");
+        Ok(())
+    }).unwrap();
+}

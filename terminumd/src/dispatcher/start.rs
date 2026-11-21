@@ -204,6 +204,8 @@ async fn now_asking(app: &Shared, r: &Run) {
 
 /// The prompt goes in: `typed` first, so no restart between can type it twice; a miss puts it back.
 async fn type_prompt(app: &Shared, r: &Run, server: &Server, pane: &str, prompt: &str) -> Result<(), gate::Miss> {
+    let _held = super::Held::take(app, |d| &d.pressing, &format!("run:{}", r.id))
+        .ok_or_else(|| gate::Miss::Other("A Run is already being prepared.".to_string()))?;
     let (id, was, session) = (r.id.clone(), r.state, app.hooks.session(&server.key(pane)).map(|(_, s)| s).filter(|s| hooks::good_id(s)));
     let wrote = store(app, move |tx| runs::change(tx, &id, |now| {
         if now.is_starting() {
@@ -220,6 +222,11 @@ async fn type_prompt(app: &Shared, r: &Run, server: &Server, pane: &str, prompt:
     if sent.is_err() {
         let id = r.id.clone();
         let _ = store(app, move |tx| runs::change(tx, &id, |now| if now.state == Phase::Typed { now.state = was; })).await;
+    } else {
+        let id = r.id.clone();
+        if let Err(why) = store(app, move |tx| super::recent::delivered(tx, &id)).await {
+            tracing::warn!(event = "dispatcher.start", error = %why);
+        }
     }
     sent
 }

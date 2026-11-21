@@ -22,6 +22,8 @@ pub(super) const ASK_HUMAN: &str = "execute_tool(\"ask_human\", {id, questions})
 /// removed waits for a human the same way, never DONE or FAILED.
 pub(crate) const ASK: &str = concat!("If you need a human's decision, call execute_tool(\"ask_human\", {id, questions}), then end your turn: the session closes, and the human's RUN brings the answers back into this conversation. Do not wait for an answer in this window. Write the questions ", questions_shape!(), ". If the task cannot be finished now for a cause that can be removed ", removable!(), ", ask the same way: Details say what is done and committed and what holds it, Recommended what unblocks it (such as \"grant access to the staging database\"): it waits for a human; give it no result by execute_tool(\"finish_task\", {id, result}). ", waits_for_task!(), " FAILED is only for a task that cannot be done at all, with a comment saying why.");
 
+pub(super) const COMMENT_SEPARATOR: &str = "\n\n---\n\n";
+
 /// What RUN types when it goes on (AC-122, AC-157): after the agent asked, the humans' answers since, else the
 /// press's comment; never "read the comments": an agent's comment there would stand as an instruction.
 pub(super) fn again_words(id: &str, who: &str, comment: Option<&str>, answers: Option<&[String]>, manager: bool) -> String {
@@ -29,8 +31,8 @@ pub(super) fn again_words(id: &str, who: &str, comment: Option<&str>, answers: O
     match (answers, comment) {
         (Some([]), _) => format!("{id}: {boss} ran it again with no answer: decide with what you have, or ask again by {ASK_HUMAN}."),
         // a manager's press brings the humans' answers and its own message: neither is said to be the other's
-        (Some(said), _) if manager => format!("{id}: answers to your questions follow, the humans' comments and the project's manager's message. Go on with the task, taking them into account.\n\n{}", said.join("\n\n---\n\n")),
-        (Some(said), _) => format!("{id}: {boss} answered your questions in the comments below. Go on with the task, taking them into account.\n\n{}", said.join("\n\n---\n\n")),
+        (Some(said), _) if manager => format!("{id}: answers to your questions follow, the humans' comments and the project's manager's message. Go on with the task, taking them into account.\n\n{}", said.join(COMMENT_SEPARATOR)),
+        (Some(said), _) => format!("{id}: {boss} answered your questions in the comments below. Go on with the task, taking them into account.\n\n{}", said.join(COMMENT_SEPARATOR)),
         (None, Some(c)) => format!("{id}: a new comment by {who} follows. Go on with the task, taking it into account.\n\n{c}"),
         (None, None) => format!("{id}: {boss} ran it again: go on with the task."),
     }
@@ -171,7 +173,7 @@ impl Facts {
         if let Some(words) = &self.integration {
             let mut parts = vec![words.clone()];
             parts.extend(said);
-            parts.extend(self.answers.iter().map(|(_, a)| format!("The human answered your questions, in the comments below. Take them into account.\n\n{}", a.join("\n\n---\n\n"))));
+            parts.extend(self.answers.iter().map(|(_, a)| format!("The human answered your questions, in the comments below. Take them into account.\n\n{}", a.join(COMMENT_SEPARATOR))));
             return parts.join("\n\n");
         }
         // Auto-Dispatcher's own words (AC-170): a round's, and those of a task a round started
@@ -186,7 +188,7 @@ impl Facts {
             parts.extend(said);
             parts.extend(several_words(&self.tasks, &self.language));
             for (id, said) in &self.answers {
-                parts.push(format!("{id}: the human answered the questions asked on it before, in the comments below. Take them into account.\n\n{}", said.join("\n\n---\n\n")));
+                parts.push(format!("{id}: the human answered the questions asked on it before, in the comments below. Take them into account.\n\n{}", said.join(COMMENT_SEPARATOR)));
             }
             parts.extend(self.comments.iter().flat_map(|(id, c)| super::carry::words(id, c)));
             return parts.join("\n\n");
@@ -289,6 +291,13 @@ pub(super) enum Way {
 }
 
 impl Way {
+    pub(super) fn run_id(&self) -> Option<&str> {
+        match self {
+            Self::Live(run) | Self::Shell(run) | Self::Resume(run) | Self::Anew(run) => Some(&run.id),
+            Self::First => None,
+        }
+    }
+
     /// Its agent hears the task as a first run's (AC-121): RUN's window shows the words.
     pub(super) fn first_words(&self) -> bool {
         matches!(self, Way::First | Way::Anew(_))

@@ -11,6 +11,11 @@ use crate::app::Shared;
 use crate::tmux::control::Control;
 use crate::tmux::Server;
 
+/// What a press types may hold line ends, nothing else unseen: tmux would refuse it after the run was written.
+pub(super) fn has_stray(text: &str) -> bool {
+    text.split(['\n', '\t']).any(crate::termtext::has_control)
+}
+
 /// How long what was pasted may take to show in the box.
 const SHOWN: Duration = Duration::from_millis(1500);
 /// A first prompt's: an agent still starting on a busy machine shows it seconds late, and one
