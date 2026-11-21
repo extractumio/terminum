@@ -23,6 +23,16 @@ pub struct Entry {
     pub batch: Option<i64>,
 }
 
+/// Refused while `t`'s commit is queued for integration (AC-187, AC-198): an agent's question, wait, move or finish
+/// would take it out of the queue, which holds it and goes on by itself, also behind a red target, and finishes it when
+/// it lands; withdraw_integration takes it out on purpose. A batch's integration task is in no queue: it moves as any.
+pub(crate) fn stays_queued(tx: &Transaction, t: &Task) -> Result<(), String> {
+    if t.status != INTEGRATION || entry_of(tx, &t.key)?.is_none() {
+        return Ok(());
+    }
+    Err(format!("{0} is queued for integration: the queue holds it and goes on with it by itself, also while it waits behind a red target, finishes it with its result when it lands, and tells you how it ends; nothing here needs a human. End your turn. To take it out on purpose, call execute_tool(\"withdraw_integration\", {{\"id\": \"{0}\"}}).", t.id))
+}
+
 /// Whatever moved it out of INTEGRATION (to `status`), the task is no longer queued: a batch it was in goes on
 /// without it; held behind a red target, it is told that target's end runs nothing for it (AC-198).
 pub(crate) fn leave(tx: &Transaction, task: &Task, status: &str, at: i64) -> Result<(), String> {

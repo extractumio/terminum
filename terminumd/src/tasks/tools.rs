@@ -293,6 +293,7 @@ fn run_in(store: &Store, state_dir: &Path, who: &Who, tool: &str, args: &Value, 
             "move_task" => {
                 let (id, to) = (arg(args, "id")?, arg(args, "to")?);
                 let t = movable(tx, who, id)?;
+                super::integration_queue::stays_queued(tx, &t)?;
                 // a wait for a human always says what it waits for: only ask_human puts a task there (AC-157)
                 if to == "WAIT FOR HUMAN" {
                     own(tx, who, id)?;
@@ -314,7 +315,9 @@ fn run_in(store: &Store, state_dir: &Path, who: &Who, tool: &str, args: &Value, 
             }
             "ask_human" => {
                 let id = arg(args, "id")?;
-                not_queued(tx, &own(tx, who, id)?)?;
+                let t = own(tx, who, id)?;
+                not_queued(tx, &t)?;
+                super::integration_queue::stays_queued(tx, &t)?;
                 let questions = rules::clean(arg(args, "questions")?);
                 // a human reads why first, the default next, the whole issue last (AC-157)
                 if let Some(why) = closeout::unshaped(id, &questions) {
@@ -348,6 +351,7 @@ fn run_in(store: &Store, state_dir: &Path, who: &Who, tool: &str, args: &Value, 
                 if let Some(why) = crate::integrate::agent::finish_refused(tx, &t.key)? {
                     return Err(why);
                 }
+                super::integration_queue::stays_queued(tx, &t)?;
                 after_its_subtasks(tx, &t)?;
                 let me = me()?;
                 let result = rules::clean(arg(args, "result")?);
