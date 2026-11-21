@@ -118,8 +118,12 @@ pub(super) enum Window {
     Ended(i32),
 }
 
-/// The status of a window ended for running over its time: no program's own.
-pub(super) const OVER: i32 = -1;
+/// Internal deadline status, distinct from shell exit codes and the wrapper's -1 for a missing folder.
+pub(super) const OVER: i32 = i32::MIN;
+
+pub(super) fn how_ended(code: i32, minutes: i64) -> String {
+    if code == OVER { format!("ran over {minutes} minutes") } else { format!("ended with status {code}") }
+}
 
 pub(super) fn window(runner: &dyn Runner, pane: &str, log: &Path, over: bool) -> Window {
     match runner.status(pane) {
@@ -170,71 +174,81 @@ fn advance(store: &Store, runner: &dyn Runner, home: &Path, b: Batch, now: i64) 
     }
 }
 
+#[derive(PartialEq, Eq)]
+enum BatchStage {
+    Check,
+    Publish,
+    After,
+    Cleanup,
+}
+
 /// A line of the batch's step: started, followed, ended; the pane cleared in the transaction that moves the state on.
 pub(super) fn follow(store: &Store, runner: &dyn Runner, p: &Place, b: Batch, now: i64) -> Result<(), String> {
-    let (step, line, folder) = match b.state.as_str() {
-        "checking" => ("check", p.s.check.clone(), None),
-        "publishing" => ("publish", p.s.publish.clone(), None),
-        "cleanup" => ("cleanup", p.s.cleanup.clone(), Some(p.repo.clone())),
-        _ => ("after", p.s.after.clone(), Some(p.repo.clone())),
+    use BatchStage::{After, Check, Cleanup, Publish};
+    let (stage, step, line, folder, retry_lost) = match b.state.as_str() {
+        "checking" => (Check, "check", &p.s.check, None, true),
+        "publishing" => (Publish, "publish", &p.s.publish, None, true),
+        "after" => (After, "after", &p.s.after, Some(p.repo.as_path()), false),
+        "cleanup" => (Cleanup, "cleanup", &p.s.cleanup, Some(p.repo.as_path()), true),
+        state => return Err(format!("Batch {} has no line to follow in state {state}.", b.number)),
     };
-    let candidate = b.candidate.clone().unwrap_or_default();
-    let Some(pane) = b.pane.clone() else {
+    // Each batch line gets the project's Check ends after limit, counted from its own window's start.
+    let minutes = p.s.check_minutes;
+    let Some(pane) = b.pane.as_deref() else {
         let folder = match folder {
-            Some(f) => f,
-            None => match tree_at(p, &b.project, &candidate) {
+            Some(f) => f.to_path_buf(),
+            None => match tree_at(p, &b.project, b.candidate.as_deref().unwrap_or_default()) {
                 Ok(t) => t,
                 Err(why) => return red(store, p, &b, &why, now),
             },
         };
-        if step == "check" && let Err(why) = retry_notes::clear(&folder) {
+        if stage == Check && let Err(why) = retry_notes::clear(&folder) {
             return red(store, p, &b, &why, now);
         }
         let label = format!("batch-{}.{}.{step}", b.number, b.round);
         let v = vars(store, p, &b, &integration::tree_in(&p.home, &b.project));
-        return match runner.start(&label, &folder, &line, &v) {
+        return match runner.start(&label, &folder, line, &v) {
             Ok(pane) => store.with(|tx| bs::set_pane(tx, b.id, Some(&pane), now)),
             Err(why) => red(store, p, &b, &format!("The {step} did not start: {why}"), now),
         };
     };
     let log = log_of(p, &b.project, &b, step);
-    // After holds the machine's tail for every project: over the check's time it fails as a check does (AC-191)
-    let over = matches!(step, "check" | "after") && now - b.step_started.unwrap_or(now) > p.s.check_minutes * 60;
-    let status = match window(runner, &pane, &log, over) {
+    let over = now - b.step_started.unwrap_or(now) > minutes * 60;
+    let status = match window(runner, pane, &log, over) {
         // After lost with its window is not run again (AC-191): what it did is not known
-        Window::Lost if step == "after" => return store.with(|tx| super::tail::lost(tx, p, &b, now)),
+        Window::Lost if !retry_lost => return store.with(|tx| super::tail::lost(tx, p, &b, now)),
         // lost with its window: run again, not counted as red (AC-190)
         Window::Lost => return store.with(|tx| {
             bs::set_pane(tx, b.id, None, now)?;
-            let again = if step == "check" { format!("Batch {} is checked again", b.number) } else { format!("Batch {}'s {step} runs again", b.number) };
+            let again = if stage == Check { format!("Batch {} is checked again", b.number) } else { format!("Batch {}'s {step} runs again", b.number) };
             bs::tell_task(tx, &b, &format!("{again}: its window was lost."), now)
         }),
         Window::Running => return Ok(()),
         Window::Ended(code) => code,
     };
-    if step == "check" && let Some(notes) = retry_notes::read(&integration::tree_in(&p.home, &b.project)) {
+    if stage == Check && let Some(notes) = retry_notes::read(&integration::tree_in(&p.home, &b.project)) {
         store.with(|tx| bs::tell_task(tx, &b, &format!("Batch {} round {} Check has retry diagnostics (AC-197).\nCheck output (data):\n{notes}", b.number, b.round), now))?;
     }
-    match (step, status) {
-        ("check", OVER) => red(store, p, &b, &format!("The check ran over {} minutes.", p.s.check_minutes), now),
-        ("check", 0) => store.with(|tx| { bs::set_pane(tx, b.id, None, now)?; bs::round_ends(tx, &b, "green", None, now)?; bs::set_state(tx, b.id, "green", None, now) }),
-        ("check", code) => red(store, p, &b, &format!("The check ended with status {code}. Its log: {}", log.display()), now),
-        ("publish", 0) => match target_now(p) {
+    match (stage, status) {
+        (Check, OVER) => red(store, p, &b, &format!("The check {}.", how_ended(OVER, minutes)), now),
+        (Check, 0) => store.with(|tx| { bs::set_pane(tx, b.id, None, now)?; bs::round_ends(tx, &b, "green", None, now)?; bs::set_state(tx, b.id, "green", None, now) }),
+        (Check, code) => red(store, p, &b, &format!("The check {}. Its log: {}", how_ended(code, minutes), log.display()), now),
+        (Publish, 0) => match target_now(p) {
             Ok(t) => landed(store, p, b, &t, now),
             Err(why) => not_published(store, &b, &why, now),
         },
-        ("publish", code) => not_published(store, &b, &format!("Publish ended with status {code}. Its log: {}", log.display()), now),
+        (Publish, code) => not_published(store, &b, &format!("Publish {}. Its log: {}", how_ended(code, minutes), log.display()), now),
         // Cleanup ends the batch whatever its status: it undoes nothing (AC-198)
-        ("cleanup", code) => store.with(|tx| {
+        (Cleanup, code) => store.with(|tx| {
             bs::set_pane(tx, b.id, None, now)?;
             if code != 0 {
-                bs::tell_task(tx, &b, &format!("Batch {}'s Cleanup ended with status {code}; nothing is undone. Its log: {}", b.number, log.display()), now)?;
+                bs::tell_task(tx, &b, &format!("Batch {}'s Cleanup {}; nothing is undone. Its log: {}", b.number, how_ended(code, minutes), log.display()), now)?;
             }
             // what its After's turn said stays on the batch's row
             bs::set_state(tx, b.id, "ended", b.why.as_deref(), now)
         }),
         // After's outcomes, its wait among them, are the tail's (AC-191)
-        (_, code) => super::tail::ended(store, p, &b, code, &log, now),
+        (After, code) => super::tail::ended(store, p, &b, code, minutes, &log, now),
     }
 }
 
