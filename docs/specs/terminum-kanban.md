@@ -346,6 +346,12 @@ Scenario: AC-109 failure — too large
   When a file is over 100 MB
   Then it is refused with "shot.mov is over 100 MB" and the rest of the window is kept
 
+Scenario: AC-109 failure — a file cannot be read
+  When GET or HEAD asks for a file whose row or bytes are missing
+  Then terminumd answers 404
+  When the store lookup, file open, initial byte read or metadata read fails for another reason
+  Then terminumd answers 500, with its error message on GET, and a draft keeps the file and its link (AC-106, AC-108)
+
 Scenario: AC-109 failure — a purge or a keep cut short
   When a purge fails (the store refuses it) or terminumd stops halfway through one or through keeping a file
   Then a file is whole or gone, never a row without its bytes: a failed purge keeps both, and what a stop left (bytes set aside by a purge, bytes an hour old with no row) goes at the next sweep
@@ -1403,7 +1409,7 @@ Sample event: `{"task":"API-12","at":1792003600,"author":"Dispatcher","kind":"co
 
 Pages hear over the page's WebSocket: `taskchange {id, history?}` (`""` for several: a server's links), upon which a board reads its columns and an open window of that task reads it, and with `history: true`, a line of a task's history that changes no card, only the window reads; `taskmarks {marks, counts, waiting, failed, lines}` when the open tasks by session, the tasks by project or the tasks that need a human change (`waiting`, `failed`: AC-117's counts of cards), for the session list and both pages' lines (AC-117: `lines` only those no human closed or saw); the `layout` it hears anyway gives a board its cards' session rows and its Sessions column, a row's plan carrying `doing`; `/sessions/?open=<key>` shows that session once and cleans its address (AC-134); `board.project` in the browser's storage keeps the project chosen (AC-135); `board.sort.<project>` keeps the columns' display sorts (`*` for All projects and multiple projects, AC-105).
 
-**MCP tools** added to `terminum mcp`'s catalog: `list_tasks`, `get_task`, `create_task`, `update_task` (AC-154), `link_task` (AC-199), `take_task`, `move_task`, `ask_human` (terminum-dispatcher.md AC-157), `add_comment`, `attach_file`, `get_file`, `finish_task`; none is listed: each is found with `search_tools` and run with `execute_tool`, and terminum's own words write the call, `execute_tool("finish_task", {id, result})` (terminum-agents.md AC-155). `add_notes_for_user`, `update_notes_for_user`, `get_notes_for_user` and `delete_notes_for_user` go (AC-98).
+**MCP tools** added to `terminum mcp`'s catalog: `list_tasks`, `get_task`, `create_task`, `update_task` (AC-154), `link_task` (AC-199), `take_task`, `move_task`, `ask_human` (terminum-dispatcher.md AC-157), `wait_for_task` (terminum-dispatcher.md AC-210), `add_comment`, `attach_file`, `get_file`, `finish_task`; none is listed: each is found with `search_tools` and run with `execute_tool`, and terminum's own words write the call, `execute_tool("finish_task", {id, result})` (terminum-agents.md AC-155). `add_notes_for_user`, `update_notes_for_user`, `get_notes_for_user` and `delete_notes_for_user` go (AC-98).
 
 **Limits.** Title 1–200 characters, its type's word aside; external link 2048 characters; target 64; a list 20 tasks, a reason 1000 characters; text 1 MiB; a project's template 8 KiB; ID letters 1–8; comment 256 KiB; a file 100 MB, no limit per project; 200 cards a page; open tasks by agents a project: settings.json's `"agentOpenTasks"`, 10000 by default, 1–1000000 (AC-115); 50 projects (`terminum.md` AC-92), Default not counted. Over a host's link, a request of 64 KB (`terminum-remote.md` §9).
 
@@ -1437,7 +1443,7 @@ Depends on: nothing more.
 - [x] AC-106 — `web/test/e2e_liveboard.mjs`, `web/test/e2e_tasktext.mjs` (one text editor), `web/test/e2e_liveboardpool.mjs`, `web/test/e2e_newtask.mjs` (unspecified agent, explicit choice, removal and refusal), `web/test/e2e_livenotes.mjs` (New task from selection), `cargo test tasks::ops`
 - [x] AC-107 — `cargo test tasks::ops`, `web/test/e2e_liveboard.mjs`
 - [x] AC-108 — `cargo test tasks::ops`, `web/test/e2e_liveboard.mjs`
-- [x] AC-109 — `cargo test tasks::files` (a failed purge, a stop's leftovers), `cargo test tasks::tools`, `web/test/e2e_liveboard.mjs`
+- [x] AC-109 — `cargo test tasks::files` (a failed purge, a stop's leftovers), `cargo test tasks::fileapi` (GET and HEAD errors), `cargo test tasks::tools`, `web/test/e2e_liveboard.mjs` (draft restoration during a read failure)
 - [x] AC-110 — `cargo test page::projects`, `scripts/e2e_core.py`, `web/test/e2e_projects.mjs`, `web/test/e2e_livelistplace.mjs`, `web/test/e2e_liveboard.mjs`
 - [x] AC-111 — `cargo test tasks::ops`, `web/test/e2e_liveboard.mjs`, Find in TODO's head in `web/test/e2e_boardpanel.mjs`, a phone's in its head in `web/test/e2e_boardphone.mjs`
 - [x] AC-112 — `cargo test tasks::ops`, `cargo test tasks::family`, `web/test/e2e_liveboardtasks.mjs`, `web/test/e2e_liveboardids.mjs`

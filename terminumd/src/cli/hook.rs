@@ -4,29 +4,33 @@
 //! agent's write never breaks), keeps a few fields of it, cut short (never a tool's output, a
 //! file's text or the agent's answer; of a plan tool, its items'
 //! words: hookplan.rs), and posts them to every sink at once (the local terminumd's private
-//! socket, the Macs' links on a host: sinks.rs) with a budget of 150 ms; it prints at most terminumd's reminder after the agent's reminder event and always
-//! exits 0, so the agent goes on as without it.
+//! socket, the Macs' links on a host: sinks.rs) with a budget of 150 ms. It prints context only
+//! on the agent's tool carrier or synchronous prompt hook, and exits 0.
 //! The pane is the one tmux names in the agent's environment (TMUX, TMUX_PANE); outside tmux,
 //! or under a shared Codex app-server (AC-207), nothing is sent.
 
 use std::io::{Read, Write};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use serde_json::{json, Map, Value};
 
 /// The most of the event read (its rest is read and dropped).
 const KEEP: usize = 1 << 20;
 pub(super) const BUDGET: Duration = Duration::from_millis(150);
+pub const PROMPT_CONTEXT: &str = "--prompt-context";
+/// Leave time to acknowledge a reachable sink's notice even if another sink stalls.
+const PROMPT_HEARD: Duration = Duration::from_millis(25);
+const PROMPT_REPLY: Duration = BUDGET.saturating_sub(PROMPT_HEARD);
 
 /// Whether the pane in the environment is the agent's: not for Codex under a shared app-server
 /// (AC-207); asked only once there is an event to send.
 pub(super) fn takes_pane(agent: &str) -> bool {
-    agent != "codex" || !super::codexdaemon::under_shared()
+    agent != "codex" || !crate::process::codex::under_shared()
 }
 
 /// Runs the hook for `agent`; always 0 when an agent runs it. Run by a person (an unknown
 /// agent, or a terminal for stdin), it says what to run instead: it would wait for the keys.
-pub fn main(agent: &str) -> i32 {
+pub fn main(agent: &str, prompt_context: bool) -> i32 {
     // SAFETY: isatty has no preconditions
     let by_hand = unsafe { libc::isatty(0) } == 1;
     if let Some(why) = refused(agent, by_hand) {
@@ -45,18 +49,25 @@ pub fn main(agent: &str) -> i32 {
         }
     }
     let (Ok(input), Ok(tmux), Ok(pane)) = (serde_json::from_slice::<Value>(&kept), std::env::var("TMUX"), std::env::var("TMUX_PANE")) else { return 0 };
-    if let Some(ev) = event(agent, &input, &tmux, &pane) && takes_pane(agent) {
+    if let Some(mut ev) = event(agent, &input, &tmux, &pane) && takes_pane(agent) {
+        let prompt = prompt_context && ev["event"] == "UserPromptSubmit";
+        if prompt {
+            ev["prompt_context"] = json!(true);
+        }
+        let deadline = Instant::now() + BUDGET;
+        let remaining = || if prompt { deadline.saturating_duration_since(Instant::now()) } else { BUDGET };
         let sinks = super::sinks::all();
-        let answers = super::sinks::post_all(&sinks, "/hook", &ev, BUDGET);
+        let budget = if prompt { remaining().min(PROMPT_REPLY) } else { BUDGET };
+        let answers = super::sinks::post_all(&sinks, "/hook", &ev, budget);
         if let Some((i, line)) = first_reminder(&ev, &answers) {
             // a closed stdout is the agent's choice: never a panic, still 0
             let printed = writeln!(std::io::stdout().lock(), "{line}").is_ok();
             // Dispatcher's lines in it go once they were printed, else they come again (AC-114)
             if printed && let Ok((_, Some(answer))) = &answers[i] && let Some(n) = answer["lines"].as_u64() {
-                let mut heard = ev.clone();
-                heard["event"] = json!("Heard");
-                heard["lines"] = json!(n);
-                let _ = super::sinks::post_all(&sinks[i..=i], "/hook", &heard, BUDGET);
+                let heard = json!({"event": "Heard", "socket": ev["socket"], "socket_path": ev["socket_path"],
+                    "pane": ev["pane"], "lines": n});
+                let budget = if prompt { PROMPT_HEARD } else { BUDGET };
+                let _ = super::sockhttp::call(&sinks[i], "POST", "/hook", Some(&heard), budget);
             }
         }
         // Codex's account's windows, at each turn's end, after it has gone (terminum-dispatcher.md AC-168)
@@ -64,13 +75,13 @@ pub fn main(agent: &str) -> i32 {
             let _ = super::sinks::post_all(&sinks, "/hook", &limits_event(&ev, &windows), BUDGET);
         }
         // the agent's command line, once a session: when a terminumd asks, after the event has gone (AC-153)
-        if answers.iter().any(|a| matches!(a, Ok((200, Some(answer))) if answer["argv"] == true)) {
+        if remaining() > PROMPT_HEARD && answers.iter().any(|a| matches!(a, Ok((200, Some(answer))) if answer["argv"] == true)) {
             let mut said = ev.clone();
             said["event"] = json!("Argv");
             if let Some(said) = said.as_object_mut() {
                 said.extend(super::hookargv::started_as(agent));
             }
-            let _ = super::sinks::post_all(&sinks, "/hook", &said, BUDGET);
+            let _ = super::sinks::post_all(&sinks, "/hook", &said, remaining());
         }
         // a task's session: the transcript is read after its turn's end has gone, so nothing waits on it
         let asked = answers.iter().any(|a| matches!(a, Ok((200, Some(answer))) if answer["tokens"] == true));
@@ -98,13 +109,13 @@ pub fn first_reminder(ev: &Value, answers: &[super::sinks::Answer]) -> Option<(u
     })
 }
 
-/// The one line the agent reads as context when terminumd's answer reminds (AC-97); None
-/// without a reminder, or for an event other than the agent's reminder event (Claude's sync
-/// PostToolBatch, Codex's PostToolUse: plans_store.rs), whose name the line carries.
+/// The agent's context, when terminumd sent text and the hook can carry it (AC-97, AC-209).
 pub fn remind_line(ev: &Value, answer: &Value) -> Option<String> {
     let text = answer["remind"].as_str().filter(|t| !t.is_empty())?;
-    let name = crate::plans::remind_event(ev["agent"].as_str().unwrap_or(""));
-    (ev["event"] == name).then(|| json!({"hookSpecificOutput": {"hookEventName": name, "additionalContext": text}}).to_string())
+    let name = ev["event"].as_str()?;
+    let tool = crate::plans::remind_event(ev["agent"].as_str().unwrap_or(""));
+    (name == tool || crate::tmux::hookstate::prompt_context(ev))
+        .then(|| json!({"hookSpecificOutput": {"hookEventName": name, "additionalContext": text}}).to_string())
 }
 
 /// Why `terminum hook <agent>` is not an agent's run (`by_hand`: its stdin is a terminal).
@@ -305,6 +316,20 @@ mod tests {
         assert_eq!(remind_line(&json!({"agent": "claude"}), &json!({"remind": "x"})), None, "no event name: nothing printed");
         for (agent, other) in [("claude", "PostToolUse"), ("codex", "PostToolBatch"), ("claude", "Stop"), ("codex", "PreToolUse"), ("claude", "UserPromptSubmit")] {
             assert_eq!(remind_line(&json!({"agent": agent, "event": other}), &json!({"remind": "x"})), None, "{agent} {other}: nothing printed");
+        }
+    }
+
+    #[test]
+    fn ac209_only_the_synchronous_prompt_hook_prints_prompt_context() {
+        for agent in ["claude", "codex"] {
+            let mut ev = json!({"agent": agent, "event": "UserPromptSubmit"});
+            let answer = json!({"remind": "comment notice"});
+            assert_eq!(remind_line(&ev, &answer), None);
+            ev["prompt_context"] = json!(true);
+            let line = remind_line(&ev, &answer).unwrap();
+            assert_eq!(serde_json::from_str::<Value>(&line).unwrap(), json!({"hookSpecificOutput": {
+                "hookEventName": "UserPromptSubmit", "additionalContext": "comment notice"
+            }}));
         }
     }
 

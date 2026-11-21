@@ -1,18 +1,17 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 //! Saved human comments carried by a later human Run (terminum-dispatcher.md AC-122).
 
-use rusqlite::Transaction;
+use rusqlite::{OptionalExtension, Transaction};
 
 use crate::tasks::comments::last_question;
 use crate::tasks::ops::{self, Task};
 
-use super::api::has_stray;
+use super::gate::has_stray;
 use crate::page::typing::PASTE_MAX;
 
-use super::press::again_words;
+use super::press::{COMMENT_SEPARATOR, again_words};
 
 pub(super) const BAD_COMMENT: &str = "A saved comment has control or invisible characters. Edit it before running again.";
-const SEPARATOR: &str = "\n\n---\n\n";
 
 pub(super) struct Again {
     pub words: String,
@@ -61,9 +60,17 @@ pub(super) fn delivered(tx: &Transaction, run: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// The upper bound before the current field was saved in the same transaction.
-pub(super) fn before_draft(tx: &Transaction) -> Result<i64, String> {
-    tx.query_row("SELECT coalesce(max(rowid), 0) FROM events", [], |r| r.get(0)).map_err(ops::sql)
+/// Older waits kept their draft without event IDs. Reuse the matching comments they kept, even if a newer one follows.
+pub(super) fn legacy_drafts(tx: &Transaction, tasks: &[Task], draft: &str, at: i64) -> Result<Vec<String>, String> {
+    let mut stmt = tx.prepare_cached("SELECT id FROM events WHERE task = ?1 AND kind = 'comment' AND author = ?2
+        AND text = ?3 AND at <= ?4 ORDER BY at DESC, rowid DESC LIMIT 1").map_err(ops::sql)?;
+    let mut events = Vec::new();
+    for task in tasks {
+        if let Some(id) = stmt.query_row((&task.key, crate::tasks::store::HUMAN, draft, at), |r| r.get(0)).optional().map_err(ops::sql)? {
+            events.push(id);
+        }
+    }
+    Ok(events)
 }
 
 fn too_long() -> String {
@@ -78,7 +85,7 @@ pub(super) struct Saved {
 }
 
 /// Read only human comments after each task's cutoff. Exclude the press's own field even when it was kept for a wait.
-pub(super) fn saved(tx: &Transaction, tasks: &[Task], before: i64, drafts: &[String], asked: bool) -> Result<Saved, String> {
+pub(super) fn saved(tx: &Transaction, tasks: &[Task], drafts: &[String], asked: bool) -> Result<Saved, String> {
     let mut out = Saved { comments: Vec::new(), asked: false, answered: false, earlier: false };
     let mut saved = Vec::new();
     let mut size = 0;
@@ -86,14 +93,12 @@ pub(super) fn saved(tx: &Transaction, tasks: &[Task], before: i64, drafts: &[Str
     let mut stmt = tx.prepare_cached(
         "SELECT e.at, e.rowid, e.text FROM tasks t JOIN events e ON e.task = t.id JOIN users u ON u.id = e.author
          WHERE t.id = ?1 AND e.kind = 'comment' AND u.kind = 'human' AND e.text IS NOT NULL
-           AND e.id NOT IN (SELECT value FROM json_each(?2)) AND e.rowid <= ?3
-           AND e.rowid > ?4").map_err(ops::sql)?;
+           AND e.id NOT IN (SELECT value FROM json_each(?2))
+           AND e.rowid > coalesce((SELECT rowid FROM events WHERE id = t.run_comments), 0)").map_err(ops::sql)?;
     for task in tasks {
-        let after: i64 = tx.query_row("SELECT coalesce((SELECT rowid FROM events WHERE id = t.run_comments), 0)
-            FROM tasks t WHERE t.id = ?1", [&task.key], |r| r.get(0)).map_err(ops::sql)?;
         let question = if asked { last_question(tx, &task.key)? } else { None };
         out.asked |= question.is_some();
-        let mut rows = stmt.query((&task.key, &drafts, before, after)).map_err(ops::sql)?;
+        let mut rows = stmt.query((&task.key, &drafts)).map_err(ops::sql)?;
         while let Some(row) = rows.next().map_err(ops::sql)? {
             let at: i64 = row.get(0).map_err(ops::sql)?;
             let rank: i64 = row.get(1).map_err(ops::sql)?;
@@ -105,7 +110,7 @@ pub(super) fn saved(tx: &Transaction, tasks: &[Task], before: i64, drafts: &[Str
             out.answered |= answer;
             out.earlier |= !answer;
             let text = if tasks.len() > 1 { format!("{}: {text}", task.id) } else { text };
-            size += text.len() + if saved.is_empty() { 0 } else { SEPARATOR.len() };
+            size += text.len() + if saved.is_empty() { 0 } else { COMMENT_SEPARATOR.len() };
             if size > PASTE_MAX {
                 return Err(too_long());
             }
@@ -132,7 +137,7 @@ impl Saved {
             let answers = self.asked.then_some([].as_slice());
             let again = again_words(id, who, draft, answers, false);
             if carries_saved {
-                format!("{id}: saved human comments, oldest first. Take them into account.\n\n{}\n\n{again}", self.comments.join(SEPARATOR))
+                format!("{id}: saved human comments, oldest first. Take them into account.\n\n{}\n\n{again}", self.comments.join(COMMENT_SEPARATOR))
             } else {
                 again
             }

@@ -47,6 +47,8 @@ pub const CARDS: &[Card] = &[
         example: r#"{"id": "TERM-12", "to": "WAIT FOR HUMAN"}"# },
     Card { name: "ask_human", area: "tasks", keywords: "ask the human, ask the user, a question, need a decision, clarify, which option, wait for an answer, human in the loop, blocked on a choice",
         example: r#"{"id": "TERM-12", "questions": "Why you are needed: dropping API v1 breaks two clients, and only you know if they may break.\nRecommended:\n1. Keep v1 a month: they move by then. Other options: drop it now.\nDetails: TERM-12 removes API v1; v2 is done on a branch. Two clients still call v1; dropping it breaks them today."}"# },
+    Card { name: "wait_for_task", area: "tasks", keywords: "wait until a blocker is done, blocked by a ticket, depends on, dependency, needs its change first, prerequisite not done, resume me when it lands, hold until",
+        example: r#"{"id": "TERM-12", "on": "TERM-9", "why": "TERM-12 reads the store column TERM-9 adds; it goes on once TERM-9 lands."}"# },
     Card { name: "add_comment", area: "comments", keywords: "comment on a task, leave a note, reply, remark, say something on a ticket",
         example: r#"{"id": "TERM-12", "text": "The cause is in tasks/ops.rs; a fix needs the owner's choice."}"# },
     Card { name: "attach_file", area: "files", keywords: "attach a file, upload, add a screenshot, a log, a document, an artifact to a task",

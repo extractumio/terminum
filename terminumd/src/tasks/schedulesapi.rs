@@ -91,7 +91,8 @@ async fn preview(State(app): State<Shared>, Json(body): Json<Value>) -> Response
         let next = s.when()?.upcoming(now, 3);
         let line = super::agents::in_project(tx, &s.agent, &s.project)?.map(|a| a.line).unwrap_or_default();
         let next_words: Vec<String> = next.iter().map(|at| super::cron::when_words(*at)).collect();
-        Ok(json!({"next": next, "next_words": next_words, "words": s.words(), "prompt": crate::dispatcher::fire::prompt(&s, "<its new task>", &s.title, &s.body, false, false), "line": line,
+        use crate::dispatcher::fire::{prompt, Initiator};
+        Ok(json!({"next": next, "next_words": next_words, "words": s.words(), "prompt": prompt(&s, "<its new task>", &s.title, &s.body, false, Initiator::Due), "line": line,
             "place": schedules::place_words(tx, &s.project)?}))
     }).await)
 }

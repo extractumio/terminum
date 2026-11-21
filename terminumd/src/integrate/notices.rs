@@ -181,8 +181,8 @@ pub fn walk(store: &Store, home: &Path, trees: &[Tree], sessions: &[(PathBuf, St
                 let Some(files) = conflict(&p.repo, (&a.head, &a.files), (&b.head, &b.files), &target) else { continue };
                 let key = |other: &Head| json!(["task", other.task, files, other.queued.is_some(), p.s.target]).to_string();
                 told(&scope, json!([a.task, key(b)]), || {
-                    store.with(|tx| tell(tx, a, &key(b), &overlap_words(a, b, &files, &p.s.target), now)
-                        .and_then(|()| tell(tx, b, &key(a), &overlap_words(b, a, &files, &p.s.target), now)))
+                    store.with(|tx| tell(tx, a, &key(b), &overlap_words(a, b, &files), now)
+                        .and_then(|()| tell(tx, b, &key(a), &overlap_words(b, a, &files), now)))
                 })?;
                 found.entry(a.task.as_str()).or_default().push(b.id.clone());
                 found.entry(b.task.as_str()).or_default().push(a.id.clone());
@@ -191,8 +191,8 @@ pub fn walk(store: &Store, home: &Path, trees: &[Tree], sessions: &[(PathBuf, St
                 if let Some(files) = conflict(&p.repo, (&a.head, &a.files), (&l.head, &l.files), &target) {
                     let key = json!(["tree", l.dir, files, p.s.target]).to_string();
                     told(&scope, json!([a.task, key]), || {
-                        let words = format!("{}: its commits and {}, a tree with no task, change the same files: {}. Whichever lands second merges {t} first: once it lands, merge {t} before you queue.",
-                                            a.id, l.name, files.join(", "), t = p.s.target);
+                        let words = format!("{}: its commits and {}, a tree with no task, change the same files: {}. Do not wait for it: integrate when your work is ready; if it lands first, the queue returns yours with the files to merge.",
+                                            a.id, l.name, files.join(", "));
                         store.with(|tx| tell(tx, a, &key, &words, now))   // the tree gets nothing: there is no task to tell
                     })?;
                 }
@@ -302,13 +302,13 @@ fn tell(tx: &Transaction, a: &Head, key: &str, words: &str, now: i64) -> Result<
 }
 
 /// What `a`'s agent is told of `b`'s commits that do not merge with its own: working, or queued at its place.
-fn overlap_words(a: &Head, b: &Head, files: &[String], target: &str) -> String {
+fn overlap_words(a: &Head, b: &Head, files: &[String]) -> String {
     let files = files.join(", ");
     match &b.queued {
-        Some(place) => format!("{}: its commits and {}'s change the same files: {files}. {} is queued for integration ({place}). Go on; merge {target} once {} lands, before you queue.",
+        Some(place) => format!("{}: its commits and {}'s change the same files: {files}. {} is queued for integration ({place}). Do not wait for it: integrate when your work is ready; the queue holds yours until {}'s batch ends and returns it with the files to merge if it no longer merges.",
                                a.id, b.id, b.id, b.id),
-        None => format!("{}: its commits and {}'s (IN PROGRESS) change the same files: {files}. They cannot be in one batch. Agree with its session who goes first; the other merges {target} after the first lands, then queues.",
-                        a.id, b.id),
+        None => format!("{}: its commits and {}'s (IN PROGRESS) change the same files: {files}. They cannot be in one batch. Do not wait for {}: integrate as soon as your work is ready. The first queued lands first; the queue returns the other with the files to merge.",
+                        a.id, b.id, b.id),
     }
 }
 

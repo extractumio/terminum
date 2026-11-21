@@ -70,7 +70,7 @@ Open questions:
 | AC-58 | [SHOULD / P1] | The user renames a file or folder inline; open tabs follow the new path. |
 | AC-59 | [SHOULD / P1] | The user moves files and folders to the Trash after one confirmation. |
 | AC-60 | [SHOULD / P1] | The user copies absolute or relative paths, reveals in Finder, opens with the default app, inserts a path into the pane, and `cd`s the pane to a folder, without anything running until the user presses Return. |
-| AC-61 | [SHOULD / P1] | Changes made by other programs (create, delete, rename, edit) show in expanded folders and open tabs within 1 s, locally and on a host. |
+| AC-61 | [SHOULD / P1] | Changes made by other programs (create, delete, rename, edit) show in expanded folders and open tabs within 1 s, locally and on a host. A folder stays readable while writes continue. |
 | AC-62 | [SHOULD / P1] | Every tree and tab action works from the keyboard with IDE-standard shortcuts that never reach the terminal. |
 | AC-63 | [SHOULD / P1] | The user filters the tree by name, including inside a 500K-entry folder. |
 | AC-64 | [SHOULD / P1] | Images (png, jpg, gif, webp, svg), PDFs, videos and sounds preview in a tab; SVG scripts never run. |
@@ -355,6 +355,13 @@ Scenario: AC-61 edge — a failed watch, bursts and stale listings
   When "npm install" writes 40,000 files into an expanded "node_modules"
   Then the tree updates at most twice a second; an older listing page arriving after a fresh one cannot replace it, nor an older re-finding of an expanded folder's children collapse one a newer read found
   And of two re-checks of an open file, or a re-check sent before a save, the older answer arriving last is dropped: the tab keeps the newer content
+
+Scenario: AC-61 edge — changes during every folder scan
+  Given a watched folder has 150,000 entries and another program keeps renaming a child during every scan
+  When Files requests the first page
+  Then the server rereads at most once and returns rows from the last completed scan while renames continue
+  And the next request reads the folder again
+  But if the last scan finished between polls and the new read is still running after 15 s, the poll gets the completed rows
 
 Scenario: AC-61 failure — a lagged remote stream
   Given a host's event stream falls behind and reconnects
@@ -776,6 +783,7 @@ A tab's `view` is `auto`, `rendered` or `source`. `prefs.hidden` true shows dot 
 | Limit | Value | When exceeded |
 |---|---|---|
 | Page size | 500 entries | clamped |
+| Rereads after invalidation during a folder scan | 1 per read | Publish the last result. A later request starts a fresh scan and can use the completed result if its wait expires. |
 | Binary detection | NUL in the first 8 KB | binary tab |
 | Name length | 255 bytes | "Name is too long (max 255 bytes)" |
 | `/api/raw` | 64 MB, judged from the size first | 400 "Larger than 64 MB" |
@@ -818,7 +826,7 @@ Logs as `terminum.md` §9 Logging and observability; no metrics are exported. Ev
 - [x] AC-58 — `ui/test/e2e_panel.mjs`, `cargo test ops`
 - [x] AC-59 — `ui/test/e2e_panel.mjs`, `ui/test/e2e_panel_review.mjs`
 - [x] AC-60 — `ui/test/e2e_panel.mjs`, `cargo test termtext`
-- [x] AC-61 — `ui/test/e2e_panel.mjs`, `ui/test/stream.test.mjs`, `ui/test/viewer-save.test.mjs`, `ui/test/tree-load.test.mjs`, `cargo test watcher`
+- [x] AC-61 — `ui/test/e2e_panel.mjs`, `ui/test/stream.test.mjs`, `ui/test/viewer-save.test.mjs`, `ui/test/tree-load.test.mjs`, `cargo test watcher`, `cargo test listing` (publication and reread under sustained invalidation)
 - [x] AC-62 — `ui/test/e2e_panel.mjs`, `ui/test/tree-input.test.mjs`, `ui/test/tree-reveal.test.mjs`, `ui/test/e2e_panel_review.mjs`, `ui/test/e2e_review.mjs`
 - [x] AC-63 — `ui/test/e2e_panel.mjs`, `cargo test listing`
 - [x] AC-64 — `ui/test/e2e_panel.mjs`, `ui/test/e2e_panel_media.mjs`, `ui/test/pcm.test.mjs`, `web/test/e2e_liveview.mjs`, `cargo test midi`, `cargo test raw_body`

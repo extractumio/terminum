@@ -2,7 +2,9 @@
 // The board's folded cards and its rows on the columns' tracks against a real private terminumd
 // (terminum-kanban.md AC-159, terminum-dispatcher.md AC-138), and schedules (terminum-schedules.md AC-160 to
 // AC-164): `node web/test/e2e_live.mjs schedules chromium`.
-import { check, coversWindow, until } from "./check.mjs";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { check, coversWindow, slack, until } from "./check.mjs";
 import { boardKit, hold, intoStore, nap, ring, startOf, tabKey } from "./boardkit.mjs";
 
 export async function liveFolded(page, live) {
@@ -80,16 +82,23 @@ export async function liveFolded(page, live) {
   // a task card's play key, pressed, takes no focus: its RUN window closed or a key typed after lights no ring; Tab
   // still reaches it, ringed (docs/UI-GUIDELINES.md "Focus"); a phone's window has no Cancel, × closes it
   // (terminum.md AC-173)
-  const run = `${card(a)} .crun`;
-  for (const [how, close] of [...(phone ? [] : [["Cancel, pressed,", () => page.click('#runbox button[value="cancel"]')]]),
-    ["×, pressed,", () => page.click("#runbox .dhead .x")], ["Esc", () => page.keyboard.press("Escape")]]) {
+  const run = `${card(a)} .crun`, cancel = '#runbox button[value="cancel"]', cross = "#runbox .dhead .x";
+  const heading = `Run ${await page.textContent(`${card(a)} .cid`)}`;
+  for (const [how, close] of [...(phone ? [] : [["Cancel, pressed,", () => page.click(cancel)]]),
+    ["×, pressed,", () => page.click(cross)], ["Esc", () => page.keyboard.press("Escape")]]) {
     await page.click(run);
-    const opened = await until(() => page.isVisible("#runbox[open]"));
+    await page.waitForSelector("#runbox[open]", { timeout: slack(8000) });
+    const [title, cancelShown, crossShown] = await Promise.all([page.textContent("#runhead"), page.isVisible(cancel), page.isVisible(cross)]);
+    const controls = `${title}, Cancel ${cancelShown ? "visible" : "hidden"}, × ${crossShown ? "visible" : "hidden"}`;
+    if (title !== heading || cancelShown === phone || !crossShown) {
+      throw new Error(`AC-138 AC-173 expected ${heading} with × and ${phone ? "hidden" : "visible"} Cancel, got ${controls}`);
+    }
+    check("AC-138 AC-173 a press opens the task's RUN window with the viewport's close controls", true, controls);
     await close();
     const shut = await until(async () => !(await page.isVisible("#runbox[open]")));
     await page.keyboard.press("Shift+ArrowRight");   // a key after the press: Chrome lights a focused key's ring by it
     const r = await ring(page, run);
-    check(`AC-138 ${how} on RUN's window, a key typed after, leaves no focus ring on the card's play key`, opened && shut && !r.lit && !r.focused, JSON.stringify(r));
+    check(`AC-138 ${how} on RUN's window, a key typed after, leaves no focus ring on the card's play key`, shut && !r.lit && !r.focused, JSON.stringify(r));
   }
   await page.focus(card(a));
   await tabKey(page);
@@ -359,20 +368,34 @@ export async function liveSchedules(page, live) {
 
   // AC-164: a later firing closes this finished session before its result is read: with no other room, its own
   // schedule's idle session is closed for it (AC-161), so the agent runs one at once for this step
-  const nightOwl = { project, name: "Night owl", kind: "claude", command: `python3 -I ${FAKE} ${cli} --kind claude` };
+  const prompts = join(live.app, `prompts-${agent}`);
+  const nightOwl = { project, name: "Night owl", kind: "claude", command: `python3 -I ${FAKE} ${cli} --kind claude --prompts ${prompts}` };
   await j(`/api/task-agents/${agent}`, "PATCH", { ...nightOwl, at_once: 1 });
-  let next;
-  const reran = await until(async () => (next = await j(`/api/schedules/${s.id}/run`, "POST")).code === 200, 15000);
-  check("AC-164 a later firing closes the finished session", reran && next.task !== task && await until(async () =>
+  await page.click(run);
+  await page.waitForSelector("#confirmbox[open]");
+  const asked = page.waitForResponse(response => response.url().endsWith(`/api/schedules/${s.id}/run`) && response.request().method() === "POST");
+  await page.click("#confirmok");
+  const next = await (await asked).json();
+  check("AC-164 a later firing closes the finished session", next.task && next.task !== task && await until(async () =>
     (await j(`/api/tasks/${task}`)).history.some((e) => e.kind === "told" && e.text === `Session ended: closed for ${s.key}.`), 90000), JSON.stringify(next));
   await j(`/api/task-agents/${agent}`, "PATCH", { ...nightOwl, at_once: 2 });
+  let sent;
+  check("AC-182 the first line sent to the agent says a human started Run now", await until(() => {
+    if (!existsSync(prompts)) return false;
+    sent = readFileSync(prompts, "utf8").split("\n").find(line => line.startsWith(`Task ${next.task}:`));
+    return Boolean(sent);
+  }, 15000) && /, started now by a human\. +FINISHES the check of dependencies\./.test(sent), sent);
 
   // AC-164: the Scheduled page, this firing rather than the newer one
   const fire = `#fires .fire:has(.stbox[aria-label^="${task} · "])`;
   await page.goto(`${live.base}/scheduled/?schedule=${s.key}`);
   check("AC-164 the Scheduled page lists the firing with its task and status", await until(async () => /DONE/.test(await page.textContent("#fires").catch(() => "")) && (await page.textContent("#fires")).includes(task)), await page.textContent("#fires").catch(() => ""));
+  const runNow = `#fires .fire:has(.stbox[aria-label^="${next.task} · "])`;
+  await page.click(`${runNow} .fireline`);
+  const shown = (await page.locator(`${runNow} .fio`).first().textContent()).split("\n", 1)[0];
+  check("AC-182 the Scheduled page shows the human's Run now prompt", shown.endsWith(", started now by a human.") && sent?.startsWith(`${shown} `), shown);
   await page.click(`${fire} .fireline`);
-  check("AC-164 a row opens to what went in and came out", await until(async () => { const b = await page.textContent(`${fire} .firebody`); return b.includes("A scheduled run of terminum's schedule") && b.includes("All done."); }), await page.textContent(`${fire} .firebody`));
+  check("AC-164 a row opens to what went in and came out", await until(async () => { const b = await page.textContent(`${fire} .firebody`); return b.includes("A scheduled run of terminum's schedule") && b.includes("no human started this run or watches it now.") && b.includes("All done."); }), await page.textContent(`${fire} .firebody`));
   // a firing's In, its key pressed, covers the window; Esc gives it back (terminum.md AC-184)
   await page.click(`${fire} .firebody .xbox:has(> .fio) > .xkey`);
   const inFull = (await coversWindow(page, `${fire} .xbox.full`)).covers;

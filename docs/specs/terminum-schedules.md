@@ -405,6 +405,12 @@ Scenario: AC-182 happy path
   When the project's manager calls run_schedule {schedule: "SCH-1"} (terminum-agents.md AC-180)
   Then the same happens, and it is answered the task's ID and status
 
+Scenario: AC-182 happy path — the human's Run now prompt
+  Given SCH-1 "Nightly deps check", every day at 03:00, set by a human
+  When a human presses Run now and confirms
+  Then the agent's prompt and the firing's In on the Scheduled page begin "Task S_TERM-42: Nightly deps check. A run of terminum's schedule SCH-1 \"Nightly deps check\" (every day at 03:00), set by a human, started now by a human."
+  And the same words are used if the task waits for room before it starts
+
 Scenario: AC-182 edge — Cancel and Escape
   Given a schedule whose next firing is after the question is closed
   When the human presses Run now with the pointer and dismisses its question with Cancel or Escape
@@ -506,4 +512,4 @@ Single stage.
 - [x] AC-162 — `cargo test dispatcher::fire` (made IN PROGRESS as S_<ID>, refused in TODO, a manager's schedule and runs said to be the manager's, missed, a start that fails, an older task's idle session closed, a waiting task superseded by a firing and by Run now, a human's RUN wait kept), `web/test/e2e_liveschedules.mjs` (a firing on a fake agent)
 - [x] AC-163 — `web/test/e2e_liveschedules.mjs` (Chromium and WebKit, wide and phone; an isolated pool and no waiting lines, whole cards over empty columns and over 40 tasks that overflow their column; both card links on the first and following firing, with the preceding task kept)
 - [x] AC-164 — `cargo test dispatcher::fire` (agent results and failure reasons survive session bookkeeping), `web/test/e2e_liveschedules.mjs` (a real later firing closes the finished session before Out is read)
-- [x] AC-182 — `cargo test roles` (`ac182_…`), `cargo test dispatcher::fire` (`ac162_a_manager_s_…`: run_schedule's words), `scripts/e2e_roles.py`; the card's play key: `web/test/e2e_liveschedules.mjs`
+- [x] AC-182 — `cargo test roles` (`ac182_…`), `cargo test dispatcher::fire` (the human's Run now and the manager's run_schedule prompts), `scripts/e2e_roles.py`; the card's play key and the first line sent to the agent and shown on the Scheduled page: `web/test/e2e_liveschedules.mjs`

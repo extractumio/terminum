@@ -29,12 +29,13 @@ const NAME: &str = "terminum";
 pub(super) const MARKET: &str = "terminum-local";
 /// terminum's plugin as Claude Code names it.
 pub(super) const PLUGIN: &str = "terminum@terminum-local";
-const CLAUDE_EVENTS: [&str; 12] = ["SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "PostToolUseFailure", "PermissionRequest",
+const CLAUDE_EVENTS: [&str; 11] = ["SessionStart", "PreToolUse", "PostToolUse", "PostToolUseFailure", "PermissionRequest",
                                     "Notification", "Stop", "StopFailure", "SubagentStart", "SubagentStop", "SessionEnd"];
 const CODEX_EVENTS: [&str; 10] = ["SessionStart", "UserPromptSubmit", "PreToolUse", "PermissionRequest", "PostToolUse", "Stop",
                                    "SubagentStart", "SubagentStop", "SessionEnd", "Interrupt"];
 /// Codex's events whose matcher is a tool name (a regular expression: every tool).
 const CODEX_TOOL_EVENTS: [&str; 3] = ["PreToolUse", "PermissionRequest", "PostToolUse"];
+pub(super) const FOREGROUND_TIMEOUT: u64 = 2;
 
 pub fn label(agent: &str) -> &'static str {
     if agent == "claude" { "Claude Code" } else { "Codex" }
@@ -61,12 +62,20 @@ pub fn program(ctx: &Ctx) -> String {
 
 /// The command a hook runs: the stable `terminum` command, as a shell word.
 pub fn command(ctx: &Ctx, agent: &str) -> String {
-    format!("{} hook {agent}", super::commands::quote(&program(ctx)))
+    format!("{} hook {agent}", crate::termtext::posix_word(&program(ctx)))
 }
 
 /// One hook that runs `cmd` in the background, past terminumd's budget at most 3 s (Codex's most for its end events).
 fn entry(cmd: &str) -> Value {
     json!({"hooks": [{"type": "command", "command": cmd, "async": true, "timeout": 3}]})
+}
+
+pub(super) fn prompt_command(cmd: &str) -> String {
+    format!("{cmd} {}", super::hook::PROMPT_CONTEXT)
+}
+
+fn foreground(cmd: &str) -> Value {
+    json!({"hooks": [{"type": "command", "command": cmd, "timeout": FOREGROUND_TIMEOUT}]})
 }
 
 pub(super) fn marker(ctx: &Ctx) -> PathBuf {
@@ -99,15 +108,22 @@ fn has_ours(v: &Value, cmd: &str) -> bool {
 }
 
 fn is_ours(entry: &Value, cmd: &str) -> bool {
-    entry["hooks"].as_array().is_some_and(|hs| hs.iter().any(|h| h["command"] == cmd))
+    entry["hooks"].as_array().is_some_and(|hs| hs.iter().any(|h| owns_command(h, cmd)))
+}
+
+pub(super) fn owns_command(hook: &Value, cmd: &str) -> bool {
+    hook["command"].as_str().is_some_and(|s| {
+        s == cmd || s.strip_prefix(cmd).and_then(|rest| rest.strip_prefix(' ')) == Some(super::hook::PROMPT_CONTEXT)
+    })
 }
 
 /// The hooks file of Claude Code's plugin: every lifecycle event runs `cmd` in the background, and
-/// PostToolBatch in the foreground (2 s): the reminder's carrier, as an async hook's output never reaches the model (AC-97).
+/// the prompt and tool batch run in the foreground to carry context (AC-97, AC-209).
 pub fn claude_hooks(cmd: &str) -> Value {
     let mut hooks: serde_json::Map<String, Value> = CLAUDE_EVENTS.iter()
         .map(|e| (e.to_string(), json!([entry(cmd)]))).collect();
-    hooks.insert("PostToolBatch".into(), json!([{"hooks": [{"type": "command", "command": cmd, "timeout": 2}]}]));
+    hooks.insert("UserPromptSubmit".into(), json!([foreground(&prompt_command(cmd))]));
+    hooks.insert("PostToolBatch".into(), json!([foreground(cmd)]));
     json!({"description": "terminum: tells terminumd what this session does (terminum hooks)", "hooks": hooks})
 }
 
@@ -123,7 +139,6 @@ pub fn codex_add(text: Option<&str>, cmd: &str) -> Result<Value, String> {
     if v["hooks"].is_null() {
         v["hooks"] = json!({});
     }
-    super::agentrefresh::codex_sync_end(&mut v, cmd);
     let hooks = v["hooks"].as_object_mut().expect("an object");
     for e in CODEX_EVENTS {
         let list = hooks.entry(e).or_insert_with(|| json!([]));
@@ -133,12 +148,10 @@ pub fn codex_add(text: Option<&str>, cmd: &str) -> Result<Value, String> {
             if CODEX_TOOL_EVENTS.contains(&e) {
                 ours["matcher"] = json!(".*");
             }
-            if e == "SessionEnd" {
-                ours["hooks"][0].as_object_mut().map(|h| h.remove("async"));
-            }
             l.push(ours);
         }
     }
+    super::agentrefresh::codex_sync_hooks(&mut v, cmd);
     Ok(v)
 }
 
@@ -254,10 +267,11 @@ pub(super) fn install_codex(ctx: &Ctx) -> Result<(), String> {
         let json = serde_json::to_string_pretty(&v).map_err(|e| e.to_string())? + "\n";
         replace_checked(&path, text.as_deref(), &json)?;
         let mut old = text.as_deref().and_then(|t| serde_json::from_str::<Value>(t).ok()).unwrap_or_default();
-        if super::agentrefresh::codex_sync_end(&mut old, &command(ctx, "codex")) {
-            ctx.say(super::agentrefresh::CODEX_RETRUST);
-        } else {
+        let changed = super::agentrefresh::codex_sync_hooks(&mut old, &command(ctx, "codex"));
+        if changed.is_empty() {
             ctx.say(format!("Codex: terminum's hooks are in {}. Codex runs a hook only once you trust it: open /hooks in Codex and trust terminum's.", ctx.shown(&path)));
+        } else {
+            changed.into_iter().for_each(|line| ctx.say(line));
         }
     }
     if toml.as_deref() == Some(new_toml.as_str()) {

@@ -140,7 +140,9 @@ fn ac122_queued_answer_keeps_its_draft_last_and_respects_the_prepared_cutoff() {
         ops::questions(tx, &agent, &task.id, "Which version?", 10)?;
         let draft = ops::comment(tx, HUMAN, &task.id, "The queued draft", 10)?;
         ops::comment(tx, HUMAN, &task.id, "An answer saved during the wait", 10)?;
-        let saved = super::saved(tx, tasks, super::before_draft(tx)?, &[draft], true)?;
+        let drafts = super::legacy_drafts(tx, tasks, "The queued draft", 10)?;
+        assert_eq!(drafts, [draft]);
+        let saved = super::saved(tx, tasks, &drafts, true)?;
         let words = saved.words(&task.id, "Human", Some("The queued draft"))?;
         assert!(words.contains("answered your questions"), "{words}");
         assert!(words.find("An early note").unwrap() < words.find("An answer saved during the wait").unwrap(), "{words}");
@@ -149,14 +151,14 @@ fn ac122_queued_answer_keeps_its_draft_last_and_respects_the_prepared_cutoff() {
         let like = Run { project: task.project.clone(), agent_id: "test-agent".into(), kind: "claude".into(), ..Default::default() };
         let run = runs::add(tx, &like, std::slice::from_ref(&task.key), Default::default(), 10)?;
         super::stage(tx, &run, &cutoff)?;
-        let before_delivery = super::saved(tx, tasks, super::before_draft(tx)?, &[], false)?;
+        let before_delivery = super::saved(tx, tasks, &[], false)?;
         assert_eq!(before_delivery.comments.len(), 3, "the pending run has not received any comments");
         ops::comment(tx, HUMAN, &task.id, "Saved after preparation", 10)?;
         super::delivered(tx, &run)?;
-        let next = super::saved(tx, tasks, super::before_draft(tx)?, &[], false)?;
+        let next = super::saved(tx, tasks, &[], false)?;
         assert_eq!(next.comments, ["Saved after preparation"]);
         ops::comment(tx, HUMAN, &task.id, "Unsafe \u{001b} comment", 10)?;
-        assert_eq!(super::saved(tx, tasks, super::before_draft(tx)?, &[], false).err().as_deref(), Some(super::BAD_COMMENT));
+        assert_eq!(super::saved(tx, tasks, &[], false).err().as_deref(), Some(super::BAD_COMMENT));
         Ok(())
     }).unwrap();
 }

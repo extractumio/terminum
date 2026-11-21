@@ -263,12 +263,12 @@ PROGRESS, WAIT FOR HUMAN, FAILED or DONE.
 - **Keys**: Save keeps your comment. When Run continues a task, it sends your saved comments since
   the previous Run, followed by the comment in the field. Run from scratch is on the
   Status line.
-- **Comments reach the working agent**: a comment you save, or one another session's agent adds
-  (the project's manager's too), reaches the agent of the task's open session at its next tool
-  call, through its hooks: a short notice with the task's ID and who wrote it, never the
-  comment's words, which it reads with `get_task`. Nothing is typed: an idle agent hears it at its
-  next turn, and Run has it act now. Each comment says "told the session", "the session hears of
-  it at its next tool call" or "not told the session" (the history line says why). A session's
+- **Comment notices** reach the open session's agent through its hooks. The next prompt or tool
+  call carries the task ID and who wrote the comment. The agent reads the comment in `get_task`.
+  With older hooks, the notice waits for a tool call. Restart Claude Code or Codex to load updated
+  hooks, and trust the changed UserPromptSubmit hook in Codex's `/hooks`. Run has the agent act now.
+  Each comment says "told the session", "waiting to tell the session" or "not told the session"
+  (the history line says why). A session's
   own agent hears nothing of its own comments.
 - **A fresh start** (the first Run, Run from scratch, a manager's `run_task`) carries the humans'
   and the project's manager's comments in its words; agents' comments only by a count, to read
@@ -301,6 +301,11 @@ A task moves only by running.
 - **A question** comes with `ask_human` (why you are needed, the recommended answers, the whole
   issue): the task waits in WAIT FOR HUMAN and its session closes. Answer in a comment and press
   Run: the same conversation goes on (on another agent of its kind, if dropped there).
+- **A wait for another task** comes with `wait_for_task` (a prerequisite whose change it needs;
+  work that only overlaps another task's just integrates): the task joins that task's Blocked by,
+  waits in TODO ("waits for TERM-9") and its session closes; once TERM-9 is DONE Dispatcher goes on
+  with it in the same conversation, no one asked. Only a task it waited for that ends FAILED or
+  archived comes to you.
 - **The result** comes in fixed sections (Outcome, Done, Checked, Not done, Needs a human, New
   tasks, Tasks changed, Issues and discoveries, Further recommendations), in the project's
   "Language of agents' writing on the board" (empty: English), also used for its tasks and
@@ -322,7 +327,7 @@ A task moves only by running.
 ### Agents on the board
 
 - **Tools**: `list_tasks`, `get_task`, `create_task`, `link_task`, `take_task`, `move_task`,
-  `update_task`, `ask_human`, `add_comment`, `attach_file`, `get_file`, `finish_task`, on every
+  `update_task`, `ask_human`, `wait_for_task`, `add_comment`, `attach_file`, `get_file`, `finish_task`, on every
   task of their project, except one a human's RUN holds in another session, until that session
   closes.
 - **`create_task`** follows the project's template (its window: Template for agents' tasks).

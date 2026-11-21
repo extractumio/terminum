@@ -496,7 +496,7 @@ Scenario: AC-104 happy path — targeted checks green, the tree lands
   When the agent runs make land SLUG=fix-paste from the primary checkout
   Then the branch is merged with origin/main in the tree
   And the targeted checks do not run again, origin/main having changed none of the files the tree changed
-  And on the merged result scripts/check_changed.py --land runs the smoke set: the security scan, terminumd's debug build, cargo test of the critical modules, scripts/e2e_core.py (terminum's own tmux), scripts/e2e_attach.py (the user's own tmux), and the real page in Chromium at one size (signing in, the list, a pane drawn, typing, Files), with no timed check
+  And on the merged result scripts/check_changed.py --land runs the smoke set: the security scan, terminumd's debug build, cargo test of the critical modules, scripts/e2e_core.py (terminum's own tmux), scripts/e2e_attach.py (the user's own tmux), and the real page in Chromium at one size (signing in, the list, a pane drawn, typing, Files, and Dispatcher's request for a result, terminum-dispatcher.md AC-123), with no timed check
   And on green it is pushed to origin main, never forced
   And the primary checkout is fast-forwarded to it, the tree is deleted by scripts/delete_worktree.sh, and it prints "landed 4f2a91c07 on origin/main"
 
@@ -528,7 +528,13 @@ Scenario: AC-104 edge — builds leave room for others
   And a step that builds or tests terminumd with cargo (the debug build, clippy, cargo test) of a tree at work, and a landing's install, runs holding one of the machine's heavy-build slots: the cores' count / 8, at least 1, or TM_HEAVY_SLOTS
   And the smoke set of the landing in the turn holds a slot of its own, so the queue of landings never waits behind trees at work
   And a step that finds every slot held says once "slot: cargo waits for one of 2 heavy-build slots: two cargo, three debug-build" and starts when one is free; a slot is freed with its holder, however it ends
-  And scripts/worktree.py add gives a new tree copy-on-write clones of the primary checkout's debug and release dependencies' builds, so its first build compiles terminumd alone
+  And scripts/worktree.py add gives a new tree copy-on-write clones of the primary checkout's idle debug and release profiles' dependency builds, so its first build compiles terminumd alone when dependencies match
+
+Scenario: AC-104 edge — worktree linking overlaps a primary build
+  Given a fresh Verify or Check tree and a Cargo build writing the primary checkout's release profile
+  When `python3 scripts/worktree.py link .` runs in the fresh tree
+  Then it reports that Cargo will build release in the tree and clones dependency builds from the idle debug profile where the disk permits
+  And each clone holds Cargo's locks on its source profile until copying ends
 
 Scenario: AC-104 happy path — script modules run in a small process pool
   Given the scripts' unit-test modules under scripts/tests
@@ -1208,6 +1214,7 @@ Scenario: AC-206 happy path — over it, the objects no build uses go first
 
 Scenario: AC-206 edge — still over after that
   Given the target still over its bound once those objects went
+  And the primary checkout's debug and release profiles are idle
   Then `cargo clean` empties it and the dependencies' builds are cloned from the primary checkout again, as a new tree gets them, so only terminumd's own build is cold
   And the log's line ends "still over: cargo clean; cloned terminumd/target/{release,debug} (their dependencies' builds; terminumd itself rebuilds)"
 
@@ -1420,7 +1427,7 @@ All cases are shipped; nothing is staged.
 - [x] AC-17 — `cargo test update::`; `web/test/e2e_tmux.mjs`
 - [x] AC-96 — `scripts/e2e_lastlines.py`; `cargo test lastlines` (a failed write tried again); `web/test/e2e_lastlines.mjs`
 - [x] AC-102 — `scripts/check_step.py` guards each step of `scripts/check_all.py` and `scripts/check_changed.py`; `scripts/tests/test_check_step.py`; `scripts/tests/test_check_cancel.py` (outer cancellation and guard recovery); `scripts/tests/test_child_status.py` (macOS non-reaping wait without the Python wrapper); `scripts/tests/test_process_ownership.py` (metadata only, directory boundaries and query failures on both platforms); `scripts/tests/test_leftovers.py`; `cargo test cli::tests::the_fake_terminumd_ends_when_its_home_goes`; `scripts/tests/test_testrun.py` (`WithItsFolder`)
-- [x] AC-104 — `scripts/tests/test_land.py`, `scripts/tests/test_land_install.py`, `scripts/tests/test_land_said.py`, `scripts/tests/test_heavy_slots.py`, `scripts/tests/test_test_scripts.py`, `scripts/tests/test_live_slots.py`, `scripts/tests/test_check_live_slots.py`, `scripts/tests/test_check_changed.py`, `scripts/tests/test_package.py`, `ui/test/build-sync.test.mjs`, `scripts/tests/test_release_turn.py`, `scripts/tests/test_release.py`, `scripts/tests/test_ci_mac.py`, `scripts/tests/test_ci_mac_node.py`, `scripts/tests/test_check_docker.py`, `scripts/tests/test_worktree_fresh.py`
+- [x] AC-104 — `scripts/tests/test_land.py`, `scripts/tests/test_land_install.py`, `scripts/tests/test_land_said.py`, `scripts/tests/test_heavy_slots.py`, `scripts/tests/test_test_scripts.py`, `scripts/tests/test_live_slots.py`, `scripts/tests/test_check_live_slots.py`, `scripts/tests/test_check_changed.py`, `scripts/tests/test_package.py`, `ui/test/build-sync.test.mjs`, `scripts/tests/test_release_turn.py`, `scripts/tests/test_release.py`, `scripts/tests/test_ci_mac.py`, `scripts/tests/test_ci_mac_node.py`, `scripts/tests/test_check_docker.py`, `scripts/tests/test_worktree_fresh.py`, `scripts/tests/test_worktree.py` (link skips a locked source profile)
 - [x] AC-146 — `scripts/tests/test_load_gate.py`, `scripts/tests/test_release_turn.py`, `scripts/tests/test_check_changed.py`, `scripts/tests/test_check_live_slots.py`, `scripts/tests/test_access.py`, `scripts/e2e_access.py`
 - [ ] AC-200 — `scripts/tests/test_release_turn.py`, `scripts/tests/test_release_tree.py`, `scripts/tests/test_land_stages.py`, `scripts/tests/test_release.py`
 - [ ] AC-201 — `scripts/tests/test_check_all.py`, `scripts/tests/test_gate_retry.py`, `scripts/tests/test_gate_record.py`, `scripts/tests/test_e2e_ws.py`

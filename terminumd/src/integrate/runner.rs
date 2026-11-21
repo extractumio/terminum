@@ -23,7 +23,7 @@ pub trait Runner: Send + Sync {
 
 /// `export K='v'; …; line`: the variables before the human's line, which runs as typed.
 pub fn with_vars(line: &str, vars: &[(&str, String)]) -> String {
-    let mut out: String = vars.iter().map(|(k, v)| format!("export {k}={}; ", crate::cli::commands::quote(v))).collect();
+    let mut out: String = vars.iter().map(|(k, v)| format!("export {k}={}; ", crate::termtext::posix_word(v))).collect();
     out.push_str(line);
     out
 }

@@ -127,6 +127,16 @@ pub fn keep_human_comment(tx: &Transaction, id: &str, text: &str, files: &[Strin
     Ok((event, true))
 }
 
+/// Keep the field of a grouped human Run on another task, tied to its original event for retries.
+pub(crate) fn copy_run_draft(tx: &Transaction, task: &str, text: &str, original: &str, at: i64) -> Result<String, String> {
+    comment_with(tx, super::store::HUMAN, task, text, Some(&json!({"run_draft": original})), at)
+}
+
+pub(crate) fn run_draft_copy(tx: &Transaction, task: &str, original: &str) -> Result<Option<String>, String> {
+    tx.query_row("SELECT id FROM events WHERE task = ?1 AND json_extract(data, '$.run_draft') = ?2",
+        (task, original), |r| r.get(0)).optional().map_err(sql)
+}
+
 /// The humans' comments since the agent's last questions, oldest first: their answers (AC-157); none asked: none.
 pub fn answers(tx: &Transaction, id: &str) -> Result<Option<Vec<String>>, String> {
     let key = key_of(tx, id)?;

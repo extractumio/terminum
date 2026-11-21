@@ -30,6 +30,8 @@ pub struct Wait {
     pub pos: i64,
     /// its task is a schedule's: it stands ahead of every wait that is not (terminum-schedules.md AC-161)
     pub scheduled: bool,
+    /// the store keys of the tasks that must be DONE before it goes on (AC-210); none for a wait for room alone
+    pub after: Vec<String>,
 }
 
 /// Whether the task of wait `w` is a schedule's.
@@ -42,17 +44,28 @@ const SCHEDULED: &str = scheduled!();
 pub(crate) const ORDER: &str = concat!("NOT ", scheduled!(), ", w.pos, w.rowid");
 
 fn select() -> String {
-    format!("SELECT w.task, w.agent_id, w.project, w.status, w.body, w.at, w.pos, {SCHEDULED} FROM run_waits w")
+    format!("SELECT w.task, w.agent_id, w.project, w.status, w.body, w.at, w.pos, {SCHEDULED}, w.after FROM run_waits w")
 }
 
 fn of_row(r: &rusqlite::Row) -> rusqlite::Result<Wait> {
-    let body: String = r.get(4)?;
-    Ok(Wait { task: r.get(0)?, agent: r.get(1)?, project: r.get(2)?, status: r.get(3)?, body: serde_json::from_str(&body).unwrap_or(Value::Null), at: r.get(5)?, pos: r.get(6)?, scheduled: r.get(7)? })
+    let (body, after): (String, Option<String>) = (r.get(4)?, r.get(8)?);
+    let after = after.and_then(|a| serde_json::from_str(&a).ok()).unwrap_or_default();
+    Ok(Wait { task: r.get(0)?, agent: r.get(1)?, project: r.get(2)?, status: r.get(3)?, body: serde_json::from_str(&body).unwrap_or(Value::Null), at: r.get(5)?, pos: r.get(6)?, scheduled: r.get(7)?, after })
 }
 
 /// Every wait, in the line's order.
 pub fn all(tx: &Transaction) -> Result<Vec<Wait>, String> {
     rows(tx, &format!("{} ORDER BY {ORDER}", select()), [], of_row)
+}
+
+/// Every wait for room alone (AC-158), in the line's order: one for other tasks holds no place (AC-210).
+fn for_room(tx: &Transaction) -> Result<Vec<Wait>, String> {
+    rows(tx, &format!("{} WHERE w.after IS NULL ORDER BY {ORDER}", select()), [], of_row)
+}
+
+/// The wait of `task` is for room alone from now on: the tasks it waited for are DONE (AC-210).
+fn room_alone(tx: &Transaction, task: &str) -> Result<(), String> {
+    tx.execute("UPDATE run_waits SET after = NULL WHERE task = ?1", [task]).map(drop).map_err(sql)
 }
 
 /// The waits of `agent`, in the line's order.
@@ -71,6 +84,11 @@ pub fn of_schedule(tx: &Transaction, schedule: &str) -> Result<Vec<Wait>, String
 }
 
 impl Wait {
+    /// It waits for other tasks to be DONE (AC-210): it holds no place in a queue until they are.
+    pub fn for_tasks(&self) -> bool {
+        !self.after.is_empty()
+    }
+
     /// A human pressed it: no manager, no Dispatcher (terminum-dispatcher.md AC-183); a newer run of its schedule never
     /// supersedes it (terminum-schedules.md AC-162).
     pub fn by_human(&self) -> bool {
@@ -85,9 +103,15 @@ impl Wait {
 
 /// `task` waits for `agent` with `body`; one waiting already keeps its place in the line.
 pub fn add(tx: &Transaction, task: &ops::Task, agent: &str, project: &str, body: &Value, at: i64) -> Result<(), String> {
-    tx.execute("INSERT INTO run_waits (task, agent_id, project, status, body, at, pos) VALUES (?1, ?2, ?3, ?4, ?5, ?6, (SELECT COALESCE(MAX(pos), 0) + 1 FROM run_waits))
-                ON CONFLICT (task) DO UPDATE SET agent_id = excluded.agent_id, project = excluded.project, status = excluded.status, body = excluded.body",
-               (&task.key, agent, project, &task.status, body.to_string(), at)).map(drop).map_err(sql)
+    add_after(tx, task, agent, project, body, &[], at)
+}
+
+/// `task` waits for `agent` with `body` once the tasks of store keys `after` are DONE (AC-210), none: for room alone.
+pub fn add_after(tx: &Transaction, task: &ops::Task, agent: &str, project: &str, body: &Value, after: &[String], at: i64) -> Result<(), String> {
+    let after = (!after.is_empty()).then(|| serde_json::json!(after).to_string());
+    tx.execute("INSERT INTO run_waits (task, agent_id, project, status, body, at, pos, after) VALUES (?1, ?2, ?3, ?4, ?5, ?6, (SELECT COALESCE(MAX(pos), 0) + 1 FROM run_waits), ?7)
+                ON CONFLICT (task) DO UPDATE SET agent_id = excluded.agent_id, project = excluded.project, status = excluded.status, body = excluded.body, after = excluded.after",
+               (&task.key, agent, project, &task.status, body.to_string(), at, after)).map(drop).map_err(sql)
 }
 
 /// The wait of `task` takes place `pos` in the line: a newer run of a schedule takes its superseded wait's (AC-162).
@@ -118,7 +142,7 @@ pub fn ahead(tx: &Transaction, agent: &str, project: &str, task: &str) -> Result
         None => (tx.query_row("SELECT EXISTS (SELECT 1 FROM schedule_fires WHERE task = ?1)", [task], |r| r.get(0)).map_err(sql)?, i64::MAX),
     };
     let slots = pool::Slots::read(tx)?;
-    for w in all(tx)?.into_iter().filter(|w| w.task != task && w.before(scheduled, place) && (w.agent == agent || w.project == project)) {
+    for w in for_room(tx)?.into_iter().filter(|w| w.task != task && w.before(scheduled, place) && (w.agent == agent || w.project == project)) {
         if let Some(a) = agents::in_project(tx, &w.agent, &w.project)? && slots.check_for(tx, &a, &w.project, Some(&w.task), None)?.is_none() {
             return Ok(Some(ops::get(tx, &w.task)?.id));
         }
@@ -129,7 +153,7 @@ pub fn ahead(tx: &Transaction, agent: &str, project: &str, task: &str) -> Result
 /// Each agent's queue for the board (AC-169): its waiting presses in the line's order, each with its task's title and
 /// project, and the other tasks of a press for several (`also`).
 pub fn queues(tx: &Transaction) -> Result<BTreeMap<String, Vec<Value>>, String> {
-    let found: Vec<(String, Value)> = rows(tx, &format!("SELECT w.agent_id, t.slug, t.shown, w.project, COALESCE(json_extract(w.body, '$.also'), '[]') FROM run_waits w JOIN tasks t ON t.id = w.task ORDER BY {ORDER}"), [],
+    let found: Vec<(String, Value)> = rows(tx, &format!("SELECT w.agent_id, t.slug, t.shown, w.project, COALESCE(json_extract(w.body, '$.also'), '[]') FROM run_waits w JOIN tasks t ON t.id = w.task WHERE w.after IS NULL ORDER BY {ORDER}"), [],
         |r| Ok((r.get(0)?, serde_json::json!({"id": r.get::<_, String>(1)?, "title": r.get::<_, String>(2)?, "project": r.get::<_, String>(3)?,
                                                "also": serde_json::from_str::<Value>(&r.get::<_, String>(4)?).unwrap_or_default()}))))?;
     let mut out: BTreeMap<String, Vec<Value>> = BTreeMap::new();
@@ -171,7 +195,7 @@ pub fn reorder(tx: &Transaction, agent: &str, ids: &[String]) -> Result<(), Stri
 pub fn take_out(tx: &Transaction, id: &str) -> Result<(), String> {
     let key = ops::key_of(tx, id)?;
     let Some(w) = of_task(tx, &key)? else { return Err(format!("{id} waits no more: it started, or its wait was called off.")) };
-    let name = agents::name_of(tx, &w.agent)?;
+    let name = if w.for_tasks() { "the tasks it waited for".to_string() } else { agents::name_of(tx, &w.agent)? };
     call_off(tx, &key, &format!("The human called off its wait for {name}."))
 }
 
@@ -185,29 +209,52 @@ pub fn words(agent: &str, why: &str) -> String {
     format!("It waits for {agent}: {why} It starts when there is room.")
 }
 
-/// Each queued press and every task it carries (AC-169), shared by cards and human-attention counts.
-const MEMBERS: &str = "WITH chosen AS (SELECT w.task press, w.task FROM run_waits w
-        UNION SELECT w.task, t.id FROM run_waits w, json_each(w.body, '$.also') j JOIN tasks t ON t.slug = j.value)
-    SELECT press, task FROM chosen
-    UNION SELECT c.press, t.id FROM chosen c JOIN tasks t ON t.parent = c.task
-        WHERE t.status <> 'DONE' AND t.archived_at IS NULL
-            AND NOT EXISTS (SELECT 1 FROM schedule_fires f JOIN schedules s ON s.id = f.schedule WHERE f.task = c.task)";
+/// Each wait and the tasks it carries (AC-158, AC-169). A wait for other tasks (AC-210) holds its primary alone.
+fn members() -> String {
+    let also = crate::tasks::slugs::key_named("j.value");
+    format!("WITH chosen AS (SELECT w.task press, w.task, w.after IS NULL for_room FROM run_waits w
+            UNION SELECT w.task, t.id, 1 FROM run_waits w JOIN tasks p ON p.id = w.task
+                JOIN json_each(w.body, '$.also') j
+                JOIN tasks t ON t.id = {also} AND t.project = p.project
+                WHERE w.after IS NULL AND j.type = 'text')
+        SELECT press, task FROM chosen
+        UNION SELECT c.press, t.id FROM chosen c JOIN tasks t ON t.parent = c.task
+            WHERE c.for_room AND t.status <> 'DONE' AND t.archived_at IS NULL
+                AND NOT EXISTS (SELECT 1 FROM schedule_fires f JOIN schedules s ON s.id = f.schedule WHERE f.task = c.task)")
+}
+
+/// The wait that protects this task from an agent's move or result. Prefer its own wait, then the first press carrying it.
+pub(crate) fn protecting(tx: &Transaction, task: &str) -> Result<Option<Wait>, String> {
+    let query = format!("{} WHERE w.task IN (SELECT press FROM ({}) WHERE task = ?1)
+        ORDER BY {} LIMIT 1", select(), members(), member_order("?1"));
+    tx.prepare_cached(&query).map_err(sql)?.query_row([task], of_row).optional().map_err(sql)
+}
+
+fn member_order(task: &str) -> String {
+    format!("w.task <> {task}, {ORDER}")
+}
 
 /// Whether task alias `t` belongs to a queued press, including its other tasks (AC-169).
 /// Aliases are source literals, never a request's words.
 pub fn queued_task(t: &str) -> String {
-    format!("{t}.id IN (SELECT task FROM ({MEMBERS}))")
+    format!("{t}.id IN (SELECT task FROM ({}))", members())
 }
 
-/// A card's wait: its agent, place in that agent's whole queue and the primary task that can cancel the press.
+/// A card's wait: its agent, place in that agent's whole queue and the primary task that can cancel the press; or the
+/// tasks it waits for (AC-210), which hold no place in a queue.
 pub struct CardWait {
     pub agent: String,
     pub position: i64,
     pub task: String,
+    pub after: Vec<String>,
 }
 
 impl CardWait {
     pub fn mark(&self, card: &mut Value) {
+        if !self.after.is_empty() {
+            card["waits_for"] = serde_json::json!(self.after);
+            return;
+        }
         card["waits"] = serde_json::json!(self.agent);
         card["wait_position"] = serde_json::json!(self.position);
         card["wait_task"] = serde_json::json!(self.task);
@@ -217,13 +264,22 @@ impl CardWait {
 /// Queue positions are ranked before card filters and pagination, shared by every task of one press (AC-169).
 pub fn on_cards(tx: &Transaction, keys: &[&str]) -> Result<HashMap<String, CardWait>, String> {
     if keys.is_empty() { return Ok(HashMap::new()); }
-    Ok(rows(tx, &format!("WITH queue AS (
+    let found = rows(tx, &format!("WITH queue AS (
             SELECT w.task, t.slug, COALESCE(a.name, w.agent_id) agent,
-                row_number() OVER (PARTITION BY w.agent_id ORDER BY {ORDER}) position
-            FROM run_waits w JOIN tasks t ON t.id = w.task LEFT JOIN agents a ON a.id = w.agent_id), members AS ({MEMBERS})
-        SELECT m.task, q.agent, q.position, q.slug FROM members m JOIN queue q ON q.task = m.press
-        WHERE m.task IN (SELECT value FROM json_each(?1))"),
-        [super::runs::listed_keys(keys)], |r| Ok((r.get(0)?, CardWait { agent: r.get(1)?, position: r.get(2)?, task: r.get(3)? })))?.into_iter().collect())
+                row_number() OVER (PARTITION BY w.agent_id, w.after IS NULL ORDER BY {ORDER}) position,
+                CASE WHEN w.after IS NULL THEN '[]' ELSE (SELECT json_group_array(x.slug) FROM json_each(w.after) j JOIN tasks x ON x.id = j.value) END after
+            FROM run_waits w JOIN tasks t ON t.id = w.task LEFT JOIN agents a ON a.id = w.agent_id), members AS ({})
+        SELECT m.task, q.agent, q.position, q.slug, q.after FROM members m
+        JOIN queue q ON q.task = m.press JOIN run_waits w ON w.task = m.press
+        WHERE m.task IN (SELECT value FROM json_each(?1))
+        ORDER BY {}", members(), member_order("m.task")),
+        [super::runs::listed_keys(keys)], |r| Ok((r.get(0)?, CardWait { agent: r.get(1)?, position: r.get(2)?, task: r.get(3)?,
+            after: serde_json::from_str(&r.get::<_, String>(4)?).unwrap_or_default() })))?;
+    let mut marks = HashMap::new();
+    for (key, mark) in found {
+        marks.entry(key).or_insert(mark);
+    }
+    Ok(marks)
 }
 
 /// What a wait comes to now: pressed again, still waiting, or called off with these words; the task's ID. Or, a
@@ -233,6 +289,8 @@ enum Due {
     Press(String, Value),
     Stays,
     Off(String, String),
+    /// a task it waited for will not be DONE: a human decides, these words asking (AC-210)
+    Asks(String, String),
     Close(String, String),
 }
 
@@ -246,6 +304,14 @@ fn due(tx: &Transaction, w: &Wait) -> Result<Due, String> {
     }
     if t.status != w.status {
         return Ok(Due::Off(t.id, format!("Its wait for {} was called off: it moved to {}.", a.name, t.status)));
+    }
+    if w.for_tasks() {
+        match super::after::blockers(tx, &t.id, &w.after)? {
+            super::after::Blockers::Open => return Ok(Due::Stays),
+            super::after::Blockers::Gone(words) => return Ok(Due::Asks(t.id, words)),
+            // all DONE: from now on it is a wait for room alone, in its place in the line
+            super::after::Blockers::Done => room_alone(tx, &w.task)?,
+        }
     }
     if pool::check_for(tx, &a, &w.project, Some(&w.task), None)?.is_some() {
         // a schedule's task closes its own schedule's idle session for room, as its firing does (terminum-schedules.md AC-161)
@@ -266,8 +332,10 @@ pub async fn start_due(app: &Shared) {
         let wanted = w.clone();
         let decided = super::store(app, move |tx| {
             let d = due(tx, &wanted)?;
-            if let Due::Off(_, words) = &d {
-                call_off(tx, &wanted.task, words)?;
+            match &d {
+                Due::Off(_, words) => call_off(tx, &wanted.task, words)?,
+                Due::Asks(id, words) => super::after::ask(tx, &wanted.task, id, words)?,
+                _ => {}
             }
             Ok(d)
         }).await;
@@ -279,7 +347,7 @@ pub async fn start_due(app: &Shared) {
                 }
                 id
             }
-            Ok(Due::Off(id, _)) => id,
+            Ok(Due::Off(id, _) | Due::Asks(id, _)) => id,
             // closed, the next walk presses it, first of the line; one that stays open was said on its task
             Ok(Due::Close(run, key)) => {
                 let _ = super::api::close_idle(app, &run, &key).await;

@@ -316,6 +316,11 @@ pub fn live(tx: &Transaction) -> Result<Vec<Run>, String> {
     rows(tx, &format!("{SELECT} WHERE {STILL} ORDER BY r.rowid"), [], of_row)
 }
 
+/// Members of a mixed run that can be moved by the silent-subagent watchdog (AC-127).
+pub(super) fn in_progress(tx: &Transaction, run: &str) -> Result<Vec<String>, String> {
+    rows(tx, "SELECT t.slug FROM run_tasks m JOIN tasks t ON t.id = m.task WHERE m.run = ?1 AND t.status = 'IN PROGRESS' ORDER BY t.number", [run], |r| r.get(0))
+}
+
 /// The run in pane `key`, if any.
 pub fn in_pane(tx: &Transaction, key: &str) -> Result<Option<Run>, String> {
     one(tx, &format!("r.pane_key = ?1 AND {STILL} ORDER BY r.rowid DESC LIMIT 1"), key).optional().map_err(sql)
@@ -342,6 +347,12 @@ pub(super) fn by_id(tx: &Transaction, id: &str) -> Result<Run, String> {
 }
 
 /// The run as it stands, changed by `f` and written.
+/// Who started run `id` and how (AC-183): a going on that is no one's new press keeps them.
+pub(super) fn started(tx: &Transaction, id: &str) -> Result<(How, String), String> {
+    let (by, how): (Option<String>, Option<String>) = tx.query_row("SELECT started_by, started_how FROM runs WHERE id = ?1", [id], |x| Ok((x.get(0)?, x.get(1)?))).map_err(crate::tasks::ops::sql)?;
+    Ok((how.as_deref().and_then(How::of_word).unwrap_or_default(), by.unwrap_or_else(|| crate::tasks::store::HUMAN.to_string())))
+}
+
 pub fn change(tx: &Transaction, id: &str, f: impl FnOnce(&mut Run)) -> Result<Run, String> {
     let mut r = by_id(tx, id)?;
     f(&mut r);

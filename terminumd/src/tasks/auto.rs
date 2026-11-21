@@ -79,6 +79,12 @@ pub fn setting(tx: &Transaction, project: &str) -> Result<Setting, String> {
     tx.query_row(&format!("{SETTING} WHERE id = ?1"), [project], setting_of).map(|(_, s)| s).map_err(sql)
 }
 
+/// Whether a new run picked by priority and saved order can still start for this project.
+pub fn order_on(tx: &Transaction, project: &str) -> Result<bool, String> {
+    tx.query_row("SELECT EXISTS(SELECT 1 FROM projects WHERE id = ?1 AND auto_on = 1 AND auto_mode = ?2)",
+        (project, ORDER), |r| r.get(0)).map_err(sql)
+}
+
 impl Setting {
     /// What the board shows of it: its switch, the picking agent, the default one, what it takes, why it is off.
     pub fn shown(&self) -> Value {
@@ -133,9 +139,9 @@ pub fn all(tx: &Transaction) -> Result<Vec<(String, Setting)>, String> {
 /// The projects a walk looks at: those it is on for, and those with a round still on the board, which leaves it when
 /// it ended though the setting is off. The one whose last round is oldest first: projects that share agents take
 /// the free slots in turn.
-pub fn due_for(tx: &Transaction) -> Result<Vec<(String, Setting)>, String> {
-    rows(tx, &format!("{SETTING} WHERE auto_on = 1 OR EXISTS (SELECT 1 FROM auto_rounds r JOIN tasks t ON t.id = r.task WHERE r.project = projects.id AND t.archived_at IS NULL)
-        ORDER BY COALESCE((SELECT max(r.at) FROM auto_rounds r WHERE r.project = projects.id), 0), place"), [], setting_of)
+pub fn due_for(tx: &Transaction) -> Result<Vec<String>, String> {
+    rows(tx, "SELECT id FROM projects WHERE auto_on = 1 OR EXISTS (SELECT 1 FROM auto_rounds r JOIN tasks t ON t.id = r.task WHERE r.project = projects.id AND t.archived_at IS NULL)
+        ORDER BY COALESCE((SELECT max(r.at) FROM auto_rounds r WHERE r.project = projects.id), 0), place", [], |r| r.get(0))
 }
 
 /// An agent of `project`'s pool, or none.

@@ -115,7 +115,7 @@ fn a_line_too_long_is_dropped_to_its_newline() {
 /// terminum-dispatcher.md AC-137: the pool is not an agent's to read or change.
 #[test]
 fn ac137_no_tool_reaches_a_projects_agents() {
-    assert_eq!(tool_names(), ["update_session_plan", "get_session_plan", "list_tasks", "get_task", "create_task", "update_task", "link_task", "take_task", "move_task", "ask_human", "add_comment", "attach_file", "get_file", "finish_task", "integrate", "withdraw_integration", "integration_status", "integration_return", "integration_recheck", "integration_add_fix", "dispatch_task"],
+    assert_eq!(tool_names(), ["update_session_plan", "get_session_plan", "list_tasks", "get_task", "create_task", "update_task", "link_task", "take_task", "move_task", "ask_human", "wait_for_task", "add_comment", "attach_file", "get_file", "finish_task", "integrate", "withdraw_integration", "integration_status", "integration_return", "integration_recheck", "integration_add_fix", "dispatch_task"],
                "the last starts a task on an agent of the pool (AC-170), and changes none; the integration queue's reach no agent");
 }
 
@@ -188,6 +188,7 @@ fn outside_a_pane_each_tool_says_so_and_nothing_is_sent() {
                 "move_task" => json!({"id": "T-1", "to": "DONE"}),
                 "add_comment" => json!({"id": "T-1", "text": "a"}),
                 "ask_human" => json!({"id": "T-1", "questions": "a"}),
+                "wait_for_task" => json!({"id": "T-1", "on": "T-2", "why": "a"}),
                 "finish_task" | "integrate" => json!({"id": "T-1", "result": "a"}),
                 "attach_file" => json!({"task": "T-1", "name": "a", "text": "b"}),
                 "get_file" => json!({"task": "T-1", "name": "a"}),

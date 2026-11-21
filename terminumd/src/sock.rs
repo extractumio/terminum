@@ -193,8 +193,12 @@ pub async fn hook_on(app: Shared, server: Option<std::sync::Arc<crate::tmux::ser
     crate::tasks::tell::session_ended(&app, &key, &ev);
     crate::dispatcher::heard(&app, &key, &ev, whose);
     let remind = crate::plans::hook_event(&app, &key, &ev, whose);
-    // what waits for it rides the same event
-    let (context, lines) = if crate::plans::carries_context(&ev, whose) { crate::tasks::tell::with_lines(&app, &key, remind) } else { (remind, None) };
+    let prompt_notice = prompt.is_some() && crate::tmux::hookstate::prompt_context(&ev);
+    let (context, lines) = if prompt_notice || crate::plans::carries_context(&ev, whose) {
+        crate::tasks::tell::with_lines(&app, &key, remind, prompt_notice)
+    } else {
+        (remind, None)
+    };
     // a task's session: its hook sums the tokens, after this turn's end has gone (AC-129)
     let tokens = matches!(ev["event"].as_str(), Some("Stop" | "SessionEnd")) && (app.dispatcher.has_run(&key) || app.task_marks.has_session(&key));
     // the agent's command line, read by its hook once a session, at its start or a prompt (AC-153)

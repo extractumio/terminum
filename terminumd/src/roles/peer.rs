@@ -4,8 +4,6 @@
 //! from outside every pane. A tripwire for an agent that names another pane, no boundary: a process of the same
 //! user can leave its ancestry, or reach what the tools reach without them.
 
-use std::process::Command;
-
 use axum::extract::connect_info::Connected;
 use axum::serve::IncomingStream;
 use tokio::net::UnixListener;
@@ -27,9 +25,7 @@ impl Connected<IncomingStream<'_, UnixListener>> for Peer {
 
 /// Whether `pid` or an ancestor of it is one of `roots`, by one `ps` of every process's parent (off the async workers).
 fn descends(pid: u32, roots: &[u32]) -> bool {
-    let Ok(out) = Command::new("ps").args(["-A", "-o", "pid=,ppid="]).output() else { return false };
-    let parents: std::collections::HashMap<u32, u32> = String::from_utf8_lossy(&out.stdout).lines()
-        .filter_map(|l| { let mut f = l.split_whitespace(); Some((f.next()?.parse().ok()?, f.next()?.parse().ok()?)) }).collect();
+    let Some(parents) = crate::process::parents() else { return false };
     let mut at = pid;
     for _ in 0..UP {
         if roots.contains(&at) {

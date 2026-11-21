@@ -14,6 +14,7 @@ mod agent;
 mod agentapi;
 mod agentmarks;
 mod agentnotice;
+mod agentopts;
 mod api_fs;
 mod app;
 mod attach;
@@ -48,6 +49,7 @@ mod release;
 mod panel_api;
 mod panel_ws;
 mod plans;
+mod process;
 mod raw_body;
 mod remote;
 mod lastlines;
@@ -205,7 +207,8 @@ fn main() {
     let args: Vec<String> = std::env::args().collect();
     // a coding agent's hook (AC-39): nothing else first, it runs on every tool call
     if args.get(1).map(String::as_str) == Some("hook") {
-        std::process::exit(cli::hook::main(args.get(2).map_or("", String::as_str)));
+        std::process::exit(cli::hook::main(args.get(2).map_or("", String::as_str),
+            args.get(3).is_some_and(|arg| arg == cli::hook::PROMPT_CONTEXT)));
     }
     // Claude Code's status line (AC-168): as often as it redraws, nothing else first
     if args.get(1).map(String::as_str) == Some("statusline") {

@@ -9,11 +9,11 @@ use std::path::Path;
 
 use rusqlite::{OptionalExtension, Transaction};
 
-use super::engine::{place, target_now, worktree};
+use super::engine::{how_ended, place, target_now, worktree, Place};
 use super::git;
 use super::retry_notes;
 use super::runner::Runner;
-use super::stages::{how, line_of, vars, Run};
+use super::stages::{line_of, vars, Run};
 use super::store::{self as bs, Left};
 use crate::tasks::integration;
 use crate::tasks::integration_queue::and_list;
@@ -22,8 +22,28 @@ use crate::tasks::store::{Store, DISPATCHER};
 
 /// A queued entry held for a red target.
 pub const HELD: &str = "red target";
+/// The SQL of task alias `$t` still open, neither DONE nor FAILED nor archived; one definition for the red target's readers.
+macro_rules! open {
+    ($t:literal) => { concat!($t, ".status NOT IN ('DONE', 'FAILED') AND ", $t, ".archived_at IS NULL") };
+}
+pub(super) use open;
+
 /// A Bug task `b` still open: what its held tasks wait for.
-const OPEN: &str = "b.status NOT IN ('DONE', 'FAILED') AND b.archived_at IS NULL";
+const OPEN: &str = open!("b");
+
+/// Verify alone started in `tree` on `target`, told to run `steps` of `of`'s plan again (land_stages.py verify);
+/// the tree moved there first. Its pane, or why it did not start.
+pub(super) fn launch(p: &Place, runner: &dyn Runner, tree: &Path, (id, number): (&str, i64), target: &str, steps: &str, of: &str) -> Result<String, String> {
+    let line = line_of("", &p.s.verify);
+    if line.is_empty() {
+        return Err("Verify is empty".to_string());
+    }
+    worktree(p, tree.to_path_buf(), target).map_err(|e| format!("its tree could not be moved there: {e}"))?;
+    retry_notes::clear(tree)?;
+    let mut vars = vars(id, target, p, tree);
+    vars.extend([("TM_INTEGRATION_RERUN", steps.to_string()), ("TM_INTEGRATION_RERUN_OF", of.to_string())]);
+    runner.start(&format!("verify-{number}"), tree, &line, &vars)
+}
 
 /// The task's failed steps started on the target, its Verify alone with what to run again; whether it runs. One
 /// that cannot start, whatever stops it, returns the task, red, as one that cannot tell. `red_attempt`: the task's own run.
@@ -31,13 +51,8 @@ pub(super) fn start(store: &Store, runner: &dyn Runner, home: &Path, run: &Run, 
     let tree = integration::verify_tree_in(home, &run.project, run.number);
     let attempt = crate::auth::crypto::random_hex::<16>();
     let started = place(store, home, &run.project).and_then(|p| {
-        let line = line_of("", &p.s.verify);
-        let target = if line.is_empty() { Err("Verify is empty".to_string()) } else { target_now(&p) }?;
-        worktree(&p, tree.clone(), &target).map_err(|e| format!("its tree could not be moved there: {e}"))?;
-        retry_notes::clear(&tree)?;
-        let mut vars = vars(&run.id, &target, &p, &tree);
-        vars.extend([("TM_INTEGRATION_RERUN", steps.join(" ")), ("TM_INTEGRATION_RERUN_OF", run.commit.clone())]);
-        runner.start(&format!("verify-{}", run.number), &tree, &line, &vars).map(|pane| (p.s.target.clone(), target, pane))
+        let target = if line_of("", &p.s.verify).is_empty() { Err("Verify is empty".to_string()) } else { target_now(&p) }?;
+        launch(&p, runner, &tree, (&run.id, run.number), &target, &steps.join(" "), &run.commit).map(|pane| (p.s.target.clone(), target, pane))
     });
     let own = integration::verify_log_in(home, &run.project, run.number, red_attempt);
     let (id, failed) = (&run.id, and_list(&steps.iter().map(String::as_str).collect::<Vec<_>>()));
@@ -79,7 +94,7 @@ pub(super) fn judge(tx: &Transaction, home: &Path, run: &Run, target: &str, code
                     and_list(&passed), if passed.len() == 1 { "it" } else { "them" })
         }
         None => {
-            let how = if code == 1 { "ended with status 1 naming no failed step".to_string() } else { how(code, run.minutes) };
+            let how = if code == 1 { "ended with status 1 naming no failed step".to_string() } else { how_ended(code, run.minutes) };
             format!("{id} returned: red check: its Verify failed {failed}; its run on {at} {how}, so whether the target is red too is not known. {logs}")
         }
     };
@@ -104,6 +119,8 @@ fn hold(tx: &Transaction, run: &Run, name: &str, target: &str, failed: &str, log
             let bug = ops::create(tx, DISPATCHER, NewTask { title: format!("Bug: {name} is red: {failed} fail at {short}"), text, project: Some(run.project.clone()),
                 severity: Some("P1".into()), ..Default::default() }, now)?;
             tx.execute("UPDATE project_integration SET red_bug = ?2 WHERE project = ?1", (&run.project, &bug.key)).map_err(sql)?;
+            // terminumd runs the steps on the target again by itself, so a red of a busy moment holds no one (red_recheck)
+            super::red_recheck::keep(tx, &run.project, &run.steps, &run.commit, now)?;
             bug.id
         }
     };

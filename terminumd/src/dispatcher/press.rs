@@ -4,11 +4,12 @@
 
 use serde::Deserialize;
 
+use super::fire::{self, Initiator};
 use super::runs::{self, Phase, Run};
 use crate::tmux::PaneState;
 use crate::tasks::{closeout, files};
 use crate::tasks::ops::{self, Task};
-use crate::tasks::closeout::{questions_shape, removable};
+use crate::tasks::closeout::{questions_shape, removable, waits_for_task};
 use crate::tasks::schedules::Schedule;
 
 /// How an agent of a run gives its result (terminum-agents.md AC-155: not listed, run through execute_tool).
@@ -19,7 +20,9 @@ pub(super) const ASK_HUMAN: &str = "execute_tool(\"ask_human\", {id, questions})
 
 /// How an agent asks a human while it works (AC-157): in words, never in its window; a task held by a cause that can be
 /// removed waits for a human the same way, never DONE or FAILED.
-pub(crate) const ASK: &str = concat!("If you need a human's decision, call execute_tool(\"ask_human\", {id, questions}), then end your turn: the session closes, and the human's RUN brings the answers back into this conversation. Do not wait for an answer in this window. Write the questions ", questions_shape!(), ". If the task cannot be finished now for a cause that can be removed ", removable!(), ", ask the same way: Details say what is done and committed and what holds it, Recommended what unblocks it (such as \"RUN it again once TERM-9 is DONE\"): it waits for a human; give it no result by execute_tool(\"finish_task\", {id, result}). FAILED is only for a task that cannot be done at all, with a comment saying why.");
+pub(crate) const ASK: &str = concat!("If you need a human's decision, call execute_tool(\"ask_human\", {id, questions}), then end your turn: the session closes, and the human's RUN brings the answers back into this conversation. Do not wait for an answer in this window. Write the questions ", questions_shape!(), ". If the task cannot be finished now for a cause that can be removed ", removable!(), ", ask the same way: Details say what is done and committed and what holds it, Recommended what unblocks it (such as \"grant access to the staging database\"): it waits for a human; give it no result by execute_tool(\"finish_task\", {id, result}). ", waits_for_task!(), " FAILED is only for a task that cannot be done at all, with a comment saying why.");
+
+pub(super) const COMMENT_SEPARATOR: &str = "\n\n---\n\n";
 
 /// What RUN types when it goes on (AC-122, AC-157): after the agent asked, the humans' answers since, else the
 /// press's comment; never "read the comments": an agent's comment there would stand as an instruction.
@@ -28,8 +31,8 @@ pub(super) fn again_words(id: &str, who: &str, comment: Option<&str>, answers: O
     match (answers, comment) {
         (Some([]), _) => format!("{id}: {boss} ran it again with no answer: decide with what you have, or ask again by {ASK_HUMAN}."),
         // a manager's press brings the humans' answers and its own message: neither is said to be the other's
-        (Some(said), _) if manager => format!("{id}: answers to your questions follow, the humans' comments and the project's manager's message. Go on with the task, taking them into account.\n\n{}", said.join("\n\n---\n\n")),
-        (Some(said), _) => format!("{id}: {boss} answered your questions in the comments below. Go on with the task, taking them into account.\n\n{}", said.join("\n\n---\n\n")),
+        (Some(said), _) if manager => format!("{id}: answers to your questions follow, the humans' comments and the project's manager's message. Go on with the task, taking them into account.\n\n{}", said.join(COMMENT_SEPARATOR)),
+        (Some(said), _) => format!("{id}: {boss} answered your questions in the comments below. Go on with the task, taking them into account.\n\n{}", said.join(COMMENT_SEPARATOR)),
         (None, Some(c)) => format!("{id}: a new comment by {who} follows. Go on with the task, taking it into account.\n\n{c}"),
         (None, None) => format!("{id}: {boss} ran it again: go on with the task."),
     }
@@ -101,6 +104,8 @@ pub(super) struct Facts {
     files: Vec<String>,
     /// the first task's schedule, and whether a run of it was before
     schedule: Option<(Schedule, bool)>,
+    /// who requested a schedule's launch when the press came from the schedule itself
+    pub(super) schedule_initiator: Initiator,
     language: String,
     /// the first task is Auto-Dispatcher's round (AC-170)
     round: Option<crate::tasks::auto::Round>,
@@ -147,6 +152,7 @@ pub(super) fn facts(tx: &rusqlite::Transaction, tasks: &[Task], message: Option<
         texts: tasks.iter().map(|t| ops::text_of(tx, &t.id)).collect::<Result<_, _>>()?,
         files: files::of_task(tx, &t.id)?.into_iter().map(|f| f.name).collect(),
         schedule,
+        schedule_initiator: Initiator::Due,
         language: closeout::language_of(tx, &t.project)?,
         round: crate::tasks::auto::round_of(tx, &t.key)?,
         auto: false,
@@ -167,7 +173,7 @@ impl Facts {
         if let Some(words) = &self.integration {
             let mut parts = vec![words.clone()];
             parts.extend(said);
-            parts.extend(self.answers.iter().map(|(_, a)| format!("The human answered your questions, in the comments below. Take them into account.\n\n{}", a.join("\n\n---\n\n"))));
+            parts.extend(self.answers.iter().map(|(_, a)| format!("The human answered your questions, in the comments below. Take them into account.\n\n{}", a.join(COMMENT_SEPARATOR))));
             return parts.join("\n\n");
         }
         // Auto-Dispatcher's own words (AC-170): a round's, and those of a task a round started
@@ -182,7 +188,7 @@ impl Facts {
             parts.extend(said);
             parts.extend(several_words(&self.tasks, &self.language));
             for (id, said) in &self.answers {
-                parts.push(format!("{id}: the human answered the questions asked on it before, in the comments below. Take them into account.\n\n{}", said.join("\n\n---\n\n")));
+                parts.push(format!("{id}: the human answered the questions asked on it before, in the comments below. Take them into account.\n\n{}", said.join(COMMENT_SEPARATOR)));
             }
             parts.extend(self.comments.iter().flat_map(|(id, c)| super::carry::words(id, c)));
             return parts.join("\n\n");
@@ -190,7 +196,8 @@ impl Facts {
         // a schedule's task goes as the schedule's run, in its own words (terminum-schedules.md AC-162)
         if let Some((s, again)) = &self.schedule {
             // its first run is the firing's or a Run now's; any after is a RUN, the human's or the manager's
-            let run = super::fire::prompt(s, &t.id, &t.title, body, *again, self.manager);
+            let by = if self.manager { Initiator::Manager } else if *again { Initiator::Human } else { self.schedule_initiator };
+            let run = fire::prompt(s, &t.id, &t.title, body, *again, by);
             return match said { Some(m) => format!("{m}\n\n{run}"), None => run };
         }
         let mut parts = vec![format!("{who} ran task {}: {}", t.id, t.title)];

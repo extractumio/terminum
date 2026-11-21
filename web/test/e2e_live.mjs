@@ -61,7 +61,7 @@ import { SORT_ALONE, BOARD_ALONE, TASKS_ALONE, WAITING_ALONE, POOL_ALONE, SMOKE,
   AUTO_ALONE, SCHEDULES_ALONE, NOTES_ALONE, ICONS_ALONE, REQUESTS_ALONE, SIGNIN_ALONE, QUEUE_ALONE, INTEGRATION_SLOTS_ALONE, MAIN_ALONE, BACKGROUND_ALONE, ARCHIVED_ALONE, FOLDS_ALONE, FOLDED_ALONE, SPLIT_ALONE, RAISE_ALONE } from "./e2e_livemodes.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
-const SHORT = SMOKE || LINKS_ALONE || FOLDS_ALONE || FOLDED_ALONE;   // a few checks, the wide size only
+const SHORT = SMOKE || LINKS_ALONE || FOLDS_ALONE;   // a few checks, the wide size only
 const BIN = process.env.TERMINUMD_BIN ?? path.join(ROOT, "terminumd/target/debug/terminumd");
 // this run's: checks in several worktrees at once never meet, and purge() ends only this run's server
 const PORT = await freePort(), SOCKET = own("tm-test-live");
@@ -155,7 +155,6 @@ const screenText = (page) => page.evaluate(() => document.getElementById("screen
 
 async function wide(browser, name) {
   runningIn(`${name} 1400×900`);
-  // reduced motion: a window stands where a press lands (e2e_motion.mjs checks the motion)
   const errors = [];
   let ctx, page, widths;
   /** A page in a context of its own, signed in with the last one's storage, the last one closed: with one
@@ -276,6 +275,7 @@ async function wide(browser, name) {
     await frame.waitForFunction(() => document.body.innerText.includes("alpha.txt"), null, { timeout: 8000 });
   });
   if (LINKS_ALONE) await liveLinks(page, { work: WORK });
+  if (SMOKE) await liveDispatcher(page, { ...live, requestOnly: true });
   if (SHORT) return ctx;
   const files = await (await page.$("#files")).contentFrame();
   await files.click("#new-file");
@@ -434,10 +434,10 @@ async function phone(browser, name) {
     await ctx.close();
     return;
   }
-  if (SCHEDULES_ALONE || QUEUE_ALONE) {
+  if (FOLDED_ALONE || SCHEDULES_ALONE || QUEUE_ALONE) {
     const shots = { ...live, shots: process.env.TM_TEST_SHOTS && `${process.env.TM_TEST_SHOTS}/phone-` };
-    if (!QUEUE_ALONE) await liveFolded(page, shots);
-    await liveQueue(page, shots);
+    if (FOLDED_ALONE || !QUEUE_ALONE) await liveFolded(page, shots);
+    if (!FOLDED_ALONE) await liveQueue(page, shots);
     await ctx.close();
     return;
   }

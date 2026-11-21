@@ -120,7 +120,7 @@ pub async fn in_pane(app: &Shared, key: &str, from_pane: bool, other: bool, tool
 }
 
 /// What a token cannot call: tools of a session's own.
-const NEEDS_A_SESSION: [&str; 3] = ["take_task", "ask_human", "dispatch_task"];
+const NEEDS_A_SESSION: [&str; 4] = ["take_task", "ask_human", "wait_for_task", "dispatch_task"];
 
 /// A call by a token (AC-181): a probe says its role; a task tool runs in its project; a manager's tool when its
 /// role is manager. The plan and what is a session's own are refused.

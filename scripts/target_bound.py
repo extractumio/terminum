@@ -5,23 +5,22 @@
 (scripts/release_tree.py). Under the bound nothing is removed. Over it, each executable's object files that its
 debug map no longer names go first: on macOS every incremental build of a crate leaves its previous objects in
 `deps` beside the new ones, and nothing else removes them. The executables, libraries, fingerprints and the
-incremental cache stay, so the next build stays incremental. Still over, `cargo clean`. A build folder cargo
-holds one of its locks on (LOCKS: a build runs there) is left as it is, and no `cargo clean` runs then.
+incremental cache stay, so the next build stays incremental. Still over, `cargo clean`. If Cargo holds a profile
+lock, that profile is left in place and `cargo clean` is skipped.
 
   target_bound.py [<tree>]   keeps the bound of <tree>'s terminumd/target (default: this checkout)"""
 from contextlib import ExitStack
-import fcntl
 import os
 from pathlib import Path
 import subprocess
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import cargo_profile  # noqa: E402
 import worktree  # noqa: E402
 
 BOUND_GIB = 20   # a warm tree's own build is about 10 GiB: debug, release and the agents' targets
 GIB = 1 << 30
-LOCKS = (".cargo-lock", ".cargo-build-lock", ".cargo-artifact-lock")   # cargo holds each while it builds there
 
 
 def gib(size):
@@ -36,23 +35,7 @@ def disk_use(path):
 
 def build_folders(target):
     """cargo's build folders: target/<profile> and target/<triple>/<profile>, each with its lock."""
-    return sorted(lock.parent for pattern in ("*/", "*/*/") for lock in target.glob(pattern + LOCKS[0]))
-
-
-def held_by_us(folder, stack):
-    """Whether we hold `folder`'s build locks now (until `stack` closes), as cargo's own build does, so a build that
-    starts meanwhile waits for us: False while a build holds one."""
-    for name in LOCKS:
-        if not (folder / name).exists():
-            continue
-        fd = os.open(folder / name, os.O_RDWR)
-        try:
-            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
-            os.close(fd)
-            return False
-        stack.callback(os.close, fd)   # closing it frees the lock
-    return True
+    return sorted(lock.parent for pattern in ("*/", "*/*/") for lock in target.glob(pattern + cargo_profile.LEGACY_LOCK))
 
 
 def debug_map(executable, run=subprocess.run):
@@ -84,8 +67,7 @@ def stale_objects(deps, names_of=debug_map):
 
 
 def cargo_clean(tree):
-    """`cargo clean`, then the dependencies' builds cloned from the primary checkout again, as a new tree gets them
-    (worktree.py link): only terminumd's own build is cold. What it did, in words."""
+    """`cargo clean`, then clone the primary's idle profiles as a new tree does. What it did, in words."""
     subprocess.run(["cargo", "clean", "--quiet", "--manifest-path", str(Path(tree) / "terminumd" / "Cargo.toml")], check=True)
     return worktree.link_target(Path(tree).resolve(), worktree.primary_of(tree))
 
@@ -101,7 +83,7 @@ def bound(tree, limit=BOUND_GIB * GIB, say=print, clean=cargo_clean, names_of=de
     busy = []
     with ExitStack() as held:
         for folder in build_folders(target):
-            if not held_by_us(folder, held):
+            if not held.enter_context(cargo_profile.try_lock(folder)):
                 busy.append(folder.relative_to(target).as_posix())
             elif (folder / "deps").is_dir():
                 for path in stale_objects(folder / "deps", names_of):

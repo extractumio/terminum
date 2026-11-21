@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 use super::press::MOST_PROMPT;
 use super::runs::{self, Phase};
 use super::screen::Screen;
-use super::{api::has_stray, gate, start, store};
+use super::{gate::{self, has_stray}, start, store};
 use crate::app::Shared;
 use crate::tasks::files;
 

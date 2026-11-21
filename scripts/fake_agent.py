@@ -3,7 +3,8 @@
 """A coding agent as Dispatcher sees it, for web/test/e2e_livedispatcher.mjs: the measured input box of
 Claude Code or Codex (terminum-dispatcher.md AS-125), hooks by `terminum hook`, finish_task by `terminum
 mcp`; no model. What it does with a prompt is in the prompt's words:
-FINISHES, WORKS, SUBAGENT, TOKENS, ASKS, QUESTIONS (ask_human, then its turn ends), LIMIT, DIES, CLEAN, SILENT, STUCK (of a main
+FINISHES, WORKS, SUBAGENT (can accompany a wait), TOKENS, ASKS, QUESTIONS (ask_human),
+DEPENDENCY (wait_for_task on --wait-on), LIMIT, DIES, CLEAN, SILENT, STUCK (of a main
 task with its subtasks, terminum-dispatcher.md AC-185: the last subtask and the main task fail, the rest is finished); Auto-Dispatcher's
 round (terminum-dispatcher.md AC-170) starts its first candidates, one for each free slot, and finishes; a task a round started
 is worked on; any other stops at once. `--stubborn`: SIGTERM is ignored. `--start trust`: a question before its box; `--start
@@ -143,6 +144,11 @@ def main():
             if main:
                 tasks = re.findall(TASK_ID, main[2]) + [main[1]]
             round_of = re.search(rf"^\[terminum Auto-Dispatcher\] Task ({TASK_ID}):.*Free agent slots: (\d+)\. Candidates, this project's TODO tasks: ((?:{TASK_ID}(?:, )?)+)", prompt, re.S)
+            if "SUBAGENT" in prompt:
+                hook("SubagentStart", agent_id="sub-1", agent_type="reviewer")
+                if "QUESTIONS" in prompt or "DEPENDENCY" in prompt:
+                    typed = "draft during wait"
+                    box()
             if round_of:
                 for task in re.findall(TASK_ID, round_of[3])[:int(round_of[2])]:
                     tool("dispatch_task", {"id": task, "why": "RICE 3×2×1÷1 = 6: the first in line"})
@@ -160,8 +166,11 @@ def main():
                 hook("Stop", last_assistant_message="I asked.")
             elif "ASKS" in prompt:
                 hook("Notification", notification_type="permission_prompt", message="Approve Bash")
+            elif "DEPENDENCY" in prompt:
+                tool("wait_for_task", {"id": tasks[0], "on": opt("--wait-on", ""), "why": "The client needs the API."})
+                hook("Stop", last_assistant_message="I am waiting for the API.")
             elif "SUBAGENT" in prompt:
-                hook("SubagentStart", agent_id="sub-1", agent_type="reviewer")
+                pass
             elif "TOKENS" in prompt:
                 path = os.path.join(os.getcwd(), f"transcript-{os.getpid()}.jsonl")
                 with open(path, "w", encoding="utf8") as f:

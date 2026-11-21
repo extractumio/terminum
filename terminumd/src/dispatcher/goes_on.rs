@@ -20,18 +20,24 @@ use crate::tmux::Server;
 /// The conversation goes on in a new window (AC-122), on its agent's slot or waiting for one (AC-158), with every task
 /// of the press: a main task's subtasks go on with it (AC-185).
 pub(super) async fn resume(app: &Shared, r: Run, tasks: &[Task], again: Again, kept: Press) -> Result<Value, String> {
+    resume_with_slot(app, &r, tasks, again, kept, || {}).await
+}
+
+/// Runs `on_reserved` once the old run's slot is released and the new one reserved, before tmux I/O.
+pub(super) async fn resume_with_slot(app: &Shared, r: &Run, tasks: &[Task], again: Again, kept: Press, on_reserved: impl FnOnce()) -> Result<Value, String> {
     let t = &tasks[0];
-    let Ok(line) = start::resume_command(&r) else {
-        return could_not_continue(app, &r, "no conversation is known").await;
+    let Ok(line) = start::resume_command(r) else {
+        return could_not_continue(app, r, "no conversation is known").await;
     };
     if r.host.is_none() && !folder_there(&r.folder).await {
-        return could_not_continue(app, &r, "its first folder is gone").await;
+        return could_not_continue(app, r, "its first folder is gone").await;
     }
     let server = server_of(app, r.host.as_deref())?;
-    let new = match next_run(app, &r, tasks, again, kept).await? {
+    let new = match next_run(app, r, tasks, again, kept).await? {
         Next::Run(new) => new,
         Next::Kept(kept) => return Ok(kept.answer(app, t)),
     };
+    on_reserved();
     let (project, ids) = (project_named(app, &t.project), tasks.iter().map(|t| t.id.clone()).collect::<Vec<_>>());
     start::open(app, start::Opening { server: &server, project: project.as_ref().map(|(i, n)| (i.as_str(), n.as_str())), folder: &r.folder, command: &line, run: &new, tasks: &ids, program: &r.kind, agent: &r.agent_id }).await?;
     start::watch(app, &new);

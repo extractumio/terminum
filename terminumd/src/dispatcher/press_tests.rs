@@ -2,7 +2,7 @@
 //! How a press goes on (AC-122, AC-138), and what goes with several tasks.
 
 use super::*;
-use crate::dispatcher::api::has_stray;
+use crate::dispatcher::gate::has_stray;
 use crate::tmux::PaneState;
 use crate::dispatcher::runs;
 use crate::tasks::agents::inline_words;
