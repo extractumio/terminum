@@ -1,32 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 //! AC-207: a shared Codex app-server is told apart, and under one no pane is taken from the environment.
+use std::process::Command;
+
 use serde_json::{json, Value};
 
 use super::super::mcp::{answer, Env, NOT_IN_PANE};
 use super::super::sockhttp::Down;
 use super::*;
-
-fn w(s: &str) -> Vec<&str> {
-    s.split(' ').collect()
-}
-
-#[test]
-fn ac207_a_listening_app_server_is_shared() {
-    for line in ["/Users/alex/.codex/packages/app-server-daemon/releases/0.171.0-aarch64-apple-darwin/bin/codex app-server --listen unix:// --analytics-default-enabled",
-                 "codex app-server --listen unix:///Users/alex/.codex/app.sock", "codex app-server --listen=ws://127.0.0.1:4500",
-                 "node /opt/homebrew/bin/codex app-server --listen unix://"] {
-        assert!(shared(&w(line)), "{line}");
-    }
-}
-
-#[test]
-fn ac207_a_stdio_app_server_or_another_codex_is_not_shared() {
-    for line in ["codex app-server", "codex app-server --listen stdio://", "codex app-server --stdio", "codex app-server --listen off",
-                 "codex app-server --listen", "codex --no-alt-screen", "codex app-server daemon pid-update-loop",
-                 "codex exec --listen unix:// fix", "claude app-server --listen unix://", "codex-helper app-server --listen unix://", ""] {
-        assert!(!shared(&w(line)), "{line}");
-    }
-}
+use crate::process::codex::under_shared;
 
 /// Run as the child of `ac207_a_shared_app_servers_child_takes_no_pane`: what `terminum mcp`,
 /// `terminum tool` and the hooks take from this environment.
@@ -64,9 +45,6 @@ fn ac207_a_shared_app_servers_child_takes_no_pane() {
 #[test]
 fn ac207_the_tests_ancestors_are_no_shared_app_server() {
     assert!(!under_shared(), "cargo's test runner");
-    let me = std::process::id();
-    assert_eq!(parent_of(me), Some(std::os::unix::process::parent_id()));
-    assert_eq!(parent_of(u32::MAX), None, "no such process");
 }
 
 fn no_call(_: &Value) -> Result<(u16, Option<Value>), Down> {
@@ -86,9 +64,9 @@ fn ac207_under_a_shared_app_server_the_session_is_told_why_it_has_no_tools() {
     let tools = asked(true, "tools/list", json!({}))["tools"].clone();
     assert_eq!(tools.as_array().map(Vec::len), Some(1), "{tools}");
     assert_eq!(tools[0]["name"], TOOL);
-    assert_eq!(tools[0]["description"], SAID);
+    assert_eq!(tools[0]["description"], said());
     let r = asked(true, "tools/call", json!({"name": TOOL, "arguments": {}}));
-    assert_eq!(r, json!({"content": [{"type": "text", "text": SAID}], "isError": false}));
+    assert_eq!(r, json!({"content": [{"type": "text", "text": said()}], "isError": false}));
 }
 
 #[test]
@@ -96,7 +74,7 @@ fn ac207_under_a_shared_app_server_terminums_tools_answer_why_and_forward_nothin
     for (name, args) in [("update_session_plan", json!({"items": [{"text": "a", "status": "pending"}]})),
                          ("search_tools", json!({"query": "a task"})), ("execute_tool", json!({"name": "list_tasks", "arguments": {}}))] {
         let r = asked(true, "tools/call", json!({"name": name, "arguments": args}));
-        assert_eq!(r, json!({"content": [{"type": "text", "text": SAID}], "isError": true}), "{name}");
+        assert_eq!(r, json!({"content": [{"type": "text", "text": said()}], "isError": true}), "{name}");
     }
 }
 
@@ -114,6 +92,6 @@ fn ac207_outside_a_pane_otherwise_the_session_still_pays_for_nothing() {
 #[test]
 fn ac207_the_words_name_the_cause_and_every_fix() {
     for part in ["app-server", "codex -c tui.alternate_screen=never", "TMUX_PANE", "--no-daemon", "codex features disable daemon_auto_start", "codex app-server daemon stop"] {
-        assert!(SAID.contains(part), "{part}");
+        assert!(said().contains(part), "{part}");
     }
 }

@@ -21,7 +21,7 @@ pub(super) const BUDGET: Duration = Duration::from_millis(150);
 /// Whether the pane in the environment is the agent's: not for Codex under a shared app-server
 /// (AC-207); asked only once there is an event to send.
 pub(super) fn takes_pane(agent: &str) -> bool {
-    agent != "codex" || !super::codexdaemon::under_shared()
+    agent != "codex" || !crate::process::codex::under_shared()
 }
 
 /// Runs the hook for `agent`; always 0 when an agent runs it. Run by a person (an unknown

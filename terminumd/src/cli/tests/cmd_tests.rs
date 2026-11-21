@@ -311,10 +311,10 @@ fn root_is_refused() {
 
 #[test]
 fn words_are_quoted_as_a_shell_reads_them() {
-    assert_eq!(commands::quote("alex@devbox.example"), "alex@devbox.example");
-    assert_eq!(commands::quote("it's"), "'it'\"'\"'s'");
-    assert_eq!(commands::quote(""), "''");
-    assert_eq!(commands::quote("a b"), "'a b'");
+    assert_eq!(crate::termtext::posix_word("alex@devbox.example"), "alex@devbox.example");
+    assert_eq!(crate::termtext::posix_word("it's"), "'it'\"'\"'s'");
+    assert_eq!(crate::termtext::posix_word(""), "''");
+    assert_eq!(crate::termtext::posix_word("a b"), "'a b'");
     assert_eq!(commands::uptime(59), "59s");
     assert_eq!(commands::uptime(90061), "1d 1h 1m");
 }
