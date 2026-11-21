@@ -1231,9 +1231,9 @@ Scenario: AC-149 happy path — a comment's label lines read as sections
   When the user reads that comment
   Then each line that starts with a short label (a capital, up to 4 words, then ":" and words; alone on its line, up to 6) starts a block of its own, never joined to the line or the list item before it
   And a label alone on its line is the heading of what follows, without its colon; a label before words is their lead, in the muted strong color
-  And Outcome's first word is a pill in its status's hue: ok and done the ok fill, attention and partly the waiting fill, failed the danger fill
+  And Outcome's first word is a status box as its column's: ok and done DONE's, attention and partly WAIT FOR HUMAN's, failed FAILED's
   And the comment's lines keep a readable measure (76 characters at most), its list items a little apart, in Chromium and WebKit, wide and on a phone, a dark and a light theme
-  But fenced code, indented lines and a sentence with a colon after its fifth word stay as written; raw HTML stays off, as in every task's Markdown
+  But fenced code, indented lines, an author's own bold and a sentence with a colon after its fifth word stay as written; a task's text keeps plain Markdown; raw HTML stays off
   And a line of history is one muted line between the cards: its time, then its words, its author named once; a screen quoted in it (between ``` lines) is shown as the terminal drew it, scrolling in a box of its own
   And a task opened is shown from its start
 

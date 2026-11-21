@@ -317,8 +317,7 @@ export async function download(id, name) {
 export async function renderInto(box, text, { comment = false } = {}) {
   box.textContent = text;
   try {
-    const r = await renderers();
-    box.innerHTML = comment ? r.commentMarkdownHtml(text) : r.taskMarkdownHtml(text);
+    box.innerHTML = (await renderers()).taskMarkdownHtml(text, comment);
   } catch { return; }
   for (const img of box.querySelectorAll("img[data-raw]")) {
     signin.blobUrl(img.dataset.raw).then((got) => {

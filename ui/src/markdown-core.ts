@@ -7,26 +7,23 @@ import MarkdownIt from "markdown-it";
 import taskLists from "markdown-it-task-lists";
 import footnote from "markdown-it-footnote";
 import { decodePath, hasScheme, resolvePath } from "./paths";
+import { saidLabels } from "./said";
 
 /** env: the folder relative links and images resolve against, and the URL of a local image
  *  ("" when it is not loaded: its alt text shows instead). */
 /** imagePath(path): the path a local image is filled from (api.ts hydrateRaw), "" for none. */
-export type MdEnv = { dir: string; imagePath: (path: string) => string };
+/** said: a task's comment, its label lines set apart (said.ts). */
+export type MdEnv = { dir: string; imagePath: (path: string) => string; said?: boolean };
 
-/** A renderer with the one configuration; a caller may add its own rules to its instance. */
-export function configuredMd(): MarkdownIt {
-  const md = new MarkdownIt({ html: false, linkify: true, typographer: true, breaks: false })
-    .use(taskLists, { enabled: false, label: true })
-    .use(footnote);
-  // Only these link schemes survive; everything else (javascript:, file:, data: for links) is dropped.
-  md.validateLink = (url) => /^(https?:|mailto:|#|\.{0,2}\/|[^:]*$)/i.test(url.trim());
-  md.renderer.rules.image = (tokens, idx, opts, e, self) => image(md, tokens, idx, opts, e, self);
-  md.renderer.rules.heading_open = headingOpen;
-  return md;
-}
+const md = new MarkdownIt({ html: false, linkify: true, typographer: true, breaks: false })
+  .use(taskLists, { enabled: false, label: true })
+  .use(footnote)
+  .use(saidLabels);
 
-type Rule = NonNullable<MarkdownIt["renderer"]["rules"]["image"]>;
-const image = (md: MarkdownIt, ...[tokens, idx, _opts, e]: Parameters<Rule>): string => {
+// Only these link schemes survive; everything else (javascript:, file:, data: for links) is dropped.
+md.validateLink = (url) => /^(https?:|mailto:|#|\.{0,2}\/|[^:]*$)/i.test(url.trim());
+
+md.renderer.rules.image = (tokens, idx, _opts, e) => {
   const env = e as MdEnv;
   const t = tokens[idx];
   const src = String(t.attrGet("src") ?? "");
@@ -40,12 +37,11 @@ const image = (md: MarkdownIt, ...[tokens, idx, _opts, e]: Parameters<Rule>): st
 };
 
 // heading anchors, so "#section" links work inside the document
-const headingOpen: Rule = (tokens, idx, opts, _env, self) => {
+md.renderer.rules.heading_open = (tokens, idx, opts, _env, self) => {
   const inline = tokens[idx + 1];
   const slug = inline?.content.toLowerCase().trim().replace(/[^\p{L}\p{N}\s-]/gu, "").replace(/\s/g, "-"); // GitHub-compatible slugs
   if (slug) tokens[idx].attrSet("id", slug);
   return self.renderToken(tokens, idx, opts);
 };
 
-const md = configuredMd();
 export const renderMd = (text: string, env: MdEnv): string => md.render(text, env);

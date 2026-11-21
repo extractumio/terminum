@@ -2,15 +2,14 @@
 // A comment as it reads (terminum-kanban.md AC-149, ui/src/said.ts) in a task's window against a fake terminumd, with
 // ui/dist's renderers as terminumd serves them: a scheduled run's result and an agent's questions written as label
 // lines read as sections (a label alone heads what follows, a label before words is their lead, never joined to the
-// line or list item before it), Outcome's word a pill in its status's hue, lines of a readable measure, in a dark and
+// line or list item before it), Outcome's word a status box in its status's hue, lines of a readable measure, in a dark and
 // a light theme. TM_TEST_SHOTS=<folder> keeps a screenshot of each.
 
 import fs from "node:fs";
 import path from "node:path";
 import { check, runningIn } from "./check.mjs";
-import { drawn, openPage, THEME, SIZES } from "./fake.mjs";
+import { drawn, openPage, serveRenderers, THEME, SIZES } from "./fake.mjs";
 
-const DIST = path.join(import.meta.dirname, "../../ui/dist");
 const AT = 1794435120;
 const RESULT = `Outcome: attention
 Summary: In the last 24 hours 12 integrations landed on origin/main, covering 11 tasks. The nightly full run on the newest main is red on one regression, AC-123 (API-47, P1).
@@ -40,7 +39,7 @@ const read = (page, id) => page.evaluate(async ({ id, meta }) => {
   await window.taskwin.open(id);
   const md = document.querySelector("#taskbody .leads .ev-comment .markdown");
   for (let i = 0; i < 100 && !md.querySelector("p"); i++) await new Promise((r) => setTimeout(r, 20));   // the renderers load on first need
-  const pill = md.querySelector(".said-pill"), fs = parseFloat(getComputedStyle(md).fontSize);
+  const pill = md.querySelector(".stbox"), fs = parseFloat(getComputedStyle(md).fontSize);
   return {
     blocks: [...md.children].map((e) => `${e.tagName}${e.className ? "." + e.className : ""}:${e.textContent.trim().slice(0, 24)}`),
     pill: pill && { words: pill.textContent, bg: getComputedStyle(pill).backgroundColor, fg: getComputedStyle(pill).color },
@@ -56,27 +55,23 @@ export async function webSaid(browser, name) {
       const f = await openPage(browser, { device, hook: (m, say) => {
         if (light && m.t === "sub") say({ t: "theme", sid: m.id, theme: { ...THEME, bg: "#ffffff", fg: "#1f2328", dark: false } });
       } });
-      await f.page.route("**/fb/**", (route) => {
-        const file = path.join(DIST, path.normalize(new URL(route.request().url()).pathname.slice(4)));
-        return file.startsWith(DIST) && fs.existsSync(file) ? route.fulfill({ contentType: "text/javascript", body: fs.readFileSync(file) }) : route.fulfill({ status: 404, body: "" });
-      });
+      await serveRenderers(f.page);
       for (const id of Object.keys(TASKS)) await f.page.route(`**/api/tasks/${id}`, (r) => r.fulfill({ contentType: "application/json", body: JSON.stringify(TASKS[id]) }));
       await drawn(f.page);
-      const r = await read(f.page, "API-30"), q = await read(f.page, "API-31"), got = JSON.stringify({ r, q });
+      const shot = (id) => process.env.TM_TEST_SHOTS && f.page.screenshot({ path: path.join(process.env.TM_TEST_SHOTS, `said-${id}-${name}-${size}${light ? "-light" : ""}.png`) });
+      if (process.env.TM_TEST_SHOTS) fs.mkdirSync(process.env.TM_TEST_SHOTS, { recursive: true });
+      const r = await read(f.page, "API-30");
+      await shot("API-30");
+      const q = await read(f.page, "API-31");
+      await shot("API-31");
+      const got = JSON.stringify({ r, q });
       check("AC-149 a result's label lines read as sections: Outcome and Summary as leads, Details and each group a heading over its list",
         r.blocks.join("|") === "P.said-lead:Outcome: attention|P.said-lead:Summary: In the last 24 |P.said-label:Details|P.said-label:New features|UL:API-21 (AC-209): when so|P.said-label:Changed / fixed|UL:API-16 (AC-207): a Codex|P.said-lead:For the human: close API", got);
-      check("AC-149 Outcome's word is a pill in the waiting hue, its ink readable", r.pill?.words === "attention" && r.pill.bg === "rgb(255, 176, 32)" && r.pill.fg !== r.pill.bg, got);
+      check("AC-149 Outcome's word is a status box in the waiting hue, its ink readable", r.pill?.words === "attention" && r.pill.bg === "rgb(255, 176, 32)" && r.pill.fg !== r.pill.bg, got);
       check("AC-149 an agent's questions: Details stands after the recommended answers, not inside the last one",
         q.blocks.join("|") === "P.said-lead:Why you are needed: the |P.said-label:Recommended|OL:RUN API-13 again when th|P.said-lead:Details: Commit 1635162b", got);
       check("AC-149 a comment's lines keep a readable measure (at most 80 ems), nothing past its edge; a heading has room above it",
         r.measure <= 80 && r.over <= 0 && q.over <= 0 && r.gapAbove >= 12, got);
-      if (process.env.TM_TEST_SHOTS) {
-        fs.mkdirSync(process.env.TM_TEST_SHOTS, { recursive: true });
-        for (const id of Object.keys(TASKS)) {
-          await read(f.page, id);
-          await f.page.screenshot({ path: path.join(process.env.TM_TEST_SHOTS, `said-${id}-${name}-${size}${light ? "-light" : ""}.png`) });
-        }
-      }
       check("no page errors", !f.errors.length, f.errors.join(" | "));
       await f.close();
     }
