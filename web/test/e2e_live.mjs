@@ -155,7 +155,6 @@ const screenText = (page) => page.evaluate(() => document.getElementById("screen
 
 async function wide(browser, name) {
   runningIn(`${name} 1400×900`);
-  // reduced motion: a window stands where a press lands (e2e_motion.mjs checks the motion)
   const errors = [];
   let ctx, page, widths;
   /** A page in a context of its own, signed in with the last one's storage, the last one closed: with one
@@ -276,6 +275,7 @@ async function wide(browser, name) {
     await frame.waitForFunction(() => document.body.innerText.includes("alpha.txt"), null, { timeout: 8000 });
   });
   if (LINKS_ALONE) await liveLinks(page, { work: WORK });
+  if (SMOKE) await liveDispatcher(page, { ...live, requestOnly: true });
   if (SHORT) return ctx;
   const files = await (await page.$("#files")).contentFrame();
   await files.click("#new-file");

@@ -8,7 +8,7 @@ import { pressCard, showColumnOf } from "./boardkit.mjs";
 
 const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==", "base64");
 
-export async function liveBoard(page, { base, tmux, work, shots }) {
+export async function liveBoard(page, { base, tmux, work, app, shots }) {
   await sameKinds(page, base, false);
   const card = (id) => `.card[data-id="${id}"]`;
   const inColumn = (status) => page.evaluate((s) => [...document.querySelectorAll(`.col[data-status="${s}"] .card`)].map((c) => c.dataset.id), status);
@@ -41,6 +41,7 @@ export async function liveBoard(page, { base, tmux, work, shots }) {
 
   // the window: a title, Markdown, a file dropped in, in TODO
   await page.click("#newtask");
+  await defaultIfNone();
   await page.fill("#newtitle", "Fix the retry loop");
   await page.fill("#newtext", "**why**\n<img src=x onerror=\"window.ranit=1\">\n");
   const shot = path.join(work, "shot.png");
@@ -52,14 +53,24 @@ export async function liveBoard(page, { base, tmux, work, shots }) {
   check("AC-106 raw HTML stays off in Preview", await page.evaluate(() => !document.querySelector("#newshown img:not([data-raw])") && !window.ranit));
   await within("AC-109 a task's own picture shows, fetched with the sign-in", () => page.waitForFunction(() => document.querySelector("#newshown img")?.naturalWidth > 0, null, { timeout: 5000 }));
   await page.click("#newtabs button:has-text(\"Write\")");
-  // a draft survives a reload
+  // A draft survives a reload even when terminumd cannot read its attachment.
+  const taskLink = (await page.inputValue("#newtext")).match(/\/api\/task-files\/([0-9a-f]{32})/);
+  const storedShot = path.join(app, "attachments", taskLink[1]);
   await page.click("#newclose");
-  await page.reload();
-  await page.waitForSelector("#board .col");
-  await page.click("#newtask");
-  check("AC-106 a draft survives closing and a reload", await page.inputValue("#newtitle") === "Fix the retry loop", await page.inputValue("#newtitle"));
-  await defaultIfNone();
-  check("AC-106 with its files", (await page.textContent("#newfiles")).includes("shot.png"));
+  fs.chmodSync(storedShot, 0o000);
+  try {
+    await page.reload();
+    await page.waitForSelector("#board .col");
+    const checked = page.waitForResponse((r) => r.url() === `${base}${taskLink[0]}` && r.request().method() === "HEAD", { timeout: 5000 });
+    await page.click("#newtask");
+    const response = await checked;
+    check("AC-109 HEAD answers 500 when the attachment cannot be read", response.status() === 500, String(response.status()));
+    check("AC-106 a draft survives closing and a reload", await page.inputValue("#newtitle") === "Fix the retry loop", await page.inputValue("#newtitle"));
+    check("AC-106 the restored draft keeps the unreadable file and its link", (await page.textContent("#newfiles")).includes("shot.png")
+      && (await page.inputValue("#newtext")).includes(taskLink[0]) && await page.textContent("#newerror") === "");
+  } finally {
+    fs.chmodSync(storedShot, 0o600);
+  }
   await page.fill("#newtitle", "");
   await page.click("#newcreate");
   check("AC-106 no title is refused by terminumd, said in place, the window stays", await until(async () => await page.textContent("#newerror") === "Title: 1–200 characters") && await page.isVisible("#newbox"));
