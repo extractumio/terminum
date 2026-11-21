@@ -209,18 +209,35 @@ pub fn words(agent: &str, why: &str) -> String {
     format!("It waits for {agent}: {why} It starts when there is room.")
 }
 
-/// Each queued press and every task it carries (AC-169), shared by cards and human-attention counts.
-const MEMBERS: &str = "WITH chosen AS (SELECT w.task press, w.task FROM run_waits w
-        UNION SELECT w.task, t.id FROM run_waits w, json_each(w.body, '$.also') j JOIN tasks t ON t.slug = j.value)
-    SELECT press, task FROM chosen
-    UNION SELECT c.press, t.id FROM chosen c JOIN tasks t ON t.parent = c.task
-        WHERE t.status <> 'DONE' AND t.archived_at IS NULL
-            AND NOT EXISTS (SELECT 1 FROM schedule_fires f JOIN schedules s ON s.id = f.schedule WHERE f.task = c.task)";
+/// Each wait and the tasks it carries (AC-158, AC-169). A wait for other tasks (AC-210) holds its primary alone.
+fn members() -> String {
+    let also = crate::tasks::slugs::key_named("j.value");
+    format!("WITH chosen AS (SELECT w.task press, w.task, w.after IS NULL for_room FROM run_waits w
+            UNION SELECT w.task, t.id, 1 FROM run_waits w JOIN tasks p ON p.id = w.task
+                JOIN json_each(w.body, '$.also') j
+                JOIN tasks t ON t.id = {also} AND t.project = p.project
+                WHERE w.after IS NULL AND j.type = 'text')
+        SELECT press, task FROM chosen
+        UNION SELECT c.press, t.id FROM chosen c JOIN tasks t ON t.parent = c.task
+            WHERE c.for_room AND t.status <> 'DONE' AND t.archived_at IS NULL
+                AND NOT EXISTS (SELECT 1 FROM schedule_fires f JOIN schedules s ON s.id = f.schedule WHERE f.task = c.task)")
+}
+
+/// The wait that protects this task from an agent's move or result. Prefer its own wait, then the first press carrying it.
+pub(crate) fn protecting(tx: &Transaction, task: &str) -> Result<Option<Wait>, String> {
+    let query = format!("{} WHERE w.task IN (SELECT press FROM ({}) WHERE task = ?1)
+        ORDER BY {} LIMIT 1", select(), members(), member_order("?1"));
+    tx.prepare_cached(&query).map_err(sql)?.query_row([task], of_row).optional().map_err(sql)
+}
+
+fn member_order(task: &str) -> String {
+    format!("w.task <> {task}, {ORDER}")
+}
 
 /// Whether task alias `t` belongs to a queued press, including its other tasks (AC-169).
 /// Aliases are source literals, never a request's words.
 pub fn queued_task(t: &str) -> String {
-    format!("{t}.id IN (SELECT task FROM ({MEMBERS}))")
+    format!("{t}.id IN (SELECT task FROM ({}))", members())
 }
 
 /// A card's wait: its agent, place in that agent's whole queue and the primary task that can cancel the press; or the
@@ -247,15 +264,22 @@ impl CardWait {
 /// Queue positions are ranked before card filters and pagination, shared by every task of one press (AC-169).
 pub fn on_cards(tx: &Transaction, keys: &[&str]) -> Result<HashMap<String, CardWait>, String> {
     if keys.is_empty() { return Ok(HashMap::new()); }
-    Ok(rows(tx, &format!("WITH queue AS (
+    let found = rows(tx, &format!("WITH queue AS (
             SELECT w.task, t.slug, COALESCE(a.name, w.agent_id) agent,
                 row_number() OVER (PARTITION BY w.agent_id, w.after IS NULL ORDER BY {ORDER}) position,
                 CASE WHEN w.after IS NULL THEN '[]' ELSE (SELECT json_group_array(x.slug) FROM json_each(w.after) j JOIN tasks x ON x.id = j.value) END after
-            FROM run_waits w JOIN tasks t ON t.id = w.task LEFT JOIN agents a ON a.id = w.agent_id), members AS ({MEMBERS})
-        SELECT m.task, q.agent, q.position, q.slug, q.after FROM members m JOIN queue q ON q.task = m.press
-        WHERE m.task IN (SELECT value FROM json_each(?1))"),
+            FROM run_waits w JOIN tasks t ON t.id = w.task LEFT JOIN agents a ON a.id = w.agent_id), members AS ({})
+        SELECT m.task, q.agent, q.position, q.slug, q.after FROM members m
+        JOIN queue q ON q.task = m.press JOIN run_waits w ON w.task = m.press
+        WHERE m.task IN (SELECT value FROM json_each(?1))
+        ORDER BY {}", members(), member_order("m.task")),
         [super::runs::listed_keys(keys)], |r| Ok((r.get(0)?, CardWait { agent: r.get(1)?, position: r.get(2)?, task: r.get(3)?,
-            after: serde_json::from_str(&r.get::<_, String>(4)?).unwrap_or_default() })))?.into_iter().collect())
+            after: serde_json::from_str(&r.get::<_, String>(4)?).unwrap_or_default() })))?;
+    let mut marks = HashMap::new();
+    for (key, mark) in found {
+        marks.entry(key).or_insert(mark);
+    }
+    Ok(marks)
 }
 
 /// What a wait comes to now: pressed again, still waiting, or called off with these words; the task's ID. Or, a
