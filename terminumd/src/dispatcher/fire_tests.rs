@@ -180,19 +180,19 @@ fn ac162_once_pauses_itself_after_it_fires() {
 fn ac162_the_prompt_says_a_scheduled_run_and_the_result_s_form() {
     open("fire-prompt").with(|tx| {
         let s = schedule(tx, 1, json!({"title": "Nightly deps check", "body": "Check them.", "agent": "a", "cron": "0 3 * * *", "budget_minutes": 30}));
-        let p = prompt(&s, "TERM-41", "Nightly deps check", "Check them.", false, false);
+        let p = prompt(&s, "TERM-41", "Nightly deps check", "Check them.", false, Initiator::Due);
         assert!(p.starts_with("Task TERM-41: Nightly deps check. A scheduled run of terminum's schedule SCH-1 \"Nightly deps check\" (every day at 03:00), set by a human; no human started this run or watches it now.\n\nCheck them.\n\nYou have 30 minutes"), "{p}");
         assert!(p.contains("call execute_tool(\"finish_task\", {id, result}) with the result in this form, each on its own line:\nOutcome: ok, attention or failed\nSummary: one or two sentences\nDetails: what was checked or done\nFor the human: what they should do, or nothing"), "{p}");
         assert!(p.ends_with(ASK), "the words on asking a human");
         let due = s.when()?.next_after(NOW).unwrap();
         let (id, _) = made(decide(tx, &s, due, false)?);
         let t = ops::get(tx, &id)?;
-        assert_eq!(super::super::press::prompt_of(tx, std::slice::from_ref(&t), None)?, prompt(&s, &id, &t.title, "Check them.", false, false), "the firing's RUN goes as the schedule's run");
+        assert_eq!(super::super::press::prompt_of(tx, std::slice::from_ref(&t), None)?, prompt(&s, &id, &t.title, "Check them.", false, Initiator::Due), "the firing's RUN goes as the schedule's run");
         // AC-158: what the human saw holds the schedule's cadence as kept, not terminum's words for it
         let own = json!([[[t.id, t.title, "Check them.", t.by_agent, t.parent, t.budget_seconds]], [], ["SCH-1", "Nightly deps check", "0 3 * * *", null, 1800, false], "English"]).to_string();
         assert_eq!(super::super::press::facts(tx, std::slice::from_ref(&t), None)?.rev(), crate::auth::crypto::sha256_hex(own.as_bytes()));
-        assert!(prompt(&s, &id, &t.title, "Check them.", true, false).starts_with(&format!("The human ran task {id} again: Nightly deps check. A task of terminum's schedule SCH-1")), "a human's RUN after says so");
-        assert!(prompt(&s, &id, &t.title, &"x".repeat(20_001), false, false).contains(&format!("Its text, by execute_tool(\"get_task\", {{id}}) for {id}, is your assignment")), "a long text by get_task");
+        assert!(prompt(&s, &id, &t.title, "Check them.", true, Initiator::Human).starts_with(&format!("The human ran task {id} again: Nightly deps check. A task of terminum's schedule SCH-1")), "a human's RUN after says so");
+        assert!(prompt(&s, &id, &t.title, &"x".repeat(20_001), false, Initiator::Due).contains(&format!("Its text, by execute_tool(\"get_task\", {{id}}) for {id}, is your assignment")), "a long text by get_task");
         Ok(())
     }).unwrap();
 }
@@ -210,23 +210,38 @@ fn ac162_a_manager_s_schedule_and_runs_are_said_to_be_the_manager_s() {
         assert!(s.by_manager, "its last author is the manager");
         let schedule = "terminum's schedule SCH-1 \"Nightly deps check\" (every day at 03:00), set by the project's manager";
         // its firing
-        let fired = prompt(&s, "TERM-41", "Nightly deps check", "Check them.", false, false);
+        let fired = prompt(&s, "TERM-41", "Nightly deps check", "Check them.", false, Initiator::Due);
         assert!(fired.starts_with(&format!("Task TERM-41: Nightly deps check. A scheduled run of {schedule}; no human started this run or watches it now.\n\nCheck them.")), "{fired}");
         // the manager's run_schedule
-        let now = prompt(&s, "TERM-42", "Nightly deps check", "Check them.", false, true);
+        let now = prompt(&s, "TERM-42", "Nightly deps check", "Check them.", false, Initiator::Manager);
         assert!(now.starts_with(&format!("Task TERM-42: Nightly deps check. A run of {schedule}, started now by the project's manager; no human watches it.\n\nCheck them.")), "{now}");
         // the manager's run_task of a task the schedule made
-        let again = prompt(&s, "TERM-41", "Nightly deps check", "Check them.", true, true);
+        let again = prompt(&s, "TERM-41", "Nightly deps check", "Check them.", true, Initiator::Manager);
         assert!(again.starts_with(&format!("The project's manager ran task TERM-41 again: Nightly deps check. A task of {schedule}.")), "{again}");
         for p in [&fired, &now, &again] {
             assert!(!p.contains("set by a human") && !p.contains("The human ran"), "a manager's words never stand as a human's: {p}");
         }
         // a human's RUN of a manager's schedule's task: the human ran it, the manager set it
-        assert!(prompt(&s, "TERM-41", "Nightly deps check", "Check them.", true, false).starts_with(&format!("The human ran task TERM-41 again: Nightly deps check. A task of {schedule}.")));
+        assert!(prompt(&s, "TERM-41", "Nightly deps check", "Check them.", true, Initiator::Human).starts_with(&format!("The human ran task TERM-41 again: Nightly deps check. A task of {schedule}.")));
         // a human who saves it again becomes its author
         schedules::change(tx, HUMAN, &s.id, &given, NOW)?;
         let s = schedules::by_id(tx, &s.id)?;
-        assert!(prompt(&s, "TERM-43", "Nightly deps check", "Check them.", false, false).contains("(every day at 03:00), set by a human; no human started"));
+        assert!(prompt(&s, "TERM-43", "Nightly deps check", "Check them.", false, Initiator::Due).contains("(every day at 03:00), set by a human; no human started"));
+        Ok(())
+    }).unwrap();
+}
+
+#[test]
+fn ac182_run_now_names_the_human_on_its_first_run() {
+    open("fire-now-prompt").with(|tx| {
+        let s = schedule(tx, 1, json!({"title": "Nightly deps check", "body": "Check them.", "agent": "a", "cron": "0 3 * * *", "budget_minutes": 30}));
+        let (id, _, _) = super::made(tx, &s, (NOW, 0), "Alex ran schedule SCH-1 now.", Some(HUMAN), NOW)?;
+        let t = ops::get(tx, &id)?;
+        let expected = format!("Task {id}: Nightly deps check. A run of terminum's schedule SCH-1 \"Nightly deps check\" (every day at 03:00), set by a human, started now by a human.");
+        // A first press can also be read back from a wait: its requester is on the task, not in the kept press.
+        let press: super::super::api::Press = serde_json::from_value(json!({"agent": "a", "how": "schedule"})).unwrap();
+        let sent = press.first_words(tx, &[t])?.prompt(None);
+        assert_eq!(sent.lines().next(), Some(expected.as_str()));
         Ok(())
     }).unwrap();
 }
