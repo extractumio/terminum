@@ -2188,7 +2188,7 @@ Only the following pass: a task's ID with fixed words, never a title or a commen
 
 **Comment notices (AC-209).** Waiting notices live in terminumd's memory. The card keeps the comments and the recorded delivery outcomes. A restart drops the pending notices because the queued notices belong to the live hook session, and the stored comment alone cannot establish whether a notice was queued or heard.
 
-**Times.** Constants, not settings: no need for another value is known. Tests drive them with an injected clock (`TM_TEST_CLOCK_SCALE`) and, to act on a finished session before it closes, a longer Close (`TM_TEST_CLOSE_AFTER`, seconds), both read only with a test's `TM_APP_DIR`.
+**Times.** Constants, not settings: no need for another value is known. Tests drive them with an injected clock (`TM_TEST_CLOCK_SCALE`), a longer Close to act on a finished session before it closes (`TM_TEST_CLOSE_AFTER`, seconds) and the integration engine's own beat (`TM_TEST_INTEGRATION_BEAT`, seconds), all read only with a test's `TM_APP_DIR`.
 
 | What | Value |
 |---|---|
