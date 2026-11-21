@@ -131,6 +131,22 @@ fn ac187_any_move_out_of_integration_leaves_the_queue_and_none_puts_a_task_in() 
 }
 
 #[test]
+fn ac187_an_agent_s_question_wait_or_move_never_takes_its_queued_task_out() {
+    let r = repo("iq-stays");
+    call(&r, "integrate", json!({"id": r.id, "result": result()})).unwrap();
+    let words = format!("{0} is queued for integration: the queue holds it and goes on with it by itself, also while it waits behind a red target, and tells you how it ends; nothing here needs a human. End your turn. To take it out on purpose, call execute_tool(\"withdraw_integration\", {{\"id\": \"{0}\"}}).", r.id);
+    let asked = "Why you are needed: x.\nRecommended:\n1. y.\nDetails: z.";
+    assert_eq!(call(&r, "ask_human", json!({"id": r.id, "questions": asked})).unwrap_err(), words);
+    assert_eq!(call(&r, "wait_for_task", json!({"id": r.id, "on": "API-9", "why": "x"})).unwrap_err(), words);
+    for to in ["IN PROGRESS", "TODO", "WAIT FOR HUMAN", "FAILED"] {
+        assert_eq!(call(&r, "move_task", json!({"id": r.id, "to": to})).unwrap_err(), words, "{to}");
+    }
+    assert_eq!(status(&r), INTEGRATION, "still queued");
+    assert_eq!(r.s.with(|tx| queue_of(tx, "api")).unwrap().len(), 1);
+    assert!(call(&r, "withdraw_integration", json!({"id": r.id})).is_ok(), "taken out on purpose");
+}
+
+#[test]
 fn ac187_refused_in_its_words() {
     let r = repo("iq-refused");
     std::fs::write(r.tree.join("y.txt"), "uncommitted\n").unwrap();
