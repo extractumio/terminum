@@ -98,7 +98,7 @@ fn last_rows(log: &Path) -> String {
 }
 
 /// A published batch's After ended with `code` (AC-191): 0 its Cleanup follows; LATER it waits; else it failed.
-pub(super) fn ended(store: &Store, p: &Place, b: &bs::Batch, code: i32, log: &Path, now: i64) -> Result<(), String> {
+pub(super) fn ended(store: &Store, p: &Place, b: &bs::Batch, code: i32, minutes: i64, log: &Path, now: i64) -> Result<(), String> {
     match code {
         0 => store.with(|tx| {
             bs::set_pane(tx, b.id, None, now)?;
@@ -109,7 +109,7 @@ pub(super) fn ended(store: &Store, p: &Place, b: &bs::Batch, code: i32, log: &Pa
             let rows = last_rows(log);
             waits(store, p, b, &if rows.is_empty() { format!("status {LATER}") } else { rows }, Some(log), now)
         }
-        engine::OVER => failed(store, p, b, Some(&format!("it ran over {} minutes", p.s.check_minutes)), &last_rows(log), Some(log), now),
+        engine::OVER => failed(store, p, b, Some(&format!("it {}", engine::how_ended(code, minutes))), &last_rows(log), Some(log), now),
         code => failed(store, p, b, Some(&format!("status {code}")), &last_rows(log), Some(log), now),
     }
 }

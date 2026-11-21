@@ -10,7 +10,7 @@ use std::path::Path;
 
 use rusqlite::Transaction;
 
-use super::engine::{place, window, worktree, Place, Window, OVER};
+use super::engine::{how_ended, place, window, worktree, Place, Window};
 use super::git;
 use super::{red_recheck, red_target};
 use super::retry_notes;
@@ -153,17 +153,12 @@ fn follow(store: &Store, runner: &dyn Runner, home: &Path, run: &Run, now: i64) 
             2 => bs::give_back(tx, &run.task, &format!("{id} returned: conflict: its Prepare or Verify ended with status 2. Its log: {log}"), Left::Conflict, now),
             code => {
                 bs::not_again(tx, &run.task, &run.commit, now)?;
-                bs::give_back(tx, &run.task, &format!("{id} returned: red check: its Prepare or Verify {}. Its log: {log}", how(code, run.minutes)), Left::Red, now)
+                bs::give_back(tx, &run.task, &format!("{id} returned: red check: its Prepare or Verify {}. Its log: {log}", how_ended(code, run.minutes)), Left::Red, now)
             }
         }
     })?;
     finish(store, home, run)?;
     Ok(false)
-}
-
-/// How a Verify's window ended, in its notices' words (§9).
-pub(super) fn how(code: i32, minutes: i64) -> String {
-    if code == OVER { format!("ran over {minutes} minutes") } else { format!("ended with status {code}") }
 }
 
 /// What Prepare and Verify get (§9): the task, the commit they run on, the target and the tree.
