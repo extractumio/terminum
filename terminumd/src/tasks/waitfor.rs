@@ -33,7 +33,7 @@ fn not_dispatchers(id: &str) -> String {
 pub(super) fn wait(tx: &Transaction, who: &Who, args: &Value, at: i64) -> Result<(String, Vec<String>), String> {
     let t = own(tx, who, arg(args, "id")?)?;
     not_queued(tx, &t)?;
-    super::integration_queue::stays_queued(&t)?;
+    super::integration_queue::stays_queued(tx, &t)?;
     let id = t.id.as_str();
     let why = rules::clean(arg(args, "why")?);
     if why.chars().count() > REASON_MOST {

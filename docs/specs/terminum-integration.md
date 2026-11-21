@@ -64,7 +64,7 @@ Open questions: none.
 | ID | Priority | Case |
 |---|---|---|
 | AC-186 | [MUST / P0] | A project's window holds an Integration tab: a switch, the target branch, a command for each stage of AC-198, the most tasks in a batch, the check's time limit, and the agent that analyses a red batch with its time budget, its prompt and the most red rounds; Check is a command run on this machine (which may itself drive a CI and wait for it) or empty for no check; the window shows what will run and where; off by default, and off nothing is merged or pushed. |
-| AC-187 | [MUST / P0] | An agent queues its task's commit with its result by `integrate`: the task stands in INTEGRATION, its budget and idle clocks stopped, its session kept; queued again it replaces its commit; taken out it is IN PROGRESS again; only withdraw_integration or a human takes it out, never an agent's question, wait or move. |
+| AC-187 | [MUST / P0] | An agent queues its task's commit with its result by `integrate`: the task stands in INTEGRATION, its budget and idle clocks stopped, its session kept; queued again it replaces its commit; taken out it is IN PROGRESS again; only withdraw_integration or a human takes it out, never an agent's question, wait, move or finish; a batch's integration task is in no queue. |
 | AC-188 | [MUST / P0] | terminumd alone builds a batch: from the fresh target, the queued commits in queue order that merge cleanly together, each its own merge commit named by its task's ID, at most the batch's size, which starts at 4, doubles after a green batch up to the project's most (8) and halves after a red one; each batch is an integration task, I_<ID>, made by Dispatcher, and one batch is in work on the machine at a time: built, checked or published; a published batch's After and Cleanup run beside the next one (AC-191, §9 Limits). |
 | AC-189 | [MUST / P0] | A commit that conflicts with the target returns to its agent at once with the target's commit and the files; one that conflicts only with a task of the batch stays queued, told once which task it waits for, and is judged again when that one's batch ends. |
 | AC-190 | [MUST / P0] | The project's Check runs on each candidate in a window the human can read; green is published; red, over its time or not started, the batch's integration task gets its agent (AC-194); nothing is published but a candidate whose own check was green; a check outlives terminumd's restart, and is checked again when terminum's tmux server ends. |
@@ -172,8 +172,8 @@ Scenario: AC-187 happy path — taken out
 
 Scenario: AC-187 edge — an agent never takes it out by the way
   Given API-12 in INTEGRATION, queued, held back or waiting behind a red target (AC-198)
-  When its agent calls ask_human, wait_for_task (terminum-dispatcher.md AC-210) or move_task on it
-  Then it is refused and API-12 stays queued: "API-12 is queued for integration: the queue holds it and goes on with it by itself, also while it waits behind a red target, and tells you how it ends; nothing here needs a human. End your turn. To take it out on purpose, call execute_tool("withdraw_integration", {"id": "API-12"})."
+  When its agent calls ask_human, wait_for_task (terminum-dispatcher.md AC-210), move_task or finish_task on it
+  Then it is refused and API-12 stays queued: "API-12 is queued for integration: the queue holds it and goes on with it by itself, also while it waits behind a red target, finishes it with its result when it lands, and tells you how it ends; nothing here needs a human. End your turn. To take it out on purpose, call execute_tool("withdraw_integration", {"id": "API-12"})."
   And withdraw_integration and a human's Take out or move take it out as before
 
 Scenario: AC-187 failure — refused
