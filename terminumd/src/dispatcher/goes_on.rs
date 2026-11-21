@@ -145,7 +145,13 @@ async fn next_run(app: &Shared, r: &Run, tasks: &[Task], again: Again, kept: Pre
         if agent.is_none() {
             say(tx, &old, &format!("{} is no longer in the pool: this goes on with the settings it started with.", old.agent_name))?;
         }
-        runs::change(tx, &old.id, |was| { was.state = Phase::Closed; was.pane_key = None; })?;
+        runs::change(tx, &old.id, |was| {
+            // A closed run still names its exited pane so it stays a worker's pane (AC-174).
+            if was.state != Phase::Closed {
+                was.state = Phase::Closed;
+                was.pane_key = None;
+            }
+        })?;
         for other in old.ids.iter().filter(|other| !all.iter().any(|t| t.id == **other)) {
             ops::link(tx, super::DISPATCHER, other, None, ops::now())?;
         }

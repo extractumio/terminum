@@ -53,20 +53,27 @@ pub(crate) fn taking(tx: &rusqlite::Transaction, key: &str) -> Result<Vec<String
 pub(super) fn apply(tx: &rusqlite::Transaction, r: &mut Run, ev: &Value, typed: bool) -> Result<(bool, bool), String> {
     let event = ev["event"].as_str().unwrap_or("");
     let session = ev["session"].as_str().filter(|s| good_id(s));
+    let takes_prompt = event == "UserPromptSubmit" && ev["own"] != true
+        && (r.is_starting() || r.prompt.as_deref().zip(ev["prompt"].as_str()).is_some_and(|(a, b)| super::same_prompt(a, b)));
+    // Codex can report a new session at startup before it saves a conversation (AC-122).
+    let confirms_session = if r.kind == "codex" {
+        event == "UserPromptSubmit" && ev["agent"] == "codex"
+    } else {
+        event == "SessionStart" || takes_prompt
+    };
+    if confirms_session && let Some(id) = session && r.agent_session.as_deref() != Some(id) {
+        r.agent_session = Some(id.to_string());
+    }
     let mut moved = false;
     let mut active = !r.nudge_turn;                    // the turn our request started is no new work (AC-123)
     match event {
-        "SessionStart" => {
-            r.agent_session = session.map(str::to_string).or(r.agent_session.take());
-            active = false;
-        }
+        "SessionStart" | "SessionEnd" => active = false,
         // the agent's own turn (a background task's end, another session's message, a wakeup it scheduled, as /hook
         // decided): it works, no one asked for new work
         "UserPromptSubmit" if ev["own"] == true => r.turn_starts(),
-        "UserPromptSubmit" if r.is_starting() || r.prompt.as_deref().zip(ev["prompt"].as_str()).is_some_and(|(a, b)| super::same_prompt(a, b)) => {
+        "UserPromptSubmit" if takes_prompt => {
             moved = accept(tx, r)?;
             r.prompt = None;
-            r.agent_session = session.map(str::to_string).or(r.agent_session.take());
         }
         "UserPromptSubmit" if typed => active = false,
         "UserPromptSubmit" => {
@@ -106,7 +113,6 @@ pub(super) fn apply(tx: &rusqlite::Transaction, r: &mut Run, ev: &Value, typed: 
             r.open_tools = (r.open_tools - 1).max(0);
             active = true;
         }
-        "SessionEnd" => active = false,
         _ => {}
     }
     Ok((moved, active))
