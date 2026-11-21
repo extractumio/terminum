@@ -16,14 +16,16 @@ fn turn_on(tx: &Transaction, default: Option<&str>, at: i64) -> Result<(), Strin
 }
 
 /// Project api with the picker P (3 at once) and the executors A (2 at once) and B (1 at once); on, A its default.
+fn configure(tx: &Transaction, dir: &str) -> Result<(), String> {
+    tx.execute("INSERT INTO projects (id, name, color, dir, place) VALUES ('api', 'api', 0, ?1, 0)", [dir]).map_err(sql)?;
+    tx.execute("INSERT INTO agents (id, project, name, kind, command, color, at_once) VALUES ('p', 'api', 'Picker', 'claude', 'claude', 0, 3), ('a', 'api', 'Smith', 'claude', 'claude', 1, 2), ('b', 'api', 'Jones', 'claude', 'claude', 2, 1)", []).map_err(sql)?;
+    crate::tasks::slugs::fill(tx)?;
+    turn_on(tx, Some("a"), NOW)
+}
+
 fn store(name: &str) -> Store {
     let s = Store::open(crate::testutil::fresh_dir(name).join("kanban.sqlite"));
-    s.with(|tx| {
-        tx.execute("INSERT INTO projects (id, name, color, dir, place) VALUES ('api', 'api', 0, '/srv', 0)", []).map_err(sql)?;
-        tx.execute("INSERT INTO agents (id, project, name, kind, command, color, at_once) VALUES ('p', 'api', 'Picker', 'claude', 'claude', 0, 3), ('a', 'api', 'Smith', 'claude', 'claude', 1, 2), ('b', 'api', 'Jones', 'claude', 'claude', 2, 1)", []).map_err(sql)?;
-        crate::tasks::slugs::fill(tx)?;
-        turn_on(tx, Some("a"), NOW)
-    }).unwrap();
+    s.with(|tx| configure(tx, "/srv")).unwrap();
     s
 }
 
@@ -43,14 +45,14 @@ fn setting(tx: &Transaction) -> Setting {
 }
 
 fn round(tx: &Transaction) -> (String, Round) {
-    let Due::Round(id) = decide(tx, "api", &setting(tx), NOW).unwrap() else { panic!("no round") };
+    let Due::Round { id, .. } = decide(tx, "api", NOW).unwrap() else { panic!("no round") };
     (id.clone(), auto::round_of(tx, &ops::key_of(tx, &id).unwrap()).unwrap().unwrap())
 }
 
 #[test]
 fn ac170_a_round_is_made_for_the_free_slots_and_the_tasks_nobody_holds() {
     store("auto-round").with(|tx| {
-        assert_eq!(decide(tx, "api", &setting(tx), NOW)?, Due::Nothing, "nothing in TODO");
+        assert_eq!(decide(tx, "api", NOW)?, Due::Nothing, "nothing in TODO");
         let (low, high, held) = (task(tx, "low", "P3"), task(tx, "high", "P0"), task(tx, "held", "P1"));
         running(tx, "a", &held);
         ops::move_to(tx, HUMAN, &held.id, "IN PROGRESS", NOW)?;
@@ -60,7 +62,7 @@ fn ac170_a_round_is_made_for_the_free_slots_and_the_tasks_nobody_holds() {
         assert_eq!((t.status.as_str(), t.budget_seconds, t.owner.as_str()), ("IN PROGRESS", Some(600), DISPATCHER));
         // its run takes no slot of its agent or project, and is shown as a round
         let run = running(tx, "p", &t);
-        assert_eq!(decide(tx, "api", &setting(tx), NOW)?, Due::Nothing, "one round at a time");
+        assert_eq!(decide(tx, "api", NOW)?, Due::Nothing, "one round at a time");
         assert_eq!(ops::get(tx, &id)?.status, "IN PROGRESS");
         let picker = agents::in_project(tx, "p", "api")?.unwrap();
         let slots = pool::Slots::read(tx)?;
@@ -70,7 +72,7 @@ fn ac170_a_round_is_made_for_the_free_slots_and_the_tasks_nobody_holds() {
         // ended, it leaves the board; the same candidates with no more room are not judged again
         runs::change(tx, &run, |r| r.state = Phase::Closed)?;
         ops::move_to(tx, DISPATCHER, &id, "DONE", NOW)?;
-        assert_eq!(decide(tx, "api", &setting(tx), NOW)?, Due::Nothing, "what a round was given and left is passed over");
+        assert_eq!(decide(tx, "api", NOW)?, Due::Nothing, "what a round was given and left is passed over");
         assert!(ops::get(tx, &id)?.archived_at.is_some(), "a round that ended is archived");
         let given = |at: i64| offer(tx, "api", &setting(tx), at).map(|(free, n)| (free.into_iter().map(|c| c.id).collect::<Vec<_>>(), n));
         // a round that filled its slots left the rest for want of room: they are offered again
@@ -84,7 +86,7 @@ fn ac170_a_round_is_made_for_the_free_slots_and_the_tasks_nobody_holds() {
         assert_eq!(given(NOW + auto::PASSED)?, (vec![high.id.clone(), low.id.clone()], 1), "after a day it is judged again");
         // off, an ended round still leaves the board and none is made
         tx.execute("UPDATE projects SET auto_on = 0 WHERE id = 'api'", []).map_err(sql)?;
-        assert_eq!(decide(tx, "api", &setting(tx), NOW + auto::PASSED)?, Due::Nothing, "off");
+        assert_eq!(decide(tx, "api", NOW + auto::PASSED)?, Due::Nothing, "off");
         Ok(())
     }).unwrap();
 }
@@ -101,13 +103,12 @@ fn ac170_one_round_at_a_time_over_the_projects_and_a_main_task_goes_with_its_sub
         ops::create(tx, HUMAN, NewTask { title: "of web".into(), project: Some("web".into()), severity: Some("P1".into()), ..Default::default() }, NOW)?;
         let (id, r) = round(tx);
         assert_eq!(r.candidates, std::slice::from_ref(&parent.id), "AC-185: the subtask is no candidate by itself: it goes with its main task");
-        let web = auto::setting(tx, "web")?;
-        assert_eq!(decide(tx, "web", &web, NOW)?, Due::Nothing, "api's round is open: one round at a time over the projects");
+        assert_eq!(decide(tx, "web", NOW)?, Due::Nothing, "api's round is open: one round at a time over the projects");
         let run = running(tx, "p", &ops::get(tx, &id)?);
         runs::change(tx, &run, |r| r.state = Phase::Closed)?;
         ops::move_to(tx, DISPATCHER, &id, "DONE", NOW)?;
-        assert_eq!(auto::due_for(tx)?.into_iter().map(|(p, _)| p).collect::<Vec<_>>(), ["web", "api"], "the project whose last round is oldest goes first");
-        assert!(matches!(decide(tx, "web", &web, NOW)?, Due::Round(_)));
+        assert_eq!(auto::due_for(tx)?, ["web", "api"], "the project whose last round is oldest goes first");
+        assert!(matches!(decide(tx, "web", NOW)?, Due::Round { .. }));
         // AC-185: a main task is a candidate only while each subtask still to do stands in TODO, free, for the wait
         let found = |tx: &Transaction, s: &Setting, now: i64| auto::candidates(tx, "api", s, now, None).map(|all| all.into_iter().map(|c| c.id).collect::<Vec<_>>());
         ops::move_to(tx, HUMAN, &child.id, "FAILED", NOW)?;
@@ -140,7 +141,7 @@ fn ac170_by_the_boards_order_terminumd_starts_them_itself_top_down() {
         let (low, high, mid, other) = (task(tx, "low", "P2"), task(tx, "high", "P0"), task(tx, "mid", "P1"), task(tx, "other", "P1"));
         auto::set_agent(tx, &other.id, Some("b"), NOW)?;
         let ids = |due: Due| { let Due::Start(l) = due else { panic!("no start: {due:?}") }; l.into_iter().map(|c| (c.id, c.agent)).collect::<Vec<_>>() };
-        let first = ids(decide(tx, "api", &setting(tx), NOW)?);
+        let first = ids(decide(tx, "api", NOW)?);
         assert_eq!(first[0], (high.id.clone(), "a".to_string()), "P0 first");
         let mut rest = first[1..].to_vec();
         rest.sort();
@@ -157,7 +158,7 @@ fn ac170_by_the_boards_order_terminumd_starts_them_itself_top_down() {
             let run = running(tx, "a", t);
             runs::change(tx, &run, |r| r.state = Phase::Closed)?;
         }
-        let mut again = ids(decide(tx, "api", &setting(tx), NOW)?);
+        let mut again = ids(decide(tx, "api", NOW)?);
         again.sort();
         let mut wanted = vec![(mid.id.clone(), "a".to_string()), (low.id.clone(), "a".to_string())];
         wanted.sort();
@@ -168,12 +169,12 @@ fn ac170_by_the_boards_order_terminumd_starts_them_itself_top_down() {
         assert_eq!(auto::started_in_day(tx, "api", NOW)?, 5);
         tx.execute("UPDATE projects SET auto_day_most = 9 WHERE id = 'api'", []).map_err(sql)?;
         tx.execute("UPDATE agents SET at_once = 0 WHERE id IN ('a', 'b')", []).map_err(sql)?;
-        assert_eq!(decide(tx, "api", &setting(tx), NOW)?, Due::Nothing, "no room");
+        assert_eq!(decide(tx, "api", NOW)?, Due::Nothing, "no room");
         assert_eq!(auto::started_in_day(tx, "api", NOW)?, 2, "the three never pressed are free again; the two that ran are kept");
         tx.execute("UPDATE agents SET at_once = 2 WHERE id IN ('a', 'b')", []).map_err(sql)?;
         // its day's cap holds here too
         tx.execute("UPDATE projects SET auto_day_most = 2 WHERE id = 'api'", []).map_err(sql)?;
-        assert_eq!(decide(tx, "api", &setting(tx), NOW)?, Due::Nothing, "the cap of 24 hours is reached");
+        assert_eq!(decide(tx, "api", NOW)?, Due::Nothing, "the cap of 24 hours is reached");
         // a human moves one that failed back to TODO: a candidate anew
         tx.execute("UPDATE projects SET auto_day_most = 9 WHERE id = 'api'", []).map_err(sql)?;
         ops::move_to(tx, HUMAN, &high.id, "FAILED", NOW + 1)?;
@@ -186,7 +187,54 @@ fn ac170_by_the_boards_order_terminumd_starts_them_itself_top_down() {
         let pane = format!("tmux:local:t:%{}", running(tx, "p", &ops::get(tx, &id)?));
         tx.execute("UPDATE projects SET auto_mode = 'order' WHERE id = 'api'", []).map_err(sql)?;
         assert!(chosen(tx, &pane, &r.candidates[0], NOW).err().unwrap().starts_with("Auto-Dispatch was set to priority and saved order"));
-        assert_eq!(decide(tx, "api", &setting(tx), NOW)?, Due::Nothing, "its round is still open");
+        assert_eq!(decide(tx, "api", NOW)?, Due::Nothing, "its round is still open");
+        Ok(())
+    }).unwrap();
+}
+
+#[tokio::test]
+async fn ac170_order_walk_cannot_pick_a_task_created_after_off() {
+    use axum::{body::{Body, to_bytes}, http::Request};
+    use serde_json::json;
+    use tower::ServiceExt;
+
+    let (root, app) = crate::testutil::app_with_tasks("auto-off");
+    let (running_task, run) = app.tasks.with(|tx| {
+        configure(tx, root.to_str().unwrap())?;
+        auto::set(tx, "api", &Setting { mode: auto::ORDER.into(), agent: None, ..setting(tx) }, NOW)?;
+        let t = task(tx, "Already running", "P1");
+        let run = running(tx, "a", &t);
+        ops::move_to(tx, HUMAN, &t.id, "IN PROGRESS", NOW)?;
+        Ok((t, run))
+    }).unwrap();
+    let routes = crate::tasks::api::routes().with_state(app.clone());
+    let request = |builder: axum::http::request::Builder, body: Value| {
+        routes.clone().oneshot(builder.header("content-type", "application/json").body(Body::from(body.to_string())).unwrap())
+    };
+
+    // Pause the walk after its first store call. Both page writes finish before its next transaction.
+    let due = super::store(&app, auto::due_for).await.unwrap();
+    assert_eq!(due, ["api"]);
+    let project = &due[0];
+    let off = request(Request::put("/api/task-projects/api/auto"), json!({"on": false})).await.unwrap();
+    assert_eq!(off.status(), 200);
+    let made = request(Request::post("/api/tasks"), json!({"title": "Made after Off", "project": "api", "severity": "P0"})).await.unwrap();
+    assert_eq!(made.status(), 200);
+    let made: Value = serde_json::from_slice(&to_bytes(made.into_body(), usize::MAX).await.unwrap()).unwrap();
+    let id = made["id"].as_str().unwrap();
+
+    app.tasks.with(|tx| {
+        let now = ops::now();
+        let s = setting(tx);
+        assert!(!s.on);
+        assert_eq!(auto::candidates(tx, project, &s, now, Some(id))?.len(), 1, "otherwise eligible with one free slot");
+        assert_eq!(decide(tx, project, now)?, Due::Nothing);
+        let t = ops::get(tx, id)?;
+        assert_eq!(t.status, "TODO");
+        assert!(runs::last_of(tx, &t.key)?.is_none());
+        assert_eq!(auto::started_in_day(tx, project, now)?, 0);
+        assert_eq!(runs::by_id(tx, &run)?.state, Phase::Working);
+        assert_eq!(ops::get(tx, &running_task.id)?.status, "IN PROGRESS");
         Ok(())
     }).unwrap();
 }
@@ -223,13 +271,13 @@ fn ac170_after_a_round_that_started_nothing_it_rests_unless_a_task_changed() {
         runs::change(tx, &run, |r| r.state = Phase::Closed)?;
         ops::move_to(tx, DISPATCHER, &id, "DONE", NOW)?;
         assert_eq!(offer(tx, "api", &setting(tx), NOW + 1)?.0.into_iter().map(|c| c.id).collect::<Vec<_>>(), std::slice::from_ref(&below.id), "the task below is next");
-        assert_eq!(decide(tx, "api", &setting(tx), NOW + 1)?, Due::Nothing, "it rests: a long list is not read through at once");
+        assert_eq!(decide(tx, "api", NOW + 1)?, Due::Nothing, "it rests: a long list is not read through at once");
         // an agent's edit of one it left does not bring that one back; a task made since is news: a round at once
         ops::edit(tx, DISPATCHER, &r.candidates[0], ops::Edit { title: Some("reworded by an agent".into()), ..Default::default() }, NOW + 2)?;
         assert_eq!(offer(tx, "api", &setting(tx), NOW + 3)?.0.len(), 1, "what a round left stays passed over");
-        assert_eq!(decide(tx, "api", &setting(tx), NOW + 3)?, Due::Nothing, "still resting");
+        assert_eq!(decide(tx, "api", NOW + 3)?, Due::Nothing, "still resting");
         let fresh = ops::create(tx, HUMAN, NewTask { title: "fresh".into(), project: Some("api".into()), severity: Some("P1".into()), ..Default::default() }, NOW + 3)?;
-        let Due::Round(next) = decide(tx, "api", &setting(tx), NOW + 3)? else { panic!("a new task makes a round at once") };
+        let Due::Round { id: next, .. } = decide(tx, "api", NOW + 3)? else { panic!("a new task makes a round at once") };
         let mut given = auto::round_of(tx, &ops::key_of(tx, &next)?)?.unwrap().candidates;
         given.sort();
         let mut wanted = vec![below.id.clone(), fresh.id];
@@ -281,7 +329,7 @@ fn ac170_a_new_task_a_round_with_no_run_and_a_picker_past_its_limit() {
         assert_eq!(again.candidates, std::slice::from_ref(&old.id), "what it was given is offered again");
         // a press that failed for the picker's own fault, with no run either, still trips it
         ops::move_to(tx, DISPATCHER, &fresh, "FAILED", NOW)?;
-        assert_eq!(decide(tx, "api", &setting(tx), NOW)?, Due::Off(format!("its round {fresh} failed: see it in Archived.")));
+        assert_eq!(decide(tx, "api", NOW)?, Due::Off(format!("its round {fresh} failed: see it in Archived.")));
         turn_on(tx, Some("a"), NOW + 1)?;
         tx.execute("UPDATE auto_rounds SET at = ?1", [NOW - 1]).map_err(sql)?;
         // a new task is news, at once
@@ -296,9 +344,9 @@ fn ac170_a_new_task_a_round_with_no_run_and_a_picker_past_its_limit() {
         tx.execute("UPDATE agents SET week_limit = 1 WHERE id = 'p'", []).map_err(sql)?;
         tx.execute("INSERT INTO usage (run, agent_id, at, input, output, cache_write, cache_read) VALUES (?1, 'p', ?2, 2000000, 0, 0, 0)", (&run, NOW)).map_err(sql)?;
         task(tx, "newer", "P2");
-        assert_eq!(decide(tx, "api", &setting(tx), NOW + 2)?, Due::Nothing, "the picking agent is held to its limits");
+        assert_eq!(decide(tx, "api", NOW + 2)?, Due::Nothing, "the picking agent is held to its limits");
         tx.execute("UPDATE agents SET week_limit = NULL WHERE id = 'p'", []).map_err(sql)?;
-        assert!(matches!(decide(tx, "api", &setting(tx), NOW + 2)?, Due::Round(_)));
+        assert!(matches!(decide(tx, "api", NOW + 2)?, Due::Round { .. }));
         Ok(())
     }).unwrap();
 }
@@ -373,7 +421,7 @@ fn ac170_it_turns_itself_off_when_its_round_or_two_of_its_tasks_fail() {
         let (one, two) = (task(tx, "one", "P1"), task(tx, "two", "P2"));
         let (id, r) = round(tx);
         ops::move_to(tx, DISPATCHER, &id, "FAILED", NOW)?;
-        assert_eq!(decide(tx, "api", &setting(tx), NOW)?, Due::Off(format!("its round {id} failed: see it in Archived.")));
+        assert_eq!(decide(tx, "api", NOW)?, Due::Off(format!("its round {id} failed: see it in Archived.")));
         let off = setting(tx);
         assert_eq!((off.on, off.agent.as_deref(), off.off_why.as_deref()), (false, Some("p"), Some(format!("its round {id} failed: see it in Archived.").as_str())), "off, its agent still chosen");
         // a human turns it on again: what failed before does not count
@@ -395,7 +443,7 @@ fn ac170_it_turns_itself_off_when_its_round_or_two_of_its_tasks_fail() {
         auto::turn_off(tx, "api", "the last two tasks it started failed.")?;
         turn_on(tx, Some("a"), NOW + 30)?;
         tx.execute("DELETE FROM agents WHERE id = 'p'", []).map_err(sql)?;
-        assert_eq!(decide(tx, "api", &setting(tx), NOW + 30)?, Due::Off("its agent is no longer in the pool.".into()));
+        assert_eq!(decide(tx, "api", NOW + 30)?, Due::Off("its agent is no longer in the pool.".into()));
         Ok(())
     }).unwrap();
 }

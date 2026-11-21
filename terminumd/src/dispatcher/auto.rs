@@ -97,8 +97,8 @@ pub(super) enum Due {
     Nothing,
     /// it turned itself off, with why
     Off(String),
-    /// a round made: its ID
-    Round(String),
+    /// a round made: its ID and the agent that picks
+    Round { id: String, picker: String },
     /// by priority and saved order, no agent picking: the tasks to start, each with its agent, their slots of the day taken
     Start(Vec<Candidate>),
 }
@@ -152,7 +152,7 @@ fn in_order(tx: &rusqlite::Transaction, project: &str, s: &Setting, now: i64) ->
 /// read, and when there is room and something to start: by priority and saved order the tasks to start are taken, top down;
 /// else a round is made. What a round was given and left is no candidate for a day (tasks/auto.rs), so the next round
 /// is given the tasks below: it goes down the board.
-pub(super) fn decide(tx: &rusqlite::Transaction, project: &str, s: &Setting, now: i64) -> Result<Due, String> {
+pub(super) fn decide(tx: &rusqlite::Transaction, project: &str, now: i64) -> Result<Due, String> {
     let mut open = false;
     for (key, id, status) in auto::rounds_shown(tx, project)? {
         if !super::plan::finished(&status) && runs::last_of(tx, &key)?.is_none() {
@@ -169,7 +169,11 @@ pub(super) fn decide(tx: &rusqlite::Transaction, project: &str, s: &Setting, now
             ops::archive(tx, DISPATCHER, &id, true, now)?;
         }
     }
-    if open || !s.on {
+    if open {
+        return Ok(Due::Nothing);
+    }
+    let s = auto::setting(tx, project)?;
+    if !s.on {
         return Ok(Due::Nothing);
     }
     auto::give_back_unpressed(tx, project)?;
@@ -179,7 +183,7 @@ pub(super) fn decide(tx: &rusqlite::Transaction, project: &str, s: &Setting, now
     }
     if s.by_order() {
         // a round of another project still counts on the slots it was given
-        return Ok(if auto::open_elsewhere(tx, project)? { Due::Nothing } else { Some(in_order(tx, project, s, now)?).filter(|l| !l.is_empty()).map_or(Due::Nothing, Due::Start) });
+        return Ok(if auto::open_elsewhere(tx, project)? { Due::Nothing } else { Some(in_order(tx, project, &s, now)?).filter(|l| !l.is_empty()).map_or(Due::Nothing, Due::Start) });
     }
     let Some(picker) = s.agent.as_deref().map(|a| agents::in_project(tx, a, project)).transpose()?.flatten() else {
         return off(tx, "its agent is no longer in the pool.".to_string());
@@ -191,7 +195,7 @@ pub(super) fn decide(tx: &rusqlite::Transaction, project: &str, s: &Setting, now
     if auto::open_elsewhere(tx, project)? {
         return Ok(Due::Nothing);
     }
-    let (free, n) = offer(tx, project, s, now)?;
+    let (free, n) = offer(tx, project, &s, now)?;
     if n == 0 {
         return Ok(Due::Nothing);
     }
@@ -204,23 +208,23 @@ pub(super) fn decide(tx: &rusqlite::Transaction, project: &str, s: &Setting, now
     ops::set_budget(tx, DISPATCHER, &t.id, Some(ROUND_MINUTES), now)?;
     ops::move_to(tx, DISPATCHER, &t.id, "IN PROGRESS", now)?;
     auto::add_round(tx, &Round { task: t.key.clone(), project: project.to_string(), slots: n, candidates: ids }, now)?;
-    Ok(Due::Round(t.id))
+    Ok(Due::Round { id: t.id, picker: picker.id })
 }
 
 /// Each project it is on for, or with a round to take off the board, one at a time, in the projects' order (AC-170).
 /// Called by the walk.
 pub async fn due(app: &Shared) {
     let Ok(all) = store(app, auto::due_for).await else { return };
-    for (project, s) in all {
-        let (p, picker) = (project.clone(), s.agent.clone().unwrap_or_default());
-        match store(app, move |tx| Ok((decide(tx, &p, &s, ops::now())?, ops::project_place(tx, &p)?.0))).await {
+    for project in all {
+        let p = project.clone();
+        match store(app, move |tx| Ok((decide(tx, &p, ops::now())?, ops::project_place(tx, &p)?.0))).await {
             Ok((Due::Nothing, _)) => {}
             Ok((Due::Off(why), name)) => {
                 super::acts::note(app, format!("Auto-Dispatcher turned itself off for {name}: {why}"));
                 crate::page::projects::tell(app);
             }
-            Ok((Due::Round(id), _)) => {
-                if let Err(why) = super::api::press_auto(app, &id, &picker).await {
+            Ok((Due::Round { id, picker }, _)) => {
+                if let Err(why) = super::api::press_auto(app, &id, &picker, None).await {
                     // a round that could not start fails, unless it ended meanwhile: the next walk's breaker says so
                     let (task, words) = (id.clone(), format!("It did not start: {why}"));
                     let _ = store(app, move |tx| if super::plan::finished(&ops::get(tx, &task)?.status) { Ok(()) } else { super::move_one(tx, &task, "FAILED", &words) }).await;
@@ -250,23 +254,27 @@ pub async fn due(app: &Shared) {
 /// is given back and a later walk tries again. A press that fails (no folder, a command that does not start) would
 /// fail at every walk: it turns itself off instead, and answers why.
 async fn start_in_order(app: &Shared, project: &str, c: &Candidate) -> Option<String> {
-    let pressed = super::api::press_auto(app, &c.id, &c.agent).await;
+    let pressed = super::api::press_auto(app, &c.id, &c.agent, Some(project)).await;
     let ran = matches!(&pressed, Ok(v) if v.get("run").is_some());
     let (task, agent, p, why) = (c.key.clone(), c.agent.clone(), project.to_string(), pressed.err().map(|e| format!("it could not start {}: {e}", c.id)));
-    let off = why.clone();
     let done = store(app, move |tx| {
         if ran {
             let name = agents::name_of(tx, &agent)?;
-            return ops::log(tx, &task, DISPATCHER, "why", &format!("Auto-Dispatcher started it on {name}, by priority and saved order."), None, ops::now()).map(drop);
+            ops::log(tx, &task, DISPATCHER, "why", &format!("Auto-Dispatcher started it on {name}, by priority and saved order."), None, ops::now())?;
+            return Ok(None);
         }
         auto::not_started(tx, &task, None)?;
-        off.map_or(Ok(()), |why| auto::turn_off(tx, &p, &why))
+        if let Some(why) = why && auto::order_on(tx, &p)? {
+            auto::turn_off(tx, &p, &why)?;
+            return Ok(Some(why));
+        }
+        Ok(None)
     }).await;
-    if let Err(e) = done {
-        tracing::warn!(event = "dispatcher.auto", error = %e);
-    }
     crate::tasks::api::told(app, &c.id);
-    why
+    done.unwrap_or_else(|e| {
+        tracing::warn!(event = "dispatcher.auto", error = %e);
+        None
+    })
 }
 
 /// What a `dispatch_task` call may start, read in one transaction, which takes its slot of the round: the task, its
@@ -318,7 +326,7 @@ pub async fn dispatch(app: &Shared, pane: &str, args: &Value) -> Result<String, 
     let why: String = crate::plans::rules::clean(args["why"].as_str().unwrap_or_default()).chars().take(WHY_MOST).collect();
     let (key, wanted) = (pane.to_string(), id.clone());
     let c = store(app, move |tx| chosen(tx, &key, &wanted, ops::now())).await?;
-    let pressed = super::api::press_auto(app, &id, &c.agent.id).await;
+    let pressed = super::api::press_auto(app, &id, &c.agent.id, None).await;
     let (task, round, name, by, ran) = (c.task.key.clone(), c.round, c.agent.name.clone(), c.by, matches!(&pressed, Ok(v) if v.get("run").is_some()));
     store(app, move |tx| {
         if !ran {

@@ -91,6 +91,9 @@ pub(super) struct Press {
     /// Auto-Dispatcher's press, no human's (AC-170): never read from a request
     #[serde(skip)]
     auto: bool,
+    /// the project that picked this task by order, checked again when the press takes a slot
+    #[serde(skip)]
+    order_project: Option<String>,
     /// the project's manager pressed, by its tool (terminum-agents.md AC-179): the user it writes as. Kept with a
     /// wait so its start says the same; never taken from a page's request
     #[serde(default)]
@@ -147,6 +150,12 @@ impl Press {
             return Err(WAIT_GONE.to_string());
         }
         Ok(())
+    }
+
+    /// A pick by order only takes a slot while its project still owns the task and allows order starts (AC-170).
+    fn order_allows(&self, tx: &rusqlite::Transaction, project: &str) -> Result<bool, String> {
+        let Some(selected) = &self.order_project else { return Ok(true) };
+        Ok(selected == project && crate::tasks::auto::order_on(tx, selected)?)
     }
 
     /// Who pressed: the manager's user, else the human.
@@ -256,11 +265,11 @@ pub(super) async fn press_again(app: &Shared, id: &str, body: Value, waited: boo
     pressed(app, id, body).await
 }
 
-/// Auto-Dispatcher's press (AC-170): a round on the agent that picks, or a task a round chose on its agent; with no
-/// room it answers `full` and nothing waits.
-pub(super) async fn press_auto(app: &Shared, id: &str, agent: &str) -> Result<Value, String> {
+/// Auto-Dispatcher's press (AC-170). With no room it answers `full` and nothing waits.
+pub(super) async fn press_auto(app: &Shared, id: &str, agent: &str, order_project: Option<&str>) -> Result<Value, String> {
     // always a session of its own: a conversation a human's RUN left is never gone on in by its words
-    pressed(app, id, Press { agent: Some(agent.to_string()), auto: true, fresh: true, how: How::Auto, ..Default::default() }).await
+    pressed(app, id, Press { agent: Some(agent.to_string()), auto: true, fresh: true, how: How::Auto,
+        order_project: order_project.map(str::to_string), ..Default::default() }).await
 }
 
 /// A red batch's integration task pressed on its project's integration agent (terminum-integration.md AC-194):
@@ -427,6 +436,9 @@ async fn first_run(app: &Shared, tasks: &[Task], body: Press, kept: Press, comme
     let (ag, f, project, at) = (a.clone(), dir.clone(), t.project.clone(), app.clone());
     let next = store(app, move |tx| {
         let now: Vec<Task> = all.iter().map(|t| ops::get(tx, &t.id)).collect::<Result<_, _>>()?;
+        if !kept.order_allows(tx, &now[0].project)? {
+            return Ok(None);
+        }
         kept.still_waits(tx, &now[0].key)?;
         for t in &now {
             way(t, runs::last_of(tx, &t.key)?, true, &|k| at.tmux.pane_state(k))?;
@@ -438,7 +450,7 @@ async fn first_run(app: &Shared, tasks: &[Task], body: Press, kept: Press, comme
             return Err(full.words);
         }
         if let Some(kept) = wait_if_full(tx, &ag, &project, (&now[0], now.len() == 1), None, (&kept, said.as_deref(), &attached))? {
-            return Ok(Next::Kept(kept));
+            return Ok(Some(Next::Kept(kept)));
         }
         let prompt = goes.prompt(said.as_deref());
         if let Some(c) = &said {
@@ -455,11 +467,13 @@ async fn first_run(app: &Shared, tasks: &[Task], body: Press, kept: Press, comme
             }
         }
         super::waits::remove(tx, &keys[0])?;
-        runs::add(tx, &Run::of(&ag, host, f, project, Some(prompt)), &keys, kept.started(), ops::now()).map(Next::Run)
+        let run = runs::add(tx, &Run::of(&ag, host, f, project, Some(prompt)), &keys, kept.started(), ops::now())?;
+        Ok(Some(Next::Run(run)))
     }).await?;
     let run = match next {
-        Next::Run(run) => run,
-        Next::Kept(kept) => return Ok(kept.answer(app, t)),
+        Some(Next::Run(run)) => run,
+        Some(Next::Kept(kept)) => return Ok(kept.answer(app, t)),
+        None => return Ok(json!({})),
     };
     let ids: Vec<String> = tasks.iter().map(|t| t.id.clone()).collect();
     launch(app, &run, &server, &t.project, &dir, &a, &ids).await?;
