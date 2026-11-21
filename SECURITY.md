@@ -158,7 +158,8 @@ project-scoped allow-list for Observer, Advisor and Operator, checked at discove
 execution. A round's or Talk's session is that caller; there is no Supervisor token, and a
 manager's token gets no Supervisor tool. Observer reads evidence and records findings and
 reports. Advisor can write authorized tasks, comments, cards and proposals. Operator can
-also start tasks, told only their IDs, or promote them and apply or release the specified reversible holds. No level's
+also start or promote tasks (its prompt names only their IDs) and apply or release the
+reversible holds of AC-245. No level's
 tools can type into or close a pane, edit the pool or schedules, run an arbitrary command,
 publish, delete work, read secrets or transcripts, or change protected settings or past
 evidence. Code checks the scope, signal level, evidence IDs, claimed numbers and budgets
@@ -178,14 +179,12 @@ rounds and lists active holds for the owner to release
   puts approved IDs, counts and an optional owner-configured link on standard input.
   It uses a fixed environment and deadline and reads only the exit status. Incident
   actions and replies require the signed-in page. Probe commands also require owner
-  confirmation, with bounded, checked metric output. Import never enables a command.
-  The tab shows each imported command in full and the owner sets it separately. Export
-  excludes commands and secrets unless the owner selects them; a file exported with them
-  holds them in plain text (`terminum-supervisor.md` AC-220, AC-227,
+  confirmation, with bounded, checked metric output. Import never enables a command:
+  the tab shows it in full for the owner to set. Export leaves out commands and secrets
+  unless the owner selects them, then holds them in plain text (`terminum-supervisor.md` AC-220, AC-227,
   AC-260).
-- **Left**: a round's agent runs with its pool command's permissions
-  (`terminum-dispatcher.md` AC-156): with a bypassing command, the case file's task
-  excerpts are one step from running as you, so choose agents without bypass for the
+- **Left**: a round's agent keeps its pool command's permissions, with AC-156's risk of a
+  bypassing command (`terminum-dispatcher.md` §9), so choose agents without bypass for the
   Supervisor's tiers. A process running as the same user can change the local store, tmux
   or the commands the owner configured. The scoped tools bound model actions through terminumd.
   An owner-configured command runs with that user's OS access. Keep the private charter,

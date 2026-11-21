@@ -42,11 +42,11 @@ page: plain JavaScript, ES modules, !bundler
 | Project memory | `project-memory/`: agents' local long-term memory, indexed, !committed ("Project memory" below) |
 | Task | a card on the board at `/kanban/`, in the SQLite store: status, severity, owner, project, session (`terminum-kanban.md`) |
 | Dispatcher | terminum's system user: starts a task's session, watches it, keeps its budget, ends it (`terminum-dispatcher.md`) |
-| Manager, worker | a tool caller's role, terminumd's word at each call (`terminum-agents.md` AC-174): manager: the session a human's + Session started, or a session the human opened in a project, for that project, or a manager's token; worker: every other session; a manager's tools are !found, !run by a worker; Supervisor: a round's or Talk's session, its level's tools alone (`terminum-supervisor.md` AC-231) |
-| Supervisor | per-project role: detects problems, sizes their impact, proposes or drives fixes, and measures whether they stay resolved |
+| Manager, worker | a tool caller's role, terminumd's word at each call (`terminum-agents.md` AC-174): manager: the session a human's + Session started, or a session the human opened in a project, for that project, or a manager's token; worker: every other session; a manager's tools are !found, !run by a worker |
+| Supervisor | per-project role: finds problems, sizes their impact, proposes or drives fixes, measures whether they stay fixed; caller: a round's or Talk's session, neither manager nor worker, its level's tools alone (`terminum-supervisor.md` AC-231) |
 | Signal | a detector's finding with its evidence, measure and fingerprint; repeats update one record |
-| Round | a short Supervisor session with a kept case file, bounded budget and typed result |
-| Incident | a critical finding's card, timeline and owner actions, shared by its related signals and updates |
+| Round | a Supervisor session: a kept case file, a bounded budget, a typed result |
+| Incident | a critical finding's card: timeline, owner actions; its subject's later signals and updates join it |
 | Hold | a reversible Supervisor action: stop a run, pause dispatch or integration, or take a task out of integration; names its undo |
 | Spec | `docs/specs/`: `terminum.md` (core), `terminum-lifecycle.md`, `terminum-terminal.md`, `terminum-agents.md`, `terminum-kanban.md`, `terminum-dispatcher.md`, `terminum-schedules.md`, `terminum-integration.md`, `terminum-supervisor.md`, `terminum-files.md`, `terminum-remote.md`: cases `AC-nn` (unique across them), BDD scenarios, design, limits, the test proving each case |
 

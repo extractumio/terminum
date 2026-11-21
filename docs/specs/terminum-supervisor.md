@@ -590,6 +590,7 @@ Scenario Outline: AC-233 failure — no room
     | the judgment budget is spent | the budget notice |
     | the tier has no agent in the pool | the missing tier |
     | the fingerprint already has an active round | the active round's ID |
+    | the signal repeats unchanged after its round ended | the round that judged it |
 
 Scenario: AC-233 failure — waiters by impact
   Given two eligible rounds wait for one freed slot
@@ -1363,7 +1364,7 @@ A detector names a schema-pinned engine query plus typed parameters: `measure`, 
 |---|---|
 | Events, runs, schedule fires and integration outcomes | Read in commit order through a persisted cursor on the detector timer, within one minute. Resume from a stable commit-order sequence and commit its cursor with signal writes. Use the event ID for evidence; IDs are random and do not sort by commit order. |
 | Store trends and baselines | Measure store trends every 15 minutes. Store points for current waits, subscription readings and plan ETAs. Update baselines daily. |
-| Hook sensors | Count tool use and failures, repeats, subagent starts and stops, stops and compactions per session. Do analysis on the collector and expire counters on their retention schedule. |
+| Hook sensors | Count tool use and failures, repeats, subagent starts and stops, stops and compactions per session in terminumd's memory; the collector flushes them in its one transaction a beat, so a hook never waits on the store. Do analysis on the collector and expire counters on their retention schedule. |
 | Git and logs | Hourly, with the project's git checkout or log source where available. |
 | Probes | Daily by default. A separate heartbeat watchdog signals two missed beats even when the collector stops. |
 | Gates | Match calibrated terms at task creation, inspect the first worktree diff and check the review record at Verify. |
@@ -1440,7 +1441,7 @@ Compare the latest four weeks to the preceding four and show changes against the
 | Weekly review | A project schedule made once a strong-tier agent is chosen, weekly, visible and editable in Routines. |
 | Guardrail bands | Each detector's threshold may be tuned within ±50% of its calibrated value; the decisions-right band is a rule's trailing rate ±2 standard errors, judged only from 30 decisions. Only the owner changes them. |
 
-A signed-in switch starts a scan within seconds: read available integrations, code host, pool and schedules, list unmet needs, calibrate and replay. With fewer than three weeks of data report limited history. On attach, a live detector raises findings immediately, but holds shadow until replay shows at least two-thirds right over at least three prior firings, or seven days elapse. A breach of a charter "never" bypasses shadow. A detector enabled later shadows all actions. The tab exports a text file with commands and secrets excluded by default. Explicit selection can include those fields in an export. Import displays proposed commands unset and leaves the live switch and command authority to separate human presses; show each command in full before confirmation.
+A signed-in switch starts a scan within seconds: read available integrations, code host, pool and schedules, list unmet needs, calibrate and replay. With fewer than three weeks of data report limited history. On attach, a live detector raises findings immediately, but holds shadow until replay shows at least two-thirds right over at least three prior firings, or seven days elapse. A breach of a charter "never" bypasses shadow. A detector enabled later shadows all actions. Export writes a text file without commands and secrets unless the owner selects them. Import displays proposed commands unset and leaves the live switch and command authority to separate human presses; show each command in full before confirmation.
 
 ### Caller, rounds and case files
 
@@ -1460,9 +1461,9 @@ A signed-in switch starts a scan within seconds: read available integrations, co
 | Reflection | Code trigger or level 3 post-mortem; strong independent agent | 30 min, replay-backed config proposals. A short reflection can be part of the weekly review when no separate trigger is due. |
 | Conversation | Owner opens a session or presses Talk; owner selects agent | No round time cap. Records owner rulings as applicable. |
 
-Investigations and triggered reflections are requested by code, through Dispatcher's gate, on kept slots. Investigate accepts any signal or incident subject to slot and budget. Weekly review can nominate an investigation. A round with an active fingerprint suppresses duplicate launches; waiters go in impact order. Review priority is by tier. The case file includes the relevant charter excerpt, signal or question, evidence rows and measures, baselines, matching register problems, rulings and indexed memory, tool scope and remaining budget. Task excerpts are capped and marked as data. Only quarantined closed-list fields may be included from outside the project.
+Investigations and triggered reflections are requested by code, through Dispatcher's gate, on kept slots. Investigate accepts any signal or incident subject to slot and budget. Weekly review can nominate an investigation. A round with an active fingerprint suppresses duplicate launches, and a repeat of a signal starts a round only when its state changes (raised, recurred, a higher level or new evidence); waiters go in impact order. Review priority is by tier. The case file includes the relevant charter excerpt, signal or question, evidence rows and measures, baselines, matching register problems, rulings and indexed memory, tool scope and remaining budget. Task excerpts are capped and marked as data. Only quarantined closed-list fields may be included from outside the project.
 
-A bootstrap prompt can read `Supervisor case case_0042. Read the case file and report through the Supervisor tools.` The case ID is the only variable data pasted. A role tool never types the prompt. Dispatcher starts, checks the marked pane, records the paste, enforces the time budget and releases the slot at exit. The result is a typed finding or review, never a transcript. A subagent has a brief, typed result, deadline and budget. Use read-only investigation, architecture critic, product analyst, tool-free quarantined reader, and independent critic where their questions require judgment. Keep no standing subordinates.
+A bootstrap prompt can read `Supervisor case case_0042. Read the case file and report through the Supervisor tools.` The case ID is the only variable data pasted. A role tool never types the prompt. Dispatcher types it through its §9 gate into the marked round pane, enforces the time budget and releases the slot (terminum-dispatcher.md §9). The result is a typed finding or review, never a transcript. A subagent has a brief, typed result, deadline and budget. Sub-agents where judgment is needed: read-only investigator, architecture critic, product analyst, tool-free quarantined reader, independent critic; none standing.
 
 ### Budgets, register and holds
 
@@ -1472,7 +1473,7 @@ Rank problems by impact level and, within it, `share × weeks standing × confid
 
 | Hold | Undo |
 |---|---|
-| Stop a marked run as a Give up (terminum-dispatcher.md AC-138): its task FAILED with a reason, its window kept, nothing typed | RUN resumes the task. |
+| Give up the marked run (terminum-dispatcher.md AC-138) | RUN resumes the task. |
 | Pause Auto-Dispatcher | Its project switch. |
 | Pause integration or take a queued task out | The corresponding queue action (terminum-integration.md AC-193). |
 | Design first (Advisor) | Unlink the review blocker. This is distinct from an Operator's runtime hold. |
@@ -1481,13 +1482,13 @@ An Operator hold names a level 2 or higher signal, the rule and undo. A human or
 
 ### Incident line, decisions and reports
 
-Group related signals on a subject into one active incident, within the line's grouping window (15 minutes by default). The pinned card carries thread and timeline; the bar remains until acknowledged. The fixed text orders what happened, what is held, what is needed, by when and what happens without an answer. The action set is selected by code for the incident: Acknowledge, Snooze one hour, Investigate now, Keep the hold, Release the hold and This is wrong as applicable. Acknowledgment stops repeats. Snoozing delays repeats. Both leave the hold in force.
+Group related signals on a subject into one active incident, within the line's grouping window (15 minutes by default). The pinned card carries thread and timeline; the bar remains until acknowledged. The fixed text orders what happened, what is held, what is needed, by when and what happens without an answer. Code picks the incident's actions from Acknowledge, Snooze one hour, Investigate now, Keep the hold, Release the hold and This is wrong. Acknowledge stops repeats, Snooze delays them; neither releases the hold.
 
 The owner configures ordered command channels in the signed-in tab. A send uses the configured command with a fixed environment and deadline, template on standard input and exit status as the only result. Example: `API · incident 27 · level 3. Target red, 2 batches blocked. Integration paused. No answer: pause stays.` Updates, all-clear and answer notices use their own fixed templates. Only approved IDs, counts and a link from the owner's optional base appear. Never insert task prose, home paths or secrets. Quiet hours defer notices except a charter-never breach or reversibility 3. Repeat per incident on the ladder, never sooner than its next step, and from the 30-minute repeat on also send to the next configured channel; there is no daily count cap. An owner test alert and weekly silent self-test exercise the path. Failed delivery shows on the bar and screen, produces `self.line_dead` and tries the next channel in order. A configured link base contains no credentials. Commands have send-only authority. All answers, including release of a hold, go through the signed-in page.
 
 Decision cards use terminum-dispatcher.md AC-157 and appear on the board and in the review. High-impact owner choices include fix options, standing rules, exhausted fix budgets, T3 sign-off, hold disposition and rules with open breakers. A card names the evidence and cost of waiting. For AC-230, keep the question's original text and optional structured fields: stable option IDs and labels, one recommended ID and operational or strategic kind. Choosing a listed option saves a human answer on that question with its option ID. Free text saves a human answer without an option ID; old questions keep their original text and an unknown kind. Answer only the current question. The same RUN continuation consumes the answer in either form.
 
-Agent nudges use the comment path in terminum-dispatcher.md AC-209. A human's incident comment reaches a live round as a comment notice (terminum-dispatcher.md AC-209), never typed, and after the round only through a human's RUN (terminum-dispatcher.md AC-122). Talk uses terminum-dispatcher.md AC-204 with the case ID as its fixed first prompt. The owner can also open a conversation with the Supervisor's skill and its charter, register and open signals (AC-244). A ruling there or on a card goes into project memory as an owner ruling; the Supervisor makes its argument once per evidence set.
+Agent nudges and a human's incident comment to a live round go as comment notices (terminum-dispatcher.md AC-209), never typed; after the round, the comment reaches an agent only through a human's RUN (terminum-dispatcher.md AC-122). Talk uses terminum-dispatcher.md AC-204 with the case ID as its fixed first prompt. The owner can also open a conversation with the Supervisor's skill and its charter, register and open signals (AC-244). A ruling there or on a card goes into project memory as an owner ruling; the Supervisor makes its argument once per evidence set.
 
 The weekly review's sections, in order:
 
@@ -1530,7 +1531,7 @@ A breaker belongs to a detector and response pair. It opens on two wrong decisio
 
 | Config class | Path |
 |---|---|
-| Tune | Reproduce the replay within the guardrail, apply, log and report. A drop in firings over 30% or an open breaker requires the owner. |
+| Tune | Reproduce the replay of the changed detector within the guardrail, apply, log and report. A drop in firings over 30% or an open breaker requires the owner. |
 | Extend | Replay and shadow, then promote only with the owner's key. |
 | Owner | Decision card with replay for pages, T3, long mutes, coverage reductions and charter amendments. |
 | Engine | Propose code and tests for a new named query, tool, probe kind or recorded field on the engine board. |
