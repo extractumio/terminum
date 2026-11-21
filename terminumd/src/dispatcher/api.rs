@@ -109,11 +109,15 @@ pub(super) struct Press {
 impl Press {
     /// The words a first run's agent hears, from the tasks as they stand: refused when they are not what the human
     /// saw, as an agent may have changed a task meanwhile (AC-121).
-    fn first_words(&self, tx: &rusqlite::Transaction, tasks: &[Task]) -> Result<Facts, String> {
+    pub(super) fn first_words(&self, tx: &rusqlite::Transaction, tasks: &[Task]) -> Result<Facts, String> {
         let mut goes = facts(tx, tasks, self.comment.as_deref().map(str::trim).filter(|c| !c.is_empty()))?;
         // a batch's integration task speaks the project's Prompt with the batch's facts (terminum-integration.md AC-194)
         if self.how == How::Integration {
             goes.integration = crate::integrate::agent::prompt_of(tx, &tasks[0].key)?;
+        }
+        if self.how == How::Schedule && self.manager.is_none() {
+            use super::fire::{run_now_by, Initiator};
+            goes.schedule_initiator = Initiator::of(run_now_by(tx, &tasks[0].key)?.as_deref());
         }
         goes.auto = self.auto;
         goes.manager = self.manager.is_some();
