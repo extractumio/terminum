@@ -153,6 +153,7 @@ settings.json (browsers that did not choose).
 | Option or ⌘ with ↑/↓ | Page up and down |
 | ⌘Z, ⌘⇧Z | The program's undo (Claude Code, zsh, bash, fish) and redo (fish) |
 | ⌘X; Backspace, Delete | Cut or delete the text selected in a coding agent's input |
+| Ctrl+Shift+V, Ctrl+Shift+C | Paste clipboard text and copy the terminal selection. On by default on Linux and Windows. Turn off the shortcut pair in Settings to send both keys to the program. |
 
 **On a phone**
 

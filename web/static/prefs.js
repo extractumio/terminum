@@ -13,6 +13,18 @@ import { agentNotices } from "./agentnotices.js";
 const $ = (id) => document.getElementById(id);
 const MD_MIN = 10, MD_MAX = 32;
 
+/** Keyboard clipboard settings are local to the browser running the page. */
+export function clipboardSettings(store) {
+  function kept(id, key, fallback) {
+    const input = $(id);
+    input.checked = store.get(key, fallback);
+    input.onchange = () => store.set(key, input.checked);
+    return () => input.checked;
+  }
+  const apple = /Mac|iPhone|iPad|iPod/.test(navigator.platform);
+  return { insertClipboard: kept("insclip", "insertClipboard", true), shiftClipboard: kept("shiftclip", "shiftClipboard", !apple) };
+}
+
 /** redraw(): the list and the header, again (the switch changes their folders at once); copy(text): the page's Copy. */
 export function menuPrefs({ store, send, toast, redraw, copy }) {
   const notices = agentNotices({ send, copy });

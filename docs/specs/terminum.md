@@ -267,6 +267,14 @@ Scenario: AC-03 edge — Shift+Insert and Ctrl+Insert
   Then the browser pastes (copies) as with ⌘V (⌘C): the page's paste and copy take it, as xterm and Windows do
   But with Settings' "Shift+Insert and Ctrl+Insert paste and copy" off (on by default, kept in this browser) the pane gets ESC[2;2~ (ESC[2;5~); ⇧⌃Insert and ⌥Insert always go to the pane
   But on a Mac a PC keyboard's Insert is Help (the browser's e.key) and nothing changes: ⌘C and ⌘V copy and paste
+Scenario: AC-03 edge — Ctrl+Shift+V and Ctrl+Shift+C
+  Given a Linux or Windows browser showing a terminal pane
+  When the user presses Ctrl+Shift+V or selects terminal text and presses Ctrl+Shift+C
+  Then the browser's paste event supplies the text or the terminal selection is copied
+  And Ctrl+V and Ctrl+C still go to the pane as ^V and ^C
+  But with Settings' "Ctrl+Shift+V and Ctrl+Shift+C paste and copy" off, the shifted keys also go to the pane as ^V and ^C
+  And the switch is kept in this browser, off by default on Apple devices
+  And the shortcut leaves other fields alone and does not match with Meta or Alt held
 Scenario: AC-03 edge — Shift+Enter and Ctrl+Enter
   When the user presses ⇧↩ or ⌃↩ (a key or the hot key)
   Then terminumd sends "send-keys S-Enter" or "C-Enter": a program that asked for extended keys (Claude Code) gets ESC[13;2u or ESC[13;5u and makes a new line, a shell gets Enter (AS-10)
@@ -1573,7 +1581,7 @@ All cases are shipped. What AC-195's lines may call for, each only once the inst
 
 - [x] AC-01 — web/test/e2e_tmux.mjs, `cargo test manager::tests` (a problem goes on the fast path back), web/test/e2e_rows.mjs, web/test/e2e_header.mjs, web/test/e2e_live.mjs, web/test/dircolors.test.mjs, scripts/e2e_core.py, terminumd/src/tmux/titles_tests.rs
 - [x] AC-02 — `cargo test page::hist::request_tests`, `web/test/e2e_requests.mjs`, `node web/test/e2e_live.mjs requests`, web/test/e2e_tmux.mjs, web/test/e2e_live.mjs, web/test/e2e_livejitter.mjs, web/test/e2e_livelimit.mjs, web/test/e2e_openend.mjs, scripts/e2e_core.py, terminumd/src/page/hist_tests.rs
-- [x] AC-03 — terminumd/src/tmux/keys_tests.rs, terminumd/src/page/pastefold.rs, web/test/e2e_livekeys.mjs, web/test/e2e_liveprogs.mjs, web/test/e2e_idekeys.mjs, web/test/e2e_touch.mjs, web/test/kbdtouch.test.mjs, scripts/e2e_core.py, scripts/e2e_typing_review.py
+- [x] AC-03 — terminumd/src/tmux/keys_tests.rs, terminumd/src/page/pastefold.rs, web/test/e2e_livekeys.mjs, web/test/e2e_liveprogs.mjs, web/test/e2e_idekeys.mjs, web/test/e2e_clipboardkeys.mjs, web/test/e2e_touch.mjs, web/test/kbdtouch.test.mjs, scripts/e2e_core.py, scripts/e2e_typing_review.py
 - [x] AC-04 — web/test/e2e_screen.mjs, web/test/e2e_switch.mjs, web/test/e2e_resize.mjs, web/test/e2e_livesplit.mjs, web/test/switchgate.test.mjs, scripts/e2e_sizing.py, terminumd/src/screen/rows_tests.rs
 - [x] AC-05 — web/test/e2e_screen.mjs, web/test/e2e_appscreen.mjs, web/test/e2e_codex.mjs, web/test/e2e_liveprogs.mjs, scripts/e2e_sizing.py
 - [x] AC-06 — web/test/e2e_screen.mjs, web/test/e2e_progcopy.mjs, web/test/e2e_liveclip.mjs, web/test/e2e_liveprogs.mjs, scripts/e2e_core.py
