@@ -22,18 +22,32 @@ const taskKit = (j) => {
 };
 
 export async function liveDispatcher(page, opts) {
-  const { base, tmux, work, shots, stop, start } = opts;
+  const { base, tmux, work, app, shots, stop, start, requestOnly } = opts;
   const { j, keyOf, card, open, backToSessions, cli } = boardKit(page, opts);
   const project = (await j("/api/task-projects", "POST", { name: "Runs", dir: work })).id;
   const fake = (kind, more = "") => `python3 -I ${FAKE} ${cli} --kind ${kind} ${more}`;
   const agent = async (name, more = "", kind = "claude") => (await j("/api/task-agents", "POST", { project, name, kind, command: fake(kind, more) })).id;
-  const plain = await agent("Plain");
   const task = async (title, text = "") => (await j("/api/tasks", "POST", { title, text, project })).id;
   // an agent takes more only when free (AC-138): a run here has its own, so one left open stands in no other's way
   let runs = 0;
   const run = async (id, body) => j(`/api/tasks/${id}/run`, "POST", body ?? { agent: await agent(`Run ${++runs}`) });
   const { status, history, paneOf, hasStatus } = taskKit(j);
   const said = (id, words, ms = 8000) => until(async () => (await history(id)).includes(words), ms);
+
+  // AC-123: observe what reached Enter. The agent folds long pastes in the box and clears it after Enter.
+  const noResult = async () => {
+    const stops = await task("stops midway");
+    const prompts = path.join(fs.mkdtempSync(path.join(app, "result-request-")), "prompts");
+    await run(stops, { agent: await agent("Stops", `--prompts ${prompts}`) });
+    const request = `[terminum Dispatcher] ${stops} is still open and your turn ended; no human watches this run now.`;
+    const received = await until(() => fs.existsSync(prompts) &&
+      fs.readFileSync(prompts, "utf8").split("\n").some((line) => line.startsWith(request)), 15000);
+    check("AC-123 a turn with no result gets a request", received, received ? "" : await history(stops));
+    if (requestOnly) return;
+    check("AC-123 no result an hour after the request: FAILED", await hasStatus(stops, "FAILED", 30000) && await said(stops, "No result from the agent within an hour of Dispatcher's request."), await history(stops));
+  };
+  if (requestOnly) return noResult();
+  const plain = await agent("Plain");
 
   // AC-121 happy path, through the page: its play key asks which agent, the last chosen picked, one press
   const first = await task("Fix the retry loop FINISHES", "Its text.");
@@ -109,11 +123,7 @@ export async function liveDispatcher(page, opts) {
   tmux("send-keys", "-t", pane, "Down");
   check("AC-121 once answered the prompt goes in and it ends", await hasStatus(asks, "DONE", 15000), await history(asks));
 
-  // AC-123 a turn with no result: one request through the gate, then FAILED an hour later, never DONE
-  const stops = await task("stops midway");
-  await run(stops);
-  check("AC-123 a turn with no result gets a request", await until(async () => /still open and your turn ended; no human watches this run now\./.test(tmux("capture-pane", "-p", "-S", "-30", "-t", await paneOf(stops))) || await status(stops) === "FAILED", 15000));
-  check("AC-123 no result an hour after the request: FAILED", await hasStatus(stops, "FAILED", 30000) && await said(stops, "No result from the agent within an hour of Dispatcher's request."), await history(stops));
+  await noResult();
 
   // AC-123 the gate never types on a draft
   const drafted = await task("a draft stands");
