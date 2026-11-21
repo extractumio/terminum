@@ -1225,6 +1225,15 @@ Scenario: AC-149 happy path — a conversation
   Then comments and history read oldest first, the comment field after the last of them; no key turns the order
   And a comment is a card with a bar inside its left edge and its author's name in the color of its kind: a human's cornflower blue; an agent's and Dispatcher's muted and near each other (teal, slate); an agent's questions for the human in the waiting color, marked "asks you" (terminum-dispatcher.md AC-157)
   And a comment says its author, when it was written and "edited <when>" once changed (AC-108): today's time alone ("10:16"), another day's with its date ("Nov 12, 10:16"), the whole date and time in its title
+
+Scenario: AC-149 happy path — a comment's label lines read as sections
+  Given an agent's result "Outcome: attention\nSummary: 12 integrations landed.\nDetails:\nNew features:\n- API-21: told at its next call.\nChanged / fixed:\n- API-16: one tool.\nFor the human: nothing", or its questions "Why you are needed: …\nRecommended:\n1. RUN it again.\nDetails: …"
+  When the user reads that comment
+  Then each line that starts with a short label (a capital, up to 4 words, then ":" and words; alone on its line, up to 6) starts a block of its own, never joined to the line or the list item before it
+  And a label alone on its line is the heading of what follows, without its colon; a label before words is their lead, in the muted strong color
+  And Outcome's first word is a pill in its status's hue: ok and done the ok fill, attention and partly the waiting fill, failed the danger fill
+  And the comment's lines keep a readable measure (76 characters at most), its list items a little apart, in Chromium and WebKit, wide and on a phone, a dark and a light theme
+  But fenced code, indented lines and a sentence with a colon after its fifth word stay as written; raw HTML stays off, as in every task's Markdown
   And a line of history is one muted line between the cards: its time, then its words, its author named once; a screen quoted in it (between ``` lines) is shown as the terminal drew it, scrolling in a box of its own
   And a task opened is shown from its start
 
@@ -1459,7 +1468,7 @@ Depends on: nothing more.
 - [x] AC-139 — `cargo test page::projects`, `cargo test tasks::folder`, `web/test/e2e_liveboardagents.mjs` (a 200-character folder, the picker up, in, Cancel and Choose), `web/test/e2e_boardtype.mjs` (the cog with one project and with several, six tabs inside a phone)
 - [x] AC-135 — `web/test/e2e_liveboardsession.mjs`, `web/test/e2e_liveboard.mjs`
 - [x] AC-148 — `cargo test tasks::slugs`, `cargo test tasks::store` (an older store), `web/test/e2e_liveboardids.mjs`
-- [x] AC-149 — `web/test/e2e_liveboardids.mjs`, `web/test/e2e_taskwin.mjs` (the parts, the kinds' bars, what leads, a change while open)
+- [x] AC-149 — `web/test/e2e_liveboardids.mjs`, `web/test/e2e_taskwin.mjs` (the parts, the kinds' bars, what leads, a change while open), `ui/test/said.test.mjs` and `web/test/e2e_said.mjs` (label lines as sections)
 - [x] AC-150 — `web/test/e2e_livenotes.mjs` (counted, listed, the task window on the session page), `cargo test tasks::ops` (a restore, a server started anew)
 - [x] AC-203 — `web/test/e2e_boardrail.mjs` (`node web/test/e2e_all.mjs webBoardRail`: 1900 px and a phone), the rails' column and a tablet's in `web/test/e2e_boardpanel.mjs`, Routines' strip in `web/test/e2e_liveschedules.mjs`
 - [x] AC-120 — `cargo test tasks::tools` (pages, a host's file), `scripts/e2e_remote_agents.py` (get_file on a host, with files off), `scripts/e2e_remote_sshd_agents.py`

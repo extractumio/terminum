@@ -13,14 +13,20 @@ import { decodePath, hasScheme, resolvePath } from "./paths";
 /** imagePath(path): the path a local image is filled from (api.ts hydrateRaw), "" for none. */
 export type MdEnv = { dir: string; imagePath: (path: string) => string };
 
-const md = new MarkdownIt({ html: false, linkify: true, typographer: true, breaks: false })
-  .use(taskLists, { enabled: false, label: true })
-  .use(footnote);
+/** A renderer with the one configuration; a caller may add its own rules to its instance. */
+export function configuredMd(): MarkdownIt {
+  const md = new MarkdownIt({ html: false, linkify: true, typographer: true, breaks: false })
+    .use(taskLists, { enabled: false, label: true })
+    .use(footnote);
+  // Only these link schemes survive; everything else (javascript:, file:, data: for links) is dropped.
+  md.validateLink = (url) => /^(https?:|mailto:|#|\.{0,2}\/|[^:]*$)/i.test(url.trim());
+  md.renderer.rules.image = (tokens, idx, opts, e, self) => image(md, tokens, idx, opts, e, self);
+  md.renderer.rules.heading_open = headingOpen;
+  return md;
+}
 
-// Only these link schemes survive; everything else (javascript:, file:, data: for links) is dropped.
-md.validateLink = (url) => /^(https?:|mailto:|#|\.{0,2}\/|[^:]*$)/i.test(url.trim());
-
-md.renderer.rules.image = (tokens, idx, _opts, e) => {
+type Rule = NonNullable<MarkdownIt["renderer"]["rules"]["image"]>;
+const image = (md: MarkdownIt, ...[tokens, idx, _opts, e]: Parameters<Rule>): string => {
   const env = e as MdEnv;
   const t = tokens[idx];
   const src = String(t.attrGet("src") ?? "");
@@ -34,11 +40,12 @@ md.renderer.rules.image = (tokens, idx, _opts, e) => {
 };
 
 // heading anchors, so "#section" links work inside the document
-md.renderer.rules.heading_open = (tokens, idx, opts, _env, self) => {
+const headingOpen: Rule = (tokens, idx, opts, _env, self) => {
   const inline = tokens[idx + 1];
   const slug = inline?.content.toLowerCase().trim().replace(/[^\p{L}\p{N}\s-]/gu, "").replace(/\s/g, "-"); // GitHub-compatible slugs
   if (slug) tokens[idx].attrSet("id", slug);
   return self.renderToken(tokens, idx, opts);
 };
 
+const md = configuredMd();
 export const renderMd = (text: string, env: MdEnv): string => md.render(text, env);
