@@ -12,6 +12,7 @@ import unittest
 from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+import cargo_profile  # noqa: E402
 import target_bound  # noqa: E402
 from testrun import short_tmp  # noqa: E402
 
@@ -92,7 +93,7 @@ class Bound(unittest.TestCase):
         release = self.folder("release")
         stale_release = self.write(release / "deps" / f"{UNIT}.cgu0.s1.rcgu.o", 256)
         self.write(release / "deps" / UNIT, 4, executable=True)
-        for name in target_bound.LOCKS:   # any of cargo's locks
+        for name in cargo_profile.LOCKS:   # any of cargo's locks
             fd = self.hold(name)
             self.bound(1)
             fcntl.flock(fd, fcntl.LOCK_UN)
@@ -107,8 +108,8 @@ class Bound(unittest.TestCase):
         free = []
 
         def names(exe):
-            with target_bound.ExitStack() as stack:
-                free.append(target_bound.held_by_us(self.deps.parent, stack))
+            with cargo_profile.try_lock(self.deps.parent) as held:
+                free.append(held)
             return {p.name for p in self.current}
         target_bound.bound(self.tree, 1, self.said.append, self.clean, names)
         self.assertEqual(free, [False])

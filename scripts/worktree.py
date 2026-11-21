@@ -8,7 +8,7 @@
   link [<path>]   share the primary checkout's local files with the tree at <path> (default:
       this one): symlinks to its .toolchain, local.mk, CLAUDE.local.md, project-memory and
       .claude/settings.local.json; clones (copy-on-write where the disk can) of ui/node_modules
-      when the lockfiles match and of terminumd/target's release and debug dependencies' builds
+      when the lockfiles match and of idle release and debug dependency builds in terminumd/target
   list            every worktree: branch, uncommitted files, commits not in origin/main,
       processes working in it
   remove <slug|path> [--discard]
@@ -32,6 +32,7 @@ import subprocess
 import sys
 import time
 
+import cargo_profile
 from process_cwd import directories, InspectionError
 
 KINDS = ("feat", "fix", "test", "docs", "chore")
@@ -258,17 +259,27 @@ def link_modules(tree, primary):
 
 
 def link_target(tree, primary):
-    target = tree / "terminumd/target"
+    source, target = primary / "terminumd/target", tree / "terminumd/target"
     if target.exists():
         return "kept own terminumd/target"
-    profiles = [p for p in ("release", "debug") if (primary / "terminumd/target" / p).is_dir()]
-    if not profiles:
-        return "terminumd/target: cargo builds it (the primary has no build)"
-    for profile in profiles:
-        if not clone_builds(primary / "terminumd/target" / profile, target / profile):
+    cloned, notes = [], []
+    for profile in ("release", "debug"):
+        folder = source / profile
+        if not folder.is_dir():
+            continue
+        with cargo_profile.try_lock(folder) as held:
+            if not held:
+                notes.append(f"cargo builds {profile} in this tree (the primary's {profile} profile is busy)")
+                continue
+            copied = clone_builds(folder, target / profile)
+        if not copied:
             shutil.rmtree(target, ignore_errors=True)
-            return "terminumd/target: no clone on this disk; cargo builds it"
-    return f"cloned terminumd/target/{{{','.join(profiles)}}} (their dependencies' builds; terminumd itself rebuilds)"
+            notes.append("terminumd/target: no clone on this disk; cargo builds it")
+            return "; ".join(notes)
+        cloned.append(profile)
+    if cloned:
+        notes.insert(0, f"cloned terminumd/target/{{{','.join(cloned)}}} (their dependencies' builds; terminumd itself rebuilds)")
+    return "; ".join(notes) or "terminumd/target: cargo builds it (the primary has no build)"
 
 
 def add(slug, kind="feat", base="origin/main", cwd="."):
