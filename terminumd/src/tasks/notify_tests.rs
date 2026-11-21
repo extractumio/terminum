@@ -81,7 +81,7 @@ fn ac209_a_closed_pane_takes_pending_notices_once() {
     let live = "tmux:local:t:%8";
     let other_server = "tmux:local:tt:%7";
     l.push_comment(KEY, "API-12", "offered", "a human".into());
-    let (n, _) = l.offer(KEY).unwrap();
+    let (n, _) = l.offer(KEY, false).unwrap();
     l.push_comment(KEY, "API-12", "waiting", "a human".into());
     l.push(KEY, "API-12", "Dispatcher's warning".into());
     l.push_comment(live, "API-12", "live", "a human".into());
