@@ -62,7 +62,6 @@ impl Drop for Group {
     fn drop(&mut self) { self.kill(); }
 }
 
-
 fn ready_to_reap(pid: libc::pid_t) -> io::Result<bool> {
     // Keep the leader unreaped until we signal its group. This also
     // ends a helper that the command left running on successful exit.

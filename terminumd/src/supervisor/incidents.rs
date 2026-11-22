@@ -119,11 +119,11 @@ fn close_if_clear(tx: &Transaction, id: i64, at: i64, continued: Option<i64>, ur
         WHERE id = ?1 AND closed_at IS NULL
           AND NOT EXISTS (SELECT 1 FROM supervisor_incident_signals WHERE incident = ?1)", (id, at)).map_err(sql)?;
     if changed != 0 {
-        let kind = if continued.is_some() { "continued" } else { "all_clear" };
+        let (event, notice) = if continued.is_some() { ("continued", Kind::Updated) } else { ("all_clear", Kind::AllClear) };
         tx.execute("INSERT INTO supervisor_incident_events (incident, at, kind, actor, related_id)
-            VALUES (?1, ?2, ?3, 'system', ?4)", (id, at, kind, continued)).map_err(sql)?;
+            VALUES (?1, ?2, ?3, 'system', ?4)", (id, at, event, continued)).map_err(sql)?;
         line_queue::stop_repeats(tx, id)?;
-        line_queue::enqueue(tx, id, if continued.is_some() { Kind::Updated } else { Kind::AllClear }, urgent)?;
+        line_queue::enqueue(tx, id, notice, urgent)?;
     }
     Ok(changed != 0)
 }

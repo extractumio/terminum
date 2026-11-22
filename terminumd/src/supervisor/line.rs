@@ -7,7 +7,7 @@ use rusqlite::{OptionalExtension, Transaction};
 use serde::{Deserialize, Serialize};
 
 use crate::{app::Shared, tasks::{api::store, ops::{now, rows, sql}}};
-use super::{Evaluation, Evidence, Reading, Rule, WEEK, Window,
+use super::{Evaluation, Evidence, Reading, Rule, SCHEMA, WEEK, Window,
     incidents, line_command, line_queue, signals};
 
 const TEST: &str = "Terminum critical line test alert.\n";
@@ -63,13 +63,8 @@ impl Settings {
         })
     }
 
-    fn render(&self, notice: &line_queue::Notice) -> String {
-        notice.render(self.link_base.as_deref())
-    }
-
-    pub fn first_delay(&self) -> i64 { i64::from(self.ladder[0]) * 60 }
-    pub fn second_delay(&self) -> i64 { i64::from(self.ladder[1]) * 60 }
-    pub fn later_delay(&self) -> i64 { i64::from(self.ladder[2]) * 60 }
+    /// The ladder's step in seconds: the first repeat, the second, then every later one.
+    pub fn delay(&self, step: usize) -> i64 { i64::from(self.ladder[step]) * 60 }
 }
 
 fn origin(text: &str) -> Option<String> {
@@ -206,7 +201,7 @@ async fn deliver(settings: &Settings, text: &str, scheduled: usize, check: bool,
         let result = line_command::send(path, check, text, limit).await;
         let done = result.is_ok() && i + 1 >= scheduled;
         attempts.push((i, result));
-        if done && !check {
+        if done {
             break;
         }
     }
@@ -222,8 +217,13 @@ pub(crate) async fn run(app: Shared) {
             _ = clock.tick() => {},
             _ = changes.changed() => {},
         }
+        // A read first: with no channel, the default, the tick takes no write turn.
         loop {
-            match send_next(&app).await {
+            let sent = match configured(&app).await {
+                Ok(true) => send_next(&app).await,
+                other => other,
+            };
+            match sent {
                 Ok(true) => tokio::task::yield_now().await,
                 Ok(false) => break,
                 Err(error) => {
@@ -232,7 +232,14 @@ pub(crate) async fn run(app: Shared) {
                 }
             }
         }
+        // Our own deliveries' changes are seen: they need no second pass.
+        changes.borrow_and_update();
     }
+}
+
+async fn configured(app: &Shared) -> Result<bool, String> {
+    let app = app.clone();
+    crate::http::off(move || app.tasks.snapshot(SCHEMA, |tx| Ok(!read(tx)?.settings.channels.is_empty()))).await
 }
 
 async fn send_next(app: &Shared) -> Result<bool, String> {
@@ -243,7 +250,7 @@ async fn send_next(app: &Shared) -> Result<bool, String> {
     }).await? else { return Ok(false) };
     let (project, text, scheduled, check) = match job {
         Job::Notice(notice) => {
-            let text = settings.render(&notice);
+            let text = notice.render(settings.link_base.as_deref());
             (notice.project, text, notice.channels, false)
         }
         Job::Weekly(project) => (project, CHECK.into(), settings.channels.len(), true),

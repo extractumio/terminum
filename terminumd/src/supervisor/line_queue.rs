@@ -88,9 +88,9 @@ pub(super) fn stop_repeats(tx: &Transaction, id: i64) -> Result<(), String> {
 /// Claim once, before starting an external program. A crash must not replay a
 /// one-shot notification or send several missed repeat steps at once.
 pub(super) fn claim(tx: &Transaction, settings: &Settings, at: i64, quiet: bool) -> Result<Option<Notice>, String> {
-    let first = settings.first_delay();
+    let first = settings.delay(0);
     let selected = tx.query_row("WITH ready AS (
-        SELECT q.id AS pending, i.id AS incident, i.project, q.kind, CASE WHEN q.kind = 'all_clear' OR q.kind = 'answer' THEN 0 ELSE q.level END AS level, q.signals,
+        SELECT q.id AS pending, i.id AS incident, i.project, q.kind, CASE WHEN q.kind IN ('all_clear', 'answer') THEN 0 ELSE q.level END AS level, q.signals,
                0 AS escalated
         FROM supervisor_line_pending q JOIN supervisor_incidents i ON i.id = q.incident
         JOIN project_supervisor s ON s.project = i.project AND s.enabled
@@ -129,7 +129,7 @@ pub(super) fn claim(tx: &Transaction, settings: &Settings, at: i64, quiet: bool)
                 ON CONFLICT (incident) DO UPDATE SET last_at = excluded.last_at", (id, at, at + first)).map_err(sql)?;
         }
         Kind::Repeat => {
-            let delay = if escalated { settings.later_delay() } else { settings.second_delay() - first };
+            let delay = if escalated { settings.delay(2) } else { settings.delay(1) - first };
             tx.execute("UPDATE supervisor_line_repeats SET escalated = 1, last_at = ?2, due_at = ?3
                 WHERE incident = ?1", (id, at, at + delay)).map_err(sql)?;
         }
