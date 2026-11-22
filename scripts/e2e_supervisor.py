@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-"""AC-216, AC-217, AC-218, AC-219 against private terminumd, signed-in board routes and tmux."""
+"""AC-216–219 and AC-227–229 against private terminumd, signed-in board routes and tmux."""
 import json
 import os
+from pathlib import Path
+import shlex
 import sqlite3
 import time
 from contextlib import closing
@@ -13,6 +15,38 @@ from testrun import free_port, own
 
 PORT, SOCKET = free_port(), own("tm-test-supervisor")
 
+
+def critical_line(t, api_path, web_path, project, call, headers):
+    line, test = api_path + "/line", api_path + "/line/test"
+    failing, working = Path(t.root, "first channel"), Path(t.root, "second channel")
+    output = Path(t.root, "line-notices")
+    failing.write_text("#!/bin/sh\ncat >/dev/null\nexit 17\n")
+    working.write_text("#!/bin/sh\ncat >> " + shlex.quote(str(output)) + "\n")
+    for executable in (failing, working):
+        executable.chmod(0o700)
+    settings = dict(channels=[str(failing), str(working)], link_base="https://terminum.example", quiet=None, ladder=[10, 30, 60])
+    saved = {"revision": 0, "settings": settings}
+    check("AC-227 both line writes require the signed-in page listener",
+          api(t, "", line, method="PUT", body=json.dumps(saved).encode(), headers=headers)[0] == 401
+          and api(t, "", test, method="POST", body=b'{"channel":1,"revision":1}', headers=headers)[0] == 401
+          and unix_request(t.sock, "PUT", line, saved)[0] == 404
+          and unix_request(t.sock, "POST", test, {"channel": 1, "revision": 1})[0] == 404)
+    configured = call(line, "PUT", saved)
+    check("AC-227 line settings are shared across projects and excluded from exported project packs",
+          configured == call(web_path + "/line")
+          and "channels" not in json.dumps(call(web_path + "/export", "POST", {})))
+    check("AC-229 the signed-in test sends fixed bytes through the selected channel",
+          call(test, "POST", {"channel": 1, "revision": configured["revision"]}) == {"sent": True}
+          and output.read_bytes() == b"Terminum critical line test alert.\n")
+
+    def notices():
+        return output.read_text() if output.exists() else ""
+
+    def incident():
+        return next((entry for entry in call("/api/supervisor/incidents")
+                     if entry["project"] == project and "missed" in entry["happened"]), None)
+
+    return failing, notices, incident
 
 def main():
     t = Terminumd(PORT, SOCKET, env={"TM_TEST_HOOKS": "1"})
@@ -90,6 +124,8 @@ def main():
         wait_for(lambda: call(api_path), lambda s: s["last_ok"] > beat, 20, every=0.25)
         check("AC-218 moving a pane to an off project stops counting its hooks in the old project", counters() == got)
 
+        failing, notices, incident = critical_line(t, api_path, web_path, api_id, call, headers)
+
         # Fail the collector's commit without stopping the server or its independent writer.
         write("""CREATE TRIGGER stall_supervisor BEFORE UPDATE OF last_ok ON project_supervisor
                  BEGIN SELECT RAISE(ABORT, 'test collector stopped'); END""")
@@ -97,10 +133,28 @@ def main():
         fault = wait_for(lambda: call(api_path), lambda s: s["collector_dead"], 45, every=0.25)
         check("AC-219 the independent watchdog records and exposes a stopped collector",
               fault["last_ok"] == last_ok and signals(api_id).get("self.collector_dead") == 1 and not signals(web_id))
+        opened = wait_for(incident, lambda entry: entry is not None, 15)
+        incident_id = opened["id"]
+        alert = (f"Critical incident {incident_id} · Level 3. Active signals: 1. Acknowledge in Terminum.\n"
+                 f"https://terminum.example/supervisor/?project={api_id}&incident={incident_id}#incident-{incident_id}\n")
+        wait_for(notices, lambda text: alert in text, 20)
+        health = wait_for(lambda: call("/api/supervisor/incidents"),
+                          lambda entries: any("Channel 1: Exit status 17." in i["happened"] for i in entries), 15)
+        check("AC-227 AC-229 a real watchdog incident falls through to the working command and stays locally actionable",
+              alert in notices() and any("Channel 1: Exit status 17." in i["happened"] for i in health)
+              and signals(api_id).get("self.line_dead") == 1)
         write("DROP TRIGGER stall_supervisor")
         wait_for(lambda: call(api_path), lambda s: not s["collector_dead"] and s["last_ok"] > last_ok, 20, every=0.25)
         check("AC-219 a successful collector resolves the previous fault",
               read("SELECT state FROM supervisor_signals WHERE project = ? AND detector = 'self.collector_dead'", (api_id,)) == [("resolved",)])
+
+        all_clear = f"All-clear on incident {incident_id}.\n"
+        check("AC-227 the watchdog recovery sends the all-clear for the same incident",
+              all_clear in wait_for(notices, lambda text: all_clear in text, 20))
+        failing.write_text("#!/bin/sh\ncat >/dev/null\n")
+        call(api_path + "/line/test", "POST", {"channel": 0, "revision": 1})
+        check("AC-229 a successful retest clears the local line failure",
+              read("SELECT state FROM supervisor_signals WHERE project = ? AND detector = 'self.line_dead'", (api_id,)) == [("resolved",)])
 
         call(api_path, "PUT", {"enabled": False})
         at_off = call(api_path)["last_ok"]

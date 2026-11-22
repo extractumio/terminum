@@ -14,7 +14,7 @@ use crate::app::Shared;
 use crate::http::off;
 use crate::tasks::{api::answer, ops::{check_project, now, rows, sql}, store::Store};
 
-use super::{Checked, DAY, Evaluation, EvaluationInputs, Evidence, Mode, Reading, Rule, SCHEMA, Scores, Window,
+use super::{DAY, Evaluation, EvaluationInputs, Evidence, Mode, Reading, Rule, SCHEMA, Window,
     attach, evaluate_snapshot, flow, incidents, samples, sensors::{Pending, Sensors}, settings, settings_api, signals};
 
 const BEAT: i64 = 10;
@@ -28,6 +28,7 @@ pub(crate) struct Runtime {
     scopes: Mutex<()>,
     changed: Notify,
     pub(super) incident_updates: watch::Sender<u64>,
+    pub(super) line_serial: tokio::sync::Mutex<()>,
 }
 
 #[derive(Clone)]
@@ -74,6 +75,7 @@ pub(crate) fn routes() -> Router<Shared> {
         .merge(settings_api::routes())
         .merge(super::screen::routes())
         .merge(super::incidents_api::routes())
+        .merge(super::line_api::routes())
 }
 
 async fn shown(State(app): State<Shared>, Path(id): Path<String>) -> Response {
@@ -333,13 +335,9 @@ fn report_dead(store: &Store, project: &Project, at: i64) -> Result<bool, String
     let reading = Reading::new("project", &project.id, "missed_beats", ((at - since) / BEAT) as f64,
         vec![Evidence::SupervisorHeartbeat { project: project.id.clone(), last_ok: project.last_ok }])
         .comparison(super::Comparison::AtLeast);
-    let Some(mut finding) = reading.finding(rule.defaults(), Window { before: since, start: since, end: at }) else {
+    let Some(evaluation) = Evaluation::critical(&project.id, rule, reading, Window { before: since, start: since, end: at }) else {
         return Ok(false);
     };
-    finding.scores = Scores { impact: 3, ..Scores::default() };
-    let evaluation = Evaluation { project: project.id.clone(), at, detectors: vec![Checked {
-        rule, mode: Mode::Live, unavailable: Vec::new(), findings: vec![finding], thresholds: Default::default(), complete_metrics: Vec::new(), measured: None,
-    }] };
     let prepared = signals::prepare(&evaluation)?;
     let written = store.with(|tx| {
         let stale = tx.execute("UPDATE project_supervisor SET reported_dead = 1 WHERE project = ?1

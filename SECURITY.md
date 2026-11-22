@@ -174,20 +174,28 @@ rounds and lists active holds for the owner to release
   only to a tool-free reader, whose closed categories and counts can inform a marked
   task. Auto-Dispatcher excludes that task until a human moves it
   (`terminum-supervisor.md` AC-234, AC-244, AC-262).
-- **Command channels and probes**: confirming a channel in the signed-in project tab
-  authorizes its command to send the fixed incident templates off the machine. terminumd
-  puts approved IDs, counts and an optional owner-configured link on standard input.
-  It uses a fixed environment and deadline and reads only the exit status. Incident
-  actions and replies require the signed-in page. Probe commands also require owner
-  confirmation, with bounded, checked metric output. Import never enables a command:
-  the tab shows it in full for the owner to set. Export leaves out commands and secrets
-  unless the owner selects them, then holds them in plain text (`terminum-supervisor.md` AC-220, AC-227,
-  AC-260).
+- **Command channels**: saving in the signed-in Supervisor tab authorizes the ordered
+  executables to send fixed incident notices. The owner-wide settings stay out of
+  project imports and exports. terminumd starts the absolute executable directly.
+  Fixed templates on standard input contain incident IDs, levels, counts and an optional
+  link built from the owner's HTTPS origin. Task or comment text, home paths and
+  credentials stay out of the template. The child starts in `/` with `PATH=/usr/bin:/bin`
+  and `LANG=C`. Its output is discarded. Each attempt has a five-second deadline and
+  terminumd ends the process group it started. Incident actions require the signed-in
+  page. A manual test sends fixed test text. A weekly check passes `--check` and fixed
+  check text, with the wrapper responsible for the silent check. A claimed send can be
+  lost if terminumd exits before the command runs. A failed delivery produces a local
+  incident and tries the next command. Quiet hours defer ordinary automatic notices
+  (`terminum-supervisor.md` AC-227–229, AC-263).
+- **Probe commands**: the owner confirms the displayed command. Probe metric output is
+  bounded and checked. Import leaves command candidates inactive until confirmation.
+  Export includes commands and secrets only when the owner selects them. The export
+  holds those values in plain text (`terminum-supervisor.md` AC-220, AC-260).
 - **Left**: a round's agent keeps its pool command's permissions, with AC-156's risk of a
   bypassing command (`terminum-dispatcher.md` §9), so choose agents without bypass for the
   Supervisor's tiers. A process running as the same user can change the local store, tmux
   or the commands the owner configured. The scoped tools bound model actions through terminumd.
-  An owner-configured command runs with that user's OS access. Keep the private charter,
+  An owner-configured command runs with that user's OS access and can launch processes that leave its group. Keep the private charter,
   register, case files, ledger and baselines out of tracked files.
 
 ### Idle agents' exit
