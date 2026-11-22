@@ -205,7 +205,12 @@ impl Store {
     /// Read a consistent snapshot without taking the store's write turn or running migrations.
     #[allow(dead_code, reason = "The Supervisor collector and replay are wired separately.")]
     pub(crate) fn snapshot<T>(&self, version: usize, read: impl FnOnce(&Transaction) -> Result<T, String>) -> Result<T, String> {
-        let mut conn = Connection::open_with_flags(&self.path, OpenFlags::SQLITE_OPEN_READ_ONLY).map_err(|e| message(&e))?;
+        Self::snapshot_path(&self.path, version, read)
+    }
+
+    /// CLI replay must never call Store::open, which can migrate or repair the database.
+    pub(crate) fn snapshot_path<T>(path: &Path, version: usize, read: impl FnOnce(&Transaction) -> Result<T, String>) -> Result<T, String> {
+        let mut conn = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY).map_err(|e| message(&e))?;
         conn.busy_timeout(Duration::from_secs(5)).map_err(|e| message(&e))?;
         let tx = conn.transaction().map_err(|e| message(&e))?;
         let actual = schema_version(&tx).map_err(|e| message(&e))?;

@@ -107,6 +107,8 @@ pub fn numbers(tx: &Transaction, ask: &Ask) -> Result<Value, String> {
 pub(crate) struct OwnerLoad {
     pub active_ms: i64,
     pub switches_per_hour: f64,
+    pub switches: i64,
+    pub off_ms: i64,
     pub peak: i64,
     pub off_hours_share: Option<f64>,
 }
@@ -330,6 +332,8 @@ fn summarize(read: &Read, span: &Span, ask: &Ask) -> (Value, OwnerLoad) {
     let all_switches: i64 = switches.iter().sum();
     let load = OwnerLoad {
         active_ms: total,
+        switches: all_switches,
+        off_ms: off.iter().sum(),
         switches_per_hour: if total > 0 { all_switches as f64 / (total as f64 / HOUR as f64) } else { 0.0 },
         peak: peak.iter().max().copied().unwrap_or(0),
         off_hours_share: (total > 0).then(|| off.iter().sum::<i64>() as f64 / total as f64),

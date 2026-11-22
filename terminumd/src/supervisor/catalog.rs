@@ -68,6 +68,19 @@ catalog! {
 }
 
 impl Rule {
+    pub(super) fn present_only(self) -> bool {
+        matches!(self, Self::Starved | Self::UserBugAge)
+    }
+
+    pub(super) fn needs_weekly_samples(self) -> bool {
+        !self.present_only() && !matches!(self, Self::WaitHuman | Self::CostOutlier)
+    }
+
+    pub(super) fn has_historical_query(self) -> bool {
+        !self.present_only() && !matches!(self, Self::Returned | Self::VerifyRed | Self::DiffOutlier | Self::Misrouted
+            | Self::QueueGrowth | Self::LimitNear | Self::StalePlan | Self::Loop | Self::Subagents)
+    }
+
     pub(super) fn supports(self, threshold: Threshold) -> bool {
         match self.defaults() {
             Threshold::Change { .. } => matches!(threshold, Threshold::Change { .. }),
@@ -93,3 +106,31 @@ fn snapshots(_: &Query<'_, '_>) -> Result<Measurements, String> {
 fn counters(_: &Query<'_, '_>) -> Result<Measurements, String> {
     Ok(Measurements::missing("Hook counters are unavailable."))
 }
+
+pub(super) const UNAVAILABLE: &[(&str, &str)] = &[
+    ("flow.flaky", "Nightly and gate probe history is unavailable."),
+    ("flow.main_red", "CI probe history is unavailable."),
+    ("drift.rule_break", "Lint probe history is unavailable."),
+    ("drift.scope", "Scope judgments require a recorded case."),
+    ("arch.surface_touched", "Historical integration and git surface data are unavailable."),
+    ("arch.migration_edited", "Git probe history is unavailable."),
+    ("arch.dependency", "Git probe history is unavailable."),
+    ("arch.hotspot", "Git probe history is unavailable."),
+    ("arch.spec_drift", "Git probe history is unavailable."),
+    ("arch.bug_cluster", "Task-to-commit history is unavailable."),
+    ("arch.review_missing", "Historical Verify review records are unavailable."),
+    ("improve.release_time", "Task commits and release tags are unavailable."),
+    ("improve.releases", "Release tags are unavailable."),
+    ("product.external", "No historical external metric probe is available."),
+    ("product.feedback_age", "No historical feedback probe is available."),
+    ("process.handoff_overdue", "Indexed handoff observations are unavailable."),
+    ("process.rules_growth", "Git probe history is unavailable."),
+    ("owner.rubber_stamp", "Structured question choices are unavailable."),
+    ("process.rule_recurs", "Recorded rule judgments are unavailable."),
+    ("self.collector_dead", "Collector heartbeat history is unavailable."),
+    ("self.budget", "Supervisor budget history is unavailable."),
+    ("self.line_dead", "Critical channel history is unavailable."),
+    ("self.round_failed", "Supervisor round history is unavailable."),
+    ("self.fights", "Supervisor override history is unavailable."),
+    ("self.unjudged", "Supervisor verdict history is unavailable."),
+];

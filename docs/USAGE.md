@@ -455,6 +455,19 @@ reading for every agent of its kind. Its window says when each resets.
   lengths and reset times, only from a pane terminum lists; with an API key, Bedrock or Vertex
   nothing is sent.
 
+### Supervisor replay
+
+Run `terminum supervisor replay --project <ID>` to inspect a project's retained history.
+Use the project ID (`default` for the default project). The command shows ranked findings,
+the evidence and weekly amounts behind them, historical firings at weekly cutoffs, unavailable detector inputs, and the seven
+improvement indicators with their guards.
+
+Replay anchors the report to the newest retained observation for that project. Use
+`--at <unix-seconds>` to choose an earlier UTC cutoff. Historical results omit checks
+that depend on present-day slots, links or priorities. Replay opens the tasks store
+read-only, even before the Supervisor is enabled, and starts no agent. The report contains
+private project data.
+
 ## History and dashboard
 
 Both live in `~/.terminum/state/kanban.sqlite`, kept 180 days.
