@@ -6,6 +6,7 @@ use crate::dispatcher::usage;
 use crate::tasks::ops::rows;
 
 use super::flow::{LAUNCH, events, failed_runs, project_events};
+use super::impact::Source;
 use super::{Comparison, Evidence, Measurements, Query, Reading};
 
 /// Read only the numeric reports and stable row IDs. No usage report's text enters the signal.
@@ -16,20 +17,36 @@ struct Spend {
     evidence: Vec<Evidence>,
 }
 
-fn usage_rows(q: &Query<'_, '_>) -> Result<BTreeMap<String, Spend>, String> {
-    let rows = rows(q.tx, &format!("SELECT u.run, u.rowid, u.model, {} FROM usage u JOIN runs r ON r.id = u.run
+pub(super) struct UsageReport {
+    pub at: i64,
+    pub run: String,
+    pub id: i64,
+    pub tokens: f64,
+    pub dollars: Option<f64>,
+}
+
+pub(super) fn usage_reports(tx: &rusqlite::Transaction, project: &str, start: i64, end: i64) -> Result<Vec<UsageReport>, String> {
+    rows(tx, &format!("SELECT u.at, u.run, u.rowid, u.model, {} FROM usage u JOIN runs r ON r.id = u.run
         WHERE r.project = ?1 AND u.at BETWEEN ?2 AND ?3 ORDER BY u.at, u.rowid", usage::TOTALS),
-        (q.project, q.window.before, q.window.end), |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?,
-            r.get::<_, Option<String>>(2)?, usage::totals_at(r, 3)?)))?;
+        (project, start, end), |r| {
+            let tokens = usage::totals_at(r, 4)?;
+            let model: Option<String> = r.get(3)?;
+            Ok(UsageReport { at: r.get(0)?, run: r.get(1)?, id: r.get(2)?,
+                tokens: (tokens.input + tokens.output + tokens.cache_write + tokens.cache_read) as f64,
+                dollars: model.as_deref().and_then(|model| usage::dollars(&tokens, model)) })
+        })
+}
+
+fn usage_rows(q: &Query<'_, '_>) -> Result<BTreeMap<String, Spend>, String> {
     let mut out = BTreeMap::new();
-    for (run, id, model, tokens) in rows {
-        let spend = out.entry(run).or_insert_with(|| Spend { complete: true, ..Spend::default() });
-        if let Some(dollars) = model.as_deref().and_then(|model| usage::dollars(&tokens, model)) {
+    for row in usage_reports(q.tx, q.project, q.window.before, q.window.end)? {
+        let spend = out.entry(row.run).or_insert_with(|| Spend { complete: true, ..Spend::default() });
+        if let Some(dollars) = row.dollars {
             spend.dollars += dollars;
         } else {
             spend.complete = false;
         }
-        spend.evidence.push(Evidence::Usage(id));
+        spend.evidence.push(Evidence::Usage(row.id));
     }
     Ok(out)
 }
@@ -76,11 +93,13 @@ fn failures(q: &Query<'_, '_>) -> Result<BTreeMap<String, Vec<Evidence>>, String
 struct Sample {
     value: f64,
     evidence: Vec<Evidence>,
+    runs: BTreeSet<String>,
 }
 
 impl Sample {
     fn add(&mut self, run: &Run, spend: &Spend) {
         self.value += spend.dollars;
+        self.runs.insert(run.id.clone());
         self.evidence.push(Evidence::Runs(run.id.clone()));
         self.evidence.extend(spend.evidence.iter().cloned());
     }
@@ -126,14 +145,14 @@ pub(super) fn outliers(q: &Query<'_, '_>) -> Result<Measurements, String> {
         };
         current.evidence.extend(old.iter().flat_map(|sample| sample.evidence.iter().cloned()));
         current.evidence.push(Evidence::Tasks(task.into()));
-        out.readings.push(Reading::new("task", task, "task_dollars", current.value, current.evidence)
-            .history(old.iter().map(|sample| sample.value).collect()));
+        out.readings.push(Reading::new("task", task, "task_dollars", current.value, current.evidence).source(Source::RunUsage)
+            .history(old.iter().map(|sample| sample.value).collect()).attributed_runs(current.runs));
     }
     let [before, now] = failure_spend;
     if !now.evidence.is_empty() {
         let evidence = now.evidence.into_iter().chain(before.evidence).collect();
-        out.readings.push(Reading::new("project", q.project, "failed_run_dollars", now.value, evidence)
-            .history(vec![before.value]));
+        out.readings.push(Reading::new("project", q.project, "failed_run_dollars", now.value, evidence).source(Source::RunUsage)
+            .history(vec![before.value]).attributed_runs(now.runs));
     }
     if missing {
         out.unavailable.push("Some run prices, launches or task-type baselines are unavailable.");
@@ -165,7 +184,7 @@ pub(super) fn allocation(q: &Query<'_, '_>) -> Result<Measurements, String> {
     }
     let mut out = Measurements::default();
     if let Some(untyped) = buckets.get(&None) {
-        out.readings.push(Reading::new("project", q.project, "untyped_share", untyped / total, measured.clone()));
+        out.readings.push(Reading::new("project", q.project, "untyped_share", untyped / total, measured.clone()).source(Source::UnclassifiedSpend));
     }
     if q.detector.allocation.is_empty() {
         out.unavailable.push("No project allocation targets are configured.");

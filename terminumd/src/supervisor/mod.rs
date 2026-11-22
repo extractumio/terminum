@@ -1,7 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 //! Deterministic Supervisor queries (AC-211, AC-212). Evaluation is read-only; recording is explicit.
 
+mod attribution;
 mod catalog;
+mod impact;
+mod replay;
+mod scoreboard;
 mod flow;
 mod people;
 mod signals;
@@ -11,6 +15,8 @@ mod spend;
 mod engine_tests;
 #[cfg(test)]
 mod catalog_tests;
+#[cfg(test)]
+mod replay_tests;
 
 use rusqlite::Transaction;
 use serde::{Deserialize, Serialize};
@@ -20,6 +26,7 @@ use crate::tasks::{ops::check_project, store::Store};
 
 pub(crate) use catalog::Rule;
 pub(crate) use signals::Signal;
+pub(crate) use replay::replay;
 
 const SCHEMA: usize = 41;
 const DAY: i64 = 86_400;
@@ -139,6 +146,17 @@ pub(crate) struct Finding {
     metric: &'static str,
     measure: Measure,
     evidence: Vec<Evidence>,
+    attributed_runs: BTreeSet<String>,
+    source: impact::Source,
+    charter_breach: bool,
+    assessment: impact::Assessment,
+    scores: Scores,
+}
+
+impl Finding {
+    fn key(&self) -> (&str, &str, &str) {
+        (self.subject_kind, &self.subject_id, self.metric)
+    }
 }
 
 #[derive(Debug)]
@@ -152,7 +170,6 @@ pub(crate) struct Evaluation {
 pub(crate) struct Checked {
     pub rule: Rule,
     pub mode: Mode,
-    pub scores: Scores,
     pub unavailable: Vec<&'static str>,
     pub findings: Vec<Finding>,
     complete_metrics: Vec<&'static str>,
@@ -181,6 +198,8 @@ struct Reading {
     evidence: Vec<Evidence>,
     comparison: Comparison,
     fixed: Option<Threshold>,
+    attributed_runs: BTreeSet<String>,
+    source: impact::Source,
 }
 
 #[derive(Clone, Copy)]
@@ -188,7 +207,21 @@ enum Comparison { Above, AtLeast, Below, Deviation(f64) }
 
 impl Reading {
     fn new(kind: &'static str, subject: impl Into<String>, metric: &'static str, value: f64, evidence: Vec<Evidence>) -> Self {
-        Self { subject_kind: kind, subject_id: subject.into(), metric, value, history: vec![], evidence, comparison: Comparison::Above, fixed: None }
+        Self { subject_kind: kind, subject_id: subject.into(), metric, value, history: vec![], evidence, comparison: Comparison::Above, fixed: None, attributed_runs: BTreeSet::new(), source: Default::default() }
+    }
+
+    fn source(mut self, source: impact::Source) -> Self {
+        self.source = source;
+        self
+    }
+
+    fn attributed_runs(mut self, runs: BTreeSet<String>) -> Self {
+        self.attributed_runs = runs;
+        self
+    }
+
+    fn key(&self) -> (&str, &str, &str) {
+        (self.subject_kind, &self.subject_id, self.metric)
     }
 
     fn history(mut self, history: Vec<f64>) -> Self {
@@ -206,11 +239,11 @@ impl Reading {
         self
     }
 
-    fn exceeds(&mut self, threshold: Threshold) -> Option<(f64, f64)> {
+    fn exceeds(&self, threshold: Threshold) -> Option<(f64, f64)> {
         let (baseline, limit) = match self.fixed.unwrap_or(threshold) {
             Threshold::Absolute(limit) => (match self.comparison { Comparison::Deviation(target) => target, _ => limit }, limit),
             Threshold::Baseline { percentile: p, floor } => {
-                let baseline = percentile(&mut self.history, p).unwrap_or(floor);
+                let baseline = percentile(&mut self.history.clone(), p).unwrap_or(floor);
                 (baseline, baseline.max(floor))
             }
             Threshold::Change { by } => {
@@ -240,7 +273,8 @@ impl Reading {
         self.evidence.dedup();
         Some(Finding {
             subject_kind: self.subject_kind, subject_id: self.subject_id, metric: self.metric,
-            evidence: self.evidence, measure: Measure {
+            evidence: self.evidence, attributed_runs: self.attributed_runs, source: self.source, charter_breach: false,
+            assessment: Default::default(), scores: Scores::default(), measure: Measure {
                 value: self.value, baseline, threshold: limit,
                 window_start: window.start, window_end: window.end,
             },
@@ -262,6 +296,11 @@ impl Window {
         Self { before: at - 2 * length, start: at - length, end: at }
     }
 
+    fn week(end: i64) -> Self {
+        let start = end - WEEK + 1;
+        Self { before: start - WEEK, start, end }
+    }
+
     fn current(self, at: i64) -> bool { at >= self.start }
 }
 
@@ -270,6 +309,7 @@ struct Query<'a, 'conn> {
     project: &'a str,
     detector: &'a Detector,
     window: Window,
+    historical: bool,
 }
 
 /// Validate every rule before opening the store. The catalog owns all SQL and all identifiers used in SQL.
@@ -285,20 +325,91 @@ pub(crate) fn evaluate(store: &Store, project: &str, at: i64, detectors: &[Detec
     }
     store.snapshot(SCHEMA, |tx| {
         check_project(tx, project)?;
-        let mut checked = Vec::new();
-        for detector in detectors {
-            let window = Window::of(at, detector.window_days);
-            let query = Query { tx, project, detector, window };
-            let data = if detector.mode == Mode::Off { Measurements::missing("Detector is off.") } else { detector.rule.query(&query)? };
-            let mut findings: Vec<_> = data.readings.into_iter().filter_map(|r| r.finding(detector.threshold, window)).collect();
-            findings.sort_by(|a, b| (&a.subject_kind, &a.subject_id, &a.metric).cmp(&(&b.subject_kind, &b.subject_id, &b.metric)));
-            checked.push(Checked { rule: detector.rule, mode: detector.mode, scores: detector.scores, unavailable: data.unavailable, findings, complete_metrics: data.complete_metrics });
-        }
-        Ok(Evaluation { project: project.into(), at, detectors: checked })
+        let (first, _) = flow::history_bounds(tx, project, at)?;
+        evaluate_snapshot(tx, project, at, first, detectors, None, true)
     })
 }
 
+fn evaluate_snapshot(
+    tx: &Transaction, project: &str, at: i64, first: i64, detectors: &[Detector],
+    weeks: Option<&[scoreboard::Week]>, current_state: bool,
+) -> Result<Evaluation, String> {
+    let mut checked = Vec::new();
+    for detector in detectors {
+        let window = Window::of(at, detector.window_days);
+        let (data, mut findings) = measure_detector(tx, project, detector, window, current_state)?;
+        findings.sort_by(|a, b| a.key().cmp(&b.key()));
+        checked.push(Checked {
+            rule: detector.rule, mode: detector.mode, unavailable: data.unavailable,
+            findings, complete_metrics: data.complete_metrics,
+        });
+    }
+    let mut result = Evaluation { project: project.into(), at, detectors: checked };
+    if !result.detectors.iter().any(|d| !d.findings.is_empty()) {
+        return Ok(result);
+    }
+    let own_weeks;
+    let weeks = if let Some(weeks) = weeks { weeks } else {
+        own_weeks = scoreboard::read(tx, project, at, first)?;
+        &own_weeks
+    };
+    let calculator = attribution::Attribution::read(tx, project, weeks)?;
+    for (detector, checked) in detectors.iter().zip(&mut result.detectors) {
+        if checked.findings.is_empty() {
+            continue;
+        }
+        let samples = weeks.iter().map(|week| {
+            if !week.available || !detector.rule.needs_weekly_samples() {
+                return Ok(Measurements::default());
+            }
+            let window = Window::week(week.end);
+            detector.rule.query(&Query { tx, project, detector, window, historical: true })
+        }).collect::<Result<Vec<_>, _>>()?;
+        let indexed = samples.iter().map(|week| {
+            week.readings.iter().map(|reading| (reading.key(), reading)).collect::<BTreeMap<_, _>>()
+        }).collect::<Vec<_>>();
+        for found in &mut checked.findings {
+            let readings = indexed.iter().map(|week| week.get(&found.key()).copied());
+            found.assessment = calculator.assess(detector, found, readings);
+            found.scores = Scores {
+                impact: found.assessment.score(at - first < 3 * WEEK, found.charter_breach),
+                ..detector.scores
+            };
+        }
+    }
+    Ok(result)
+}
+
+fn measure_detector(
+    tx: &Transaction, project: &str, detector: &Detector, window: Window, current_state: bool,
+) -> Result<(Measurements, Vec<Finding>), String> {
+    let query = Query { tx, project, detector, window, historical: !current_state };
+    let mut data = if detector.mode == Mode::Off {
+        Measurements::missing("Detector is off.")
+    } else if !current_state && detector.rule.present_only() {
+        Measurements::missing("Historical slot or priority state is unavailable.")
+    } else {
+        detector.rule.query(&query)?
+    };
+    let findings = std::mem::take(&mut data.readings).into_iter()
+        .filter(|reading| current_state || !matches!(reading.source, impact::Source::Present))
+        .filter_map(|reading| reading.finding(detector.threshold, window)).collect();
+    Ok((data, findings))
+}
+
 impl Evaluation {
+    fn ranked_findings(&self) -> (Vec<(&'static str, &Finding)>, usize) {
+        let (mut ranked, inactive): (Vec<_>, Vec<_>) = self.detectors.iter().flat_map(|d| {
+            d.findings.iter().map(|f| (d.rule.id(), f))
+        }).partition(|(_, f)| f.assessment.ranked || f.charter_breach);
+        ranked.sort_by(|(a_rule, a), (b_rule, b)| {
+            b.scores.impact.cmp(&a.scores.impact)
+                .then_with(|| b.assessment.peak_share().total_cmp(&a.assessment.peak_share()))
+                .then_with(|| (a_rule, a.key()).cmp(&(b_rule, b.key())))
+        });
+        (ranked, inactive.len())
+    }
+
     pub(crate) fn record(&self, store: &Store) -> Result<(), String> {
         signals::record(store, self)
     }

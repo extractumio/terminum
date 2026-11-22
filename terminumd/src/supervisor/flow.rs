@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 
+use rusqlite::Transaction;
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::dispatcher::{pool::Slots, waits};
-use crate::tasks::{agents, ops::{CURRENT_PROJECT_HISTORY, rows}};
+use crate::tasks::{agents, ops::{CURRENT_PROJECT_HISTORY, rows, sql}, store::DEFAULT_PROJECT};
 
+use super::impact::{Source, Unit};
 use super::{Comparison, Evidence, Measurements, Query, Reading, Threshold, WEEK, percentile};
 
 // Event IDs survive maintenance; rowid orders transitions within a second. Prior-project history
@@ -14,6 +16,23 @@ pub(super) fn project_events() -> String {
         SELECT e.id, e.task, e.at, e.kind, e.author, e.text, e.data, e.rowid AS seq FROM events e JOIN tasks t ON t.id = e.task
         WHERE t.project = ?1 AND e.at <= ?2 {CURRENT_PROJECT_HISTORY}
     )")
+}
+
+pub(super) fn history_bounds(tx: &Transaction, project: &str, limit: i64) -> Result<(i64, i64), String> {
+    let key = if project == DEFAULT_PROJECT { "" } else { project };
+    tx.query_row(&format!("{}, kept(at) AS (
+        SELECT at FROM project_events
+        UNION ALL SELECT created_at FROM tasks WHERE project = ?1 AND NOT EXISTS
+            (SELECT 1 FROM events WHERE task = tasks.id AND kind = 'project')
+        UNION ALL SELECT at / 1000 FROM user_interaction WHERE project = ?3
+        UNION ALL SELECT at / 1000 FROM messages WHERE coalesce(project, '') = ?3
+        UNION ALL SELECT i.at / 1000 FROM inputs i LEFT JOIN runs r ON r.id = i.run
+            WHERE coalesce(i.project, r.project, '') = ?3
+        UNION ALL SELECT u.at FROM usage u JOIN runs r ON r.id = u.run WHERE r.project = ?1
+        UNION ALL SELECT f.at FROM schedule_fires f JOIN schedules s ON s.id = f.schedule WHERE s.project = ?1
+        UNION ALL SELECT r.ended FROM integration_rounds r JOIN integration_batches b ON b.id = r.batch WHERE b.project = ?1
+        ) SELECT coalesce(min(at), ?2), coalesce(max(at), 0) FROM kept WHERE at BETWEEN 1 AND ?2", project_events()),
+        (project, limit, key), |r| Ok((r.get(0)?, r.get(1)?))).map_err(sql)
 }
 
 pub(super) const FIRST_DONE: &str = "first_done AS NOT MATERIALIZED (
@@ -35,13 +54,25 @@ pub(super) fn wait_human(q: &Query<'_, '_>) -> Result<Measurements, String> {
             AND x.kind = 'move' AND json_extract(x.data, '$.from') = 'WAIT FOR HUMAN')
         WHERE e.kind = 'move' AND json_extract(e.data, '$.to') = 'WAIT FOR HUMAN' AND o.at >= ?3 AND o.at >= e.at"),
         (q.project, q.window.end, q.window.before), |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, f64>(2)?)))?;
-    let candidates = rows(q.tx, &format!("{events_sql}
-        SELECT t.id, w.id, w.at FROM tasks t LEFT JOIN project_events w
-        ON w.seq = (SELECT max(x.seq) FROM project_events x WHERE x.task = t.id AND x.kind = 'move'
-            AND json_extract(x.data, '$.to') = 'WAIT FOR HUMAN')
-        WHERE t.project = ?1 AND t.status = 'WAIT FOR HUMAN' AND t.archived_at IS NULL AND NOT ({})",
-        waits::queued_task("t")), (q.project, q.window.end), |r| Ok((r.get::<_, String>(0)?, r.get::<_, Option<String>>(1)?, r.get::<_, Option<i64>>(2)?)))?;
     let mut out = Measurements::default();
+    let candidates = if q.historical {
+        out.unavailable.push("Historical queued presses and blocking links are unavailable.");
+        rows(q.tx, &format!("{events_sql}
+            SELECT t.id, w.id, w.at FROM tasks t JOIN project_events w ON w.task = t.id
+            WHERE t.project = ?1 AND w.kind = 'move'
+              AND json_extract(w.data, '$.to') = 'WAIT FOR HUMAN'
+              AND (t.archived_at IS NULL OR t.archived_at > ?2)
+              AND NOT EXISTS (SELECT 1 FROM project_events x WHERE x.task = t.id AND x.seq > w.seq
+                AND x.kind IN ('move', 'archive'))"), (q.project, q.window.end),
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
+    } else {
+        rows(q.tx, &format!("{events_sql}
+            SELECT t.id, w.id, w.at FROM tasks t LEFT JOIN project_events w
+            ON w.seq = (SELECT max(x.seq) FROM project_events x WHERE x.task = t.id AND x.kind = 'move'
+                AND json_extract(x.data, '$.to') = 'WAIT FOR HUMAN')
+            WHERE t.project = ?1 AND t.status = 'WAIT FOR HUMAN' AND t.archived_at IS NULL AND NOT ({})",
+            waits::queued_task("t")), (q.project, q.window.end), |r| Ok((r.get::<_, String>(0)?, r.get::<_, Option<String>>(1)?, r.get::<_, Option<i64>>(2)?)))?
+    };
     let baseline = match q.detector.threshold {
         Threshold::Baseline { percentile: p, floor } => percentile(&mut history.iter().map(|(_, _, n)| *n).collect::<Vec<_>>(), p).unwrap_or(floor),
         _ => 0.0,
@@ -54,17 +85,17 @@ pub(super) fn wait_human(q: &Query<'_, '_>) -> Result<Measurements, String> {
             }
             continue;
         };
-        let blocked = rows(q.tx, "SELECT b.id FROM task_links l JOIN tasks b ON b.id = l.task
+        let blocked = if q.historical { Vec::new() } else { rows(q.tx, "SELECT b.id FROM task_links l JOIN tasks b ON b.id = l.task
             WHERE l.other = ?1 AND l.kind = 'blocked_by' AND b.project = ?2 AND b.archived_at IS NULL
-                AND b.status NOT IN ('DONE', 'FAILED') ORDER BY b.id", (&id, q.project), |r| r.get::<_, String>(0))?;
+                AND b.status NOT IN ('DONE', 'FAILED') ORDER BY b.id", (&id, q.project), |r| r.get::<_, String>(0))? };
         let evidence = vec![task(&id), events(wait)];
         if !blocked.is_empty() {
             let mut evidence = evidence.clone();
             evidence.extend(blocked.iter().map(|b| Evidence::TaskLinks { task: b.clone(), other: id.clone() }));
             let count = blocked.len();
-            out.readings.push(Reading::new("task", &id, "blocked_tasks", count as f64, evidence).fixed(Threshold::Absolute(0.0)));
+            out.readings.push(Reading::new("task", &id, "blocked_tasks", count as f64, evidence).source(Source::BlockingLinks).fixed(Threshold::Absolute(0.0)));
         }
-        let mut age = Reading::new("task", &id, "wait_minutes", (q.window.end - at) as f64 / 60.0, evidence).history(vec![baseline]);
+        let mut age = Reading::new("task", &id, "wait_minutes", (q.window.end - at) as f64 / 60.0, evidence).source(Source::WaitDays).history(vec![baseline]);
         if age.exceeds(q.detector.threshold).is_some() {
             age.evidence.extend(history_evidence.iter().cloned());
             out.readings.push(age);
@@ -97,7 +128,7 @@ pub(super) fn reasonless(q: &Query<'_, '_>) -> Result<Measurements, String> {
         }
         evidence.push(events(id));
     }
-    Ok(one(Reading::new("project", q.project, "reasonless_failures", value, evidence).history(history)))
+    Ok(one(Reading::new("project", q.project, "reasonless_failures", value, evidence).source(Source::Count(Unit::FailureEvents)).history(history)))
 }
 
 // The run lifecycle state describes the pane, not its task's disposition. Link a FAILED transition
@@ -129,8 +160,10 @@ pub(super) fn failed_repeat(q: &Query<'_, '_>) -> Result<Measurements, String> {
     }
     for (task, runs) in groups {
         let count = runs.len() as f64;
+        let attributed = runs.keys().cloned().collect();
         let evidence = runs.into_iter().flat_map(|(run, event)| [Evidence::Runs(run), events(event)]).collect();
-        out.readings.push(Reading::new("task", task, "failed_runs", count, evidence).comparison(Comparison::AtLeast));
+        out.readings.push(Reading::new("task", task, "failed_runs", count, evidence).source(Source::Count(Unit::FailureEvents))
+            .attributed_runs(attributed).comparison(Comparison::AtLeast));
     }
     Ok(out)
 }
@@ -154,7 +187,7 @@ pub(super) fn rerun(q: &Query<'_, '_>) -> Result<Measurements, String> {
         }
     }
     Ok(Measurements { readings: groups.into_iter().map(|(task, (runs, evidence))|
-        Reading::new("task", task, "runs_after_done", runs.len() as f64, evidence)).collect(), ..Measurements::default() })
+        Reading::new("task", task, "runs_after_done", runs.len() as f64, evidence).source(Source::Count(Unit::RunEvents)).attributed_runs(runs)).collect(), ..Measurements::default() })
 }
 
 pub(super) fn starved(q: &Query<'_, '_>) -> Result<Measurements, String> {
@@ -225,7 +258,7 @@ pub(super) fn lead_time(q: &Query<'_, '_>) -> Result<Measurements, String> {
     for (name, p) in [("median_lead_minutes", 50), ("p90_lead_minutes", 90)] {
         let value = percentile(&mut recent, p).unwrap();
         let baseline = percentile(&mut earlier, p).unwrap();
-        readings.push(Reading::new("project", q.project, name, value, evidence.clone()).history(vec![baseline]));
+        readings.push(Reading::new("project", q.project, name, value, evidence.clone()).source(Source::LeadDays).history(vec![baseline]));
     }
     Ok(Measurements { readings, ..Measurements::default() })
 }
@@ -250,7 +283,7 @@ pub(super) fn backlog(q: &Query<'_, '_>) -> Result<Measurements, String> {
         count += 1;
         evidence.extend(rows);
     }
-    Ok(one(Reading::new("project", q.project, "growing_weeks", f64::from(count), evidence).comparison(Comparison::AtLeast)))
+    Ok(one(Reading::new("project", q.project, "growing_weeks", f64::from(count), evidence).source(Source::BacklogGrowth).comparison(Comparison::AtLeast)))
 }
 
 pub(super) fn schedule(q: &Query<'_, '_>) -> Result<Measurements, String> {
@@ -275,10 +308,10 @@ pub(super) fn schedule(q: &Query<'_, '_>) -> Result<Measurements, String> {
         }
     }
     let mut readings: Vec<_> = trouble.into_iter().map(|(id, (count, evidence))|
-        Reading::new("schedule", id, "skipped_or_failed_fires", count as f64, evidence)).collect();
+        Reading::new("schedule", id, "skipped_or_failed_fires", count as f64, evidence).source(Source::Count(Unit::ScheduleEvents))).collect();
     readings.extend(failures.into_iter().map(|(id, evidence)| {
         let value = (evidence.len() / 2) as f64;
-        Reading::new("schedule", id, "failed_routine_tasks", value, evidence).fixed(Threshold::Absolute(1.0))
+        Reading::new("schedule", id, "failed_routine_tasks", value, evidence).source(Source::Count(Unit::FailureEvents)).fixed(Threshold::Absolute(1.0))
     }));
     Ok(Measurements { readings, ..Measurements::default() })
 }

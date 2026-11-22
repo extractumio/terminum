@@ -104,8 +104,8 @@ fn ac211_signal_fingerprint_and_named_query() {
     initial.record(&f.store).unwrap();
     let original = &signals(&f.store, PROJECT).unwrap()[0];
     assert_eq!(original.state, State::New);
-    assert_eq!(original.level, 0);
-    assert_eq!(original.response, "R0");
+    assert_eq!(original.level, 1);
+    assert_eq!(original.response, "R2");
     assert_eq!(original.measure.value, 2.0);
     assert_eq!(original.measure.threshold, 2.0);
     assert!(original.evidence.contains(&Evidence::Events(first)));
