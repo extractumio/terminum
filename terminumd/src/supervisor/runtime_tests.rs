@@ -155,10 +155,11 @@ async fn ac218_points_and_hook_counter_retention() {
     assert_eq!(value(s, "SELECT count(*) FROM supervisor_points WHERE metric = 'queue_waits_p90'"), 1);
 
     for event in ["PreToolUse", "PreToolUse", "PostToolUseFailure", "SubagentStart", "SubagentStop", "PreCompact"] {
-        app.supervisor.sensors.heard(PROJECT, &json!({"agent":"claude", "session":"counted", "event":event,
+        app.supervisor.sensors.heard(PROJECT, "test-pane", &json!({"agent":"claude", "session":"counted", "event":event,
             "tool_name_hash":"abcdef1234567890", "tool":"Read: private fixture input", "output":"fixture output"}), NOW);
     }
-    app.supervisor.sensors.heard(OTHER, &json!({"agent":"claude", "session":"ignored", "event":"Stop"}), NOW);
+    app.supervisor.sensors.heard(OTHER, "other-pane", &json!({"agent":"claude", "session":"ignored", "event":"Stop"}), NOW);
+    app.supervisor.sensors.heard(PROJECT, "moved-pane", &json!({"agent":"claude", "session":"moved", "event":"Stop"}), NOW);
     let later = NOW + samples::CADENCE;
     let failed_flush = app.supervisor.sensors.take(PROJECT, projects[0].generation);
     drop(failed_flush);

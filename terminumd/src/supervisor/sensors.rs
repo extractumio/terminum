@@ -7,6 +7,7 @@ use parking_lot::Mutex;
 use rusqlite::Transaction;
 use serde_json::Value;
 
+use crate::dispatcher::runs::STILL;
 use crate::tasks::ops::sql;
 
 const MAX_SESSIONS: usize = 1024;
@@ -19,7 +20,14 @@ pub(super) struct Sensors(Mutex<HashMap<String, Project>>);
 
 struct Project {
     generation: i64,
-    sessions: HashMap<(&'static str, String), Session>,
+    sessions: HashMap<HookSession, Session>,
+}
+
+#[derive(Clone, Eq, Hash, PartialEq)]
+struct HookSession {
+    agent: &'static str,
+    id: String,
+    pane: String,
 }
 
 #[derive(Default)]
@@ -63,7 +71,7 @@ impl Sensors {
         }
     }
 
-    pub(super) fn heard(&self, project: &str, event: &Value, at: i64) {
+    pub(super) fn heard(&self, project: &str, pane: &str, event: &Value, at: i64) {
         let kind = match event["event"].as_str() {
             Some("PreToolUse") => "tool",
             Some("PostToolUseFailure") => "failure",
@@ -77,7 +85,7 @@ impl Sensors {
         let Some(id) = event["session"].as_str().filter(|s| !s.is_empty() && s.len() <= 400 && !crate::termtext::has_control(s)) else { return };
         let mut scopes = self.0.lock();
         let Some(scope) = scopes.get_mut(project) else { return };
-        let key = (agent, id.to_owned());
+        let key = HookSession { agent, id: id.to_owned(), pane: pane.to_owned() };
         if scope.sessions.len() >= MAX_SESSIONS && !scope.sessions.contains_key(&key) {
             return;
         }
@@ -102,7 +110,7 @@ impl Sensors {
             let mut active = scope.sessions.iter_mut().filter(|(_, s)| !s.counts.0.is_empty()).collect::<Vec<_>>();
             active.sort_unstable_by_key(|(_, s)| s.seen_at);
             active.into_iter().take(FLUSH_SESSIONS)
-                .map(|((agent, session), s)| ((*agent, session.clone()), std::mem::take(&mut s.counts))).collect()
+                .map(|(session, s)| (session.clone(), std::mem::take(&mut s.counts))).collect()
         }).unwrap_or_default();
         Pending { sensors: self, project: project.into(), generation, deltas }
     }
@@ -112,7 +120,7 @@ pub(super) struct Pending<'a> {
     sensors: &'a Sensors,
     project: String,
     generation: i64,
-    deltas: Vec<((&'static str, String), Delta)>,
+    deltas: Vec<(HookSession, Delta)>,
 }
 
 impl Pending<'_> {
@@ -120,17 +128,22 @@ impl Pending<'_> {
         if self.deltas.is_empty() {
             return Ok(None);
         }
-        let counts = self.deltas.iter().flat_map(|((agent, session), delta)| {
-            delta.0.iter().map(move |(event, count)| (agent, session, event, count))
+        let counts = self.deltas.iter().flat_map(|(session, delta)| {
+            delta.0.iter().map(move |(event, count)| (session.agent, &session.id, event, count, &session.pane))
         }).collect::<Vec<_>>();
         serde_json::to_string(&counts).map(Some).map_err(|err| err.to_string())
     }
 
     pub(super) fn write(tx: &Transaction, project: &str, at: i64, counts: Option<String>) -> Result<(), String> {
         if let Some(counts) = counts {
-            tx.execute("INSERT INTO supervisor_hook_counts (project, agent, session, at, event, count)
-                SELECT ?1, value ->> 0, value ->> 1, ?2, value ->> 2, value ->> 3 FROM json_each(?3) WHERE true
-                ON CONFLICT (project, agent, session, at, event) DO UPDATE SET count = count + excluded.count",
+            // Reconfirm ownership before storing counters. The pane identifier is
+            // only an in-memory routing key and does not become counter evidence.
+            tx.execute(&format!("INSERT INTO supervisor_hook_counts (project, agent, session, at, event, count)
+                SELECT ?1, e.value ->> 0, e.value ->> 1, ?2, e.value ->> 2, e.value ->> 3 FROM json_each(?3) e
+                WHERE coalesce(
+                    (SELECT r.project FROM runs r WHERE r.pane_key = (e.value ->> 4) AND {STILL} ORDER BY r.rowid DESC LIMIT 1),
+                    (SELECT m.project FROM project_members m WHERE m.pane_key = (e.value ->> 4))) = ?1
+                ON CONFLICT (project, agent, session, at, event) DO UPDATE SET count = count + excluded.count"),
                 (project, at, counts)).map_err(sql)?;
         }
         tx.execute("DELETE FROM supervisor_hook_counts WHERE id IN (

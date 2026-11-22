@@ -116,7 +116,7 @@ pub(crate) fn hook(app: &Shared, key: &str, event: &serde_json::Value) {
         projects.of(key).map(|p| p.id.clone())
     });
     if let Some(project) = project {
-        sensors.heard(&project, event, now());
+        sensors.heard(&project, key, event, now());
     }
 }
 

@@ -117,7 +117,8 @@ pub async fn open(app: &Shared, o: Opening<'_>) -> Result<String, String> {
         o.server.note_pane(&pane, session);            // its agent's first hook may come before the next list
     }
     let key = o.server.key(&pane);
-    app.dispatcher.panes.lock().insert(key.clone(), o.project.map_or(crate::tasks::store::DEFAULT_PROJECT, |(id, _)| id).to_owned());    // its agent's first hooks
+    let project = o.project.map_or(crate::tasks::store::DEFAULT_PROJECT, |(id, _)| id);
+    app.dispatcher.track_pane(&key, o.run, project);    // its agent's first hooks
     let on = if o.server.is_local() { "on this Mac".to_string() } else { format!("on {}", o.server.name) };
     let (a, run, tasks, words, k) = (app.clone(), o.run.to_string(), o.tasks.to_vec(), format!("Session started: {} in window {place}, {on}.", o.program), key.clone());
     store(app, move |tx| {

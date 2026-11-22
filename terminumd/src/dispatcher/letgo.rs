@@ -21,6 +21,9 @@ pub(super) async fn let_go(State(app): State<Shared>, Path(id): Path<String>) ->
 
 /// Every page hears of the tasks of a run let go of: their IDs.
 fn let_go_of(app: &Shared, r: Run) -> Vec<String> {
+    if let Some(key) = &r.pane_key {
+        app.dispatcher.release_pane(key, &r.id);
+    }
     super::told_all(app, &r);
     r.ids
 }
