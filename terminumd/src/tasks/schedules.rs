@@ -241,6 +241,7 @@ pub fn kept_by_agent(tx: &Transaction) -> Result<std::collections::BTreeMap<Stri
         by.entry(agent).or_default().integration = true;
     }
     for (agent, at_once) in rows(tx, "SELECT DISTINCT a.id, a.at_once FROM project_supervisor p
+        JOIN projects j ON j.id = p.project AND j.host IS NULL
         JOIN supervisor_settings s USING (project) JOIN agents a ON a.project = p.project
         WHERE p.enabled = 1 AND a.id IN (json_extract(s.pack, '$.tiers.small'),
             json_extract(s.pack, '$.tiers.medium'), json_extract(s.pack, '$.tiers.strong'))
