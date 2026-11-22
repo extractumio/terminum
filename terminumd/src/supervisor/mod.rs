@@ -5,6 +5,9 @@ mod attribution;
 mod catalog;
 mod impact;
 mod replay;
+pub(crate) mod runtime;
+mod samples;
+mod sensors;
 mod scoreboard;
 mod flow;
 mod people;
@@ -28,7 +31,7 @@ pub(crate) use catalog::Rule;
 pub(crate) use signals::Signal;
 pub(crate) use replay::replay;
 
-const SCHEMA: usize = 41;
+const SCHEMA: usize = 42;
 const DAY: i64 = 86_400;
 const WEEK: i64 = 7 * DAY;
 
@@ -70,10 +73,13 @@ pub(crate) struct Detector {
 
 impl Detector {
     pub(crate) fn named(name: &str) -> Result<Self, String> {
-        let rule = Rule::named(name)?;
+        Rule::named(name).map(Self::for_rule)
+    }
+
+    fn for_rule(rule: Rule) -> Self {
         let threshold = rule.defaults();
         let window_days = if rule == Rule::FailedWithoutReason { 7 } else { 28 };
-        Ok(Self { rule, mode: Mode::Off, window_days, threshold, allocation: BTreeMap::new(), scores: Scores::default() })
+        Self { rule, mode: Mode::Off, window_days, threshold, allocation: BTreeMap::new(), scores: Scores::default() }
     }
 
     /// Initial attachment can set its mode in the pack. Enabling an additional rule always starts here.
@@ -128,6 +134,9 @@ pub(crate) enum Evidence {
     Usage(i64),
     UserInteraction(i64),
     Messages(i64),
+    SupervisorPoints(i64),
+    SupervisorHookCounts(i64),
+    SupervisorHeartbeat { project: String, last_ok: Option<i64> },
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -173,6 +182,7 @@ pub(crate) struct Checked {
     pub unavailable: Vec<&'static str>,
     pub findings: Vec<Finding>,
     complete_metrics: Vec<&'static str>,
+    measured: MeasuredSubjects,
 }
 
 /// A detector returns measured subjects; an unavailable input cannot prove anything resolved.
@@ -325,29 +335,29 @@ pub(crate) fn evaluate(store: &Store, project: &str, at: i64, detectors: &[Detec
     }
     store.snapshot(SCHEMA, |tx| {
         check_project(tx, project)?;
-        let (first, _) = flow::history_bounds(tx, project, at)?;
-        evaluate_snapshot(tx, project, at, first, detectors, None, true)
+        evaluate_snapshot(tx, project, at, None, detectors, None, true)
     })
 }
 
 fn evaluate_snapshot(
-    tx: &Transaction, project: &str, at: i64, first: i64, detectors: &[Detector],
+    tx: &Transaction, project: &str, at: i64, first: Option<i64>, detectors: &[Detector],
     weeks: Option<&[scoreboard::Week]>, current_state: bool,
 ) -> Result<Evaluation, String> {
     let mut checked = Vec::new();
     for detector in detectors {
         let window = Window::of(at, detector.window_days);
-        let (data, mut findings) = measure_detector(tx, project, detector, window, current_state)?;
+        let (data, mut findings, measured) = measure_detector(tx, project, detector, window, current_state)?;
         findings.sort_by(|a, b| a.key().cmp(&b.key()));
         checked.push(Checked {
             rule: detector.rule, mode: detector.mode, unavailable: data.unavailable,
-            findings, complete_metrics: data.complete_metrics,
+            findings, complete_metrics: data.complete_metrics, measured,
         });
     }
     let mut result = Evaluation { project: project.into(), at, detectors: checked };
     if !result.detectors.iter().any(|d| !d.findings.is_empty()) {
         return Ok(result);
     }
+    let first = match first { Some(first) => first, None => flow::history_bounds(tx, project, at)?.0 };
     let own_weeks;
     let weeks = if let Some(weeks) = weeks { weeks } else {
         own_weeks = scoreboard::read(tx, project, at, first)?;
@@ -380,9 +390,11 @@ fn evaluate_snapshot(
     Ok(result)
 }
 
+type MeasuredSubjects = Option<Vec<(&'static str, String, &'static str)>>;
+
 fn measure_detector(
     tx: &Transaction, project: &str, detector: &Detector, window: Window, current_state: bool,
-) -> Result<(Measurements, Vec<Finding>), String> {
+) -> Result<(Measurements, Vec<Finding>, MeasuredSubjects), String> {
     let query = Query { tx, project, detector, window, historical: !current_state };
     let mut data = if detector.mode == Mode::Off {
         Measurements::missing("Detector is off.")
@@ -391,10 +403,13 @@ fn measure_detector(
     } else {
         detector.rule.query(&query)?
     };
+    let measured = matches!(detector.rule, Rule::LimitNear | Rule::StalePlan).then(|| {
+        data.readings.iter().map(|r| (r.subject_kind, r.subject_id.clone(), r.metric)).collect()
+    });
     let findings = std::mem::take(&mut data.readings).into_iter()
         .filter(|reading| current_state || !matches!(reading.source, impact::Source::Present))
         .filter_map(|reading| reading.finding(detector.threshold, window)).collect();
-    Ok((data, findings))
+    Ok((data, findings, measured))
 }
 
 impl Evaluation {

@@ -159,6 +159,9 @@ pub async fn hook_on(app: Shared, server: Option<std::sync::Arc<crate::tmux::ser
     let Some((changed, whose)) = app.hooks.apply_event(&key, &ev, std::time::Instant::now()) else {
         return StatusCode::NO_CONTENT.into_response();
     };
+    if whose != crate::tmux::hookstate::Whose::Stale {
+        crate::supervisor::runtime::hook(&app, &key, &ev);
+    }
     if changed {
         server.list_changed();
     }

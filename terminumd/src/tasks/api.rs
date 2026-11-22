@@ -30,6 +30,7 @@ pub fn routes() -> Router<Shared> {
         .merge(super::agents::routes())
         .merge(super::limits::routes())
         .merge(super::integration::routes())
+        .merge(crate::supervisor::runtime::routes())
         .merge(crate::integrate::keys::routes())
         .merge(crate::integrate::column::routes())
         .merge(super::auto::routes())

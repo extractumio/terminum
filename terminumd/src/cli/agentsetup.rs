@@ -29,8 +29,8 @@ const NAME: &str = "terminum";
 pub(super) const MARKET: &str = "terminum-local";
 /// terminum's plugin as Claude Code names it.
 pub(super) const PLUGIN: &str = "terminum@terminum-local";
-const CLAUDE_EVENTS: [&str; 11] = ["SessionStart", "PreToolUse", "PostToolUse", "PostToolUseFailure", "PermissionRequest",
-                                    "Notification", "Stop", "StopFailure", "SubagentStart", "SubagentStop", "SessionEnd"];
+const CLAUDE_EVENTS: [&str; 12] = ["SessionStart", "PreToolUse", "PostToolUse", "PostToolUseFailure", "PermissionRequest",
+                                    "Notification", "Stop", "StopFailure", "SubagentStart", "SubagentStop", "PreCompact", "SessionEnd"];
 const CODEX_EVENTS: [&str; 10] = ["SessionStart", "UserPromptSubmit", "PreToolUse", "PermissionRequest", "PostToolUse", "Stop",
                                    "SubagentStart", "SubagentStop", "SessionEnd", "Interrupt"];
 /// Codex's events whose matcher is a tool name (a regular expression: every tool).

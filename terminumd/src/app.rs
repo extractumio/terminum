@@ -97,6 +97,7 @@ pub struct App {
     /// Dispatcher's words waiting for a pane's next hook
     pub task_lines: crate::tasks::tell::Lines,
     pub dispatcher: crate::dispatcher::Dispatcher,
+    pub supervisor: crate::supervisor::runtime::Runtime,
     pub task_marks: crate::tasks::marks::Marks,
     /// panes whose agent ended a turn nobody has looked at since (AC-93)
     pub unread: Mutex<crate::page::unread::Marks>,
