@@ -69,6 +69,10 @@ catalog! {
 }
 
 impl Rule {
+    pub(super) fn configurable(self) -> bool {
+        self != Self::CollectorDead
+    }
+
     pub(super) fn present_only(self) -> bool {
         matches!(self, Self::Starved | Self::UserBugAge)
     }

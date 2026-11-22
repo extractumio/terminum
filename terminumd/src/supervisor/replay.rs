@@ -7,7 +7,7 @@ use rusqlite::{OptionalExtension, Transaction};
 
 use crate::tasks::{ops::{check_project, sql}, store::Store};
 
-use super::{Detector, Evaluation, Finding, Mode, Rule, SCHEMA, WEEK, Window, evaluate_snapshot, measure_detector, flow::history_bounds, scoreboard};
+use super::{Detector, Evaluation, EvaluationInputs, Finding, Rule, SCHEMA, WEEK, Window, collect_findings, evaluate_snapshot, measure_detector, flow::history_bounds, scoreboard, settings};
 
 pub(crate) fn replay(path: &Path, project: &str, as_of: Option<i64>) -> Result<String, String> {
     if as_of.is_some_and(|at| !(1..i64::MAX / 1000 - WEEK).contains(&at)) {
@@ -20,33 +20,42 @@ pub(crate) fn replay(path: &Path, project: &str, as_of: Option<i64>) -> Result<S
         let first = first.min(at);
         let current_state = as_of.is_none();
         let weeks = scoreboard::read(tx, project, at, first)?;
-        let detectors = Rule::ALL.iter().map(|rule| {
-            let mut detector = Detector::for_rule(*rule);
-            detector.mode = Mode::Digest;
-            detector
-        }).collect::<Vec<_>>();
-        let evaluation = evaluate_snapshot(tx, project, at, Some(first), &detectors, Some(&weeks), current_state)?;
-        let historical = historical_findings(tx, project, first, at, &detectors)?;
+        let settings = settings::read(tx, project)?.settings;
+        let detectors = Rule::ALL.iter().map(|&rule| settings.detector(rule)).collect::<Vec<_>>();
+        let inputs = EvaluationInputs { first: Some(first), weeks: Some(&weeks), current_state, observe_thresholds: false };
+        let evaluation = evaluate_snapshot(tx, project, at, &detectors, inputs)?;
+        let mut historical = BTreeMap::new();
+        visit_history(tx, project, first, at, &detectors, |rule, _| {
+            *historical.entry(rule).or_default() += 1;
+            Ok(())
+        })?;
         render(tx, &evaluation, &weeks, first, &historical)
     })
 }
 
-fn historical_findings(
+pub(super) fn visit_history(
     tx: &Transaction, project: &str, first: i64, at: i64, detectors: &[Detector],
-) -> Result<BTreeMap<Rule, usize>, String> {
-    let mut counts = BTreeMap::new();
+    mut visit: impl FnMut(Rule, &Finding) -> Result<(), String>,
+) -> Result<(), String> {
     let mut end = at - 2 * WEEK;
     while end >= first && end > 0 {
         for detector in detectors.iter().filter(|detector| detector.rule.has_historical_query()) {
             let window = Window::of(end, detector.window_days);
-            let (_, found, _) = measure_detector(tx, project, detector, window, false)?;
-            if !found.is_empty() {
-                *counts.entry(detector.rule).or_default() += found.len();
+            let mut data = measure_detector(tx, project, detector, window, false)?;
+            for finding in collect_findings(&mut data, detector, window, false) {
+                visit(detector.rule, &finding)?;
             }
         }
         end -= WEEK;
     }
-    Ok(counts)
+    Ok(())
+}
+
+pub(super) fn firing_key(project: &str, rule: Rule, finding: &Finding) -> Result<String, String> {
+    // A standing finding backed by the same evidence at several cutoffs counts once for holds.
+    let key = serde_json::to_vec(&(project, rule.id(), finding.key(), &finding.evidence))
+        .map_err(|_| "Could not encode Supervisor firing evidence.")?;
+    Ok(crate::auth::crypto::sha256_hex(&key))
 }
 
 fn subject(tx: &Transaction, f: &Finding) -> Result<String, String> {

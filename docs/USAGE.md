@@ -461,15 +461,41 @@ reading for every agent of its kind. Its window says when each resets.
 
 ### Project Supervisor
 
-The Supervisor starts off for each project. The signed-in project endpoint
-`/api/task-projects/<ID>/supervisor` accepts a JSON PUT with `{"enabled": true}` or
-`{"enabled": false}`. GET returns the switch, the last successful collector beat as
-`last_ok` in Unix seconds, and `collector_dead` after two missed beats.
+The Supervisor starts off for each project. Turn it on to scan the project's retained
+history, calibrate its detector thresholds and see which detectors can run. With fewer than
+three weeks of history, ordinary findings have impact at most 1. The default Operator level
+uses code alone until you choose tier agents from the project's pool. Live-at-attach rules
+can raise findings immediately. Their holds stay in shadow until seven days pass or replay
+verifies at least two-thirds of three or more past firings. A verified charter breach bypasses
+that wait. A detector enabled after attach starts in shadow. Turning a live rule off
+retires its live-at-attach eligibility.
 
 An enabled project checks store changes every ten seconds. It keeps queue waits, available
 subscription readings and active plan ETAs every 15 minutes. Hook counts keep 30 days of
 numeric totals per session. Turning the Supervisor off stops collection and keeps its
-existing signals and measurement history.
+settings, signals and measurements.
+
+#### Signed-in Supervisor API
+
+All routes below are relative to `/api/task-projects/<ID>/supervisor`.
+
+| Request | Result |
+|---|---|
+| GET the base route | Switch, last successful beat in Unix seconds, collector health and the attachment report when ready. |
+| PUT the base route with `{"enabled": true}` or `{"enabled": false}` | Change the switch for this project. |
+| GET `/settings` | Pack, revision, detector defaults and confirmed and unset probe IDs. |
+| PUT `/settings` with `revision` and `settings` | Replace the project's preferences. Use the latest revision. |
+| POST `/export` with `{}` | Download a versioned JSON text file. Select `include_commands` and `include_secrets` independently. |
+| POST `/import` with `revision` and the text `file` | Copy preferences and stage proposed probe commands as unset. Keep the destination switch, tier agents and approved commands. The owner-wide critical line stays outside the file. |
+| POST `/probe-candidates/<probe>` with `command` | Stage a new probe command for approval. |
+| POST `/probe-candidates/<probe>/preview` with `{}` | Read the full proposed command and obtain its approval value. |
+| POST `/probe-candidates/<probe>/confirm` with `approval` | Set that command after a separate owner confirmation. Restaging or reimporting invalidates old approvals. |
+| DELETE `/probe-candidates/<probe>` or `/probe-commands/<probe>` | Discard a proposed command or clear a confirmed one. |
+
+The export selection for secrets controls redaction of recognized secret formats in free text.
+When commands are selected without secrets, a command that would need redaction is omitted.
+Review the file before sharing it. The attachment report gives the configured threshold
+and, for measured inputs, the range of effective thresholds per metric.
 
 ### Supervisor replay
 
