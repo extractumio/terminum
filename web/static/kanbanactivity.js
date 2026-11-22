@@ -72,7 +72,7 @@ export function activity(t, { refresh, confirmed, leads = true }) {
     li.append(head);
     if (e.kind === "comment") {
       const said = el("div", "markdown");
-      renderInto(said, e.text ?? "");
+      renderInto(said, e.text ?? "", { comment: true });
       li.append(said);
       if (e.author_kind === "human") head.append(commentActions(e, said));
     } else if (e.kind === "deleted") {

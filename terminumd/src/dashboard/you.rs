@@ -13,7 +13,7 @@ use rusqlite::Transaction;
 use serde_json::{json, Value};
 
 use super::{civil, local, median, stack_key, stacked, Ask, Span, DAY, HOUR, MINUTE};
-use crate::tasks::ops::rows;
+use crate::tasks::ops::{CURRENT_PROJECT_HISTORY, rows};
 
 pub const GAP: i64 = 15 * 60_000;
 pub const TAIL: i64 = 2 * 60_000;
@@ -92,18 +92,33 @@ struct Read {
 }
 
 pub fn numbers(tx: &Transaction, ask: &Ask) -> Result<Value, String> {
-    let read = read(tx, ask)?;
-    let mut now = summarize(&read, ask.span, ask);
+    let read = read(tx, ask, false)?;
+    let mut now = summarize(&read, ask.span, ask).0;
     // a span from before the pages counted is measured another way: not compared
     let before = ask.before.filter(|b| read.measured.is_none_or(|m| m <= b.lo()));
-    now["before"] = before.map_or(Value::Null, |b| summarize(&read, b, ask)["tiles"].take());
+    now["before"] = before.map_or(Value::Null, |b| summarize(&read, b, ask).0["tiles"].take());
     now["measured_from"] = json!(read.measured.map(|m| civil(m.div_euclid(DAY))));
     // the rules the page draws and words by
     now["rules"] = json!({"night": NIGHT, "rated_minutes": RATED_MINUTES, "over_usual": OVER_USUAL});
     Ok(now)
 }
 
-fn read(tx: &Transaction, ask: &Ask) -> Result<Read, String> {
+#[derive(Clone, Copy)]
+pub(crate) struct OwnerLoad {
+    pub active_ms: i64,
+    pub switches_per_hour: f64,
+    pub peak: i64,
+    pub off_hours_share: Option<f64>,
+}
+
+#[allow(dead_code, reason = "The Supervisor collector and replay are wired separately.")]
+pub(crate) fn project_load(tx: &Transaction, project: &str, span: &Span, since: i64) -> Result<OwnerLoad, String> {
+    let project = if project == crate::tasks::store::DEFAULT_PROJECT { "" } else { project };
+    let ask = Ask { span, before: None, since, project: Some(project), colors: &HashMap::new() };
+    Ok(summarize(&read(tx, &ask, true)?, span, &ask).1)
+}
+
+fn read(tx: &Transaction, ask: &Ask, current_project_history: bool) -> Result<Read, String> {
     let only = "AND (?2 IS NULL OR coalesce(project, '') = ?2)";
     let mut names = super::project_names(tx)?;
     let (mut projects, mut panes) = (Names::new(), Names::new());
@@ -148,8 +163,9 @@ fn read(tx: &Transaction, ask: &Ask) -> Result<Read, String> {
     let measured: Option<i64> = tx.query_row(&format!("SELECT {} FROM (SELECT min(at) AS at FROM user_interaction) WHERE at IS NOT NULL", local("at")), [], |r| r.get(0)).ok();
     let at = local("e.at * 1000");
     let mine = "(?2 IS NULL OR t.project = ?2)";
+    let transferred = if current_project_history { CURRENT_PROJECT_HISTORY } else { "" };
     let board: Vec<(i64, String, String)> = rows(tx, &format!("SELECT {at}, e.kind, CASE WHEN p.is_default THEN '' ELSE p.id END FROM events e JOIN tasks t ON t.id = e.task JOIN projects p ON p.id = t.project
-        WHERE e.author = 'human' AND e.at >= ?1 / 1000 AND {mine}"), (ask.since, ask.task_project()), |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
+        WHERE e.author = 'human' AND e.at >= ?1 / 1000 AND {mine} {transferred}"), (ask.since, ask.task_project()), |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
     let board: Vec<(i64, String)> = board.into_iter().map(|(t, kind, project)| {
         events.push(Event { t, project: projects.id(project), pane: NO_PANE, sent: false, phone: None, how: How::Act });
         (t, kind)
@@ -178,7 +194,7 @@ fn off_hours(wd: usize, hour: usize) -> bool {
 }
 
 /// Every number of `span`.
-fn summarize(read: &Read, span: &Span, ask: &Ask) -> Value {
+fn summarize(read: &Read, span: &Span, ask: &Ask) -> (Value, OwnerLoad) {
     let (first, last) = (read.events.partition_point(|e| e.t < span.lo()), read.events.partition_point(|e| e.t <= span.until));
     let evs = &read.events[first..last];
     let n = span.len();
@@ -312,16 +328,22 @@ fn summarize(read: &Read, span: &Span, ask: &Ask) -> Value {
     let total: i64 = active.iter().sum();
     let worked: Vec<&Vec<[i64; 2]>> = spans.iter().filter(|s| !s.is_empty()).collect();
     let all_switches: i64 = switches.iter().sum();
+    let load = OwnerLoad {
+        active_ms: total,
+        switches_per_hour: if total > 0 { all_switches as f64 / (total as f64 / HOUR as f64) } else { 0.0 },
+        peak: peak.iter().max().copied().unwrap_or(0),
+        off_hours_share: (total > 0).then(|| off.iter().sum::<i64>() as f64 / total as f64),
+    };
     let tiles = json!({
-        "active_ms": total, "active_units": active_units.len(), "units": if span.by_hour() { n as i64 } else { span.days() },
+        "active_ms": load.active_ms, "active_units": active_units.len(), "units": if span.by_hour() { n as i64 } else { span.days() },
         "active_per_unit_ms": if active_units.is_empty() { 0 } else { total / active_units.len() as i64 },
         "longest_ms": longest,
         "engaged": all.json(),
-        "sessions": median(panes.iter().map(|p| p.len() as i64).filter(|p| *p > 0).collect()), "peak": peak.iter().max().copied().unwrap_or(0),
-        "switches": all_switches, "switches_per_hour": if total > 0 { all_switches as f64 / (total as f64 / HOUR as f64) } else { 0.0 },
+        "sessions": median(panes.iter().map(|p| p.len() as i64).filter(|p| *p > 0).collect()), "peak": load.peak,
+        "switches": all_switches, "switches_per_hour": load.switches_per_hour,
         "board": board_by.values().sum::<i64>(), "board_by": board_by,
         "asks": waits.len(), "waiting": waits.iter().filter(|w| w.1.is_none()).count(), "answer_ms": median(waits.iter().filter_map(|w| w.1).collect()),
-        "off": (total > 0).then(|| off.iter().sum::<i64>() as f64 / total as f64),
+        "off": load.off_hours_share,
         // a usual bucket: the median of those with any, to draw a line at (sessions: above)
         "usual_active_ms": median(active.iter().copied().filter(|a| *a > 0).collect()),
         "usual_switches": usual_rate, "rated": rates.iter().flatten().count(), "over": over.iter().filter(|o| **o).count(),
@@ -330,5 +352,5 @@ fn summarize(read: &Read, span: &Span, ask: &Ask) -> Value {
         "phone": (paged > 0).then(|| phone as f64 / paged as f64),
     });
     let other: i64 = ranked.iter().skip(stack.len()).map(|p| p.1).sum();
-    json!({"tiles": tiles, "series": series, "stacked": stack, "other_ms": other, "projects": projects, "heat": heat})
+    (json!({"tiles": tiles, "series": series, "stacked": stack, "other_ms": other, "projects": projects, "heat": heat}), load)
 }

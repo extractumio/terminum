@@ -66,6 +66,8 @@ mod settings;
 mod sock;
 mod slow;
 mod dispatcher;
+#[allow(dead_code, reason = "The Supervisor collector and replay are wired separately.")]
+mod supervisor;
 mod tasks;
 mod termtext;
 #[cfg(test)]

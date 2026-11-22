@@ -21,6 +21,10 @@ pub fn sql(e: rusqlite::Error) -> String {
     super::store::message(&e)
 }
 
+/// For event alias `e` and task alias `t`: ignore history before the task joined its current project.
+pub(crate) const CURRENT_PROJECT_HISTORY: &str = "AND e.rowid > coalesce(
+    (SELECT max(m.rowid) FROM events m WHERE m.task = t.id AND m.kind = 'project'), 0)";
+
 /// Every row `query` finds.
 pub(crate) fn rows<T>(tx: &Transaction, query: &str, params: impl Params, f: impl FnMut(&Row) -> rusqlite::Result<T>) -> Result<Vec<T>, String> {
     tx.prepare_cached(query).map_err(sql)?.query_map(params, f).map_err(sql)?.collect::<Result<_, _>>().map_err(sql)

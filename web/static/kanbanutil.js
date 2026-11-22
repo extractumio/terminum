@@ -314,10 +314,10 @@ export async function download(id, name) {
 
 /** Markdown by the Panel's rules (raw HTML off, javascript: links dropped, remote images not
  *  loaded); a task's own pictures are fetched with the sign-in, its files download. */
-export async function renderInto(box, text) {
+export async function renderInto(box, text, { comment = false } = {}) {
   box.textContent = text;
   try {
-    box.innerHTML = (await renderers()).taskMarkdownHtml(text);
+    box.innerHTML = (await renderers()).taskMarkdownHtml(text, comment);
   } catch { return; }
   for (const img of box.querySelectorAll("img[data-raw]")) {
     signin.blobUrl(img.dataset.raw).then((got) => {
