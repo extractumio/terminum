@@ -146,9 +146,7 @@ pub(super) fn act(tx: &Transaction, id: i64, action: Action, at: i64) -> Result<
     };
     let changed = changed.map_err(sql)? != 0;
     if changed {
-        if matches!(action, Action::Acknowledge) {
-            line_queue::stop_repeats(tx, id)?;
-        }
+        // Acknowledge stops repeats in the claim (AC-228); the row's last send keeps the updates' cool-down.
         tx.execute("INSERT INTO supervisor_incident_events (incident, at, kind, actor)
             VALUES (?1, ?2, ?3, ?4)", (id, at, kind, HUMAN)).map_err(sql)?;
     }

@@ -91,6 +91,28 @@ fn ac228_repeat_escalation_snooze_and_acknowledgment() {
 }
 
 #[test]
+fn ac228_acknowledged_incident_updates_keep_the_cool_down() {
+    let f = Fixture::new("line-ack-updates");
+    configure(&f, None);
+    let take = |offset| take(&f.store, NOW + offset, 600);
+    // Reversibility 3 also passes quiet hours, so the cool-down is the only bound on its updates.
+    observed(&f, NOW, &[("target", false, 3, 1)]);
+    let open = take(0).unwrap();
+    assert!(f.store.with(|tx| incidents::act(tx, open.incident, Action::Acknowledge, NOW + 1)).unwrap());
+    for (offset, amount) in [(10, 2), (20, 3), (30, 4)] {
+        observed(&f, NOW + offset, &[("target", false, 3, amount)]);
+        assert!(take(offset).is_none(), "an acknowledged incident's updates wait for the cool-down");
+    }
+    let update = take(60).unwrap();
+    assert_eq!((update.incident, update.kind), (open.incident, Kind::Updated));
+    assert!(take(61).is_none(), "pending updates merge into one and repeats stay stopped");
+    observed(&f, NOW + 70, &[("target", false, 3, 5)]);
+    assert!(take(119).is_none());
+    assert_eq!(take(120).unwrap().kind, Kind::Updated);
+    assert!(take(3600).is_none(), "acknowledged: no repeat on the ladder");
+}
+
+#[test]
 fn ac228_quiet_hours_defer_ordinary_notices_and_keep_all_incidents() {
     let f = Fixture::new("line-quiet");
     configure(&f, Some([23 * 60, 8 * 60]));
@@ -134,6 +156,17 @@ async fn ac227_bounded_channel_stdin_and_exit() {
     assert_eq!(line_command::send(&bad, false, TEST, timeout).await.unwrap_err(), "Exit status 17.");
     let slow = command(root, "slow", "cat >/dev/null\nprintf 'Synthetic reply fixture'\nwait_time=10\nsleep \"$wait_time\" &\nwait");
     assert_eq!(line_command::send(&slow, false, TEST, Duration::from_millis(100)).await.unwrap_err(), "Command timed out.");
+    let pid_file = root.join("helper.pid");
+    let leaves = command(root, "leaves", &format!(
+        "cat >/dev/null\nsleep 30 &\necho $! > {}\nexit 0", crate::termtext::posix_word(pid_file.to_str().unwrap())));
+    line_command::send(&leaves, false, TEST, timeout).await.unwrap();
+    let helper: libc::pid_t = fs::read_to_string(&pid_file).unwrap().trim().parse().unwrap();
+    let gone = || unsafe { libc::kill(helper, 0) } != 0;   // SAFETY: signal 0 only checks the pid
+    for _ in 0..100 {
+        if gone() { break; }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    assert!(gone(), "a helper left in the command's group ends with it");
 }
 
 #[tokio::test]

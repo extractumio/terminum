@@ -152,9 +152,9 @@ def main():
         check("AC-227 the watchdog recovery sends the all-clear for the same incident",
               all_clear in wait_for(notices, lambda text: all_clear in text, 20))
         failing.write_text("#!/bin/sh\ncat >/dev/null\n")
-        call(api_path + "/line/test", "POST", {"channel": 0, "revision": 1})
+        retest = call(api_path + "/line/test", "POST", {"channel": 0, "revision": 1})
         check("AC-229 a successful retest clears the local line failure",
-              read("SELECT state FROM supervisor_signals WHERE project = ? AND detector = 'self.line_dead'", (api_id,)) == [("resolved",)])
+              retest == {"sent": True} and read("SELECT state FROM supervisor_signals WHERE project = ? AND detector = 'self.line_dead'", (api_id,)) == [("resolved",)])
 
         call(api_path, "PUT", {"enabled": False})
         at_off = call(api_path)["last_ok"]

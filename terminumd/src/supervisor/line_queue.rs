@@ -121,13 +121,12 @@ pub(super) fn claim(tx: &Transaction, settings: &Settings, at: i64, quiet: bool)
         tx.execute("DELETE FROM supervisor_line_pending WHERE id = ?1", [row]).map_err(sql)?;
     }
     match notice.kind {
-        Kind::Opened => {
-            tx.execute("INSERT OR IGNORE INTO supervisor_line_repeats (incident, escalated, last_at, due_at)
-                SELECT id, 0, ?2, ?3 FROM supervisor_incidents
-                WHERE id = ?1 AND closed_at IS NULL AND acknowledged_at IS NULL", (id, at, at + first)).map_err(sql)?;
-        }
-        Kind::Updated => {
-            tx.execute("UPDATE supervisor_line_repeats SET last_at = ?2 WHERE incident = ?1", (id, at)).map_err(sql)?;
+        // The row's last_at is every open incident's update cool-down, acknowledged or not;
+        // the repeat branch above skips acknowledged incidents.
+        Kind::Opened | Kind::Updated => {
+            tx.execute("INSERT INTO supervisor_line_repeats (incident, escalated, last_at, due_at)
+                SELECT id, 0, ?2, ?3 FROM supervisor_incidents WHERE id = ?1 AND closed_at IS NULL
+                ON CONFLICT (incident) DO UPDATE SET last_at = excluded.last_at", (id, at, at + first)).map_err(sql)?;
         }
         Kind::Repeat => {
             let delay = if escalated { settings.later_delay() } else { settings.second_delay() - first };

@@ -474,6 +474,11 @@ Scenario: AC-228 failure — persistent incident noise
   Given four distinct critical incidents open and one of them repeats its fingerprint
   When the line processes the alerts
   Then none is suppressed by a daily count cap and the repeat shares the existing incident and cooldown
+
+Scenario: AC-228 edge — updates after acknowledgment
+  Given the owner acknowledged an urgent incident whose measure keeps changing
+  When its signal changes several times within the ladder's first step
+  Then no repeat is sent and its changes go out as one update, at most one per first step
 ```
 
 ### AC-229 — Line health [MUST / P0]
@@ -1577,7 +1582,7 @@ Enable none of the runtime cases by default. Land the specification after indepe
 - [ ] AC-225 — `liveIncidents` in `web/test/e2e_liveincidents.mjs` drills a level 3 signal with two signed-in browsers and standalone Files, the pinned card and its timeline. Hold details follow AC-245.
 - [x] AC-226 — `ac226_owner_keys_are_audited_once_and_do_not_clear_the_cause` and `liveIncidents` cover snooze, acknowledgment, the recorded actor and time, and refusal without sign-in.
 - [ ] AC-227 — `ac227_bounded_channel_stdin_and_exit` and `ac227_templates_exclude_case_prose_and_use_only_a_validated_origin` cover execution and the four templates. `scripts/e2e_supervisor.py` exercises signed-in configuration, the watchdog's notice and its all-clear. The answer producer follows AC-244.
-- [x] AC-228 — `ac228_repeat_escalation_snooze_and_acknowledgment` and `ac228_quiet_hours_defer_ordinary_notices_and_keep_all_incidents` exercise the ladder and quiet hours on a short clock.
+- [x] AC-228 — `ac228_repeat_escalation_snooze_and_acknowledgment`, `ac228_acknowledged_incident_updates_keep_the_cool_down` and `ac228_quiet_hours_defer_ordinary_notices_and_keep_all_incidents` exercise the ladder, the updates' cool-down after acknowledgment and quiet hours on a short clock.
 - [x] AC-229 — `ac229_next_channel_weekly_test_and_local_recovery` covers the weekly check, fallback and local recovery. `scripts/e2e_supervisor.py` exercises the signed-in test and the live failure path. `webSupervisor` checks the tab's test status.
 - [ ] AC-230 — Planned test: `ac230_question_options_and_legacy_resume` covers structured question and answer records.
 - [ ] AC-231 — Planned test: `ac231_supervisor_tools_pane_and_token` covers distinct caller with level enforcement.
