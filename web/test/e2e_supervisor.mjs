@@ -20,7 +20,7 @@ const DEFAULTS = { [RULE]: { mode: "live", window_days: 7, threshold: { baseline
 const SIGNAL = { fingerprint: "one", project: "api", detector: RULE, subject_id: LITERAL, subject_kind: "project",
   metric: "Unexplained failures", level: 1, state: "raised", count: 2, response: "digest", last_seen: DATE,
   measure: { value: 12, baseline: 4, threshold: 8, window_start: DATE - 1000, window_end: DATE },
-  evidence: [{ table: "tasks", id: "API-2" }, { table: "events", id: LITERAL }] };
+  evidence: [{ table: "tasks", id: "API-2" }, { table: "events", id: LITERAL }, { table: "supervisor_line", id: { channel: 2, failure: "Exit status 17." } }] };
 const SCORE = { name: "Release cadence", verdict: "not measured yet", guard: "Stability", metrics: [
   { name: "Releases per month", verdict: "not measured yet", missing: "release tags are unavailable" },
   { name: "Fixture measured series", verdict: "better", missing: null, before: 3, current: 5, noise: 0.5 },
@@ -234,6 +234,8 @@ async function screen(page, suffix, phone) {
     && (await page.locator(".sv-evidence").first().textContent()).includes(LITERAL)
     && await page.locator("#sv-signals img").count() === 0 && !await page.evaluate(() => window.fixtureRan)
     && !await page.getByText("Web signal", { exact: false }).count());
+  check("AC-229 the Supervisor screen spells out the channel and exit status in signal evidence",
+    await page.getByText("Channel 2: Exit status 17.", { exact: true }).first().isVisible());
   await shot(page, `supervisor-evidence-${suffix}`);
   check("AC-223 investigation shows its availability and evidence does not cause sideways scrolling",
     await page.getByRole("button", { name: "Investigate", exact: true }).first().isDisabled()

@@ -54,6 +54,7 @@ function evidence({ table, id }) {
   const label = table.replaceAll("_", " ");
   if (table === "tasks") return part("li", null, "Task ", reference(id));
   if (table === "task_links") return part("li", null, "Task link ", reference(id.task), " to ", reference(id.other));
+  if (table === "supervisor_line") return el("li", null, `Channel ${id.channel}: ${id.failure}`);
   const detail = table === "supervisor_heartbeat" ? id.last_ok ? `Last successful check ${stamp(id.last_ok)}` : "No successful check recorded" : String(id);
   return el("li", null, `${label} — ${detail}`);
 }
