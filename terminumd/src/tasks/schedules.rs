@@ -193,6 +193,7 @@ pub struct Kept {
     pub slots: i64,
     pub schedules: usize,
     pub integration: bool,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub supervisor: bool,
 }
 

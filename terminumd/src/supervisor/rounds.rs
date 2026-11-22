@@ -254,9 +254,9 @@ pub(crate) fn failure(tx: &Transaction, run: &str, why: &str, refused: bool) -> 
 mod tests {
     use super::*;
 
-    #[test]
-    fn ac233_waiters_use_distinct_weeks_and_impact() {
-        let (_root, app) = crate::testutil::app_with_tasks("round-waiters");
+    #[tokio::test]
+    async fn ac233_waiters_use_distinct_weeks_and_impact() {
+        let (root, app) = crate::testutil::app_with_tasks("round-waiters");
         let week = 100;
         let at = week * crate::supervisor::WEEK;
         app.tasks.with(|tx| {
@@ -276,5 +276,7 @@ mod tests {
             assert_eq!(keys, ["critical", "medium", "repeat"]);
             Ok(())
         }).unwrap();
+        drop(app);
+        std::fs::remove_dir_all(root).unwrap();
     }
 }
