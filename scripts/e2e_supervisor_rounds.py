@@ -176,12 +176,16 @@ def main():
                     "WHERE r.project = ? AND r.ended_at IS NULL", [expiry_project])
         displaced, key = active[0]
         pane = key.rsplit(":", 1)[1]
+        wait_for(logged, lambda log: any(
+            line.get("case") == displaced and line.get("tool") == "get_case_file" and not line.get("isError")
+            for line in log), 8, every=0.1)
         tmux_on(SOCKET, "set-option", "-p", "-t", pane, "@terminum-run", "fixture-other-run")
-        ended(expiry_project, 3)
+        result = ended(expiry_project, 3)[-1]
+        panes = tmux_on(SOCKET, "list-panes", "-a", "-F", "#{pane_id}").splitlines()
+        mark = db("SELECT m.round, r.ended_at IS NOT NULL FROM supervisor_panes m JOIN supervisor_rounds r ON r.id = m.round "
+                  "WHERE m.pane_key = ?", [key])
         check("AC-234 a pane with a changed tmux mark survives with its original role mark revoked",
-              pane in tmux_on(SOCKET, "list-panes", "-a", "-F", "#{pane_id}").splitlines()
-              and db("SELECT m.round, r.ended_at IS NOT NULL FROM supervisor_panes m JOIN supervisor_rounds r ON r.id = m.round "
-                     "WHERE m.pane_key = ?", [key]) == [(displaced, 1)])
+              pane in panes and mark == [(displaced, 1)], (pane, panes, mark, result[3]))
     except Exception:
         print(t.log())
         raise
