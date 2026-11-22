@@ -152,8 +152,6 @@ def main(command, folder=None):
 def check(command, folder, cancelled):
     private_group = folder is not None
     folder = folder or os.path.realpath(tempfile.mkdtemp(prefix="tmc.", dir="/tmp"))
-    inspected = False
-    cleaned = False
     try:
         child, status, group = run(command, folder, cancelled, private_group)
         end = time.monotonic() + SETTLE_S
@@ -166,7 +164,7 @@ def check(command, folder, cancelled):
             except OwnershipError as error:
                 inspected = False
                 processes = error.processes
-                print(f"ownership inspection failed: {error}; private root retained: {folder}", file=sys.stderr)
+                print(f"ownership inspection failed: {error}", file=sys.stderr)
                 status = status or 1
                 if cancelled.forward(group):
                     end = time.monotonic() + SETTLE_S
@@ -189,11 +187,17 @@ def check(command, folder, cancelled):
         for name in files_in(folder)[:50]:
             left += 1
             print(f"LEFT {name}", file=sys.stderr)
-        cleaned = inspected
-        return status or (LEFT if left else 0)
+        status = status or (LEFT if left else 0)
+        if inspected and not private_group:
+            try:
+                shutil.rmtree(folder)
+            except OSError as error:
+                print(f"could not remove private root: {error}", file=sys.stderr)
+                status = status or 1
+        return status
     finally:
-        if not private_group and cleaned:
-            shutil.rmtree(folder, ignore_errors=True)
+        if not private_group and os.path.lexists(folder):
+            print(f"private root retained: {folder}", file=sys.stderr)
 
 
 if __name__ == "__main__":

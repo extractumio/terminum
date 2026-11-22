@@ -20,20 +20,21 @@ GUARD = str(Path(__file__).resolve().parents[1] / "check_step.py")
 GUARD_WAIT_S = 60   # 15 s settling, bounded native directory queries, and process termination
 
 
-def guard_command():
+def guard_command(setup=""):
     # These fixtures check outcomes; cancellation grace is exercised by test_check_cancel.
     harness = (f"import sys; sys.path.insert(0, {str(Path(GUARD).parent)!r}); "
-               "import check_step; check_step.SETTLE_S=0.2; args=sys.argv[1:]; "
+               f"import check_step; check_step.SETTLE_S=0.2; {setup}args=sys.argv[1:]; "
                "owned=args[:1]==['--owned-root']; "
                "sys.exit(check_step.main(args[2:] if owned else args, folder=args[1] if owned else None))")
     return [sys.executable, "-I", "-c", harness]
 
 
-def guarded(script, **kwargs):
+def guarded(script, *, setup=""):
     """Runs `script` under the guard; (exit status, its stderr, the folder it was given)."""
     with tempfile.NamedTemporaryFile("r", suffix=".where") as where:
-        done = subprocess.run([*guard_command(), "sh", "-c", f'echo "$TMPDIR" > {where.name}; {script}'],
-                              capture_output=True, text=True, timeout=GUARD_WAIT_S, **kwargs)
+        command = f'echo "$TMPDIR" > {where.name}; {script}'
+        done = subprocess.run([*guard_command(setup), "sh", "-c", command],
+                              capture_output=True, text=True, timeout=GUARD_WAIT_S)
         return done.returncode, done.stderr, where.read().strip()
 
 
@@ -114,23 +115,21 @@ class SignalForwarding(unittest.TestCase):
 
 class Guard(unittest.TestCase):
     def test_failed_directory_inspection_reports_files_ends_known_children_and_keeps_root(self):  # AC-102
-        harness = (f"import sys\nsys.path.insert(0, {str(Path(GUARD).parent)!r})\n"
-                   "import check_step\ncheck_step.SETTLE_S=0.2\nfrom process_cwd import InspectionError\n"
-                   "def failed_inspection(_):\n raise InspectionError('lsof timed out')\n"
-                   "check_step.working_in=failed_inspection\n"
-                   "sys.exit(check_step.main(sys.argv[1:]))")
+        setup = ("from unittest.mock import Mock; "
+                 "check_step.working_in=Mock(side_effect=check_step.InspectionError('lsof timed out')); ")
         folder = None
         pid = None
         with tempfile.NamedTemporaryFile("r", suffix=".where") as where:
             try:
                 command = f'touch "$TMPDIR/x"; sleep 61 >/dev/null 2>&1 & echo "$TMPDIR $!" > {where.name}'
-                run = subprocess.run([sys.executable, "-I", "-c", harness, "sh", "-c", command],
+                run = subprocess.run([*guard_command(setup), "sh", "-c", command],
                                      capture_output=True, text=True, timeout=GUARD_WAIT_S)
                 folder, pid_text = where.read().strip().split()
                 pid = int(pid_text)
                 self.assertNotEqual(run.returncode, 0, run.stderr)
                 self.assertIn("ownership inspection failed", run.stderr)
                 self.assertIn("lsof timed out", run.stderr)
+                self.assertIn(f"private root retained: {folder}", run.stderr)
                 self.assertIn("LEFT x", run.stderr)
                 self.assertIn(f"LEFT process {pid}", run.stderr)
                 self.assertTrue(Path(folder, "x").exists(), "unknown ownership must retain the root")
@@ -164,11 +163,41 @@ class Guard(unittest.TestCase):
         self.assertEqual(status, 3)
         self.assertIn("LEFT tm-empty", err)
 
-    def test_a_failure_keeps_its_own_status(self):
+    def assert_failed_step_is_cleaned(self):
         status, err, folder = guarded('touch "$TMPDIR/x"; exit 7')
-        self.assertEqual(status, 7)
-        self.assertIn("LEFT x", err)
-        self.assertFalse(os.path.exists(folder))
+        try:
+            self.assertEqual(status, 7, err)
+            self.assertIn("LEFT x", err)
+            self.assertFalse(os.path.exists(folder), f"guard retained {folder}: {err!r}")
+        finally:
+            if folder and os.path.exists(folder):
+                shutil.rmtree(folder)
+
+    def test_a_failure_keeps_its_own_status(self):  # AC-102
+        self.assert_failed_step_is_cleaned()
+
+    def test_an_unrelated_cwd_with_a_unicode_line_separator_does_not_block_cleanup(self):  # AC-102
+        with tempfile.TemporaryDirectory(prefix="tm-other-", dir="/tmp") as other:
+            cwd = Path(other, "line\u2028name")
+            cwd.mkdir()
+            with subprocess.Popen(["cat"], cwd=cwd, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL) as other_process:
+                self.assert_failed_step_is_cleaned()
+                self.assertIsNone(other_process.poll())
+
+    def test_failed_root_removal_is_reported_and_preserves_a_nonzero_status(self):  # AC-102
+        setup = ("from unittest.mock import Mock; "
+                 "check_step.shutil.rmtree=Mock(side_effect=PermissionError('permission denied')); ")
+        for child_status, expected in ((7, 7), (0, 1)):
+            with self.subTest(child_status=child_status):
+                status, err, folder = guarded(f"exit {child_status}", setup=setup)
+                try:
+                    self.assertEqual(status, expected, err)
+                    self.assertIn("could not remove private root: permission denied", err)
+                    self.assertIn(f"private root retained: {folder}", err)
+                    self.assertTrue(os.path.isdir(folder), err)
+                finally:
+                    if folder and os.path.exists(folder):
+                        shutil.rmtree(folder)
 
     def test_a_left_process_fails_and_is_ended(self):
         status, err, _ = guarded("sleep 61 >/dev/null 2>&1 &")

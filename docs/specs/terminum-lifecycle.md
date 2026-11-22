@@ -399,6 +399,17 @@ Scenario: AC-102 failure — a step that leaves something fails
   When it ends
   Then each is printed as "LEFT …", the process is ended by its pid (SIGTERM, then SIGKILL when it is still there 2 s later: an interactive shell ignores SIGTERM), the folder is removed and the step fails
 
+Scenario: AC-102 failure — a failed step's status survives cleanup
+  Given a step exits with a nonzero status and leaves a file in its private folder
+  When the guard reports the leftover and ownership inspection succeeds
+  Then it removes its private folder and returns the step's status
+  And a Unicode line separator in an unrelated process's working-directory name does not split a macOS inspection record
+
+Scenario: AC-102 failure — the guard's own folder cannot be removed
+  Given ownership inspection succeeds and the guard cannot remove its private folder
+  When it returns
+  Then it reports the removal error and retained path, preserves a nonzero step status and fails an otherwise successful step
+
 Scenario: AC-102 failure — working-directory inspection times out
   Given macOS working-directory inspection exceeds its 15 s deadline twice or fails
   When guarded cleanup runs

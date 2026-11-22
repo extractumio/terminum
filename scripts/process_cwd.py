@@ -56,7 +56,8 @@ def mac_directories():
                 raise
     found = {}
     pid = command = None
-    for line in out.splitlines():
+    # lsof separates fields with LF; a path can contain other Unicode line separators.
+    for line in out.split("\n"):
         tag, value = line[:1], line[1:]
         if tag == "p":
             pid, command = int(value), None
