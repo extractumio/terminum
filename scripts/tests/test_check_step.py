@@ -177,7 +177,10 @@ class Guard(unittest.TestCase):
         self.assert_failed_step_is_cleaned()
 
     def test_an_unrelated_cwd_with_a_unicode_line_separator_does_not_block_cleanup(self):  # AC-102
-        with tempfile.TemporaryDirectory(prefix="tm-other-", dir="/tmp") as other:
+        sys.path.insert(0, str(Path(GUARD).parent))
+        from testrun import short_tmp
+
+        with tempfile.TemporaryDirectory(prefix="tm-other-", dir=short_tmp()) as other:
             cwd = Path(other, "line\u2028name")
             cwd.mkdir()
             with subprocess.Popen(["cat"], cwd=cwd, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL) as other_process:
