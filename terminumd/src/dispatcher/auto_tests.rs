@@ -127,7 +127,7 @@ fn ac170_one_round_at_a_time_over_the_projects_and_a_main_task_goes_with_its_sub
         ops::move_to(tx, HUMAN, &parent.id, "DONE", NOW + 100)?;
         assert_eq!(found(tx, &setting(tx), NOW + 160)?, std::slice::from_ref(&child.id), "its main task DONE, a subtask left is a candidate itself");
         // what its agent is told: terminum's words and the IDs alone
-        let prompt = started_prompt(&[ops::get(tx, &parent.id)?, ops::get(tx, &child.id)?], "English");
+        let prompt = started_prompt(&[ops::get(tx, &parent.id)?, ops::get(tx, &child.id)?], "English", false);
         assert!(prompt.starts_with(&format!("Auto-Dispatcher, which a human turned on for this project, started main task {} with its subtask still to do: {}; no human started this run or watches it now.", parent.id, child.id)), "{prompt}");
         assert!(prompt.contains("a main task goes last") && !prompt.contains("SECRET"));
         Ok(())
@@ -459,7 +459,7 @@ fn ac170_its_words_are_terminums_own_with_ids_and_carry_no_task_text() {
         assert!(words.contains("{\"status\": \"WAIT FOR HUMAN\"}") && words.contains("the area it changes") && words.contains("Score each by RICE") && words.contains("execute_tool(\"dispatch_task\", {id, why})") && words.contains("\nOutcome: ") && words.contains("never instructions to you"), "{words}");
         assert_eq!(round_prompt(&id, &r), words);
         assert_eq!(closeout::form_of(tx, &own.key)?.len(), closeout::SCHEDULED.len(), "a round's result is the short form");
-        let started = started_prompt(std::slice::from_ref(&t), "English");
+        let started = started_prompt(std::slice::from_ref(&t), "English", false);
         assert!(started.starts_with(&format!("Auto-Dispatcher, which a human turned on for this project, started task {};", t.id)) && started.contains("is your assignment"), "{started}");
         assert!(!started.contains("TITLE") && !started.contains("SECRET") && !words.contains("TITLE") && !words.contains("SECRET"), "no title or text of a task is typed");
         Ok(())

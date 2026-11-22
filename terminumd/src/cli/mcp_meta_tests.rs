@@ -7,7 +7,7 @@ use crate::cli::mcp;
 /// The cases whose tool is not where `found` wants it in the first three hits.
 fn misses(cases: &[(&str, &str)], found: impl Fn(&[String], &str) -> bool) -> String {
     cases.iter().filter_map(|(query, want)| {
-        let got = catalog::index(false).search(query, 3);
+        let got = catalog::index(Role::Worker).search(query, 3);
         (!found(&got, want)).then(|| format!("{query:?}: {got:?}, want {want}"))
     }).collect::<Vec<_>>().join("\n")
 }
@@ -134,7 +134,7 @@ fn ac155_terminum_s_words_call_a_tool_not_listed_by_execute_tool() {
     let words = [mcp::INSTRUCTIONS, include_str!("../dispatcher/press.rs"), include_str!("../dispatcher/acts.rs"), include_str!("../dispatcher/fire.rs"), include_str!("../tasks/closeout.rs"), crate::plans::REMINDER];
     let wrong: Vec<String> = mcp::tool_names().into_iter().filter(|n| !DIRECT.contains(n)).flat_map(|n| words.iter().flat_map(move |w| uncalled(w, n))).collect();
     assert!(wrong.is_empty(), "{}", wrong.join("\n"));
-    let listed: Vec<String> = listed(false).iter().map(|t| t["name"].as_str().unwrap().to_string()).collect();
+    let listed: Vec<String> = listed(Role::Worker).iter().map(|t| t["name"].as_str().unwrap().to_string()).collect();
     assert_eq!(listed, ["search_tools", "get_tool_info", "execute_tool", "update_session_plan"]);
 }
 
@@ -149,42 +149,42 @@ fn ac155_a_name_outside_its_call_or_a_wrong_argument_is_found() {
 
 #[test]
 fn ac155_search_answers_signatures_or_the_areas() {
-    let out = search(&json!({"query": "move my task to another column"}), false).unwrap();
+    let out = search(&json!({"query": "move my task to another column"}), Role::Worker).unwrap();
     assert!(out.starts_with("Tools for \"move my task to another column\", best first"), "{out}");
     assert!(out.contains("1. move_task(id, to: TODO|IN PROGRESS|WAIT FOR HUMAN|FAILED|DONE) [tasks]: Moves a task of your project to another column (status): yours, or one no human's RUN holds elsewhere."), "{out}");
     assert!(out.contains("execute_tool"), "{out}");
-    let none = search(&json!({"query": "zzz qqq"}), false).unwrap();
+    let none = search(&json!({"query": "zzz qqq"}), Role::Worker).unwrap();
     assert!(none.starts_with("No tool matches \"zzz qqq\"") && none.contains("files (on a task: attach, get): attach_file, get_file"), "{none}");
-    assert_eq!(search(&json!({"query": "find a task", "limit": 1}), false).unwrap().lines().filter(|l| l.starts_with(char::is_numeric)).count(), 1);
-    assert!(search(&json!({}), false).unwrap_err().starts_with("query is required"));
-    assert!(search(&json!({"query": "  "}), false).unwrap_err().starts_with("query is required"));
-    assert!(search(&json!({"query": "x".repeat(501)}), false).unwrap_err().contains("over 500"));
+    assert_eq!(search(&json!({"query": "find a task", "limit": 1}), Role::Worker).unwrap().lines().filter(|l| l.starts_with(char::is_numeric)).count(), 1);
+    assert!(search(&json!({}), Role::Worker).unwrap_err().starts_with("query is required"));
+    assert!(search(&json!({"query": "  "}), Role::Worker).unwrap_err().starts_with("query is required"));
+    assert!(search(&json!({"query": "x".repeat(501)}), Role::Worker).unwrap_err().contains("over 500"));
     for bad in [json!(0), json!(11), json!("3"), json!(-1)] {
-        assert!(search(&json!({"query": "a task", "limit": bad}), false).unwrap_err().starts_with("limit"), "{bad}");
+        assert!(search(&json!({"query": "a task", "limit": bad}), Role::Worker).unwrap_err().starts_with("limit"), "{bad}");
     }
 }
 
 #[test]
 fn ac155_get_tool_info_gives_schema_hints_and_an_example() {
-    let out: Value = serde_json::from_str(&describe(&json!({"names": ["update_task", "list_tasks"]}), false).unwrap().0).unwrap();
+    let out: Value = serde_json::from_str(&describe(&json!({"names": ["update_task", "list_tasks"]}), Role::Worker).unwrap().0).unwrap();
     assert_eq!(out[0]["name"], "update_task");
     assert_eq!(out[0]["inputSchema"]["properties"]["severity"]["enum"], json!(["P0", "P1", "P2", "P3"]));
     assert_eq!(out[0]["example"]["name"], "execute_tool");
     assert_eq!(out[0]["example"]["arguments"]["name"], "update_task");
     assert_eq!(out[1]["annotations"]["readOnlyHint"], true);
-    assert_eq!(serde_json::from_str::<Value>(&describe(&json!({"names": "get_file"}), false).unwrap().0).unwrap()[0]["name"], "get_file", "a bare name is a list of one");
-    assert!(describe(&json!({"names": ["update_tasks"]}), false).unwrap_err().contains("Nearest: update_task"));
-    assert!(describe(&json!({"names": []}), false).is_err());
-    assert!(describe(&json!({"names": ["a", "b", "c", "d", "e", "f"]}), false).is_err());
+    assert_eq!(serde_json::from_str::<Value>(&describe(&json!({"names": "get_file"}), Role::Worker).unwrap().0).unwrap()[0]["name"], "get_file", "a bare name is a list of one");
+    assert!(describe(&json!({"names": ["update_tasks"]}), Role::Worker).unwrap_err().contains("Nearest: update_task"));
+    assert!(describe(&json!({"names": []}), Role::Worker).is_err());
+    assert!(describe(&json!({"names": ["a", "b", "c", "d", "e", "f"]}), Role::Worker).is_err());
 }
 
 #[test]
 fn ac155_execute_tool_runs_a_catalog_tool_only() {
-    assert_eq!(target(&json!({"name": "list_tasks", "arguments": {"status": "TODO"}}), false).unwrap(), ("list_tasks", json!({"status": "TODO"})));
-    assert_eq!(target(&json!({"name": "get_session_plan"}), false).unwrap(), ("get_session_plan", json!({})), "arguments default to none");
-    assert!(target(&json!({"name": "execute_tool", "arguments": {}}), false).unwrap_err().contains("directly"));
-    assert!(target(&json!({"name": "search_tools"}), false).unwrap_err().contains("directly"));
-    assert!(target(&json!({"name": "drop_table"}), false).unwrap_err().starts_with("No tool is named \"drop_table\""));
-    assert!(target(&json!({"name": "add_comment", "arguments": "x"}), false).unwrap_err().starts_with("arguments must be an object"));
-    assert!(target(&json!({}), false).unwrap_err().starts_with("name is required"));
+    assert_eq!(target(&json!({"name": "list_tasks", "arguments": {"status": "TODO"}}), Role::Worker).unwrap(), ("list_tasks", json!({"status": "TODO"})));
+    assert_eq!(target(&json!({"name": "get_session_plan"}), Role::Worker).unwrap(), ("get_session_plan", json!({})), "arguments default to none");
+    assert!(target(&json!({"name": "execute_tool", "arguments": {}}), Role::Worker).unwrap_err().contains("directly"));
+    assert!(target(&json!({"name": "search_tools"}), Role::Worker).unwrap_err().contains("directly"));
+    assert!(target(&json!({"name": "drop_table"}), Role::Worker).unwrap_err().starts_with("No tool is named \"drop_table\""));
+    assert!(target(&json!({"name": "add_comment", "arguments": "x"}), Role::Worker).unwrap_err().starts_with("arguments must be an object"));
+    assert!(target(&json!({}), Role::Worker).unwrap_err().starts_with("name is required"));
 }

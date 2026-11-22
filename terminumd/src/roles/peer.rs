@@ -74,3 +74,15 @@ pub async fn in_any_pane(app: &Shared, peer: Peer) -> bool {
     }
     under(pid, roots).await
 }
+
+/// A marked pane must not inherit worker tools by naming a different pane (AC-231).
+pub(crate) async fn in_marked_pane(app: &Shared, peer: Peer, keys: &[String]) -> bool {
+    let Some(pid) = peer.0 else { return false };
+    let mut roots = Vec::new();
+    for key in keys {
+        if let Some((server, pane)) = app.tmux.resolve(key) && server.is_local() {
+            roots.extend(pane_pids(&server, Some(&pane)).await);
+        }
+    }
+    !roots.is_empty() && under(pid, roots).await
+}

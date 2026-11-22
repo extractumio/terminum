@@ -20,7 +20,7 @@ fn fresh(name: &str) -> (Store, std::path::PathBuf) {
 }
 
 fn who() -> Who {
-    Who { key: KEY.into(), agent: "claude".into(), title: "api".into(), project: Some("api".into()), dir: None }
+    Who { key: KEY.into(), agent: "claude".into(), title: "api".into(), project: Some("api".into()), dir: None, supervisor: false }
 }
 
 /// `titles`' tasks in api, the first the main task of the others, linked to KEY and IN PROGRESS in one run of

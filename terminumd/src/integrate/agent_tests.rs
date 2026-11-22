@@ -15,7 +15,7 @@ use crate::tasks::tools::Who;
 const PANE: &str = "tmux:local:terminum:%9";
 
 fn who(key: &str) -> Who {
-    Who { key: key.into(), agent: "claude".into(), title: "api".into(), project: Some("api".into()), dir: None }
+    Who { key: key.into(), agent: "claude".into(), title: "api".into(), project: Some("api".into()), dir: None, supervisor: false }
 }
 
 /// Api's queue, `check` its Check, with Opus reviewer as its integration agent unless `agent` is false.

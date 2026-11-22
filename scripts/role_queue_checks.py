@@ -64,3 +64,4 @@ def queue_promotion(t, call, typed, tool, boss, plain, project, fake):
     check("AC-169 the next eligible vacancy resumes P0 on the same agent and conversation", started["status"] == "IN PROGRESS" and resumed[0] != saved[0] and resumed[1:] == saved[1:] and queued() == [one, two], (resumed, saved, queued()))
     out, rc = typed(boss, tool("promote_queued_task", id=urgent))
     check("AC-169 an already-started promotion is refused without restarting it", rc == "1" and "no waiting run of its own" in out and latest(urgent) == resumed, out)
+    return two, queued

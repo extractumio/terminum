@@ -13,7 +13,7 @@ const OTHER: &str = "tmux:local:terminum:%8";
 const SECTIONS: &str = "## Problem or goal\nx\n## Context\ny\n## Expected result\nz\n## Prerequisites\nNone";
 
 fn who() -> Who {
-    Who { key: KEY.into(), agent: "claude".into(), title: "api".into(), project: Some("api".into()), dir: None }
+    Who { key: KEY.into(), agent: "claude".into(), title: "api".into(), project: Some("api".into()), dir: None, supervisor: false }
 }
 
 fn fresh(name: &str) -> (Store, std::path::PathBuf) {

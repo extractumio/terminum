@@ -102,6 +102,7 @@ pub fn links_restored(tx: &Transaction, prefix: &str, panes: &[(String, String)]
     // where a task was made follows its pane too, so a new pane of an old number counts none of them (AC-150)
     follow(tx, "tasks", "made_in", prefix, Some(panes))?;
     follow(tx, "runs", "pane_key", prefix, Some(panes))?;
+    supervisor_panes(tx, prefix, panes)?;
     let linked = on_server(tx, "tasks", "session_key", prefix)?;
     let mut changed = 0;
     for (task, key) in linked {
@@ -126,11 +127,26 @@ pub fn links_restored(tx: &Transaction, prefix: &str, panes: &[(String, String)]
 pub fn links_dropped(tx: &Transaction, prefix: &str, now: i64) -> Result<usize, String> {
     follow(tx, "tasks", "made_in", prefix, None)?;
     follow(tx, "runs", "pane_key", prefix, None)?;
+    supervisor_panes(tx, prefix, &[])?;
     let linked = on_server(tx, "tasks", "session_key", prefix)?;
     for (task, _) in &linked {
         drop_link(tx, task, now)?;
     }
     Ok(linked.len())
+}
+
+/// A restored pane keeps its restricted identity but has no live Supervisor authority.
+fn supervisor_panes(tx: &Transaction, prefix: &str, panes: &[(String, String)]) -> Result<(), String> {
+    let like = format!("{}%", super::query::like_escaped(prefix));
+    let marks: Vec<(String, String)> = rows(tx, "SELECT pane_key, project FROM supervisor_panes WHERE pane_key LIKE ?1 ESCAPE '\\'",
+        [&like], |r| Ok((r.get(0)?, r.get(1)?)))?;
+    tx.execute("DELETE FROM supervisor_panes WHERE pane_key LIKE ?1 ESCAPE '\\'", [&like]).map_err(sql)?;
+    for (key, project) in marks {
+        if let Some((_, new)) = panes.iter().find(|(old, _)| key.strip_prefix(prefix) == Some(old.as_str())) {
+            tx.execute("INSERT INTO supervisor_panes VALUES (?1, ?2, 0)", (format!("{prefix}{new}"), project)).map_err(sql)?;
+        }
+    }
+    Ok(())
 }
 
 /// `table`'s `column` naming a pane of the server whose keys start with `prefix` follows it (`panes`: old id, new id;

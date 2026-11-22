@@ -7,7 +7,7 @@ use crate::tasks::{closeout::ASKED, ops::NewTask, store::Store, tools::{self, Wh
 fn fixture(name: &str) -> (Store, std::path::PathBuf, Who, String) {
     let dir = crate::testutil::fresh_dir(name);
     let store = Store::open(dir.join("kanban.sqlite"));
-    let who = Who { key: "tmux:local:terminum:%7".into(), agent: "claude".into(), title: "Testing".into(), project: None, dir: None };
+    let who = Who { key: "tmux:local:terminum:%7".into(), agent: "claude".into(), title: "Testing".into(), project: None, dir: None, supervisor: false };
     let task = store.with(|tx| ops::create(tx, HUMAN, NewTask { title: "Choose API version".into(),
         session: Some(who.key.clone()), ..Default::default() }, 1)).unwrap().id;
     (store, dir, who, task)

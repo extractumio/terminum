@@ -36,12 +36,28 @@ pub(super) async fn give_up(State(app): State<Shared>, Path(id): Path<String>) -
 /// `who` gives up on task `id`: a wait is called off, the task where it stood (AC-158); else its run is given up.
 /// The tasks it concerned.
 pub(crate) async fn gave_up(app: &Shared, id: &str, who: &'static str) -> Result<Vec<String>, String> {
+    gave_up_checked(app, id, who, |_, _| Ok(()), |_, _| Ok(())).await
+}
+
+pub(crate) async fn gave_up_checked(
+    app: &Shared, id: &str, who: &'static str,
+    check: impl FnOnce(&rusqlite::Transaction, &str) -> Result<(), String> + Send + 'static,
+    record: impl FnOnce(&rusqlite::Transaction, &[String]) -> Result<(), String> + Send + 'static,
+) -> Result<Vec<String>, String> {
     let wanted = id.to_string();
     let done = store(app, move |tx| {
+        check(tx, &wanted)?;
         let key = ops::key_of(tx, &wanted)?;
-        let Some(w) = super::waits::of_task(tx, &key)? else { return runs::give_up(tx, &key).map(Some) };
-        let name = agents::name_of(tx, &w.agent)?;
-        super::waits::call_off(tx, &key, &format!("{who} called off its wait for {name}.")).map(|()| None)
+        if let Some(w) = super::waits::of_task(tx, &key)? {
+            let name = agents::name_of(tx, &w.agent)?;
+            super::waits::call_off(tx, &key, &format!("{who} called off its wait for {name}."))?;
+            record(tx, std::slice::from_ref(&wanted))?;
+            Ok(None)
+        } else {
+            let run = runs::give_up(tx, &key)?;
+            record(tx, &run.ids)?;
+            Ok(Some(run))
+        }
     }).await?;
     Ok(match done {
         None => {

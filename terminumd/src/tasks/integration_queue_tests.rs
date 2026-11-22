@@ -47,7 +47,7 @@ fn repo(name: &str) -> Repo {
         ops::move_to(tx, DISPATCHER, &t.id, "IN PROGRESS", 2)?;
         Ok(t.id)
     }).unwrap();
-    let who = Who { key: KEY.into(), agent: "claude".into(), title: "api".into(), project: Some("api".into()), dir: Some(tree.to_str().unwrap().into()) };
+    let who = Who { key: KEY.into(), agent: "claude".into(), title: "api".into(), project: Some("api".into()), dir: Some(tree.to_str().unwrap().into()), supervisor: false };
     Repo { s, who, id, tree }
 }
 

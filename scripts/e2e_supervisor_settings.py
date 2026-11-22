@@ -124,7 +124,10 @@ def ac220_export_redaction_and_import_confirmation(fixture, api_path, web_path):
           and marker in with_secrets and "probe_commands" not in json.loads(with_secrets))
 
     r(web_path, "PUT", {"enabled": False})
-    imported = r(web_path + "/import", "POST", {"revision": 0, "file": with_commands})
+    owner = r(web_path + "/settings", "PUT", {"revision": 0, "settings": {"level": "observer"}})
+    imported = r(web_path + "/import", "POST", {"revision": owner["revision"], "file": with_commands})
+    check("AC-232 importing another project's pack preserves the owner-selected level",
+          imported["settings"]["level"] == "observer" and json.loads(with_commands)["settings"]["level"] == "operator")
     check("AC-220 import copies preferences, keeps the switch off, and sets no command",
           imported["settings"]["charter"]["priorities"] == ["Keep builds repeatable"]
           and not r(web_path)["enabled"] and imported["confirmed_probes"] == []

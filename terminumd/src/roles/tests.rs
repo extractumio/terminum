@@ -263,3 +263,62 @@ async fn ac174_a_session_the_human_opened_in_a_project_is_its_manager() {
     mark(&app, &mut groups);
     assert_eq!(groups[0]["items"], json!([{"id": PLAIN, "manager": true}, {"id": WORKER}, {"id": DEFAULTS}]), "its row has the crown");
 }
+
+#[tokio::test]
+async fn ac231_supervisor_marks_follow_only_restored_panes() {
+    let (app, _) = app("supervisor-restore");
+    let restored = "tmux:local:t:%11";
+    let prefix = "tmux:local:t:";
+    app.tasks.with(|tx| {
+        tx.execute("INSERT INTO project_supervisor (project, enabled, generation, enabled_at) VALUES ('api', 1, 1, 1)", []).map_err(sql)?;
+        tx.execute("INSERT INTO supervisor_panes VALUES (?1, 'api', 1), (?2, 'api', 1)", [BOSS, WORKER]).map_err(sql)?;
+        assert_eq!(supervisor::marked(tx, BOSS)?.unwrap().role, Role::Supervisor(Some(crate::supervisor::Level::Operator)));
+        assert!(ordinary_manager(tx, BOSS)?.is_some());
+        assert!(manages(tx, BOSS)?.is_none(), "a stored mark wins over a previously issued manager role");
+        crate::tasks::projects::links_restored(tx, prefix, &[("%1".into(), "%11".into())], 1)?;
+        assert!(supervisor::marked(tx, BOSS)?.is_none());
+        assert!(supervisor::marked(tx, WORKER)?.is_none());
+        assert_eq!(supervisor::marked(tx, restored)?.unwrap().role, Role::Supervisor(None));
+        assert!(manages(tx, restored)?.is_none(), "matching a restored pane cannot restore its authority");
+        crate::tasks::projects::links_dropped(tx, prefix, 2)?;
+        assert!(supervisor::marked(tx, restored)?.is_none(), "a new tmux server may reuse the pane ID");
+        Ok(())
+    }).unwrap();
+}
+
+/// The catalog's tools every session has, beside MANAGER_TOOLS.
+fn session_tools() -> impl Iterator<Item = &'static str> {
+    ["update_session_plan", "get_session_plan"].into_iter().chain(crate::tasks::tools::NAMES)
+}
+
+#[test]
+fn ac231_ac232_each_level_allows_exactly_its_list_of_the_catalog() {
+    use crate::supervisor::Level::{Advisor, Observer, Operator};
+    let observer = ["list_tasks", "get_task"];
+    let advisor = ["create_task", "add_comment", "ask_human"];
+    let operator = ["run_task", "promote_queued_task", "stop_task", "list_runs", "get_dashboard"];
+    let expected = [(Observer, observer.len()), (Advisor, observer.len() + advisor.len()), (Operator, observer.len() + advisor.len() + operator.len())];
+    for (level, count) in expected {
+        let wanted: Vec<&str> = observer.iter().chain(advisor.iter().filter(|_| level != Observer))
+            .chain(operator.iter().filter(|_| level == Operator)).copied().collect();
+        let allowed: Vec<&str> = session_tools().chain(MANAGER_TOOLS).filter(|t| Role::Supervisor(Some(level)).allows(t)).collect();
+        assert_eq!(allowed.len(), count, "{level:?}: {allowed:?}");
+        assert!(wanted.iter().all(|t| allowed.contains(t)), "{level:?}: {allowed:?}");
+    }
+    for never in ["send_to_session", "close_session", "create_agent", "update_agent", "delete_agent", "create_schedule", "update_schedule",
+        "delete_schedule", "run_schedule", "get_session", "get_file", "attach_file", "update_task", "integrate", "dispatch_task", "probe"] {
+        assert!(!Role::Supervisor(Some(Operator)).allows(never), "{never} at Operator");
+    }
+    assert!(session_tools().chain(MANAGER_TOOLS).all(|t| !Role::Supervisor(None).allows(t)), "an inactive mark allows nothing");
+    assert!(session_tools().all(|t| Role::Worker.allows(t)) && MANAGER_TOOLS.iter().all(|t| !Role::Worker.allows(t)), "a worker's reach");
+    assert!(session_tools().chain(MANAGER_TOOLS).all(|t| Role::Manager.allows(t)), "a manager's reach");
+}
+
+#[test]
+fn ac231_an_unknown_local_peer_is_refused_while_a_supervisor_pane_is_marked() {
+    let marks = vec![BOSS.to_string()];
+    assert!(supervisor::unjudged(Some(peer::Peer(None)), &marks), "it could be a process under the Supervisor's pane");
+    assert!(!supervisor::unjudged(Some(peer::Peer(Some(42))), &marks), "a known peer is judged by its ancestry");
+    assert!(!supervisor::unjudged(Some(peer::Peer(None)), &[]), "with no Supervisor pane, as before");
+    assert!(!supervisor::unjudged(None, &marks), "a host's link names no local process");
+}

@@ -57,10 +57,13 @@ pub async fn agent_on(app: Shared, server: Option<std::sync::Arc<crate::tmux::se
     let pane = body["pane"].as_str().unwrap_or("");
     let Some(server) = server.filter(|s| s.session_of(pane).is_some()) else { return answer(NOT_IN_PANE, true) };
     let key = server.key(pane);
-    if body["tool"] == "probe" {
-        // `terminum mcp` asks at initialize whether to offer its tools here, and which (AC-174)
-        let manager = crate::tasks::api::store(&app, move |tx| Ok(roles::manages(tx, &key)?.is_some())).await.unwrap_or(false);
-        return Json(json!({"text": "terminum knows this pane.", "error": false, "role": roles::name(manager)}));
+    let probe = body["tool"] == "probe";
+    let (role, mark) = match roles::pane_caller(&app, &server, pane, local, probe).await {
+        Ok(caller) => caller,
+        Err(why) => return answer(&why, true),
+    };
+    if probe {
+        return Json(json!({"text": "terminum knows this pane.", "error": false, "role": role.name(), "level": role.level()}));
     }
     let hooked = app.hooks.session(&key);
     let asked: Option<String> = body["session"].as_str().map(|s| crate::termtext::clean(s, false).chars().take(100).collect());
@@ -69,6 +72,12 @@ pub async fn agent_on(app: Shared, server: Option<std::sync::Arc<crate::tmux::se
     let (hooks, session) = (hooked.is_some(), main.or(asked));
     let caller = Caller { agent: hooked.map_or(crate::plans::UNKNOWN, |(a, _)| a).to_string(), session, key, hooks, other };
     let (tool, args) = (body["tool"].as_str().unwrap_or("").to_string(), body["args"].clone());
+    if let Some(mark) = mark {
+        let role = mark.role.name();
+        let mut reply = said(roles::supervisor::run(&app, &caller.key, caller.other, mark, tool, args).await);
+        reply.0["role"] = json!(role);
+        return reply;
+    }
     if roles::MANAGER_TOOLS.contains(&tool.as_str()) {
         // a manager's tool (AC-174, AC-178): its pane's own record decides, and the call comes from under that pane
         let from_pane = match local {
@@ -104,6 +113,7 @@ async fn task_tool(app: &Shared, caller: &Caller, tool: String, args: Value) -> 
         title: row["title"].as_str().filter(|t| !t.is_empty()).unwrap_or("session").to_string(),
         project: app.projects.lock().of(&caller.key).map(|p| p.id.clone()),
         dir: if host.is_none() { dir } else { None },
+        supervisor: false,
     };
     said(task_tool_of(app, who, host, caller.other, tool, args).await)
 }
