@@ -83,7 +83,7 @@ impl Budgets {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Default, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub(super) struct Charter {
     mission: String,
@@ -97,14 +97,6 @@ pub(super) struct Charter {
     indicators: Indicators,
     outside_indicators: BTreeMap<String, String>,
     surfaces: Surfaces,
-}
-
-impl Default for Charter {
-    fn default() -> Self {
-        Self { mission: String::new(), users: vec![], risk_appetite: String::new(), never: vec![], priorities: vec![],
-            priority_review_at: None, allocation: BTreeMap::new(), allocation_review_at: None,
-            indicators: Indicators::default(), outside_indicators: BTreeMap::new(), surfaces: Surfaces::default() }
-    }
 }
 
 #[derive(Default, Serialize, Deserialize)]
