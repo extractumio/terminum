@@ -175,7 +175,7 @@ export async function liveDispatcher(page, opts) {
   check("AC-157 and it goes on to the end", await hasStatus(asking, "DONE", 20000), await history(asking));
   check("AC-157 its conversation is the one it asked in", (await j(`/api/tasks/${asking}`)).agent?.conversation === conversation, JSON.stringify((await j(`/api/tasks/${asking}`)).agent));
 
-  check("AC-230 and AC-157 RUN carries the saved option ID and free text to the same agent", fs.readFileSync(choicePrompts, "utf8").includes("Selected option: v2.\n\n---\n\nv2, and FINISHES"));
+  check("AC-230 and AC-157 RUN carries the saved option ID and free text to the same agent", (/Selected option: v2\.\s+---\s+v2, and FINISHES/).test(fs.readFileSync(choicePrompts, "utf8")));
 
   // AC-122 running again: a live agent, a shell, a closed session
   const again = await task("again STOPS");
