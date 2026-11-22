@@ -74,23 +74,27 @@ export function incidentCard(initial, surface) {
   });
   const ack = button(KEY, "Acknowledge", () => write("acknowledge"));
   const snooze = button(KEY, "Snooze 1 hour", () => write("snooze"));
-  const feedback = el("p", "incident-state");
-  feedback.setAttribute("role", "status");
-  const investigate = button(KEY, "Investigate now", oneAtATime(card, async () => {
-    showError(error, "");
-    try {
-      const saved = await api(`${INCIDENTS}/${i.id}/investigate`, { method: "POST" });
-      feedback.textContent = saved.message;
-    } catch (e) { showError(error, e.message); }
-  }));
-  const keys = part("div", "incident-actions", ack, snooze, investigate);
+  const keys = part("div", "incident-actions", ack, snooze);
+  card.append(keys);
+  if (surface !== "bar") {
+    const feedback = el("p", "incident-state");
+    feedback.setAttribute("role", "status");
+    const investigate = button(KEY, "Investigate now", oneAtATime(card, async () => {
+      showError(error, "");
+      try {
+        const saved = await api(`${INCIDENTS}/${i.id}/investigate`, { method: "POST" });
+        feedback.textContent = saved.message;
+      } catch (e) { showError(error, e.message); }
+    }));
+    keys.append(investigate);
+    card.append(feedback);
+  }
   if (surface !== "screen") {
     const link = el("a", KEY, "Timeline");
     link.href = incidentUrl(i);
     textKey(link);
     keys.append(link);
   }
-  card.append(keys, feedback);
   const put = (node, words) => { if (node.textContent !== words) node.textContent = words; };
   function update(next) {
     i = next;
