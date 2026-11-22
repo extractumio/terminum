@@ -269,7 +269,7 @@ pub(super) fn several_words(tasks: &[Task], language: &str) -> Vec<String> {
     }
     parts.extend(tasks.iter().filter_map(|t| t.budget_seconds).reduce(|a, b| a + b).map(budget_words));
     parts.push(closeout::words(language, FINISH, true));
-    parts.push(format!("When one is done, call {FINISH} with its result; do so for each. {}", if together { ASK_TOGETHER } else { ASK }));
+    parts.push(format!("When one is done, call {FINISH} with its result; do so for each. {REPORT} {}", if together { ASK_TOGETHER } else { ASK }));
     parts
 }
 
