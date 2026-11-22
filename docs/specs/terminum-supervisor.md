@@ -1287,9 +1287,9 @@ All cases below are open. The existing mechanisms in §3 provide inputs or prece
 | AC | Open gap |
 |---|---|
 | AC-212 | The 19 store-backed rules, typed thresholds and shadow enablement are implemented. Integration, probes, counters, snapshots and structured question and design guards need their owning stages. |
-| AC-213 | Impact and response scoring. |
-| AC-214 | Seven guarded scoreboard indicators. |
-| AC-215 | Read-only replay command. |
+| AC-213 | Charter breach inputs and round execution belong to their owning stages. |
+| AC-214 | Release tags, task commits, nightly history, question kinds and design sign-offs need their owning inputs. |
+| AC-215 | Probe, snapshot, hook counter and judgment quality replay require retained inputs from their owning stages. |
 | AC-216 | Per-project runtime switch. |
 | AC-217 | Collector timer and event cursor. |
 | AC-218 | Sweep points and retained hook counters. |
@@ -1568,9 +1568,9 @@ Enable none of the runtime cases by default. Land the specification after indepe
 
 - [x] AC-211 — `supervisor::engine_tests` checks named queries, read-only snapshots, fingerprint repeats, resolution and recurrence, and atomic retry.
 - [ ] AC-212 — `supervisor::catalog_tests` and `ac212_off_missing_and_shadow` cover the store rules, typed thresholds, unavailable inputs and shadow enablement. Remaining catalog and guard inputs are listed in §7.
-- [ ] AC-213 — Planned test: `ac213_impact_floors_and_ladder` covers impact and response scoring.
-- [ ] AC-214 — Planned test: `ac214_scoreboard_guard_verdicts` covers seven guarded scoreboard indicators.
-- [ ] AC-215 — Planned test: `ac215_replay_rank_and_schema` covers read-only replay command.
+- [x] AC-213 — `ac213_impact_floors_and_ladder` and `ac213_records_per_finding_impact_and_reads_legacy_scores` cover thresholds, floors, level, response and recording.
+- [x] AC-214 — `ac214_scoreboard_guard_verdicts` covers four-week comparisons, separate indicators, guards and missing inputs.
+- [x] AC-215 — `ac215_replay_rank_and_schema` covers the CLI ranking, repeatable output, unavailable detectors, project isolation, read-only bytes and schema refusal.
 - [ ] AC-216 — Planned test: `ac216_project_off_is_inert` covers per-project runtime switch.
 - [ ] AC-217 — Planned test: `ac217_cursor_restart_and_rollback` covers collector timer and event cursor.
 - [ ] AC-218 — Planned test: `ac218_points_and_hook_counter_retention` covers sweep points and retained hook counters.

@@ -7,37 +7,42 @@ use crate::dispatcher::runs::GAVE_UP;
 use crate::tasks::{ops::{rows, sql}, store::DEFAULT_PROJECT};
 
 use super::flow::{FIRST_DONE, LAUNCH, events, one, project_events};
+use super::impact::Source;
 use super::{Comparison, Evidence, Measurements, Query, Reading, Threshold, percentile};
 
-fn local_time(q: &Query<'_, '_>, unix_ms: i64) -> Result<i64, String> {
-    q.tx.query_row(&format!("SELECT {}", dashboard::local("?1")), [unix_ms], |r| r.get(0)).map_err(sql)
+fn local_time(tx: &rusqlite::Transaction, unix_ms: i64) -> Result<i64, String> {
+    tx.query_row(&format!("SELECT {}", dashboard::local("?1")), [unix_ms], |r| r.get(0)).map_err(sql)
 }
 
 #[derive(Clone, Copy, Default)]
-struct Load {
-    hours: f64,
+pub(super) struct Load {
+    pub hours: f64,
+    pub switch_count: f64,
+    pub off_hours: f64,
     switches: f64,
-    peak: f64,
+    pub peak: f64,
     off: f64,
 }
 
-fn owner_load(q: &Query<'_, '_>, from: i64, until: i64) -> Result<Load, String> {
-    let start = local_time(q, from * 1000)?;
-    let end = local_time(q, until * 1000 + 999)?;
+pub(super) fn owner_load(tx: &rusqlite::Transaction, project: &str, from: i64, until: i64) -> Result<Load, String> {
+    let start = local_time(tx, from * 1000)?;
+    let end = local_time(tx, until * 1000 + 999)?;
     let mut edges = vec![start];
     edges.extend((start.div_euclid(dashboard::DAY) + 1..=end.div_euclid(dashboard::DAY)).map(|d| d * dashboard::DAY));
     let span = Span { unit: "day", edges, until: end };
-    let load = dashboard::you::project_load(q.tx, q.project, &span, from * 1000)?;
+    let load = dashboard::you::project_load(tx, project, &span, from * 1000)?;
     Ok(Load {
         hours: load.active_ms as f64 / dashboard::HOUR as f64,
         switches: load.switches_per_hour,
+        switch_count: load.switches as f64,
+        off_hours: load.off_ms as f64 / dashboard::HOUR as f64,
         peak: load.peak as f64,
         off: load.off_hours_share.unwrap_or(0.0),
     })
 }
 
 fn load_windows(q: &Query<'_, '_>) -> Result<[Load; 2], String> {
-    Ok([owner_load(q, q.window.before, q.window.start - 1)?, owner_load(q, q.window.start, q.window.end)?])
+    Ok([owner_load(q.tx, q.project, q.window.before, q.window.start - 1)?, owner_load(q.tx, q.project, q.window.start, q.window.end)?])
 }
 
 fn owner_evidence(q: &Query<'_, '_>) -> Result<Vec<Evidence>, String> {
@@ -89,7 +94,7 @@ pub(super) fn involvement(q: &Query<'_, '_>) -> Result<Measurements, String> {
     };
     let mut evidence = owner_evidence(q)?;
     evidence.extend(done.into_iter().filter(|row| row.feature).flat_map(|r| [events(r.event), Evidence::Tasks(r.task)]));
-    Ok(one(Reading::new("project", q.project, "features_per_owner_hour", now, evidence)
+    Ok(one(Reading::new("project", q.project, "features_per_owner_hour", now, evidence).source(Source::ExcessOwnerHours)
         .history(vec![old]).comparison(Comparison::Below)))
 }
 
@@ -99,13 +104,14 @@ pub(super) fn load(q: &Query<'_, '_>) -> Result<Measurements, String> {
         return Ok(Measurements::missing("Owner load needs measured owner time in both windows."));
     }
     let evidence = owner_evidence(q)?;
-    let readings = [("switches_per_hour", before.switches, now.switches), ("concurrent_sessions", before.peak, now.peak),
-        ("off_hours_share", before.off, now.off)].into_iter().map(|(metric, old, new)|
-        Reading::new("project", q.project, metric, new, evidence.clone()).history(vec![old])).collect();
+    let readings = [("switches_per_hour", before.switches, now.switches, Source::ExcessSwitches),
+        ("concurrent_sessions", before.peak, now.peak, Source::Unattributed),
+        ("off_hours_share", before.off, now.off, Source::ExcessOffHours)].into_iter().map(|(metric, old, new, source)|
+        Reading::new("project", q.project, metric, new, evidence.clone()).source(source).history(vec![old])).collect();
     Ok(Measurements { readings, ..Measurements::default() })
 }
 
-const QUESTIONS: &str = "questions AS (
+pub(super) const QUESTIONS: &str = "questions AS (
     SELECT e.id, e.task, e.at, e.seq,
         (SELECT min(n.seq) FROM project_events n WHERE n.task = e.task AND n.seq > e.seq
             AND n.kind = 'comment' AND json_extract(n.data, '$.questions') IS NOT NULL) AS next
@@ -137,7 +143,7 @@ pub(super) fn answer_latency(q: &Query<'_, '_>) -> Result<Measurements, String> 
             pending.extend([events(question), Evidence::Tasks(task)]);
         }
     }
-    out.readings.push(Reading::new("project", q.project, "pending_answers", (pending.len() / 2) as f64, pending)
+    out.readings.push(Reading::new("project", q.project, "pending_answers", (pending.len() / 2) as f64, pending).source(Source::Present)
         .fixed(Threshold::Absolute(2.0)));
     if let [Some(old), Some(now)] = minutes.each_mut().map(|samples| percentile(samples, 50)) {
         out.readings.push(Reading::new("project", q.project, "median_answer_minutes", now, answered).history(vec![old]));
@@ -149,11 +155,10 @@ pub(super) fn answer_latency(q: &Query<'_, '_>) -> Result<Measurements, String> 
 }
 
 // Legacy priority edits carry templated text, so require the entire generated sentence.
-const PRIORITY_EDIT: &str = "e.kind = 'edit' AND substr(e.text, -2) GLOB 'P[0-3]'
+pub(super) const PRIORITY_EDIT: &str = "e.kind = 'edit' AND substr(e.text, -2) GLOB 'P[0-3]'
     AND e.text = (SELECT name FROM users WHERE id = e.author) || ' set severity ' || substr(e.text, -2)";
 
 pub(super) fn operations(q: &Query<'_, '_>) -> Result<Measurements, String> {
-    let events_sql = project_events();
     let done = done(q)?;
     let mut completed = [0; 2];
     for row in &done {
@@ -162,38 +167,69 @@ pub(super) fn operations(q: &Query<'_, '_>) -> Result<Measurements, String> {
     if completed.contains(&0) {
         return Ok(Measurements::missing("Operations per DONE task needs completions in both windows."));
     }
-    // Give each board move or edit one count, plus actual answers and launches requested by the owner.
-    let operations = rows(q.tx, &format!("{events_sql}, {QUESTIONS}
-        SELECT e.id, e.at FROM project_events e WHERE e.author = 'human' AND e.kind IN ('move', 'edit')
-            AND NOT coalesce(({PRIORITY_EDIT}), 0) AND e.at >= ?3
-        UNION SELECT answer, answered_at FROM answers WHERE answered_at >= ?3"), (q.project, q.window.end, q.window.before),
-        |r| Ok((events(r.get(0)?), r.get::<_, i64>(1)?)))?;
-    let starts = owner_starts(q)?;
+    let actions = owner_actions(q.tx, q.project, q.window.before, q.window.end)?;
     let mut counts = [0; 2];
+    let mut strategic = [0; 2];
+    let mut strategic_evidence = Vec::new();
     let mut evidence: Vec<_> = done.into_iter().map(|r| events(r.event)).collect();
-    for (id, at) in operations.into_iter().chain(starts) {
-        counts[usize::from(q.window.current(at))] += 1;
-        evidence.push(id);
+    for (kind, id, at) in actions {
+        let period = usize::from(q.window.current(at));
+        if kind.is_operation() {
+            counts[period] += 1;
+            evidence.push(id);
+        } else {
+            strategic[period] += 1;
+            strategic_evidence.push(id);
+        }
     }
     let [old, now] = std::array::from_fn(|i| f64::from(counts[i]) / f64::from(completed[i]));
-    let mut out = one(Reading::new("project", q.project, "operations_per_done", now, evidence).history(vec![old]));
-    let strategic = rows(q.tx, &format!("{events_sql} SELECT e.id, e.at FROM project_events e JOIN tasks t ON t.id = e.task
-        WHERE e.author = 'human' AND e.at >= ?3 AND ((e.kind = 'made' AND t.type IN ('Feature', 'Story')) OR ({PRIORITY_EDIT}))"),
-        (q.project, q.window.end, q.window.before), |r| Ok((events(r.get(0)?), r.get::<_, i64>(1)?)))?;
-    let earlier = strategic.iter().filter(|(_, at)| !q.window.current(*at)).count();
-    let recent = strategic.len() - earlier;
-    out.readings.push(Reading::new("project", q.project, "recorded_strategic_acts", recent as f64,
-        strategic.into_iter().map(|(id, _)| id).collect()).history(vec![earlier as f64]).comparison(Comparison::Below));
+    let mut out = one(Reading::new("project", q.project, "operations_per_done", now, evidence).source(Source::ExcessOperations).history(vec![old]));
+    let [earlier, recent] = strategic;
+    out.readings.push(Reading::new("project", q.project, "recorded_strategic_acts", f64::from(recent),
+        strategic_evidence).history(vec![f64::from(earlier)]).comparison(Comparison::Below));
     out.unavailable.push("Question kinds and recorded design sign-offs are unavailable.");
     out.complete_metrics.extend(["operations_per_done", "recorded_strategic_acts"]);
     Ok(out)
 }
 
-fn owner_starts(q: &Query<'_, '_>) -> Result<Vec<(Evidence, i64)>, String> {
-    rows(q.tx, &format!("SELECT r.id, min(i.at) / 1000 FROM runs r JOIN inputs i ON i.run = r.id AND {LAUNCH}
+fn owner_starts(tx: &rusqlite::Transaction, project: &str, from: i64, until: i64) -> Result<Vec<(Evidence, i64)>, String> {
+    rows(tx, &format!("SELECT r.id, min(i.at) / 1000 FROM runs r JOIN inputs i ON i.run = r.id AND {LAUNCH}
         WHERE r.project = ?1 AND r.started_by = 'human'
         GROUP BY r.id HAVING min(i.at) BETWEEN ?2 * 1000 AND ?3 * 1000 + 999"),
-        (q.project, q.window.before, q.window.end), |r| Ok((Evidence::Runs(r.get(0)?), r.get(1)?)))
+        (project, from, until), |r| Ok((Evidence::Runs(r.get(0)?), r.get(1)?)))
+}
+
+#[derive(Clone, Copy)]
+pub(super) enum OwnerAction { Answer, Run, Move, Edit, Priority, PlanWork }
+
+impl OwnerAction {
+    pub fn is_operation(self) -> bool {
+        !matches!(self, Self::Priority | Self::PlanWork)
+    }
+}
+
+pub(super) fn owner_actions(tx: &rusqlite::Transaction, project: &str, from: i64, until: i64) -> Result<Vec<(OwnerAction, Evidence, i64)>, String> {
+    use OwnerAction as A;
+    let events_sql = project_events();
+    let mut out = rows(tx, &format!("{events_sql}, {QUESTIONS}
+        SELECT answer, answered_at, 'answer' FROM answers WHERE answered_at >= ?3 GROUP BY answer
+        UNION ALL
+        SELECT e.id, e.at, CASE WHEN ({PRIORITY_EDIT}) THEN 'priority' ELSE e.kind END
+        FROM project_events e JOIN tasks t ON t.id = e.task
+        WHERE e.author = 'human' AND e.at >= ?3 AND (e.kind IN ('move', 'edit')
+            OR (e.kind = 'made' AND t.type IN ('Feature', 'Story')))"),
+        (project, until, from), |r| {
+            let kind = match r.get::<_, String>(2)?.as_str() {
+                "answer" => A::Answer,
+                "move" => A::Move,
+                "edit" => A::Edit,
+                "priority" => A::Priority,
+                _ => A::PlanWork,
+            };
+            Ok((kind, events(r.get(0)?), r.get(1)?))
+        })?;
+    out.extend(owner_starts(tx, project, from, until)?.into_iter().map(|(id, at)| (A::Run, id, at)));
+    Ok(out)
 }
 
 pub(super) fn churn(q: &Query<'_, '_>) -> Result<Measurements, String> {
@@ -222,7 +258,7 @@ pub(super) fn churn(q: &Query<'_, '_>) -> Result<Measurements, String> {
     let baseline = (old.len() / 2) as f64;
     let mut out = one(Reading::new("project", q.project, "priority_reversals", value, recent.into_iter().chain(old).collect())
         .history(vec![baseline]));
-    let starts = owner_starts(q)?;
+    let starts = owner_starts(q.tx, q.project, q.window.before, q.window.end)?;
     let stops = rows(q.tx, &format!("{events_sql} SELECT id, at FROM project_events
         WHERE kind = 'why' AND author = 'dispatcher' AND text = ?4 AND at >= ?3"),
         (q.project, q.window.end, q.window.before, GAVE_UP), |r| Ok((events(r.get(0)?), r.get::<_, i64>(1)?)))?;

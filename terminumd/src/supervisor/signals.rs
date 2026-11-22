@@ -7,6 +7,7 @@ use sha2::{Digest, Sha256};
 
 use crate::tasks::{ops::{rows, sql}, store::Store};
 
+use super::impact::Assessment;
 use super::{Evaluation, Evidence, Finding, Measure, Mode, Scores};
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
@@ -25,6 +26,7 @@ pub(crate) struct Signal {
     pub evidence: Vec<Evidence>,
     pub measure: Measure,
     pub scores: Scores,
+    pub(super) impact_basis: Assessment,
     pub level: u8,
     pub response: &'static str,
     pub first_seen: i64,
@@ -42,11 +44,20 @@ fn fingerprint(project: &str, detector: &str, found: &Finding) -> String {
     crate::auth::crypto::hex(&hash.finalize())
 }
 
+#[derive(Serialize, Deserialize)]
+struct RecordedScores {
+    #[serde(flatten)]
+    scores: Scores,
+    #[serde(default)]
+    impact_basis: Assessment,
+}
+
 struct PreparedFinding<'a> {
     key: String,
     found: &'a Finding,
     evidence: String,
     measure: String,
+    scores: String,
 }
 
 pub(super) fn record(store: &Store, evaluation: &Evaluation) -> Result<(), String> {
@@ -61,10 +72,11 @@ pub(super) fn record(store: &Store, evaluation: &Evaluation) -> Result<(), Strin
             Ok::<_, String>(PreparedFinding {
                 key: fingerprint(&evaluation.project, rule, found), found,
                 evidence: encode(&found.evidence)?, measure: encode(&found.measure)?,
+                scores: encode(&RecordedScores { scores: found.scores, impact_basis: found.assessment.clone() })?,
             })
         }).collect::<Result<_, _>>()?;
         let keys = encode(&findings.iter().map(|f| &f.key).collect::<Vec<_>>())?;
-        batches.push((detector, findings, keys, encode(&detector.scores)?, encode(&detector.complete_metrics)?));
+        batches.push((detector, findings, keys, encode(&detector.complete_metrics)?));
     }
     if batches.is_empty() {
         return Ok(());
@@ -81,7 +93,7 @@ pub(super) fn record(store: &Store, evaluation: &Evaluation) -> Result<(), Strin
                 WHEN state = 'shadow' THEN 'new'
                 WHEN state = 'resolved' THEN 'recurred'
                 ELSE state END").map_err(sql)?;
-        for (detector, findings, keys, scores, metrics) in batches {
+        for (detector, findings, keys, metrics) in batches {
             let rule = detector.rule.id();
             let advanced = tx.execute("INSERT INTO supervisor_evaluations VALUES (?1, ?2, ?3)
                 ON CONFLICT (project, detector) DO UPDATE SET evaluated_at = excluded.evaluated_at
@@ -91,7 +103,7 @@ pub(super) fn record(store: &Store, evaluation: &Evaluation) -> Result<(), Strin
             }
             for row in findings {
                 upsert.execute(params![row.key, evaluation.project, rule, row.found.subject_kind,
-                    row.found.subject_id, row.found.metric, row.evidence, row.measure, scores, evaluation.at,
+                    row.found.subject_id, row.found.metric, row.evidence, row.measure, row.scores, evaluation.at,
                     if detector.mode == Mode::Shadow { "shadow" } else { "new" }]).map_err(sql)?;
             }
             tx.execute("UPDATE supervisor_signals SET state = 'resolved'
@@ -117,13 +129,14 @@ pub(super) fn list(tx: &Transaction, project: &str) -> Result<Vec<Signal>, Strin
     rows(tx, "SELECT fingerprint, detector, subject_kind, subject_id, metric, evidence, measure, scores,
         first_seen, last_seen, count, json_quote(state) FROM supervisor_signals WHERE project = ?1
         ORDER BY detector, subject_kind, subject_id, metric", [project], |r| {
-        let scores: Scores = decode(r, 7)?;
+        let RecordedScores { scores, impact_basis } = decode(r, 7)?;
         let level = scores.level();
+        let count = r.get(10)?;
         Ok(Signal {
             fingerprint: r.get(0)?, project: project.into(), detector: r.get(1)?, subject_kind: r.get(2)?,
             subject_id: r.get(3)?, metric: r.get(4)?, evidence: decode(r, 5)?, measure: decode(r, 6)?,
-            scores, level, response: ["R0", "R2", "R4", "R5"][usize::from(level)],
-            first_seen: r.get(8)?, last_seen: r.get(9)?, count: r.get(10)?, state: decode(r, 11)?,
+            scores, impact_basis, level, response: scores.response(count > 1),
+            first_seen: r.get(8)?, last_seen: r.get(9)?, count, state: decode(r, 11)?,
         })
     })
 }
