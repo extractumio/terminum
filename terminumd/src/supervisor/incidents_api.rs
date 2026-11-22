@@ -45,7 +45,9 @@ const SUMMARY: &str = "SELECT i.id, i.project, p.name, m.level,
       (SELECT max(id) FROM supervisor_incident_events WHERE incident = i.id),
       m.metric, m.value, m.threshold,
       (SELECT count(*) FROM supervisor_incident_events WHERE incident = i.id AND kind = 'signal'),
-      (SELECT related_id FROM supervisor_incident_events WHERE incident = i.id AND kind = 'continued')
+      (SELECT related_id FROM supervisor_incident_events WHERE incident = i.id AND kind = 'continued'),
+      (SELECT group_concat('Channel ' || channel || ': ' || failure, ' ' ORDER BY channel)
+        FROM supervisor_line_failures WHERE i.subject_kind = 'critical_line' AND i.closed_at IS NULL)
     FROM supervisor_incidents i JOIN projects p ON p.id = i.project
     JOIN supervisor_incident_events m ON m.id = coalesce(
       (SELECT event FROM supervisor_incident_signals WHERE incident = i.id ORDER BY level DESC, event DESC LIMIT 1),
@@ -65,6 +67,8 @@ fn incident(row: &Row<'_>) -> rusqlite::Result<Incident> {
     let continued: Option<i64> = row.get(13)?;
     let measured = measurement(&row.get::<_, String>(9)?, row.get(10)?, row.get(11)?);
     let count: i64 = row.get(12)?;
+    let failure: Option<String> = row.get(14)?;
+    let detail = failure.map_or_else(String::new, |status| format!(" {status}"));
     let status = match (closed_at, continued) {
         (_, Some(id)) => format!("Continued in incident {id}. "),
         (Some(_), None) => "All-clear. ".into(),
@@ -73,7 +77,7 @@ fn incident(row: &Row<'_>) -> rusqlite::Result<Incident> {
     Ok(Incident {
         id: row.get(0)?, project: row.get(1)?, project_name: row.get(2)?, level: row.get(3)?,
         opened_at: row.get(4)?, closed_at, acknowledged_at, snoozed_until: row.get(7)?, revision: row.get(8)?,
-        happened: format!("{status}{measured} {count} {} recorded.", if count == 1 { "signal" } else { "signals" }),
+        happened: format!("{status}{measured} {count} {} recorded.{detail}", if count == 1 { "signal" } else { "signals" }),
         held: "No hold in effect.",
         needed: if acknowledged_at.is_some() { "Acknowledged." } else { "Acknowledge when seen." },
         no_answer: "No automatic action without an answer.",

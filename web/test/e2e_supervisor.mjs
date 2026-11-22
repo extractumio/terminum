@@ -20,7 +20,7 @@ const DEFAULTS = { [RULE]: { mode: "live", window_days: 7, threshold: { baseline
 const SIGNAL = { fingerprint: "one", project: "api", detector: RULE, subject_id: LITERAL, subject_kind: "project",
   metric: "Unexplained failures", level: 1, state: "raised", count: 2, response: "digest", last_seen: DATE,
   measure: { value: 12, baseline: 4, threshold: 8, window_start: DATE - 1000, window_end: DATE },
-  evidence: [{ table: "tasks", id: "API-2" }, { table: "events", id: LITERAL }] };
+  evidence: [{ table: "tasks", id: "API-2" }, { table: "events", id: LITERAL }, { table: "supervisor_line", id: { channel: 2, failure: "Exit status 17." } }] };
 const SCORE = { name: "Release cadence", verdict: "not measured yet", guard: "Stability", metrics: [
   { name: "Releases per month", verdict: "not measured yet", missing: "release tags are unavailable" },
   { name: "Fixture measured series", verdict: "better", missing: null, before: 3, current: 5, noise: 0.5 },
@@ -34,6 +34,8 @@ async function fixture(page, theme) {
   await page.route("**/api/messages/meta", (route) => json(route, { projects, theme }));
   let enabled = false, refusal = true, saved = structuredClone(SETTINGS), revision = 0, candidate = false, approved = false, commandViewed = false;
   const calls = [];
+  let line = { revision: 0, settings: { channels: [], link_base: null, quiet: [1380, 480], ladder: [10, 30, 60] } };
+  let failedTest = true;
   let refuseSave;
   const firstSave = new Promise((resolve) => { refuseSave = resolve; });
   const view = () => ({ revision, settings: saved, detector_defaults: DEFAULTS,
@@ -57,6 +59,17 @@ async function fixture(page, theme) {
       const attachment = enabled ? { limited_history: true, detectors: { [RULE]: { can_run: true, mode: "shadow", unavailable: [],
         observed_thresholds: { failure_count: { min: 2, max: 3 } } } } } : null;
       return json(route, { enabled, attachment });
+    }
+    if (suffix === "/line") {
+      if (method === "PUT") line = { revision: line.revision + 1, settings: body.settings };
+      return json(route, line);
+    }
+    if (suffix === "/line/test") {
+      if (failedTest) {
+        failedTest = false;
+        return json(route, { error: "Exit status 17." }, 400);
+      }
+      return json(route, { sent: true });
     }
     if (suffix === "/settings" && method === "PUT") {
       if (refusal) {
@@ -102,9 +115,35 @@ async function settingsTab(page, { calls, refuseSave }, suffix, phone) {
     && await panel.getByLabel("Fixes, % of weekly spend").inputValue() === "10");
   await small.selectOption("mine");
   await openGroup(page, "Critical line");
-  check("AC-222 the critical line names shared defaults and the unavailable test",
-    await panel.getByRole("button", { name: "Send a test alert" }).isDisabled()
-    && await panel.getByText("Channels and link base are unset.", { exact: false }).isVisible());
+  const line = panel.locator('[data-section="Critical line"]');
+  const test = line.getByRole("button", { name: "Send a test alert" });
+  await test.waitFor();
+  check("AC-227 the critical line names shared settings and starts without a channel",
+    await test.isDisabled() && await line.getByText("Delivery settings apply to every project.").isVisible()
+    && await line.getByLabel("Quiet hours start").inputValue() === "23:00"
+    && await line.getByLabel("First repeat, minutes").inputValue() === "10");
+  await shot(page, `supervisor-critical-line-${suffix}`);
+  const paths = line.getByLabel("Channel executables", { exact: false });
+  await paths.fill("/opt/example/channel-one\n/opt/example/channel-two");
+  const saveLine = line.getByRole("button", { name: "Save line settings" });
+  await saveLine.click();
+  await line.getByText("Critical line settings saved.").waitFor();
+  check("AC-227 the line saves ordered channels separately from project settings",
+    calls.find(({ method, suffix }) => method === "PUT" && suffix === "/line").body.settings.channels.join(",")
+      === "/opt/example/channel-one,/opt/example/channel-two" && await saveLine.evaluate((node) => node === document.activeElement));
+  await line.getByLabel("Saved channel to test").selectOption("1");
+  await test.click();
+  await line.getByText("Exit status 17.").waitFor();
+  await test.click();
+  await line.getByText("The command accepted the test alert.", { exact: false }).waitFor();
+  check("AC-229 the tab reports both outcomes for the selected saved channel",
+    calls.filter(({ suffix }) => suffix === "/line/test").every(({ body }) => body.channel === 1 && body.revision === 1));
+  await shot(page, `supervisor-line-result-${suffix}`);
+  check("AC-229 the line controls fit and have touch-size buttons on a phone",
+    await line.locator("button").evaluateAll((buttons, touch) => buttons.every((key) => {
+      const box = key.getBoundingClientRect();
+      return box.left >= 0 && box.right <= innerWidth && (!touch || (box.width >= 40 && box.height >= 40));
+    }), phone));
   await openGroup(page, "Surface map");
   await panel.getByLabel("T3 paths, one pattern per line").fill("src/storage/**");
   check("AC-222 the surface preview says what it will count", await panel.getByRole("button", { name: "Preview last month" }).isDisabled()
@@ -116,7 +155,7 @@ async function settingsTab(page, { calls, refuseSave }, suffix, phone) {
   await priorities.press("Enter");
   await priorities.fill("First project priority\nSecond project priority");
   check("AC-222 typing in a Supervisor field leaves the project window open",
-    await page.isVisible("#projectbox") && !calls.some(({ method }) => method === "PUT"));
+    await page.isVisible("#projectbox") && !calls.some(({ method, suffix }) => method === "PUT" && suffix === "/settings"));
   await page.click("#supervisorok");
   await page.locator("#projectbox[data-busy]").waitFor();
   await page.keyboard.press("Escape");
@@ -195,6 +234,8 @@ async function screen(page, suffix, phone) {
     && (await page.locator(".sv-evidence").first().textContent()).includes(LITERAL)
     && await page.locator("#sv-signals img").count() === 0 && !await page.evaluate(() => window.fixtureRan)
     && !await page.getByText("Web signal", { exact: false }).count());
+  check("AC-229 the Supervisor screen spells out the channel and exit status in signal evidence",
+    await page.getByText("Channel 2: Exit status 17.", { exact: true }).first().isVisible());
   await shot(page, `supervisor-evidence-${suffix}`);
   check("AC-223 investigation shows its availability and evidence does not cause sideways scrolling",
     await page.getByRole("button", { name: "Investigate", exact: true }).first().isDisabled()

@@ -109,7 +109,7 @@ fn heartbeat(_: &Query<'_, '_>) -> Result<Measurements, String> {
     Ok(Measurements::missing("The independent watchdog owns collector heartbeat findings."))
 }
 
-const LINE_UNAVAILABLE: &str = "Critical channel history is unavailable.";
+const LINE_UNAVAILABLE: &str = "The critical line records its own delivery health.";
 
 fn line_health(_: &Query<'_, '_>) -> Result<Measurements, String> {
     Ok(Measurements::missing(LINE_UNAVAILABLE))

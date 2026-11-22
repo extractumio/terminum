@@ -5,7 +5,8 @@ import { $, agentsOf, api, button, say as toast, showError } from "./kanbanutil.
 import { detectorStatus } from "./supervisordetectors.js";
 import { hint, stack } from "./supervisorfields.js";
 import { portableSettings, probeCommands } from "./supervisorpack.js";
-import { criticalLine, preferences } from "./supervisorpreferences.js";
+import { preferences } from "./supervisorpreferences.js";
+import { criticalLine } from "./supervisorline.js";
 
 export function supervisorWindow({ getMeta }) {
   const panel = $("supervisorpanel"), body = $("supervisorsettings"), save = $("supervisorok");
@@ -92,7 +93,8 @@ export function supervisorWindow({ getMeta }) {
       },
     });
     probes.draw(state.view);
-    body.replaceChildren(stack(fields.node, probes.node, criticalLine(), portable));
+    state.line ??= criticalLine(state.request, on);
+    body.replaceChildren(stack(fields.node, probes.node, state.line, portable));
     for (const group of body.querySelectorAll("details")) group.open = opened.has(group.dataset.section);
     state.read = fields.read;
     updateScan(state);

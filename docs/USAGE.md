@@ -485,10 +485,10 @@ commands. In **Probe commands**, use **View command** to read the full text and 
 
 **Open Supervisor screen** shows the project's incidents, scoreboard and signals. Open an indicator
 for its guard and missing inputs, or open a signal for the measurement, threshold and
-evidence. Use **More signals** to see older results. Critical-line delivery, test alerts,
-surface previews and Investigate show their availability in the interface.
+evidence. Use **More signals** to see older results. Surface previews and Investigate
+show their availability in the interface.
 
-A critical live signal or a failed collector opens an incident. Related signals within
+A critical live signal, failed collector or failed delivery command opens an incident. Related signals within
 15 minutes share a timeline. Signed-in pages show a red bar until you acknowledge it.
 The project board pins the incident at the top of **WAIT FOR HUMAN**, and **Timeline**
 opens the Supervisor screen with its updates and all-clear. An acknowledged incident
@@ -499,6 +499,26 @@ Use **Acknowledge** on the Mac or phone to dismiss the bar across signed-in page
 when you pressed each key. The local bar, card and timeline are available without an
 agent or a delivery command.
 
+In **Critical line**, enter an absolute path to each executable, in delivery order. Use
+a wrapper script if your notifier needs arguments. **Save line settings** authorizes the
+commands to send fixed incident messages. These settings apply to every project and
+stay out of project imports and exports. Leave the channel list empty for local alerts
+only. The optional HTTPS origin adds a link to the signed-in timeline. Messages carry
+incident IDs, levels and counts. Task and comment text stay in Terminum.
+
+The first channel sends new incidents and updates. The default ladder repeats after 10
+and 30 minutes, then hourly. The second channel joins at the second repeat. A failed
+command falls through to the next one. Quiet hours use the server’s clock and default
+to 23:00–08:00. A charter-never breach or reversibility 3 bypasses quiet hours. An
+acknowledgment stops repeats. Snooze delays them for an hour.
+
+Use **Send a test alert** to run a saved channel and check that the message arrives.
+The command receives the fixed message on standard input. For the weekly health check,
+it receives a fixed health-check message and the argument `--check`. In that mode the
+wrapper should check its route silently and exit nonzero on failure. Line failures
+appear on the incident bar and Supervisor screen while working channels and local
+incident actions remain available.
+
 #### Signed-in Supervisor API
 
 All routes below are relative to `/api/task-projects/<ID>/supervisor`.
@@ -507,6 +527,8 @@ All routes below are relative to `/api/task-projects/<ID>/supervisor`.
 |---|---|
 | GET the base route | Switch, last successful beat in Unix seconds, collector health and the attachment report when ready. |
 | PUT the base route with `{"enabled": true}` or `{"enabled": false}` | Change the switch for this project. |
+| GET or PUT `/line` | Read or save the owner-wide channel paths, HTTPS origin, quiet hours and ladder. PUT requires the current revision. |
+| POST `/line/test` | Run the saved channel at the zero-based `channel` index with the current `revision`. |
 | GET `/screen` | Project name, enabled scoreboard indicators and the newest page of signals with their evidence. |
 | GET `/signals?after=<cursor>` | The next page of signals for the same project. |
 | GET `/incidents?before=<cursor>` | The project's newest incidents, or the next page with a cursor. |

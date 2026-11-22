@@ -15,6 +15,8 @@
 .sv-section > summary.sv-touch { color: var(--t-fg); font-weight: var(--fw-head); }
 .supervisor .field { min-width: 0; max-width: 100%; }
 .supervisor .field[type="file"] { width: 100%; }
+.supervisor .field[type="time"] { color-scheme: dark; }
+:root.light .supervisor .field[type="time"] { color-scheme: light; }
 .sv-field-error { grid-column: 1 / -1; }
 .supervisor .field[aria-invalid="true"] { box-shadow: var(--field-focus-edge); }
 .sv-command { margin: 0; padding: var(--sp-2); white-space: pre-wrap; font-family: var(--term-font, monospace); }

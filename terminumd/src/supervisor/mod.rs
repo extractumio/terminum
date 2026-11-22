@@ -7,6 +7,10 @@ mod catalog;
 mod impact;
 mod incidents;
 mod incidents_api;
+pub(crate) mod line;
+mod line_api;
+mod line_command;
+mod line_queue;
 mod replay;
 pub(crate) mod runtime;
 mod samples;
@@ -39,7 +43,7 @@ pub(crate) use catalog::Rule;
 pub(crate) use signals::Signal;
 pub(crate) use replay::replay;
 
-const SCHEMA: usize = 44;
+const SCHEMA: usize = 45;
 const DAY: i64 = 86_400;
 const WEEK: i64 = 7 * DAY;
 
@@ -147,6 +151,7 @@ pub(crate) enum Evidence {
     SupervisorPoints(i64),
     SupervisorHookCounts(i64),
     SupervisorHeartbeat { project: String, last_ok: Option<i64> },
+    SupervisorLine { channel: i64, failure: String },
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -449,6 +454,15 @@ fn collect_findings(data: &mut Measurements, detector: &Detector, window: Window
 }
 
 impl Evaluation {
+    fn critical(project: &str, rule: Rule, reading: Reading, window: Window) -> Option<Self> {
+        let mut finding = reading.finding(rule.defaults(), window)?;
+        finding.scores = Scores { impact: 3, ..Scores::default() };
+        Some(Self { project: project.into(), at: window.end, detectors: vec![Checked {
+            rule, mode: Mode::Live, unavailable: Vec::new(), findings: vec![finding],
+            thresholds: Default::default(), complete_metrics: Vec::new(), measured: None,
+        }] })
+    }
+
     fn ranked_findings(&self) -> (Vec<(&'static str, &Finding)>, usize) {
         let (mut ranked, inactive): (Vec<_>, Vec<_>) = self.detectors.iter().flat_map(|d| {
             d.findings.iter().map(|f| (d.rule.id(), f))

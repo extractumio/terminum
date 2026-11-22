@@ -115,12 +115,3 @@ export function preferences(view, agents) {
   section("Standard probes", hint("These settings will control which standard probes may collect data."), actions(...probes)));
   return { node, read: () => edit.read(structuredClone(saved)) };
 }
-
-export function criticalLine() {
-  const test = button("textkey", "Send a test alert");
-  test.disabled = true;
-  return section("Critical line", hint("Delivery channels and quiet hours belong to the owner and apply to every project."),
-    hint("Channels and link base are unset. The line will use the local incident bar and card until you add a delivery channel."),
-    hint("The repeat ladder defaults to 10 minutes, 30 minutes, then hourly. Quiet hours default to 23:00–08:00 once a channel is set."),
-    actions(test), hint("The test alert will check delivery when the critical line is available."));
-}
