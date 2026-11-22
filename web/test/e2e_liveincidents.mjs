@@ -25,7 +25,6 @@ export async function liveIncidents(page, opts) {
   const pw = await playwright();
   const other = await pw[phoneName].launch(NO_SIGNALS);
   const filesContext = await page.context().browser().newContext();
-  const files = await filesContext.newPage();
   let stalled = false;
   try {
     const context = await other.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true,
@@ -35,7 +34,10 @@ export async function liveIncidents(page, opts) {
     await phone.goto(`${base}/kanban/?project=${project}`);
     await phone.locator("#newtask").click();
     await phone.locator("#newtitle").fill("Draft beside the drill");
-    await signIn(files);
+    const signInPage = await filesContext.newPage();
+    await signIn(signInPage);
+    await signInPage.close();
+    const files = await filesContext.newPage();
     const connecting = files.waitForEvent("websocket", { predicate: (socket) => new URL(socket.url()).pathname === `${FEED}/watch` });
     await files.goto(`${base}/fb/`);
     const watch = await connecting;
@@ -57,7 +59,8 @@ export async function liveIncidents(page, opts) {
 
     await page.locator('#colswitch button[data-status="WAIT FOR HUMAN"]').click();
     check("AC-225 the signed-in wake-up socket carries only a change notification",
-      wakeups.length > 0 && wakeups.every((message) => message === "changed"));
+      await until(() => wakeups.length > 0, 5000) && wakeups.every((message) => message === "changed"),
+      `${wakeups.filter((message) => message === "changed").length} change frames, ${wakeups.filter((message) => message !== "changed").length} other frames`);
 
     const pinned = page.locator('.col[data-status="WAIT FOR HUMAN"] .cards > :first-child .incident-card');
     const id = await pinned.getAttribute("data-incident");
@@ -98,7 +101,8 @@ export async function liveIncidents(page, opts) {
     });
     await files.locator(BAR).waitFor({ state: "hidden", timeout: 15000 });
     check("AC-226 revoking the Files sign-in closes its wake-up socket and clears the notice",
-      signedOut === 204 && await until(() => watch.isClosed()));
+      signedOut === 204 && await until(() => watch.isClosed()),
+      `logout HTTP ${signedOut}, socket closed ${watch.isClosed()}`);
 
     const screen = await page.context().newPage();
     await screen.goto(`${base}${await pinned.getByRole("link", { name: "Timeline" }).getAttribute("href")}`);
