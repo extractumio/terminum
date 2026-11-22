@@ -1286,8 +1286,7 @@ All cases below are open. The existing mechanisms in §3 provide inputs or prece
 
 | AC | Open gap |
 |---|---|
-| AC-211 | Signal persistence and fingerprint deduplication. |
-| AC-212 | Store detector library, project thresholds and data needs. |
+| AC-212 | The 19 store-backed rules, typed thresholds and shadow enablement are implemented. Integration, probes, counters, snapshots and structured question and design guards need their owning stages. |
 | AC-213 | Impact and response scoring. |
 | AC-214 | Seven guarded scoreboard indicators. |
 | AC-215 | Read-only replay command. |
@@ -1567,8 +1566,8 @@ Enable none of the runtime cases by default. Land the specification after indepe
 
 ## 11. Checklist with Definition of Done
 
-- [ ] AC-211 — Planned test: `ac211_signal_fingerprint_and_named_query` covers signal persistence and fingerprint deduplication.
-- [ ] AC-212 — Planned test: `ac212_store_detector_catalog` covers store detector library, project thresholds and data needs.
+- [x] AC-211 — `supervisor::engine_tests` checks named queries, read-only snapshots, fingerprint repeats, resolution and recurrence, and atomic retry.
+- [ ] AC-212 — `supervisor::catalog_tests` and `ac212_off_missing_and_shadow` cover the store rules, typed thresholds, unavailable inputs and shadow enablement. Remaining catalog and guard inputs are listed in §7.
 - [ ] AC-213 — Planned test: `ac213_impact_floors_and_ladder` covers impact and response scoring.
 - [ ] AC-214 — Planned test: `ac214_scoreboard_guard_verdicts` covers seven guarded scoreboard indicators.
 - [ ] AC-215 — Planned test: `ac215_replay_rank_and_schema` covers read-only replay command.

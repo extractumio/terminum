@@ -9,13 +9,13 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use parking_lot::Mutex;
-use rusqlite::{Connection, ErrorCode, Transaction, TransactionBehavior};
+use rusqlite::{Connection, ErrorCode, OpenFlags, Transaction, TransactionBehavior};
 
 use crate::slow;
 
 /// The schema's versions, oldest first: `PRAGMA user_version` says how many have run. Append only: a file's name
 /// is not its place, and a database that ran a place runs it never again.
-const MIGRATIONS: [&str; 40] = [include_str!("schema1.sql"), include_str!("schema2.sql"), include_str!("schema3.sql"), include_str!("schema4.sql"), include_str!("schema5.sql"), include_str!("schema6.sql"), include_str!("schema7.sql"), include_str!("schema8.sql"), include_str!("schema9.sql"), include_str!("schema10.sql"), include_str!("schema11.sql"), include_str!("schema12.sql"), include_str!("schema13.sql"), include_str!("schema14.sql"), include_str!("schema15.sql"), include_str!("schema16.sql"), include_str!("schema17.sql"), include_str!("schema18.sql"), include_str!("schema19.sql"), include_str!("schema20.sql"), include_str!("schema22.sql"), include_str!("schema23.sql"), include_str!("schema24.sql"), include_str!("schema21.sql"), include_str!("schema25.sql"), include_str!("schema26.sql"), include_str!("schema27.sql"), include_str!("schema28.sql"), include_str!("schema29.sql"), include_str!("schema30.sql"), include_str!("schema31.sql"), include_str!("schema32.sql"), include_str!("schema33.sql"), include_str!("schema34.sql"), include_str!("schema35.sql"), include_str!("schema36.sql"), include_str!("schema37.sql"), include_str!("schema38.sql"), include_str!("schema40.sql"), include_str!("schema39.sql")];
+const MIGRATIONS: [&str; 41] = [include_str!("schema1.sql"), include_str!("schema2.sql"), include_str!("schema3.sql"), include_str!("schema4.sql"), include_str!("schema5.sql"), include_str!("schema6.sql"), include_str!("schema7.sql"), include_str!("schema8.sql"), include_str!("schema9.sql"), include_str!("schema10.sql"), include_str!("schema11.sql"), include_str!("schema12.sql"), include_str!("schema13.sql"), include_str!("schema14.sql"), include_str!("schema15.sql"), include_str!("schema16.sql"), include_str!("schema17.sql"), include_str!("schema18.sql"), include_str!("schema19.sql"), include_str!("schema20.sql"), include_str!("schema22.sql"), include_str!("schema23.sql"), include_str!("schema24.sql"), include_str!("schema21.sql"), include_str!("schema25.sql"), include_str!("schema26.sql"), include_str!("schema27.sql"), include_str!("schema28.sql"), include_str!("schema29.sql"), include_str!("schema30.sql"), include_str!("schema31.sql"), include_str!("schema32.sql"), include_str!("schema33.sql"), include_str!("schema34.sql"), include_str!("schema35.sql"), include_str!("schema36.sql"), include_str!("schema37.sql"), include_str!("schema38.sql"), include_str!("schema40.sql"), include_str!("schema39.sql"), include_str!("schema41.sql")];
 
 /// The default project's and Dispatcher's fixed IDs, seeded by schema1.sql.
 pub const DEFAULT_PROJECT: &str = "default";
@@ -201,6 +201,19 @@ impl Store {
         Ok(out)
     }
 
+
+    /// Read a consistent snapshot without taking the store's write turn or running migrations.
+    #[allow(dead_code, reason = "The Supervisor collector and replay are wired separately.")]
+    pub(crate) fn snapshot<T>(&self, version: usize, read: impl FnOnce(&Transaction) -> Result<T, String>) -> Result<T, String> {
+        let mut conn = Connection::open_with_flags(&self.path, OpenFlags::SQLITE_OPEN_READ_ONLY).map_err(|e| message(&e))?;
+        conn.busy_timeout(Duration::from_secs(5)).map_err(|e| message(&e))?;
+        let tx = conn.transaction().map_err(|e| message(&e))?;
+        let actual = schema_version(&tx).map_err(|e| message(&e))?;
+        if actual != version {
+            return Err(format!("The tasks' store schema is {actual}; Supervisor queries require {version}."));
+        }
+        read(&tx)
+    }
 
     /// Why it cannot be used, for the board's banner.
     #[track_caller]
