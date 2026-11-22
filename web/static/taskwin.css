@@ -125,6 +125,15 @@ dialog .markdown img { max-width: 100%; }
 .ev-comment.ev-questions { --kind: var(--waiting); background: color-mix(in srgb, var(--waiting) 8%, var(--surface-2)); }
 .ev-comment .evhead strong { color: color-mix(in srgb, var(--kind) 55%, var(--t-fg)); }
 .evasks { color: color-mix(in srgb, var(--waiting) 70%, var(--t-fg)); font-weight: var(--fw-head); }
+/* a comment as it reads (AC-149, ui/src/said.ts): lines of a readable measure, lists with room between items; a label
+   alone on its line heads what follows, a label before words is their lead (Outcome's word a status box, .stbox.word) */
+.ev-comment > .markdown { max-width: 76ch; }
+.ev-comment .markdown li + li { margin-top: var(--sp-1); }
+.ev-comment .markdown li > :is(ul, ol) { margin: var(--sp-1) 0 0; }
+.ev-comment .markdown p.said-label { margin: var(--sp-4) 0 var(--sp-1); font-weight: var(--fw-head); color: var(--t-fg); }
+.ev-comment .markdown p.said-label:first-child { margin-top: 0; }
+.ev-comment .markdown p.said-lead { margin-bottom: var(--sp-2); }
+.ev-comment .markdown p.said-lead > strong { font-weight: var(--fw-head); color: var(--muted-text); }
 /* what the human reacts to, first in the window: its heading stands out of the muted ones */
 .leads .sechead h3 { color: var(--t-fg); }
 .cconv { font: var(--fs-meta) ui-monospace, Menlo, monospace; color: var(--muted); overflow-wrap: anywhere; }
