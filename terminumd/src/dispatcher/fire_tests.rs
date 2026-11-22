@@ -190,7 +190,7 @@ fn ac264_a_schedule_s_task_is_a_report_and_a_newer_one_supersedes_one_unread() {
             ops::link(tx, DISPATCHER, &id, Some(&key), due)?;
             Ok(id)
         }).unwrap();
-        let who = crate::tasks::tools::Who { key, agent: "claude".into(), title: "t".into(), project: None, dir: None };
+        let who = crate::tasks::tools::Who { key, agent: "claude".into(), title: "t".into(), project: None, dir: None, supervisor: false };
         let result = json!({"id": id, "result": "Outcome: ok\nSummary: s\nDetails: d\nFor the human: nothing"});
         assert_eq!(crate::tasks::tools::run(&store, &dir, &who, "finish_task", &result).unwrap().0, format!("{id} waits for the human to read your report."));
         id

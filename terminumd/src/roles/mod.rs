@@ -18,6 +18,8 @@ mod schedules;
 mod sessions;
 mod tasks;
 pub mod tokens;
+pub(crate) mod supervisor;
+pub(crate) use supervisor::Role;
 
 /// The manager's tools, in the catalog's order (cli/mcp_manager.rs).
 pub const MANAGER_TOOLS: [&str; 18] = ["list_runs", "run_task", "promote_queued_task", "stop_task", "list_agents", "create_agent", "update_agent", "delete_agent",
@@ -50,6 +52,9 @@ const OPENED: &str = "SELECT m.pane_key, m.project FROM project_members m
 pub fn managers(tx: &Transaction, live: &[runs::Run]) -> Result<std::collections::HashSet<String>, String> {
     let mut all: std::collections::HashSet<String> = live.iter().filter(|r| r.manages()).filter_map(|r| r.pane_key.clone()).collect();
     all.extend(crate::tasks::ops::rows(tx, OPENED, [], |r| r.get::<_, String>(0))?);
+    for key in supervisor::marked_panes(tx)? {
+        all.remove(&key);
+    }
     Ok(all)
 }
 
@@ -57,6 +62,13 @@ pub fn managers(tx: &Transaction, live: &[runs::Run]) -> Result<std::collections
 /// while Dispatcher holds it, or a session the human opened in that project. A run with a task makes a worker,
 /// whoever started it, and so does a pane in no project.
 pub fn manages(tx: &Transaction, key: &str) -> Result<Option<(String, Option<runs::Run>)>, String> {
+    if supervisor::marked(tx, key)?.is_some() {
+        return Ok(None);
+    }
+    ordinary_manager(tx, key)
+}
+
+pub(super) fn ordinary_manager(tx: &Transaction, key: &str) -> Result<Option<(String, Option<runs::Run>)>, String> {
     if let Some(r) = runs::in_pane(tx, key)? {
         return Ok(r.manages().then(|| (r.project.clone(), Some(r))));
     }
@@ -93,14 +105,37 @@ pub fn mark(app: &Shared, groups: &mut [Value]) {
     }
 }
 
-/// A role's name, as a probe says it.
-pub fn name(manager: bool) -> &'static str {
-    if manager { "manager" } else { "worker" }
+/// Whether a tool only reads.
+pub(super) fn reads(tool: &str) -> bool {
+    tool.starts_with("list_") || tool.starts_with("get_")
 }
 
-/// Whether a tool only reads.
-fn reads(tool: &str) -> bool {
-    tool.starts_with("list_") || tool.starts_with("get_")
+/// Resolve the recorded role for this pane. Peer ancestry binds local Supervisor calls in both directions.
+pub(crate) async fn pane_caller(
+    app: &Shared, server: &crate::tmux::Server, pane: &str, peer: Option<peer::Peer>, probe: bool,
+) -> Result<(Role, Option<supervisor::Mark>), String> {
+    let key = server.key(pane);
+    let local = peer.is_some_and(|peer| peer.0.is_some());
+    let (role, mark, marks) = crate::tasks::api::store(app, move |tx| {
+        if let Some(mark) = supervisor::marked(tx, &key)? {
+            return Ok((mark.role, Some(mark), Vec::new()));
+        }
+        let manager = probe && ordinary_manager(tx, &key)?.is_some();
+        let marks = if local { supervisor::marked_panes(tx)? } else { Vec::new() };
+        Ok((Role::from(manager), None, marks))
+    }).await?;
+    if mark.is_some() {
+        let from_pane = match peer {
+            Some(peer) if local && server.is_local() => peer::in_pane(peer, server, pane).await,
+            _ => false,
+        };
+        if !from_pane {
+            return Err("This call does not come from the Supervisor's own pane.".into());
+        }
+    } else if let Some(peer) = peer && peer::in_marked_pane(app, peer, &marks).await {
+        return Err("The Supervisor must call from its own pane.".into());
+    }
+    Ok((role, mark))
 }
 
 /// A manager's tool called from pane `key` (AC-174, AC-178): run only when the pane's session is its project's
@@ -132,7 +167,7 @@ pub async fn by_token(app: &Shared, body: &Value) -> Result<String, String> {
         Ok((t, boss))
     }).await?;
     if tool == "probe" {
-        return Ok(name(t.manager).to_string());
+        return Ok(Role::from(t.manager).name().to_string());
     }
     if MANAGER_TOOLS.contains(&tool.as_str()) {
         let Some(boss) = boss else { return Err(not_yours(&tool)) };
@@ -144,7 +179,7 @@ pub async fn by_token(app: &Shared, body: &Value) -> Result<String, String> {
     // its files are read and given in its project's folder, on this Mac
     let dir = app.projects.lock().by_id(&t.project).filter(|p| p.host.is_none()).map(|p| p.dir.clone());
     let project = Some(t.project.clone()).filter(|p| p != crate::tasks::store::DEFAULT_PROJECT);
-    let who = crate::tasks::tools::Who { key: t.key(), agent: "token".into(), title: t.name.clone(), project, dir };
+    let who = crate::tasks::tools::Who { key: t.key(), agent: "token".into(), title: t.name.clone(), project, dir, supervisor: false };
     crate::agentapi::task_tool_of(app, who, None, false, tool, args).await
 }
 

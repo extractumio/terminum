@@ -7,6 +7,7 @@
 use serde_json::{json, Value};
 
 use super::mcp_catalog as catalog;
+use crate::roles::Role;
 
 pub const META: [&str; 3] = ["search_tools", "get_tool_info", "execute_tool"];
 /// Listed in full: the plan, sent at every step with a schema the client checks. Every other tool
@@ -19,21 +20,21 @@ const QUERY_MOST: usize = 500;
 const NAMES_MOST: usize = 5;
 
 /// The areas, for search_tools' description; with their tools' names for an empty search.
-fn areas(names: bool, manager: bool) -> String {
-    catalog::areas(manager).map(|(area, what)| {
-        let tools: Vec<&str> = catalog::cards(manager).filter(|c| c.area == *area).map(|c| c.name).collect();
+fn areas(names: bool, role: Role) -> String {
+    catalog::areas(role).map(|(area, what)| {
+        let tools: Vec<&str> = catalog::cards(role).filter(|c| c.area == area).map(|c| c.name).collect();
         if names { format!("{area} ({what}): {}", tools.join(", ")) } else { format!("{area} ({what})") }
     }).collect::<Vec<_>>().join("; ")
 }
 
 /// The meta tools' definitions, their areas a role's own.
-pub fn definitions(manager: bool) -> Vec<Value> {
+pub fn definitions(role: Role) -> Vec<Value> {
     let read = super::mcp::hints(true, true);
     vec![
         json!({"name": "search_tools", "title": "Search terminum's tools",
             "description": format!("Finds terminum's tools for an action. query: the action as verb and object, in English, e.g. \"change a task's priority\", \"make a task a subtask of another\", \"attach a screenshot to a task\"; \
 synonyms count. Answers the best tools with their arguments: run one with execute_tool. \
-Areas: {}.", areas(false, manager)),
+Areas: {}.", areas(false, role)),
             "annotations": read,
             "inputSchema": {"type": "object", "required": ["query"], "properties": {
                 "query": {"type": "string", "maxLength": QUERY_MOST, "description": "The action: verb and object, e.g. \"move a task under another task\"."},
@@ -53,9 +54,9 @@ Areas: {}.", areas(false, manager)),
 }
 
 /// tools/list: the meta tools, then the direct ones.
-pub fn listed(manager: bool) -> Vec<Value> {
-    let mut all = definitions(manager);
-    all.extend(DIRECT.iter().filter_map(|n| catalog::definition(n).cloned()));
+pub fn listed(role: Role) -> Vec<Value> {
+    let mut all = definitions(role);
+    all.extend(DIRECT.iter().filter_map(|n| catalog::definition_for(role, n).cloned()));
     all
 }
 
@@ -90,35 +91,35 @@ fn signature(d: &Value) -> String {
 /// Said under a tool's first refusal in a session that has not read its card (AC-155): its
 /// signature, whole description and example call, the words get_tool_info gives, so the next call
 /// can follow them without another round.
-pub fn card_text(name: &str) -> Option<String> {
-    let (d, c) = (catalog::definition(name)?, catalog::card(name)?);
-    Some(format!("How to call it: {}: {}\nExample: execute_tool({})", signature(d), d["description"].as_str().unwrap_or(""), example_call(c)))
+pub fn card_text(role: Role, name: &str) -> Option<String> {
+    let (d, c) = (catalog::definition_for(role, name)?, catalog::card(name)?);
+    Some(format!("How to call it: {}: {}\nExample: execute_tool({})", signature(d), d["description"].as_str().unwrap_or(""), example_call(role, c)))
 }
 
 /// A card's example as execute_tool's arguments.
-fn example_call(c: &catalog::Card) -> Value {
-    json!({"name": c.name, "arguments": serde_json::from_str::<Value>(c.example).unwrap_or(Value::Null)})
+fn example_call(role: Role, c: &catalog::Card) -> Value {
+    json!({"name": c.name, "arguments": serde_json::from_str::<Value>(catalog::example(role, c)).unwrap_or(Value::Null)})
 }
 
 /// get_tool_info's answer for one tool: its definition, area and an example call.
-fn info(d: &Value) -> Value {
+fn info(role: Role, d: &Value) -> Value {
     let mut out = d.clone();
     if let Some(c) = d["name"].as_str().and_then(catalog::card) {
         out["area"] = json!(c.area);
-        out["example"] = json!({"name": "execute_tool", "arguments": example_call(c)});
+        out["example"] = json!({"name": "execute_tool", "arguments": example_call(role, c)});
     }
     out
 }
 
 /// A name that is no tool of this role: why, and the nearest by search. A manager's tool is no tool to a worker.
-fn unknown(name: &str, manager: bool) -> String {
-    let near = catalog::index(manager).search(name, 3);
+fn unknown(name: &str, role: Role) -> String {
+    let near = catalog::index(role).search(name, 3);
     let near = if near.is_empty() { String::new() } else { format!(" Nearest: {}.", near.join(", ")) };
     format!("No tool is named {name:?}.{near} search_tools finds a tool by what it does.")
 }
 
 /// search_tools: Ok(text) or Err(why).
-pub fn search(args: &Value, manager: bool) -> Result<String, String> {
+pub fn search(args: &Value, role: Role) -> Result<String, String> {
     let query = args.get("query").and_then(Value::as_str).map(str::trim).filter(|q| !q.is_empty())
         .ok_or("query is required: the action as a verb and its object, e.g. \"change a task's priority\"")?;
     if query.chars().count() > QUERY_MOST {
@@ -131,17 +132,17 @@ pub fn search(args: &Value, manager: bool) -> Result<String, String> {
             _ => return Err(format!("limit {v} is not a whole number from 1 to {LIMIT_MOST}")),
         },
     };
-    let hits = catalog::index(manager).search(query, limit);
+    let hits = catalog::index(role).search(query, limit);
     if hits.is_empty() {
         return Ok(format!("No tool matches {query:?}. Ask again with the action as a verb and its object in English, \
-e.g. \"create a task\". The tools by area: {}.", areas(true, manager)));
+e.g. \"create a task\". The tools by area: {}.", areas(true, role)));
     }
-    let lines: Vec<String> = hits.iter().filter_map(|n| catalog::definition(n)).enumerate().map(|(i, d)| format!("{}. {}", i + 1, summary(d))).collect();
+    let lines: Vec<String> = hits.iter().filter_map(|n| catalog::definition_for(role, n)).enumerate().map(|(i, d)| format!("{}. {}", i + 1, summary(d))).collect();
     Ok(format!("Tools for {query:?}, best first (? optional):\n{}\nRun one: execute_tool {{name, arguments}}; get_tool_info {{names}} gives its whole description, schema and an example.", lines.join("\n")))
 }
 
 /// get_tool_info: its text and the tools it described, or why not.
-pub fn describe(args: &Value, manager: bool) -> Result<(String, Vec<&'static str>), String> {
+pub fn describe(args: &Value, role: Role) -> Result<(String, Vec<&'static str>), String> {
     let names: Vec<&str> = match args.get("names") {
         Some(Value::String(n)) => vec![n.as_str()],
         Some(Value::Array(a)) if !a.is_empty() && a.len() <= NAMES_MOST && a.iter().all(Value::is_string) => a.iter().filter_map(Value::as_str).collect(),
@@ -149,25 +150,28 @@ pub fn describe(args: &Value, manager: bool) -> Result<(String, Vec<&'static str
     };
     let (mut out, mut described) = (Vec::new(), Vec::new());
     for n in names {
-        match catalog::definition(n).filter(|_| manager || !catalog::manager_only(n)) {
+        match catalog::definition_for(role, n) {
             Some(d) => {
-                out.push(info(d));
+                out.push(info(role, d));
                 described.extend(catalog::card(n).map(|c| c.name));
             }
             None if META.contains(&n) => return Err(format!("{n} is listed by tools/list already.")),
-            None => return Err(unknown(n, manager)),
+            None => return Err(unknown(n, role)),
         }
     }
     Ok((Value::Array(out).to_string(), described))
 }
 
 /// execute_tool: the catalog tool to run and its arguments, or why not.
-pub fn target(args: &Value, manager: bool) -> Result<(&'static str, Value), String> {
+pub fn target(args: &Value, role: Role) -> Result<(&'static str, Value), String> {
     let name = args.get("name").and_then(Value::as_str).filter(|n| !n.is_empty()).ok_or("name is required: a tool from search_tools")?;
     if META.contains(&name) {
         return Err(format!("{name} is called directly, not through execute_tool."));
     }
-    let card = catalog::card(name).filter(|c| manager || !catalog::manager_only(c.name)).ok_or_else(|| unknown(name, manager))?;
+    let card = catalog::card(name).ok_or_else(|| unknown(name, role))?;
+    if !role.allows(name) {
+        return Err(if matches!(role, Role::Supervisor(_)) { role.refusal(name) } else { unknown(name, role) });
+    }
     let arguments = match args.get("arguments") {
         None | Some(Value::Null) => json!({}),
         Some(a @ Value::Object(_)) => a.clone(),

@@ -23,6 +23,7 @@ from e2e_ws import BIN, Terminumd, check, summary, tmux_on, wait_for, wait_layou
 from e2e_remote import api  # noqa: E402
 from testrun import free_port, own, short_tmp  # noqa: E402
 from role_queue_checks import queue_promotion  # noqa: E402
+from role_supervisor_checks import ac231_supervisor_tools_pane_and_token  # noqa: E402
 
 FAKE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fake_agent.py")
 PORT, SOCKET = free_port(), own("tm-test-rol")
@@ -170,7 +171,7 @@ def main():
         check("AC-179 list_runs shows the project's runs", rc == "0" and '"kind":"session"' in out, out)
 
         # AC-169: explicit queue promotion, through the manager's real pane, preserves a P0 conversation.
-        queue_promotion(t, call, typed, tool, boss, plain, project, FAKE)
+        waiting = queue_promotion(t, call, typed, tool, boss, plain, project, FAKE)
 
         # the project's sessions: read, typed into, closed; never its own, another manager's, another project's
         out, rc = typed(boss, tool("list_sessions"))
@@ -218,6 +219,11 @@ def main():
         st, said = call(f"/api/schedules/{scheds[0]['id']}/run", "POST", {})
         check("AC-182 Run now on its card does the same for a human", st == 200 and said.get("task", "").startswith("S_"), said)
         wait_for(lambda: call("/api/schedules")[1]["schedules"][0]["last"], lambda last: last and last["task"] == said.get("task") and last["status"] == "WAIT FOR HUMAN", 150, 0.5)
+        supervisor_page = t.page(secret)
+        try:
+            ac231_supervisor_tools_pane_and_token(t, call, typed, tool, tmux, supervisor_page, project, work, boss, plain, cli, waiting, token)
+        finally:
+            supervisor_page.close()
         log = t.log()
         check("AC-174 each manager's call is a line of the log, with no argument", "manager.tool" in open(t.log_path).read() and "keep it short" not in open(t.log_path).read(), log[-300:])
     finally:

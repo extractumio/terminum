@@ -41,6 +41,7 @@ use crate::tasks::{ops::check_project, store::Store};
 
 pub(crate) use catalog::Rule;
 pub(crate) use signals::Signal;
+pub(crate) use settings::{Level, level};
 pub(crate) use replay::replay;
 
 const SCHEMA: usize = crate::tasks::store::SCHEMA_VERSION;

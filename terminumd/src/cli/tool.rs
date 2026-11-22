@@ -10,6 +10,7 @@ use std::time::Duration;
 use serde_json::{json, Value};
 
 use super::mcp::{self, Env};
+use crate::roles::Role;
 use super::sockhttp::Down;
 use super::Ctx;
 
@@ -48,7 +49,10 @@ fn call(ctx: &Ctx, who: &Caller, tool: &str, args: &Value) -> Result<(String, bo
             }
         }
         Caller::Pane(env) => {
-            let said = mcp::call(tool, args, None, env, &|body| forward(body));
+            if tool == "run_task" {
+                mcp::role(env, &forward);
+            }
+            let said = mcp::call(tool, args, None, env, &forward);
             Ok((text(&said["content"][0]["text"]), said["isError"] == true))
         }
     }
@@ -56,7 +60,11 @@ fn call(ctx: &Ctx, who: &Caller, tool: &str, args: &Value) -> Result<(String, bo
 
 /// One call as `who`, its arguments checked first: the answer, or the refusal as the error.
 pub(super) fn ask(ctx: &Ctx, who: &Caller, tool: &str, args: &Value) -> Result<String, String> {
-    match call(ctx, who, tool, &mcp::checked(tool, args)?)? {
+    let args = match who {
+        Caller::Token(_) => mcp::checked(tool, args)?,
+        Caller::Pane(_) => args.clone(),
+    };
+    match call(ctx, who, tool, &args)? {
         (text, false) => Ok(text),
         (why, true) => Err(why),
     }
@@ -67,11 +75,11 @@ fn forward(body: &Value) -> Result<(u16, Option<Value>), Down> {
     super::sinks::first_knowing(&super::sinks::all(), |p| super::sockhttp::call(p, "POST", "/agent", Some(body), BUDGET))
 }
 
-/// Whether the caller is a manager: what `terminum tools` shows follows it.
-fn manager(ctx: &Ctx, who: &Caller) -> Result<bool, String> {
+/// The server's role for the CLI catalog.
+fn role(ctx: &Ctx, who: &Caller) -> Result<Role, String> {
     match who {
-        Caller::Pane(env) => Ok(mcp::manager(env, &|body| forward(body))),
-        Caller::Token(_) => Ok(ask(ctx, who, "probe", &json!({}))? == crate::roles::name(true)),
+        Caller::Pane(env) => Ok(mcp::role(env, &forward)),
+        Caller::Token(_) => Ok(Role::from(ask(ctx, who, "probe", &json!({}))? == "manager")),
     }
 }
 
@@ -99,17 +107,17 @@ pub fn tool(ctx: &Ctx, name: &str, given: Option<&str>) -> Result<i32, String> {
 /// `terminum tools [search <words> | info <name>…]`: what the caller's role finds, as search_tools and
 /// get_tool_info answer it; with nothing, every tool by area.
 pub fn tools(ctx: &Ctx, rest: &[String]) -> Result<i32, String> {
-    let manager = manager(ctx, &caller(ctx)?)?;
+    let role = role(ctx, &caller(ctx)?)?;
     let said = match rest {
         [] => {
-            let areas: Vec<String> = super::mcp_catalog::areas(manager).map(|(area, what)| {
-                let names: Vec<&str> = super::mcp_catalog::cards(manager).filter(|c| c.area == *area).map(|c| c.name).collect();
+            let areas: Vec<String> = super::mcp_catalog::areas(role).map(|(area, what)| {
+                let names: Vec<&str> = super::mcp_catalog::cards(role).filter(|c| c.area == area).map(|c| c.name).collect();
                 format!("{area} ({what}):\n  {}", names.join(", "))
             }).collect();
-            Ok(format!("You call as a {}.\n{}\nterminum tools search <words> finds one; terminum tools info <name> describes it; terminum tool <name> '<json>' runs it.", crate::roles::name(manager), areas.join("\n")))
+            Ok(format!("You call as a {}.\n{}\nterminum tools search <words> finds one; terminum tools info <name> describes it; terminum tool <name> '<json>' runs it.", role.name(), areas.join("\n")))
         }
-        [s, words @ ..] if s == "search" && !words.is_empty() => super::mcp_meta::search(&json!({"query": words.join(" "), "limit": 10}), manager),
-        [i, names @ ..] if i == "info" && !names.is_empty() => super::mcp_meta::describe(&json!({"names": names}), manager).map(|(text, _)| text),
+        [s, words @ ..] if s == "search" && !words.is_empty() => super::mcp_meta::search(&json!({"query": words.join(" "), "limit": 10}), role),
+        [i, names @ ..] if i == "info" && !names.is_empty() => super::mcp_meta::describe(&json!({"names": names}), role).map(|(text, _)| text),
         _ => Err("usage: terminum tools [search <words> | info <name>…]".into()),
     }?;
     ctx.say(said);

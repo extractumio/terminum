@@ -263,3 +263,25 @@ async fn ac174_a_session_the_human_opened_in_a_project_is_its_manager() {
     mark(&app, &mut groups);
     assert_eq!(groups[0]["items"], json!([{"id": PLAIN, "manager": true}, {"id": WORKER}, {"id": DEFAULTS}]), "its row has the crown");
 }
+
+#[tokio::test]
+async fn ac231_supervisor_marks_follow_only_restored_panes() {
+    let (app, _) = app("supervisor-restore");
+    let restored = "tmux:local:t:%11";
+    let prefix = "tmux:local:t:";
+    app.tasks.with(|tx| {
+        tx.execute("INSERT INTO project_supervisor (project, enabled, generation, enabled_at) VALUES ('api', 1, 1, 1)", []).map_err(sql)?;
+        tx.execute("INSERT INTO supervisor_panes VALUES (?1, 'api', 1), (?2, 'api', 1)", [BOSS, WORKER]).map_err(sql)?;
+        assert_eq!(supervisor::marked(tx, BOSS)?.unwrap().role, Role::Supervisor(Some(crate::supervisor::Level::Operator)));
+        assert!(ordinary_manager(tx, BOSS)?.is_some());
+        assert!(manages(tx, BOSS)?.is_none(), "a stored mark wins over a previously issued manager role");
+        crate::tasks::projects::links_restored(tx, prefix, &[("%1".into(), "%11".into())], 1)?;
+        assert!(supervisor::marked(tx, BOSS)?.is_none());
+        assert!(supervisor::marked(tx, WORKER)?.is_none());
+        assert_eq!(supervisor::marked(tx, restored)?.unwrap().role, Role::Supervisor(None));
+        assert!(manages(tx, restored)?.is_none(), "matching a restored pane cannot restore its authority");
+        crate::tasks::projects::links_dropped(tx, prefix, 2)?;
+        assert!(supervisor::marked(tx, restored)?.is_none(), "a new tmux server may reuse the pane ID");
+        Ok(())
+    }).unwrap();
+}

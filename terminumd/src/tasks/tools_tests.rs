@@ -11,7 +11,7 @@ const KEY: &str = "tmux:local:terminum:%7";
 const OTHER: &str = "tmux:local:terminum:%8";
 
 fn who(project: Option<&str>) -> Who {
-    Who { key: KEY.into(), agent: "claude".into(), title: "api".into(), project: project.map(str::to_string), dir: None }
+    Who { key: KEY.into(), agent: "claude".into(), title: "api".into(), project: project.map(str::to_string), dir: None, supervisor: false }
 }
 
 fn fresh(name: &str) -> (Store, std::path::PathBuf) {

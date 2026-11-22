@@ -4,7 +4,7 @@
 
 use serde_json::{json, Value};
 
-use super::{arg, in_project, opt, yes, Boss, DATA};
+use super::{arg, in_project, opt, supervisor, yes, Boss, DATA};
 use crate::app::Shared;
 use crate::dispatcher::{runs, waits};
 use crate::tasks::api::store;
@@ -53,11 +53,22 @@ pub async fn run_task(app: &Shared, boss: &Boss, args: &Value) -> Result<String,
 
 /// Moves an existing press, never starts one: scope, order and history share admission's store transaction (AC-169).
 pub async fn promote_queued_task(app: &Shared, boss: &Boss, args: &Value) -> Result<String, String> {
+    promote_queued(app, boss, args, false).await
+}
+
+pub(super) async fn promote_queued(app: &Shared, boss: &Boss, args: &Value, supervised: bool) -> Result<String, String> {
     let (b, id) = (boss.clone(), arg(args, "id")?.to_string());
     let (id, name, moved, behind) = store(app, move |tx| {
         let t = in_project(tx, &b, &id)?;
         let gone = || format!("{} waits no more: it started, or its wait was called off.", t.id);
         let w = waits::of_task(tx, &t.key)?.ok_or_else(|| format!("{} has no waiting run of its own: use a queued primary task from list_runs.", t.id))?;
+        if supervised {
+            supervisor::require(tx, &b.key, &b.project, "promote_queued_task")?;
+            if w.scheduled {
+                return Err("The Supervisor cannot promote a schedule's task.".into());
+            }
+            supervisor::author(tx, &b.project)?;
+        }
         if w.project != b.project {
             return Err(format!("{}'s wait is outside your project.", t.id));
         }
@@ -81,14 +92,26 @@ pub async fn promote_queued_task(app: &Shared, boss: &Boss, args: &Value) -> Res
 }
 
 pub async fn stop_task(app: &Shared, boss: &Boss, args: &Value) -> Result<String, String> {
+    stop(app, boss, args, false).await
+}
+
+pub(super) async fn stop(app: &Shared, boss: &Boss, args: &Value, supervised: bool) -> Result<String, String> {
     let id = arg(args, "id")?.to_string();
-    let (b, wanted) = (boss.clone(), id.clone());
-    store(app, move |tx| in_project(tx, &b, &wanted).map(drop)).await?;
-    let stopped = crate::dispatcher::letgo::gave_up(app, &id, "The project's manager").await?;
-    let (b, ids) = (boss.clone(), stopped.clone());
-    store(app, move |tx| {
-        for id in &ids {
-            ops::log(tx, &ops::key_of(tx, id)?, &b.user, "why", &format!("{} stopped it.", b.name), None, ops::now())?;
+    let (scope, actor) = (boss.clone(), boss.clone());
+    let who = if supervised { "The project's Supervisor" } else { "The project's manager" };
+    let stopped = crate::dispatcher::letgo::gave_up_checked(app, &id, who, move |tx, wanted| {
+        in_project(tx, &scope, wanted)?;
+        if supervised {
+            supervisor::require(tx, &scope.key, &scope.project, "stop_task")?;
+        }
+        Ok(())
+    }, move |tx, ids| {
+        if supervised {
+            supervisor::author(tx, &actor.project)?;
+        }
+        for id in ids {
+            let key = if supervised { in_project(tx, &actor, id)?.key } else { ops::key_of(tx, id)? };
+            ops::log(tx, &key, &actor.user, "why", &format!("{} stopped it.", actor.name), None, ops::now())?;
         }
         Ok(())
     }).await?;

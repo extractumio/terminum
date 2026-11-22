@@ -7,6 +7,9 @@ use std::sync::OnceLock;
 
 use serde_json::Value;
 
+use crate::roles::{Role, supervisor::START_ARGS};
+use crate::supervisor::Level;
+
 use super::mcp_search::{Doc, Index};
 
 /// The areas, in the order search_tools lists them, each with what it holds.
@@ -73,18 +76,27 @@ pub const CARDS: &[Card] = &[
         example: r#"{"id": "TERM-12", "why": "RICE 8×2×0.8÷1 = 12.8; tasks/ops.rs moves; a small fix many sessions hit"}"# },
 ];
 
-/// The cards a role finds: a worker the catalog's own, a manager those and its own (AC-174).
-pub fn cards(manager: bool) -> impl Iterator<Item = &'static Card> {
-    CARDS.iter().chain(super::mcp_manager::CARDS.iter().filter(move |_| manager))
+/// The cards a role finds (AC-174, AC-231).
+pub fn cards(role: Role) -> impl Iterator<Item = &'static Card> {
+    CARDS.iter().chain(&super::mcp_manager::CARDS).filter(move |c| role.allows(c.name))
 }
 
 /// The areas a role is told of.
-pub fn areas(manager: bool) -> impl Iterator<Item = &'static (&'static str, &'static str)> {
-    AREAS.iter().chain(super::mcp_manager::AREAS.iter().filter(move |_| manager))
+pub fn areas(role: Role) -> impl Iterator<Item = (&'static str, &'static str)> {
+    let supervisor = matches!(role, Role::Supervisor(_));
+    AREAS.iter().chain(&super::mcp_manager::AREAS).filter_map(move |&(area, what)| {
+        cards(role).any(|c| c.area == area).then_some((area, if supervisor {
+            match area {
+                "tasks" => "this project's tasks",
+                "runs" => "this project's runs",
+                _ => what,
+            }
+        } else { what }))
+    })
 }
 
 pub fn card(name: &str) -> Option<&'static Card> {
-    cards(true).find(|c| c.name == name)
+    cards(Role::Manager).find(|c| c.name == name)
 }
 
 /// Whether `name` is a manager's tool: a worker neither finds nor runs it.
@@ -106,12 +118,48 @@ pub fn definition(name: &str) -> Option<&'static Value> {
     definitions().iter().find(|d| d["name"] == name)
 }
 
+/// The Operator's start shares the tool name with the manager, but has a narrower contract.
+pub fn definition_for(role: Role, name: &str) -> Option<&'static Value> {
+    let d = definition(name).filter(|_| role.allows(name))?;
+    if role == Role::Supervisor(Some(Level::Operator)) && name == "run_task" {
+        static START: OnceLock<Value> = OnceLock::new();
+        return Some(START.get_or_init(|| {
+            let mut start = d.clone();
+            start["description"] = serde_json::json!("Starts a free task in this project on the named pool agent. Dispatcher supplies a fixed prompt with the task ID.");
+            let schema = &mut start["inputSchema"];
+            if let Some(props) = schema["properties"].as_object_mut() {
+                props.retain(|name, _| START_ARGS.contains(&name.as_str()));
+            }
+            schema["required"] = serde_json::json!(START_ARGS);
+            schema["additionalProperties"] = serde_json::json!(false);
+            start
+        }));
+    }
+    Some(d)
+}
+
+pub fn example(role: Role, c: &Card) -> &'static str {
+    if matches!(role, Role::Supervisor(_)) && c.name == "run_task" {
+        r#"{"id": "TERM-12", "agent": "Reviewer"}"#
+    } else {
+        c.example
+    }
+}
+
 /// A role's search index: a tool's name, its keywords, its area and text, its arguments' names.
-pub fn index(manager: bool) -> &'static Index {
-    static INDEXES: [OnceLock<Index>; 2] = [OnceLock::new(), OnceLock::new()];
-    INDEXES[manager as usize].get_or_init(|| {
-        let docs: Vec<(String, String, &Card)> = cards(manager).filter_map(|c| {
-            let d = definition(c.name)?;
+pub fn index(role: Role) -> &'static Index {
+    static INDEXES: [OnceLock<Index>; 6] = [const { OnceLock::new() }; 6];
+    let slot = match role {
+        Role::Worker => 0,
+        Role::Manager => 1,
+        Role::Supervisor(Some(Level::Observer)) => 2,
+        Role::Supervisor(Some(Level::Advisor)) => 3,
+        Role::Supervisor(Some(Level::Operator)) => 4,
+        Role::Supervisor(None) => 5,
+    };
+    INDEXES[slot].get_or_init(|| {
+        let docs: Vec<(String, String, &Card)> = cards(role).filter_map(|c| {
+            let d = definition_for(role, c.name)?;
             let args: Vec<&str> = d["inputSchema"]["properties"].as_object().map(|p| p.keys().map(String::as_str).collect()).unwrap_or_default();
             Some((format!("{} {}", d["title"].as_str().unwrap_or(""), d["description"].as_str().unwrap_or("")), args.join(" "), c))
         }).collect();

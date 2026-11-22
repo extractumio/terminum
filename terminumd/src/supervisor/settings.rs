@@ -9,9 +9,9 @@ use serde::{Deserialize, Serialize};
 use crate::tasks::ops::sql;
 use super::{Detector, Mode, Rule, Threshold};
 
-#[derive(Clone, Copy, Default, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-enum Level {
+pub(crate) enum Level {
     Observer,
     Advisor,
     #[default]
@@ -250,6 +250,14 @@ pub(super) struct Saved {
     pub settings: Settings,
 }
 
+/// Read only the live authorization level. A missing field in an older pack uses the default.
+pub(crate) fn level(tx: &Transaction, project: &str) -> Result<Level, String> {
+    let value: Option<String> = tx.query_row("SELECT pack -> 'level' FROM supervisor_settings WHERE project = ?1",
+        [project], |r| r.get(0)).optional().map_err(sql)?.flatten();
+    value.map(|json| serde_json::from_str(&json).map_err(|_| "Invalid saved Supervisor level.".into()))
+        .transpose().map(Option::unwrap_or_default)
+}
+
 pub(super) fn revision(tx: &Transaction, project: &str) -> Result<i64, String> {
     tx.query_row("SELECT revision FROM supervisor_settings WHERE project = ?1", [project], |row| row.get(0))
         .optional().map(|revision| revision.unwrap_or_default()).map_err(sql)
@@ -278,6 +286,7 @@ pub(super) fn write(
     }
     if imported {
         settings.tiers = previous.settings.tiers.clone();
+        settings.level = previous.settings.level;
     } else {
         settings.tiers.retain_project(tx, project, true)?;
     }

@@ -10,60 +10,32 @@ use serde_json::{json, Value};
 
 use super::gate::{self, Miss};
 use super::runs::{self, How, Phase, Run, Started};
-use super::press::{again_words, also_of, answers_of, bring_back, facts, way, ways, with_open, Asked, Facts, Way};
+use super::press::{again_words, answers_of, bring_back, facts, way, ways, with_open, Facts, Way};
 use super::pool;
 use super::recent::{self, Again};
 use super::screen::Screen;
 use super::goes_on::{from_shell, resume, went_on};
-use super::places::{ad_hoc, launch, linked_panes, no_folder, pane_of, place};
+use super::places::{ad_hoc, launch, linked_panes, pane_of, place};
 use super::{acts, start, store};
 use crate::app::Shared;
-use crate::tasks::agents::{self, Agent};
+use crate::tasks::agents::Agent;
 use crate::tasks::api::{answer, told};
 use crate::tasks::ops::{self, Task};
 use crate::tasks::store::HUMAN;
 
+#[path = "api_offer.rs"]
+mod offer;
+#[path = "api_supervisor.rs"]
+mod supervisor;
+pub(crate) use supervisor::press_by_supervisor;
+
 pub fn routes() -> Router<Shared> {
     Router::new()
-        .route("/api/tasks/{id}/run", get(offer).post(press))
+        .route("/api/tasks/{id}/run", get(offer::offer).post(press))
         .route("/api/tasks/{id}/give-up", post(super::letgo::give_up))
         .route("/api/task-projects/{id}/session", post(ad_hoc))
         .route("/api/runs/{id}/let-go", post(super::letgo::let_go))
         .merge(super::queue::routes())
-}
-
-/// What RUN's dialog shows (AC-121, AC-138): the tasks' project's pool, each saying what keeps it busy; an agent named that cannot
-/// take them is refused here, so the window never offers another under its name. `no_folder`: nothing can start (AC-140).
-async fn offer(State(app): State<Shared>, Path(id): Path<String>, axum::extract::Query(asked): axum::extract::Query<Asked>) -> Response {
-    let pane = linked_panes(&app, &id, &also_of(&asked.also)).await;
-    answer(store(&app, move |tx| {
-        let (tasks, w, moved_from) = ways(tx, &id, &also_of(&asked.also), asked.agent.as_deref(), false, &pane)?;
-        let w = w?;
-        let t = &tasks[0];
-        let (name, host, dir) = ops::project_place(tx, &t.project)?;
-        let all: Vec<Agent> = agents::of_project(tx, &t.project)?;
-        let lacks = no_folder(&name, &dir).err().filter(|_| matches!(w, Way::First));
-        let slots = pool::Slots::read(tx)?;
-        let mut offered = Vec::new();
-        for a in &all {
-            // one with no room is offered all the same, with its queue (AC-169): what the press would find
-            let mut v = json!(a);
-            v["full"] = json!(no_room(tx, &slots, a, &t.project, (t, tasks.len() == 1), None)?.as_ref().map(queue_offer));
-            offered.push(v);
-        }
-        if asked.agent.as_ref().is_some_and(|named| !all.iter().any(|a| &a.id == named)) && matches!(w, Way::First) {
-            return Err("That agent is gone.".to_string());
-        }
-        // its conversation goes on on another agent: the window names both, Run from scratch stays (AC-138)
-        let moved = match (&w, moved_from) {
-            (Way::Shell(r) | Way::Resume(r), Some(from)) => Some(json!({"from": from, "to": r.agent_name, "conversation": r.agent_session})),
-            _ => None,
-        };
-        let last = runs::last_agent(tx, &t.project)?.filter(|l| all.iter().any(|a| a.id == *l));
-        let shown = facts(tx, &tasks, None)?;
-        Ok(json!({"first": w.first_words(), "agents": offered, "last": last, "dir": dir, "host": host, "project": t.project, "no_folder": lacks,
-                  "prompt_rev": shown.rev(), "prompt": shown.shown(), "moved": moved, "by_agent": tasks.iter().any(|t| t.by_agent), "ids": tasks.iter().map(|t| &t.id).collect::<Vec<_>>()}))
-    }).await)
 }
 
 #[derive(Clone, Default, Deserialize, Serialize)]
@@ -86,6 +58,8 @@ pub(super) struct Press {
     /// Auto-Dispatcher's press, no human's (AC-170): never read from a request
     #[serde(skip)]
     auto: bool,
+    #[serde(skip)]
+    supervisor: Option<crate::roles::Boss>,
     /// the project that picked this task by order, checked again when the press takes a slot
     #[serde(skip)]
     order_project: Option<String>,
@@ -121,6 +95,7 @@ impl Press {
             goes.schedule_initiator = Initiator::of(run_now_by(tx, &tasks[0].key)?.as_deref());
         }
         goes.auto = self.auto;
+        goes.supervisor = self.supervisor.is_some();
         goes.manager = self.manager.is_some();
         if self.prompt_rev.as_ref().is_some_and(|rev| *rev != goes.rev()) {
             return Err("The task's text changed: look at it again.".to_string());
@@ -308,6 +283,7 @@ async fn pressed(app: &Shared, id: &str, body: Press) -> Result<Value, String> {
     let (a, mut kept) = (app.clone(), body);
     let (tasks, prepared, kept, show_comment) = store(app, move |tx| {
         let (tasks, w, _) = ways(tx, &wanted, &also, agent.as_deref(), fresh, &pane)?;
+        supervisor::check(tx, &kept, &tasks)?;
         // A start from scratch keeps its draft where it starts. A continuation or a refusal keeps it here.
         if !matches!(w, Ok(Way::First)) && let Some(c) = &said && kept.kept_comments.is_empty() {
             kept.kept_comments = if kept.waited {
@@ -441,6 +417,8 @@ async fn first_run(app: &Shared, tasks: &[Task], kept: Press, comment: Option<St
     let (ag, f, project, at) = (a.clone(), dir.clone(), t.project.clone(), app.clone());
     let next = store(app, move |tx| {
         let now: Vec<Task> = all.iter().map(|t| ops::get(tx, &t.id)).collect::<Result<_, _>>()?;
+        supervisor::check(tx, &kept, &now)?;
+        supervisor::check_family(tx, &kept, &now)?;
         if !kept.order_allows(tx, &now[0].project)? {
             return Ok(None);
         }
@@ -474,6 +452,7 @@ async fn first_run(app: &Shared, tasks: &[Task], kept: Press, comment: Option<St
         super::waits::remove(tx, &keys[0])?;
         let run = runs::add(tx, &Run::of(&ag, host, f, project, Some(prompt)), &keys, kept.started(), ops::now())?;
         recent::stage(tx, &run, &recent::through(tx, &now)?)?;
+        supervisor::record(tx, &kept, &now[0])?;
         Ok(Some(Next::Run(run)))
     }).await?;
     let run = match next {

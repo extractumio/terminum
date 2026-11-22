@@ -153,19 +153,23 @@ history.**
 
 ### Project Supervisor
 
-The Supervisor is off per project until the owner enables it. Its caller kind has a separate
-project-scoped allow-list for Observer, Advisor and Operator, checked at discovery and at
-execution. A round's or Talk's session is that caller; there is no Supervisor token, and a
-manager's token gets no Supervisor tool. Observer reads evidence and records findings and
-reports. Advisor can write authorized tasks, comments, cards and proposals. Operator can
-also start or promote tasks (its prompt names only their IDs) and apply or release the
-reversible holds of AC-245. No level's
-tools can type into or close a pane, edit the pool or schedules, run an arbitrary command,
-publish, delete work, read secrets or transcripts, or change protected settings or past
-evidence. Code checks the scope, signal level, evidence IDs, claimed numbers and budgets
-before acting. Incidents are produced by code at every level. The switch stops Supervisor
-rounds and lists active holds for the owner to release
-(`terminum-supervisor.md` AC-231, AC-232, AC-235, AC-245, AC-258).
+The Supervisor is off per project until the owner enables it. Discovery and each call use
+the project's current level. terminumd binds the role to its own pane record and checks
+local process ancestry both when a caller names that pane and when it names a different
+pane. A disabled or replaced generation keeps the pane's role with its tools inactive.
+Only the signed-in owner's settings can change the level. Project imports preserve it.
+Tokens keep their own roles.
+
+Observer can list and read its project's tasks. Advisor can also create a task, add
+comments and ask on a task linked to its pane. Operator can also list runs, read the
+project dashboard, promote a queued task, give up a run and start a free task on a
+named project agent. Dispatcher supplies the start prompt from the task IDs and fixed
+words. Give up frees the slot and leaves the window. Every level refuses terminal
+input, session closure, transcript and attachment access, pool and schedule management,
+token operations and protected settings. The critical line delivers incidents at every
+level. Round and Talk registration and the evidence, budget and hold tools follow their
+own acceptance cases (`terminum-supervisor.md` AC-231, AC-232, AC-234, AC-235, AC-237–239,
+AC-244, AC-245, AC-258).
 
 - **Rounds and Talk**: Dispatcher writes a fixed case-file ID prompt to the marked round
   pane, through its existing typing gate. Talk requires the human's press and pastes its

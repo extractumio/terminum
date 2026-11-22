@@ -206,3 +206,32 @@ async fn ac229_next_channel_weekly_test_and_local_recovery() {
     let local = f.store.snapshot(SCHEMA, incidents_api::pending).unwrap();
     assert_eq!(local[0].closed_at, Some(NOW + WEEK + 5));
 }
+
+#[tokio::test]
+async fn ac232_owner_sets_level_and_all_levels_page() {
+    for (level, name) in [(super::super::Level::Observer, "observer"), (super::super::Level::Advisor, "advisor"),
+        (super::super::Level::Operator, "operator")]
+    {
+        let f = Fixture::new(name);
+        configure(&f, None);
+        let output = f.path.with_extension("notices");
+        let out = crate::termtext::posix_word(output.to_str().unwrap());
+        let channel = command(f.path.parent().unwrap(), "notify", &format!("cat > {out}"));
+        let s = Settings { channels: vec![channel], quiet: None, ..Settings::default() };
+        f.store.with(|tx| {
+            let pack = serde_json::from_value(serde_json::json!({"level": name})).unwrap();
+            super::super::settings::write(tx, PROJECT, 0, pack, false)?;
+            save(tx, 1, s, NOW)?;
+            assert_eq!(super::super::level(tx, PROJECT)?, level);
+            Ok(())
+        }).unwrap();
+        observed(&f, NOW, &[("charter fixture", true, 3, 1)]);
+        let (settings, Job::Notice(notice)) = f.store.with(|tx| claim(tx, NOW, Some(600))).unwrap().unwrap()
+            else { panic!("the charter incident should page at {name}") };
+        assert_eq!(notice.kind, Kind::Opened);
+        let message = notice.render(None);
+        assert_eq!(deliver(&settings, &message, 1, false, Duration::from_secs(1)).await, [(0, Ok(()))]);
+        assert_eq!(fs::read_to_string(output).unwrap(), message);
+        assert_eq!(f.store.with(|tx| super::super::level(tx, PROJECT)).unwrap(), level);
+    }
+}

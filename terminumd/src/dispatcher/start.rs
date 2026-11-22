@@ -381,7 +381,7 @@ mod tests {
             let r = runs::change(tx, &id, |r| { r.state = Phase::Typed; r.pane_key = Some(key.clone()); })?;
             Ok((t.id, r))
         }).unwrap();
-        let who = Who { key, agent: "claude".into(), title: "Fixer".into(), project: Some("default".into()), dir: None };
+        let who = Who { key, agent: "claude".into(), title: "Fixer".into(), project: Some("default".into()), dir: None, supervisor: false };
         tools::run(&app.tasks, &root, &who, "ask_human", &serde_json::json!({"id": task, "questions": crate::tasks::closeout::ASKED})).unwrap();
         let accepted = app.tasks.with(|tx| runs::by_id(tx, &stale.id)).unwrap();
         now_asking(&app, &stale).await;

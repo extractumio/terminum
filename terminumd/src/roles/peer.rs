@@ -74,3 +74,26 @@ pub async fn in_any_pane(app: &Shared, peer: Peer) -> bool {
     }
     under(pid, roots).await
 }
+
+
+/// A marked pane must not inherit worker tools by naming a different pane (AC-231).
+pub(crate) async fn in_marked_pane(app: &Shared, peer: Peer, keys: &[String]) -> bool {
+    let Some(pid) = peer.0 else { return false };
+    use std::collections::{HashMap, HashSet};
+
+    let mut servers = HashMap::new();
+    for key in keys {
+        if let Some((server, pane)) = app.tmux.resolve(key) && server.is_local() {
+            servers.entry(server.id()).or_insert_with(|| (server, HashSet::new())).1.insert(pane);
+        }
+    }
+    let mut roots = Vec::new();
+    for (_, (server, panes)) in servers {
+        let rows = server.run("list-panes -a -F '#{pane_id} #{pane_pid}'").await.unwrap_or_default();
+        roots.extend(rows.iter().filter_map(|row| {
+            let (pane, pid) = row.trim().split_once(' ')?;
+            panes.contains(pane).then(|| pid.parse::<u32>().ok()).flatten()
+        }));
+    }
+    !roots.is_empty() && under(pid, roots).await
+}
