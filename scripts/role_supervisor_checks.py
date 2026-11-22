@@ -69,7 +69,7 @@ def ac231_supervisor_tools_pane_and_token(t, call, typed, tool, tmux, page, proj
     assert call(switch, "PUT", {"enabled": True})[0] == 200
 
     # The later Round and Talk launchers own mark creation. Seed their trusted store boundary in this fixture.
-    db("INSERT INTO supervisor_panes SELECT ?, project, generation FROM project_supervisor WHERE project = ?", (key, project))
+    db("INSERT INTO supervisor_panes (pane_key, project, generation) SELECT ?, project, generation FROM project_supervisor WHERE project = ?", (key, project))
     db("UPDATE tasks SET made_in = ? WHERE slug = ?", (key, foreign))
     db("UPDATE tasks SET session_key = ? WHERE slug = ?", (key, question))
     manager, rc = typed(boss, f"{binary} tools")
@@ -94,7 +94,7 @@ def ac231_supervisor_tools_pane_and_token(t, call, typed, tool, tmux, page, proj
     check("AC-231 a manager token still discovers the ordinary manager catalog",
           rc == 0 and "call as a manager" in manager_tools and names(manager_tools) == catalog)
 
-    observer = {"list_tasks", "get_task"}
+    observer = {"list_tasks", "get_task", "get_case_file", "list_signals", "get_signal", "get_metric", "record_finding"}
     advisor = observer | {"create_task", "add_comment", "ask_human"}
     operator = advisor | {"run_task", "promote_queued_task", "stop_task", "list_runs", "get_dashboard"}
     view = call(settings)[1]

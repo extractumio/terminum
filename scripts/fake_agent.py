@@ -68,7 +68,42 @@ def main():
         rpc = lambda i, m, p=None: json.dumps({"jsonrpc": "2.0", **({} if i is None else {"id": i}), "method": m, **({"params": p} if p else {})})
         lines = [rpc(1, "initialize", {"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "fake", "version": "1"}}), rpc(None, "notifications/initialized"),
                  rpc(2, "tools/call", {"name": name, "arguments": arguments})]
-        subprocess.run([cli, "mcp"], input="\n".join(lines) + "\n", text=True, capture_output=True, timeout=8)
+        done = subprocess.run([cli, "mcp"], input="\n".join(lines) + "\n", text=True, capture_output=True, timeout=8)
+        for reply in map(json.loads, done.stdout.splitlines()):
+            if reply.get("id") == 2:
+                return reply.get("result", reply.get("error", {}))
+        return {}
+
+    def investigate(case_id):
+        def call(name, **arguments):
+            result = tool("execute_tool", {"name": name, "arguments": arguments})
+            with open(opt("--round-log", ""), "a", encoding="utf8") as log:
+                log.write(json.dumps({"case": case_id, "tool": name, **result}) + "\n")
+            return result
+
+        def decoded(result):
+            return json.loads(result["content"][0]["text"])
+
+        call("get_case_file", id="case_foreign")
+        case = decoded(call("get_case_file", id=case_id))
+        if opt("--round-mode", "") != "finding":
+            return
+        sig = case["signal"]
+        query, fingerprint = sig["detector"], sig["fingerprint"]
+        call("list_signals")
+        call("get_signal", id=fingerprint)
+        value = decoded(call("get_metric", query=query, signal=fingerprint))["measure"]["value"]
+        refs = sig["evidence"]
+        finding = dict(cause="A blocked dependency holds the queue.", confidence=0.85,
+                       disproof="The wait continues after the dependency clears.",
+                       fix_proposal="Resolve the dependency.", evidence=refs,
+                       measurements=[dict(query=query, signal=fingerprint, value=value)])
+        wrong = [dict(query=query, signal=fingerprint, value=value + 5)]
+        call("record_finding", **{**finding, "measurements": wrong})
+        call("record_finding", **{**finding, "evidence": [{"table": "events", "id": "missing"}]})
+        if foreign := opt("--foreign-evidence", ""):
+            call("record_finding", **{**finding, "evidence": [{"table": "tasks", "id": foreign}]})
+        call("record_finding", **finding)
 
     # a result is kept only in its sections (AC-123): the close-out's and a schedule's, both there, as
     # terminumd/src/tasks/closeout.rs names them (SECTIONS, SCHEDULED)
@@ -95,6 +130,10 @@ def main():
             draw([" Accessing workspace:", "", " Quick safety check", "", " ❯ No, exit", "   Yes, I trust this folder", "", " Enter to confirm · Esc to cancel"])
             os.read(fd, 16)
         box()
+        if log := opt("--round-log", ""):
+            probe = subprocess.run([cli, "tools"], text=True, capture_output=True, timeout=8)
+            with open(log, "a", encoding="utf8") as f:
+                f.write(json.dumps({"probe": probe.stdout, "rc": probe.returncode}) + "\n")
         if kind == "claude":
             hook("SessionStart", source="resume" if "--resume" in args else "startup")
         if start == "quits":
@@ -149,7 +188,9 @@ def main():
                 if "QUESTIONS" in prompt or "DEPENDENCY" in prompt:
                     typed = "draft during wait"
                     box()
-            if round_of:
+            if opt("--round-log", "") and (case := re.fullmatch(r"Supervisor case (case_[a-f0-9]+)\..*", prompt)):
+                investigate(case[1])
+            elif round_of:
                 for task in re.findall(TASK_ID, round_of[3])[:int(round_of[2])]:
                     tool("dispatch_task", {"id": task, "why": "RICE 3×2×1÷1 = 6: the first in line"})
                 finish(round_of[1])

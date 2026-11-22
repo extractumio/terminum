@@ -129,9 +129,12 @@ pub(crate) async fn pane_caller(
         tracing::warn!(event = "supervisor.peer_unknown", pane);
         return Err(supervisor::PEER_UNKNOWN.into());
     }
-    if mark.is_some() {
+    if let Some(mark) = &mark {
         let from_pane = match peer {
-            Some(peer) if local && server.is_local() => peer::in_pane(peer, server, pane).await,
+            Some(peer) if local && server.is_local() => match &mark.run {
+                Some(run) => peer::in_run(peer, server, pane, run).await,
+                None => peer::in_pane(peer, server, pane).await,
+            },
             _ => false,
         };
         if !from_pane {

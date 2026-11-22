@@ -147,7 +147,7 @@ pub(super) async fn session(app: &Shared, project: &str, body: AdHoc) -> Result<
     let (app, project) = (app.clone(), project.to_string());
     tokio::spawn(async move {
         let key = open_run(&app, &run, &server, &project, &dir, &a, &[]).await?;
-        let typed = firstprompt::type_once(&app, &run, &text).await;
+        let typed = firstprompt::type_once(&app, &run, &text, firstprompt::Scope::Human).await;
         drop(hold);
         start::watch(&app, &run);                    // after the prompt: a run it made Working is no more its to type in
         Ok(json!({"run": run, "key": key, "typed": typed.is_ok(), "why": typed.err()}))

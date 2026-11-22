@@ -78,9 +78,11 @@ pub enum How {
     Auto,
     /// a red batch's integration task, on its project's integration agent (terminum-integration.md AC-194)
     Integration,
+    /// An investigation of a Supervisor signal (terminum-supervisor.md AC-233).
+    Supervisor,
 }
 
-const HOWS: [(How, &str); 7] = [(How::Run, "run"), (How::Drop, "drop"), (How::New, "new"), (How::Session, "session"), (How::Schedule, "schedule"), (How::Auto, "auto"), (How::Integration, "integration")];
+const HOWS: [(How, &str); 8] = [(How::Run, "run"), (How::Drop, "drop"), (How::New, "new"), (How::Session, "session"), (How::Schedule, "schedule"), (How::Auto, "auto"), (How::Integration, "integration"), (How::Supervisor, "supervisor")];
 
 impl How {
     pub fn word(self) -> &'static str {
@@ -448,6 +450,9 @@ pub fn let_go(tx: &Transaction, id: &str) -> Result<Run, String> {
     let run = by_id(tx, id).map_err(|_| "That session is gone.".to_string())?;
     if run.is_over() {
         return Err("Dispatcher holds that session no more.".into());
+    }
+    if run.ad_hoc() && started(tx, id)?.0 == How::Supervisor {
+        return Err("Dispatcher keeps this investigation until its case ends. Turn off the project's Supervisor to stop its rounds.".into());
     }
     super::move_task(tx, &run, "FAILED", GAVE_UP)?;
     change(tx, &run.id, |r| r.state = Phase::Left)

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // AC-223: a single project's independent indicator verdicts and typed evidence.
+import { oneAtATime } from "./dialogs.js";
 import { boardFor } from "./sections.js";
 import { api, loadMeta } from "./msgpage.js";
 import { $, button, showError, stamp } from "./kanbanutil.js";
@@ -59,12 +60,25 @@ function evidence({ table, id }) {
   return el("li", null, `${label} — ${detail}`);
 }
 
-function signal(record) {
+function signal(record, enabled) {
   const { detector, metric, subject_id, subject_kind, state, level, count, response, last_seen, measure } = record;
   return folding(`Level ${level} · ${metric} · ${state}`, () => {
-    const investigate = button("textkey", "Investigate");
-    investigate.disabled = true;
-    investigate.setAttribute("aria-describedby", "sv-investigate-note");
+    const feedback = note(record.investigation ?? "");
+    feedback.setAttribute("role", "status");
+    const error = el("p", "incident-error");
+    error.setAttribute("role", "alert");
+    error.hidden = true;
+    const controls = actions();
+    const investigate = button("textkey", "Investigate now", oneAtATime(controls, async () => {
+      showError(error, "");
+      try {
+        const saved = await api(`${path}/signals/${encodeURIComponent(record.fingerprint)}/investigate`, { method: "POST" });
+        feedback.textContent = saved.message;
+      } catch (e) { showError(error, e.message); }
+    }));
+    controls.append(investigate);
+    investigate.disabled = !enabled;
+    if (!enabled) investigate.setAttribute("aria-describedby", "sv-investigate-note");
     const readings = Object.entries({ Measured: measure.value, Baseline: measure.baseline, Threshold: measure.threshold })
       .map(([label, value]) => part("div", "sv-reading", el("dt", null, label), el("dd", null, numbers.format(value))));
     return stack(
@@ -73,12 +87,12 @@ function signal(record) {
       part("dl", "sv-readings", ...readings),
       note(`Measurement window ${stamp(measure.window_start)} – ${stamp(measure.window_end)}`),
       el("h3", null, "Evidence"), record.evidence.length ? part("ul", "sv-evidence", ...record.evidence.map(evidence)) : note("No evidence rows retained."),
-      actions(investigate));
+      controls, feedback, error);
   });
 }
 
 function addSignals(data) {
-  $("sv-signals").append(...data.signals.map(signal));
+  $("sv-signals").append(...data.signals.map((record) => signal(record, data.investigations_enabled)));
   next = data.next;
   more.hidden = !next;
 }
@@ -92,7 +106,7 @@ async function readScreen() {
     $("sv-title").textContent = `${data.project_name} · Supervisor`;
     $("sv-score").replaceChildren(...(data.indicators.length ? data.indicators.map(indicator) : [note("All scoreboard indicators are off.")]));
     $("sv-signals").replaceChildren();
-    $("sv-investigate-note").hidden = !data.signals.length;
+    $("sv-investigate-note").hidden = !data.signals.length || data.investigations_enabled;
     if (!data.signals.length) $("sv-signals").append(note("No signals recorded for this project."));
     addSignals(data);
     $("sv-content").hidden = false;

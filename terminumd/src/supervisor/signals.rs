@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 
-use rusqlite::{Transaction, params};
+use rusqlite::{OptionalExtension, Transaction, params};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
@@ -134,6 +134,13 @@ impl Prepared<'_> {
                     row.found.subject_id, row.found.metric, row.evidence, row.measure, row.scores, evaluation.at,
                     if checked.mode == Mode::Shadow { "shadow" } else { "new" }], |r| r.get(0)).map_err(sql)?;
                 if checked.mode == Mode::Live && accepted {
+                    let week = evaluation.at.div_euclid(super::WEEK);
+                    if tx.execute("INSERT OR IGNORE INTO supervisor_signal_weeks VALUES (?1, ?2)",
+                        (&row.key, week)).map_err(sql)? != 0
+                    {
+                        tx.execute("DELETE FROM supervisor_signal_weeks WHERE fingerprint = ?1 AND week < ?2",
+                            (&row.key, week - 7)).map_err(sql)?;
+                    }
                     incidents::observe(tx, incidents::Observation {
                         project: &evaluation.project, rule: checked.rule, fingerprint: &row.key,
                         finding: row.found, evidence: &row.evidence, at: evaluation.at,
@@ -202,4 +209,26 @@ pub(super) fn page(tx: &Transaction, project: &str, after: Option<&str>, limit: 
             SELECT first_seen, fingerprint FROM supervisor_signals WHERE fingerprint = ?2 AND project = ?1
         )) ORDER BY first_seen DESC, fingerprint DESC LIMIT ?3"),
         (project, after, limit as i64), |r| read(project, r))
+}
+
+
+pub(super) fn get(tx: &Transaction, project: &str, key: &str) -> Result<Signal, String> {
+    tx.query_row(&format!("SELECT {COLUMNS} FROM supervisor_signals WHERE project = ?1 AND fingerprint = ?2"),
+        (project, key), |r| read(project, r)).optional().map_err(sql)?.ok_or("No such signal in this project.".into())
+}
+
+
+/// A point event is retained by case and never resolves unrelated failures.
+pub(super) fn round_failed(tx: &Transaction, project: &str, id: &str, metric: &str, value: f64, at: i64) -> Result<(), String> {
+    let detector = "self.round_failed";
+    let key = fingerprint(project, detector, ("round", id, metric));
+    let evidence = encode(&[Evidence::SupervisorRounds(id.into())])?;
+    let measure = encode(&Measure { value, baseline: 0., threshold: 0., window_start: at, window_end: at })?;
+    let scores = encode(&RecordedScores { scores: Scores { impact: 1, ..Scores::default() }, impact_basis: Default::default() })?;
+    tx.execute("INSERT INTO supervisor_signals (fingerprint, project, detector, subject_kind, subject_id,
+        metric, evidence, measure, scores, first_seen, last_seen, count, state)
+        VALUES (?1, ?2, ?3, 'round', ?4, ?5, ?6, ?7, ?8, ?9, ?9, 1, 'raised')
+        ON CONFLICT (fingerprint) DO UPDATE SET measure = excluded.measure, last_seen = excluded.last_seen, count = count + 1",
+        params![key, project, detector, id, metric, evidence, measure, scores, at]).map_err(sql)?;
+    Ok(())
 }

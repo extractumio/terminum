@@ -1,0 +1,194 @@
+// SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
+//! AC-234 and AC-235: case access and typed findings on a live, project-scoped round.
+
+use rusqlite::{OptionalExtension, Transaction};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use serde_json::{Value, json};
+
+use crate::app::Shared;
+use crate::roles::supervisor;
+use crate::tasks::{api::store, ops::{now, sql}};
+
+use super::{Evidence, Measure, Rule, Window, round_evidence, rounds, settings, signals};
+
+pub(crate) const NAMES: &[&str] = &["get_case_file", "list_signals", "get_signal", "get_metric", "record_finding"];
+
+const MOST_EVIDENCE: usize = 128;
+const MOST_CLAIMS: usize = 16;
+const MOST_PROSE: usize = 2_000;
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CaseArgs { id: String }
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ListArgs { after: Option<String> }
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SignalArgs { id: String }
+
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct MetricArgs { query: String, signal: String }
+
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct Claim {
+    query: String,
+    signal: String,
+    value: f64,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct Finding {
+    cause: String,
+    confidence: f64,
+    disproof: String,
+    fix_proposal: String,
+    evidence: Vec<Evidence>,
+    measurements: Vec<Claim>,
+}
+
+fn run_of(tx: &Transaction, key: &str, project: &str, tool: &str) -> Result<String, String> {
+    supervisor::require(tx, key, project, tool)?;
+    tx.query_row("SELECT r.run FROM supervisor_rounds r JOIN supervisor_panes m ON m.round = r.id
+        WHERE m.pane_key = ?1 AND r.project = ?2 AND m.generation = r.generation",
+        (key, project), |r| r.get(0)).optional().map_err(sql)?
+        .ok_or("There is no live investigation in this pane.".into())
+}
+
+fn case_file(tx: &Transaction, run: &str) -> Result<Value, String> {
+    let case: String = tx.query_row("SELECT case_file FROM supervisor_rounds WHERE run = ?1",
+        [run], |r| r.get(0)).map_err(sql)?;
+    serde_json::from_str(&case).map_err(|e| e.to_string())
+}
+
+fn args<T: DeserializeOwned>(value: Value) -> Result<T, String> {
+    serde_json::from_value(value).map_err(|_| "The tool arguments do not match the required fields and types.".into())
+}
+
+pub(crate) async fn run(app: &Shared, key: String, project: String, tool: String, value: Value) -> Result<String, String> {
+    if tool == "record_finding" {
+        return store(app, move |tx| {
+            let run = run_of(tx, &key, &project, &tool)?;
+            let case = case_file(tx, &run)?;
+            let why = match accept(tx, &project, &case, value) {
+                Ok(finding) => {
+                    let changed = tx.execute("UPDATE supervisor_rounds SET finding = ?2, found_at = ?3
+                        WHERE run = ?1 AND deadline > ?3", (&run, finding, now())).map_err(sql)?;
+                    if changed == 1 { return Ok(Ok("Finding checked and recorded.".into())); }
+                    "Finding arrived after the deadline.".into()
+                }
+                Err(why) => why,
+            };
+            rounds::failure(tx, &run, &why, true)?;
+            Ok(Err(why))
+        }).await?;
+    }
+    let app = app.clone();
+    crate::http::off(move || app.tasks.snapshot(super::SCHEMA, |tx| {
+        let run = run_of(tx, &key, &project, &tool)?;
+        let response = match tool.as_str() {
+            "get_case_file" => {
+                let input: CaseArgs = args(value)?;
+                let case = case_file(tx, &run)?;
+                if case["id"] != input.id { return Err("That case does not belong to this round.".into()); }
+                case
+            }
+            "list_signals" => {
+                let input: ListArgs = args(value)?;
+                let mut page = signals::page(tx, &project, input.after.as_deref(), 21)?;
+                let more = page.len() > 20;
+                page.truncate(20);
+                json!({"next": if more { page.last().map(|s| &s.fingerprint) } else { None }, "signals": page})
+            }
+            "get_signal" => {
+                let input: SignalArgs = args(value)?;
+                json!(signals::get(tx, &project, &input.id)?)
+            }
+            "get_metric" => {
+                let input: MetricArgs = args(value)?;
+                json!(metric(tx, &project, &case_file(tx, &run)?, &input.query, &input.signal)?)
+            }
+            _ => return Err("Unknown Supervisor round tool.".into()),
+        };
+        Ok(response.to_string())
+    })).await
+}
+
+#[derive(Deserialize)]
+struct Scope {
+    detector: String,
+    subject_kind: String,
+    subject_id: String,
+    metric: String,
+    measure: Measure,
+}
+
+#[derive(Serialize)]
+struct Reading {
+    query: &'static str,
+    measure: Measure,
+    evidence: Vec<Evidence>,
+}
+
+fn metric(tx: &Transaction, project: &str, case: &Value, query: &str, fingerprint: &str) -> Result<Reading, String> {
+    let rule = Rule::named(query)?;
+    let case_signal = &case["signal"];
+    let scope: Scope = if case_signal["fingerprint"] == fingerprint {
+        args(case_signal.clone())?
+    } else {
+        args(json!(signals::get(tx, project, fingerprint)?))?
+    };
+    if scope.detector != rule.id() {
+        return Err("The named query did not measure this signal.".into());
+    }
+    let Measure { window_start: start, window_end: end, .. } = scope.measure;
+    let window = Window { before: start - (end - start), start, end };
+    let detector = settings::read(tx, project)?.settings.detector(rule);
+    let measure = super::measure_detector(tx, project, &detector, window, true)?;
+    let entry = measure.readings.into_iter().find(|r| r.key() == (&*scope.subject_kind, &*scope.subject_id, &*scope.metric))
+        .ok_or("The named query cannot currently recompute the signal's measure.")?;
+    let (baseline, threshold) = entry.limits(detector.threshold).ok_or("The query has no comparable baseline.")?;
+    Ok(Reading { query: rule.id(), measure: Measure { value: entry.value, baseline, threshold,
+        window_start: start, window_end: end }, evidence: entry.evidence })
+}
+
+fn accept(tx: &Transaction, project: &str, case: &Value, value: Value) -> Result<String, String> {
+    let mut finding: Finding = args(value)?;
+    for prose in [&mut finding.cause, &mut finding.disproof, &mut finding.fix_proposal] {
+        if prose.trim().is_empty() || prose.chars().count() > MOST_PROSE {
+            return Err("Supply a cause, what would disprove it, and a fix proposal within 2,000 characters each.".into());
+        }
+        if prose.chars().any(|c| c.is_numeric()) {
+            return Err("Put numbers in measurements, where the named queries can check them.".into());
+        }
+        *prose = crate::sent::redact(prose);
+    }
+    if !(0.0..=1.0).contains(&finding.confidence) || finding.evidence.is_empty()
+        || finding.evidence.len() > MOST_EVIDENCE || finding.measurements.len() > MOST_CLAIMS
+    {
+        return Err("Supply confidence between zero and one, one to 128 evidence IDs and at most 16 measurements.".into());
+    }
+    if case["kind"] == "verification" && !finding.measurements.iter()
+        .any(|claim| case["signal"]["fingerprint"] == claim.signal)
+    {
+        return Err("A verification must cite the recomputed measurement for its signal.".into());
+    }
+    for (i, id) in finding.evidence.iter().enumerate() {
+        if round_evidence::resolve(tx, project, id)?.is_none() {
+            return Err(format!("Evidence item {} does not resolve to a row in this project.", i + 1));
+        }
+    }
+    for (i, claim) in finding.measurements.iter().enumerate() {
+        let reading = metric(tx, project, case, &claim.query, &claim.signal)?;
+        if claim.value != reading.measure.value {
+            return Err(format!("Measurement {} claims {} but the named query returned {}.",
+                i + 1, claim.value, reading.measure.value));
+        }
+    }
+    serde_json::to_string(&finding).map_err(|e| e.to_string())
+}

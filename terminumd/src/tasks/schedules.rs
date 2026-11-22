@@ -193,16 +193,18 @@ pub struct Kept {
     pub slots: i64,
     pub schedules: usize,
     pub integration: bool,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub supervisor: bool,
 }
 
 impl Kept {
     fn of(schedules: usize, integration: bool) -> Kept {
-        Kept { slots: slots_for(schedules), schedules, integration }
+        Kept { slots: slots_for(schedules), schedules, integration, supervisor: false }
     }
 
     /// Every slot it keeps.
     pub fn total(&self) -> i64 {
-        self.slots + i64::from(self.integration)
+        self.slots + i64::from(self.integration) + i64::from(self.supervisor)
     }
 
     /// How they stand among the holders of a full agent: "2 kept for 3 schedules; 1 kept for integration".
@@ -214,6 +216,7 @@ impl Kept {
         if self.integration {
             out.push("1 kept for integration".to_string());
         }
+        if self.supervisor { out.push("1 kept for Supervisor investigations".into()); }
         out
     }
 }
@@ -237,6 +240,17 @@ pub fn kept_by_agent(tx: &Transaction) -> Result<std::collections::BTreeMap<Stri
     for agent in rows(tx, "SELECT DISTINCT agent FROM project_integration WHERE is_on = 1 AND agent IS NOT NULL", [], |r| r.get::<_, String>(0))? {
         by.entry(agent).or_default().integration = true;
     }
+    for (agent, at_once) in rows(tx, "SELECT DISTINCT a.id, a.at_once FROM project_supervisor p
+        JOIN projects j ON j.id = p.project AND j.host IS NULL
+        JOIN supervisor_settings s USING (project) JOIN agents a ON a.project = p.project
+        WHERE p.enabled = 1 AND a.id IN (json_extract(s.pack, '$.tiers.small'),
+            json_extract(s.pack, '$.tiers.medium'), json_extract(s.pack, '$.tiers.strong'))
+        UNION SELECT r.agent_id, NULL FROM supervisor_rounds q JOIN runs r ON r.id = q.run WHERE q.ended_at IS NULL",
+        [], |r| Ok((r.get::<_, String>(0)?, r.get::<_, Option<i64>>(1)?)))? {
+        let kept = by.entry(agent).or_default();
+        kept.supervisor |= at_once.is_none_or(|at_once| kept.total() < at_once);
+    }
+    by.retain(|_, kept| kept.total() > 0);
     Ok(by)
 }
 
@@ -245,16 +259,23 @@ pub(super) fn integrates(tx: &Transaction, agent: &str) -> Result<bool, String> 
     Ok(tx.query_row("SELECT 1 FROM project_integration WHERE is_on = 1 AND agent = ?1", [agent], |_| Ok(())).optional().map_err(sql)?.is_some())
 }
 
-/// What the agent keeps for schedules `keys` and integration: "Opus reviewer keeps 1 slot for 2 schedules:
-/// SCH-1, SCH-2, and 1 for integration", and how many slots that is.
-pub(super) fn kept_words(name: &str, keys: &[String], integration: bool) -> (String, i64) {
-    let k = Kept::of(keys.len(), integration);
+/// Whether this agent has a slot kept for Supervisor investigations.
+pub(super) fn supervises(tx: &Transaction, agent: &str) -> Result<bool, String> {
+    Ok(kept_by_agent(tx)?.get(agent).is_some_and(|kept| kept.supervisor))
+}
+
+/// Where the agent keeps its slots, and their total.
+pub(super) fn kept_words(name: &str, keys: &[String], integration: bool, supervisor: bool) -> (String, i64) {
+    let k = Kept { supervisor, ..Kept::of(keys.len(), integration) };
     let mut parts = Vec::new();
     if k.slots > 0 {
         parts.push(format!("{} slot{} for {} schedule{}: {}", k.slots, plural(k.slots), keys.len(), plural(keys.len() as i64), keys.join(", ")));
     }
     if k.integration {
         parts.push(if parts.is_empty() { "1 slot for integration" } else { "1 for integration" }.to_string());
+    }
+    if k.supervisor {
+        parts.push(if parts.is_empty() { "1 slot for Supervisor investigations" } else { "1 for Supervisor investigations" }.into());
     }
     (format!("{name} keeps {}", parts.join(", and ")), k.total())
 }
@@ -265,9 +286,10 @@ fn check_slot(tx: &Transaction, given: &Given, id: Option<&str>) -> Result<(), S
     let a = agents::chosen(tx, &given.agent, &given.project)?;
     let kept = kept_on(tx, &a.id, id)?;
     let integration = integrates(tx, &a.id)?;
-    let with = Kept::of(kept.len() + 1, integration).total();
+    let supervisor = supervises(tx, &a.id)?;
+    let with = Kept { supervisor, ..Kept::of(kept.len() + 1, integration) }.total();
     if !given.paused && with > a.at_once {
-        let (words, _) = kept_words(&a.name, &kept, integration);
+        let (words, _) = kept_words(&a.name, &kept, integration, supervisor);
         let this = match id {
             Some(id) => by_id(tx, id)?.key,
             None => "this one".to_string(),

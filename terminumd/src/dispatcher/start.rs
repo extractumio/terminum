@@ -28,7 +28,7 @@ pub(super) fn start_scaled(d: Duration) -> Duration {
 /// older bash's login shell (macOS's) or ash's waits for the terminal for good, spinning, with no prompt.
 /// The `trap`: with job control a dash or ash dies of its job's Ctrl-C, and the window with it; a caught
 /// signal goes back to its default in the agent and the shell after.
-const WRAPPER: &str = r#"trap : INT; set -m; d=$1; c=$2; t=$3; case $d in "~"|"~/"*) d=$HOME${d#"~"};; esac; s=${SHELL:-/bin/sh}; if cd -- "$d"; then "$s" -lic "$c"; e=$?; else e=-1; fi; "$t" set -p -t "$TMUX_PANE" @terminum-exit "$e"; stty -icanon min 0 time 0 2>/dev/null; cat >/dev/null 2>&1; stty sane 2>/dev/null; exec "$s" -l"#;
+const WRAPPER: &str = r#"trap : INT; set -m; d=$1; c=$2; t=$3; case $d in "~"|"~/"*) d=$HOME${d#"~"};; esac; s=${SHELL:-/bin/sh}; if cd -- "$d"; then "$s" -lic "$c"; e=$?; else e=-1; fi; "$t" set -p -t "$TMUX_PANE" @terminum-exit "$e"; if [ "$4" = "round" ]; then exit 0; fi; stty -icanon min 0 time 0 2>/dev/null; cat >/dev/null 2>&1; stty sane 2>/dev/null; exec "$s" -l"#;
 /// The wrapper a window's line runs in: its status as `@terminum-exit`, the pane kept (terminum-integration.md AC-190).
 pub(crate) fn window_wrapper() -> &'static str {
     WRAPPER
@@ -38,8 +38,9 @@ pub(crate) fn window_wrapper() -> &'static str {
 const NO_FOLDER: i32 = -1;
 
 /// The words of a shell-command's arguments for tmux: each quoted, tmux runs no shell of its own.
-fn window_command(folder: &str, command: &str, tmux: &str) -> String {
-    ["/bin/sh", "-c", WRAPPER, "sh", folder, command, tmux].iter().map(|w| args::quote(w)).collect::<Vec<_>>().join(" ")
+fn window_command(folder: &str, command: &str, tmux: &str, round: bool) -> String {
+    let mode = if round { "round" } else { "" };
+    ["/bin/sh", "-c", WRAPPER, "sh", folder, command, tmux, mode].iter().map(|w| args::quote(w)).collect::<Vec<_>>().join(" ")
 }
 
 fn tmux_of(server: &Server) -> String {
@@ -51,8 +52,8 @@ fn tmux_of(server: &Server) -> String {
 
 /// A new window: after the project's last session on this server, else in a session of its name,
 /// made when there is none; its pane and where it stands.
-async fn open_window(app: &Shared, server: &Arc<Server>, project: Option<(&str, &str)>, folder: &str, command: &str) -> Result<(String, String), String> {
-    let cmd = window_command(folder, command, &tmux_of(server));
+async fn open_window(app: &Shared, server: &Arc<Server>, project: Option<(&str, &str)>, folder: &str, command: &str, staged: bool) -> Result<(String, String), String> {
+    let cmd = if staged { "/bin/sleep 120".into() } else { window_command(folder, command, &tmux_of(server), false) };
     let fmt = "-P -F '#{pane_id} #{session_name}:#{window_index}'";
     let last = project.and_then(|(id, _)| {
         let ps = app.projects.lock();
@@ -110,8 +111,19 @@ pub struct Opening<'a> {
 
 /// Opens the window, links it and says so: its key.
 pub async fn open(app: &Shared, o: Opening<'_>) -> Result<String, String> {
-    let (pane, place) = open_window(app, o.server, o.project, o.folder, o.command).await?;
-    crate::inputs::wrote(app, crate::inputs::Who::dispatcher("dispatcher.start", o.run, o.tasks, o.agent), "launch", o.server, &pane, o.command, None, o.project);
+    open_pane(app, o, false).await
+}
+
+/// AC-234: no unmarked program runs while the store and tmux are recording the pane.
+pub(super) async fn open_supervisor(app: &Shared, o: Opening<'_>) -> Result<String, String> {
+    open_pane(app, o, true).await
+}
+
+async fn open_pane(app: &Shared, o: Opening<'_>, staged: bool) -> Result<String, String> {
+    let (pane, place) = open_window(app, o.server, o.project, o.folder, o.command, staged).await?;
+    if !staged {
+        crate::inputs::wrote(app, crate::inputs::Who::dispatcher("dispatcher.start", o.run, o.tasks, o.agent), "launch", o.server, &pane, o.command, None, o.project);
+    }
     mark(o.server, &pane, o.run).await?;
     if let Some((session, _)) = place.rsplit_once(':') {
         o.server.note_pane(&pane, session);            // its agent's first hook may come before the next list
@@ -121,20 +133,45 @@ pub async fn open(app: &Shared, o: Opening<'_>) -> Result<String, String> {
     app.dispatcher.track_pane(&key, o.run, project);    // its agent's first hooks
     let on = if o.server.is_local() { "on this Mac".to_string() } else { format!("on {}", o.server.name) };
     let (a, run, tasks, words, k) = (app.clone(), o.run.to_string(), o.tasks.to_vec(), format!("Session started: {} in window {place}, {on}.", o.program), key.clone());
-    store(app, move |tx| {
+    let linked = store(app, move |tx| {
         for task in &tasks {
             ops::link(tx, DISPATCHER, task, Some(&k), ops::now())?;
         }
+        if staged {
+            crate::supervisor::rounds::mark(tx, &run, &k)?;
+            runs::change(tx, &run, |r| r.pane_key = Some(k.clone()))?;
+            return Ok(());
+        }
         let r = a.dispatcher.pane_opened(tx, &run, &k)?;
         say(tx, &r, &words)
-    }).await?;
+    }).await;
+    if let Err(why) = linked {
+        if staged {
+            let _ = marked_command(o.server, &pane, o.run, &format!("kill-pane -t {pane}")).await;
+        }
+        return Err(why);
+    }
     // a member only once its run names it: a project's pane no run names is a human's, its manager (AC-174)
     if let Some((project, _)) = o.project {
         let (a, k, project) = (app.clone(), key.clone(), project.to_string());
         let _ = crate::http::off(move || a.projects.lock().add_to(&k, &project, None)).await;
         crate::page::projects::tell(app);
     }
+    if staged {
+        let run = o.run.to_owned();
+        store(app, move |tx| crate::supervisor::rounds::check_first_prompt(tx, &run)).await?;
+        let line = format!("respawn-pane -k -t {pane} {}", window_command(o.folder, o.command, &tmux_of(o.server), true));
+        marked_command(o.server, &pane, o.run, &line).await?;
+        crate::inputs::wrote(app, crate::inputs::Who::dispatcher("dispatcher.start", o.run, o.tasks, o.agent),
+            "launch", o.server, &pane, o.command, None, o.project);
+    }
     Ok(key)
+}
+
+/// Test the mark in tmux itself, in the command that acts on it.
+pub(super) async fn marked_command(server: &Server, pane: &str, run: &str, line: &str) -> Result<(), String> {
+    let client = server.client(pane).ok_or("The pane's tmux client is unavailable.")?;
+    gate::guarded(&client, run, pane, line, false).await
 }
 
 enum StartMiss<'a> {
@@ -361,7 +398,7 @@ pub async fn respawn(app: &Shared, server: &Arc<Server>, pane: &str, old: &str, 
     if let Some(w) = app.dispatcher.watch.lock().get_mut(&server.key(pane)) {
         w.clear_subagents();                                // a new agent: none of the last one's
     }
-    server.run(format!("respawn-pane -k -t {pane} {}", window_command(folder, command, &tmux_of(server)))).await.map(drop).map_err(|e| format!("tmux did not start it: {e}"))
+    server.run(format!("respawn-pane -k -t {pane} {}", window_command(folder, command, &tmux_of(server), false))).await.map(drop).map_err(|e| format!("tmux did not start it: {e}"))
 }
 
 #[cfg(test)]

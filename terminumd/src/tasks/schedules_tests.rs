@@ -82,7 +82,7 @@ fn ac161_an_agent_keeps_one_slot_for_every_two_schedules() {
         assert_eq!((0..=6).map(slots_for).collect::<Vec<_>>(), vec![0, 1, 1, 2, 2, 3, 3], "ceil(N / 2)");
         for (n, slots) in [(1, 1), (2, 1), (3, 2), (4, 2), (5, 3)] {
             add(tx, HUMAN, &given(tx, body("a", "0 3 * * *"))?, NOW)?;
-            assert_eq!(kept_by_agent(tx)?["a"], Kept { slots, schedules: n, integration: false }, "{n} schedules");
+            assert_eq!(kept_by_agent(tx)?["a"], Kept { slots, schedules: n, integration: false, supervisor: false }, "{n} schedules");
         }
         let mut b = body("a", "0 4 * * *");
         b["paused"] = json!(true);
@@ -122,12 +122,27 @@ fn ac161_a_schedule_is_refused_when_its_agent_cannot_keep_the_slots() {
 }
 
 #[test]
+fn ac233_remote_projects_keep_their_ordinary_slots() {
+    open("sched-slot-supervisor").with(|tx| {
+        agent(tx, "a", 1);
+        tx.execute("INSERT INTO project_supervisor (project, enabled, generation, enabled_at)
+            VALUES ('default', 1, 1, ?1)", [NOW]).map_err(sql)?;
+        tx.execute("INSERT INTO supervisor_settings (project, revision, pack) VALUES
+            ('default', 1, '{\"tiers\":{\"small\":\"a\",\"medium\":\"a\"}}')", []).map_err(sql)?;
+        assert!(kept_by_agent(tx)?["a"].supervisor, "the local tiers share one kept slot");
+        tx.execute("UPDATE projects SET host = 'devbox.example' WHERE id = 'default'", []).map_err(sql)?;
+        assert!(!kept_by_agent(tx)?.contains_key("a"), "a round cannot use this project’s remote pane");
+        Ok(())
+    }).unwrap();
+}
+
+#[test]
 fn ac161_integration_s_kept_slot_counts_against_its_at_once() {
     open("sched-slot-integration").with(|tx| {
         agent(tx, "a", 2);
         let s = crate::tasks::integration::read(tx, "default")?;
         crate::tasks::integration::keep(tx, "default", &crate::tasks::integration::Settings { on: true, agent: Some("a".into()), ..s })?;
-        assert_eq!(kept_by_agent(tx)?["a"], Kept { slots: 0, schedules: 0, integration: true });
+        assert_eq!(kept_by_agent(tx)?["a"], Kept { slots: 0, schedules: 0, integration: true, supervisor: false });
         add(tx, HUMAN, &given(tx, body("a", "0 3 * * *"))?, NOW)?;
         add(tx, HUMAN, &given(tx, body("a", "0 3 * * *"))?, NOW)?;
         assert_eq!(kept_by_agent(tx)?["a"].total(), 2);

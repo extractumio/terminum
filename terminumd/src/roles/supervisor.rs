@@ -47,6 +47,9 @@ impl Role {
     }
 
     pub fn allows(self, tool: &str) -> bool {
+        if supervisor::round_tools::NAMES.contains(&tool) {
+            return matches!(self, Self::Supervisor(Some(_)));
+        }
         match self {
             Self::Manager => true,
             Self::Worker => !super::MANAGER_TOOLS.contains(&tool),
@@ -71,17 +74,23 @@ impl Role {
 pub(crate) struct Mark {
     pub project: String,
     pub role: Role,
+    pub run: Option<String>,
 }
 
 /// Even an old mark wins over a human's project membership or a + Session run.
 pub(crate) fn marked(tx: &Transaction, key: &str) -> Result<Option<Mark>, String> {
-    let row: Option<(String, bool)> = tx.prepare_cached("SELECT m.project, EXISTS(
+    let active_round = supervisor::rounds::ACTIVE;
+    let row: Option<(String, bool, Option<String>)> = tx.prepare_cached(&format!("SELECT m.project, EXISTS(
         SELECT 1 FROM project_supervisor s WHERE s.project = m.project AND s.enabled = 1 AND s.generation = m.generation
-        ) FROM supervisor_panes m WHERE m.pane_key = ?1").map_err(ops::sql)?
-        .query_row([key], |r| Ok((r.get(0)?, r.get(1)?))).optional().map_err(ops::sql)?;
-    row.map(|(project, active)| {
+        ) AND NOT EXISTS (
+            SELECT 1 FROM supervisor_rounds q WHERE q.id = m.round AND NOT ({active_round})
+        ),
+        (SELECT run FROM supervisor_rounds WHERE id = m.round)
+        FROM supervisor_panes m WHERE m.pane_key = ?1")).map_err(ops::sql)?
+        .query_row((key, ops::now()), |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).optional().map_err(ops::sql)?;
+    row.map(|(project, active, run)| {
         let level = active.then(|| supervisor::level(tx, &project)).transpose()?;
-        Ok(Mark { project, role: Role::Supervisor(level) })
+        Ok(Mark { project, role: Role::Supervisor(level), run })
     }).transpose()
 }
 
@@ -118,6 +127,9 @@ pub(crate) async fn run(app: &Shared, key: &str, other: bool, mark: Mark, tool: 
     }
     if other && !super::reads(&tool) {
         return Err("Only the Supervisor's main agent changes the project.".into());
+    }
+    if supervisor::round_tools::NAMES.contains(&tool.as_str()) {
+        return supervisor::round_tools::run(app, key.into(), mark.project, tool, args).await;
     }
     if task_tool(&tool) {
         let who = Who { key: key.into(), project: Some(mark.project), title: "Supervisor".into(),

@@ -93,7 +93,7 @@ function session(s, { projectName, doing, openTask, openSession, letGo }) {
   const li = el("li", "agsession"), head = el("div", "agsesshead");
   head.append(el("span", "agsessname", [projectName(s.project), doing(s)].filter(Boolean).join(" · ")));
   if (s.key) head.append(button(null, "Open session", () => openSession(s.key)));
-  head.append(button(null, "Let go", () => letGo(s, li)));
+  if (!s.supervisor) head.append(button(null, "Let go", () => letGo(s, li)));
   li.append(head);
   const list = s.list ?? [];
   for (const [title, tasks] of [["Working on", list.filter((t) => !FINISHED.includes(t.status))], ["Finished, session open", list.filter((t) => FINISHED.includes(t.status))]]) {
@@ -103,7 +103,7 @@ function session(s, { projectName, doing, openTask, openSession, letGo }) {
     ul.append(...tasks.map((t) => taskLink(t, openTask)));
     li.append(el("h4", null, title), ul);
   }
-  if (!list.length) li.append(el("p", "hint", "+ Session: no task"));
+  if (!list.length) li.append(el("p", "hint", s.supervisor ? "Supervisor investigation" : "+ Session: no task"));
   return li;
 }
 

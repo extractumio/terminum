@@ -20,6 +20,9 @@ mod screen;
 mod flow;
 mod people;
 mod signals;
+pub(crate) mod rounds;
+pub(crate) mod round_tools;
+mod round_evidence;
 mod settings;
 mod settings_api;
 mod spend;
@@ -152,6 +155,7 @@ pub(crate) enum Evidence {
     SupervisorPoints(i64),
     SupervisorHookCounts(i64),
     SupervisorHeartbeat { project: String, last_ok: Option<i64> },
+    SupervisorRounds(String),
     SupervisorLine { channel: i64, failure: String },
 }
 

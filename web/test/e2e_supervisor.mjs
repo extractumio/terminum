@@ -21,6 +21,9 @@ const SIGNAL = { fingerprint: "one", project: "api", detector: RULE, subject_id:
   metric: "Unexplained failures", level: 1, state: "raised", count: 2, response: "digest", last_seen: DATE,
   measure: { value: 12, baseline: 4, threshold: 8, window_start: DATE - 1000, window_end: DATE },
   evidence: [{ table: "tasks", id: "API-2" }, { table: "events", id: LITERAL }, { table: "supervisor_line", id: { channel: 2, failure: "Exit status 17." } }] };
+const INCIDENT = { id: 42, project: "api", project_name: "API service", level: 3, revision: 1,
+  happened: "The collector missed successive heartbeats.", held: "No hold in effect.",
+  needed: "Acknowledge when seen.", no_answer: "No automatic action without an answer." };
 const SCORE = { name: "Release cadence", verdict: "not measured yet", guard: "Stability", metrics: [
   { name: "Releases per month", verdict: "not measured yet", missing: "release tags are unavailable" },
   { name: "Fixture measured series", verdict: "better", missing: null, before: 3, current: 5, noise: 0.5 },
@@ -32,6 +35,8 @@ async function fixture(page, theme) {
   const agents = [{ project: "api", id: "mine", name: "API agent" }, { project: "web", id: "foreign", name: "Web agent" }];
   await fakeBoard(page, { meta: () => ({ projects, agents, theme, users: [], hosts: [], sessions: [] }), tasks: () => [], counts: {} });
   await page.route("**/api/messages/meta", (route) => json(route, { projects, theme }));
+  await page.route("**/api/supervisor/incidents", (route) => json(route, []));
+  await page.route("**/api/supervisor/incidents/42/investigate", (route) => json(route, { message: "Incident investigation requested." }));
   let enabled = false, refusal = true, saved = structuredClone(SETTINGS), revision = 0, candidate = false, approved = false, commandViewed = false;
   const calls = [];
   let line = { revision: 0, settings: { channels: [], link_base: null, quiet: [1380, 480], ladder: [10, 30, 60] } };
@@ -48,7 +53,12 @@ async function fixture(page, theme) {
       return json(route, { project_name: "Web service", indicators: [], signals: [{ ...SIGNAL, metric: "Web signal" }], next: null });
     }
     if (suffix === "/screen") return json(route, { project_name: "API service", indicators: [SCORE],
+      investigations_enabled: true,
       signals: Array.from({ length: 50 }, (_, i) => ({ ...SIGNAL, fingerprint: String(i), metric: i ? `Signal ${i}` : SIGNAL.metric })), next: "49" });
+    if (suffix === "/incidents") return json(route, { rows: [INCIDENT], next: null });
+    if (suffix === "/signals/0/investigate" && method === "POST") {
+      return json(route, { message: "Investigation requested." });
+    }
     if (suffix === "/signals") {
       return searchParams.get("after") === "49"
         ? json(route, { signals: [{ ...SIGNAL, metric: "Last signal" }], next: null })
@@ -236,9 +246,21 @@ async function screen(page, suffix, phone) {
     && !await page.getByText("Web signal", { exact: false }).count());
   check("AC-229 the Supervisor screen spells out the channel and exit status in signal evidence",
     await page.getByText("Channel 2: Exit status 17.", { exact: true }).first().isVisible());
+  const incident = page.locator("#sv-incidents [data-incident='42']");
+  const incidentInvestigate = incident.getByRole("button", { name: "Investigate now", exact: true });
+  await incidentInvestigate.click();
+  check("AC-233 the incident card starts an investigation and reports the result",
+    await until(async () => await incident.getByRole("status").textContent() === "Incident investigation requested."));
+  if (phone) check("AC-233 the incident investigation key fits a finger on a phone",
+    await incidentInvestigate.evaluate((node) => node.getBoundingClientRect().height >= 44));
+  await shot(page, `supervisor-investigation-${suffix}`);
+  const investigate = opened.getByRole("button", { name: "Investigate now", exact: true });
+  await investigate.click();
+  check("AC-233 Investigate now requests a round for this signal",
+    await until(async () => await opened.getByRole("status").textContent() === "Investigation requested."));
   await shot(page, `supervisor-evidence-${suffix}`);
-  check("AC-223 investigation shows its availability and evidence does not cause sideways scrolling",
-    await page.getByRole("button", { name: "Investigate", exact: true }).first().isDisabled()
+  check("AC-223 evidence does not cause sideways scrolling",
+    await investigate.isEnabled()
     && await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
   if (phone) check("AC-223 a long signal's summary remains finger-sized",
     await page.locator("#sv-signals summary").first().evaluate((node) => node.getBoundingClientRect().height >= 44));

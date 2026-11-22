@@ -375,7 +375,11 @@ impl<'a> RunPane<'a> {
 async fn walk(app: &Shared) {
     let a = app.clone();
     let Ok((all, linked, limits)) = store(app, move |tx| Ok((
-        a.dispatcher.read_runs(tx)?,
+        {
+            let rounds: HashSet<String> = ops::rows(tx, "SELECT run FROM supervisor_rounds WHERE ended_at IS NULL",
+                [], |r| r.get(0))?.into_iter().collect();
+            a.dispatcher.read_runs(tx)?.into_iter().filter(|r| !rounds.contains(&r.id)).collect::<Vec<_>>()
+        },
         ops::rows(tx, "SELECT slug, session_key FROM tasks WHERE session_key IS NOT NULL AND archived_at IS NULL", [], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?,
         crate::tasks::limits::limits(tx)?,
     ))).await else { return };
