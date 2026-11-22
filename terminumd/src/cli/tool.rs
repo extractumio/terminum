@@ -49,9 +49,6 @@ fn call(ctx: &Ctx, who: &Caller, tool: &str, args: &Value) -> Result<(String, bo
             }
         }
         Caller::Pane(env) => {
-            if tool == "run_task" {
-                mcp::role(env, &forward);
-            }
             let said = mcp::call(tool, args, None, env, &forward);
             Ok((text(&said["content"][0]["text"]), said["isError"] == true))
         }

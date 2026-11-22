@@ -286,10 +286,10 @@ async fn ac231_supervisor_marks_follow_only_restored_panes() {
     }).unwrap();
 }
 
-/// The catalog's 22 tools every session has, beside MANAGER_TOOLS' 18.
-const SESSION_TOOLS: [&str; 22] = ["update_session_plan", "get_session_plan", "list_tasks", "get_task", "create_task", "update_task",
-    "link_task", "take_task", "move_task", "ask_human", "wait_for_task", "add_comment", "attach_file", "get_file", "finish_task",
-    "integrate", "withdraw_integration", "integration_status", "integration_return", "integration_recheck", "integration_add_fix", "dispatch_task"];
+/// The catalog's tools every session has, beside MANAGER_TOOLS.
+fn session_tools() -> impl Iterator<Item = &'static str> {
+    ["update_session_plan", "get_session_plan"].into_iter().chain(crate::tasks::tools::NAMES)
+}
 
 #[test]
 fn ac231_ac232_each_level_allows_exactly_its_list_of_the_catalog() {
@@ -301,7 +301,7 @@ fn ac231_ac232_each_level_allows_exactly_its_list_of_the_catalog() {
     for (level, count) in expected {
         let wanted: Vec<&str> = observer.iter().chain(advisor.iter().filter(|_| level != Observer))
             .chain(operator.iter().filter(|_| level == Operator)).copied().collect();
-        let allowed: Vec<&str> = SESSION_TOOLS.iter().chain(MANAGER_TOOLS.iter()).copied().filter(|t| Role::Supervisor(Some(level)).allows(t)).collect();
+        let allowed: Vec<&str> = session_tools().chain(MANAGER_TOOLS).filter(|t| Role::Supervisor(Some(level)).allows(t)).collect();
         assert_eq!(allowed.len(), count, "{level:?}: {allowed:?}");
         assert!(wanted.iter().all(|t| allowed.contains(t)), "{level:?}: {allowed:?}");
     }
@@ -309,9 +309,9 @@ fn ac231_ac232_each_level_allows_exactly_its_list_of_the_catalog() {
         "delete_schedule", "run_schedule", "get_session", "get_file", "attach_file", "update_task", "integrate", "dispatch_task", "probe"] {
         assert!(!Role::Supervisor(Some(Operator)).allows(never), "{never} at Operator");
     }
-    assert!(SESSION_TOOLS.iter().chain(MANAGER_TOOLS.iter()).all(|t| !Role::Supervisor(None).allows(t)), "an inactive mark allows nothing");
-    assert!(SESSION_TOOLS.iter().all(|t| Role::Worker.allows(t)) && MANAGER_TOOLS.iter().all(|t| !Role::Worker.allows(t)), "a worker's reach");
-    assert!(SESSION_TOOLS.iter().chain(MANAGER_TOOLS.iter()).all(|t| Role::Manager.allows(t)), "a manager's reach");
+    assert!(session_tools().chain(MANAGER_TOOLS).all(|t| !Role::Supervisor(None).allows(t)), "an inactive mark allows nothing");
+    assert!(session_tools().all(|t| Role::Worker.allows(t)) && MANAGER_TOOLS.iter().all(|t| !Role::Worker.allows(t)), "a worker's reach");
+    assert!(session_tools().chain(MANAGER_TOOLS).all(|t| Role::Manager.allows(t)), "a manager's reach");
 }
 
 #[test]

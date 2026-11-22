@@ -124,7 +124,7 @@ pub(crate) async fn run(app: &Shared, key: &str, other: bool, mark: Mark, tool: 
             agent: "supervisor".into(), dir: None, supervisor: true };
         return crate::agentapi::task_tool_of(app, who, None, other, tool, args).await;
     }
-    let actor = super::Boss { key: key.into(), user: format!("supervisor:{}", mark.project),
+    let actor = super::Boss { key: key.into(), user: user(&mark.project),
         project: mark.project, name: "Supervisor".into() };
     match tool.as_str() {
         "run_task" => start(app, actor, &args).await,
@@ -137,7 +137,12 @@ pub(crate) async fn run(app: &Shared, key: &str, other: bool, mark: Mark, tool: 
 }
 
 pub(crate) fn author(tx: &Transaction, project: &str) -> Result<String, String> {
-    ops::agent_named(tx, format!("supervisor:{project}"), "Supervisor")
+    ops::agent_named(tx, user(project), "Supervisor")
+}
+
+/// The project's Supervisor as the store's user who writes.
+fn user(project: &str) -> String {
+    format!("supervisor:{project}")
 }
 
 async fn start(app: &Shared, actor: super::Boss, args: &Value) -> Result<String, String> {

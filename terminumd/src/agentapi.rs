@@ -73,8 +73,9 @@ pub async fn agent_on(app: Shared, server: Option<std::sync::Arc<crate::tmux::se
     let caller = Caller { agent: hooked.map_or(crate::plans::UNKNOWN, |(a, _)| a).to_string(), session, key, hooks, other };
     let (tool, args) = (body["tool"].as_str().unwrap_or("").to_string(), body["args"].clone());
     if let Some(mark) = mark {
+        let role = mark.role.name();
         let mut reply = said(roles::supervisor::run(&app, &caller.key, caller.other, mark, tool, args).await);
-        reply.0["role"] = json!("supervisor");
+        reply.0["role"] = json!(role);
         return reply;
     }
     if roles::MANAGER_TOOLS.contains(&tool.as_str()) {

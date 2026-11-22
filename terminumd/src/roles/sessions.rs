@@ -76,7 +76,7 @@ pub async fn list(app: &Shared, boss: &Boss) -> Result<String, String> {
             "you": *key == boss.key,
             "agent": app.hooks.session(key).map(|(agent, _)| agent),
             "working": working,
-            "role": if marked.contains(key) { "supervisor" } else { super::Role::from(managers.contains(key)).name() },
+            "role": if marked.contains(key) { super::Role::Supervisor(None) } else { super::Role::from(managers.contains(key)) }.name(),
             "run": run.map(|r| json!({"tasks": r.ids, "agent": r.agent_name, "state": r.state.label(), "asked_a_human": r.asked})),
             "plan": plan.map(|d| json!({"doing": d.row.doing, "done": d.row.done, "total": d.row.total})),
         })
