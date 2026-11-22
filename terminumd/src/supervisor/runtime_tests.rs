@@ -8,7 +8,7 @@ use rusqlite::Params;
 use serde_json::json;
 
 use super::*;
-use crate::supervisor::{self, engine_tests::{Fixture, NOW, OTHER, PROJECT}, signals::State};
+use crate::supervisor::{self, WEEK, replay, engine_tests::{Fixture, NOW, OTHER, PROJECT}, signals::State};
 
 fn write(store: &Store, sql: &str, args: impl Params) {
     store.with(|tx| tx.execute(sql, args).map(drop).map_err(crate::tasks::ops::sql)).unwrap();
@@ -42,7 +42,8 @@ async fn ac216_project_off_is_inert_and_a_new_generation_rejects_old_work() {
     set_enabled(store, PROJECT, false, NOW).unwrap();
     assert!(!commit(store, &project, batch, &pending, || NOW).unwrap());
     set_enabled(store, PROJECT, true, NOW).unwrap();
-    let stale = Batch { at: NOW, cursor: 100, evaluation: None, points: vec![], sampled: false, baseline: false };
+    let stale = Batch { at: NOW, cursor: 100, evaluation: None, points: vec![], sampled: false, baseline: false,
+        settings_revision: 0, attachment: None, first_attachment: false };
     assert!(!commit(store, &project, stale, &pending, || NOW).unwrap());
     assert_eq!(value(store, "SELECT cursor FROM project_supervisor"), 0);
     assert_eq!(value(store, "SELECT count(*) FROM supervisor_points"), 0);
@@ -242,4 +243,67 @@ async fn ac219_independent_watchdog_reports_two_misses_once_and_honors_recovery(
     collect_project(&app, &ready(s), || NOW + 3 * BEAT).unwrap();
     report_dead(s, &live, NOW + 3 * BEAT).unwrap();
     assert_eq!(supervisor::signals(s, PROJECT).unwrap()[0].state, State::Resolved);
+}
+
+#[tokio::test]
+async fn ac221_attach_replays_distinct_verdicts_seeds_problems_and_retires_disabled_rule() {
+    let (root, app) = crate::testutil::app_with_tasks("supervisor-attach");
+    let fixture = Fixture::in_path(root.join("state/kanban.sqlite"));
+    let store = &app.tasks;
+    fixture.write("UPDATE projects SET dir = '' WHERE id = ?1", [PROJECT]);
+    fixture.task("history", None, "P2", "DONE", NOW - 7 * WEEK);
+    fixture.task("work", None, "P2", "FAILED", NOW - 5 * WEEK);
+    for week in 0..=4 {
+        for offset in 0..3 {
+            fixture.transition("work", NOW - week * WEEK - 60 + offset, "IN PROGRESS", "FAILED");
+        }
+    }
+    let rule = Rule::FailedWithoutReason;
+    let name = rule.id();
+    let preferences = |mode| serde_json::from_value(json!({
+        "detectors": { (name): { "mode": mode, "threshold": { "absolute": 1 } } }
+    })).unwrap();
+    store.with(|tx| settings::write(tx, PROJECT, 0, preferences("live"), false)).unwrap();
+    let past = store.snapshot(SCHEMA, |tx| {
+        let detector = settings::read(tx, PROJECT)?.settings.detector(rule);
+        let mut past = std::collections::BTreeSet::new();
+        replay::visit_history(tx, PROJECT, NOW - 7 * WEEK, NOW, &[detector], |rule, f| {
+            past.insert(replay::firing_key(PROJECT, rule, f)?);
+            Ok(())
+        })?;
+        Ok(past)
+    }).unwrap();
+    assert_eq!(past.len(), 3);
+    for (i, firing) in past.iter().enumerate() {
+        fixture.write("INSERT INTO supervisor_hold_verdicts VALUES (?1, ?2, ?3, ?4, ?5)",
+            (PROJECT, name, firing, NOW - 2 * WEEK, i < 2));
+    }
+    fixture.write("INSERT INTO supervisor_hold_verdicts VALUES (?1, ?2, ?3, ?4, 0)",
+        (OTHER, name, past.first().unwrap(), NOW - 2 * WEEK));
+    fixture.write("INSERT INTO supervisor_hold_verdicts VALUES (?1, ?2, 'no-replay-match', ?3, 0)",
+        (PROJECT, name, NOW - 2 * WEEK));
+
+    set_enabled(store, PROJECT, true, NOW).unwrap();
+    collect_project(&app, &ready(store), || NOW).unwrap();
+    let report = || store.snapshot(SCHEMA, |tx| attach::read(tx, PROJECT)).unwrap().unwrap();
+    let status = report().status(NOW, true).unwrap();
+    let scan = &status["detectors"][name];
+    assert_eq!(scan["replay_firings"], 3);
+    assert_eq!(scan["holds"]["replay_judged"], 3);
+    assert_eq!(scan["holds"]["replay_right"], 2);
+    assert_eq!(scan["hold_state"], "eligible");
+    assert_eq!(value(store, "SELECT count(*) FROM supervisor_attach_seeds
+        JOIN supervisor_signals USING (fingerprint) WHERE detector = 'flow.failed_no_reason'"), 1);
+    assert_eq!(report().status(NOW, false).unwrap()["detectors"][name]["hold_state"], "inactive");
+
+    // No collector beat may see the off setting. Its authority is retired in the write transaction.
+    store.with(|tx| settings::write(tx, PROJECT, 1, preferences("off"), false)).unwrap();
+    store.with(|tx| settings::write(tx, PROJECT, 2, preferences("live"), false)).unwrap();
+    store.with(|tx| settings::write(tx, PROJECT, 3, preferences("live"), false)).unwrap();
+    collect_project(&app, &ready(store), || NOW + WEEK + 1).unwrap();
+    let revised = report().status(NOW + WEEK + 1, true).unwrap();
+    assert_eq!(revised["detectors"][name]["mode"], "shadow");
+    assert_eq!(revised["detectors"][name]["hold_state"], "inactive");
+    assert_eq!(value(store, "SELECT count(*) FROM supervisor_attach_seeds
+        JOIN supervisor_signals USING (fingerprint) WHERE detector = 'flow.failed_no_reason'"), 1);
 }

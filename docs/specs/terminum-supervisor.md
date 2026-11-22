@@ -1290,10 +1290,9 @@ All cases below are open. The existing mechanisms in §3 provide inputs or prece
 | AC-213 | Charter breach inputs and round execution belong to their owning stages. |
 | AC-214 | Release tags, task commits, nightly history, question kinds and design sign-offs need their owning inputs. |
 | AC-215 | Probe and judgment quality replay require retained inputs from their owning stages. |
-| AC-216 | The signed-in switch gates collection and sensors. The project tab, attach and stopping rounds belong to AC-221, AC-222, AC-234 and AC-245. |
+| AC-216 | The signed-in switch gates collection and sensors. The project tab and stopping rounds belong to AC-222, AC-234 and AC-245. |
 | AC-219 | The watchdog records a signal and exposes its last heartbeat through the project settings endpoint. Incident grouping and presentation belong to AC-224 and AC-225. |
-| AC-220 | Settings and bounded import authority. |
-| AC-221 | Bootstrap and shadow holds. |
+| AC-221 | Bootstrap keeps high-impact register seeds and exposes hold eligibility. Consuming seeds, recording proposed holds and checking their verdicts belong to AC-236, AC-245 and AC-246. Charter breach inputs belong to AC-213. |
 | AC-222 | Supervisor settings tab. |
 | AC-223 | Responsive Supervisor screen. |
 | AC-224 | Incident grouping and updates. |
@@ -1428,7 +1427,7 @@ Compare the latest four weeks to the preceding four and show changes against the
 |---|---|
 | Supervisor switch and level | Off; Operator when enabled. |
 | Tier agents | None selected, so code only; choose the project's pool agents for the small, medium, strong and independent roles. |
-| Judgment and fixes | 3% and 10% of trailing weekly project spend respectively. Judgment has a floor and a reserved investigation share. Configure ceilings in project settings. |
+| Judgment and fixes | 3% and 10% of trailing weekly project spend respectively. Judgment has a floor of one million tokens and reserves 30% for investigations. Configure ceilings in project settings. |
 | Charter | Never list, priorities, allocation target by type and review dates empty; project-type template may suggest values. Seven indicators enabled, with no outside indicators required. |
 | Surface map | Empty, so no gate. Preview prior-month task count; size the T3 map toward three to four owner sign-offs per month. |
 | Critical line | The owner's, one set for all their projects: every project's tab shows and edits it and says so, and per-project export and import leave it out. No command or link base. Local bar and card work without them. Default repeats after 10 minutes, 30 minutes, then hourly, and from the 30-minute repeat on also the next channel; a 15-minute grouping window; quiet hours 23:00–08:00 once a channel is configured. |
@@ -1438,7 +1437,7 @@ Compare the latest four weeks to the preceding four and show changes against the
 | Weekly review | A project schedule made once a strong-tier agent is chosen, weekly, visible and editable in Routines. |
 | Guardrail bands | Each detector's threshold may be tuned within ±50% of its calibrated value; the decisions-right band is a rule's trailing rate ±2 standard errors, judged only from 30 decisions. Only the owner changes them. |
 
-A signed-in switch starts a scan within seconds: read available integrations, code host, pool and schedules, list unmet needs, calibrate and replay. With fewer than three weeks of data report limited history. On attach, a live detector raises findings immediately, but holds shadow until replay shows at least two-thirds right over at least three prior firings, or seven days elapse. A breach of a charter "never" bypasses shadow. A detector enabled later shadows all actions. Export writes a text file without commands and secrets unless the owner selects them. Import displays proposed commands unset and leaves the live switch and command authority to separate human presses; show each command in full before confirmation.
+A signed-in switch starts a scan within seconds: read available integrations, code host, pool and schedules, list unmet needs, calibrate and replay. With fewer than three weeks of data report limited history. On attach, a live detector raises findings immediately, but holds shadow until replay shows at least two-thirds right over at least three prior firings, or seven days elapse. A breach of a charter "never" bypasses shadow. A detector enabled later shadows all actions. Export writes a text file without commands and redacts recognized secret formats unless the owner selects them. Import keeps the destination switch, pool choices and confirmed commands. It stages proposed probe commands unset. The signed-in page shows the full command and requires a separate confirmation tied to that preview. The collector commits the attachment report and high-impact register seeds with the settings revision and generation it read. Replay qualification uses distinct firings matched to retained verdicts for the same project and detector. Unjudged firings grant no credit. Turning a rule off retires its live-at-attach state.
 
 ### Caller, rounds and case files
 
@@ -1573,8 +1572,8 @@ Enable none of the runtime cases by default. Land the specification after indepe
 - [x] AC-217 — `e2e_supervisor.py` checks live detection within a minute. `ac217_cursor_restart_and_rollback_with_same_time_nonmonotonic_ids` and `ac217_open_detector_snapshot_does_not_take_the_store_write_turn` cover durable order, retry and concurrent writes. `scripts/bench_busy.py --supervisor` measures the active collector under load.
 - [x] AC-218 — `e2e_supervisor.py`, `ac218_points_and_hook_counter_retention` and `ac218_queue_growth_uses_only_the_first_available_samples` cover the sample and baseline cadence, numerical hook counts, retention and unavailable history.
 - [ ] AC-219 — `e2e_supervisor.py` and `ac219_independent_watchdog_reports_two_misses_once_and_honors_recovery` cover the independent failure signal, the two-beat threshold and recovery. The incident presentation remains open in §7.
-- [ ] AC-220 — Planned test: `ac220_export_redaction_and_import_confirmation` covers settings and bounded import authority.
-- [ ] AC-221 — Planned test: `ac221_attach_short_history_and_hold_shadow` covers bootstrap and shadow holds.
+- [x] AC-220 — `ac220_export_redaction_and_import_confirmation` in `scripts/e2e_supervisor_settings.py` covers per-project defaults and export, unset imports and preview-bound command confirmation on private terminumd. The project tab is AC-222.
+- [ ] AC-221 — `ac221_switch_attaches_two_projects` in `scripts/e2e_supervisor_settings.py` covers switch-only attachment, project-specific calibration and unavailable inputs. `ac221_attach_short_history_and_hold_shadow` covers the seven-day boundary and charter exception. `ac221_attach_replays_distinct_verdicts_seeds_problems_and_retires_disabled_rule` covers the collector's replay qualification, register seeds and fast off/on edits. See §7 for the remaining consumers.
 - [ ] AC-222 — Planned test: `ac222_supervisor_settings_tab` covers supervisor settings tab.
 - [ ] AC-223 — Planned test: `ac223_supervisor_screen_project_scope` covers responsive Supervisor screen.
 - [ ] AC-224 — Planned test: `ac224_incident_grouping_and_clear` covers incident grouping and updates.

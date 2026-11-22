@@ -80,7 +80,7 @@ pub(super) fn record(store: &Store, evaluation: &Evaluation) -> Result<(), Strin
     if prepared.batches.is_empty() {
         return Ok(());
     }
-    store.with(|tx| prepared.write(tx))
+    store.with(|tx| prepared.write(tx, false))
 }
 
 pub(super) fn prepare(evaluation: &Evaluation) -> Result<Prepared<'_>, String> {
@@ -108,7 +108,7 @@ pub(super) fn prepare(evaluation: &Evaluation) -> Result<Prepared<'_>, String> {
 }
 
 impl Prepared<'_> {
-    pub(super) fn write(self, tx: &Transaction) -> Result<(), String> {
+    pub(super) fn write(self, tx: &Transaction, seed_attachment: bool) -> Result<(), String> {
         let Self { evaluation, batches } = self;
         let mut upsert = tx.prepare_cached("INSERT INTO supervisor_signals
             (fingerprint, project, detector, subject_kind, subject_id, metric, evidence, measure, scores, first_seen, last_seen, count, state)
@@ -133,6 +133,10 @@ impl Prepared<'_> {
                 upsert.execute(params![row.key, evaluation.project, rule, row.found.subject_kind,
                     row.found.subject_id, row.found.metric, row.evidence, row.measure, row.scores, evaluation.at,
                     if checked.mode == Mode::Shadow { "shadow" } else { "new" }]).map_err(sql)?;
+                if seed_attachment && checked.mode == Mode::Live && row.found.scores.impact >= 2 {
+                    tx.execute("INSERT OR IGNORE INTO supervisor_attach_seeds (fingerprint, seeded_at)
+                        VALUES (?1, ?2)", (&row.key, evaluation.at)).map_err(sql)?;
+                }
             }
             tx.execute(&format!("UPDATE supervisor_signals SET state = 'resolved'
                 WHERE project = ?1 AND detector = ?2 AND {ACTIVE}

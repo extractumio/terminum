@@ -21,7 +21,10 @@ pub(super) struct Fixture {
 
 impl Fixture {
     pub fn new(name: &str) -> Self {
-        let path = crate::testutil::fresh_dir(&format!("supervisor-{name}")).join("kanban.sqlite");
+        Self::in_path(crate::testutil::fresh_dir(&format!("supervisor-{name}")).join("kanban.sqlite"))
+    }
+
+    pub fn in_path(path: PathBuf) -> Self {
         let fixture = Self { store: Store::open(path.clone()), path, number: Cell::new(0) };
         fixture.write("INSERT INTO projects (id, name, color, dir, place) VALUES ('other', 'Other', 1, '', 1)", []);
         fixture

@@ -78,8 +78,16 @@ pub(super) fn wait_human(q: &Query<'_, '_>) -> Result<Measurements, String> {
             waits::queued_task("t")), (q.project, q.window.end), |r| Ok((r.get::<_, String>(0)?, r.get::<_, Option<String>>(1)?, r.get::<_, Option<i64>>(2)?)))?
     };
     let baseline = match q.detector.threshold {
-        Threshold::Baseline { percentile: p, floor } => percentile(&mut history.iter().map(|(_, _, n)| *n).collect::<Vec<_>>(), p).unwrap_or(floor),
-        _ => 0.0,
+        Threshold::Baseline { percentile: p, floor } => {
+            let baseline = percentile(&mut history.iter().map(|(_, _, n)| *n).collect::<Vec<_>>(), p).unwrap_or(floor);
+            out.threshold_hint = Some(("wait_minutes", baseline.max(floor)));
+            baseline
+        }
+        Threshold::Absolute(limit) => {
+            out.threshold_hint = Some(("wait_minutes", limit));
+            0.0
+        }
+        Threshold::Change { .. } => 0.0,
     };
     let history_evidence: Vec<_> = history.into_iter().flat_map(|(a, b, _)| [events(a), events(b)]).collect();
     for (id, wait, at) in candidates {
@@ -297,6 +305,11 @@ pub(super) fn backlog(q: &Query<'_, '_>) -> Result<Measurements, String> {
 }
 
 pub(super) fn schedule(q: &Query<'_, '_>) -> Result<Measurements, String> {
+    if !q.historical && !q.tx.query_row("SELECT EXISTS (SELECT 1 FROM schedules WHERE project = ?1 AND deleted_at IS NULL)",
+        [q.project], |r| r.get::<_, bool>(0)).map_err(sql)?
+    {
+        return Ok(Measurements::missing("No project routines are configured."));
+    }
     let events_sql = project_events();
     let fires = rows(q.tx, &format!("{events_sql}
         SELECT s.id, f.id, f.state IN ('failed','skipped'), f.missed,

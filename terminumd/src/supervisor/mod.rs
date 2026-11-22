@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 //! Deterministic Supervisor queries (AC-211, AC-212). Evaluation is read-only; recording is explicit.
 
+mod attach;
 mod attribution;
 mod catalog;
 mod impact;
@@ -12,6 +13,8 @@ mod scoreboard;
 mod flow;
 mod people;
 mod signals;
+mod settings;
+mod settings_api;
 mod spend;
 
 #[cfg(test)]
@@ -31,11 +34,12 @@ pub(crate) use catalog::Rule;
 pub(crate) use signals::Signal;
 pub(crate) use replay::replay;
 
-const SCHEMA: usize = 42;
+const SCHEMA: usize = 43;
 const DAY: i64 = 86_400;
 const WEEK: i64 = 7 * DAY;
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub(crate) enum Mode {
     Off,
     Shadow,
@@ -43,7 +47,8 @@ pub(crate) enum Mode {
     Digest,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub(crate) enum Threshold {
     Absolute(f64),
     Baseline { percentile: u8, floor: f64 },
@@ -175,12 +180,15 @@ pub(crate) struct Evaluation {
     pub(crate) detectors: Vec<Checked>,
 }
 
+type MeasuredSubjects = Option<Vec<(&'static str, String, &'static str)>>;
+
 #[derive(Debug)]
 pub(crate) struct Checked {
     pub rule: Rule,
     pub mode: Mode,
     pub unavailable: Vec<&'static str>,
     pub findings: Vec<Finding>,
+    thresholds: BTreeMap<&'static str, attach::Range>,
     complete_metrics: Vec<&'static str>,
     measured: MeasuredSubjects,
 }
@@ -191,6 +199,7 @@ struct Measurements {
     readings: Vec<Reading>,
     unavailable: Vec<&'static str>,
     complete_metrics: Vec<&'static str>,
+    threshold_hint: Option<(&'static str, f64)>,
 }
 
 impl Measurements {
@@ -249,8 +258,8 @@ impl Reading {
         self
     }
 
-    fn exceeds(&self, threshold: Threshold) -> Option<(f64, f64)> {
-        let (baseline, limit) = match self.fixed.unwrap_or(threshold) {
+    fn limits(&self, threshold: Threshold) -> Option<(f64, f64)> {
+        Some(match self.fixed.unwrap_or(threshold) {
             Threshold::Absolute(limit) => (match self.comparison { Comparison::Deviation(target) => target, _ => limit }, limit),
             Threshold::Baseline { percentile: p, floor } => {
                 let baseline = percentile(&mut self.history.clone(), p).unwrap_or(floor);
@@ -264,7 +273,11 @@ impl Reading {
                 };
                 (baseline, limit)
             }
-        };
+        })
+    }
+
+    fn exceeds(&self, threshold: Threshold) -> Option<(f64, f64)> {
+        let (baseline, limit) = self.limits(threshold)?;
         let fires = match self.comparison {
             Comparison::Above => self.value > limit,
             Comparison::AtLeast => self.value >= limit,
@@ -335,22 +348,43 @@ pub(crate) fn evaluate(store: &Store, project: &str, at: i64, detectors: &[Detec
     }
     store.snapshot(SCHEMA, |tx| {
         check_project(tx, project)?;
-        evaluate_snapshot(tx, project, at, None, detectors, None, true)
+        evaluate_snapshot(tx, project, at, detectors, EvaluationInputs { current_state: true, ..EvaluationInputs::default() })
     })
 }
 
+#[derive(Default)]
+struct EvaluationInputs<'a> {
+    first: Option<i64>,
+    weeks: Option<&'a [scoreboard::Week]>,
+    current_state: bool,
+    observe_thresholds: bool,
+}
+
 fn evaluate_snapshot(
-    tx: &Transaction, project: &str, at: i64, first: Option<i64>, detectors: &[Detector],
-    weeks: Option<&[scoreboard::Week]>, current_state: bool,
+    tx: &Transaction, project: &str, at: i64, detectors: &[Detector], inputs: EvaluationInputs<'_>,
 ) -> Result<Evaluation, String> {
+    let EvaluationInputs { first, weeks, current_state, observe_thresholds } = inputs;
     let mut checked = Vec::new();
     for detector in detectors {
         let window = Window::of(at, detector.window_days);
-        let (data, mut findings, measured) = measure_detector(tx, project, detector, window, current_state)?;
+        let mut data = measure_detector(tx, project, detector, window, current_state)?;
+        let mut thresholds = BTreeMap::new();
+        if observe_thresholds {
+            for (metric, limit) in data.threshold_hint.into_iter().chain(data.readings.iter()
+                .filter_map(|r| r.limits(detector.threshold).map(|(_, limit)| (r.metric, limit))))
+            {
+                thresholds.entry(metric).and_modify(|band: &mut attach::Range| band.include(limit))
+                    .or_insert_with(|| attach::Range::new(limit));
+            }
+        }
+        let measured = matches!(detector.rule, Rule::LimitNear | Rule::StalePlan).then(|| {
+            data.readings.iter().map(|r| (r.subject_kind, r.subject_id.clone(), r.metric)).collect()
+        });
+        let mut findings = collect_findings(&mut data, detector, window, current_state);
         findings.sort_by(|a, b| a.key().cmp(&b.key()));
         checked.push(Checked {
             rule: detector.rule, mode: detector.mode, unavailable: data.unavailable,
-            findings, complete_metrics: data.complete_metrics, measured,
+            findings, thresholds, complete_metrics: data.complete_metrics, measured,
         });
     }
     let mut result = Evaluation { project: project.into(), at, detectors: checked };
@@ -390,26 +424,23 @@ fn evaluate_snapshot(
     Ok(result)
 }
 
-type MeasuredSubjects = Option<Vec<(&'static str, String, &'static str)>>;
-
 fn measure_detector(
     tx: &Transaction, project: &str, detector: &Detector, window: Window, current_state: bool,
-) -> Result<(Measurements, Vec<Finding>, MeasuredSubjects), String> {
+) -> Result<Measurements, String> {
     let query = Query { tx, project, detector, window, historical: !current_state };
-    let mut data = if detector.mode == Mode::Off {
-        Measurements::missing("Detector is off.")
+    if detector.mode == Mode::Off {
+        Ok(Measurements::missing("Detector is off."))
     } else if !current_state && detector.rule.present_only() {
-        Measurements::missing("Historical slot or priority state is unavailable.")
+        Ok(Measurements::missing("Historical slot or priority state is unavailable."))
     } else {
-        detector.rule.query(&query)?
-    };
-    let measured = matches!(detector.rule, Rule::LimitNear | Rule::StalePlan).then(|| {
-        data.readings.iter().map(|r| (r.subject_kind, r.subject_id.clone(), r.metric)).collect()
-    });
-    let findings = std::mem::take(&mut data.readings).into_iter()
+        detector.rule.query(&query)
+    }
+}
+
+fn collect_findings(data: &mut Measurements, detector: &Detector, window: Window, current_state: bool) -> Vec<Finding> {
+    std::mem::take(&mut data.readings).into_iter()
         .filter(|reading| current_state || !matches!(reading.source, impact::Source::Present))
-        .filter_map(|reading| reading.finding(detector.threshold, window)).collect();
-    Ok((data, findings, measured))
+        .filter_map(|reading| reading.finding(detector.threshold, window)).collect()
 }
 
 impl Evaluation {
