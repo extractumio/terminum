@@ -88,6 +88,14 @@ fn ac213_one_week_with_two_additive_quantities_is_high() {
     assert_eq!(signal.scores.impact, 2);
     assert!(signal.impact_basis.shares.iter().any(|s| s.unit == Unit::FailureEvents && s.amount == 3.0));
     assert!(signal.impact_basis.shares.iter().any(|s| s.unit == Unit::Tokens && s.amount == 600.0));
+
+    f.task("shared", None, "P2", "IN PROGRESS", NOW - WEEK);
+    f.write("INSERT INTO run_tasks (run, task) SELECT id, 'shared' FROM runs", []);
+    let d = Fixture::detector("repeated_failures");
+    evaluate(&f.store, PROJECT, NOW + 1, &[d]).unwrap().record(&f.store).unwrap();
+    let shared = super::signals(&f.store, PROJECT).unwrap();
+    assert_eq!(shared[0].scores.impact, 1);
+    assert!(shared[0].impact_basis.shares.iter().all(|s| s.unit == Unit::FailureEvents));
 }
 
 fn replay_args() -> Vec<String> {

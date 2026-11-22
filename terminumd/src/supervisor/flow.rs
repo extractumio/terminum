@@ -146,22 +146,23 @@ pub(super) fn failed_runs() -> String {
 pub(super) fn failed_repeat(q: &Query<'_, '_>) -> Result<Measurements, String> {
     let events_sql = project_events();
     let failed = failed_runs();
-    let rows = rows(q.tx, &format!("{events_sql}, {failed} SELECT task, run, id FROM failed_runs
+    let rows = rows(q.tx, &format!("{events_sql}, {failed} SELECT task, run, id,
+            (SELECT count(*) FROM run_tasks WHERE run = f.run) = 1 FROM failed_runs f
         WHERE at >= ?3 ORDER BY task, at, id"), (q.project, q.window.end, q.window.start),
-        |r| Ok((r.get::<_, String>(0)?, r.get::<_, Option<String>>(1)?, r.get::<_, String>(2)?)))?;
-    let mut groups = BTreeMap::<String, BTreeMap<String, String>>::new();
+        |r| Ok((r.get::<_, String>(0)?, r.get::<_, Option<String>>(1)?, r.get::<_, String>(2)?, r.get::<_, bool>(3)?)))?;
+    let mut groups = BTreeMap::<String, BTreeMap<String, (String, bool)>>::new();
     let mut out = Measurements::default();
-    for (task, run, event) in rows {
+    for (task, run, event, sole_task) in rows {
         if let Some(run) = run {
-            groups.entry(task).or_default().insert(run, event);
+            groups.entry(task).or_default().insert(run, (event, sole_task));
         } else {
             out.unavailable = vec!["Some failures lack a retained run launch."];
         }
     }
     for (task, runs) in groups {
         let count = runs.len() as f64;
-        let attributed = runs.keys().cloned().collect();
-        let evidence = runs.into_iter().flat_map(|(run, event)| [Evidence::Runs(run), events(event)]).collect();
+        let attributed = runs.iter().filter(|(_, (_, sole_task))| *sole_task).map(|(run, _)| run.clone()).collect();
+        let evidence = runs.into_iter().flat_map(|(run, (event, _))| [Evidence::Runs(run), events(event)]).collect();
         out.readings.push(Reading::new("task", task, "failed_runs", count, evidence).source(Source::Count(Unit::FailureEvents))
             .attributed_runs(attributed).comparison(Comparison::AtLeast));
     }
@@ -171,23 +172,28 @@ pub(super) fn failed_repeat(q: &Query<'_, '_>) -> Result<Measurements, String> {
 pub(super) fn rerun(q: &Query<'_, '_>) -> Result<Measurements, String> {
     let events_sql = project_events();
     let launches = rows(q.tx, &format!("{events_sql}
-        SELECT m.task, r.id, i.id, e.id FROM inputs i JOIN runs r ON r.id = i.run
+        SELECT m.task, r.id, i.id, e.id, (SELECT count(*) FROM run_tasks WHERE run = r.id) = 1
+        FROM inputs i JOIN runs r ON r.id = i.run
         JOIN run_tasks m ON m.run = r.id JOIN tasks t ON t.id = m.task
         JOIN project_events e ON e.seq = (SELECT max(d.seq) FROM project_events d
             WHERE d.task = m.task AND d.kind = 'move' AND json_extract(d.data, '$.to') = 'DONE' AND d.at < i.at / 1000)
         WHERE {LAUNCH} AND i.at BETWEEN ?3 * 1000 AND ?2 * 1000 + 999
             AND t.project = ?1 AND r.project = ?1
         ORDER BY m.task, i.at, i.id"), (q.project, q.window.end, q.window.start),
-        |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, i64>(2)?, r.get::<_, String>(3)?)))?;
-    let mut groups = BTreeMap::<String, (BTreeSet<String>, Vec<Evidence>)>::new();
-    for (task, run, input, done) in launches {
-        let (runs, evidence) = groups.entry(task).or_default();
+        |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, i64>(2)?, r.get::<_, String>(3)?, r.get::<_, bool>(4)?)))?;
+    let mut groups = BTreeMap::<String, (BTreeSet<String>, BTreeSet<String>, Vec<Evidence>)>::new();
+    for (task, run, input, done, sole_task) in launches {
+        let (runs, attributed, evidence) = groups.entry(task).or_default();
         if runs.insert(run.clone()) {
+            if sole_task {
+                attributed.insert(run.clone());
+            }
             evidence.extend([Evidence::Runs(run), Evidence::Inputs(input), events(done)]);
         }
     }
-    Ok(Measurements { readings: groups.into_iter().map(|(task, (runs, evidence))|
-        Reading::new("task", task, "runs_after_done", runs.len() as f64, evidence).source(Source::Count(Unit::RunEvents)).attributed_runs(runs)).collect(), ..Measurements::default() })
+    Ok(Measurements { readings: groups.into_iter().map(|(task, (runs, attributed, evidence))|
+        Reading::new("task", task, "runs_after_done", runs.len() as f64, evidence)
+            .source(Source::Count(Unit::RunEvents)).attributed_runs(attributed)).collect(), ..Measurements::default() })
 }
 
 pub(super) fn starved(q: &Query<'_, '_>) -> Result<Measurements, String> {

@@ -116,6 +116,13 @@ fn render(tx: &Transaction, result: &Evaluation, weeks: &[scoreboard::Week], fir
             writeln!(output).unwrap();
         }
     }
-    writeln!(output, "Period improved: {}.", if scoreboard::period_improved(&indicators) { "yes" } else { "no" }).unwrap();
+    let outcome = if indicators.iter().all(|indicator| indicator.verdict == scoreboard::Verdict::Unmeasured) {
+        "not measured yet"
+    } else if scoreboard::period_improved(&indicators) {
+        "yes"
+    } else {
+        "no"
+    };
+    writeln!(output, "Period improved: {outcome}.").unwrap();
     Ok(output)
 }
