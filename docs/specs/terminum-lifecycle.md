@@ -409,6 +409,7 @@ Scenario: AC-102 failure — the guard's own folder cannot be removed
   Given ownership inspection succeeds and the guard cannot remove its private folder
   When it returns
   Then it reports the removal error and retained path, preserves a nonzero step status and fails an otherwise successful step
+  And a root that is already absent counts as removed
 
 Scenario: AC-102 failure — working-directory inspection times out
   Given macOS working-directory inspection exceeds its 15 s deadline twice or fails

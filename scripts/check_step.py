@@ -192,8 +192,9 @@ def check(command, folder, cancelled):
             try:
                 shutil.rmtree(folder)
             except OSError as error:
-                print(f"could not remove private root: {error}", file=sys.stderr)
-                status = status or 1
+                if os.path.lexists(folder):
+                    print(f"could not remove private root: {error}", file=sys.stderr)
+                    status = status or 1
         return status
     finally:
         if not private_group and os.path.lexists(folder):

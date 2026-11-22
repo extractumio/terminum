@@ -202,6 +202,13 @@ class Guard(unittest.TestCase):
                     if folder and os.path.exists(folder):
                         shutil.rmtree(folder)
 
+    def test_a_root_removed_during_cleanup_counts_as_removed(self):  # AC-102
+        setup = ("from unittest.mock import Mock; remove=check_step.shutil.rmtree; "
+                 "check_step.shutil.rmtree=Mock(side_effect=lambda folder: (remove(folder), remove(folder))); ")
+        status, err, folder = guarded("exit 0", setup=setup)
+        self.assertEqual((status, err), (0, ""))
+        self.assertFalse(os.path.exists(folder))
+
     def test_a_left_process_fails_and_is_ended(self):
         status, err, _ = guarded("sleep 61 >/dev/null 2>&1 &")
         self.assertEqual(status, 3)
