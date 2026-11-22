@@ -36,7 +36,13 @@ export async function liveIncidents(page, opts) {
     await phone.locator("#newtask").click();
     await phone.locator("#newtitle").fill("Draft beside the drill");
     await signIn(files);
+    const connecting = files.waitForEvent("websocket", { predicate: (socket) => new URL(socket.url()).pathname === `${FEED}/watch` });
     await files.goto(`${base}/fb/`);
+    const watch = await connecting;
+    const wakeups = [];
+    watch.on("framereceived", ({ payload }) => wakeups.push(payload));
+    await files.waitForLoadState("networkidle", { timeout: 5000 });
+    check("AC-225 the wake-up socket leaves standalone Files free to settle", true);
     await j(api, "PUT", { enabled: true });
     if (!await until(async () => Boolean((await j(api)).last_ok), 30000)) throw new Error("The drill's collector did not start.");
 
@@ -50,6 +56,9 @@ export async function liveIncidents(page, opts) {
       Date.now() - start < 60000, `${Math.round((Date.now() - start) / 1000)} seconds · ${wideName} and ${phoneName}`);
 
     await page.locator('#colswitch button[data-status="WAIT FOR HUMAN"]').click();
+    check("AC-225 the signed-in wake-up socket carries only a change notification",
+      wakeups.length > 0 && wakeups.every((message) => message === "changed"));
+
     const pinned = page.locator('.col[data-status="WAIT FOR HUMAN"] .cards > :first-child .incident-card');
     const id = await pinned.getAttribute("data-incident");
     const timeline = `${FEED}/${id}`;
@@ -88,7 +97,8 @@ export async function liveIncidents(page, opts) {
       return r.status;
     });
     await files.locator(BAR).waitFor({ state: "hidden", timeout: 15000 });
-    check("AC-226 revoked sign-in clears the existing notice in standalone Files", signedOut === 204);
+    check("AC-226 revoking the Files sign-in closes its wake-up socket and clears the notice",
+      signedOut === 204 && await until(() => watch.isClosed()));
 
     const screen = await page.context().newPage();
     await screen.goto(`${base}${await pinned.getByRole("link", { name: "Timeline" }).getAttribute("href")}`);

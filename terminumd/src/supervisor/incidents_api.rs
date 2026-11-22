@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 //! AC-224–226: incident reads and owner actions on the signed-in page listener.
 
-use axum::{Json, Router, extract::{Path, Query, State}, response::Response, routing::get};
+use axum::{Json, Router, extract::{Path, Query, State, ws::{Message, WebSocket, WebSocketUpgrade}},
+    http::HeaderMap, response::{IntoResponse, Response}, routing::get};
 use rusqlite::{OptionalExtension, Row, Transaction};
 use std::time::Duration;
 use serde::{Deserialize, Serialize};
@@ -87,17 +88,51 @@ async fn attention(State(app): State<Shared>) -> Response {
     answer(off(move || app.tasks.snapshot(SCHEMA, pending)).await)
 }
 
-#[derive(Deserialize)]
-struct Watch { after: Option<u64> }
+// The page router has checked the sign-in and Origin before this upgrade. The socket
+// only says a change occurred. The feed and every owner action check sign-in afresh.
+async fn watch(State(app): State<Shared>, headers: HeaderMap, ws: WebSocketUpgrade) -> Response {
+    let credential = crate::auth::checks::credential_of(&headers).unwrap_or_default();
+    let ws = ws.protocols(["tm"]).max_frame_size(1024).max_message_size(1024);
+    ws.on_upgrade(move |socket| wakeups(app, credential, socket)).into_response()
+}
 
-// A wake-up carries no incident data. The next feed read goes through the sign-in guard again.
-async fn watch(State(app): State<Shared>, Query(watch): Query<Watch>) -> Json<u64> {
+async fn wakeups(app: Shared, credential: String, mut socket: WebSocket) {
+    let mut revoked = app.signins.revocations();
     let mut updates = app.supervisor.incident_updates.subscribe();
-    if watch.after == Some(*updates.borrow_and_update()) {
-        let _ = tokio::time::timeout(Duration::from_secs(20), updates.changed()).await;
+    let signed_in = || app.signins.check(&credential, true);
+    if !signed_in() {
+        return;
     }
-    let current = *updates.borrow_and_update();
-    Json(current)
+    let mut ping = tokio::time::interval(Duration::from_secs(15));
+    loop {
+        let outgoing = tokio::select! {
+            result = revoked.changed() => {
+                if result.is_err() || !signed_in() {
+                    break;
+                }
+                continue;
+            }
+            _ = ping.tick() => {
+                if !signed_in() {
+                    break;
+                }
+                Message::Ping(Default::default())
+            }
+            result = updates.changed() => {
+                if result.is_err() {
+                    break;
+                }
+                Message::Text("changed".into())
+            }
+            incoming = socket.recv() => match incoming {
+                Some(Ok(Message::Ping(_) | Message::Pong(_))) => continue,
+                _ => break,
+            }
+        };
+        if !matches!(tokio::time::timeout(Duration::from_secs(10), socket.send(outgoing)).await, Ok(Ok(()))) {
+            break;
+        }
+    }
 }
 
 #[derive(Default, Deserialize)]

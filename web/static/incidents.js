@@ -1,14 +1,15 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // AC-225–226: one signed-in incident feed and the same owner keys on every surface.
-import { held } from "./signin.js";
+import { held, prove, protocols, socketUrl } from "./signin.js";
 import { oneAtATime } from "./dialogs.js";
 import { api, button, placeChildren, showError, stamp } from "./kanbanutil.js";
 import { el, part, textKey } from "./listparts.js";
 
 export const INCIDENTS = "/api/supervisor/incidents";
 const listeners = new Set();
-const KEY = location.pathname.startsWith("/fb/") ? "textkey btn" : "textkey";
-let rows = [], published = "", reading = false, again = false, writes = 0;
+const FILES = location.pathname.startsWith("/fb/");
+const KEY = FILES ? "textkey btn" : "textkey";
+let rows = [], published = "", reading = false, again = false, writes = 0, signedOut = false;
 
 export function onIncidents(heard) {
   listeners.add(heard);
@@ -16,6 +17,7 @@ export function onIncidents(heard) {
 }
 
 async function readIncidents() {
+  if (signedOut) return;
   if (reading) { again = true; return; }
   if (!held()) { publish([]); return; }
   reading = true;
@@ -25,6 +27,7 @@ async function readIncidents() {
     if (!Array.isArray(got)) throw new Error("The incident feed returned an invalid answer.");
     if (before === writes) publish(held() ? got : []);
   } catch (e) {
+    if (FILES && e.status === 401) signedOut = true; // standalone Files signs in on its next load
     if (!held() || e.status === 401) publish([]);
     showError(feedError, rows.some((i) => !i.acknowledged_at) ? e.message : "");
   } finally {
@@ -108,22 +111,25 @@ export function incidentCards(host, surface, make = (i) => incidentCard(i, surfa
   };
 }
 
-// A long-held wake-up request avoids relying on background tabs' throttled timers. It
-// carries only a revision. The feed itself always uses a fresh signed-in request.
+// The signed-in wake-up socket carries no incident data. An open or a change
+// fetches the feed through the usual sign-in guard.
 async function watchIncidents() {
-  let after;
+  if (signedOut) return;
+  const retry = () => setTimeout(watchIncidents, 5000);
+  if (!held()) { retry(); return; }
   try {
-    while (held()) {
-      const query = after === undefined ? "" : `?after=${after}`;
-      after = await api(`${INCIDENTS}/watch${query}`, { signal: AbortSignal.timeout(25000) });
-      if (!Number.isSafeInteger(after)) throw new Error("The incident watch returned an invalid answer.");
-      await readIncidents();
+    if (await prove() === "ok") {
+      const address = new URL(socketUrl());
+      address.pathname = `${INCIDENTS}/watch`;
+      const socket = new WebSocket(address, protocols());
+      socket.addEventListener("open", readIncidents);
+      socket.addEventListener("message", readIncidents);
+      socket.addEventListener("close", () => { readIncidents(); retry(); });
+      return;
     }
-  } catch {
-    await readIncidents();
-  } finally {
-    setTimeout(watchIncidents, 5000);
-  }
+  } catch { /* the feed reports loss of access to an incident that was visible */ }
+  readIncidents();
+  retry();
 }
 
 const feedError = el("p", "incident-error");
@@ -184,6 +190,7 @@ if (window.top === window) {
   });
   readIncidents();
   watchIncidents();
+  setInterval(readIncidents, 20000);   // snooze expiry and changes made while disconnected
   document.addEventListener("visibilitychange", () => { if (!document.hidden) readIncidents(); });
   addEventListener("pageshow", readIncidents);
 }
