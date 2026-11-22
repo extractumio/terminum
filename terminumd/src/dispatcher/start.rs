@@ -28,7 +28,7 @@ pub(super) fn start_scaled(d: Duration) -> Duration {
 /// older bash's login shell (macOS's) or ash's waits for the terminal for good, spinning, with no prompt.
 /// The `trap`: with job control a dash or ash dies of its job's Ctrl-C, and the window with it; a caught
 /// signal goes back to its default in the agent and the shell after.
-const WRAPPER: &str = r#"trap : INT; set -m; d=$1; c=$2; t=$3; case $d in "~"|"~/"*) d=$HOME${d#"~"};; esac; s=${SHELL:-/bin/sh}; if cd -- "$d"; then "$s" -lic "$c"; e=$?; else e=-1; fi; "$t" set -p -t "$TMUX_PANE" @terminum-exit "$e"; stty -icanon min 0 time 0 2>/dev/null; cat >/dev/null 2>&1; stty sane 2>/dev/null; exec "$s" -l"#;
+const WRAPPER: &str = r#"trap : INT; set -m; d=$1; c=$2; t=$3; case $d in "~"|"~/"*) d=$HOME${d#"~"};; esac; s=${SHELL:-/bin/sh}; if cd -- "$d"; then "$s" -lic "$c"; e=$?; else e=-1; fi; "$t" set -p -t "$TMUX_PANE" @terminum-exit "$e"; if [ "$4" = "round" ]; then exit 0; fi; stty -icanon min 0 time 0 2>/dev/null; cat >/dev/null 2>&1; stty sane 2>/dev/null; exec "$s" -l"#;
 /// The wrapper a window's line runs in: its status as `@terminum-exit`, the pane kept (terminum-integration.md AC-190).
 pub(crate) fn window_wrapper() -> &'static str {
     WRAPPER
@@ -38,8 +38,9 @@ pub(crate) fn window_wrapper() -> &'static str {
 const NO_FOLDER: i32 = -1;
 
 /// The words of a shell-command's arguments for tmux: each quoted, tmux runs no shell of its own.
-fn window_command(folder: &str, command: &str, tmux: &str) -> String {
-    ["/bin/sh", "-c", WRAPPER, "sh", folder, command, tmux].iter().map(|w| args::quote(w)).collect::<Vec<_>>().join(" ")
+fn window_command(folder: &str, command: &str, tmux: &str, round: bool) -> String {
+    let mode = if round { "round" } else { "" };
+    ["/bin/sh", "-c", WRAPPER, "sh", folder, command, tmux, mode].iter().map(|w| args::quote(w)).collect::<Vec<_>>().join(" ")
 }
 
 fn tmux_of(server: &Server) -> String {
@@ -52,7 +53,7 @@ fn tmux_of(server: &Server) -> String {
 /// A new window: after the project's last session on this server, else in a session of its name,
 /// made when there is none; its pane and where it stands.
 async fn open_window(app: &Shared, server: &Arc<Server>, project: Option<(&str, &str)>, folder: &str, command: &str, staged: bool) -> Result<(String, String), String> {
-    let cmd = if staged { "/bin/sleep 120".into() } else { window_command(folder, command, &tmux_of(server)) };
+    let cmd = if staged { "/bin/sleep 120".into() } else { window_command(folder, command, &tmux_of(server), false) };
     let fmt = "-P -F '#{pane_id} #{session_name}:#{window_index}'";
     let last = project.and_then(|(id, _)| {
         let ps = app.projects.lock();
@@ -159,7 +160,7 @@ async fn open_pane(app: &Shared, o: Opening<'_>, staged: bool) -> Result<String,
     if staged {
         let run = o.run.to_owned();
         store(app, move |tx| crate::supervisor::rounds::check_first_prompt(tx, &run)).await?;
-        let line = format!("respawn-pane -k -t {pane} {}", window_command(o.folder, o.command, &tmux_of(o.server)));
+        let line = format!("respawn-pane -k -t {pane} {}", window_command(o.folder, o.command, &tmux_of(o.server), true));
         marked_command(o.server, &pane, o.run, &line).await?;
         crate::inputs::wrote(app, crate::inputs::Who::dispatcher("dispatcher.start", o.run, o.tasks, o.agent),
             "launch", o.server, &pane, o.command, None, o.project);
@@ -397,7 +398,7 @@ pub async fn respawn(app: &Shared, server: &Arc<Server>, pane: &str, old: &str, 
     if let Some(w) = app.dispatcher.watch.lock().get_mut(&server.key(pane)) {
         w.clear_subagents();                                // a new agent: none of the last one's
     }
-    server.run(format!("respawn-pane -k -t {pane} {}", window_command(folder, command, &tmux_of(server)))).await.map(drop).map_err(|e| format!("tmux did not start it: {e}"))
+    server.run(format!("respawn-pane -k -t {pane} {}", window_command(folder, command, &tmux_of(server), false))).await.map(drop).map_err(|e| format!("tmux did not start it: {e}"))
 }
 
 #[cfg(test)]

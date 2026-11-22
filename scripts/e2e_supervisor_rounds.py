@@ -165,6 +165,19 @@ def main():
         call(expiry_path, "PUT", {"enabled": False})
         check("AC-216 disabling the project ends its active investigation",
               "disabled" in ended(expiry_project, 2)[1][3].lower())
+        call(expiry_path, "PUT", {"enabled": True})
+        call(route, "POST", {})
+        wait_for(taken, lambda lines: len(lines) == 4, 12, every=0.2)
+        active = db("SELECT r.id, d.pane_key FROM supervisor_rounds r JOIN runs d ON d.id = r.run "
+                    "WHERE r.project = ? AND r.ended_at IS NULL", [expiry_project])
+        displaced, key = active[0]
+        pane = key.rsplit(":", 1)[1]
+        tmux_on(SOCKET, "set-option", "-p", "-t", pane, "@terminum-run", "fixture-other-run")
+        ended(expiry_project, 3)
+        check("AC-234 a pane with a changed tmux mark survives with its original role mark revoked",
+              pane in tmux_on(SOCKET, "list-panes", "-a", "-F", "#{pane_id}").splitlines()
+              and db("SELECT m.round, r.ended_at IS NOT NULL FROM supervisor_panes m JOIN supervisor_rounds r ON r.id = m.round "
+                     "WHERE m.pane_key = ?", [key]) == [(displaced, 1)])
     except Exception:
         print(t.log())
         raise

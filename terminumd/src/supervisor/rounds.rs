@@ -220,12 +220,12 @@ pub(crate) const ACTIVE: &str = "q.deadline > ?2 AND q.ended_at IS NULL AND q.fa
     AND EXISTS (SELECT 1 FROM project_supervisor p WHERE p.project = q.project
         AND p.enabled = 1 AND p.generation = q.generation)";
 
-/// Other first prompts belong to their ordinary Dispatcher path; rounds must still be authorized.
+/// A staged investigation must still be active before starting the agent and typing.
 pub(crate) fn check_first_prompt(tx: &Transaction, run: &str) -> Result<(), String> {
-    let revoked = tx.prepare_cached(&format!("SELECT EXISTS (SELECT 1 FROM supervisor_rounds q
-        WHERE q.run = ?1 AND NOT ({ACTIVE}))")).map_err(sql)?
+    let active = tx.prepare_cached(&format!("SELECT EXISTS (SELECT 1 FROM supervisor_rounds q
+        WHERE q.run = ?1 AND ({ACTIVE}))")).map_err(sql)?
         .query_row((run, now()), |r| r.get::<_, bool>(0)).map_err(sql)?;
-    if revoked { Err("The Supervisor investigation is no longer active.".into()) } else { Ok(()) }
+    if active { Ok(()) } else { Err("The Supervisor investigation is no longer active.".into()) }
 }
 
 pub(crate) fn mark(tx: &Transaction, run: &str, key: &str) -> Result<(), String> {

@@ -43,22 +43,26 @@ async fn beat(app: &Shared) -> Result<(), String> {
                 finished: row.get(3)?, failed: row.get(4)? }))?;
         Ok((active, rounds::waiting(tx, at, None)?))
     })).await?;
+    // A launch can link its pane and finish between two awaits. Exclude launches before reading tmux,
+    // so a round that just finished opening cannot be paired with an older list.
+    let active: Vec<_> = {
+        let starting = app.dispatcher.starting.lock();
+        active.into_iter().filter(|round| !starting.contains(&round.run)).collect()
+    };
     let panes = if active.is_empty() { Vec::new() } else {
         app.tmux.local.run("list-panes -a -F '#{pane_id}\t#{@terminum-run}\t#{@terminum-exit}\t#{pane_pid}'").await?
     };
     let panes = std::sync::Arc::new(panes);
     for r in active {
-        if !app.dispatcher.starting.lock().contains(&r.run) {
-            let a = app.clone();
-            let Some(hold) = Held::take(app, |d| &d.ending, &r.run) else { continue };
-            let panes = panes.clone();
-            tokio::spawn(async move {
-                if let Err(error) = check(&a, r, &panes).await {
-                    tracing::warn!(event = "supervisor.round_end", %error);
-                }
-                drop(hold);
-            });
-        }
+        let a = app.clone();
+        let Some(hold) = Held::take(app, |d| &d.ending, &r.run) else { continue };
+        let panes = panes.clone();
+        tokio::spawn(async move {
+            if let Err(error) = check(&a, r, &panes).await {
+                tracing::warn!(event = "supervisor.round_end", %error);
+            }
+            drop(hold);
+        });
     }
     for (project, key) in waiting {
         if let Err(why) = admit(app, &project, &key).await {
@@ -164,7 +168,11 @@ async fn check(app: &Shared, active: Active, panes: &[String]) -> Result<(), Str
                 start::marked_command(&server, &pane, &id, &format!("kill-pane -t {pane}")).await?;
                 gone = true;
             }
-            None => { gone = true; }
+            None => {
+                let current = server.run("list-panes -a -F '#{pane_id}'").await?;
+                if current.contains(&pane) { return Ok(()); }
+                gone = true;
+            }
             _ => (),
         }
     }
