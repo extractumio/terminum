@@ -35,9 +35,9 @@ pub(crate) struct Signal {
     pub state: State,
 }
 
-fn fingerprint(project: &str, detector: &str, found: &Finding) -> String {
+fn fingerprint(project: &str, detector: &str, (kind, id, metric): (&str, &str, &str)) -> String {
     let mut hash = Sha256::new();
-    for field in [project, detector, found.subject_kind, &found.subject_id, found.metric] {
+    for field in [project, detector, kind, id, metric] {
         hash.update((field.len() as u64).to_be_bytes());
         hash.update(field.as_bytes());
     }
@@ -60,7 +60,30 @@ struct PreparedFinding<'a> {
     scores: String,
 }
 
+const ACTIVE: &str = "state IN ('new', 'shadow', 'raised', 'recurred')";
+
+struct PreparedRule<'a> {
+    checked: &'a super::Checked,
+    findings: Vec<PreparedFinding<'a>>,
+    keys: String,
+    complete_metrics: String,
+    measured: String,
+}
+
+pub(super) struct Prepared<'a> {
+    evaluation: &'a Evaluation,
+    batches: Vec<PreparedRule<'a>>,
+}
+
 pub(super) fn record(store: &Store, evaluation: &Evaluation) -> Result<(), String> {
+    let prepared = prepare(evaluation)?;
+    if prepared.batches.is_empty() {
+        return Ok(());
+    }
+    store.with(|tx| prepared.write(tx))
+}
+
+pub(super) fn prepare(evaluation: &Evaluation) -> Result<Prepared<'_>, String> {
     let mut batches = Vec::new();
     for detector in &evaluation.detectors {
         let complete = detector.unavailable.is_empty();
@@ -70,18 +93,23 @@ pub(super) fn record(store: &Store, evaluation: &Evaluation) -> Result<(), Strin
         let rule = detector.rule.id();
         let findings: Vec<_> = detector.findings.iter().map(|found| {
             Ok::<_, String>(PreparedFinding {
-                key: fingerprint(&evaluation.project, rule, found), found,
+                key: fingerprint(&evaluation.project, rule, found.key()), found,
                 evidence: encode(&found.evidence)?, measure: encode(&found.measure)?,
                 scores: encode(&RecordedScores { scores: found.scores, impact_basis: found.assessment.clone() })?,
             })
         }).collect::<Result<_, _>>()?;
         let keys = encode(&findings.iter().map(|f| &f.key).collect::<Vec<_>>())?;
-        batches.push((detector, findings, keys, encode(&detector.complete_metrics)?));
+        let measured = detector.measured.as_deref().unwrap_or_default().iter()
+            .map(|(kind, id, metric)| fingerprint(&evaluation.project, rule, (kind, id, metric))).collect::<Vec<_>>();
+        batches.push(PreparedRule { checked: detector, findings, keys,
+            complete_metrics: encode(&detector.complete_metrics)?, measured: encode(&measured)? });
     }
-    if batches.is_empty() {
-        return Ok(());
-    }
-    store.with(|tx| {
+    Ok(Prepared { evaluation, batches })
+}
+
+impl Prepared<'_> {
+    pub(super) fn write(self, tx: &Transaction) -> Result<(), String> {
+        let Self { evaluation, batches } = self;
         let mut upsert = tx.prepare_cached("INSERT INTO supervisor_signals
             (fingerprint, project, detector, subject_kind, subject_id, metric, evidence, measure, scores, first_seen, last_seen, count, state)
             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?10, 1, ?11)
@@ -93,8 +121,8 @@ pub(super) fn record(store: &Store, evaluation: &Evaluation) -> Result<(), Strin
                 WHEN state = 'shadow' THEN 'new'
                 WHEN state = 'resolved' THEN 'recurred'
                 ELSE state END").map_err(sql)?;
-        for (detector, findings, keys, metrics) in batches {
-            let rule = detector.rule.id();
+        for PreparedRule { checked, findings, keys, complete_metrics, measured } in batches {
+            let rule = checked.rule.id();
             let advanced = tx.execute("INSERT INTO supervisor_evaluations VALUES (?1, ?2, ?3)
                 ON CONFLICT (project, detector) DO UPDATE SET evaluated_at = excluded.evaluated_at
                 WHERE excluded.evaluated_at > supervisor_evaluations.evaluated_at", (&evaluation.project, rule, evaluation.at)).map_err(sql)?;
@@ -104,16 +132,22 @@ pub(super) fn record(store: &Store, evaluation: &Evaluation) -> Result<(), Strin
             for row in findings {
                 upsert.execute(params![row.key, evaluation.project, rule, row.found.subject_kind,
                     row.found.subject_id, row.found.metric, row.evidence, row.measure, row.scores, evaluation.at,
-                    if detector.mode == Mode::Shadow { "shadow" } else { "new" }]).map_err(sql)?;
+                    if checked.mode == Mode::Shadow { "shadow" } else { "new" }]).map_err(sql)?;
             }
-            tx.execute("UPDATE supervisor_signals SET state = 'resolved'
-                WHERE project = ?1 AND detector = ?2 AND state IN ('new', 'shadow', 'raised', 'recurred')
+            tx.execute(&format!("UPDATE supervisor_signals SET state = 'resolved'
+                WHERE project = ?1 AND detector = ?2 AND {ACTIVE}
                 AND fingerprint NOT IN (SELECT value FROM json_each(?3))
-                AND (?4 OR metric IN (SELECT value FROM json_each(?5)))",
-                (&evaluation.project, rule, keys, detector.unavailable.is_empty(), metrics)).map_err(sql)?;
+                AND (?4 OR metric IN (SELECT value FROM json_each(?5)) OR fingerprint IN (SELECT value FROM json_each(?6)))"),
+                (&evaluation.project, rule, keys, checked.unavailable.is_empty() && checked.measured.is_none(),
+                    complete_metrics, measured)).map_err(sql)?;
         }
         Ok(())
-    })
+    }
+}
+
+pub(super) fn resolve_rule(tx: &Transaction, project: &str, rule: super::Rule) -> Result<(), String> {
+    tx.execute(&format!("UPDATE supervisor_signals SET state = 'resolved'
+        WHERE project = ?1 AND detector = ?2 AND {ACTIVE}"), (project, rule.id())).map(drop).map_err(sql)
 }
 
 fn encode(value: &impl Serialize) -> Result<String, String> {

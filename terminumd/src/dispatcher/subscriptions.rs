@@ -121,6 +121,13 @@ impl Readings {
         self.0.lock().get(kind).is_some_and(|e| e.failed.is_some())
     }
 
+    /// One kind's last validated windows, for consumers inside terminumd.
+    pub(crate) fn latest(&self, kind: &str) -> Option<(i64, Vec<Window>)> {
+        let all = self.0.lock();
+        let (at, windows, _) = all.get(kind)?.reading.as_ref()?;
+        Some((*at, windows.clone()))
+    }
+
     /// The readings as the store keeps them, by kind `{at, windows, via}`: failures are not kept.
     pub fn kept(&self) -> Value {
         let all = self.0.lock();

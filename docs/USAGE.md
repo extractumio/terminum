@@ -459,6 +459,18 @@ reading for every agent of its kind. Its window says when each resets.
   lengths and reset times, only from a pane terminum lists; with an API key, Bedrock or Vertex
   nothing is sent.
 
+### Project Supervisor
+
+The Supervisor starts off for each project. The signed-in project endpoint
+`/api/task-projects/<ID>/supervisor` accepts a JSON PUT with `{"enabled": true}` or
+`{"enabled": false}`. GET returns the switch, the last successful collector beat as
+`last_ok` in Unix seconds, and `collector_dead` after two missed beats.
+
+An enabled project checks store changes every ten seconds. It keeps queue waits, available
+subscription readings and active plan ETAs every 15 minutes. Hook counts keep 30 days of
+numeric totals per session. Turning the Supervisor off stops collection and keeps its
+existing signals and measurement history.
+
 ### Supervisor replay
 
 Run `terminum supervisor replay --project <ID>` to inspect a project's retained history.

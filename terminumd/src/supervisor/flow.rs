@@ -31,6 +31,10 @@ pub(super) fn history_bounds(tx: &Transaction, project: &str, limit: i64) -> Res
         UNION ALL SELECT u.at FROM usage u JOIN runs r ON r.id = u.run WHERE r.project = ?1
         UNION ALL SELECT f.at FROM schedule_fires f JOIN schedules s ON s.id = f.schedule WHERE s.project = ?1
         UNION ALL SELECT r.ended FROM integration_rounds r JOIN integration_batches b ON b.id = r.batch WHERE b.project = ?1
+        UNION ALL SELECT min(at) FROM supervisor_points WHERE project = ?1 AND at <= ?2
+        UNION ALL SELECT max(at) FROM supervisor_points WHERE project = ?1 AND at <= ?2
+        UNION ALL SELECT min(at) FROM supervisor_hook_counts WHERE project = ?1 AND at <= ?2
+        UNION ALL SELECT max(at) FROM supervisor_hook_counts WHERE project = ?1 AND at <= ?2
         ) SELECT coalesce(min(at), ?2), coalesce(max(at), 0) FROM kept WHERE at BETWEEN 1 AND ?2", project_events()),
         (project, limit, key), |r| Ok((r.get(0)?, r.get(1)?))).map_err(sql)
 }

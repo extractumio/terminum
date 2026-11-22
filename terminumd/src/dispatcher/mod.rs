@@ -76,7 +76,7 @@ pub struct Dispatcher {
     active: Mutex<HashSet<String>>,
     /// panes with a live run: the others' hook events cost nothing here; changed only with the store's lock
     /// held, so a walk's read and a window's opening each see the other whole
-    panes: Mutex<HashSet<String>>,
+    panes: Mutex<HashMap<String, LivePane>>,
     /// those of them a + Session's run holds: their sessions are their projects' managers, which the list's rows
     /// say (terminum-agents.md AC-174); and whether they changed since the list was last asked to be read again
     managers: Mutex<HashSet<String>>,
@@ -109,6 +109,11 @@ pub struct Dispatcher {
     pub subscriptions: subscriptions::Readings,
     /// asking each kind's usage command (AC-168)
     asking: usageask::Asking,
+}
+
+struct LivePane {
+    run: String,
+    project: String,
 }
 
 /// What is known of a watched pane beyond the store; a restart learns it anew.
@@ -182,7 +187,23 @@ impl Dispatcher {
     }
 
     pub fn has_run(&self, key: &str) -> bool {
-        self.panes.lock().contains(key)
+        self.panes.lock().contains_key(key)
+    }
+
+    /// The project of a pane Dispatcher currently holds.
+    pub(crate) fn pane_project(&self, key: &str) -> Option<String> {
+        self.panes.lock().get(key).map(|pane| pane.project.clone())
+    }
+
+    fn track_pane(&self, key: &str, run: &str, project: &str) {
+        self.panes.lock().insert(key.to_owned(), LivePane { run: run.to_owned(), project: project.to_owned() });
+    }
+
+    fn release_pane(&self, key: &str, run: &str) {
+        let mut panes = self.panes.lock();
+        if panes.get(key).is_some_and(|pane| pane.run == run) {
+            panes.remove(key);
+        }
     }
 
     /// Whether pane `key`'s session is its project's manager, as the last read of the runs says: for what a
@@ -199,7 +220,7 @@ impl Dispatcher {
     /// Pane `key` holds `run` from now on, in the transaction that says so (AC-131).
     fn pane_opened(&self, tx: &rusqlite::Transaction, run: &str, key: &str) -> Result<runs::Run, String> {
         let r = runs::change(tx, run, |r| r.pane_key = Some(key.to_string()))?;
-        self.panes.lock().insert(key.to_string());
+        self.track_pane(key, &r.id, &r.project);
         if r.manages() && self.managers.lock().insert(key.to_string()) {
             self.managers_changed.store(true, std::sync::atomic::Ordering::Relaxed);
         }
@@ -209,7 +230,9 @@ impl Dispatcher {
     /// The runs a walk goes by, and the panes they hold, in one transaction (AC-131).
     pub(crate) fn read_runs(&self, tx: &rusqlite::Transaction) -> Result<Vec<runs::Run>, String> {
         let all = runs::live(tx)?;
-        *self.panes.lock() = all.iter().filter_map(|r| r.pane_key.clone()).collect();
+        *self.panes.lock() = all.iter().filter_map(|r| {
+            r.pane_key.clone().map(|key| (key, LivePane { run: r.id.clone(), project: r.project.clone() }))
+        }).collect();
         self.hold_managers(crate::roles::managers(tx, &all)?);
         Ok(all)
     }
@@ -380,6 +403,17 @@ fn told_all(app: &crate::app::Shared, run: &runs::Run) {
 
 #[cfg(test)]
 mod typed_tests {
+    #[test]
+    fn ac218_hook_scope_drops_a_released_run_without_erasing_its_replacement() {
+        let dispatcher = super::Dispatcher::default();
+        dispatcher.track_pane("pane", "old", "api");
+        dispatcher.release_pane("pane", "old");
+        assert_eq!(dispatcher.pane_project("pane"), None);
+        dispatcher.track_pane("pane", "new", "web");
+        dispatcher.release_pane("pane", "old");
+        assert_eq!(dispatcher.pane_project("pane").as_deref(), Some("web"));
+    }
+
     /// A prompt Dispatcher typed is its message (AC-147) and still its own for the gate (§9), once.
     #[tokio::test]
     async fn ac147_a_prompt_dispatcher_typed_is_told_apart_and_left_for_its_gate() {

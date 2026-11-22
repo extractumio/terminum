@@ -81,7 +81,7 @@ pub(super) async fn from_shell(app: &Shared, r: &Run, server: &Arc<Server>, pane
     crate::inputs::wrote(app, crate::inputs::Who::dispatcher("dispatcher.start", &new, std::slice::from_ref(&t.id), &r.agent_id), "launch", server, pane, &line, done.as_ref().err().cloned(), None);
     done?;
     let (a, key, n) = (app.clone(), server.key(pane), new.clone());
-    app.dispatcher.panes.lock().insert(key.clone());    // its agent's first hooks
+    app.dispatcher.track_pane(&key, &new, &r.project);    // its agent's first hooks
     store(app, move |tx| a.dispatcher.pane_opened(tx, &n, &key).map(drop)).await?;
     start::watch(app, &new);
     Ok(json!({"run": new}))

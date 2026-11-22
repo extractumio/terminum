@@ -52,11 +52,12 @@ fn codex_entries_are_added_once_and_removed_leaving_others() {
 #[test]
 fn claudes_plugin_runs_context_carriers_in_the_foreground() {
     let v = claude_hooks("/x/terminum hook claude");
-    for e in ["SessionStart", "PreToolUse", "PermissionRequest", "Notification", "Stop", "StopFailure", "SubagentStart", "SubagentStop", "SessionEnd"] {
+    // AC-218: the compaction sensor runs with the background lifecycle hooks.
+    for e in ["SessionStart", "PreToolUse", "PermissionRequest", "Notification", "Stop", "StopFailure", "SubagentStart", "SubagentStop", "PreCompact", "SessionEnd"] {
         let h = &v["hooks"][e][0]["hooks"][0];
         assert_eq!((h["command"].as_str(), h["async"].as_bool()), (Some("/x/terminum hook claude"), Some(true)), "{e}");
     }
-    assert_eq!(v["hooks"].as_object().unwrap().len(), 13);
+    assert_eq!(v["hooks"].as_object().unwrap().len(), 14);
     // the reminder's carrier: Claude Code delivers no async hook's output (AC-97)
     assert_eq!(v["hooks"]["PostToolBatch"], json!([{"hooks": [{"type": "command", "command": "/x/terminum hook claude", "timeout": 2}]}]));
     assert_eq!(v["hooks"]["UserPromptSubmit"], json!([{"hooks": [{"type": "command", "command": "/x/terminum hook claude --prompt-context", "timeout": 2}]}]));

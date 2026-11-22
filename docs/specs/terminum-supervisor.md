@@ -1286,14 +1286,12 @@ All cases below are open. The existing mechanisms in §3 provide inputs or prece
 
 | AC | Open gap |
 |---|---|
-| AC-212 | The 19 store-backed rules, typed thresholds and shadow enablement are implemented. Integration, probes, counters, snapshots and structured question and design guards need their owning stages. |
+| AC-212 | The 19 store-backed rules, typed thresholds and shadow enablement are implemented. Snapshot and counter rules use retained inputs. Integration, probes and structured question and design guards need their owning stages. |
 | AC-213 | Charter breach inputs and round execution belong to their owning stages. |
 | AC-214 | Release tags, task commits, nightly history, question kinds and design sign-offs need their owning inputs. |
-| AC-215 | Probe, snapshot, hook counter and judgment quality replay require retained inputs from their owning stages. |
-| AC-216 | Per-project runtime switch. |
-| AC-217 | Collector timer and event cursor. |
-| AC-218 | Sweep points and retained hook counters. |
-| AC-219 | Independent collector watchdog. |
+| AC-215 | Probe and judgment quality replay require retained inputs from their owning stages. |
+| AC-216 | The signed-in switch gates collection and sensors. The project tab, attach and stopping rounds belong to AC-221, AC-222, AC-234 and AC-245. |
+| AC-219 | The watchdog records a signal and exposes its last heartbeat through the project settings endpoint. Incident grouping and presentation belong to AC-224 and AC-225. |
 | AC-220 | Settings and bounded import authority. |
 | AC-221 | Bootstrap and shadow holds. |
 | AC-222 | Supervisor settings tab. |
@@ -1368,7 +1366,7 @@ A detector names a schema-pinned engine query plus typed parameters: `measure`, 
 | Probes | Daily by default. A separate heartbeat watchdog signals two missed beats even when the collector stops. |
 | Gates | Match calibrated terms at task creation, inspect the first worktree diff and check the review record at Verify. |
 
-The collector runs off the async workers through a read-only store connection. A small write transaction updates signals, measurements and progress. Reuse Dashboard measures and keep collection off Dispatcher's walk. On equal timestamps or restart, no committed event is skipped or counted twice. A store migration preserves old questions, event evidence references and existing project settings. A schema mismatch in replay fails with the versions named and leaves the store untouched.
+The collector runs off the async workers through a read-only store connection. Each enabled project uses one small transaction for its signals, measurements, heartbeat and cursor. The cursor acknowledges the enabled project’s change journal up to the high-water mark of the same read snapshot. The collector coalesces changes in one snapshot and prunes acknowledged journal entries in bounded batches. Reuse Dashboard measures and keep collection off Dispatcher's walk. On equal timestamps or restart, no committed event is skipped or counted twice. A store migration preserves old questions, event evidence references and existing project settings. Hook counter rows expire after 30 days. Hook repeat comparisons use only a digest of the tool name in memory. A schema mismatch in replay fails with the versions named and leaves the store untouched.
 
 #### Detector catalog
 
@@ -1571,10 +1569,10 @@ Enable none of the runtime cases by default. Land the specification after indepe
 - [x] AC-213 — `ac213_impact_floors_and_ladder` and `ac213_records_per_finding_impact_and_reads_legacy_scores` cover thresholds, floors, level, response and recording.
 - [x] AC-214 — `ac214_scoreboard_guard_verdicts` covers four-week comparisons, separate indicators, guards and missing inputs.
 - [x] AC-215 — `ac215_replay_rank_and_schema` covers the CLI ranking, repeatable output, unavailable detectors, project isolation, read-only bytes and schema refusal.
-- [ ] AC-216 — Planned test: `ac216_project_off_is_inert` covers per-project runtime switch.
-- [ ] AC-217 — Planned test: `ac217_cursor_restart_and_rollback` covers collector timer and event cursor.
-- [ ] AC-218 — Planned test: `ac218_points_and_hook_counter_retention` covers sweep points and retained hook counters.
-- [ ] AC-219 — Planned test: `ac219_stopped_collector_incident` covers independent collector watchdog.
+- [ ] AC-216 — `e2e_supervisor.py` and `ac216_project_off_is_inert_and_a_new_generation_rejects_old_work` cover the signed-in switch, its project scope and disabling during collection. The attach and round cases remain open in §7.
+- [x] AC-217 — `e2e_supervisor.py` checks live detection within a minute. `ac217_cursor_restart_and_rollback_with_same_time_nonmonotonic_ids` and `ac217_open_detector_snapshot_does_not_take_the_store_write_turn` cover durable order, retry and concurrent writes. `scripts/bench_busy.py --supervisor` measures the active collector under load.
+- [x] AC-218 — `e2e_supervisor.py`, `ac218_points_and_hook_counter_retention` and `ac218_queue_growth_uses_only_the_first_available_samples` cover the sample and baseline cadence, numerical hook counts, retention and unavailable history.
+- [ ] AC-219 — `e2e_supervisor.py` and `ac219_independent_watchdog_reports_two_misses_once_and_honors_recovery` cover the independent failure signal, the two-beat threshold and recovery. The incident presentation remains open in §7.
 - [ ] AC-220 — Planned test: `ac220_export_redaction_and_import_confirmation` covers settings and bounded import authority.
 - [ ] AC-221 — Planned test: `ac221_attach_short_history_and_hold_shadow` covers bootstrap and shadow holds.
 - [ ] AC-222 — Planned test: `ac222_supervisor_settings_tab` covers supervisor settings tab.

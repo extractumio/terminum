@@ -21,11 +21,11 @@ pub(crate) fn replay(path: &Path, project: &str, as_of: Option<i64>) -> Result<S
         let current_state = as_of.is_none();
         let weeks = scoreboard::read(tx, project, at, first)?;
         let detectors = Rule::ALL.iter().map(|rule| {
-            let mut detector = Detector::named(rule.id())?;
+            let mut detector = Detector::for_rule(*rule);
             detector.mode = Mode::Digest;
-            Ok(detector)
-        }).collect::<Result<Vec<_>, String>>()?;
-        let evaluation = evaluate_snapshot(tx, project, at, first, &detectors, Some(&weeks), current_state)?;
+            detector
+        }).collect::<Vec<_>>();
+        let evaluation = evaluate_snapshot(tx, project, at, Some(first), &detectors, Some(&weeks), current_state)?;
         let historical = historical_findings(tx, project, first, at, &detectors)?;
         render(tx, &evaluation, &weeks, first, &historical)
     })
@@ -39,7 +39,7 @@ fn historical_findings(
     while end >= first && end > 0 {
         for detector in detectors.iter().filter(|detector| detector.rule.has_historical_query()) {
             let window = Window::of(end, detector.window_days);
-            let (_, found) = measure_detector(tx, project, detector, window, false)?;
+            let (_, found, _) = measure_detector(tx, project, detector, window, false)?;
             if !found.is_empty() {
                 *counts.entry(detector.rule).or_default() += found.len();
             }

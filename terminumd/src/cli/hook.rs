@@ -187,6 +187,10 @@ pub fn event(agent: &str, input: &Value, tmux: &str, pane: &str) -> Option<Value
     }
     let tool = input.get("tool_name").and_then(Value::as_str);
     if let Some(t) = tool {
+        if name == "PreToolUse" && !t.is_empty() && t.len() <= 100 {
+            let hash = crate::auth::crypto::sha256_hex(t.as_bytes());
+            out.insert("tool_name_hash".into(), json!(&hash[..16]));
+        }
         out.insert("tool".into(), json!(tool_summary(t, input.get("tool_input").unwrap_or(&Value::Null))));
     }
     // a question it asks the user (Claude Code's AskUserQuestion), else a notification's words

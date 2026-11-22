@@ -189,7 +189,7 @@ fn ac212_off_missing_and_shadow() {
     let off = evaluate(&f.store, PROJECT, NOW, &[d.clone(), Fixture::detector("flow.returned"), Fixture::detector("drift.loop")]).unwrap();
     assert_eq!(off.detectors[0].unavailable, ["Detector is off."]);
     assert_eq!(off.detectors[1].unavailable, ["Project integration is off."]);
-    assert_eq!(off.detectors[2].unavailable, ["Hook counters are unavailable."]);
+    assert_eq!(off.detectors[2].unavailable, ["No retained hook counters for this period."]);
     off.record(&f.store).unwrap();
     assert!(signals(&f.store, PROJECT).unwrap().is_empty());
     d.enable();

@@ -63,6 +63,12 @@ fn for_room(tx: &Transaction) -> Result<Vec<Wait>, String> {
     rows(tx, &format!("{} WHERE w.after IS NULL ORDER BY {ORDER}", select()), [], of_row)
 }
 
+/// How many of this project's presses are in the queue and when the oldest joined.
+pub(crate) fn queue_depth(tx: &Transaction, project: &str) -> Result<(i64, Option<i64>), String> {
+    tx.query_row("SELECT count(*), min(at) FROM run_waits WHERE project = ?1 AND after IS NULL",
+        [project], |r| Ok((r.get(0)?, r.get(1)?))).map_err(sql)
+}
+
 /// The wait of `task` is for room alone from now on: the tasks it waited for are DONE (AC-210).
 fn room_alone(tx: &Transaction, task: &str) -> Result<(), String> {
     tx.execute("UPDATE run_waits SET after = NULL WHERE task = ?1", [task]).map(drop).map_err(sql)

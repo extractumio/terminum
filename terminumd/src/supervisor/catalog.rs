@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 
-use super::{Measurements, Query, Threshold, flow, people, spend};
+use super::{Measurements, Query, Threshold, flow, people, samples, spend};
 
 macro_rules! catalog {
     ($($name:ident, $id:literal, $query:literal, $threshold:expr, $run:path;)+) => {
@@ -60,11 +60,12 @@ catalog! {
     VerifyRed, "drift.verify_red", "verify_failures", Absolute(0.0), integration;
     DiffOutlier, "drift.diff_outlier", "diff_outliers", Absolute(0.0), integration;
     Misrouted, "drift.misrouted", "misrouted_tasks", Absolute(0.0), integration;
-    QueueGrowth, "flow.queue_growth", "queue_growth", Absolute(0.0), snapshots;
-    LimitNear, "flow.limit_near", "subscription_limits", Absolute(0.0), snapshots;
-    StalePlan, "drift.stale_plan", "stale_plans", Absolute(0.0), snapshots;
-    Loop, "drift.loop", "tool_loops", Absolute(0.0), counters;
-    Subagents, "drift.subagents", "subagent_counts", Absolute(0.0), counters;
+    QueueGrowth, "flow.queue_growth", "queue_growth", Absolute(0.0), samples::snapshots;
+    LimitNear, "flow.limit_near", "subscription_limits", Absolute(100.0), samples::snapshots;
+    StalePlan, "drift.stale_plan", "stale_plans", Absolute(0.0), samples::snapshots;
+    Loop, "drift.loop", "tool_loops", baseline(90, 2.0), samples::counters;
+    Subagents, "drift.subagents", "subagent_counts", baseline(90, 2.0), samples::counters;
+    CollectorDead, "self.collector_dead", "collector_heartbeat", Absolute(2.0), heartbeat;
 }
 
 impl Rule {
@@ -73,12 +74,12 @@ impl Rule {
     }
 
     pub(super) fn needs_weekly_samples(self) -> bool {
-        !self.present_only() && !matches!(self, Self::WaitHuman | Self::CostOutlier)
+        !self.present_only() && !matches!(self, Self::WaitHuman | Self::CostOutlier | Self::QueueGrowth | Self::LimitNear | Self::StalePlan | Self::Loop | Self::Subagents | Self::CollectorDead)
     }
 
     pub(super) fn has_historical_query(self) -> bool {
         !self.present_only() && !matches!(self, Self::Returned | Self::VerifyRed | Self::DiffOutlier | Self::Misrouted
-            | Self::QueueGrowth | Self::LimitNear | Self::StalePlan | Self::Loop | Self::Subagents)
+            | Self::CollectorDead)
     }
 
     pub(super) fn supports(self, threshold: Threshold) -> bool {
@@ -99,12 +100,8 @@ fn integration(q: &Query<'_, '_>) -> Result<Measurements, String> {
     Ok(Measurements::missing(if on { "Integration detector is unavailable in the store catalog." } else { "Project integration is off." }))
 }
 
-fn snapshots(_: &Query<'_, '_>) -> Result<Measurements, String> {
-    Ok(Measurements::missing("Snapshot history is unavailable."))
-}
-
-fn counters(_: &Query<'_, '_>) -> Result<Measurements, String> {
-    Ok(Measurements::missing("Hook counters are unavailable."))
+fn heartbeat(_: &Query<'_, '_>) -> Result<Measurements, String> {
+    Ok(Measurements::missing("The independent watchdog owns collector heartbeat findings."))
 }
 
 pub(super) const UNAVAILABLE: &[(&str, &str)] = &[
@@ -127,7 +124,6 @@ pub(super) const UNAVAILABLE: &[(&str, &str)] = &[
     ("process.rules_growth", "Git probe history is unavailable."),
     ("owner.rubber_stamp", "Structured question choices are unavailable."),
     ("process.rule_recurs", "Recorded rule judgments are unavailable."),
-    ("self.collector_dead", "Collector heartbeat history is unavailable."),
     ("self.budget", "Supervisor budget history is unavailable."),
     ("self.line_dead", "Critical channel history is unavailable."),
     ("self.round_failed", "Supervisor round history is unavailable."),

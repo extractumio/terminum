@@ -310,6 +310,13 @@ impl Plans {
         Some(text)
     }
 
+    /// A Supervisor sweep keeps only the active session ID and its numerical ETA.
+    pub(crate) fn supervisor_eta(&self, key: &str) -> Option<(String, u64, u64)> {
+        let plans = self.cur.lock();
+        let plan = plans.get(key).filter(|p| !p.finished() && !p.session.is_empty())?;
+        Some((format!("{}/{}", plan.agent, plan.session), plan.eta_at?, plan.updated))
+    }
+
     /// The row's summary of the pane's plan; None without items, and for a finished one whose
     /// turn is over FINISHED_SHOWN after its last update (it stayed at 100% for good). Stale
     /// only while the pane works (`working`: its hooks say so).
