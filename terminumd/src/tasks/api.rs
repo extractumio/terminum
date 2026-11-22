@@ -45,6 +45,7 @@ pub fn routes() -> Router<Shared> {
         .route("/api/tasks/{id}/seen", post(seen))
         .merge(super::fileapi::routes())
         .merge(super::report::routes())
+        .merge(super::choices::routes())
 }
 
 /// Runs `f` in one transaction off the async workers.

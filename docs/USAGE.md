@@ -300,8 +300,9 @@ A task moves only by running.
 - **Memory**: a session over the project's limits is warned, then ended (4 and 8 GiB unless set:
   `dispatcher` in settings.json, or the project's Memory limits tab).
 - **A question** comes with `ask_human` (why you are needed, the recommended answers, the whole
-  issue): the task waits in WAIT FOR HUMAN and its session closes. Answer in a comment and press
-  Run: the same conversation goes on (on another agent of its kind, if dropped there).
+  issue). The task waits in WAIT FOR HUMAN and its session closes. Press an option in the task
+  window to save that answer, or write a comment in your own words. Press Run to resume the same
+  conversation with the saved answer and any comments.
 - **A report** for you to read (`finish_task` with `report: "yes"`; every schedule's task) waits
   in WAIT FOR HUMAN under "Report" and its session closes as after DONE. Press Done once you read
   it, or comment and press Run to go on in the same conversation.

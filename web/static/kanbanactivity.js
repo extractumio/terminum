@@ -28,7 +28,7 @@ function reactsTo(t) {
     const e = t.history.findLast((h) => h.kind === "comment" && fits(h));
     return e ? { e, heading } : null;
   };
-  if (t.status === "WAIT FOR HUMAN") return t.report ? last("Report", (e) => e.author_kind === "agent") : last("Asks you", (e) => e.questions);
+  if (t.status === "WAIT FOR HUMAN") return t.report ? last("Report", (e) => e.author_kind === "agent") : last("Asks you", (e) => t.active_question ? e.id === t.active_question : e.questions);
   if (t.status === "DONE") return last("Result", (e) => e.author_kind === "agent");
   if (t.status === "FAILED") return last("Why it failed", (e) => e.author_kind !== "human");
   return null;
@@ -37,11 +37,32 @@ function reactsTo(t) {
 /** `refresh(ended)` reads the task again, `ended` the part whose editor closed; `confirmed(question, yes, run)`
  *  asks, then runs. Answers `lead`: the part that stands first, or null (always with `leads` off: all of it reads
  *  in order); and `rest`: the conversation, without what leads. */
-export function activity(t, { refresh, confirmed, leads = true }) {
+export function activity(t, { refresh, confirmed, pickChoice, leads = true }) {
+  const choices = new Map(t.history.filter((e) => e.choice).map((e) => [e.choice.question, e.choice.option]));
+  const questions = new Map(t.history.filter((e) => e.question?.options).map((e) => [e.id, e.question]));
+  const labelOf = (question, option) => questions.get(question)?.options.find((o) => o.id === option)?.label ?? option;
+
+  function optionKeys(e) {
+    const picked = choices.get(e.id);
+    if (picked) {
+      const saved = el("p", "choice-saved", `Saved answer: ${labelOf(e.id, picked)}`);
+      saved.tabIndex = -1;
+      return saved;
+    }
+    const keys = row(...e.question.options.map(({ id, label }) => {
+      const recommended = id === e.question.recommended;
+      const key = button(recommended ? "primary" : null, "", () => pickChoice(e.id, id));
+      key.append(el("span", null, recommended ? `${label} (Recommended)` : label));
+      return key;
+    }));
+    keys.classList.add("question-choices");
+    return keys;
+  }
+
   /** A human's own comment changes or goes (AC-108): small keys on its head's line. */
   function commentActions(e, said) {
     const route = `/api/tasks/${t.id}/comments/${e.id}`;
-    const edit = iconButton("icon", "pencil", "Edit", "Edit this comment", () => {
+    const edit = e.choice ? null : iconButton("icon", "pencil", "Edit", "Edit this comment", () => {
       const area = editor(e.text ?? "");
       const save = button("primary", "Save", async () => {
         try {
@@ -54,7 +75,8 @@ export function activity(t, { refresh, confirmed, leads = true }) {
     });
     const del = iconButton("icon", "x", "Delete", "Delete this comment", () => confirmed("Delete this comment?", "Delete", () => api(route, { method: "DELETE" })));
     const keys = el("span", "evacts");
-    keys.append(edit, del);
+    if (edit) keys.append(edit);
+    keys.append(del);
     return keys;
   }
 
@@ -72,8 +94,10 @@ export function activity(t, { refresh, confirmed, leads = true }) {
     li.append(head);
     if (e.kind === "comment") {
       const said = el("div", "markdown");
-      renderInto(said, e.text ?? "", { comment: true });
+      if (e.choice) said.textContent = `Selected option: ${labelOf(e.choice.question, e.choice.option)}`;
+      else renderInto(said, e.text ?? "", { comment: true });
       li.append(said);
+      if (pickChoice && e.id === t.active_question && e.question?.options?.length) li.append(optionKeys(e));
       if (e.author_kind === "human") head.append(commentActions(e, said));
     } else if (e.kind === "deleted") {
       li.append(el("em", null, "Comment deleted"));
