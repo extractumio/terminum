@@ -57,7 +57,7 @@ pub fn prompt(s: &Schedule, task: &str, title: &str, body: &str, again: bool, by
     }
     parts.push(budget_words(s.budget_seconds));
     let form = crate::tasks::closeout::short_form();
-    parts.push(format!("This is a scheduled run: its result is read later on the board. When it is done, call {FINISH} with the result in this form, each on its own line:{form}"));
+    parts.push(format!("This is a scheduled run: its result waits on the board for a human to read. When it is done, call {FINISH} with the result in this form, each on its own line:{form}"));
     parts.push(ASK.to_string());
     parts.join("\n\n")
 }

@@ -22,6 +22,9 @@ pub(super) const ASK_HUMAN: &str = "execute_tool(\"ask_human\", {id, questions})
 /// removed waits for a human the same way, never DONE or FAILED.
 pub(crate) const ASK: &str = concat!("If you need a human's decision, call execute_tool(\"ask_human\", {id, questions}), then end your turn: the session closes, and the human's RUN brings the answers back into this conversation. Do not wait for an answer in this window. Write the questions ", questions_shape!(), ". If the task cannot be finished now for a cause that can be removed ", removable!(), ", ask the same way: Details say what is done and committed and what holds it, Recommended what unblocks it (such as \"grant access to the staging database\"): it waits for a human; give it no result by execute_tool(\"finish_task\", {id, result}). ", waits_for_task!(), " FAILED is only for a task that cannot be done at all, with a comment saying why.");
 
+/// When a result is a report for its human to read, which waits for them (AC-264).
+pub(crate) const REPORT: &str = "When the deliverable is a report for a person to read (a review, an audit, an answer to a question), pass report: \"yes\" with the result: it waits for the human to read it.";
+
 pub(super) const COMMENT_SEPARATOR: &str = "\n\n---\n\n";
 
 /// What RUN types when it goes on (AC-122, AC-157): after the agent asked, the humans' answers since, else the
@@ -216,7 +219,7 @@ impl Facts {
         }
         parts.extend(t.budget_seconds.map(budget_words));
         parts.push(closeout::words(&self.language, FINISH, false));
-        parts.push(format!("When it is done, call {FINISH} with the result. {ASK}"));
+        parts.push(format!("When it is done, call {FINISH} with the result. {REPORT} {ASK}"));
         parts.join("\n\n")
     }
 

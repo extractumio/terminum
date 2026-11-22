@@ -302,6 +302,9 @@ A task moves only by running.
 - **A question** comes with `ask_human` (why you are needed, the recommended answers, the whole
   issue): the task waits in WAIT FOR HUMAN and its session closes. Answer in a comment and press
   Run: the same conversation goes on (on another agent of its kind, if dropped there).
+- **A report** for you to read (`finish_task` with `report: "yes"`; every schedule's task) waits
+  in WAIT FOR HUMAN under "Report" and its session closes as after DONE. Press Done once you read
+  it, or comment and press Run to go on in the same conversation.
 - **A wait for another task** comes with `wait_for_task` (a prerequisite whose change it needs;
   work that only overlaps another task's just integrates): the task joins that task's Blocked by,
   waits in TODO ("waits for TERM-9") and its session closes; once TERM-9 is DONE Dispatcher goes on
@@ -370,7 +373,8 @@ Routines, the board's word for them, are a strip over the columns; its + opens o
   three runs are shown.
 - **A firing** makes a task S_TERM-8 (S_ and the project's next ID), IN PROGRESS, never in TODO, in
   the project's folder, and runs it on
-  the schedule's agent; its result has Outcome, Summary, Details and For the human, or it asks you
+  the schedule's agent; its result has Outcome, Summary, Details and For the human and waits for
+  you as a report (a newer one of the same schedule takes an unread one's place), or it asks you
   with `ask_human`. Its card says SCH-1.
 - **No run**: a firing while a task of it still runs is skipped (counted on the card); one while
   a task of it waits for room replaces that wait, unless you ran that task yourself; one missed while the Mac slept is not run on wake; one that cannot start (no folder, no hooks,
