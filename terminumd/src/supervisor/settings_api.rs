@@ -154,6 +154,9 @@ struct Import {
 }
 
 fn check_command(probe: &str, command: &str) -> Result<(), String> {
+    if matches!(probe, "." | "..") {
+        return Err("A probe ID cannot be a dot or two dots.".into());
+    }
     if probe.is_empty() || probe.len() > 80 || !probe.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-')) {
         return Err("Use letters, numbers, dots, underscores or hyphens in a probe ID.".into());
     }

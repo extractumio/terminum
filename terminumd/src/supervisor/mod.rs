@@ -10,6 +10,7 @@ pub(crate) mod runtime;
 mod samples;
 mod sensors;
 mod scoreboard;
+mod screen;
 mod flow;
 mod people;
 mod signals;

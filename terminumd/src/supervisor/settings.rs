@@ -39,12 +39,14 @@ impl Tiers {
     // A deleted agent never grants round authority to a replacement with the same name.
     fn retain_project(&mut self, tx: &Transaction, project: &str, reject: bool) -> Result<(), String> {
         let mut has = tx.prepare_cached("SELECT EXISTS(SELECT 1 FROM agents WHERE id = ?1 AND project = ?2)").map_err(sql)?;
-        for slot in [&mut self.small, &mut self.medium, &mut self.strong, &mut self.independent] {
+        for (tier, slot) in [("Small", &mut self.small), ("Medium", &mut self.medium),
+            ("Strong", &mut self.strong), ("Independent", &mut self.independent)]
+        {
             if let Some(id) = slot.as_deref()
                 && !has.query_row((id, project), |r| r.get::<_, bool>(0)).map_err(sql)?
             {
                 if reject {
-                    return Err("Choose tier agents from this project's pool.".into());
+                    return Err(format!("{tier}: choose a tier agent from this project's pool."));
                 }
                 *slot = None;
             }
@@ -183,6 +185,11 @@ pub(super) struct Settings {
 }
 
 impl Settings {
+    pub(super) fn enabled_indicators(&self) -> [bool; 7] {
+        let i = &self.charter.indicators;
+        [i.involvement, i.stability, i.lead_time, i.releases, i.backlog, i.cognitive_load, i.operations]
+    }
+
     pub fn mode(&self, rule: Rule) -> Mode {
         self.detectors.get(rule.id()).and_then(|change| change.mode).unwrap_or(Mode::Live)
     }
@@ -227,10 +234,10 @@ impl Settings {
                 return Err("The collector heartbeat watchdog uses a fixed threshold.".into());
             }
             if rule.id() != name || !self.detector(rule).valid() {
-                return Err("Invalid Supervisor detector settings.".into());
+                return Err(format!("{name}: invalid Supervisor detector settings."));
             }
             if change.mute.as_ref().is_some_and(|m| m.reason.trim().is_empty() || m.until <= 0) {
-                return Err("A detector mute needs a reason and an end time.".into());
+                return Err(format!("{name}: a detector mute needs a reason and an end time."));
             }
         }
         Ok(())

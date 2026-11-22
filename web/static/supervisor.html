@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#000000">
+<meta name="build" content="__BUILD__">
+<base href="/">
+<title>Supervisor · terminum</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="fonts/fonts.css">
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="controls.css">
+<link rel="stylesheet" href="shapes.css">
+<link rel="stylesheet" href="motion.css">
+<link rel="stylesheet" href="grain.css">
+<link rel="stylesheet" href="msgpage.css">
+<link rel="stylesheet" href="supervisor.css">
+<style id="customcss"></style>
+</head>
+<body class="msg-page">
+<main id="mpage">
+  <header id="bar" class="wavebar">
+    <nav class="sections seg" aria-label="Sections"></nav>
+  </header>
+  <div class="supervisor sv-screen">
+    <header class="sv-screen-head"><h1 id="sv-title">Supervisor</h1>
+      <div class="sv-actions"><a id="sv-board" class="textkey" href="/kanban/">Project board</a>
+        <button id="sv-refresh" class="textkey" type="button" hidden>Refresh</button></div></header>
+    <p id="sv-theme-error" class="merr" role="alert" hidden></p>
+    <p id="sv-error" class="merr" role="alert" hidden></p>
+    <div id="sv-content" class="sv-content" hidden>
+      <section class="sv-stack" aria-labelledby="sv-score-title">
+        <h2 id="sv-score-title">Scoreboard</h2>
+        <p class="msay">The latest four weeks compared with the preceding four.</p>
+        <div id="sv-score" class="sv-score"></div>
+      </section>
+      <section class="sv-stack" aria-labelledby="sv-signal-title">
+        <h2 id="sv-signal-title">Signals</h2>
+        <p id="sv-investigate-note" class="msay" hidden>Investigate will open a Supervisor round when rounds are available.</p>
+        <div id="sv-signals" class="sv-stack"></div>
+        <p id="sv-more-error" class="merr" role="alert" hidden></p>
+        <div class="sv-actions"><button id="sv-more" class="textkey" type="button" hidden>More signals</button></div>
+      </section>
+    </div>
+  </div>
+</main>
+<script type="module" src="grain.js"></script>
+<script type="module" src="interact.js"></script>
+<script type="module" src="supervisorscreen.js"></script>
+</body>
+</html>

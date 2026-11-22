@@ -56,7 +56,7 @@ export function integrationWindow({ getMeta }) {
     $("integrationruns").replaceChildren(...s.runs.map((line) => el("li", null, line)));
     hints();
     $("integrationfields").hidden = !s.here;   // a project on another server has no switch
-    $("integrationok").hidden = !s.here;
+    $("integrationok").hidden = !s.here || box.hidden;
   }
 
   /** Kept, a toast says so and the tab shows what was kept; refused, it says terminumd's words and keeps what was typed. One at a time. */

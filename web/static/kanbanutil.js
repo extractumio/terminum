@@ -60,9 +60,10 @@ export function signInElsewhere() {
 /** A JSON route (a write always has a body: terminumd asks its type); a refusal throws terminumd's
  *  message, with its status. An empty answer is {}; one that cannot be read (cut off, as a navigation
  *  leaves a read in WebKit) throws, never stands for an empty one. */
-export async function api(path, { method = "GET", body } = {}) {
+export async function api(path, { method = "GET", body, asText = false } = {}) {
   const sent = method === "GET" ? undefined : JSON.stringify(body ?? {});
   const r = await fetch(path, { method, headers: sent ? { "Content-Type": "application/json" } : undefined, body: sent });
+  if (asText && r.ok) return r.text();
   let m = {}, unread;
   try {
     const text = await r.text();
@@ -304,7 +305,11 @@ export const goneSaid = (names) => `${names.join(", ")}: gone, this draft was no
 export async function download(id, name) {
   const r = await fetch(fileUrl(id));
   if (!r.ok) throw new Error(`${name}: terminumd answered ${r.status}`);
-  const url = URL.createObjectURL(await r.blob());
+  downloadBlob(await r.blob(), name);
+}
+
+export function downloadBlob(blob, name) {
+  const url = URL.createObjectURL(blob);
   const a = el("a");
   a.href = url;
   a.download = name;
