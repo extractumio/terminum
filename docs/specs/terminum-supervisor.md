@@ -517,6 +517,13 @@ Scenario: AC-230 failure — invalid or stale choice
   Given the recommendation references an unknown option, or a page submits an option on a question that has been superseded
   When terminumd validates the request
   Then it reports the invalid recommendation or stale question and records no choice
+
+Scenario: AC-230 edge — repeated press and correction
+  Given the human saved Wait for the current question
+  When the page resends that choice or submits Retry
+  Then the same Wait answer is returned or the second choice is refused
+  When the human deletes their saved choice
+  Then the question accepts a new choice
 ```
 
 ### AC-231 — Caller authorization [MUST / P0]
@@ -1303,7 +1310,6 @@ The existing mechanisms in §3 provide inputs or precedents for these open gaps.
 | AC-224 | The line-failure producer depends on AC-229. Incident updates from rounds and holds depend on AC-234 and AC-245. |
 | AC-225 | The template reports an active hold and its deadline when the hold ledger is available (AC-245). |
 | AC-227 | The incident thread produces answer notices under AC-244. |
-| AC-230 | Structured question and answer records. |
 | AC-231 | Distinct caller with level enforcement. |
 | AC-232 | Owner setting and level-independent incidents. |
 | AC-233 | Investigation admission, deduplication and confidence. |
@@ -1484,7 +1490,7 @@ Group related signals on a subject into one active incident, within the line's g
 
 The owner configures ordered absolute executables in the signed-in tab. A send runs the executable directly with a fixed environment and deadline, template on standard input and exit status as the only result. Example: `API · incident 27 · level 3. Target red, 2 batches blocked. Integration paused. No answer: pause stays.` Updates, all-clear and answer notices use their own fixed templates. Only approved IDs, counts and a link from the owner's optional base appear. Never insert task prose, home paths or secrets. Quiet hours defer notices except a charter-never breach or reversibility 3. Repeat per incident on the ladder, never sooner than its next step, and from the 30-minute repeat on also send to the next configured channel; there is no daily count cap. An owner test alert exercises delivery. The weekly check supplies the fixed `--check` argument for the executable to exercise its route silently. Failed delivery shows on the bar and screen, produces `self.line_dead` and tries the next channel in order. A configured link base is an HTTPS origin. Commands have send-only authority. All answers, including release of a hold, go through the signed-in page.
 
-Decision cards use terminum-dispatcher.md AC-157 and appear on the board and in the review. High-impact owner choices include fix options, standing rules, exhausted fix budgets, T3 sign-off, hold disposition and rules with open breakers. A card names the evidence and cost of waiting. For AC-230, keep the question's original text and optional structured fields: stable option IDs and labels, one recommended ID and operational or strategic kind. Choosing a listed option saves a human answer on that question with its option ID. Free text saves a human answer without an option ID; old questions keep their original text and an unknown kind. Answer only the current question. The same RUN continuation consumes the answer in either form.
+Decision cards use terminum-dispatcher.md AC-157 and appear on the board and in the review. High-impact owner choices include fix options, standing rules, exhausted fix budgets, T3 sign-off, hold disposition and rules with open breakers. A card names the evidence and cost of waiting. For AC-230, `ask_human` keeps the original question and optional `kind` in its comment event. With `options`, also give `kind` and `recommended`. For example, `{"kind":"operational","options":[{"id":"retry","label":"Retry"},{"id":"wait","label":"Wait"}],"recommended":"wait"}`. Give up to 12 distinct IDs and labels. IDs start with a lowercase letter or digit and contain at most 32 lowercase letters, digits, hyphens or underscores. Labels contain at most 240 characters on one line. The task window submits the selected ID and the current question's event ID. The human's comment records the two IDs, with a unique live answer per question. The label is plain text in the window and RUN carries the ID through AC-157. A free-text answer has no option ID. Old questions keep their text and an unknown kind.
 
 Agent nudges and a human's incident comment to a live round go as comment notices (terminum-dispatcher.md AC-209), never typed; after the round, the comment reaches an agent only through a human's RUN (terminum-dispatcher.md AC-122). Talk uses terminum-dispatcher.md AC-204 with the case ID as its fixed first prompt. The owner can also open a conversation with the Supervisor's skill and its charter, register and open signals (AC-244). A ruling there or on a card goes into project memory as an owner ruling; the Supervisor makes its argument once per evidence set.
 
@@ -1584,7 +1590,7 @@ Enable none of the runtime cases by default. Land the specification after indepe
 - [ ] AC-227 — `ac227_bounded_channel_stdin_and_exit` and `ac227_templates_exclude_case_prose_and_use_only_a_validated_origin` cover execution and the four templates. `scripts/e2e_supervisor.py` exercises signed-in configuration, the watchdog's notice and its all-clear. The answer producer follows AC-244.
 - [x] AC-228 — `ac228_repeat_escalation_snooze_and_acknowledgment`, `ac228_acknowledged_incident_updates_keep_the_cool_down` and `ac228_quiet_hours_defer_ordinary_notices_and_keep_all_incidents` exercise the ladder, the updates' cool-down after acknowledgment and quiet hours on a short clock.
 - [x] AC-229 — `ac229_next_channel_weekly_test_and_local_recovery` covers the weekly check, fallback and local recovery. `scripts/e2e_supervisor.py` exercises the signed-in test and the live failure path. `webSupervisor` checks the tab's test status.
-- [ ] AC-230 — Planned test: `ac230_question_options_and_legacy_resume` covers structured question and answer records.
+- [x] AC-230 — `cargo test ac230` covers the old store, validation and answer records. `node web/test/e2e_all.mjs webQuestionChoices` checks wide and touch windows in Chromium and WebKit. `web/test/e2e_livedispatcher.mjs` checks the live answer and continuation.
 - [ ] AC-231 — Planned test: `ac231_supervisor_tools_pane_and_token` covers distinct caller with level enforcement.
 - [ ] AC-232 — Planned test: `ac232_owner_sets_level_and_all_levels_page` covers owner setting and level-independent incidents.
 - [ ] AC-233 — Planned test: `ac233_round_admission_and_investigate` covers investigation admission, deduplication and confidence.

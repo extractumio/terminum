@@ -7,6 +7,7 @@ use serde_json::{json, Map, Value};
 use crate::tasks::ops::{COLUMNS, COMMENT_MOST, INTEGRATION, SEVERITIES, TEXT_MOST};
 use crate::tasks::attrs::{LINK_MOST, LINKS_MOST, LISTS as LISTS_OF, REASON_MOST, TARGET_MOST, TYPES};
 use crate::tasks::tools::TEXT_FILE_MOST;
+use crate::tasks::choices::{ID_MOST, KINDS, LABEL_MOST, OPTIONS_MOST};
 
 pub(super) struct Tool {
     pub name: &'static str,
@@ -39,7 +40,7 @@ const TOOLS: [Tool; 20] = [
         fields: &[ID, ("list", true, 12), ("task", true, 24), ("reason", false, REASON_MOST * 4), ("remove", false, 3)] },
     Tool { name: "take_task", read_only: false, description: "Takes a free task of your project: it becomes this session's, in its column.", fields: &[ID] },
     Tool { name: "move_task", read_only: false, description: "Moves a task of your project to another column (status): yours, or one no human's RUN holds elsewhere. To wait for a human, call ask_human instead.", fields: &[ID, ("to", true, 20)] },
-    Tool { name: "ask_human", read_only: false, description: "Asks the human what only a person decides, on your task, then end your turn. The questions in three parts, in order, for a reader new to the task, labels in English: \"Why you are needed:\" one sentence; \"Recommended:\" each question numbered, its recommended default and why, its other options; \"Details:\" one paragraph on the whole issue.", fields: &[ID, ("questions", true, COMMENT_MOST)] },
+    Tool { name: "ask_human", read_only: false, description: "Asks the human what only a person decides, on your task, then end your turn. The questions in three parts, in order, for a reader new to the task, labels in English: \"Why you are needed:\" one sentence; \"Recommended:\" each question numbered, its recommended default and why, its other options; \"Details:\" one paragraph on the whole issue. Set kind to operational (how to proceed) or strategic (what direction or policy to choose). For one decision, give options as [{id, label}] using distinct short lowercase IDs and plain single-line labels, and recommended as one option ID. Leave options and recommended out for a text-only answer.", fields: &[ID, ("questions", true, COMMENT_MOST), ("kind", false, 11), ("recommended", false, ID_MOST)] },
     Tool { name: "wait_for_task", read_only: false, description: "Your task cannot go on before other tasks of your project are DONE (a prerequisite whose change it needs): on, their IDs; why, one sentence. They join its Blocked by, it waits in TODO, and Dispatcher goes on with it in this conversation once they are DONE, no human asked; then end your turn.",
         fields: &[ID, ("on", true, 26 * LINKS_MOST), ("why", true, REASON_MOST * 4)] },
     Tool { name: "add_comment", read_only: false, description: "Adds a Markdown comment to a task you can reach.", fields: &[ID, ("text", true, COMMENT_MOST)] },
@@ -86,7 +87,14 @@ fn moves() -> Vec<&'static str> {
 /// line, so one retry can fix them all.
 pub fn checked(tool: &str, args: &Value) -> Result<Value, String> {
     let mut faults = Vec::new();
-    let out = fields_of(&TOOLS, tool, args, &mut faults);
+    let mut out = fields_of(&TOOLS, tool, args, &mut faults);
+    if tool == "ask_human" && let Some(options) = args.get("options").filter(|v| !v.is_null()) {
+        if options.is_array() {
+            out.insert("options".into(), options.clone());
+        } else {
+            faults.push("options must be an array".into());
+        }
+    }
     if out.get("severity").and_then(Value::as_str).is_some_and(|s| !SEVERITIES.contains(&s)) {
         faults.push(format!("severity: one of {}", SEVERITIES.join(", ")));
     }
@@ -133,12 +141,20 @@ pub(super) fn listed(tools: &[Tool]) -> Vec<Value> {
                 "severity" => json!({"type": "string", "enum": SEVERITIES}),
                 "archive" | "remove" | "report" => json!({"type": "string", "enum": ARCHIVE}),
                 "list" => json!({"type": "string", "enum": LISTS}),
+                "kind" if tool.name == "ask_human" => json!({"type": "string", "enum": KINDS}),
                 "type" => json!({"type": "string", "enum": std::iter::once("").chain(TYPES.map(|(name, _)| name)).collect::<Vec<_>>()}),
                 f => match super::mcp_manager::values(f) {
                     Some(values) => json!({"type": "string", "enum": values}),
                     None => json!({"type": "string"}),
                 },
             });
+        }
+        if tool.name == "ask_human" {
+            properties.insert("options".into(), json!({"type": "array", "maxItems": OPTIONS_MOST, "items": {
+                "type": "object", "additionalProperties": false, "required": ["id", "label"],
+                "properties": {"id": {"type": "string", "maxLength": ID_MOST, "pattern": "^[a-z0-9][a-z0-9_-]*$"},
+                               "label": {"type": "string", "minLength": 1, "maxLength": LABEL_MOST}}
+            }}));
         }
         let required: Vec<&str> = tool.fields.iter().filter(|(_, required, _)| *required).map(|(field, _, _)| *field).collect();
         let mut t = json!({"name": tool.name, "description": tool.description, "inputSchema": {"type": "object", "properties": properties, "required": required}});
@@ -188,6 +204,18 @@ mod tests {
     fn ac166_finish_task_names_the_result_s_sections() {
         let d = TOOLS.iter().find(|t| t.name == "finish_task").unwrap().description;
         assert!(d.ends_with(&format!("{}.", crate::tasks::closeout::SECTIONS.map(|(s, _)| s).join(", "))), "{d}");
+    }
+
+    #[test]
+    fn ac230_ask_human_schema_and_call_keep_the_choice_fields() {
+        let schema = &tools().into_iter().find(|d| d["name"] == "ask_human").unwrap()["inputSchema"];
+        assert_eq!(schema["properties"]["options"]["items"]["required"], json!(["id", "label"]));
+        assert_eq!(schema["properties"]["kind"]["enum"], json!(KINDS));
+        assert_eq!(schema["required"], json!(["id", "questions"]));
+        let args = json!({"id": "T-1", "questions": "A question", "kind": "strategic",
+            "options": [{"id": "wait", "label": "Wait"}], "recommended": "wait"});
+        assert_eq!(checked("ask_human", &args).unwrap(), args);
+        assert_eq!(checked("ask_human", &json!({"id": "T-1", "questions": "A question", "options": "wait"})).unwrap_err(), "options must be an array");
     }
 
     #[test]

@@ -12,7 +12,7 @@ use super::ops::{check_comment, key_of, log, rows, sql, touch, user_name};
 /// The latest comment's event if the human already kept these words (a retried Run).
 fn same_human_comment(tx: &Transaction, id: &str, text: &str) -> Result<Option<String>, String> {
     let key = key_of(tx, id)?;
-    tx.query_row("SELECT CASE WHEN text = ?2 AND author = ?3 THEN id END FROM events
+    tx.query_row("SELECT CASE WHEN text = ?2 AND author = ?3 AND json_extract(data, '$.choice') IS NULL THEN id END FROM events
                   WHERE task = ?1 AND kind = 'comment' ORDER BY at DESC, rowid DESC LIMIT 1",
                  (&key, text, super::store::HUMAN), |r| r.get(0)).optional().map(Option::flatten).map_err(sql)
 }
@@ -73,7 +73,15 @@ pub fn carried(tx: &Transaction, id: &str, message: Option<&str>, answered: bool
 
 /// An agent's questions for a human (terminum-dispatcher.md AC-157): a comment the task's window shows as such.
 pub fn questions(tx: &Transaction, author: &str, id: &str, text: &str, at: i64) -> Result<String, String> {
-    comment_with(tx, author, id, text, Some(&json!({"questions": true})), at)
+    record_question(tx, author, id, text, None, at)
+}
+
+pub(super) fn record_question(tx: &Transaction, author: &str, id: &str, text: &str, recorded: Option<&super::choices::Question>, at: i64) -> Result<String, String> {
+    let mut data = json!({"questions": true});
+    if let Some(question) = recorded {
+        data["question"] = json!(question);
+    }
+    comment_with(tx, author, id, text, Some(&data), at)
 }
 
 /// Dispatcher's words on a task leaving the integration queue, marked with how it left (`terminum-integration.md`
@@ -109,7 +117,7 @@ pub fn newest_by(tx: &Transaction, key: &str, author: &str, most: i64) -> Result
          (key, author, most), |r| Ok((r.get(0)?, r.get(1)?)))
 }
 
-fn comment_with(tx: &Transaction, author: &str, id: &str, text: &str, data: Option<&Value>, at: i64) -> Result<String, String> {
+pub(super) fn comment_with(tx: &Transaction, author: &str, id: &str, text: &str, data: Option<&Value>, at: i64) -> Result<String, String> {
     check_comment(text)?;
     let key = key_of(tx, id)?;
     touch(tx, &key, at)?;
@@ -150,10 +158,13 @@ pub fn answers(tx: &Transaction, id: &str) -> Result<Option<Vec<String>>, String
 /// shown history (AC-108). Those of agents and Dispatcher stay as written. Whether its text changed.
 pub fn change_comment(tx: &Transaction, author: &str, id: &str, event: &str, text: Option<&str>, at: i64) -> Result<bool, String> {
     let key = key_of(tx, id)?;
-    let (kind, by, was): (String, String, Option<String>) = tx.query_row("SELECT kind, author, text FROM events WHERE id = ?1 AND task = ?2", (event, &key), |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+    let (kind, by, was, choice): (String, String, Option<String>, bool) = tx.query_row("SELECT kind, author, text, json_extract(data, '$.choice') IS NOT NULL FROM events WHERE id = ?1 AND task = ?2", (event, &key), |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
         .optional().map_err(sql)?.ok_or("That comment is gone.")?;
     if kind != "comment" || by != author {
         return Err("Only its human author can change a comment.".into());
+    }
+    if choice && text.is_some() {
+        return Err("Remove the chosen option before changing your answer.".into());
     }
     check_comment(text.unwrap_or(""))?;
     let who = user_name(tx, author)?;
@@ -163,7 +174,7 @@ pub fn change_comment(tx: &Transaction, author: &str, id: &str, event: &str, tex
             log(tx, &key, author, "edit", &format!("{who} changed a comment"), None, at)?;
         }
         None => {
-            tx.execute("UPDATE events SET kind = 'deleted', text = '' WHERE id = ?1", [event]).map_err(sql)?;
+            tx.execute("UPDATE events SET kind = 'deleted', text = '', data = json_remove(data, '$.choice') WHERE id = ?1", [event]).map_err(sql)?;
             log(tx, &key, author, "edit", &format!("{who} deleted a comment"), None, at)?;
         }
     }
@@ -179,7 +190,9 @@ pub fn history(tx: &Transaction, id: &str) -> Result<Value, String> {
         files.entry(event).or_default().push(file);
     }
     let out = rows(tx, "SELECT e.id, e.at, e.author, u.name, u.kind, e.kind, e.text, e.edited_at, json_extract(e.data, '$.questions') IS NOT NULL,
-                        CASE WHEN e.kind = 'told' THEN json_extract(e.data, '$.comments') END, CASE WHEN e.kind = 'told' THEN json_extract(e.data, '$.not') END
+                        CASE WHEN e.kind = 'told' THEN json_extract(e.data, '$.comments') END, CASE WHEN e.kind = 'told' THEN json_extract(e.data, '$.not') END,
+                        CASE WHEN e.kind = 'comment' THEN json_extract(e.data, '$.question') END,
+                        CASE WHEN e.kind = 'comment' THEN json_extract(e.data, '$.choice') END
                         FROM events e JOIN users u ON u.id = e.author WHERE e.task = ?1 ORDER BY e.at, e.rowid", [&key], |r| {
         let event: String = r.get(0)?;
         let attached = files.remove(&event).unwrap_or_default();
@@ -193,6 +206,11 @@ pub fn history(tx: &Transaction, id: &str) -> Result<Value, String> {
         if let Some(ids) = r.get::<_, Option<String>>(9)?.and_then(|s| serde_json::from_str::<Value>(&s).ok()) {
             v["comments"] = ids;
             v["not"] = json!(r.get::<_, Option<bool>>(10)?.unwrap_or(false));
+        }
+        for (column, field) in [(11, "question"), (12, "choice")] {
+            if let Some(data) = r.get::<_, Option<String>>(column)?.and_then(|s| serde_json::from_str::<Value>(&s).ok()) {
+                v[field] = data;
+            }
         }
         Ok(v)
     })?;

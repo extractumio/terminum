@@ -326,7 +326,8 @@ fn run_in(store: &Store, state_dir: &Path, who: &Who, tool: &str, args: &Value, 
                     return Err(why);
                 }
                 let me = me()?;
-                ops::questions(tx, &me, id, &questions, at)?;
+                let recorded = super::choices::question(args)?;
+                super::comments::record_question(tx, &me, id, &questions, recorded.as_ref(), at)?;
                 ops::move_to(tx, &me, id, "WAIT FOR HUMAN", at)?;
                 let then = asked(tx, who, true)?;
                 // in a run of several its other tasks in progress wait with it: one question closes the session (AC-185)

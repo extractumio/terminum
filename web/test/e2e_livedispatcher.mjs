@@ -155,19 +155,27 @@ export async function liveDispatcher(page, opts) {
   if (shots) await page.screenshot({ path: path.join(shots, "needs-line.png") });
 
   // AC-157 the agent asks by ask_human: its session closes, RUN resumes the same conversation with the answers
-  const asking = await task("needs a decision QUESTIONS");
-  await run(asking);
+  const asking = await task("needs a decision CHOICES QUESTIONS"), choicePrompts = path.join(app, "choice-prompts");
+  await run(asking, { agent: await agent("Asks with choices", `--prompts ${choicePrompts}`) });
   check("AC-157 its questions wait for the human", await hasStatus(asking, "WAIT FOR HUMAN", 15000), await history(asking));
   const asked = await j(`/api/tasks/${asking}`);
   check("AC-157 kept as questions on the task", asked.history.some((e) => e.questions && /^Why you are needed: .*\nRecommended:\n1\. v2/.test(e.text)), JSON.stringify(asked.history.at(-1)));
   check("AC-157 its session closes once its turn is over", await until(async () => (await j(`/api/tasks/${asking}`)).session?.closed || /waits for the human's answers/.test(await history(asking)), 20000), await history(asking));
   const conversation = (await j(`/api/tasks/${asking}`)).agent?.conversation;
   check("AC-157 the task keeps its agent and conversation", /^fake-\d+$/.test(conversation ?? ""), JSON.stringify((await j(`/api/tasks/${asking}`)).agent));
+  await page.goto(`${base}/kanban/${asking}`);
+  await page.getByRole("button", { name: "<b>v2</b> (Recommended)", exact: true }).click();
+  await page.getByText("Saved answer: <b>v2</b>", { exact: true }).waitFor();
+  const picked = await j(`/api/tasks/${asking}`);
+  check("AC-230 one press saves the chosen option and still waits", picked.status === "WAIT FOR HUMAN" && picked.history.some((e) =>
+    e.author_kind === "human" && e.choice?.question === asked.active_question && e.choice?.option === "v2"));
   const answered = await run(asking, { comment: "v2, and FINISHES" });
   check("AC-157 RUN resumes it", !!answered.run, JSON.stringify(answered));
   check("AC-157 in the same conversation, with the human's answers", await until(async () => { const p = await paneOf(asking); return !!p && /answered your questions/.test(tmux("capture-pane", "-p", "-S", "-40", "-t", p)); }, 15000) || await status(asking) === "DONE");
   check("AC-157 and it goes on to the end", await hasStatus(asking, "DONE", 20000), await history(asking));
   check("AC-157 its conversation is the one it asked in", (await j(`/api/tasks/${asking}`)).agent?.conversation === conversation, JSON.stringify((await j(`/api/tasks/${asking}`)).agent));
+
+  check("AC-230 and AC-157 RUN carries the saved option ID and free text to the same agent", (/Selected option: v2\.\s+---\s+v2, and FINISHES/).test(fs.readFileSync(choicePrompts, "utf8")));
 
   // AC-122 running again: a live agent, a shell, a closed session
   const again = await task("again STOPS");

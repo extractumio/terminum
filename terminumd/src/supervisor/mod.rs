@@ -43,7 +43,7 @@ pub(crate) use catalog::Rule;
 pub(crate) use signals::Signal;
 pub(crate) use replay::replay;
 
-const SCHEMA: usize = 45;
+const SCHEMA: usize = crate::tasks::store::SCHEMA_VERSION;
 const DAY: i64 = 86_400;
 const WEEK: i64 = 7 * DAY;
 

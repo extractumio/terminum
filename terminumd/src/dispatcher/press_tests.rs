@@ -185,6 +185,8 @@ fn ac157_the_prompt_says_how_to_ask_a_human() {
         assert!(ASK.contains("a cause that can be removed") && ASK.contains("FAILED is only for a task that cannot be done at all"), "a removable cause waits for a human (AC-157)");
         // the human reads why first, the default next, the whole issue last: the shape ask_human checks
         for words in [ASK, ASK_TOGETHER] {
+            assert!(words.contains("kind to operational") && words.contains("strategic") && words.contains("options as [{id, label}]")
+                && words.contains("recommended as one of those IDs"), "AC-230 each RUN tells the agent how to give choices");
             let at: Vec<usize> = crate::tasks::closeout::QUESTIONS.iter().map(|name| words.find(&format!("\"{name}:\"")).expect(name)).collect();
             assert!(at.is_sorted(), "its parts in order: {words}");
             assert!(words.contains("a person who has not followed this task") && words.contains("one sentence") && words.contains("one paragraph"), "{words}");

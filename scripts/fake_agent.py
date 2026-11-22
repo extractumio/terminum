@@ -162,7 +162,12 @@ def main():
                 hook("SessionEnd", reason="other")
                 sys.exit(0)
             elif "QUESTIONS" in prompt:
-                tool("ask_human", {"id": tasks[0], "questions": "Why you are needed: only you know which API the clients may use.\nRecommended:\n1. v2: v1 goes away in May. Other options: v1.\nDetails: the task moves the clients to one API; v1 and v2 both work today."})
+                ask = {"id": tasks[0], "questions": "Why you are needed: only you know which API the clients may use.\nRecommended:\n1. v2: v1 goes away in May. Other options: v1.\nDetails: the task moves the clients to one API; v1 and v2 both work today."}
+                if "CHOICES" in prompt:
+                    ask.update(kind="operational", recommended="v2", options=[{"id": "v1", "label": "v1"}, {"id": "v2", "label": "<b>v2</b>"}])
+                    tool("execute_tool", {"name": "ask_human", "arguments": ask})
+                else:
+                    tool("ask_human", ask)
                 hook("Stop", last_assistant_message="I asked.")
             elif "ASKS" in prompt:
                 hook("Notification", notification_type="permission_prompt", message="Approve Bash")

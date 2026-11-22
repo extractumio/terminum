@@ -6,6 +6,7 @@ pub mod api;
 pub mod archiving;
 pub mod attrs;
 pub mod auto;
+pub(crate) mod choices;
 pub mod closeout;
 mod columns;
 pub mod comments;

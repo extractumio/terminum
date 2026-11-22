@@ -299,8 +299,9 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
     try { await commentWork(() => work(current)); } finally {
       await refresh(false, true);                  // the action held any task changes it heard while busy
       note?.wait();
-      if (current() && box.contains(focused) && focused.isConnected && !focused.matches(":disabled")
-        && (document.activeElement === document.body || document.activeElement === box)) focused.focus({ preventScroll: true });
+      const restore = focused?.matches(".question-choices button") ? body.querySelector(".choice-saved") ?? focused : focused;
+      if (current() && box.contains(restore) && restore.isConnected && !restore.matches(":disabled")
+        && (document.activeElement === document.body || document.activeElement === box)) restore.focus({ preventScroll: true });
     }
   }
 
@@ -408,7 +409,12 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
     drawn = JSON.stringify(t);
     $("tasktitle").textContent = `${t.id} ${t.title}`;
     const scroll = body.scrollTop, n = noteFor(t.id), kin = family(t, { openTask, newSubtask, patch, send });
-    const { lead, rest } = activity(t, { refresh, confirmed, leads });
+    const pickChoice = (question, option) => commentAction(n, async () => {
+      try {
+        await api(`/api/tasks/${t.id}/comments/${question}/choice`, { method: "POST", body: { option } });
+      } catch (e) { say(e.message); }
+    });
+    const { lead, rest } = activity(t, { refresh, confirmed, pickChoice, leads });
     leads = Boolean(lead);
     n.area.placeholder = `${lead && t.status === "WAIT FOR HUMAN" && !t.report ? "Your answer" : "Comment"}, Markdown. Drop or paste files here.`;
     // the comment being written stays where it is, never taken out: its focus, cursor and files on their way stay too
