@@ -73,7 +73,7 @@ pub(super) fn started_prompt(tasks: &[Task], language: &str) -> String {
     ];
     parts.extend(t.budget_seconds.map(budget_words));
     parts.push(closeout::words(language, FINISH, false));
-    parts.push(format!("When it is done, call {FINISH} with the result. {ASK}"));
+    parts.push(format!("When it is done, call {FINISH} with the result. {} {ASK}", super::press::REPORT));
     parts.join("\n\n")
 }
 

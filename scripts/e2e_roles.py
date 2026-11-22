@@ -210,13 +210,14 @@ def main():
               and scheds[0]["author_name"] == "Shell · manager", (out, scheds))
         out, rc = typed(boss, tool("run_schedule", schedule="SCH-1"), 40)
         check("AC-182 run_schedule makes the schedule's task and starts it now", rc == "0" and "SCH-1 ran now: its task S_" in out, out)
-        ran = wait_for(lambda: call("/api/schedules")[1]["schedules"][0]["last"], lambda last: last and last["status"] == "DONE", 30, 0.3, last=True)
-        check("AC-182 its task runs to its end on the schedule's agent, the cadence as it was", ran and ran["status"] == "DONE" and call("/api/schedules")[1]["schedules"][0]["cron"] == "0 3 * * *", ran)
+        # a schedule's result is a report: it waits for the human (terminum-dispatcher.md AC-264)
+        ran = wait_for(lambda: call("/api/schedules")[1]["schedules"][0]["last"], lambda last: last and last["status"] == "WAIT FOR HUMAN", 30, 0.3, last=True)
+        check("AC-182 AC-264 its task runs to its end on the schedule's agent, its report waiting, the cadence as it was", ran and ran["status"] == "WAIT FOR HUMAN" and call("/api/schedules")[1]["schedules"][0]["cron"] == "0 3 * * *", ran)
         # its last run's session holds the one slot: the task waits, and once that session is a minute quiet
         # (terminum-dispatcher.md AC-141) it is closed for it and the task runs (terminum-schedules.md AC-161)
         st, said = call(f"/api/schedules/{scheds[0]['id']}/run", "POST", {})
         check("AC-182 Run now on its card does the same for a human", st == 200 and said.get("task", "").startswith("S_"), said)
-        wait_for(lambda: call("/api/schedules")[1]["schedules"][0]["last"], lambda last: last and last["task"] == said.get("task") and last["status"] == "DONE", 150, 0.5)
+        wait_for(lambda: call("/api/schedules")[1]["schedules"][0]["last"], lambda last: last and last["task"] == said.get("task") and last["status"] == "WAIT FOR HUMAN", 150, 0.5)
         log = t.log()
         check("AC-174 each manager's call is a line of the log, with no argument", "manager.tool" in open(t.log_path).read() and "keep it short" not in open(t.log_path).read(), log[-300:])
     finally:

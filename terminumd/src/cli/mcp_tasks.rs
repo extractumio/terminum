@@ -45,7 +45,7 @@ const TOOLS: [Tool; 20] = [
     Tool { name: "add_comment", read_only: false, description: "Adds a Markdown comment to a task you can reach.", fields: &[ID, ("text", true, COMMENT_MOST)] },
     Tool { name: "attach_file", read_only: false, description: "Attaches a file to a task: path in this session's folder; from a host name and text.", fields: &[TASK, ("path", false, 4096), ("name", false, 300), ("text", false, TEXT_FILE_MOST)] },
     Tool { name: "get_file", read_only: true, description: "Gets a task's file, by name: its path here.", fields: &[TASK, ("name", true, 300)] },
-    Tool { name: "finish_task", read_only: false, description: "Your task is done, or one of your project you did: its result becomes a comment and the task moves to DONE; call it for yours before you stop; refused when its Outcome says partly or not finished: then ask_human. The result's sections, each there (\"None\" when empty): Outcome, Done, Checked, Not done, Needs a human, New tasks, Tasks changed, Issues and discoveries, Further recommendations.", fields: &[ID, ("result", true, COMMENT_MOST)] },
+    Tool { name: "finish_task", read_only: false, description: concat!("Your task is done, or one of your project you did: its result becomes a comment and the task moves to DONE; call it for yours before you stop; refused when its Outcome says partly or not finished: then ask_human. ", crate::tasks::report::words!(), " A schedule's task's result always waits so, in WAIT FOR HUMAN. The result's sections, each there (\"None\" when empty): Outcome, Done, Checked, Not done, Needs a human, New tasks, Tasks changed, Issues and discoveries, Further recommendations."), fields: &[ID, ("result", true, COMMENT_MOST), ("report", false, 3)] },
     Tool { name: "integrate", read_only: false, description: "Your task's work is committed and its checks passed: queues the commit for integration into the project's branch, with the result finish_task would take; the task waits in INTEGRATION and is DONE once its batch lands, or comes back with why. commit: none for this session's folder's HEAD.", fields: &[ID, ("result", true, COMMENT_MOST), ("commit", false, 64)] },
     Tool { name: "withdraw_integration", read_only: false, description: "Takes a task out of the integration queue: it is IN PROGRESS again.", fields: &[ID] },
     Tool { name: "integration_status", read_only: true, description: "The project's integration: on or off, its target and commands, the queue with each task's place; with an id, that task's.", fields: &[("id", false, 24)] },
@@ -95,7 +95,7 @@ pub fn checked(tool: &str, args: &Value) -> Result<Value, String> {
             faults.push(format!("{field}: one of {}", allowed.join(", ")));
         }
     }
-    for field in ["archive", "remove"] {
+    for field in ["archive", "remove", "report"] {
         if out.get(field).and_then(Value::as_str).is_some_and(|a| !ARCHIVE.contains(&a)) {
             faults.push(format!("{field}: \"yes\" or left out"));
         }
@@ -131,7 +131,7 @@ pub(super) fn listed(tools: &[Tool]) -> Vec<Value> {
                 "status" => json!({"type": "string", "enum": COLUMNS}),
                 "to" => json!({"type": "string", "enum": moves()}),
                 "severity" => json!({"type": "string", "enum": SEVERITIES}),
-                "archive" | "remove" => json!({"type": "string", "enum": ARCHIVE}),
+                "archive" | "remove" | "report" => json!({"type": "string", "enum": ARCHIVE}),
                 "list" => json!({"type": "string", "enum": LISTS}),
                 "type" => json!({"type": "string", "enum": std::iter::once("").chain(TYPES.map(|(name, _)| name)).collect::<Vec<_>>()}),
                 f => match super::mcp_manager::values(f) {
