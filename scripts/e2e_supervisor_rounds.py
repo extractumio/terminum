@@ -165,8 +165,10 @@ def main():
               bool(wait_for(lambda: db("SELECT run FROM supervisor_rounds WHERE project = ?", [expiry_project]), lambda r: len(r) == 2, 10, every=0.2)))
         wait_for(taken, lambda lines: len(lines) == 3, 12, every=0.2)
         call(expiry_path, "PUT", {"enabled": False})
-        check("AC-216 disabling the project ends its active investigation",
-              "disabled" in ended(expiry_project, 2)[1][3].lower())
+        cancelled = ended(expiry_project, 2)[1]
+        check("AC-216 disabling the project ends its active investigation without a new alert",
+              "disabled" in cancelled[3].lower()
+              and not db("SELECT 1 FROM supervisor_signals WHERE subject_id = ? AND detector = 'self.round_failed'", [cancelled[0]]))
         call(expiry_path, "PUT", {"enabled": True})
         call(route, "POST", {})
         wait_for(taken, lambda lines: len(lines) == 4, 12, every=0.2)

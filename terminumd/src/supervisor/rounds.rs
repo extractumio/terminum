@@ -236,16 +236,18 @@ pub(crate) fn mark(tx: &Transaction, run: &str, key: &str) -> Result<(), String>
 }
 
 pub(crate) fn failure(tx: &Transaction, run: &str, why: &str, refused: bool) -> Result<(), String> {
-    let (id, project, count, previous): (String, String, i64, Option<String>) = tx.query_row(
-        "SELECT id, project, refused, failure FROM supervisor_rounds WHERE run = ?1", [run],
-        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))).map_err(sql)?;
+    let (id, project, count, previous, enabled): (String, String, i64, Option<String>, bool) = tx.query_row(
+        "SELECT r.id, r.project, r.refused, r.failure, EXISTS (SELECT 1 FROM project_supervisor p
+            WHERE p.project = r.project AND p.generation = r.generation AND p.enabled = 1)
+        FROM supervisor_rounds r WHERE r.run = ?1", [run],
+        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?))).map_err(sql)?;
     if !refused && previous.is_some() { return Ok(()); }
     if refused {
         tx.execute("UPDATE supervisor_rounds SET refused = refused + 1 WHERE run = ?1", [run]).map_err(sql)?;
     } else {
         tx.execute("UPDATE supervisor_rounds SET failure = ?2 WHERE run = ?1", (run, why)).map_err(sql)?;
     }
-    if crate::tasks::ops::check_project(tx, &project).is_err() { return Ok(()); }
+    if !enabled { return Ok(()); }
     let (metric, value) = if refused { ("refused_findings", (count + 1) as f64) } else { ("failed_rounds", 1.) };
     signals::round_failed(tx, &project, &id, metric, value, now())
 }
