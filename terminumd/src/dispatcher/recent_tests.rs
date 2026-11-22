@@ -163,6 +163,24 @@ fn ac122_queued_answer_keeps_its_draft_last_and_respects_the_prepared_cutoff() {
     }).unwrap();
 }
 
+/// terminum-dispatcher.md AC-264: a RUN after a report says the human read it and carries their comments.
+#[test]
+fn ac264_a_run_after_a_report_says_the_human_read_it() {
+    let store = Store::open(crate::testutil::fresh_dir("saved-report").join("kanban.sqlite"));
+    store.with(|tx| {
+        let task = ops::create(tx, HUMAN, ops::NewTask { title: "Audit the logs".into(), ..Default::default() }, 10)?;
+        let tasks = &[task];
+        super::record(tx, &super::through(tx, tasks)?)?;
+        ops::move_to(tx, crate::tasks::store::DISPATCHER, &tasks[0].id, "IN PROGRESS", 10)?;
+        crate::tasks::report::wait(tx, crate::tasks::store::DISPATCHER, &ops::get(tx, &tasks[0].id)?, 11)?;
+        ops::comment(tx, HUMAN, &tasks[0].id, "Add the March numbers", 12)?;
+        let tasks = &[ops::get(tx, &tasks[0].id)?];       // as a RUN reads it: waiting
+        let words = super::saved(tx, tasks, &[], true)?.words(&tasks[0].id, "Human", None)?;
+        assert_eq!(words, format!("{}: the human read your report and commented below. Go on with the task, taking it into account.\n\nAdd the March numbers", tasks[0].id));
+        Ok(())
+    }).unwrap();
+}
+
 fn codex_run(tm: &crate::testutil::Tmux, script: &Path, saved: &str) -> (crate::app::Shared, Router, Task) {
     tm.read(&["set-environment", "-g", "SHELL", "/bin/sh"]);
     tm.read(&["set-environment", "-g", "HOME", tm.dir.to_str().unwrap()]);

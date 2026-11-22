@@ -21,10 +21,12 @@ pub(super) async fn window(State(app): State<Shared>, Path(id): Path<String>) ->
         let from = super::schedules::of_task(tx, &t.key)?.map(|s| json!({"key": s.key, "title": s.title}));
         let runs_on = super::auto::agent_of(tx, &t.key)?;
         let lists = super::attrs::lists_of(tx, &t.key)?;
-        Ok((ops::text_of(tx, &id)?, ops::history(tx, &id)?, files::of_task(tx, &id)?, (held, waits, from, runs_on, lists), agent, kids, t))
+        let report = super::report::waits_on(tx, &t)?;
+        Ok((ops::text_of(tx, &id)?, ops::history(tx, &id)?, files::of_task(tx, &id)?, (held, waits, from, runs_on, lists), agent, kids, (t, report)))
     }).await;
-    answer(done.map(|(body, history, attached, (held, waits, from, runs_on, lists), agent, kids, t)| {
+    answer(done.map(|(body, history, attached, (held, waits, from, runs_on, lists), agent, kids, (t, report))| {
         let mut v = card(&app, &t);
+        v["report"] = json!(report);                  // it waits with its report: Done reads it (terminum-dispatcher.md AC-264)
         v["lists"] = lists;
         v["children"] = json!(kids);
         v["text_rev"] = json!(text_rev(&body));

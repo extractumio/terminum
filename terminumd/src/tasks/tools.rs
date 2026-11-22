@@ -70,7 +70,8 @@ pub(super) fn visible(tx: &Transaction, who: &Who, id: &str) -> Result<Task, Str
 pub(super) fn own(tx: &Transaction, who: &Who, id: &str) -> Result<Task, String> {
     let t = ops::get(tx, id)?;
     match &t.session {
-        Some(s) if s == &who.key => Ok(t),
+        // a report waits for its human's Done or RUN alone (terminum-dispatcher.md AC-264)
+        Some(s) if s == &who.key => super::report::untouched(tx, &t).map(|()| t),
         Some(s) => Err(format!("{id} belongs to session {}: only its agent asks on it. You can comment.", ops::pane_of(s))),
         None => Err(format!("{id} has no session: take_task first, or comment.")),
     }
@@ -84,6 +85,7 @@ pub(super) fn movable(tx: &Transaction, who: &Who, id: &str) -> Result<Task, Str
         return Err(format!("{} is archived: a human brings it back from the Archived list.", t.id));
     }
     not_run_elsewhere(tx, who, &t)?;
+    super::report::untouched(tx, &t)?;
     not_queued(tx, &t).map(|()| t)
 }
 
@@ -113,7 +115,7 @@ pub(super) fn not_run_elsewhere(tx: &Transaction, who: &Who, t: &Task) -> Result
 }
 
 /// A main task ends last: refused while a subtask its run took is not DONE (terminum-dispatcher.md AC-185).
-fn after_its_subtasks(tx: &Transaction, t: &Task) -> Result<(), String> {
+pub(super) fn after_its_subtasks(tx: &Transaction, t: &Task) -> Result<(), String> {
     let open = crate::dispatcher::runs::subtasks_open(tx, &t.key)?;
     if open.is_empty() {
         return Ok(());
@@ -345,42 +347,7 @@ fn run_in(store: &Store, state_dir: &Path, who: &Who, tool: &str, args: &Value, 
                 *noted = Some((id.to_string(), event));
                 Ok((format!("Comment kept on {id}."), vec![id.to_string()]))
             }
-            "finish_task" => {
-                let id = arg(args, "id")?;
-                let t = movable(tx, who, id)?;
-                if let Some(why) = crate::integrate::agent::finish_refused(tx, &t.key)? {
-                    return Err(why);
-                }
-                super::integration_queue::stays_queued(tx, &t)?;
-                after_its_subtasks(tx, &t)?;
-                let me = me()?;
-                let result = rules::clean(arg(args, "result")?);
-                ops::comment(tx, &me, id, &result, at)?;
-                // a result is there only in its sections: else its words stay a comment, the task as it was (AC-123)
-                let form = closeout::form_of(tx, &t.key)?;
-                let lacks = closeout::missing(&result, form);
-                if !lacks.is_empty() {
-                    Ok((closeout::missing_words(id, &t.status, &lacks), vec![id.to_string()]))
-                // work its own Outcome says is not done is no DONE: it waits for a human or fails (AC-123, AC-157)
-                } else if form == closeout::SECTIONS.as_slice() && closeout::not_done(&result) {
-                    Ok((closeout::not_done_words(id, &t.status), vec![id.to_string()]))
-                } else {
-                    ops::move_to(tx, &me, id, "DONE", at)?;
-                    crate::dispatcher::runs::finished(tx, &t.key)?;
-                    // what it leaves is on the board by terminum's word, and what it names and is not there is said (AC-166)
-                    let mut said = vec![format!("{id} is DONE, with your result.")];
-                    said.extend(closeout::made_line(tx, &t)?);
-                    let unknown = closeout::unknown_ids(tx, &result)?;
-                    if !unknown.is_empty() {
-                        said.push(closeout::unknown_words(&unknown));
-                    }
-                    let untracked = closeout::untracked(tx, &result)?;
-                    if !untracked.is_empty() {
-                        said.push(closeout::untracked_words(&untracked));
-                    }
-                    Ok((said.join(" "), vec![id.to_string()]))
-                }
-            }
+            "finish_task" => super::finish::finish(tx, who, args, &me()?, at),
             "get_file" => {
                 if who.dir.is_none() {
                     return Err("A task's file reaches a host through its link: terminum's own route sends it.".into());

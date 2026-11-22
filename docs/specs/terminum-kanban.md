@@ -16,7 +16,7 @@ A snapshot of what terminum must do, not a record of how it came to be: git hold
 
 **Who it affects.** One person running many Claude Code and Codex sessions from a Mac or a phone; later a team sharing a central store.
 
-**Expected outcome.** `/kanban/` shows tasks in TODO, IN PROGRESS, WAIT FOR HUMAN, INTEGRATION (where a project's integration is on), FAILED and DONE, filtered by several projects, severity and owner. A task has a Markdown text, comments, files, an owner, a severity P0…P3, a project and at most one session. Agents and Dispatcher move tasks; a human moves one only by running it (AC-107). Tasks live in one local database file with no service to run.
+**Expected outcome.** `/kanban/` shows tasks in TODO, IN PROGRESS, WAIT FOR HUMAN, INTEGRATION (where a project's integration is on), FAILED and DONE, filtered by several projects, severity and owner. A task has a Markdown text, comments, files, an owner, a severity P0…P3, a project and at most one session. Agents and Dispatcher move tasks; a human moves one only by running it, or a report read to DONE (AC-107). Tasks live in one local database file with no service to run.
 
 **Scenario.** Alex drops a screenshot into the new-task window, writes "Fix the retry loop", picks P1 and presses Create: API-12 stands on top of the P1 cards in TODO. RUN (`terminum-dispatcher.md` AC-121) starts an agent on it. An hour later the board's tab counts one card in WAIT FOR HUMAN; Alex comments and presses RUN, and the agent goes on.
 
@@ -57,7 +57,7 @@ Open questions: none.
 | AC-105 | [MUST / P0] | `/kanban/` shows TODO as a column of its own and the other columns (IN PROGRESS, WAIT FOR HUMAN, INTEGRATION where a shown project's integration is on: `terminum-integration.md` AC-193, FAILED, DONE) one at a time in a panel beside it under their tabs, each tab with its count, WAIT FOR HUMAN's and FAILED's pulsing while they hold tasks; each column sorted by recent updates or by priority then recent updates, chosen by a segmented control of two icons before its count and remembered per project in this browser; a tablet's head is one row; `/sessions/` is the session list, `/` leads to it; a phone shows one column at a time. |
 | AC-159 | [MUST / P0] | TODO and DONE show each card as one line, its ID, severity, title and its state's dot; a press shows one whole, folding the one before; the other columns show cards whole. |
 | AC-106 | [MUST / P0] | A window makes a task (title, Markdown with preview, files dropped or pasted, project, severity, owner, parent), in TODO unless said; a draft survives closing; a selection in a terminal can start one. |
-| AC-107 | [MUST / P0] | A human moves a task only by running it (terminum-dispatcher.md AC-138); agents and Dispatcher move it; every change is kept in the task's history with who and when. |
+| AC-107 | [MUST / P0] | A human moves a task only by running it (terminum-dispatcher.md AC-138), but for Done on a report that waits for them (terminum-dispatcher.md AC-264); agents and Dispatcher move it; every change is kept in the task's history with who and when. |
 | AC-108 | [MUST / P0] | A task holds Markdown comments with files, by humans, agents and Dispatcher; a human's comment is kept by SAVE or goes with RUN. |
 | AC-109 | [MUST / P0] | Files up to 100 MB each stay with their task: images shown, other files downloaded, nothing run; a human can purge a file or a text. |
 | AC-110 | [MUST / P0] | The session list and the board share projects; a project needs no session, its last session closing leaves it; Default holds what has no project and is no real project; deleting a project moves its sessions and tasks to Default. |
@@ -275,6 +275,11 @@ Scenario: AC-107 happy path — a task moves by running
   Then Dispatcher moves it as its agent goes, every page shows it within 2 s and its history adds "Dispatcher moved it from TODO to IN PROGRESS" with the time
   And a drag to another column does nothing: the column does not light and the card stays; the integration queue's two drops are not moves of a column but its keys: on INTEGRATION a task is queued, from it to IN PROGRESS it is taken out (terminum-integration.md AC-193)
   And the human's way to take a task off the board is Archive (AC-118); its display order follows the column's sort (AC-105)
+
+Scenario: AC-107 edge — a report read
+  Given API-12 in WAIT FOR HUMAN with its agent's report (terminum-dispatcher.md AC-264)
+  When the user presses Done in its window
+  Then API-12 is DONE, its history naming the user: the one move a human makes but by running, only for a report that waits for them
 
 Scenario: AC-107 failure — a route with a column
   When a page sends PATCH /api/tasks/API-12 {"status": "DONE"}
@@ -1238,9 +1243,9 @@ Scenario: AC-149 happy path — a comment's label lines read as sections
   And a task opened is shown from its start
 
 Scenario: AC-149 happy path — what the human reacts to stands first
-  Given API-12 waits for its human: WAIT FOR HUMAN with its agent's questions, DONE with its agent's last comment (its result), or FAILED with the last comment of its agent or Dispatcher (why)
+  Given API-12 waits for its human: WAIT FOR HUMAN with its agent's questions or its report (terminum-dispatcher.md AC-264), DONE with its agent's last comment (its result), or FAILED with the last comment of its agent or Dispatcher (why)
   When the user opens its window
-  Then that comment stands first under its heading (Asks you, Result, Why it failed), the comment field right under it (for questions: "Your answer…"), the window's keys at its foot
+  Then that comment stands first under its heading (Asks you, Report, Result, Why it failed), the comment field right under it (for questions: "Your answer…"), the window's keys at its foot, Done among them for a report
   And then the task itself, then the rest of the conversation newest first under "Earlier", then its subtasks
   When it has no such comment, or stands in TODO or IN PROGRESS
   Then it reads as a conversation, above

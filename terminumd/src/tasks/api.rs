@@ -44,6 +44,7 @@ pub fn routes() -> Router<Shared> {
         .route("/api/tasks/{id}/archive", post(archive))
         .route("/api/tasks/{id}/seen", post(seen))
         .merge(super::fileapi::routes())
+        .merge(super::report::routes())
 }
 
 /// Runs `f` in one transaction off the async workers.
@@ -70,7 +71,7 @@ pub(super) fn told_projects<T: Serialize>(app: &Shared, done: Result<T, String>)
 }
 
 /// `done`'s answer; every page hears when it changed task `id`.
-fn told_answer<T: Serialize>(app: &Shared, id: &str, done: Result<T, String>) -> Response {
+pub(super) fn told_answer<T: Serialize>(app: &Shared, id: &str, done: Result<T, String>) -> Response {
     if done.is_ok() {
         told(app, id);
     }

@@ -180,7 +180,7 @@ fn ac157_the_prompt_says_how_to_ask_a_human() {
     store_of("api-ask").with(|tx| {
         let a = made(tx, "Fix it", "the text");
         let prompt = prompt_of(tx, std::slice::from_ref(&a), None)?;
-        assert!(prompt.ends_with(&format!("When it is done, call {FINISH} with the result. {ASK}")), "{prompt}");
+        assert!(prompt.ends_with(&format!("When it is done, call {FINISH} with the result. {REPORT} {ASK}")), "{prompt}");
         assert!(ASK.contains("ask_human") && ASK.contains("the answer you recommend") && ASK.contains("end your turn"));
         assert!(ASK.contains("a cause that can be removed") && ASK.contains("FAILED is only for a task that cannot be done at all"), "a removable cause waits for a human (AC-157)");
         // the human reads why first, the default next, the whole issue last: the shape ask_human checks
@@ -242,7 +242,7 @@ fn ac166_the_prompt_closes_the_task_out_in_the_project_s_language() {
     use crate::tasks::closeout;
     store_of("api-closeout").with(|tx| {
         let a = made(tx, "Fix it", "the text");
-        let finish = format!("When it is done, call {FINISH} with the result. {ASK}");
+        let finish = format!("When it is done, call {FINISH} with the result. {REPORT} {ASK}");
         let prompt = prompt_of(tx, std::slice::from_ref(&a), None)?;
         assert!(prompt.ends_with(&format!("{}\n\n{finish}", closeout::words("English", FINISH, false))), "{prompt}");
         let rev = facts(tx, std::slice::from_ref(&a), None)?.rev();
