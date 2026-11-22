@@ -163,18 +163,30 @@ fn decode<T: serde::de::DeserializeOwned>(row: &rusqlite::Row<'_>, col: usize) -
         .map_err(|e| rusqlite::Error::FromSqlConversionFailure(col, rusqlite::types::Type::Text, Box::new(e)))
 }
 
-pub(super) fn list(tx: &Transaction, project: &str) -> Result<Vec<Signal>, String> {
-    rows(tx, "SELECT fingerprint, detector, subject_kind, subject_id, metric, evidence, measure, scores,
-        first_seen, last_seen, count, json_quote(state) FROM supervisor_signals WHERE project = ?1
-        ORDER BY detector, subject_kind, subject_id, metric", [project], |r| {
-        let RecordedScores { scores, impact_basis } = decode(r, 7)?;
-        let level = scores.level();
-        let count = r.get(10)?;
-        Ok(Signal {
-            fingerprint: r.get(0)?, project: project.into(), detector: r.get(1)?, subject_kind: r.get(2)?,
-            subject_id: r.get(3)?, metric: r.get(4)?, evidence: decode(r, 5)?, measure: decode(r, 6)?,
-            scores, impact_basis, level, response: scores.response(count > 1),
-            first_seen: r.get(8)?, last_seen: r.get(9)?, count, state: decode(r, 11)?,
-        })
+const COLUMNS: &str = "fingerprint, detector, subject_kind, subject_id, metric, evidence, measure, scores,
+    first_seen, last_seen, count, json_quote(state)";
+
+fn read(project: &str, r: &rusqlite::Row<'_>) -> rusqlite::Result<Signal> {
+    let RecordedScores { scores, impact_basis } = decode(r, 7)?;
+    let level = scores.level();
+    let count = r.get(10)?;
+    Ok(Signal {
+        fingerprint: r.get(0)?, project: project.into(), detector: r.get(1)?, subject_kind: r.get(2)?,
+        subject_id: r.get(3)?, metric: r.get(4)?, evidence: decode(r, 5)?, measure: decode(r, 6)?,
+        scores, impact_basis, level, response: scores.response(count > 1),
+        first_seen: r.get(8)?, last_seen: r.get(9)?, count, state: decode(r, 11)?,
     })
+}
+
+pub(super) fn list(tx: &Transaction, project: &str) -> Result<Vec<Signal>, String> {
+    rows(tx, &format!("SELECT {COLUMNS} FROM supervisor_signals WHERE project = ?1
+        ORDER BY detector, subject_kind, subject_id, metric"), [project], |r| read(project, r))
+}
+
+pub(super) fn page(tx: &Transaction, project: &str, after: Option<&str>, limit: usize) -> Result<Vec<Signal>, String> {
+    rows(tx, &format!("SELECT {COLUMNS} FROM supervisor_signals WHERE project = ?1
+        AND (?2 IS NULL OR (first_seen, fingerprint) < (
+            SELECT first_seen, fingerprint FROM supervisor_signals WHERE fingerprint = ?2 AND project = ?1
+        )) ORDER BY first_seen DESC, fingerprint DESC LIMIT ?3"),
+        (project, after, limit as i64), |r| read(project, r))
 }

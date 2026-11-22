@@ -461,8 +461,11 @@ reading for every agent of its kind. Its window says when each resets.
 
 ### Project Supervisor
 
-The Supervisor starts off for each project. Turn it on to scan the project's retained
-history, calibrate its detector thresholds and see which detectors can run. With fewer than
+On Kanban, select a project, open its settings and choose **Supervisor**. The switch takes
+effect when you press it. **Save** keeps the level, tier agents, budgets, charter, indicators,
+surface map, probes and detector overrides. The Supervisor starts off for each project.
+Turn it on to scan the project's retained history and use **Refresh scan** to see which
+detectors can run and their calibrated thresholds. With fewer than
 three weeks of history, ordinary findings have impact at most 1. The default Operator level
 uses code alone until you choose tier agents from the project's pool. Live-at-attach rules
 can raise findings immediately. Their holds stay in shadow until seven days pass or replay
@@ -475,6 +478,16 @@ subscription readings and active plan ETAs every 15 minutes. Hook counts keep 30
 numeric totals per session. Turning the Supervisor off stops collection and keeps its
 settings, signals and measurements.
 
+In **Import and export**, export saved preferences or choose a file and import it. Import
+replaces the project preferences and keeps the switch, tier agents and approved probe
+commands. In **Probe commands**, use **View command** to read the full text and then
+**Approve command** to set it. Commands from an import start unset.
+
+**Open Supervisor screen** shows the project's scoreboard and signals. Open an indicator
+for its guard and missing inputs, or open a signal for the measurement, threshold and
+evidence. Use **More signals** to see older results. Critical-line delivery, test alerts,
+surface previews and Investigate show their availability in the interface.
+
 #### Signed-in Supervisor API
 
 All routes below are relative to `/api/task-projects/<ID>/supervisor`.
@@ -483,6 +496,8 @@ All routes below are relative to `/api/task-projects/<ID>/supervisor`.
 |---|---|
 | GET the base route | Switch, last successful beat in Unix seconds, collector health and the attachment report when ready. |
 | PUT the base route with `{"enabled": true}` or `{"enabled": false}` | Change the switch for this project. |
+| GET `/screen` | Project name, enabled scoreboard indicators and the newest page of signals with their evidence. |
+| GET `/signals?after=<cursor>` | The next page of signals for the same project. |
 | GET `/settings` | Pack, revision, detector defaults and confirmed and unset probe IDs. |
 | PUT `/settings` with `revision` and `settings` | Replace the project's preferences. Use the latest revision. |
 | POST `/export` with `{}` | Download a versioned JSON text file. Select `include_commands` and `include_secrets` independently. |

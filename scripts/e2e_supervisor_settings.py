@@ -99,6 +99,11 @@ def ac220_export_redaction_and_import_confirmation(fixture, api_path, web_path):
           and all(agent is None for agent in settings["tiers"].values())
           and settings["budgets"]["judgment_percent"] == 3 and settings["budgets"]["fixes_percent"] == 10
           and all(settings["charter"]["indicators"].values()) and view["detector_defaults"])
+    r(api_path + "/import", "POST", {"revision": 0, "file": json.dumps({
+        "version": 1, "settings": {}, "probe_commands": {"..": "true"},
+    })}, expected=400)
+    check("AC-220 a path segment cannot become a probe ID",
+          r(api_path + "/settings")["revision"] == 0 and not r(api_path + "/settings")["unset_probes"])
     marker = "fixture-" + "placeholder"
     preferences = {"charter": {"priorities": ["Keep builds repeatable"], "mission": f"API_TOKEN={marker}"}}
     r(api_path + "/settings", "PUT", {"revision": 0, "settings": preferences})

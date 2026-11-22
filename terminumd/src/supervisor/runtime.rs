@@ -68,7 +68,10 @@ struct Status {
 
 pub(crate) fn routes() -> Router<Shared> {
     // Only the signed-in page router mounts this. The agent socket has no settings route.
-    Router::new().route("/api/task-projects/{id}/supervisor", get(shown).put(set)).merge(settings_api::routes())
+    Router::new()
+        .route("/api/task-projects/{id}/supervisor", get(shown).put(set))
+        .merge(settings_api::routes())
+        .merge(super::screen::routes())
 }
 
 async fn shown(State(app): State<Shared>, Path(id): Path<String>) -> Response {

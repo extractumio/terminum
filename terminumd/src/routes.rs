@@ -58,6 +58,7 @@ pub fn pages(app: Shared) -> Router {
         .route("/scheduled/", get(|headers: HeaderMap| async move { http::page_named("scheduled.html", &headers) }))
         .route("/dashboard", get(|| async { axum::response::Redirect::permanent("/dashboard/") }))
         .route("/dashboard/", get(|headers: HeaderMap| async move { http::page_named("dashboard.html", &headers) }))
+        .route("/supervisor/", get(|headers: HeaderMap| async move { http::page_named("supervisor.html", &headers) }))
         .route("/ws", get(crate::page::ws::socket))
         .route("/api/hello", get(hello))
         .route("/api/settings", get(settings))

@@ -95,7 +95,9 @@ import { webBoardPanel } from "./e2e_boardpanel.mjs";
 import { webBoardType } from "./e2e_boardtype.mjs";
 import { webPhoneWin } from "./e2e_phonewin.mjs";
 
-const CHECKS = { webClipboardKeys, webTaskText, webBoardPhone, webBoardPanel, webBoardType, webPhoneWin, webRequestOwners, webRequests, webTerm, webApp, webMove, webTrace, webCtxTrace, webClip, webWidgets, webWidgetFolds, webWidgetTables, webWidgetPng, webWidgetSteady, webTableForms, webDialogCenter, webMarks, webProgCopy, webTouch, webEdit, webBoxNav,
+import { webSupervisor } from "./e2e_supervisor.mjs";
+
+const CHECKS = { webSupervisor, webClipboardKeys, webTaskText, webBoardPhone, webBoardPanel, webBoardType, webPhoneWin, webRequestOwners, webRequests, webTerm, webApp, webMove, webTrace, webCtxTrace, webClip, webWidgets, webWidgetFolds, webWidgetTables, webWidgetPng, webWidgetSteady, webTableForms, webDialogCenter, webMarks, webProgCopy, webTouch, webEdit, webBoxNav,
   webSignin, webTmux, webScreen, webLook, webMotion, webCodex, webNotices, webSplit, webSent, webIdeKeys, webScreenFolds, webProjects, webListDrag, webPhoneRow, webRows, webResize, webOpenEnd, webSwitch, webDock, webSheets, webFold, webHeader, webNotes, webFoot, webMarksScope, webListOrder, webPlans, webLastLines, webPlansFind, webPathFold, webMarkNav, webPaneWin, webReview, webTips, webHold, webListPlace, webIsolation, webSections, webDialogSize, webTaskWin, webSaid, webTaskRun, webTaskClose, webExpand, webKanbanSort, webSwitches, webNewTask, webQueueOrder, webIntegrationSlots, webKanbanKept, webCardKeys, webTaskLines, webBannerProj, webNavSession, webBoardRail, webSessBox, webAskFold, webTouchKeys, webTabHead, webDraftFiles };
 const BROWSERS = ["chromium", "webkit"], KNOWN = [...BROWSERS, "firefox"];
 // Checks a user saw fail in Firefox and that need no touch screen (Firefox has no isMobile).

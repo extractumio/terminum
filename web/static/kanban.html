@@ -20,6 +20,7 @@
 <link rel="stylesheet" href="projects.css">
 <link rel="stylesheet" href="listdrag.css">
 <link rel="stylesheet" href="kanban.css">
+<link rel="stylesheet" href="supervisor.css">
 <link rel="stylesheet" href="controls.css">
 <link rel="stylesheet" href="askfold.css">
 <link rel="stylesheet" href="boardphone.css">
@@ -300,7 +301,7 @@
   <form method="dialog" id="projectform">
     <div class="dhead"><h2 id="projecthead">New project</h2><button class="icon x" type="button" title="Close (Esc)" aria-label="Close"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
     <div id="projecttabs" class="seg projtabs" role="tablist" aria-label="The project's settings">
-      <button id="projecttabgeneral" type="button" role="tab" data-tab="general" aria-selected="true">General</button><button id="projecttabagents" type="button" role="tab" data-tab="agents" aria-selected="false">Agents</button><button id="projecttabauto" type="button" role="tab" data-tab="auto" aria-selected="false">Auto-Dispatch</button><button id="projectintegration" type="button" role="tab" data-tab="integration" aria-selected="false">Integration</button><button id="projectlimits" type="button" role="tab" data-tab="limits" aria-selected="false">Memory limits</button><button id="projectarchived" type="button" role="tab" data-tab="archived" aria-selected="false">Archived</button>
+      <button id="projecttabgeneral" type="button" role="tab" data-tab="general" aria-selected="true">General</button><button id="projecttabagents" type="button" role="tab" data-tab="agents" aria-selected="false">Agents</button><button id="projecttabauto" type="button" role="tab" data-tab="auto" aria-selected="false">Auto-Dispatch</button><button id="projectintegration" type="button" role="tab" data-tab="integration" aria-selected="false">Integration</button><button id="projectsupervisor" type="button" role="tab" data-tab="supervisor" aria-selected="false" aria-controls="supervisorpanel">Supervisor</button><button id="projectlimits" type="button" role="tab" data-tab="limits" aria-selected="false">Memory limits</button><button id="projectarchived" type="button" role="tab" data-tab="archived" aria-selected="false">Archived</button>
     </div>
     <section class="projpanel" data-tab="general" role="tabpanel">
     <div id="projectfields">
@@ -384,6 +385,17 @@
       </div>
       <p id="integrationerror" role="alert" hidden></p>
     </section>
+    <section id="supervisorpanel" class="projpanel supervisor" data-tab="supervisor" role="tabpanel" aria-labelledby="projectsupervisor" hidden>
+      <div class="sv-actions">
+        <label class="fieldrow checkrow sv-touch">Enabled <input id="supervisoron" role="switch" type="checkbox" disabled></label>
+        <a id="supervisorscreen" class="textkey">Open Supervisor screen</a>
+      </div>
+      <div class="sv-actions"><p id="supervisorscan" class="colempty" role="status"></p>
+        <button id="supervisorrefresh" class="textkey" type="button" hidden>Refresh scan</button></div>
+      <p id="supervisorswitcherror" role="alert" hidden></p>
+      <p id="supervisorsaveerror" role="alert" hidden></p>
+      <div id="supervisorsettings"></div>
+    </section>
     <section id="limitspanel" class="projpanel" data-tab="limits" role="tabpanel" hidden>
       <p id="limitstext" class="colempty">terminum adds up the memory of the agent's processes every 30 s. Two readings in a row over Warn tell the agent; over End its tasks fail and it is ended. Nothing stops a process between readings: this is a watch, not a limit the system holds.</p>
       <p id="limitsfor" class="colempty"></p>
@@ -407,6 +419,7 @@
       <button id="projectok" type="button" class="primary">Create</button>
       <button id="autook" type="button" hidden class="primary">Save</button>
       <button id="integrationok" type="button" hidden class="primary">Save</button>
+      <button id="supervisorok" type="button" hidden class="primary">Save</button>
       <button id="limitsok" type="button" hidden class="primary">Save</button>
     </div>
   </form>
