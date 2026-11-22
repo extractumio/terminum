@@ -311,8 +311,12 @@ pub fn board(tx: &Transaction) -> Result<Value, String> {
         .chain(rounds.iter().map(|r| (r, true, false))).chain(integrating.iter().map(|r| (r, false, true))) {
         let in_slot = in_kept.contains_key(&r.id);
         let (integration, ended) = (no_slot && r.status == ops::INTEGRATION, no_slot && r.status != ops::INTEGRATION);
-        of_agent.entry(&r.agent_id).or_default().push(json!({"run": r.id, "tasks": r.names(), "state": r.state, "key": r.pane_key, "project": r.project, "idle": !r.busy() && !r.ad_hoc(), "kept": in_slot,
-            "round": round, "integration": integration, "ended": ended, "list": tasks.remove(&r.id).unwrap_or_default()}));
+        let mut shown = json!({"run": r.id, "tasks": r.names(), "state": r.state, "key": r.pane_key, "project": r.project, "idle": !r.busy() && !r.ad_hoc(), "kept": in_slot,
+            "round": round, "integration": integration, "ended": ended, "list": tasks.remove(&r.id).unwrap_or_default()});
+        if in_kept.get(&r.id).is_some_and(|(_, slot)| *slot == Slot::Supervisor) {
+            shown["supervisor"] = json!(true);
+        }
+        of_agent.entry(&r.agent_id).or_default().push(shown);
         if round || no_slot {
             continue;
         }

@@ -451,6 +451,9 @@ pub fn let_go(tx: &Transaction, id: &str) -> Result<Run, String> {
     if run.is_over() {
         return Err("Dispatcher holds that session no more.".into());
     }
+    if run.ad_hoc() && started(tx, id)?.0 == How::Supervisor {
+        return Err("Dispatcher keeps this investigation until its case ends. Turn off the project's Supervisor to stop its rounds.".into());
+    }
     super::move_task(tx, &run, "FAILED", GAVE_UP)?;
     change(tx, &run.id, |r| r.state = Phase::Left)
 }

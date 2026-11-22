@@ -144,10 +144,12 @@ def main():
         call(route, "POST", {})
         call(route, "POST", {})
         wait_for(taken, lambda lines: len(lines) == 2, 12, every=0.2)
-        active = db("SELECT d.pane_key FROM supervisor_rounds r JOIN runs d ON d.id = r.run WHERE r.project = ?", [expiry_project])
+        active = db("SELECT d.pane_key, d.id FROM supervisor_rounds r JOIN runs d ON d.id = r.run WHERE r.project = ?", [expiry_project])
         pane = active[0][0].rsplit(":", 1)[1]
         check("AC-233 the signed press starts one round and a repeat joins the active case",
               len(active) == 1 and "already open" in call(route, "POST", {})["message"])
+        check("AC-234 Let go cannot release a running investigation's slot",
+              "investigation" in request(f"/api/runs/{active[0][1]}/let-go", "POST", {})[1]["error"])
         late_case, deadline, end, failure, _, finding = ended(expiry_project, 1)[0]
         panes = tmux_on(SOCKET, "list-panes", "-a", "-F", "#{pane_id}").splitlines()
         check("AC-234 Dispatcher closes an expired round and frees its kept slot",
