@@ -33,6 +33,7 @@ import { integrationColumn } from "./kanbanqueuecol.js";
 import { cardKeys } from "./kanbancardkeys.js";
 import { boardColumns } from "./kanbancols.js";
 import { columnPanel } from "./kanbanpanel.js";
+import { incidentCards, onIncidents } from "./incidents.js";
 import { $, COLUMNS, agentChip, api, button, guardQueuedRun, hasFiles, placeChildren, say, sessionLine, showError, signInElsewhere, shortStamp, statusBox, timeOf, needBoxes, underParents } from "./kanbanutil.js";
 
 const signIn = signInElsewhere();                  // with no sign-in the board goes to /sessions/, whose form signs in
@@ -280,6 +281,9 @@ $("schedbar").append(scheduled.box);
 /** The cards drawn, by task: one whose task shows the same (`key`) is the same element at the next draw, so a press
  *  that straddles a redraw of its column lands (AC-133). */
 const drawnCards = new Map();
+const incidentList = el("div", "incident-list");
+const drawIncidents = incidentCards(incidentList, "board");
+let incidents = [];
 function keptCard(t, under, key) {
   const had = drawnCards.get(t.id);
   if (had?.key === key) return had.c;
@@ -294,18 +298,20 @@ function draw() {
   if (dragging) return;
   folds.keep(cards);
   const active = document.activeElement, focused = active?.closest?.(".card")?.dataset.id, runFocused = active?.matches(".crun");
-  const filtered = narrowed(), one = filters().project.length === 1;
+  const filtered = narrowed(), projects = filters().project, one = projects.length === 1;
   const inks = new Map(meta.projects.map((p) => [p.id, [p.name, p.color]]));
   for (const [column, part] of columns) {
     // a session's state changes on its card alone (sessionsCame): a column is drawn anew without it, a card with it
     const have = cards.get(column), n = counts[column] ?? 0, seen = have.map((t) => JSON.stringify([{ ...t, session: t.session?.key }, inks.get(t.project)]));
-    const shown = JSON.stringify([seen, n, !!filtered, one]);
-    part.drawCount(counts);
+    const pinned = column === "WAIT FOR HUMAN" ? incidents.filter((i) => !projects.length || projects.includes(i.project)) : [];
+    if (column === "WAIT FOR HUMAN") drawIncidents(pinned);
+    const shown = JSON.stringify([seen, n, !!filtered, one, pinned.length]);
+    part.drawCount(counts, pinned.length);
     if (shown === part.drawn) continue;
     part.drawn = shown;
     const scroll = [part.list.scrollTop, part.col.scrollTop], keys = new Map(have.map((t, i) => [t.id, `${seen[i]}${JSON.stringify(t.session ?? null)}${one}`]));
-    placeChildren(part.list, [...underParents(have).map(([t, under]) => keptCard(t, under, `${keys.get(t.id)}${under}`)),
-      !have.length && el("p", "colempty", filtered ? "No tasks match" : "No tasks"),
+    placeChildren(part.list, [pinned.length && incidentList, ...underParents(have).map(([t, under]) => keptCard(t, under, `${keys.get(t.id)}${under}`)),
+      !have.length && !pinned.length && el("p", "colempty", filtered ? "No tasks match" : "No tasks"),
       have.length < n && button("textkey colmore", `Show ${Math.min(PAGE, n - have.length)} more`, () => more(column))].filter(Boolean));
     [part.list.scrollTop, part.col.scrollTop] = scroll;   // a phone's column scrolls whole, its head too (boardphone.css)
   }
@@ -481,6 +487,7 @@ await Promise.race([new Promise((r) => listen(false, r)), new Promise((r) => set
 columnsRead = true;
 await Promise.all([load(), scheduled.load()]);
 address.route();
+onIncidents((items) => { incidents = items; draw(); });
 const asked = new URLSearchParams(location.search);
 if (asked.get("new") === "1") {
   form.open({ session: asked.get("session"), project: asked.get("for"), parent: asked.get("parent") ?? undefined, text: takeSelection() });

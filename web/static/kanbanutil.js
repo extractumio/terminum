@@ -60,9 +60,9 @@ export function signInElsewhere() {
 /** A JSON route (a write always has a body: terminumd asks its type); a refusal throws terminumd's
  *  message, with its status. An empty answer is {}; one that cannot be read (cut off, as a navigation
  *  leaves a read in WebKit) throws, never stands for an empty one. */
-export async function api(path, { method = "GET", body, asText = false } = {}) {
+export async function api(path, { method = "GET", body, asText = false, signal } = {}) {
   const sent = method === "GET" ? undefined : JSON.stringify(body ?? {});
-  const r = await fetch(path, { method, headers: sent ? { "Content-Type": "application/json" } : undefined, body: sent });
+  const r = await fetch(path, { method, headers: sent ? { "Content-Type": "application/json" } : undefined, body: sent, signal });
   if (asText && r.ok) return r.text();
   let m = {}, unread;
   try {

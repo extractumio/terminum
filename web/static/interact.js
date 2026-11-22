@@ -7,6 +7,7 @@
 // events count (isTrusted): a screen that scrolls by itself is no reading. The Dashboard reads presence
 // and engagement from these counts.
 import "./signin.js";
+import "./incidents.js";
 
 const MINUTE = 60_000;
 const SECTION = location.pathname.split("/")[1];

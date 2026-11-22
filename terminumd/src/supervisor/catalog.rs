@@ -66,11 +66,12 @@ catalog! {
     Loop, "drift.loop", "tool_loops", baseline(90, 2.0), samples::counters;
     Subagents, "drift.subagents", "subagent_counts", baseline(90, 2.0), samples::counters;
     CollectorDead, "self.collector_dead", "collector_heartbeat", Absolute(2.0), heartbeat;
+    LineDead, "self.line_dead", "line_health", Absolute(0.0), line_health;
 }
 
 impl Rule {
     pub(super) fn configurable(self) -> bool {
-        self != Self::CollectorDead
+        !matches!(self, Self::CollectorDead | Self::LineDead)
     }
 
     pub(super) fn present_only(self) -> bool {
@@ -78,12 +79,12 @@ impl Rule {
     }
 
     pub(super) fn needs_weekly_samples(self) -> bool {
-        !self.present_only() && !matches!(self, Self::WaitHuman | Self::CostOutlier | Self::QueueGrowth | Self::LimitNear | Self::StalePlan | Self::Loop | Self::Subagents | Self::CollectorDead)
+        !self.present_only() && !matches!(self, Self::WaitHuman | Self::CostOutlier | Self::QueueGrowth | Self::LimitNear | Self::StalePlan | Self::Loop | Self::Subagents | Self::CollectorDead | Self::LineDead)
     }
 
     pub(super) fn has_historical_query(self) -> bool {
         !self.present_only() && !matches!(self, Self::Returned | Self::VerifyRed | Self::DiffOutlier | Self::Misrouted
-            | Self::CollectorDead)
+            | Self::CollectorDead | Self::LineDead)
     }
 
     pub(super) fn supports(self, threshold: Threshold) -> bool {
@@ -108,6 +109,12 @@ fn heartbeat(_: &Query<'_, '_>) -> Result<Measurements, String> {
     Ok(Measurements::missing("The independent watchdog owns collector heartbeat findings."))
 }
 
+const LINE_UNAVAILABLE: &str = "Critical channel history is unavailable.";
+
+fn line_health(_: &Query<'_, '_>) -> Result<Measurements, String> {
+    Ok(Measurements::missing(LINE_UNAVAILABLE))
+}
+
 pub(super) const UNAVAILABLE: &[(&str, &str)] = &[
     ("flow.flaky", "Nightly and gate probe history is unavailable."),
     ("flow.main_red", "CI probe history is unavailable."),
@@ -129,7 +136,7 @@ pub(super) const UNAVAILABLE: &[(&str, &str)] = &[
     ("owner.rubber_stamp", "Structured question choices are unavailable."),
     ("process.rule_recurs", "Recorded rule judgments are unavailable."),
     ("self.budget", "Supervisor budget history is unavailable."),
-    ("self.line_dead", "Critical channel history is unavailable."),
+    ("self.line_dead", LINE_UNAVAILABLE),
     ("self.round_failed", "Supervisor round history is unavailable."),
     ("self.fights", "Supervisor override history is unavailable."),
     ("self.unjudged", "Supervisor verdict history is unavailable."),

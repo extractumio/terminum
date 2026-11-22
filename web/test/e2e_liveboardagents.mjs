@@ -8,12 +8,16 @@ import path from "node:path";
 import { boardKit, pressCard, pressRun } from "./boardkit.mjs";
 import { check, until } from "./check.mjs";
 import { agentPool } from "./e2e_liveboardpool.mjs";
+import { liveIncidents } from "./e2e_liveincidents.mjs";
 import { liveSupervisor } from "./e2e_livesupervisor.mjs";
 import { columnChecks, integrationChecks } from "./e2e_liveintegration.mjs";
+
+export { liveIncidents };
 
 const COMMAND = "claude --model opus";
 
 export async function liveBoardAgents(page, opts) {
+  await liveIncidents(page, opts);
   await liveSupervisor(page, opts);
   const { base, shots } = opts;
   const { j, backToSessions } = boardKit(page, opts);

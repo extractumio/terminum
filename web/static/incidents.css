@@ -1,0 +1,53 @@
+/* SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial */
+.incident-bar {
+  position: fixed;
+  inset: max(env(safe-area-inset-top), var(--sp-2)) var(--gutter) auto;
+  z-index: 100;
+  margin: 0 auto;
+  width: auto;
+  max-width: 46rem;
+  max-height: 45dvh;
+  overflow: auto;
+  overscroll-behavior: contain;
+  border: 0;
+  padding: var(--sp-2);
+  border-radius: var(--r-lg);
+  background: var(--danger-fill);
+  color: var(--danger-ink);
+  box-shadow: var(--shadow-far);
+  font-family: var(--ui);
+  text-align: start;
+}
+.incident-bar[hidden] { display: none; }
+:is(.incident-list, .incident-card) { display: grid; gap: var(--sp-2); min-width: 0; }
+.incident-card {
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--r-lg);
+  box-shadow: var(--m-edge);
+  background: var(--surface-2);
+  font-size: var(--fs-body);
+  overflow-wrap: anywhere;
+}
+.incident-bar .incident-card { background: var(--danger-fill); box-shadow: none; }
+.incident-card :is(p, h3) { margin: 0; }
+.incident-title { display: block; font-size: var(--fs-body); font-weight: var(--fw-head); }
+.incident-state, .incident-error { font-size: var(--fs-small); }
+.incident-error { color: var(--danger-text); }
+.incident-bar :is(.incident-brief, .incident-error)[role="alert"] { color: inherit; }
+.incident-bar .incident-error { font-weight: var(--fw-head); }
+.incident-actions { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+.incident-actions[hidden] { display: none; }
+.incident-actions .textkey { text-decoration: none; }
+.incident-actions .btn { display: inline-flex; align-items: center; min-height: var(--key-h); }
+.incident-bar .textkey { --kf: var(--surface-3); --kc: var(--t-fg); }
+.incident-bar .textkey:focus-visible { outline-color: var(--danger-ink); }
+.incident-card summary { cursor: pointer; }
+.incident-events { margin: 0; padding-inline-start: var(--sp-4); }
+.incident-events li { padding-block: var(--sp-1); }
+@media (max-width: 860px), (pointer: coarse) {
+  .incident-actions .textkey, .incident-card summary {
+    min-height: var(--key-h-touch);
+    min-width: var(--key-h-touch);
+  }
+  .incident-card summary { box-sizing: border-box; padding-block: var(--sp-2); }
+}

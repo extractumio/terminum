@@ -5,6 +5,8 @@ mod attach;
 mod attribution;
 mod catalog;
 mod impact;
+mod incidents;
+mod incidents_api;
 mod replay;
 pub(crate) mod runtime;
 mod samples;
@@ -24,6 +26,8 @@ mod engine_tests;
 mod catalog_tests;
 #[cfg(test)]
 mod replay_tests;
+#[cfg(test)]
+mod incidents_tests;
 
 use rusqlite::Transaction;
 use serde::{Deserialize, Serialize};
@@ -35,7 +39,7 @@ pub(crate) use catalog::Rule;
 pub(crate) use signals::Signal;
 pub(crate) use replay::replay;
 
-const SCHEMA: usize = 43;
+const SCHEMA: usize = 44;
 const DAY: i64 = 86_400;
 const WEEK: i64 = 7 * DAY;
 

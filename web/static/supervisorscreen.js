@@ -5,6 +5,7 @@ import { api, loadMeta } from "./msgpage.js";
 import { $, button, showError, stamp } from "./kanbanutil.js";
 import { el } from "./listparts.js";
 import { boardUrl, taskUrl } from "./tasklink.js";
+import { incidentHistory } from "./supervisorincidents.js";
 import { actions, part, stack } from "./supervisorfields.js";
 
 const project = new URLSearchParams(location.search).get("project");
@@ -112,6 +113,7 @@ refresh.addEventListener("click", readScreen);
 
 loadMeta().catch((e) => showError($("sv-theme-error"), e.message));
 if (project) {
+  incidentHistory(project, new URLSearchParams(location.search).get("incident"), refresh);
   boardFor(project);
   $("sv-board").href = boardUrl(project);
   refresh.hidden = false;

@@ -483,10 +483,21 @@ replaces the project preferences and keeps the switch, tier agents and approved 
 commands. In **Probe commands**, use **View command** to read the full text and then
 **Approve command** to set it. Commands from an import start unset.
 
-**Open Supervisor screen** shows the project's scoreboard and signals. Open an indicator
+**Open Supervisor screen** shows the project's incidents, scoreboard and signals. Open an indicator
 for its guard and missing inputs, or open a signal for the measurement, threshold and
 evidence. Use **More signals** to see older results. Critical-line delivery, test alerts,
 surface previews and Investigate show their availability in the interface.
+
+A critical live signal or a failed collector opens an incident. Related signals within
+15 minutes share a timeline. Signed-in pages show a red bar until you acknowledge it.
+The project board pins the incident at the top of **WAIT FOR HUMAN**, and **Timeline**
+opens the Supervisor screen with its updates and all-clear. An acknowledged incident
+stays on the board while its cause is active.
+
+Use **Acknowledge** on the Mac or phone to dismiss the bar across signed-in pages.
+**Snooze 1 hour** defers repeats while keeping the bar visible. The timeline records
+when you pressed each key. The local bar, card and timeline are available without an
+agent or a delivery command.
 
 #### Signed-in Supervisor API
 
@@ -498,6 +509,7 @@ All routes below are relative to `/api/task-projects/<ID>/supervisor`.
 | PUT the base route with `{"enabled": true}` or `{"enabled": false}` | Change the switch for this project. |
 | GET `/screen` | Project name, enabled scoreboard indicators and the newest page of signals with their evidence. |
 | GET `/signals?after=<cursor>` | The next page of signals for the same project. |
+| GET `/incidents?before=<cursor>` | The project's newest incidents, or the next page with a cursor. |
 | GET `/settings` | Pack, revision, detector defaults and confirmed and unset probe IDs. |
 | PUT `/settings` with `revision` and `settings` | Replace the project's preferences. Use the latest revision. |
 | POST `/export` with `{}` | Download a versioned JSON text file. Select `include_commands` and `include_secrets` independently. |
