@@ -8,7 +8,7 @@ use sha2::{Digest, Sha256};
 use crate::tasks::{ops::{rows, sql}, store::Store};
 
 use super::impact::Assessment;
-use super::{Evaluation, Evidence, Finding, Measure, Mode, Scores};
+use super::{Evaluation, Evidence, Finding, Measure, Mode, Scores, incidents};
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -120,7 +120,7 @@ impl Prepared<'_> {
                 WHEN excluded.state = 'shadow' THEN 'shadow'
                 WHEN state = 'shadow' THEN 'new'
                 WHEN state = 'resolved' THEN 'recurred'
-                ELSE state END").map_err(sql)?;
+                ELSE state END RETURNING state NOT IN ('muted', 'rejected')").map_err(sql)?;
         for PreparedRule { checked, findings, keys, complete_metrics, measured } in batches {
             let rule = checked.rule.id();
             let advanced = tx.execute("INSERT INTO supervisor_evaluations VALUES (?1, ?2, ?3)
@@ -130,28 +130,41 @@ impl Prepared<'_> {
                 continue;
             }
             for row in findings {
-                upsert.execute(params![row.key, evaluation.project, rule, row.found.subject_kind,
+                let accepted: bool = upsert.query_row(params![row.key, evaluation.project, rule, row.found.subject_kind,
                     row.found.subject_id, row.found.metric, row.evidence, row.measure, row.scores, evaluation.at,
-                    if checked.mode == Mode::Shadow { "shadow" } else { "new" }]).map_err(sql)?;
+                    if checked.mode == Mode::Shadow { "shadow" } else { "new" }], |r| r.get(0)).map_err(sql)?;
+                if checked.mode == Mode::Live && accepted {
+                    incidents::observe(tx, incidents::Observation {
+                        project: &evaluation.project, rule: checked.rule, fingerprint: &row.key,
+                        finding: row.found, evidence: &row.evidence, at: evaluation.at,
+                    })?;
+                }
                 if seed_attachment && checked.mode == Mode::Live && row.found.scores.impact >= 2 {
                     tx.execute("INSERT OR IGNORE INTO supervisor_attach_seeds (fingerprint, seeded_at)
                         VALUES (?1, ?2)", (&row.key, evaluation.at)).map_err(sql)?;
                 }
             }
-            tx.execute(&format!("UPDATE supervisor_signals SET state = 'resolved'
+            let resolved = tx.execute(&format!("UPDATE supervisor_signals SET state = 'resolved'
                 WHERE project = ?1 AND detector = ?2 AND {ACTIVE}
                 AND fingerprint NOT IN (SELECT value FROM json_each(?3))
                 AND (?4 OR metric IN (SELECT value FROM json_each(?5)) OR fingerprint IN (SELECT value FROM json_each(?6)))"),
                 (&evaluation.project, rule, keys, checked.unavailable.is_empty() && checked.measured.is_none(),
                     complete_metrics, measured)).map_err(sql)?;
+            if resolved != 0 {
+                incidents::clear_resolved(tx, &evaluation.project, checked.rule, evaluation.at)?;
+            }
         }
         Ok(())
     }
 }
 
-pub(super) fn resolve_rule(tx: &Transaction, project: &str, rule: super::Rule) -> Result<(), String> {
-    tx.execute(&format!("UPDATE supervisor_signals SET state = 'resolved'
-        WHERE project = ?1 AND detector = ?2 AND {ACTIVE}"), (project, rule.id())).map(drop).map_err(sql)
+pub(super) fn resolve_rule(tx: &Transaction, project: &str, rule: super::Rule, at: i64) -> Result<(), String> {
+    let resolved = tx.execute(&format!("UPDATE supervisor_signals SET state = 'resolved'
+        WHERE project = ?1 AND detector = ?2 AND {ACTIVE}"), (project, rule.id())).map_err(sql)?;
+    if resolved != 0 {
+        incidents::clear_resolved(tx, project, rule, at)?;
+    }
+    Ok(())
 }
 
 fn encode(value: &impl Serialize) -> Result<String, String> {

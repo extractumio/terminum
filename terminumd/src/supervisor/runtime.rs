@@ -7,7 +7,7 @@ use axum::{Json, Router, extract::{Path, State}, response::Response, routing::ge
 use parking_lot::Mutex;
 use rusqlite::{OptionalExtension, Transaction};
 use serde::{Deserialize, Serialize};
-use tokio::sync::Notify;
+use tokio::sync::{Notify, watch};
 use tokio::time::{MissedTickBehavior, interval};
 
 use crate::app::Shared;
@@ -15,7 +15,7 @@ use crate::http::off;
 use crate::tasks::{api::answer, ops::{check_project, now, rows, sql}, store::Store};
 
 use super::{Checked, DAY, Evaluation, EvaluationInputs, Evidence, Mode, Reading, Rule, SCHEMA, Scores, Window,
-    attach, evaluate_snapshot, flow, samples, sensors::{Pending, Sensors}, settings, settings_api, signals};
+    attach, evaluate_snapshot, flow, incidents, samples, sensors::{Pending, Sensors}, settings, settings_api, signals};
 
 const BEAT: i64 = 10;
 const DEAD_AFTER: i64 = 2 * BEAT;
@@ -27,6 +27,7 @@ pub(crate) struct Runtime {
     // A scope refresh cannot overwrite a newer setting. Hook delivery never takes this lock.
     scopes: Mutex<()>,
     changed: Notify,
+    pub(super) incident_updates: watch::Sender<u64>,
 }
 
 #[derive(Clone)]
@@ -72,6 +73,7 @@ pub(crate) fn routes() -> Router<Shared> {
         .route("/api/task-projects/{id}/supervisor", get(shown).put(set))
         .merge(settings_api::routes())
         .merge(super::screen::routes())
+        .merge(super::incidents_api::routes())
 }
 
 async fn shown(State(app): State<Shared>, Path(id): Path<String>) -> Response {
@@ -132,6 +134,10 @@ pub(crate) fn hook(app: &Shared, key: &str, event: &serde_json::Value) {
 }
 
 impl Runtime {
+    pub(super) fn incident_changed(&self) {
+        self.incident_updates.send_modify(|revision| *revision = revision.wrapping_add(1));
+    }
+
     pub(super) fn wake(&self) {
         self.changed.notify_one();
     }
@@ -198,7 +204,7 @@ fn read_batch(
         (&project.id, previous), |r| r.get::<_, bool>(0)).map_err(sql)?;
     let age_due = at - previous >= AGE_EVERY;
     let rules = Rule::ALL.iter().copied().filter(|rule| match rule {
-        Rule::CollectorDead => false,
+        Rule::CollectorDead | Rule::LineDead => false,
         Rule::QueueGrowth | Rule::LimitNear | Rule::StalePlan => samples_ready || sampled || scan_due,
         Rule::Loop | Rule::Subagents => hooks_ready || sampled || scan_due,
         Rule::WaitHuman | Rule::Starved | Rule::UserBugAge => age_due || changed,
@@ -248,13 +254,17 @@ fn collect_project(app: &Shared, project: &Project, clock: impl Fn() -> i64) -> 
     })?;
     let Some(batch) = batch else { return Ok(()) };
     let pending = app.supervisor.sensors.take(&project.id, project.generation);
-    if commit(&app.tasks, project, batch, &pending, clock)? {
+    let (committed, incidents_changed) = commit(&app.tasks, project, batch, &pending, clock)?;
+    if committed {
         pending.committed();
+    }
+    if incidents_changed {
+        app.supervisor.incident_changed();
     }
     Ok(())
 }
 
-fn commit(store: &Store, project: &Project, batch: Batch, pending: &Pending<'_>, clock: impl FnOnce() -> i64) -> Result<bool, String> {
+fn commit(store: &Store, project: &Project, batch: Batch, pending: &Pending<'_>, clock: impl FnOnce() -> i64) -> Result<(bool, bool), String> {
     let signals = batch.evaluation.as_ref().map(signals::prepare).transpose()?;
     let counts = pending.encode()?;
     store.with(|tx| {
@@ -270,8 +280,9 @@ fn commit(store: &Store, project: &Project, batch: Batch, pending: &Pending<'_>,
                 batch.sampled.then_some(at), batch.baseline.then_some(at), project.cursor, project.last_ok,
                 batch.attachment, batch.settings_revision)).map_err(sql)?;
         if enabled == 0 {
-            return Ok(false);
+            return Ok((false, false));
         }
+        let before = incidents::revision(tx)?;
         if let Some(signals) = signals {
             signals.write(tx, batch.first_attachment)?;
         }
@@ -280,8 +291,8 @@ fn commit(store: &Store, project: &Project, batch: Batch, pending: &Pending<'_>,
         tx.execute("DELETE FROM supervisor_changes WHERE seq IN (
             SELECT seq FROM supervisor_changes WHERE project = ?1 AND seq <= ?2 ORDER BY seq LIMIT 256)",
             (&project.id, batch.cursor)).map_err(sql)?;
-        signals::resolve_rule(tx, &project.id, Rule::CollectorDead)?;
-        Ok(true)
+        signals::resolve_rule(tx, &project.id, Rule::CollectorDead, heartbeat)?;
+        Ok((true, before != incidents::revision(tx)?))
     })
 }
 
@@ -294,32 +305,36 @@ pub(crate) async fn watch(app: Shared) {
             continue;
         }
         let a = app.clone();
-        if let Err(error) = off(move || check_heartbeat(&a.tasks, now())).await {
-            tracing::warn!(event = "supervisor.watchdog", %error);
+        match off(move || check_heartbeat(&a.tasks, now())).await {
+            Ok(true) => app.supervisor.incident_changed(),
+            Ok(false) => (),
+            Err(error) => tracing::warn!(event = "supervisor.watchdog", %error),
         }
     }
 }
 
-fn check_heartbeat(store: &Store, at: i64) -> Result<(), String> {
+fn check_heartbeat(store: &Store, at: i64) -> Result<bool, String> {
     let stale = store.snapshot(SCHEMA, |tx| {
         Ok(enabled(tx)?.into_iter().filter(|p| !p.reported_dead && at - p.last_ok.unwrap_or(p.enabled_at) >= DEAD_AFTER).collect::<Vec<_>>())
     })?;
+    let mut changed = false;
     for project in stale {
-        if let Err(error) = report_dead(store, &project, at) {
-            tracing::warn!(event = "supervisor.watchdog", project = %project.id, %error);
+        match report_dead(store, &project, at) {
+            Ok(written) => changed |= written,
+            Err(error) => tracing::warn!(event = "supervisor.watchdog", project = %project.id, %error),
         }
     }
-    Ok(())
+    Ok(changed)
 }
 
-fn report_dead(store: &Store, project: &Project, at: i64) -> Result<(), String> {
+fn report_dead(store: &Store, project: &Project, at: i64) -> Result<bool, String> {
     let since = project.last_ok.unwrap_or(project.enabled_at);
     let rule = Rule::CollectorDead;
     let reading = Reading::new("project", &project.id, "missed_beats", ((at - since) / BEAT) as f64,
         vec![Evidence::SupervisorHeartbeat { project: project.id.clone(), last_ok: project.last_ok }])
         .comparison(super::Comparison::AtLeast);
     let Some(mut finding) = reading.finding(rule.defaults(), Window { before: since, start: since, end: at }) else {
-        return Ok(());
+        return Ok(false);
     };
     finding.scores = Scores { impact: 3, ..Scores::default() };
     let evaluation = Evaluation { project: project.id.clone(), at, detectors: vec![Checked {
@@ -338,7 +353,7 @@ fn report_dead(store: &Store, project: &Project, at: i64) -> Result<(), String> 
     if written {
         tracing::warn!(event = "supervisor.collector_dead", project = %project.id, last_ok = ?project.last_ok);
     }
-    Ok(())
+    Ok(written)
 }
 
 #[cfg(test)]

@@ -1,18 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 import { asTyped } from "./astyped.js";
-import { el } from "./listparts.js";
+import { el, part } from "./listparts.js";
+export { part } from "./listparts.js";
 import { fillSelect } from "./kanbanutil.js";
 
 export const hint = (text) => el("p", "colempty", text);
 export const grid = (...nodes) => part("div", "fieldgrid", ...nodes);
 export const stack = (...nodes) => part("div", "sv-stack", ...nodes);
 export const actions = (...nodes) => part("div", "sv-actions", ...nodes);
-
-export function part(tag, cls, ...nodes) {
-  const node = el(tag, cls);
-  node.append(...nodes);
-  return node;
-}
 
 export function section(title, ...nodes) {
   const summary = el("summary", "sv-touch", title);

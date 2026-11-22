@@ -1282,7 +1282,7 @@ The yardstick belongs to the detector and the outcome belongs to the store check
 
 ## 7. Current behavior and gaps
 
-All cases below are open. The existing mechanisms in §3 provide inputs or precedents.
+The existing mechanisms in §3 provide inputs or precedents for these open gaps.
 
 | AC | Open gap |
 |---|---|
@@ -1291,13 +1291,12 @@ All cases below are open. The existing mechanisms in §3 provide inputs or prece
 | AC-214 | Release tags, task commits, nightly history, question kinds and design sign-offs need their owning inputs. |
 | AC-215 | Probe and judgment quality replay require retained inputs from their owning stages. |
 | AC-216 | The project tab switch gates collection and sensors. Stopping rounds and listing remaining holds belong to AC-234 and AC-245. |
-| AC-219 | The watchdog records a signal and exposes its last heartbeat through the project settings endpoint. Incident grouping and presentation belong to AC-224 and AC-225. |
+| AC-219 | The watchdog records a signal and exposes its last heartbeat through the project settings endpoint. Line delivery health belongs to AC-229. |
 | AC-221 | Bootstrap keeps high-impact register seeds and exposes hold eligibility. Consuming seeds, recording proposed holds and checking their verdicts belong to AC-236, AC-245 and AC-246. Charter breach inputs belong to AC-213. |
 | AC-222 | The project tab edits the project pack, runs the switch and manages import, export and probe approval. The critical line and the historical surface preview depend on AC-227–229, AC-250 and AC-263. |
-| AC-223 | The project screen shows its scoreboard, missing inputs and paged signals with evidence. Investigate, the register, incidents, holds, spends and Supervisor scorecard depend on their owning cases. |
-| AC-224 | Incident grouping and updates. |
-| AC-225 | Incident bar, pinned card and latency. |
-| AC-226 | Signed-in acknowledgment and snooze. |
+| AC-223 | The project screen shows its scoreboard, missing inputs and paged signals with evidence. Investigate, the register, holds, spends and Supervisor scorecard depend on their owning cases. |
+| AC-224 | The line-failure producer depends on AC-229. Incident updates from rounds and holds depend on AC-234 and AC-245. |
+| AC-225 | The template reports an active hold and its deadline when the hold ledger is available (AC-245). |
 | AC-227 | Restricted command delivery. |
 | AC-228 | Repeat ladder and quiet hours. |
 | AC-229 | Manual test and line health. |
@@ -1478,7 +1477,7 @@ An Operator hold names a level 2 or higher signal, the rule and undo. A human or
 
 ### Incident line, decisions and reports
 
-Group related signals on a subject into one active incident, within the line's grouping window (15 minutes by default). The pinned card carries thread and timeline; the bar remains until acknowledged. The fixed text orders what happened, what is held, what is needed, by when and what happens without an answer. Code picks the incident's actions from Acknowledge, Snooze one hour, Investigate now, Keep the hold, Release the hold and This is wrong. Acknowledge stops repeats, Snooze delays them; neither releases the hold.
+Group related signals on a subject into one active incident, within the line's grouping window (15 minutes by default). The pinned card carries thread and timeline; the bar remains until acknowledged. The fixed text orders what happened, what is held, what is needed, by when and what happens without an answer. Code picks the incident's actions from Acknowledge, Snooze one hour, Investigate now, Keep the hold, Release the hold and This is wrong. Acknowledge stops repeats. Snooze delays repeats one hour and keeps the bar visible. Both preserve any hold. Acknowledged incidents stay pinned while their causes are active. The Supervisor screen keeps the timeline after the card unpins.
 
 The owner configures ordered command channels in the signed-in tab. A send uses the configured command with a fixed environment and deadline, template on standard input and exit status as the only result. Example: `API · incident 27 · level 3. Target red, 2 batches blocked. Integration paused. No answer: pause stays.` Updates, all-clear and answer notices use their own fixed templates. Only approved IDs, counts and a link from the owner's optional base appear. Never insert task prose, home paths or secrets. Quiet hours defer notices except a charter-never breach or reversibility 3. Repeat per incident on the ladder, never sooner than its next step, and from the 30-minute repeat on also send to the next configured channel; there is no daily count cap. An owner test alert and weekly silent self-test exercise the path. Failed delivery shows on the bar and screen, produces `self.line_dead` and tries the next channel in order. A configured link base contains no credentials. Commands have send-only authority. All answers, including release of a hold, go through the signed-in page.
 
@@ -1576,9 +1575,9 @@ Enable none of the runtime cases by default. Land the specification after indepe
 - [ ] AC-221 — `ac221_switch_attaches_two_projects` in `scripts/e2e_supervisor_settings.py` covers switch-only attachment, project-specific calibration and unavailable inputs. `ac221_attach_short_history_and_hold_shadow` covers the seven-day boundary and charter exception. `ac221_attach_replays_distinct_verdicts_seeds_problems_and_retires_disabled_rule` covers the collector's replay qualification, register seeds and fast off/on edits. See §7 for the remaining consumers.
 - [ ] AC-222 — `webSupervisor` in `web/test/e2e_supervisor.mjs` and `liveSupervisor` in `web/test/e2e_livesupervisor.mjs` cover the settings tab, switch, project pool, draft after refusal, and portable settings. Critical-line actions and surface preview follow their owning cases.
 - [ ] AC-223 — `webSupervisor` covers the scoreboard and paged literal evidence at desktop and phone widths in Chromium and WebKit. `liveSupervisor` verifies the two-project collector and screen. The other sections and investigation action follow their owning cases.
-- [ ] AC-224 — Planned test: `ac224_incident_grouping_and_clear` covers incident grouping and updates.
-- [ ] AC-225 — Planned test: `ac225_incident_on_signed_in_surfaces` covers incident bar, pinned card and latency.
-- [ ] AC-226 — Planned test: `ac226_acknowledge_and_snooze_at_phone_size` covers signed-in acknowledgment and snooze.
+- [ ] AC-224 — `ac224_incident_grouping_and_clear` and `ac224_distinct_fingerprints_share_subject_and_clear_independently` cover grouping, level changes, missing input and recovery. `liveIncidents` covers an actual collector outage and recovery. The line's producer follows AC-229.
+- [ ] AC-225 — `liveIncidents` in `web/test/e2e_liveincidents.mjs` drills a level 3 signal with two signed-in browsers and standalone Files, the pinned card and its timeline. Hold details follow AC-245.
+- [x] AC-226 — `ac226_owner_keys_are_audited_once_and_do_not_clear_the_cause` and `liveIncidents` cover snooze, acknowledgment, the recorded actor and time, and refusal without sign-in.
 - [ ] AC-227 — Planned test: `ac227_bounded_channel_stdin_and_exit` covers restricted command delivery.
 - [ ] AC-228 — Planned test: `ac228_repeat_escalation_with_fake_clock` covers repeat ladder and quiet hours.
 - [ ] AC-229 — Planned test: `ac229_line_failure_and_weekly_test` covers manual test and line health.

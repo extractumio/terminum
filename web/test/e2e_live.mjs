@@ -6,7 +6,7 @@
 // Chromium and WebKit, at a wide (1400×900) and a phone (390×844) size. smoke: a landing's (AC-104):
 // signing in, the list, a pane drawn, typing and Files, at the wide size only.
 //
-//   node web/test/e2e_live.mjs [chromium|webkit] [board|smoke]
+//   node web/test/e2e_live.mjs [chromium|webkit] [board|smoke|incidents]
 //     (needs terminumd built: cd terminumd && cargo build; and ui built: cd ui && npm run build)
 
 import { execFileSync, spawn } from "node:child_process";
@@ -40,7 +40,7 @@ import { liveBoardSort } from "./e2e_liveboardsort.mjs";
 import { liveBoard, liveBoardPhone } from "./e2e_liveboard.mjs";
 import { liveBoardEdge, liveBoardScale } from "./e2e_liveboardedge.mjs";
 import { liveBoardSessions, liveBoardSessionsPhone } from "./e2e_liveboardsession.mjs";
-import { liveBoardAgents } from "./e2e_liveboardagents.mjs";
+import { liveBoardAgents, liveIncidents } from "./e2e_liveboardagents.mjs";
 import { liveMain } from "./e2e_livemain.mjs";
 import { liveBoardBusy } from "./e2e_liveboardbusy.mjs";
 import { liveBoardTasks } from "./e2e_liveboardtasks.mjs";
@@ -59,9 +59,9 @@ import { liveAuto } from "./e2e_liveauto.mjs";
 import { liveIconKeys } from "./e2e_liveiconkeys.mjs";
 import { SORT_ALONE, BOARD_ALONE, TASKS_ALONE, WAITING_ALONE, POOL_ALONE, SMOKE, LINKS_ALONE, HISTORY_ALONE,
   AUTO_ALONE, SCHEDULES_ALONE, NOTES_ALONE, ICONS_ALONE, REQUESTS_ALONE, SIGNIN_ALONE, QUEUE_ALONE, INTEGRATION_SLOTS_ALONE, MAIN_ALONE, BACKGROUND_ALONE, ARCHIVED_ALONE, FOLDS_ALONE, FOLDED_ALONE, SPLIT_ALONE, RAISE_ALONE } from "./e2e_livemodes.mjs";
-
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
-const SHORT = SMOKE || LINKS_ALONE || FOLDS_ALONE;   // a few checks, the wide size only
+const INCIDENTS_ALONE = process.argv.includes("incidents");
+const SHORT = SMOKE || LINKS_ALONE || FOLDS_ALONE || INCIDENTS_ALONE;   // a few checks, the wide size only
 const BIN = process.env.TERMINUMD_BIN ?? path.join(ROOT, "terminumd/target/debug/terminumd");
 // this run's: checks in several worktrees at once never meet, and purge() ends only this run's server
 const PORT = await freePort(), SOCKET = own("tm-test-live");
@@ -170,13 +170,14 @@ async function wide(browser, name) {
     await page.goto(`${BASE}/`);
     await page.waitForFunction(() => document.querySelectorAll("#sessions .item").length > 0, null, { timeout: 30000 });
   };
-  const live = { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP, stop, start, shots: process.env.TM_TEST_SHOTS };
+  const live = { base: BASE, signIn, tmux, work: WORK, bin: BIN, home: HOME, app: APP, stop, start, shots: process.env.TM_TEST_SHOTS };
   /** The board's suites, each on a page of its own */
   const edge = [0, 1].map((part) => (p, o) => liveBoardEdge(p, { ...o, part }));
   const boards = async (suites = [liveBoard, liveBoardSort, ...edge, liveBoardSessions, liveBoardAgents, liveBoardBusy, liveBoardSignin, liveBoardTasks, liveBoardIds, liveBoardAttrs, liveDispatcher, liveBackground, liveArchived, liveHistory, liveFolded, liveSchedules, liveQueue, liveAuto, liveMain, liveIconKeys, liveWaitingRun, liveRaise]) => {
     for (const suite of suites) { await renew(); await suite(page, live); }
   };
   await renew();
+  if (INCIDENTS_ALONE) { await liveIncidents(page, live); return ctx; }
   if (INTEGRATION_SLOTS_ALONE) { await boards([liveIntegrationSlots]); return ctx; }
   if (FOLDS_ALONE) { await liveFolds(page, live); return ctx; }
   if (RAISE_ALONE) { await boards([liveRaise]); return ctx; }
@@ -410,7 +411,7 @@ async function phone(browser, name) {
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: name === "chromium", hasTouch: true, reducedMotion: "reduce" });
   const page = await ctx.newPage();
   await signIn(page);
-  const live = { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP, stop, start };
+  const live = { base: BASE, signIn, tmux, work: WORK, bin: BIN, home: HOME, app: APP, stop, start };
   if (INTEGRATION_SLOTS_ALONE) { await liveIntegrationSlots(page, live); await ctx.close(); return; }
   if (REQUESTS_ALONE) { await liveRequests(page, live); await ctx.close(); return; }
   if (WAITING_ALONE || ARCHIVED_ALONE) {
@@ -468,7 +469,6 @@ async function phone(browser, name) {
   await liveHistoryPhone(page, { base: BASE, shots: process.env.TM_TEST_SHOTS });
   await ctx.close();
 }
-
 try {
   purge();
   await start();

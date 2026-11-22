@@ -4,7 +4,7 @@
 // a draw fills them. INTEGRATION stands hidden until a shown project integrates, its
 // head holding the queue's keys instead of sort keys: its order is the queue's (terminum-integration.md AC-193).
 import { icon } from "./icons.js";
-import { el } from "./listparts.js";
+import { el, plural } from "./listparts.js";
 import { COLUMNS, button } from "./kanbanutil.js";
 
 const ALARMS = { "WAIT FOR HUMAN": "waiting", FAILED: "failed" };   // their counts in the head counters' hues (askfold.css)
@@ -34,12 +34,12 @@ export function boardColumns({ sorting, showColumn, newTask, queueKeys }) {
     tab.dataset.status = column;
     tab.setAttribute("role", "tab");
     tab.hidden = queue;
-    const drawCount = (counts) => {
+    const drawCount = (counts, incidents = 0) => {
       const n = counts[column] ?? 0, queued = column === "WAIT FOR HUMAN" ? (counts.queued_waiting ?? 0) : 0;
-      const label = `${n - queued}${queued ? ` · ${queued} queued` : ""}`;
+      const label = `${n - queued}${queued ? ` · ${queued} queued` : ""}${incidents ? ` · ${plural(incidents, "incident")}` : ""}`;
       count.textContent = label;
       tabCount.textContent = label;
-      const alarm = column in ALARMS && n - queued > 0;   // tasks that wait for the human (AC-117)
+      const alarm = column in ALARMS && n - queued + incidents > 0;   // tasks that wait for the human (AC-117)
       tab.classList.toggle("alarm", alarm);
       if (ALARMS[column]) tabCount.classList.toggle(ALARMS[column], alarm);
     };
