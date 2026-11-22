@@ -101,10 +101,10 @@ export async function liveIncidents(page, opts) {
     const snooze = await until(async () => {
       const primary = await j(timeline);
       const event = primary.rows.find((e) => e.kind === "snoozed");
-      return event?.actor === "human" && event.at > 0;
+      return event?.actor === "human" && event.at > 0
+        && await phone.locator(BAR).getByText(/Repeats snoozed until/).isVisible();
     });
-    check("AC-226 phone Snooze keeps the bar and records who and when",
-      snooze && await phone.locator(BAR).getByText(/Repeats snoozed until/).isVisible());
+    check("AC-226 phone Snooze keeps the bar and records who and when", snooze);
     await phone.locator(BAR).getByRole("button", { name: "Acknowledge" }).click();
     await Promise.all([page, phone, screen].map((p) => p.locator(BAR).waitFor({ state: "hidden", timeout: 15000 })));
     const owner = (await j(timeline)).rows.filter((e) => e.actor === "human");
