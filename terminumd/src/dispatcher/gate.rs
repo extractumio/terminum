@@ -54,17 +54,30 @@ const REFUSED: &str = "terminum-gate-refused";
 
 /// `line`, if at that moment the pane is still `run`'s with its agent's exit not recorded: tmux judges
 /// both in the command that types; the answer is `line`'s own (`Control::run_if`).
-async fn guarded(client: &Control, run: &str, pane: &str, line: &str) -> Result<(), String> {
-    let test = format!("#{{&&:#{{==:#{{@terminum-run}},{run}}},#{{==:#{{@terminum-exit}},}}}}");
+pub(super) async fn guarded(client: &Control, run: &str, pane: &str, line: &str, agent_live: bool) -> Result<(), String> {
+    let marked = format!("#{{==:#{{@terminum-run}},{run}}}");
+    let test = if agent_live { format!("#{{&&:{marked},#{{==:#{{@terminum-exit}},}}}}") } else { marked };
     match client.run_if(pane, &test, line, &format!("display -p {REFUSED}")).await? {
         said if said.iter().any(|l| l == REFUSED) => Err("its pane is no more this run's, or its agent has ended".into()),
         _ => Ok(()),
     }
 }
 
+async fn check_scope(app: &Shared, run: &Run, scope: super::firstprompt::Scope) -> Result<(), Miss> {
+    if matches!(scope, super::firstprompt::Scope::Supervisor) {
+        let id = run.id.clone();
+        super::store(app, move |tx| scope.check(tx, &id)).await.map_err(other)?;
+    }
+    Ok(())
+}
+
 /// Pastes `text` into `run`'s pane and sends it. `first`: its first prompt, no turn has ended yet:
 /// the caller knows the agent has started.
 pub async fn deliver(app: &Shared, run: &Run, server: &Server, pane: &str, text: &str, first: bool) -> Result<(), Miss> {
+    deliver_scoped(app, run, server, pane, text, first, super::firstprompt::Scope::Human).await
+}
+
+pub(super) async fn deliver_scoped(app: &Shared, run: &Run, server: &Server, pane: &str, text: &str, first: bool, scope: super::firstprompt::Scope) -> Result<(), Miss> {
     let _held = server.typing(pane).lock_owned().await;
     let said = server.run(format!("display -p -t {pane} '#{{@terminum-run}}\t#{{pane_in_mode}}\t#{{@terminum-exit}}\t#{{pane_current_command}}'")).await.map_err(|e| other(format!("tmux does not answer: {e}")))?;
     let fields: Vec<&str> = said.first().map_or(Vec::new(), |l| l.split('\t').collect());
@@ -89,9 +102,10 @@ pub async fn deliver(app: &Shared, run: &Run, server: &Server, pane: &str, text:
         Screen::Asks => return Err(Miss::NotEmpty("the agent asks a question")),
         Screen::Unknown => return Err(other(format!("screen not known ({})", run.kind))),
     }
+    check_scope(app, run, scope).await?;
     let client = server.client(pane).ok_or_else(|| other("tmux does not answer"))?;
     let buffer = crate::page::typing::load_buffer(app, &client, server, text).await.map_err(other)?;
-    let pasted = guarded(&client, &run.id, pane, &format!("paste-buffer -p -b {buffer} -t {pane}")).await;
+    let pasted = guarded(&client, &run.id, pane, &format!("paste-buffer -p -b {buffer} -t {pane}"), true).await;
     let shown = async {
         pasted.map_err(|e| other(format!("tmux did not take the paste: {e}")))?;
         let until = tokio::time::Instant::now() + if first { SHOWN_FIRST } else { SHOWN };
@@ -110,10 +124,11 @@ pub async fn deliver(app: &Shared, run: &Run, server: &Server, pane: &str, text:
     }.await;
     let _ = client.run(format!("delete-buffer -b {buffer}")).await;
     let entered = match shown {
-        Ok(()) => {
+        Ok(()) => async {
+            check_scope(app, run, scope).await?;
             app.dispatcher.remember_typed(&key, text);
-            guarded(&client, &run.id, pane, &format!("send-keys -t {pane} Enter")).await.map_err(|e| other(format!("tmux did not take Enter: {e}")))
-        }
+            guarded(&client, &run.id, pane, &format!("send-keys -t {pane} Enter"), true).await.map_err(|e| other(format!("tmux did not take Enter: {e}")))
+        }.await,
         Err(m) => Err(m),
     };
     // what went in, and what tmux refused of it (AC-147)

@@ -75,6 +75,7 @@ pub(crate) fn routes() -> Router<Shared> {
         .merge(settings_api::routes())
         .merge(super::screen::routes())
         .merge(super::incidents_api::routes())
+        .merge(super::rounds::routes())
         .merge(super::line_api::routes())
 }
 
@@ -113,6 +114,8 @@ fn set_enabled(store: &Store, project: &str, on: bool, at: i64) -> Result<Option
                     last_ok = NULL, reported_dead = 0 WHERE enabled = 0 RETURNING generation",
                 (project, at), |r| r.get(0)).optional().map_err(sql)
         } else {
+            tx.execute("DELETE FROM supervisor_round_requests WHERE fingerprint IN (
+                SELECT fingerprint FROM supervisor_signals WHERE project = ?1)", [project]).map_err(sql)?;
             tx.query_row("UPDATE project_supervisor SET enabled = 0, generation = generation + 1, reported_dead = 0
                 WHERE project = ?1 AND enabled = 1 RETURNING generation", [project], |r| r.get(0)).optional().map_err(sql)
         }

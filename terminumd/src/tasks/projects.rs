@@ -143,7 +143,7 @@ fn supervisor_panes(tx: &Transaction, prefix: &str, panes: &[(String, String)]) 
     tx.execute("DELETE FROM supervisor_panes WHERE pane_key LIKE ?1 ESCAPE '\\'", [&like]).map_err(sql)?;
     for (key, project) in marks {
         if let Some((_, new)) = panes.iter().find(|(old, _)| key.strip_prefix(prefix) == Some(old.as_str())) {
-            tx.execute("INSERT INTO supervisor_panes VALUES (?1, ?2, 0)", (format!("{prefix}{new}"), project)).map_err(sql)?;
+            tx.execute("INSERT INTO supervisor_panes (pane_key, project, generation) VALUES (?1, ?2, 0)", (format!("{prefix}{new}"), project)).map_err(sql)?;
         }
     }
     Ok(())

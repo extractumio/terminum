@@ -9,7 +9,7 @@ use crate::app::Shared;
 use crate::http::off;
 use crate::tasks::{api::answer, ops::{check_project, now, project_place}};
 
-use super::{SCHEMA, Signal, flow, scoreboard, settings, signals};
+use super::{SCHEMA, Signal, flow, scoreboard, rounds, settings, signals};
 
 const PAGE: usize = 50;
 
@@ -38,8 +38,16 @@ struct Indicator {
 }
 
 #[derive(Serialize)]
+struct ShownSignal {
+    #[serde(flatten)]
+    signal: Signal,
+    investigation: Option<String>,
+}
+
+#[derive(Serialize)]
 struct SignalPage {
-    signals: Vec<Signal>,
+    signals: Vec<ShownSignal>,
+    investigations_enabled: bool,
     next: Option<String>,
 }
 
@@ -56,7 +64,10 @@ fn signal_page(tx: &Transaction, id: &str, after: Option<&str>) -> Result<Signal
     let more = signals.len() > PAGE;
     signals.truncate(PAGE);
     let next = signals.last().filter(|_| more).map(|s| s.fingerprint.clone());
-    Ok(SignalPage { signals, next })
+    let signals = signals.into_iter().map(|signal| {
+        Ok::<_, String>(ShownSignal { investigation: rounds::status(tx, &signal.fingerprint)?, signal })
+    }).collect::<Result<_, _>>()?;
+    Ok(SignalPage { signals, next, investigations_enabled: rounds::enabled(tx, id)?.is_some() })
 }
 
 fn indicators(tx: &Transaction, id: &str) -> Result<Vec<Indicator>, String> {

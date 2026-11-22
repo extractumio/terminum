@@ -271,7 +271,7 @@ async fn ac231_supervisor_marks_follow_only_restored_panes() {
     let prefix = "tmux:local:t:";
     app.tasks.with(|tx| {
         tx.execute("INSERT INTO project_supervisor (project, enabled, generation, enabled_at) VALUES ('api', 1, 1, 1)", []).map_err(sql)?;
-        tx.execute("INSERT INTO supervisor_panes VALUES (?1, 'api', 1), (?2, 'api', 1)", [BOSS, WORKER]).map_err(sql)?;
+        tx.execute("INSERT INTO supervisor_panes (pane_key, project, generation) VALUES (?1, 'api', 1), (?2, 'api', 1)", [BOSS, WORKER]).map_err(sql)?;
         assert_eq!(supervisor::marked(tx, BOSS)?.unwrap().role, Role::Supervisor(Some(crate::supervisor::Level::Operator)));
         assert!(ordinary_manager(tx, BOSS)?.is_some());
         assert!(manages(tx, BOSS)?.is_none(), "a stored mark wins over a previously issued manager role");
@@ -294,14 +294,15 @@ fn session_tools() -> impl Iterator<Item = &'static str> {
 #[test]
 fn ac231_ac232_each_level_allows_exactly_its_list_of_the_catalog() {
     use crate::supervisor::Level::{Advisor, Observer, Operator};
-    let observer = ["list_tasks", "get_task"];
+    let observer = ["list_tasks", "get_task"].into_iter()
+        .chain(crate::supervisor::round_tools::NAMES.iter().copied()).collect::<Vec<_>>();
     let advisor = ["create_task", "add_comment", "ask_human"];
     let operator = ["run_task", "promote_queued_task", "stop_task", "list_runs", "get_dashboard"];
     let expected = [(Observer, observer.len()), (Advisor, observer.len() + advisor.len()), (Operator, observer.len() + advisor.len() + operator.len())];
     for (level, count) in expected {
         let wanted: Vec<&str> = observer.iter().chain(advisor.iter().filter(|_| level != Observer))
             .chain(operator.iter().filter(|_| level == Operator)).copied().collect();
-        let allowed: Vec<&str> = session_tools().chain(MANAGER_TOOLS).filter(|t| Role::Supervisor(Some(level)).allows(t)).collect();
+        let allowed: Vec<&str> = session_tools().chain(MANAGER_TOOLS).chain(crate::supervisor::round_tools::NAMES.iter().copied()).filter(|t| Role::Supervisor(Some(level)).allows(t)).collect();
         assert_eq!(allowed.len(), count, "{level:?}: {allowed:?}");
         assert!(wanted.iter().all(|t| allowed.contains(t)), "{level:?}: {allowed:?}");
     }
@@ -312,6 +313,7 @@ fn ac231_ac232_each_level_allows_exactly_its_list_of_the_catalog() {
     assert!(session_tools().chain(MANAGER_TOOLS).all(|t| !Role::Supervisor(None).allows(t)), "an inactive mark allows nothing");
     assert!(session_tools().all(|t| Role::Worker.allows(t)) && MANAGER_TOOLS.iter().all(|t| !Role::Worker.allows(t)), "a worker's reach");
     assert!(session_tools().chain(MANAGER_TOOLS).all(|t| Role::Manager.allows(t)), "a manager's reach");
+    assert!(crate::supervisor::round_tools::NAMES.iter().all(|t| !Role::Worker.allows(t) && !Role::Manager.allows(t)));
 }
 
 #[test]

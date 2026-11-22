@@ -13,11 +13,12 @@ use crate::supervisor::Level;
 use super::mcp_search::{Doc, Index};
 
 /// The areas, in the order search_tools lists them, each with what it holds.
-pub const AREAS: [(&str, &str); 4] = [
+pub const AREAS: [(&str, &str); 5] = [
     ("plan", "this session's steps, current step, ETA"),
     ("tasks", "list, read, create, change priority, parent or text, archive, take, move, ask the human, finish"),
     ("comments", "on a task"),
     ("files", "on a task: attach, get"),
+    ("supervisor", "this project’s case, signals, metrics and finding"),
 ];
 
 pub struct Card {
@@ -78,7 +79,7 @@ pub const CARDS: &[Card] = &[
 
 /// The cards a role finds (AC-174, AC-231).
 pub fn cards(role: Role) -> impl Iterator<Item = &'static Card> {
-    CARDS.iter().chain(&super::mcp_manager::CARDS).filter(move |c| role.allows(c.name))
+    all_cards().filter(move |c| role.allows(c.name))
 }
 
 /// The areas a role is told of.
@@ -95,8 +96,12 @@ pub fn areas(role: Role) -> impl Iterator<Item = (&'static str, &'static str)> {
     })
 }
 
+fn all_cards() -> impl Iterator<Item = &'static Card> {
+    CARDS.iter().chain(&super::mcp_manager::CARDS).chain(super::mcp_supervisor::CARDS)
+}
+
 pub fn card(name: &str) -> Option<&'static Card> {
-    cards(Role::Manager).find(|c| c.name == name)
+    all_cards().find(|c| c.name == name)
 }
 
 /// Whether `name` is a manager's tool: a worker neither finds nor runs it.
@@ -110,6 +115,7 @@ pub fn definitions() -> &'static [Value] {
     DEFS.get_or_init(|| {
         let mut all = super::mcp::catalog();
         all.extend(super::mcp_manager::tools());
+        all.extend(super::mcp_supervisor::tools());
         all
     })
 }

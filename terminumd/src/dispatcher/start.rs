@@ -51,8 +51,8 @@ fn tmux_of(server: &Server) -> String {
 
 /// A new window: after the project's last session on this server, else in a session of its name,
 /// made when there is none; its pane and where it stands.
-async fn open_window(app: &Shared, server: &Arc<Server>, project: Option<(&str, &str)>, folder: &str, command: &str) -> Result<(String, String), String> {
-    let cmd = window_command(folder, command, &tmux_of(server));
+async fn open_window(app: &Shared, server: &Arc<Server>, project: Option<(&str, &str)>, folder: &str, command: &str, staged: bool) -> Result<(String, String), String> {
+    let cmd = if staged { "/bin/sleep 120".into() } else { window_command(folder, command, &tmux_of(server)) };
     let fmt = "-P -F '#{pane_id} #{session_name}:#{window_index}'";
     let last = project.and_then(|(id, _)| {
         let ps = app.projects.lock();
@@ -110,8 +110,19 @@ pub struct Opening<'a> {
 
 /// Opens the window, links it and says so: its key.
 pub async fn open(app: &Shared, o: Opening<'_>) -> Result<String, String> {
-    let (pane, place) = open_window(app, o.server, o.project, o.folder, o.command).await?;
-    crate::inputs::wrote(app, crate::inputs::Who::dispatcher("dispatcher.start", o.run, o.tasks, o.agent), "launch", o.server, &pane, o.command, None, o.project);
+    open_pane(app, o, false).await
+}
+
+/// AC-234: no unmarked program runs while the store and tmux are recording the pane.
+pub(super) async fn open_supervisor(app: &Shared, o: Opening<'_>) -> Result<String, String> {
+    open_pane(app, o, true).await
+}
+
+async fn open_pane(app: &Shared, o: Opening<'_>, staged: bool) -> Result<String, String> {
+    let (pane, place) = open_window(app, o.server, o.project, o.folder, o.command, staged).await?;
+    if !staged {
+        crate::inputs::wrote(app, crate::inputs::Who::dispatcher("dispatcher.start", o.run, o.tasks, o.agent), "launch", o.server, &pane, o.command, None, o.project);
+    }
     mark(o.server, &pane, o.run).await?;
     if let Some((session, _)) = place.rsplit_once(':') {
         o.server.note_pane(&pane, session);            // its agent's first hook may come before the next list
@@ -121,20 +132,45 @@ pub async fn open(app: &Shared, o: Opening<'_>) -> Result<String, String> {
     app.dispatcher.track_pane(&key, o.run, project);    // its agent's first hooks
     let on = if o.server.is_local() { "on this Mac".to_string() } else { format!("on {}", o.server.name) };
     let (a, run, tasks, words, k) = (app.clone(), o.run.to_string(), o.tasks.to_vec(), format!("Session started: {} in window {place}, {on}.", o.program), key.clone());
-    store(app, move |tx| {
+    let linked = store(app, move |tx| {
         for task in &tasks {
             ops::link(tx, DISPATCHER, task, Some(&k), ops::now())?;
         }
+        if staged {
+            crate::supervisor::rounds::mark(tx, &run, &k)?;
+            runs::change(tx, &run, |r| r.pane_key = Some(k.clone()))?;
+            return Ok(());
+        }
         let r = a.dispatcher.pane_opened(tx, &run, &k)?;
         say(tx, &r, &words)
-    }).await?;
+    }).await;
+    if let Err(why) = linked {
+        if staged {
+            let _ = marked_command(o.server, &pane, o.run, &format!("kill-pane -t {pane}")).await;
+        }
+        return Err(why);
+    }
     // a member only once its run names it: a project's pane no run names is a human's, its manager (AC-174)
     if let Some((project, _)) = o.project {
         let (a, k, project) = (app.clone(), key.clone(), project.to_string());
         let _ = crate::http::off(move || a.projects.lock().add_to(&k, &project, None)).await;
         crate::page::projects::tell(app);
     }
+    if staged {
+        let run = o.run.to_owned();
+        store(app, move |tx| crate::supervisor::rounds::check_first_prompt(tx, &run)).await?;
+        let line = format!("respawn-pane -k -t {pane} {}", window_command(o.folder, o.command, &tmux_of(o.server)));
+        marked_command(o.server, &pane, o.run, &line).await?;
+        crate::inputs::wrote(app, crate::inputs::Who::dispatcher("dispatcher.start", o.run, o.tasks, o.agent),
+            "launch", o.server, &pane, o.command, None, o.project);
+    }
     Ok(key)
+}
+
+/// Test the mark in tmux itself, in the command that acts on it.
+pub(super) async fn marked_command(server: &Server, pane: &str, run: &str, line: &str) -> Result<(), String> {
+    let client = server.client(pane).ok_or("The pane's tmux client is unavailable.")?;
+    gate::guarded(&client, run, pane, line, false).await
 }
 
 enum StartMiss<'a> {

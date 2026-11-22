@@ -226,7 +226,7 @@ fn ac194_each_integration_agent_keeps_a_slot_of_its_own() {
         let t = ops::create(tx, DISPATCHER, ops::NewTask { title: "Integration batch 1: WEB-1".into(), project: Some("web".into()), integration: true, ..Default::default() }, 5)?;
         tx.execute("INSERT INTO integration_batches (project, number, task, tasks, base_sha, state, created_at) VALUES ('web', 1, ?1, '[]', 'x', 'red', 5)", [&t.key]).map_err(sql)?;
         let kept = crate::tasks::schedules::kept_by_agent(tx)?;
-        assert_eq!(kept.get("a2").copied().unwrap_or_default(), crate::tasks::schedules::Kept { slots: 0, schedules: 0, integration: true });
+        assert_eq!(kept.get("a2").copied().unwrap_or_default(), crate::tasks::schedules::Kept { integration: true, ..Default::default() });
         let a2 = crate::tasks::agents::chosen(tx, "a2", "web")?;
         assert_eq!(crate::dispatcher::pool::check_for(tx, &a2, "web", Some(&t.key), None)?, None, "a1's run stands in a1's slot, not a2's");
         Ok(())

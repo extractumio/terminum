@@ -137,7 +137,6 @@ pub(super) const UNAVAILABLE: &[(&str, &str)] = &[
     ("process.rule_recurs", "Recorded rule judgments are unavailable."),
     ("self.budget", "Supervisor budget history is unavailable."),
     ("self.line_dead", LINE_UNAVAILABLE),
-    ("self.round_failed", "Supervisor round history is unavailable."),
     ("self.fights", "Supervisor override history is unavailable."),
     ("self.unjudged", "Supervisor verdict history is unavailable."),
 ];

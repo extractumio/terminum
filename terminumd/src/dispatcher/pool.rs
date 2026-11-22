@@ -83,6 +83,7 @@ fn victim<'a>(tx: &Transaction, full: &[(&[&'a Run], i64)]) -> Result<Option<&'a
 pub enum Slot {
     Schedule,
     Integration,
+    Supervisor,
 }
 
 impl Kept {
@@ -91,6 +92,7 @@ impl Kept {
         match slot {
             Slot::Schedule => self.slots,
             Slot::Integration => i64::from(self.integration),
+            Slot::Supervisor => i64::from(self.supervisor),
         }
     }
 }
@@ -177,7 +179,10 @@ impl Slots {
         });
         match free {
             Some(Slot::Integration) => Ok(None),
-            Some(Slot::Schedule) => self.check(tx, None, project, but),
+            Some(Slot::Schedule | Slot::Supervisor) => self.check(tx, None, project, but),
+            None if slot == Some(Slot::Supervisor) => Ok(Some(Full {
+                words: format!("{} has no free slot kept for Supervisor investigations.", agent.name), close: None,
+            })),
             None => self.check(tx, Some(agent), project, but),
         }
     }
@@ -217,16 +222,20 @@ fn in_kept(tx: &Transaction, ids: &[&str], kept: &BTreeMap<String, Kept>) -> Res
     if kept.values().all(|k| k.total() == 0) {
         return Ok(HashMap::new());
     }
+    let ids = runs::listed_keys(ids);
     let scheduled: Vec<(String, String)> = rows(tx, "SELECT DISTINCT r.id, r.agent_id, r.rowid FROM runs r JOIN run_tasks rt ON rt.run = r.id JOIN schedule_fires f ON f.task = rt.task JOIN schedules s ON s.id = f.schedule
                  WHERE r.id IN (SELECT value FROM json_each(?1)) AND s.agent_id = r.agent_id AND s.paused = 0 AND s.deleted_at IS NULL
                    AND (SELECT count(*) FROM run_tasks x WHERE x.run = r.id) = 1 ORDER BY r.rowid",
-            [runs::listed_keys(ids)], |r| Ok((r.get(0)?, r.get(1)?)))?;
+            [&ids], |r| Ok((r.get(0)?, r.get(1)?)))?;
     let integrating: Vec<(String, String)> = rows(tx, "SELECT DISTINCT r.id, r.agent_id, r.rowid FROM runs r JOIN run_tasks rt ON rt.run = r.id JOIN integration_batches b ON b.task = rt.task
                  JOIN project_integration i ON i.project = b.project WHERE r.id IN (SELECT value FROM json_each(?1)) AND i.agent = r.agent_id AND i.is_on = 1 ORDER BY r.rowid",
-            [runs::listed_keys(ids)], |r| Ok((r.get(0)?, r.get(1)?)))?;
+            [&ids], |r| Ok((r.get(0)?, r.get(1)?)))?;
+    let supervising = rows(tx, "SELECT r.id, r.agent_id FROM runs r JOIN supervisor_rounds q ON q.run = r.id
+        WHERE q.ended_at IS NULL AND r.id IN (SELECT value FROM json_each(?1))",
+        [&ids], |r| Ok((r.get(0)?, r.get(1)?)))?;
     let mut out = HashMap::new();
     let mut used: HashMap<(String, Slot), i64> = HashMap::new();
-    for (slot, found) in [(Slot::Schedule, scheduled), (Slot::Integration, integrating)] {
+    for (slot, found) in [(Slot::Schedule, scheduled), (Slot::Integration, integrating), (Slot::Supervisor, supervising)] {
         for (run, agent) in found {
             let most = kept.get(&agent).map_or(0, |k| k.of_slot(slot));
             let n = used.entry((agent.clone(), slot)).or_default();

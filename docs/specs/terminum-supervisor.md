@@ -1311,9 +1311,8 @@ The existing mechanisms in §3 provide inputs or precedents for these open gaps.
 | AC-225 | The template reports an active hold and its deadline when the hold ledger is available (AC-245). |
 | AC-227 | The incident thread produces answer notices under AC-244. |
 | AC-231 | The store-backed pane role checks the existing catalog at discovery and execution. Round and Talk registration, case-file access and finding tools belong to AC-234, AC-235 and AC-244. Rule and spend checks belong to AC-237–239. |
-| AC-233 | Investigation admission, deduplication and confidence. |
-| AC-234 | Retained case file, fixed prompt and typed outcome. |
-| AC-235 | Finding verification from named queries. |
+| AC-233 | Known causes from the problem register depend on AC-236. Interim holds depend on AC-245 and spend governance on AC-237. |
+| AC-234 | Register and owner-ruling context depend on AC-236 and AC-244. Investigation launches require local pane ancestry. |
 | AC-236 | Ranked register and protected yardstick. |
 | AC-237 | Judgment governor and deterministic fallback. |
 | AC-238 | Fix spend attribution and ceiling. |
@@ -1592,9 +1591,9 @@ Enable none of the runtime cases by default. Land the specification after indepe
 - [x] AC-230 — `cargo test ac230` covers the old store, validation and answer records. `node web/test/e2e_all.mjs webQuestionChoices` checks wide and touch windows in Chromium and WebKit. `web/test/e2e_livedispatcher.mjs` checks the live answer and continuation.
 - [ ] AC-231 — `ac231_supervisor_tools_pane_and_token` in `scripts/e2e_roles.py` checks every existing catalog tool at all three levels, pane identity, project scope and the fixed Dispatcher prompt. `ac231_supervisor_marks_follow_only_restored_panes` covers restored pane identity, `ac231_ac232_each_level_allows_exactly_its_list_of_the_catalog` the levels' lists and a worker's and a manager's reach, `ac231_an_unknown_local_peer_is_refused_while_a_supervisor_pane_is_marked` a caller whose process the system does not name. The checks seed the pane mark in the store; AC-234 and AC-244 prove the launchers' own marks. Live registration and the case-file tools have separate acceptance cases.
 - [x] AC-232 — `scripts/e2e_roles.py` checks the owner changing a live pane's level, and `scripts/e2e_supervisor_settings.py` checks that importing preferences preserves it. `ac232_owner_sets_level_and_all_levels_page` delivers charter-breach notices to a private command at every level.
-- [ ] AC-233 — Planned test: `ac233_round_admission_and_investigate` covers investigation admission, deduplication and confidence.
-- [ ] AC-234 — Planned test: `ac234_round_prompt_in_private_tmux` covers retained case file, fixed prompt and typed outcome, the launcher marking the pane before its agent starts, and a worker unable to mark one.
-- [ ] AC-235 — Planned test: `ac235_finding_evidence_recomputation` covers finding verification from named queries.
+- [ ] AC-233 — `e2e_supervisor_rounds.py` covers automatic admission, the confidence gate, budget denial, deduplication and the owner's press. `ac233_waiters_use_distinct_weeks_and_impact` covers recurring signals and wait order. The dependent actions are listed in §7.
+- [ ] AC-234 — `e2e_supervisor_rounds.py` checks exact case access, bounded data, the fixed prompt, a scoped mark before the first tool call, deadlines and cleanup in private tmux. The dependent case inputs are listed in §7.
+- [x] AC-235 — `e2e_supervisor_rounds.py` refuses a wrong number and an unresolved row, records the refusal signal and keeps the finding after the named query and evidence pass.
 - [ ] AC-236 — Planned test: `ac236_register_rank_ruling_and_recurrence` covers ranked register and protected yardstick.
 - [ ] AC-237 — Planned test: `ac237_judgment_reserve_and_caps` covers judgment governor and deterministic fallback.
 - [ ] AC-238 — Planned test: `ac238_fix_budget_and_critical_exception` covers fix spend attribution and ceiling.

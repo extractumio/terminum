@@ -28,6 +28,14 @@ pub(super) struct Tiers {
 }
 
 impl Tiers {
+    pub(super) fn investigation(&self, level: u8) -> (&'static str, Option<&str>) {
+        match level {
+            3 => ("strong", self.strong.as_deref()),
+            2 => ("medium", self.medium.as_deref()),
+            _ => ("small", self.small.as_deref()),
+        }
+    }
+
     fn choices(&self) -> [Option<&str>; 4] {
         [self.small.as_deref(), self.medium.as_deref(), self.strong.as_deref(), self.independent.as_deref()]
     }
@@ -77,6 +85,11 @@ impl Default for Budgets {
 }
 
 impl Budgets {
+    fn investigation_room(&self) -> bool {
+        self.daily_token_ceiling != Some(0) && self.round_token_ceiling != Some(0)
+            && self.judgment_ceiling != Some(0.)
+    }
+
     fn valid(&self) -> bool {
         [self.judgment_percent, self.fixes_percent, self.investigation_reserve_percent]
             .into_iter().all(|v| (0.0..=100.0).contains(&v))
@@ -185,6 +198,14 @@ pub(super) struct Settings {
 }
 
 impl Settings {
+    pub(super) fn investigation_room(&self) -> bool {
+        self.budgets.investigation_room()
+    }
+
+    pub(super) fn investigation_charter(&self) -> [&[String]; 2] {
+        [&self.charter.never, &self.charter.priorities]
+    }
+
     pub(super) fn enabled_indicators(&self) -> [bool; 7] {
         let i = &self.charter.indicators;
         [i.involvement, i.stability, i.lead_time, i.releases, i.backlog, i.cognitive_load, i.operations]

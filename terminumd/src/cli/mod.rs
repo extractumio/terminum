@@ -24,6 +24,7 @@ mod launch;
 mod mcp;
 mod mcp_catalog;
 mod mcp_manager;
+mod mcp_supervisor;
 mod mcp_meta;
 mod mcp_search;
 mod mcp_tasks;

@@ -78,9 +78,11 @@ pub enum How {
     Auto,
     /// a red batch's integration task, on its project's integration agent (terminum-integration.md AC-194)
     Integration,
+    /// An investigation of a Supervisor signal (terminum-supervisor.md AC-233).
+    Supervisor,
 }
 
-const HOWS: [(How, &str); 7] = [(How::Run, "run"), (How::Drop, "drop"), (How::New, "new"), (How::Session, "session"), (How::Schedule, "schedule"), (How::Auto, "auto"), (How::Integration, "integration")];
+const HOWS: [(How, &str); 8] = [(How::Run, "run"), (How::Drop, "drop"), (How::New, "new"), (How::Session, "session"), (How::Schedule, "schedule"), (How::Auto, "auto"), (How::Integration, "integration"), (How::Supervisor, "supervisor")];
 
 impl How {
     pub fn word(self) -> &'static str {

@@ -74,14 +74,23 @@ export function incidentCard(initial, surface) {
   });
   const ack = button(KEY, "Acknowledge", () => write("acknowledge"));
   const snooze = button(KEY, "Snooze 1 hour", () => write("snooze"));
-  const keys = part("div", "incident-actions", ack, snooze);
+  const feedback = el("p", "incident-state");
+  feedback.setAttribute("role", "status");
+  const investigate = button(KEY, "Investigate now", oneAtATime(card, async () => {
+    showError(error, "");
+    try {
+      const saved = await api(`${INCIDENTS}/${i.id}/investigate`, { method: "POST" });
+      feedback.textContent = saved.message;
+    } catch (e) { showError(error, e.message); }
+  }));
+  const keys = part("div", "incident-actions", ack, snooze, investigate);
   if (surface !== "screen") {
     const link = el("a", KEY, "Timeline");
     link.href = incidentUrl(i);
     textKey(link);
     keys.append(link);
   }
-  card.append(keys);
+  card.append(keys, feedback);
   const put = (node, words) => { if (node.textContent !== words) node.textContent = words; };
   function update(next) {
     i = next;
@@ -91,7 +100,6 @@ export function incidentCard(initial, surface) {
     put(state, [i.held, i.needed, snoozed && `Repeats snoozed until ${stamp(i.snoozed_until)}.`, i.no_answer].filter(Boolean).join(" "));
     ack.hidden = Boolean(i.acknowledged_at);
     snooze.hidden = Boolean(i.acknowledged_at || i.closed_at || snoozed);
-    keys.hidden = surface === "screen" && ack.hidden && snooze.hidden;
   }
   update(i);
   return { card, update };

@@ -476,8 +476,8 @@ retires its live-at-attach eligibility.
 
 An enabled project checks store changes every ten seconds. It keeps queue waits, available
 subscription readings and active plan ETAs every 15 minutes. Hook counts keep 30 days of
-numeric totals per session. Turning the Supervisor off stops collection and keeps its
-settings, signals and measurements.
+numeric totals per session. Turning the Supervisor off stops collection and active
+investigations. It keeps settings, signals, measurements and earlier cases.
 
 In **Import and export**, export saved preferences or choose a file and import it. Import
 replaces the project preferences and keeps the switch, tier agents and approved probe
@@ -486,8 +486,23 @@ commands. In **Probe commands**, use **View command** to read the full text and 
 
 **Open Supervisor screen** shows the project's incidents, scoreboard and signals. Open an indicator
 for its guard and missing inputs, or open a signal for the measurement, threshold and
-evidence. Use **More signals** to see older results. Surface previews and Investigate
-show their availability in the interface.
+evidence. Use **More signals** to see older results and **Refresh** to see the
+latest investigation status. Press **Investigate now** on a signal or incident to
+request a round. Its configured tier agent needs a kept slot and room in the judgment budget.
+
+Code also requests a round for a level 2 or 3 signal, or a level 1 signal that fired
+in at least three of the past eight weeks and has no checked cause. One round can
+run per fingerprint. Unchanged repeats keep the earlier verdict. When several rounds
+wait for the same slot, higher-impact signals go first.
+
+Investigations use the small, medium and strong tiers for levels 1, 2 and 3.
+A manually requested level 0 investigation uses the small tier. Choose local
+pool agents in **Tiers**. Dispatcher starts the agent with fixed words and a case
+ID and ends it when it returns a checked finding or reaches 15 minutes. Level 2
+or 3 signals below 0.7 confidence use the time to verify the signal. Critical
+alerts go out independently. Task and comment excerpts appear in capped data fields
+in the retained case. Terminum verifies evidence references and reruns each named
+query before keeping the finding.
 
 A critical live signal, failed collector or failed delivery command opens an incident. Related signals within
 15 minutes share a timeline. Signed-in pages show a red bar until you acknowledge it.
@@ -532,6 +547,8 @@ All routes below are relative to `/api/task-projects/<ID>/supervisor`.
 | POST `/line/test` | Run the saved channel at the zero-based `channel` index with the current `revision`. |
 | GET `/screen` | Project name, enabled scoreboard indicators and the newest page of signals with their evidence. |
 | GET `/signals?after=<cursor>` | The next page of signals for the same project. |
+| POST `/signals/<fingerprint>/investigate` | Request an investigation of the signal. |
+| GET `/rounds/<case>` | Read the retained case, checked finding or failure, refusal count and end time. |
 | GET `/incidents?before=<cursor>` | The project's newest incidents, or the next page with a cursor. |
 | GET `/settings` | Pack, revision, detector defaults and confirmed and unset probe IDs. |
 | PUT `/settings` with `revision` and `settings` | Replace the project's preferences. Use the latest revision. |
@@ -541,6 +558,9 @@ All routes below are relative to `/api/task-projects/<ID>/supervisor`.
 | POST `/probe-candidates/<probe>/preview` with `{}` | Read the full proposed command and obtain its approval value. |
 | POST `/probe-candidates/<probe>/confirm` with `approval` | Set that command after a separate owner confirmation. Restaging or reimporting invalidates old approvals. |
 | DELETE `/probe-candidates/<probe>` or `/probe-commands/<probe>` | Discard a proposed command or clear a confirmed one. |
+
+Use `POST /api/supervisor/incidents/<id>/investigate` to request an
+investigation of the incident's highest-level retained signal.
 
 The export selection for secrets controls redaction of recognized secret formats in free text.
 When commands are selected without secrets, a command that would need redaction is omitted.

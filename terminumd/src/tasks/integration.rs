@@ -179,7 +179,7 @@ pub fn keep(tx: &Transaction, project: &str, s: &Settings) -> Result<(), String>
         let agent = super::agents::chosen(tx, id, project)?;
         if s.on {
             let kept = schedules::kept_on(tx, id, None)?;
-            let (words, total) = schedules::kept_words(&agent.name, &kept, true);
+            let (words, total) = schedules::kept_words(&agent.name, &kept, true, schedules::supervises(tx, id)?);
             if total > agent.at_once {
                 return Err(format!("{words}: raise its at once, or choose another agent."));
             }
