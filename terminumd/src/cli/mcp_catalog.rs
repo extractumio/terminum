@@ -45,7 +45,7 @@ pub const CARDS: &[Card] = &[
         example: r#"{"id": "TERM-12"}"# },
     Card { name: "move_task", area: "tasks", keywords: "move a task to a column, change its status, in progress, wait for a human, escalate, blocked, give up, failed, postpone, put back to todo",
         example: r#"{"id": "TERM-12", "to": "WAIT FOR HUMAN"}"# },
-    Card { name: "ask_human", area: "tasks", keywords: "ask the human, ask the user, a question, need a decision, clarify, which option, wait for an answer, human in the loop, blocked on a choice",
+    Card { name: "ask_human", area: "tasks", keywords: "ask the human, ask the user, a question, need a human, need a decision, clarify, which option, wait for an answer, human in the loop, blocked on a choice",
         example: r#"{"id": "TERM-12", "questions": "Why you are needed: dropping API v1 breaks two clients, and only you know if they may break.\nRecommended:\n1. Keep v1 a month: they move by then. Other options: drop it now.\nDetails: TERM-12 removes API v1; v2 is done on a branch. Two clients still call v1; dropping it breaks them today.", "kind": "strategic", "options": [{"id": "keep", "label": "Keep v1 a month"}, {"id": "drop", "label": "Drop v1 now"}], "recommended": "keep"}"# },
     Card { name: "wait_for_task", area: "tasks", keywords: "wait until a blocker is done, blocked by a ticket, depends on, dependency, needs its change first, prerequisite not done, resume me when it lands, hold until",
         example: r#"{"id": "TERM-12", "on": "TERM-9", "why": "TERM-12 reads the store column TERM-9 adds; it goes on once TERM-9 lands."}"# },
