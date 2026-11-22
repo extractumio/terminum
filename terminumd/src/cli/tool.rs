@@ -61,8 +61,8 @@ fn call(ctx: &Ctx, who: &Caller, tool: &str, args: &Value) -> Result<(String, bo
 /// One call as `who`, its arguments checked first: the answer, or the refusal as the error.
 pub(super) fn ask(ctx: &Ctx, who: &Caller, tool: &str, args: &Value) -> Result<String, String> {
     let args = match who {
-        Caller::Token(_) => mcp::checked(tool, args)?,
-        Caller::Pane(_) => args.clone(),
+        Caller::Token(_) if tool != "probe" => mcp::checked(tool, args)?,
+        _ => args.clone(),
     };
     match call(ctx, who, tool, &args)? {
         (text, false) => Ok(text),

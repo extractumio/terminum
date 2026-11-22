@@ -140,6 +140,9 @@ def main():
         check("AC-181 a program outside a pane runs a manager's tool with a manager's token", rc == 0 and '"name":"Fake"' in out, err or out)
         rc, out, err = cli("tool", "list_agents", token=low)
         check("AC-181 a worker's token is refused it", rc == 1 and 'No tool is named "list_agents"' in err, err or out)
+        rc, out, err = cli("tools", token=low)
+        check("AC-181 a worker's token discovers the worker catalog",
+              rc == 0 and "call as a worker" in out and "list_tasks" in out and "list_agents" not in out, err)
         rc, out, err = cli("tool", "list_tasks", token=low)
         check("AC-181 and reads its project's tasks", rc == 0 and out.startswith("A task's text"), err or out)
         rc, out, err = cli("tool", "list_tasks")
