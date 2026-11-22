@@ -24,19 +24,35 @@ macro_rules! waits {
 }
 pub(crate) use waits;
 
-/// Whether task `key` waits with its report.
-pub fn waits_on(tx: &Transaction, key: &str) -> Result<bool, String> {
-    tx.query_row(concat!("SELECT ", waits!("t"), " FROM tasks t WHERE t.id = ?1"), [key], |r| r.get(0)).map_err(sql)
+/// What a run sees of task alias `$t`'s status, as SQL: a waiting report is finished work, as DONE is: it holds no
+/// session open and is no task to go on with.
+macro_rules! run_status {
+    ($t:literal) => { concat!("CASE WHEN ", $crate::tasks::report::waits!($t), " THEN 'DONE' ELSE ", $t, ".status END") };
+}
+pub(crate) use run_status;
+
+/// What RUN's prompt and finish_task's description say of a report.
+macro_rules! words {
+    () => { "When the deliverable is a report for a person to read (a review, an audit, an answer to a question), pass report: \"yes\" with the result: it waits for the human to read it." };
+}
+pub(crate) use words;
+
+/// Whether task `t` waits with its report: only one in WAIT FOR HUMAN reads its moves.
+pub fn waits_on(tx: &Transaction, t: &Task) -> Result<bool, String> {
+    if t.status != "WAIT FOR HUMAN" {
+        return Ok(false);
+    }
+    tx.prepare_cached(concat!("SELECT ", waits!("t"), " FROM tasks t WHERE t.id = ?1")).and_then(|mut q| q.query_row([&t.key], |r| r.get(0))).map_err(sql)
 }
 
 /// Whether finish_task's result for task `key` is a report: the agent says so, and a schedule's task's always is.
 pub fn wanted(tx: &Transaction, key: &str, args: &Value) -> Result<bool, String> {
-    Ok(args["report"] == "yes" || args["report"] == true || super::schedules::of_task(tx, key)?.is_some())
+    Ok(args["report"] == "yes" || super::schedules::of_task(tx, key)?.is_some())
 }
 
 /// Refused to every agent: a waiting report is moved by its human's Done or RUN alone.
 pub fn untouched(tx: &Transaction, t: &Task) -> Result<(), String> {
-    if waits_on(tx, &t.key)? {
+    if waits_on(tx, t)? {
         return Err(format!("{} waits for the human to read its report: only their Done or RUN moves it. You can comment.", t.id));
     }
     Ok(())
@@ -60,7 +76,7 @@ pub fn wait(tx: &Transaction, author: &str, t: &Task, at: i64) -> Result<Vec<Str
 /// The human read task `id`'s report: DONE, the one move a human makes but by running (terminum-kanban.md AC-107).
 pub fn read(tx: &Transaction, id: &str, at: i64) -> Result<(), String> {
     let t = ops::get(tx, id)?;
-    if !waits_on(tx, &t.key)? {
+    if !waits_on(tx, &t)? {
         return Err(if t.status == "WAIT FOR HUMAN" {
             format!("{id} has questions for you, not a report: answer them under Comment and press RUN.")
         } else {
@@ -78,10 +94,7 @@ pub fn routes() -> Router<Shared> {
 async fn read_route(State(app): State<Shared>, Path(id): Path<String>) -> Response {
     let wanted = id.clone();
     let done = super::api::store(&app, move |tx| read(tx, &wanted, ops::now())).await;
-    if done.is_ok() {
-        super::api::told(&app, &id);
-    }
-    super::api::answer(done.map(|()| json!({"ok": true})))
+    super::api::told_answer(&app, &id, done.map(|()| json!({"ok": true})))
 }
 
 #[cfg(test)]

@@ -54,7 +54,7 @@ pub fn set_parent(tx: &Transaction, author: &str, id: &str, parent: Option<&str>
 pub fn to_do(tx: &Transaction, key: &str) -> Result<Vec<super::ops::Task>, String> {
     let mut out = Vec::new();
     for t in super::query::subtasks(tx, key)? {
-        if t.status != "DONE" && t.archived_at.is_none() && !super::report::waits_on(tx, &t.key)? {
+        if t.status != "DONE" && t.archived_at.is_none() && !super::report::waits_on(tx, &t)? {
             out.push(t);
         }
     }

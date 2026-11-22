@@ -115,8 +115,8 @@ pub async fn beat(app: &Shared) {
     let Ok((kinds, live)) = store(app, move |tx| {
         load_once(tx, &a.dispatcher.asking.loaded, &a.dispatcher.subscriptions)?;
         let kinds = ops::rows(tx, "SELECT DISTINCT kind FROM agents", [], |r| r.get::<_, String>(0))?;
-        let open = format!("SELECT r.id, r.kind, (SELECT count(*) FROM run_tasks m JOIN tasks x ON x.id = m.task WHERE m.run = r.id AND x.status NOT IN ('DONE', 'FAILED'))
-                            FROM runs r WHERE {}", runs::STILL);
+        let open = format!(concat!("SELECT r.id, r.kind, (SELECT count(*) FROM run_tasks m JOIN tasks x ON x.id = m.task WHERE m.run = r.id AND (", crate::tasks::report::run_status!("x"), ") NOT IN ('DONE', 'FAILED'))
+                            FROM runs r WHERE {}"), runs::STILL);
         Ok((kinds, ops::rows(tx, &open, [], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, i64>(2)? as usize)))?))
     }).await else { return };
     let now = ops::now();

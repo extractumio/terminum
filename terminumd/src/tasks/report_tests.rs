@@ -98,7 +98,7 @@ fn ac264_done_on_a_wait_that_is_no_report_is_refused_and_no_report_is_done() {
     assert_eq!(status(&s, id), "WAIT FOR HUMAN", "nothing moves");
     // a report that left its wait and came back another way is none
     s.with(|tx| { ops::move_to(tx, DISPATCHER, id, "IN PROGRESS", 10)?; ops::move_to(tx, DISPATCHER, id, "WAIT FOR HUMAN", 11) }).unwrap();
-    assert!(!s.with(|tx| waits_on(tx, &ops::key_of(tx, id)?)).unwrap());
+    assert!(!s.with(|tx| waits_on(tx, &ops::get(tx, id)?)).unwrap());
     let (s, dir) = fresh("report-none");
     let id = in_a_run(&s, &["Fix the loop"]).remove(0);
     assert_eq!(finish(&s, &dir, &id, json!({"report": "no"})).unwrap(), format!("{id} is DONE, with your result."), "another value is no report");

@@ -340,7 +340,6 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
     const busy = t.waits || (t.run_holds && t.status === "IN PROGRESS"), on = firstOn(t);
     save.classList.toggle("primary", Boolean(busy));
     save.onclick = () => commentAction(n, () => keepComment(n, t));
-    run.classList.toggle("primary", !busy);
     run.onclick = () => runTask(t);
     n.keys = [save, run];
     n.wait = () => {
@@ -362,7 +361,8 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
     const shelve = button(null, t.archived_at ? "Bring back" : "Archive", () => api(`/api/tasks/${t.id}/archive`, { method: "POST", body: { on: !t.archived_at } }).then(() => refresh(), (e) => say(e.message)));
     // a report waiting for its human: read, it is DONE (terminum-dispatcher.md AC-264)
     const read = t.report ? button("primary", "Done", () => api(`/api/tasks/${t.id}/read`, { method: "POST" }).then(() => refresh(), (e) => say(e.message))) : null;
-    if (read) { read.title = "I read the report: move it to DONE"; run.classList.remove("primary"); }
+    if (read) read.title = "I read the report: move it to DONE";
+    run.classList.toggle("primary", !busy && !read);
     // its keys at the window's foot, in sight while the task scrolls above them
     const acts = $("taskacts"), paint = () => {
       for (const key of [...acts.children]) if (key !== save && key !== run) key.remove();

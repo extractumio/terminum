@@ -70,7 +70,7 @@ pub(super) fn told_projects<T: Serialize>(app: &Shared, done: Result<T, String>)
 }
 
 /// `done`'s answer; every page hears when it changed task `id`.
-fn told_answer<T: Serialize>(app: &Shared, id: &str, done: Result<T, String>) -> Response {
+pub(super) fn told_answer<T: Serialize>(app: &Shared, id: &str, done: Result<T, String>) -> Response {
     if done.is_ok() {
         told(app, id);
     }

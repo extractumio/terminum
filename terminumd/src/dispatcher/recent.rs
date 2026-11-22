@@ -100,7 +100,7 @@ pub(super) fn saved(tx: &Transaction, tasks: &[Task], drafts: &[String], asked: 
     for task in tasks {
         let question = if asked { last_question(tx, &task.key)? } else { None };
         out.asked |= question.is_some();
-        out.read |= crate::tasks::report::waits_on(tx, &task.key)?;
+        out.read |= crate::tasks::report::waits_on(tx, task)?;
         let mut rows = stmt.query((&task.key, &drafts)).map_err(ops::sql)?;
         while let Some(row) = rows.next().map_err(ops::sql)? {
             let at: i64 = row.get(0).map_err(ops::sql)?;

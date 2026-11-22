@@ -279,15 +279,12 @@ impl Run {
     }
 }
 
-/// A run's view of its tasks: a report that waits for its human is finished work, as DONE is (terminum-dispatcher.md
-/// AC-264): it holds no session open and is no task to go on with.
-macro_rules! as_run_sees {
-    ($t:literal) => { concat!("CASE WHEN ", crate::tasks::report::waits!($t), " THEN 'DONE' ELSE ", $t, ".status END") };
-}
+/// A run sees a report that waits for its human as DONE (terminum-dispatcher.md AC-264).
+use crate::tasks::report::run_status;
 const SELECT: &str = concat!("SELECT r.id, COALESCE(r.task, ''),
     (SELECT group_concat(x.slug, ',' ORDER BY x.number) FROM run_tasks m JOIN tasks x ON x.id = m.task WHERE m.run = r.id),
-    (SELECT group_concat(x.slug, ',' ORDER BY x.number) FROM run_tasks m JOIN tasks x ON x.id = m.task WHERE m.run = r.id AND (", as_run_sees!("x"), ") NOT IN ('DONE', 'FAILED')),
-    COALESCE((SELECT s FROM (SELECT ", as_run_sees!("x"), " AS s FROM run_tasks m JOIN tasks x ON x.id = m.task WHERE m.run = r.id) ORDER BY CASE s WHEN 'IN PROGRESS' THEN 0 WHEN 'WAIT FOR HUMAN' THEN 1 WHEN 'TODO' THEN 2 WHEN 'INTEGRATION' THEN 3 WHEN 'FAILED' THEN 4 ELSE 5 END LIMIT 1), ''),
+    (SELECT group_concat(x.slug, ',' ORDER BY x.number) FROM run_tasks m JOIN tasks x ON x.id = m.task WHERE m.run = r.id AND (", run_status!("x"), ") NOT IN ('DONE', 'FAILED')),
+    COALESCE((SELECT s FROM (SELECT ", run_status!("x"), " AS s FROM run_tasks m JOIN tasks x ON x.id = m.task WHERE m.run = r.id) ORDER BY CASE s WHEN 'IN PROGRESS' THEN 0 WHEN 'WAIT FOR HUMAN' THEN 1 WHEN 'TODO' THEN 2 WHEN 'INTEGRATION' THEN 3 WHEN 'FAILED' THEN 4 ELSE 5 END LIMIT 1), ''),
     r.project,
     (SELECT sum(x.budget_seconds) FROM run_tasks m JOIN tasks x ON x.id = m.task WHERE m.run = r.id),
     r.agent_id, r.agent_name, r.agent_color, r.kind, r.command, r.host, r.folder, r.pane_key, r.agent_session, r.state, r.prompt,
@@ -343,7 +340,7 @@ pub fn holding_agent(tx: &Transaction, agent: &str) -> Result<Option<Run>, Strin
 
 /// Whether session `key` holds an open task other than `lead`'s: one taken there, no run's.
 pub fn others_open(tx: &Transaction, key: &str, lead: &str) -> Result<bool, String> {
-    tx.query_row(concat!("SELECT EXISTS (SELECT 1 FROM tasks t WHERE t.session_key = ?1 AND t.id != ?2 AND (", as_run_sees!("t"), ") NOT IN ('DONE', 'FAILED') AND t.archived_at IS NULL)"), (key, lead), |x| x.get(0)).map_err(sql)
+    tx.query_row(concat!("SELECT EXISTS (SELECT 1 FROM tasks t WHERE t.session_key = ?1 AND t.id != ?2 AND t.status NOT IN ('DONE', 'FAILED') AND t.archived_at IS NULL AND NOT ", crate::tasks::report::waits!("t"), ")"), (key, lead), |x| x.get(0)).map_err(sql)
 }
 
 
@@ -404,7 +401,7 @@ fn set_result(tx: &Transaction, task: &str, given: bool) -> Result<(), String> {
 /// (AC-185). Its run over, they still hold it: a subtask's own RUN going on in that conversation ends no main task.
 pub fn subtasks_open(tx: &Transaction, main: &str) -> Result<Vec<String>, String> {
     rows(tx, concat!("SELECT s.slug FROM tasks s JOIN run_tasks m ON m.task = s.id
-              WHERE s.parent = ?1 AND (", as_run_sees!("s"), ") <> 'DONE' AND s.archived_at IS NULL
+              WHERE s.parent = ?1 AND s.status <> 'DONE' AND s.archived_at IS NULL AND NOT ", crate::tasks::report::waits!("s"), "
                 AND m.run = (SELECT o.run FROM run_tasks o WHERE o.task = ?1 ORDER BY o.rowid DESC LIMIT 1) ORDER BY s.number"), [main], |r| r.get(0))
 }
 
