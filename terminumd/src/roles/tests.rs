@@ -285,3 +285,40 @@ async fn ac231_supervisor_marks_follow_only_restored_panes() {
         Ok(())
     }).unwrap();
 }
+
+/// The catalog's 22 tools every session has, beside MANAGER_TOOLS' 18.
+const SESSION_TOOLS: [&str; 22] = ["update_session_plan", "get_session_plan", "list_tasks", "get_task", "create_task", "update_task",
+    "link_task", "take_task", "move_task", "ask_human", "wait_for_task", "add_comment", "attach_file", "get_file", "finish_task",
+    "integrate", "withdraw_integration", "integration_status", "integration_return", "integration_recheck", "integration_add_fix", "dispatch_task"];
+
+#[test]
+fn ac231_ac232_each_level_allows_exactly_its_list_of_the_catalog() {
+    use crate::supervisor::Level::{Advisor, Observer, Operator};
+    let observer = ["list_tasks", "get_task"];
+    let advisor = ["create_task", "add_comment", "ask_human"];
+    let operator = ["run_task", "promote_queued_task", "stop_task", "list_runs", "get_dashboard"];
+    let expected = [(Observer, observer.len()), (Advisor, observer.len() + advisor.len()), (Operator, observer.len() + advisor.len() + operator.len())];
+    for (level, count) in expected {
+        let wanted: Vec<&str> = observer.iter().chain(advisor.iter().filter(|_| level != Observer))
+            .chain(operator.iter().filter(|_| level == Operator)).copied().collect();
+        let allowed: Vec<&str> = SESSION_TOOLS.iter().chain(MANAGER_TOOLS.iter()).copied().filter(|t| Role::Supervisor(Some(level)).allows(t)).collect();
+        assert_eq!(allowed.len(), count, "{level:?}: {allowed:?}");
+        assert!(wanted.iter().all(|t| allowed.contains(t)), "{level:?}: {allowed:?}");
+    }
+    for never in ["send_to_session", "close_session", "create_agent", "update_agent", "delete_agent", "create_schedule", "update_schedule",
+        "delete_schedule", "run_schedule", "get_session", "get_file", "attach_file", "update_task", "integrate", "dispatch_task", "probe"] {
+        assert!(!Role::Supervisor(Some(Operator)).allows(never), "{never} at Operator");
+    }
+    assert!(SESSION_TOOLS.iter().chain(MANAGER_TOOLS.iter()).all(|t| !Role::Supervisor(None).allows(t)), "an inactive mark allows nothing");
+    assert!(SESSION_TOOLS.iter().all(|t| Role::Worker.allows(t)) && MANAGER_TOOLS.iter().all(|t| !Role::Worker.allows(t)), "a worker's reach");
+    assert!(SESSION_TOOLS.iter().chain(MANAGER_TOOLS.iter()).all(|t| Role::Manager.allows(t)), "a manager's reach");
+}
+
+#[test]
+fn ac231_an_unknown_local_peer_is_refused_while_a_supervisor_pane_is_marked() {
+    let marks = vec![BOSS.to_string()];
+    assert!(supervisor::unjudged(Some(peer::Peer(None)), &marks), "it could be a process under the Supervisor's pane");
+    assert!(!supervisor::unjudged(Some(peer::Peer(Some(42))), &marks), "a known peer is judged by its ancestry");
+    assert!(!supervisor::unjudged(Some(peer::Peer(None)), &[]), "with no Supervisor pane, as before");
+    assert!(!supervisor::unjudged(None, &marks), "a host's link names no local process");
+}

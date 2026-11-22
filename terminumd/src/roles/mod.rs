@@ -121,9 +121,14 @@ pub(crate) async fn pane_caller(
             return Ok((mark.role, Some(mark), Vec::new()));
         }
         let manager = probe && ordinary_manager(tx, &key)?.is_some();
-        let marks = if local { supervisor::marked_panes(tx)? } else { Vec::new() };
+        let marks = if peer.is_some() { supervisor::marked_panes(tx)? } else { Vec::new() };
         Ok((Role::from(manager), None, marks))
     }).await?;
+    if supervisor::unjudged(peer, &marks) {
+        // a process under a Supervisor's pane could name a worker's pane: unknown, it is refused (AC-231)
+        tracing::warn!(event = "supervisor.peer_unknown", pane);
+        return Err(supervisor::PEER_UNKNOWN.into());
+    }
     if mark.is_some() {
         let from_pane = match peer {
             Some(peer) if local && server.is_local() => peer::in_pane(peer, server, pane).await,

@@ -156,7 +156,7 @@ history.**
 The Supervisor is off per project until the owner enables it. Discovery and each call use
 the project's current level. terminumd binds the role to its own pane record and checks
 local process ancestry both when a caller names that pane and when it names a different
-pane. A disabled or replaced generation keeps the pane's role with its tools inactive.
+pane; while a Supervisor pane is marked, a call whose process the system does not name is refused. A disabled or replaced generation keeps the pane's role with its tools inactive.
 Only the signed-in owner's settings can change the level. Project imports preserve it.
 Tokens keep their own roles.
 
@@ -197,7 +197,9 @@ AC-244, AC-245, AC-258).
   holds those values in plain text (`terminum-supervisor.md` AC-220, AC-260).
 - **Left**: a round's agent keeps its pool command's permissions, with AC-156's risk of a
   bypassing command (`terminum-dispatcher.md` §9), so choose agents without bypass for the
-  Supervisor's tiers. A process running as the same user can change the local store, tmux
+  Supervisor's tiers. An Operator can start a task whose text or comments it wrote, so the
+  worker it starts reads the Supervisor's words with its own pool command's permissions:
+  set Advisor to keep every start a human's. A process running as the same user can change the local store, tmux
   or the commands the owner configured. The scoped tools bound model actions through terminumd.
   An owner-configured command runs with that user's OS access and can launch processes that leave its group. Keep the private charter,
   register, case files, ledger and baselines out of tracked files.

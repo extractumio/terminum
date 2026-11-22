@@ -89,6 +89,13 @@ pub(crate) fn marked_panes(tx: &Transaction) -> Result<Vec<String>, String> {
     ops::rows(tx, "SELECT pane_key FROM supervisor_panes", [], |r| r.get(0))
 }
 
+pub(crate) const PEER_UNKNOWN: &str = "terminumd cannot tell which process calls, so while a Supervisor session is open it runs no pane's tool for it.";
+
+/// A call on this Mac's socket whose process the system does not name, while a Supervisor's pane is marked.
+pub(crate) fn unjudged(peer: Option<super::peer::Peer>, marks: &[String]) -> bool {
+    peer.is_some_and(|p| p.0.is_none()) && !marks.is_empty()
+}
+
 pub(crate) fn require(tx: &Transaction, key: &str, project: &str, tool: &str) -> Result<(), String> {
     let role = marked(tx, key)?.filter(|m| m.project == project).map_or(Role::Supervisor(None), |m| m.role);
     if role.allows(tool) { Ok(()) } else { Err(role.refusal(tool)) }
