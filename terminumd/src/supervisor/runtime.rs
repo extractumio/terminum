@@ -14,7 +14,7 @@ use crate::app::Shared;
 use crate::http::off;
 use crate::tasks::{api::answer, ops::{check_project, now, rows, sql}, store::Store};
 
-use super::{DAY, Evaluation, EvaluationInputs, Evidence, Mode, Reading, Rule, SCHEMA, Window,
+use super::{DAY, Evaluation, EvaluationInputs, Evidence, Reading, Rule, SCHEMA, Window,
     attach, evaluate_snapshot, flow, incidents, rounds, samples, sensors::{Pending, Sensors}, settings, settings_api, signals};
 
 const BEAT: i64 = 10;
@@ -75,6 +75,7 @@ pub(crate) fn routes() -> Router<Shared> {
         .route("/api/task-projects/{id}/supervisor", get(shown).put(set))
         .merge(settings_api::routes())
         .merge(super::screen::routes())
+        .merge(super::config_api::routes())
         .merge(super::holds_api::routes())
         .merge(super::incidents_api::routes())
         .merge(super::rounds::routes())
@@ -152,7 +153,7 @@ impl Runtime {
         self.incident_updates.send_modify(|revision| *revision = revision.wrapping_add(1));
     }
 
-    pub(super) fn wake(&self) {
+    pub(crate) fn wake(&self) {
         self.changed.notify_one();
     }
 
@@ -228,8 +229,8 @@ fn read_batch(
     let points = if sampled { samples::measure(tx, app, &project.id, at, baseline)? } else { Vec::new() };
     let previous = project.last_evaluation.unwrap_or(0);
     let first_run = project.last_ok.is_none();
-    let settings_revision = settings::revision(tx, &project.id)?;
-    let scan_due = first_run || project.settings_revision != Some(settings_revision);
+    let (settings_revision, expired) = settings::recall_due(tx, &project.id, previous, at)?;
+    let scan_due = first_run || project.settings_revision != Some(settings_revision) || expired;
     let changed = cursor != project.cursor || sampled || scan_due;
     let samples_ready = project.last_sample.is_some_and(|last| last >= previous);
     let hooks_ready = tx.query_row("SELECT EXISTS (SELECT 1 FROM supervisor_hook_counts WHERE project = ?1 AND at >= ?2)",
@@ -248,15 +249,11 @@ fn read_batch(
         return Ok(batch);
     }
     let saved = settings::read(tx, &project.id)?;
+    let weekly = super::config_lifecycle::on_weekly(tx, &project.id)?;
     let previous_attach = attach::read(tx, &project.id)?;
     let detectors = rules.into_iter().map(|rule| {
         let mut detector = saved.settings.detector(rule);
-        if let Some(report) = &previous_attach {
-            detector.mode = report.mode(&detector);
-        }
-        if saved.settings.muted(rule, at) {
-            detector.mode = Mode::Off;
-        }
+        detector.mode = super::config_lifecycle::mode(&saved.settings, previous_attach.as_ref(), &detector, &weekly, at);
         detector
     }).collect::<Vec<_>>();
     let bounds = scan_due.then(|| flow::history_bounds(tx, &project.id, at)).transpose()?;
@@ -286,6 +283,7 @@ fn collect_project(app: &Shared, project: &Project, clock: impl Fn() -> i64) -> 
     })?;
     let Some(batch) = batch else { return Ok(()) };
     let evaluated = batch.evaluation.is_some().then_some(batch.at);
+    let sunset_due = batch.baseline;
     let pending = app.supervisor.sensors.take(&project.id, project.generation);
     let ((committed, incidents_changed, holds), cards) = commit(&app.tasks, project, batch, &pending, &clock)?;
     super::breakers::notify(app, cards);
@@ -305,6 +303,7 @@ fn collect_project(app: &Shared, project: &Project, clock: impl Fn() -> i64) -> 
         let (changed, nudges) = app.tasks.with(|tx| {
             if rounds::enabled(tx, &project.id)? != Some(project.generation) { return Ok((Vec::new(), Vec::new())); }
             let at = clock();
+            if sunset_due { super::config_lifecycle::advance(tx, &project.id, project.enabled_at, at)?; }
             let mut changed = super::fix_tasks::advance(tx, &project.id, at)?;
             changed.extend(super::decisions::advance(tx, &project.id, at)?);
             if evaluated.is_some() { changed.extend(super::decisions::retro(tx, &project.id, at)?); }

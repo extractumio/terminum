@@ -113,6 +113,7 @@ fn answer(tx: &Transaction, task: &str, question: &str, option: &str, at: i64) -
         return if previous == option { Ok((event, false)) } else { Err("An option was already chosen for this question.".into()) };
     }
     // The ordinary RUN and comment notice paths can carry these words. Only the validated ID comes from the agent.
+    crate::supervisor::config_changes::owner_choice(tx, &t, question, option, at)?;
     let text = format!("Selected option: {option}.");
     let data = json!({"choice": {"question": question, "option": option}});
     let event = comments::comment_with(tx, HUMAN, task, &text, Some(&data), at)?;
@@ -131,6 +132,7 @@ async fn choose(State(app): State<Shared>, Path((id, question)): Path<(String, S
     if let Ok((event, true)) = &done {
         super::notify::comment_added(&app, &id, event, None);
         api::told(&app, &id);
+        app.supervisor.wake();
     }
     api::answer(done.map(|(event, _)| json!({"event": event})))
 }

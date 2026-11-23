@@ -38,7 +38,11 @@ struct View {
     detector_defaults: BTreeMap<&'static str, DetectorDefaults>,
     confirmed_probes: Vec<String>,
     unset_probes: Vec<String>,
+    engine_boards: Vec<EngineBoard>,
 }
+
+#[derive(Serialize)]
+struct EngineBoard { id: String, name: String }
 
 #[derive(Serialize)]
 struct DetectorDefaults {
@@ -57,7 +61,9 @@ fn view(tx: &Transaction, id: &str, saved: settings::Saved) -> Result<View, Stri
         let d = defaults.detector(rule);
         (rule.id(), DetectorDefaults { mode: d.mode, window_days: d.window_days, threshold: d.threshold })
     }).collect();
-    Ok(View { saved, detector_defaults, confirmed_probes, unset_probes })
+    let engine_boards = rows(tx, "SELECT id, name FROM projects ORDER BY name, id", [],
+        |r| Ok(EngineBoard { id: r.get(0)?, name: r.get(1)? }))?;
+    Ok(View { saved, detector_defaults, confirmed_probes, unset_probes, engine_boards })
 }
 
 async fn shown(State(app): State<Shared>, Path(id): Path<String>) -> Response {

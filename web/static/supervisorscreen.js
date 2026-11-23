@@ -223,7 +223,7 @@ async function readScreen() {
     drawRuleOutcomes(data, path, readScreen);
     drawReflections(data.reflections ?? [], path);
     drawAgentRates(data.agent_rates ?? []);
-    $("sv-reports").replaceChildren(...reportCards(data, path));
+    $("sv-reports").replaceChildren(...reportCards(data, path, readScreen));
     if (data.spending) $("sv-spending").replaceChildren(...spending(data.spending, data.marked_tasks_eligible));
     const problems = data.problems ?? [];
     $("sv-problems").replaceChildren(...(problems.length ? problems.map(problem) : [note("No problems in the register.")]));

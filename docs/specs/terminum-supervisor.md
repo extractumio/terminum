@@ -1341,16 +1341,13 @@ The existing mechanisms in §3 provide inputs or precedents for these open gaps.
 | AC-245 | Code can hold the current marked run on a qualifying critical task cost signal. The cost detector needs an authorized level 3 escalation before it can produce that signal itself. |
 | AC-246 | The collector checks retained decisions at three horizons and reports mostly undecided rules. |
 | AC-247 | A breaker diverts holds, task runs and alerts. Restoring autonomy requires a changed live detector and measurable retained replay. Fixed or present-only detectors without historical replay stay paused. |
-| AC-248 | Independent rounds, retained proposals and closed-incident timelines. Misses depend on AC-255 and proposal adoption on AC-253. |
+| AC-248 | Miss-triggered reflection depends on the cases that produce the misses in AC-255. |
 | AC-249 | Seven-day agent scorecards with per-metric denominators, intervals and a 30-observation floor. Routing proposals open owner cards. |
 | AC-250 | The preview covers the previous 30 days and shows missing per-task diffs. |
 | AC-251 | Task creation and assigned local worktree diffs can flag T3. The opt-in Verify command checks the pinned submission. |
 | AC-252 | One bounded review workflow per task design, with distinct T3 critics and an authenticated owner choice. |
-| AC-253 | Versioned configuration with replay, shadow and revert. |
-| AC-254 | Protected and expiring mutes. |
 | AC-255 | Independent miss detection. |
 | AC-256 | Supervisor outcome scorecard. |
-| AC-257 | Sunset and exemptions. |
 | AC-258 | Protected settings, ledger and yardsticks. |
 | AC-259 | Independent quarterly audit. |
 | AC-260 | Owner probes and failure signals. |
@@ -1574,7 +1571,7 @@ A quarterly independent audit reads the ledger and register without earlier refl
 | Owner | Decision card with replay for pages, T3, long mutes, coverage reductions and charter amendments. |
 | Engine | Propose code and tests for a new named query, tool, probe kind or recorded field on the engine board. |
 
-Version every accepted change and record its one-key revert. Mutes name an owner, reason and expiry; reductions of protected coverage need the owner, including T3 or level 3 mutes and mutes over two weeks. At eight weeks without an acted-on firing move eligible rules to weekly reporting and at sixteen propose removal; T3 and level 3 are exempt. The Supervisor can change neither guardrails and protected settings nor a fix's yardstick, verdicts, score formulas or historical ledger.
+Version every accepted change and record its one-key revert. A project-scoped replay receipt fixes the detector, action, settings revision, time range, input coverage and counts. Code reproduces the receipt before applying a change. Compare firing drops against both the immediate predecessor and the settings before a chain of automatic tunes. Snapshot and counter tunes require owner review because weekly cutoffs can miss short-lived firings. An owner approves the exact pending detector change through its board question. Paging, charter and surface-map requests point to owner-controlled settings. Revert restores the prior detector settings and preserves edits to other settings. An added rule stays in shadow until three distinct findings from the trial have weekly verdicts and the owner promotes it. The owner can select a local engine board; its tasks contain only the detector ID and the type of engine work required. Mutes name an owner, reason and expiry; reductions of protected coverage need the owner, including T3 or level 3 mutes, mutes over two weeks, full pauses and recent renewals. At eight weeks without an acted-on firing move eligible rules to weekly reporting and at sixteen propose removal; T3 and level 3 are exempt. The Supervisor can change neither guardrails and protected settings nor a fix's yardstick, verdicts, score formulas or historical ledger.
 
 ### Probes, isolation and logging
 
@@ -1647,11 +1644,11 @@ Enable none of the runtime cases by default. The stages below list the cases in 
 - [x] AC-250 — `ac250_surface_map_preview_and_diff` covers a multi-task batch, a new and an edited migration, missing diffs and an empty map. `webSupervisor` exercises unsaved preview and errors.
 - [x] AC-251 — `ac251_design_first_and_verify_requires_review_record` covers the mark, blocker, absent-record comment and repeated Verify with a review. `scripts/e2e_supervisor_design.py` checks the private integration queue and same-commit retry.
 - [x] AC-252 — `ac252_review_priority_budget_escalation_and_timeout` and `ac252_t3_needs_distinct_reviewers_and_the_owners_choice` cover priority, reuse, budget, time and sign-off. `scripts/e2e_supervisor_design.py` exercises the marked critic pane.
-- [ ] AC-253 — Planned test: `ac253_config_classes_replay_and_revert` covers versioned configuration with replay, shadow and revert.
-- [ ] AC-254 — Planned test: `ac254_mute_authority_and_expiry` covers protected and expiring mutes.
+- [x] AC-253 — `supervisor::config_tests` checks reproducible replay, versioned tune, coverage and breaker routing, shadow promotion, engine routing and one-key revert. `e2e_supervisor_reflection.py` exercises the tools through a marked round. `webSupervisor` exercises the owner key in Chromium and WebKit.
+- [x] AC-254 — `ac254_mute_authority_and_expiry` checks the reason, owner, escalation and expiration. `ac254_collector_resumes_at_mute_expiry_without_new_events` checks the detector resumes at the boundary on a private store.
 - [ ] AC-255 — Planned test: `ac255_miss_from_owner_and_target_events` covers independent miss detection.
 - [ ] AC-256 — Planned test: `ac256_supervisor_scorecard_denominators` covers supervisor outcome scorecard.
-- [ ] AC-257 — Planned test: `ac257_sunset_age_and_exemptions` covers sunset and exemptions.
+- [x] AC-257 — `ac257_sunset_age_and_exemptions` checks the eight- and sixteen-week boundaries, acted-on findings and protected scope. `webSupervisor` shows the removal proposal.
 - [ ] AC-258 — Planned test: `ac258_protected_state_denials` covers protected settings, ledger and yardsticks.
 - [ ] AC-259 — Planned test: `ac259_quarterly_audit_unedited_result` covers independent quarterly audit.
 - [ ] AC-260 — Planned test: `ac260_probe_valid_invalid_timeout` covers owner probes and failure signals.

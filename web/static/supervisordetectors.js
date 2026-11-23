@@ -61,7 +61,7 @@ export function detectors(edit, draft, defaults) {
       if (reason.value || until.value) {
         if (!reason.value.trim()) fieldError(reason, name, "A detector mute needs a reason.");
         if (!(timeOf(until) > 0)) fieldError(until, name, "A detector mute needs an end time.");
-        set(out, "mute", { reason: reason.value, until: timeOf(until) });
+        set(out, "mute", { ...saved.mute, reason: reason.value, until: timeOf(until) });
       } else set(out, "mute", null);
     });
     const status = hint("");

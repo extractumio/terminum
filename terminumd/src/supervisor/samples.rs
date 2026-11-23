@@ -92,13 +92,22 @@ struct Sample {
     reset: Option<i64>,
 }
 
-pub(super) fn snapshots(q: &Query<'_, '_>) -> Result<Measurements, String> {
-    let (metric, subjects) = match q.detector.rule {
+fn snapshot_metric(rule: Rule) -> (&'static str, &'static str) {
+    match rule {
         Rule::QueueGrowth => (QUEUE, "project"),
         Rule::LimitNear => (LIMIT, "subscription"),
         Rule::StalePlan => (ETA, "session"),
         _ => unreachable!("Only snapshot rules use the snapshot query"),
-    };
+    }
+}
+
+pub(super) fn first_point(tx: &Transaction, project: &str, rule: Rule, at: i64) -> Result<Option<i64>, String> {
+    tx.query_row("SELECT min(at) FROM supervisor_points WHERE project = ?1 AND metric = ?2 AND at <= ?3",
+        (project, snapshot_metric(rule).0, at), |r| r.get(0)).map_err(sql)
+}
+
+pub(super) fn snapshots(q: &Query<'_, '_>) -> Result<Measurements, String> {
+    let (metric, subjects) = snapshot_metric(q.detector.rule);
     let mut groups = BTreeMap::<String, Vec<Sample>>::new();
     let samples = rows(q.tx, "SELECT id, subject, at, value, resets_at FROM supervisor_points
         WHERE project = ?1 AND metric = ?2 AND at BETWEEN ?3 AND ?4 ORDER BY subject, at DESC",
@@ -147,12 +156,22 @@ pub(super) fn snapshots(q: &Query<'_, '_>) -> Result<Measurements, String> {
     Ok(out)
 }
 
-pub(super) fn counters(q: &Query<'_, '_>) -> Result<Measurements, String> {
-    let filters = match q.detector.rule {
+fn counter_events(rule: Rule) -> &'static str {
+    match rule {
         Rule::Loop => "('failure', 'repeat', 'compaction')",
         Rule::Subagents => "('subagent_start')",
         _ => unreachable!("Only hook rules use the hook counter query"),
-    };
+    }
+}
+
+pub(super) fn first_count(tx: &Transaction, project: &str, rule: Rule, at: i64) -> Result<Option<i64>, String> {
+    let events = counter_events(rule);
+    tx.query_row(&format!("SELECT min(at) FROM supervisor_hook_counts WHERE project = ?1 AND at <= ?2 AND event IN {events}"),
+        (project, at), |r| r.get(0)).map_err(sql)
+}
+
+pub(super) fn counters(q: &Query<'_, '_>) -> Result<Measurements, String> {
+    let filters = counter_events(q.detector.rule);
     let start = q.window.end - DAY + 1;
     let counts = rows(q.tx, &format!("SELECT agent, session, event, sum(count), max(id)
         FROM supervisor_hook_counts WHERE project = ?1 AND at BETWEEN ?2 AND ?3

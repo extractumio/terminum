@@ -55,6 +55,8 @@ struct Scan {
     observed_thresholds: BTreeMap<String, Range>,
     replay_firings: usize,
     holds: Gate,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    owner_live: bool,
 }
 
 #[derive(Clone, Copy, Default, Serialize, Deserialize)]
@@ -88,8 +90,8 @@ impl Gate {
 }
 
 impl Report {
-    pub(super) fn mode(&self, detector: &Detector) -> Mode {
-        if detector.mode == Mode::Live && self.detectors.get(detector.rule.id()).is_none_or(|scan| !scan.holds.live_at_attach) {
+    pub(super) fn mode(&self, detector: &Detector, settings: &Settings) -> Mode {
+        if detector.mode == Mode::Live && !settings.owner_live(detector.rule) && self.detectors.get(detector.rule.id()).is_none_or(|scan| !scan.holds.live_at_attach) {
             Mode::Shadow
         } else {
             detector.mode
@@ -99,7 +101,10 @@ impl Report {
     /// A later hold caller passes a verified charter breach, never a claim from imported settings.
     pub(crate) fn hold_state(&self, rule: Rule, at: i64, charter_breach: bool) -> HoldState {
         self.detectors.get(rule.id()).filter(|scan| scan.mode == Mode::Live && scan.can_run)
-            .map_or(HoldState::Inactive, |scan| scan.holds.state(at.saturating_sub(self.attached_at), charter_breach))
+            .map_or(HoldState::Inactive, |scan| {
+                if scan.owner_live { HoldState::Eligible }
+                else { scan.holds.state(at.saturating_sub(self.attached_at), charter_breach) }
+            })
     }
 
     pub(super) fn status(&self, at: i64, active: bool) -> Result<serde_json::Value, String> {
@@ -169,7 +174,7 @@ pub(super) fn scan(
         let old = previous.and_then(|report| report.detectors.get(rule.id()));
         let live_at_attach = old.is_some_and(|scan| scan.holds.live_at_attach)
             || (previous.is_none() && can_run && detector.mode == Mode::Live);
-        if checked.mode == Mode::Live && !live_at_attach {
+        if checked.mode == Mode::Live && !live_at_attach && !settings.owner_live(rule) {
             checked.mode = Mode::Shadow;
         }
         let (replay_judged, replay_right) = judged.get(&rule).copied().unwrap_or_default();
@@ -180,18 +185,18 @@ pub(super) fn scan(
             threshold: Some(detector.threshold),
             observed_thresholds: checked.thresholds.iter().map(|(metric, band)| ((*metric).into(), *band)).collect(),
             replay_firings: firings.get(&rule).map_or(0, |found| found.len()),
-            holds: Gate { live_at_attach, replay_judged, replay_right },
+            holds: Gate { live_at_attach, replay_judged, replay_right }, owner_live: settings.owner_live(rule),
         });
     }
     for &(name, reason) in catalog::UNAVAILABLE {
         scans.entry(name.into()).or_insert_with(|| Scan {
             mode: Mode::Off, can_run: false, unavailable: vec![reason.into()], threshold: None,
-            observed_thresholds: BTreeMap::new(), replay_firings: 0, holds: Gate::default(),
+            observed_thresholds: BTreeMap::new(), replay_firings: 0, holds: Gate::default(), owner_live: false,
         });
     }
     scans.insert(Rule::CollectorDead.id().into(), Scan {
         mode: Mode::Live, can_run: true, unavailable: vec![], threshold: Some(Rule::CollectorDead.defaults()),
-        observed_thresholds: BTreeMap::new(), replay_firings: 0, holds: Gate::default(),
+        observed_thresholds: BTreeMap::new(), replay_firings: 0, holds: Gate::default(), owner_live: false,
     });
 
     Ok(Report { attached_at, scanned_at: at, first_observation: (latest > 0).then_some(first),

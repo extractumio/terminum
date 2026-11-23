@@ -3,7 +3,7 @@ import { check, runningIn, until } from "./check.mjs";
 import { drawn, fakeBoard, openPage, ORIGIN, SIZES, serveRenderers, shot, THEME } from "./fake.mjs";
 
 import { surfacePreview } from "./e2e_surface_preview.mjs";
-
+import { configFixture, checkConfiguration } from "./e2e_supervisor_config.mjs";
 const ROOT = "/api/task-projects/api/supervisor";
 const RULE = "flow.failed_no_reason";
 const DATE = 1_790_000_000;
@@ -44,8 +44,8 @@ const SPENDING = {
 const SMALL_RATE = { sample: 12, value: .25, interval_95: [.09, .53], can_gate: false, missing: null };
 const MISSING_RATE = { sample: 0, value: null, interval_95: null, can_gate: false, missing: "Project integration is off." };
 const json = (route, obj, status = 200) => route.fulfill({ status, json: obj });
-
 async function fixture(page, theme) {
+  const configuration = configFixture(RULE, DATE);
   const projects = [{ id: "api", name: "API service", color: 0 }, { id: "web", name: "Web service", color: 1 }];
   const agents = [{ project: "api", id: "mine", name: "API agent" }, { project: "web", id: "foreign", name: "Web agent" }];
   await serveRenderers(page);
@@ -119,12 +119,14 @@ async function fixture(page, theme) {
     if (suffix === "/rounds/case_fixture") return json(route, { case: {
       timeline: [{ number: 1, at: DATE, kind: "breaker", ref: "42", data: { detector: RULE } }],
     } });
+    if (configuration.reverts(suffix, method)) return json(route, { change: 7 });
     if (suffix === "/screen") return json(route, { project_name: "API service",
       agent_rates: [{ task_type: "Debt", agent: "mine", agent_name: "API agent",
         failure: SMALL_RATE, return: MISSING_RATE, questions: SMALL_RATE, cost: SMALL_RATE }],
       reflections: [{ at: DATE, case: "case_fixture", routing_card: "API-41", triggers: ["breaker_opened", "alert_wrong"],
         result: { missed: "One missed event.", noise: "One repeated alert.", wrong: "One judged action.",
           settings_revision: 4, proposals: [{ change: LITERAL, replay: "Compare the fixture timeline.", evidence: [1] }] } }],
+      ...configuration.screen(),
       outcomes: [{ detector: RULE, response: "R5", right: 0, wrong: Number(wrong), undecided: 2, pending: 0 }],
       breakers: breaker ? [{ id: 5, detector: RULE, response: "R5", opened_at: DATE, cards: ["API-41"] }] : [], indicators: [SCORE], holds: activeHolds(),
       investigations_enabled: true, spending: SPENDING, marked_tasks_eligible: false,
@@ -391,6 +393,7 @@ async function screen(page, suffix, phone) {
   await reports.getByText("Weekly review ·", { exact: false }).click();
   await reports.getByText("Exception digest ·", { exact: false }).click();
   await reports.getByRole("heading", { name: "Decisions waiting for you" }).waitFor();
+  await checkConfiguration(page, suffix);
   const useful = reports.getByRole("button", { name: "Useful", exact: true });
   await useful.click();
   check("AC-240 AC-242 AC-243 the Supervisor screen links decisions and reports and records a verdict",
@@ -472,7 +475,6 @@ async function screen(page, suffix, phone) {
     await until(() => page.getByText("Last signal", { exact: false }).isVisible())
     && await opened.getByRole("heading", { name: "Evidence", exact: true }).isVisible() && await page.isHidden("#sv-more"));
 }
-
 export async function webSupervisor(browser, engine) {
   for (const [size, device] of SIZES) {
     const phone = device.hasTouch;

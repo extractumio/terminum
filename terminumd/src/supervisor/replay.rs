@@ -47,16 +47,29 @@ fn visit_rule_history(tx: &Transaction, project: &str, first: i64, at: i64, dete
     mut visit: impl FnMut(&Finding) -> Result<(), String>,
 ) -> Result<bool, String> {
     if detector.mode == super::Mode::Off { return Ok(true); }
-    let mut end = at - 2 * WEEK;
     let mut measured = false;
+    cutoffs(tx, project, first, at - 2 * WEEK, detector, |_, available, _, findings| {
+        measured |= available;
+        for finding in &findings { visit(finding)?; }
+        Ok(())
+    })?;
+    Ok(measured)
+}
+
+pub(super) fn cutoffs(
+    tx: &Transaction, project: &str, first: i64, mut end: i64, detector: &Detector,
+    mut visit: impl FnMut(i64, bool, &[&str], Vec<Finding>) -> Result<(), String>,
+) -> Result<(), String> {
+    if detector.mode == super::Mode::Off { return Ok(()); }
     while end >= first && end > 0 {
         let window = Window::of(end, detector.window_days);
         let mut data = measure_detector(tx, project, detector, window, false)?;
-        measured |= data.unavailable.is_empty() || !data.readings.is_empty();
-        for finding in collect_findings(&mut data, detector, window, false) { visit(&finding)?; }
+        let measured = data.unavailable.is_empty() || !data.readings.is_empty();
+        let findings = collect_findings(&mut data, detector, window, false);
+        visit(end, measured, &data.unavailable, findings)?;
         end -= WEEK;
     }
-    Ok(measured)
+    Ok(())
 }
 
 /// Count detector firings over the same historical cutoffs for both configurations.

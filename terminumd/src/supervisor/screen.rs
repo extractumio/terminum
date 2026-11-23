@@ -67,6 +67,8 @@ struct Screen {
     spending: governor::Spending,
     marked_tasks_eligible: bool,
     decisions: Vec<super::decisions::Decision>,
+    config_changes: Vec<super::config_changes::Entry>,
+    sunset: Vec<super::config_lifecycle::Status>,
     digest: Option<super::digest::Digest>,
     review: Option<super::review::Published>,
     review_setup_error: Option<String>,
@@ -128,6 +130,8 @@ async fn screen(State(app): State<Shared>, Path(id): Path<String>, Query(query):
             problems: register::ranked(tx, &id, at, true)?, spending: governor::spending(tx, &id, at)?,
             marked_tasks_eligible: crate::tasks::auto::setting(tx, &id)?.supervisor_tasks,
             decisions: super::decisions::cards(tx, &id)?, digest: super::digest::latest(tx, &id)?,
+            config_changes: super::config_changes::list(tx, &id, 0)?,
+            sunset: super::config_lifecycle::status(tx, &id)?,
             review: super::review::latest(tx, &id)?, review_setup_error })
 
     })).await)

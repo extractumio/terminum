@@ -9,10 +9,10 @@ use crate::app::Shared;
 use crate::roles::supervisor;
 use crate::tasks::{api::store, ops::{self, now, sql}};
 
-use super::{Evidence, Measure, Rule, Window, register, round_evidence, rounds, settings, signals, task_policy};
+use super::{config_changes, Evidence, Measure, Rule, Window, register, round_evidence, rounds, settings, signals, task_policy};
 
 pub(crate) const NAMES: &[&str] = &["get_case_file", "list_signals", "get_signal", "get_metric", "record_finding"];
-pub(crate) const ADVISOR: &[&str] = &["open_problem", "update_problem", "propose_rank", "propose_decision", "post_incident_answer"];
+pub(crate) const ADVISOR: &[&str] = &["open_problem", "update_problem", "propose_rank", "propose_decision", "post_incident_answer", config_changes::PREVIEW, config_changes::PROPOSE];
 
 pub(crate) fn known(tool: &str) -> bool {
     NAMES.contains(&tool) || ADVISOR.contains(&tool) || matches!(tool, super::reflection::TOOL | super::design_gates::RECORD)
@@ -115,7 +115,35 @@ fn args<T: DeserializeOwned>(value: Value) -> Result<T, String> {
     serde_json::from_value(value).map_err(|_| "The tool arguments do not match the required fields and types.".into())
 }
 
+async fn configuration(app: &Shared, key: String, project: String, tool: String, value: Value) -> Result<String, String> {
+    let snapshot = app.clone();
+    if tool == config_changes::PREVIEW {
+        return crate::http::off(move || snapshot.tasks.snapshot(super::SCHEMA, |tx| {
+            let run = run_of(tx, &key, &project, &tool)?;
+            config_changes::preview(tx, &project, &run, args(value)?, now()).map(|result| result.to_string())
+        })).await;
+    }
+    let (scope, pane, name) = (project.clone(), key.clone(), tool.clone());
+    let (run, verified) = crate::http::off(move || snapshot.tasks.snapshot(super::SCHEMA, |tx| {
+        let run = run_of(tx, &pane, &scope, &name)?;
+        let verified = config_changes::verify(tx, &scope, &run, args(value)?, now())?;
+        Ok((run, verified))
+    })).await?;
+    let result = store(app, move |tx| {
+        if run_of(tx, &key, &project, &tool)? != run {
+            return Err("The live Supervisor round changed. Replay the proposal again.".into());
+        }
+        config_changes::submit(tx, &project, &run, verified, now())
+    }).await?;
+    if let Some(task) = &result.task { crate::tasks::api::told(app, task); }
+    app.supervisor.wake();
+    Ok(json!(result).to_string())
+}
+
 pub(crate) async fn run(app: &Shared, key: String, project: String, tool: String, value: Value) -> Result<String, String> {
+    if matches!(tool.as_str(), config_changes::PREVIEW | config_changes::PROPOSE) {
+        return configuration(app, key, project, tool, value).await;
+    }
     if tool == super::design_gates::RECORD {
         let task = store(app, move |tx| {
             let run = run_of(tx, &key, &project, &tool)?;
@@ -132,7 +160,7 @@ pub(crate) async fn run(app: &Shared, key: String, project: String, tool: String
         }).await?;
         if let Some(card) = card { crate::tasks::api::told(app, &card); }
         app.supervisor.wake();
-        return Ok("Reflection proposals recorded for the owner.".into());
+        return Ok("Reflection recorded with its configuration proposals.".into());
     }
     if tool == "post_incident_answer" {
         #[derive(Deserialize)]

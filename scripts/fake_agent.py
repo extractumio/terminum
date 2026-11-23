@@ -94,10 +94,14 @@ def main():
         if case["kind"] == "reflection":
             call("hold", signal="fixture", kind="pause_dispatch", reason="Reflection fixture.")
             call("run_task", id="TERM-1", agent="Fixture")
+            change = {"detector": "flow.failed_repeat", "action": {"operation": "owner_review", "target": "charter"}}
+            if case["subject_id"] == "config-tune":
+                change["action"] = {"operation": "tune", "threshold": {"absolute": 2.5}}
+            preview = decoded(call("replay_config_change", **change))
+            adopted = decoded(call("propose_config_change", change=change, replay=preview["replay"]))
             report = dict(missed="No earlier evidence was recorded.", noise="One repeated rule fired.",
                           wrong="The timeline shows the recorded trigger.",
-                          proposals=[{"change": "Review the observed threshold.",
-                                      "replay": "Compare on the retained timeline.", "evidence": [1]}])
+                          proposals=[{"change_id": adopted["change"], "evidence": [1]}])
             call("record_reflection", **{**report, "proposals": [{**report["proposals"][0], "evidence": [9999]}]})
             if "alert_wrong" in case["triggers"]:
                 measured = next(row for row in case["agent_rates"] if row["task_type"] == "Bug")

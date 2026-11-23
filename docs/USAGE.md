@@ -659,9 +659,39 @@ cost uses priced runs. An interval and a sample size accompany each measured
 rate. Fewer than 30 observations are advisory only. Return data is unavailable
 when integration is off. A routing proposal opens a decision card for the owner.
 
+#### Supervisor configuration changes
+
+Advisor, Operator and independent reflection rounds can call
+`replay_config_change` with a detector ID and a typed action. Pass the returned
+replay unchanged to `propose_config_change`. Terminum reruns it before accepting
+the change. The replay shows firing counts over retained inputs and identifies
+the weeks with labels. It gives a quality count only for exact replay matches
+with a retained judgment. Snapshot and counter history starts with the first
+retained sample for that detector.
+
+Open **Decisions and reports → Configuration changes** for the diff, replay and
+**Revert change**. A tune within its band applies automatically unless the replay
+shows a drop over 30% since the detector's prior or pre-tuning configuration.
+Changes to protected detectors, open breakers and larger coverage reductions wait
+for an owner decision. Use **Apply this change** on a detector decision card.
+Paging, charter and surface-map requests direct you to the owner controls. A newly
+enabled detector records shadow findings. Once three distinct findings from the
+trial have verdicts in the weekly review, use **Promote to Live**. An engine
+request goes to the **Engine project** selected in Supervisor settings. With no
+destination selected, the request waits for the owner in the source project.
+
+A mute records its owner, reason and expiration. Temporary shadow and weekly-only
+delivery use the same mute rules. A full pause, protected detector, mute over
+two weeks or recent renewal needs owner approval. When the mute expires, the
+detector resumes its prior delivery. A live detector with no acted-on findings
+for eight weeks appears only in the weekly review. After sixteen weeks the review
+proposes removal for the owner to consider. T3 and level 3 detectors are exempt.
+
 #### Signed-in Supervisor API
 
 All routes below are relative to `/api/task-projects/<ID>/supervisor`.
+`POST /config/<change>/revert` and `POST /config/<change>/promote` take an empty
+JSON object and use the versioned change shown on the Supervisor screen.
 
 | Request | Result |
 |---|---|

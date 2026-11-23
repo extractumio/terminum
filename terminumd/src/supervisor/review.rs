@@ -186,6 +186,12 @@ pub(crate) fn complete(tx: &Transaction, task: &ops::Task, project: &str, by: &s
         let body = match index {
             0 => super::review_data::decisions(tx, project, at)?,
             5 => super::review_data::bottlenecks(tx, project, at)?,
+            7 => {
+                let mut body = words[*start..end].split_once('\n').map_or("", |(_, body)| body).to_owned();
+                let changes = super::config_changes::weekly(tx, project, at)?;
+                if !changes.is_empty() { body.push_str(&format!("\n\n### Configuration\n\n{changes}")); }
+                body.trim().to_owned()
+            }
             8 => "Use the verdict keys below the review on the Supervisor screen.".into(),
             _ => { document.push_str(words[*start..end].trim_end()); document.push_str("\n\n"); continue; }
         };
