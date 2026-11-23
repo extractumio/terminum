@@ -1240,7 +1240,8 @@ Scenario: AC-261 failure — release not found
 Scenario: AC-262 happy path — optional metric and closed output
   Given the owner adds a product measure and the quarantined reader receives issue text
   When the probe and reader complete
-  Then the external series uses its guard and the reader yields only allowed categories and counts; a resulting task carries those fields, a link and an outside mark
+  Then the external series shows the probe name and uses its guard independently of the seven-indicator verdict
+  And the reader yields only allowed categories and counts; a resulting task carries those fields, a link and an outside mark
 
 Scenario: AC-262 edge — human promotion
   Given an outside-marked task is waiting
@@ -1250,7 +1251,7 @@ Scenario: AC-262 edge — human promotion
 Scenario: AC-262 failure — unexpected free text or tool request
   Given the quarantined input asks to run a command or the reader emits a free-text field
   When the reader runs and output is validated
-  Then it has no tools, and no outside sentence reaches a task, comment or case file
+  Then it has no tools, and no outside sentence reaches a task, comment, case file or signal
 ```
 
 ### AC-263 — Multiple projects [SHOULD / P1]
@@ -1332,7 +1333,7 @@ The existing mechanisms in §3 provide inputs or precedents for these open gaps.
 | AC-234 | Talk context depends on AC-244. Investigation launches require local pane ancestry. |
 | AC-237 | Weekly review admission and its decision card depend on AC-242. Token caps are enforced when a usage report reaches the daemon. |
 | AC-238 | Weekly reporting depends on AC-242. Verifying a charter breach depends on the inputs in AC-213. |
-| AC-239 | The outside-text eligibility gate also depends on AC-262. |
+| AC-239 | Auto-Dispatcher checks the task's outside mark and human move under AC-262. |
 | AC-240 | Decision proposals wait for a checked finding, then qualifying cards open and the remaining decisions go to the weekly list. |
 | AC-241 | The collector retains a single ordinary comment per signal and task and uses the existing hook notice. |
 | AC-242 | A strong-tier selection creates a Routines schedule. The review's stored batch supplies the verdict keys. |
@@ -1347,7 +1348,7 @@ The existing mechanisms in §3 provide inputs or precedents for these open gaps.
 | AC-252 | One bounded review workflow per task design, with distinct T3 critics and an authenticated owner choice. |
 | AC-260 | Independent daily Git, gate and owner-approved command probes, bounded output and failure signals. |
 | AC-261 | Containing-release lead time, cadence, quick patches, recorded owner-act kinds and priced allocation. |
-| AC-262 | Quarantined reader and human task eligibility. |
+| AC-262 | Guarded outside indicators, a local tool-free reader and human task eligibility. |
 | AC-263 | Project templates, shared line and data isolation. |
 
 ## 8. Recommendation and ownership
@@ -1473,7 +1474,7 @@ A signed-in switch starts a scan within seconds: read available integrations, co
 
 Investigations and triggered reflections are requested by code, through Dispatcher's gate, on kept slots. Investigate accepts any signal or incident subject to slot and budget. Weekly review can nominate an investigation. A round with an active fingerprint suppresses duplicate launches, and a repeat of a signal starts a round only when its state changes (raised, recurred, a higher level or new evidence); waiters go in impact order. Review priority is by tier. The case file includes the relevant charter excerpt, signal or question, evidence rows and measures, baselines, matching register problems, rulings and indexed memory, tool scope and remaining budget. Task excerpts are capped and marked as data. Only quarantined closed-list fields may be included from outside the project.
 
-A bootstrap prompt can read `Supervisor case case_0042. Read the case file and report through the Supervisor tools.` The case ID is the only variable data pasted. A role tool never types the prompt. Dispatcher types it through its §9 gate into the marked round pane, enforces the time budget and releases the slot (terminum-dispatcher.md §9). The result is a typed finding or review, never a transcript. A subagent has a brief, typed result, deadline and budget. Sub-agents where judgment is needed: read-only investigator, architecture critic, product analyst, tool-free quarantined reader, independent critic; none standing.
+A bootstrap prompt can read `Supervisor case case_0042. Read the case file and report through the Supervisor tools.` The case ID is the only variable data pasted. A role tool never types the prompt. Dispatcher types it through its §9 gate into the marked round pane, enforces the time budget and releases the slot (terminum-dispatcher.md §9). The result is a typed finding or review, never a transcript. A subagent has a brief, typed result, deadline and budget. Sub-agents where judgment is needed: read-only investigator, architecture critic, product analyst and independent critic. The quarantined reader runs locally on its own input as described under Probes, isolation and logging. None is standing.
 
 ### Budgets, register and holds
 
@@ -1572,7 +1573,25 @@ Version every accepted change and record its one-key revert. A project-scoped re
 
 An owner-set probe is read-only, idempotent and bounded by time and output size. Run with a fixed environment and parse only metric lines matching name, numeric value, unit, timestamp and allowed dimensions. For example, `{"metric":"product.active_workspaces","value":63,"unit":"count","at":1800000120,"dims":{"plan":"standard"}}`. Malformed output, failure and timeout raise a signal. Standard probes read local Git and gate records. Custom commands use the local project directory and a fixed locale, timezone and PATH, with five seconds and 64 KiB of stdout. The same-user security boundary makes read-only and idempotent behavior an owner contract. Retain checked samples and availability for 90 days. A probe detector can replay only from the first retained sample of its source. Optional project probes can supply guarded product series.
 
-Raw outside text goes to a tool-free reader. Accept only closed categories such as theme, kind and sentiment, plus counts and a validated reference link. No outside prose passes into tasks, comments or case files. An outside-marked task cannot enter Auto-Dispatcher until moved by a human. For project reuse, only general detector definitions and lessons cross to the engine board. The owner can share the line and quiet hours across projects, with incidents ordered by level. Private charter, ledger, register, case files and baselines stay scoped to the project and out of tracked files. The threat model in [SECURITY.md](../../SECURITY.md) describes the residual access of a process running as the same user.
+Each outside indicator names two undimensioned series from one approved probe. The
+latest point in each week supplies the four-week averages and weekly noise. Missing
+weeks and inconsistent units withhold the comparison. The guard uses its own direction.
+The scoreboard shows these rows beside the seven built-in indicators. The seven alone
+determine the product verdict.
+
+Only approved probes with an owner-set HTTPS reference base can supply raw outside
+text. Each item gets one in-memory pass through a tool-free keyword reader. The
+projection is theme, kind, sentiment and report count. The server appends the numeric
+reference to the trusted base and keeps the resulting link without fetching it. A
+transaction records the reference and creates at most one outside-marked review task
+per project and link. Raw prose stays out of retained probe data, tasks, comments,
+case files and signals. Auto-Dispatcher and the Supervisor require a human column
+move before they can start the task. For project reuse, only general detector
+definitions and lessons cross to the engine board. The owner can share the line and
+quiet hours across projects, with incidents ordered by level. Private charter, ledger,
+register, case files and baselines stay scoped to the project and out of tracked files.
+The threat model in [SECURITY.md](../../SECURITY.md) describes the residual access of a
+process running as the same user.
 
 The ledger is the audit record. Log stable event names with project and record IDs, decision, counts and reason codes; omit task bodies, command input, credentials and transcripts. For example, `level=warn event=supervisor.channel_failed project=API incident=27 channel=2 reason=timeout`. Operator-visible health is the last successful beat, skipped sources, refused findings, active incidents and holds, and both budgets. Bound collection batches and probe output, keep detector work off the async workers, enforce the minute incident target with an independent clock and use private seeded stores, tmux and command stand-ins for tests.
 
@@ -1648,5 +1667,5 @@ Enable none of the runtime cases by default. The stages below list the cases in 
 - [x] AC-259 — `ac259_quarterly_audit_unedited_result` checks cadence, independence, budget and exact publication. `scripts/e2e_supervisor_reflection.py` exercises the real scheduled run and its tool scope.
 - [x] AC-260 — `ac260_probe_valid_invalid_timeout` checks approval, bounds, failures and discarded stale results. `ac260_standard_architecture_and_gate_detectors` checks real Git and gate inputs. `e2e_supervisor_probes.py` exercises the signed-in routes and independent collector.
 - [x] AC-261 — `ac261_git_release_metrics_and_owner_split` checks commit ancestry, tags, the owner split and allocation. `ac261_only_an_own_verify_records_its_outcome` distinguishes Verify from Prepare. `e2e_supervisor_probes.py` checks the live scoreboard with integration on and off.
-- [ ] AC-262 — Planned test: `ac262_outside_fields_and_dispatch_gate` covers quarantined reader and human task eligibility.
+- [x] AC-262 — `ac262_outside_fields_and_deduplication` checks the closed reader projection, reference validation and duplicate suppression. `ac262_outside_indicator_uses_its_probe_and_guard` checks guard verdicts and probe replacement. `ac262_outside_task_needs_a_human_move_before_a_round` checks Auto-Dispatcher's round. `e2e_supervisor_probes.py` checks live collection and `webSupervisor` checks the settings and scoreboard in the browser.
 - [ ] AC-263 — Planned test: `ac263_two_project_attachment_and_line` covers project templates, shared line and data isolation.

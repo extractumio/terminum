@@ -43,28 +43,68 @@ function allocation(edit, draft) {
 
 function outsideIndicators(edit, existing) {
   const entries = el("div", "sv-stack");
-  const add = (name = "", probe = "") => {
-    const title = text(name), id = literal(text(probe));
-    title.placeholder = "Indicator";
-    id.placeholder = "Probe ID";
-    const record = stack(grid(row("Indicator", title), row("Probe ID", id)),
+  const reads = new WeakMap();
+  const direction = [["up", "Higher is better"], ["down", "Lower is better"]];
+  const add = (name = "", saved = {}) => {
+    const legacy = typeof saved === "string";
+    const title = text(name), id = literal(text(legacy ? saved : saved.probe));
+    const metric = literal(text(saved.metric)), guard = literal(text(saved.guard));
+    const change = select(direction, saved.higher_is_better === false ? "down" : "up");
+    const guardChange = select(direction, saved.guard_higher_is_better === true ? "up" : "down");
+    const record = stack(grid(row("Indicator", title), row("Probe ID", id),
+      row("Metric ID", metric), row("Metric direction", change),
+      row("Guard metric ID", guard), row("Guard direction", guardChange)),
       actions(button("textkey", "Remove indicator", () => { record.remove(); addKey.focus(); })));
     entries.append(record);
+    reads.set(record, (pairs) => {
+      const label = title.value.trim(), probe = id.value.trim();
+      if (legacy && title.value === name && id.value === saved && !metric.value && !guard.value
+        && change.value === "up" && guardChange.value === "down") {
+        if (pairs.has(name)) fieldError(title, "Outside indicator", "Use each indicator name once.");
+        pairs.set(name, saved);
+        return;
+      }
+      if (pairs.has(label)) fieldError(title, "Outside indicator", "Use each indicator name once.");
+      for (const [input, label] of [[title, "Indicator name"], [id, "Probe ID"], [metric, "Metric ID"], [guard, "Guard metric ID"]]) {
+        if (!input.value.trim()) fieldError(input, label, "Enter a value.");
+      }
+      if (metric.value.trim() === guard.value.trim()) fieldError(guard, "Guard metric ID", "Choose a different metric.");
+      pairs.set(label, { probe, metric: metric.value.trim(), higher_is_better: change.value === "up",
+        guard: guard.value.trim(), guard_higher_is_better: guardChange.value === "up" });
+    });
     return title;
   };
   const addKey = button("textkey", "Add outside indicator", () => add().focus());
-  for (const [name, probe] of Object.entries(existing)) add(name, probe);
+  for (const [name, saved] of Object.entries(existing)) add(name, saved);
   edit.raw((out) => {
-    const fields = [...entries.children].map((record) => record.querySelectorAll("input"));
-    if (JSON.stringify(fields.map(([title, probe]) => [title.value, probe.value])) === JSON.stringify(Object.entries(existing))) return;
     const pairs = new Map();
-    for (const [title, probe] of fields) {
-      const name = title.value.trim(), id = probe.value.trim();
-      if (!name || !id) fieldError(!name ? title : probe, "Outside indicator", "Enter an indicator name and a probe ID.");
-      if (pairs.has(name)) fieldError(title, "Outside indicator", "Use each indicator name once.");
-      pairs.set(name, id);
-    }
+    for (const record of entries.children) reads.get(record)(pairs);
     out.charter.outside_indicators = Object.fromEntries(pairs);
+  });
+  return stack(entries, actions(addKey));
+}
+
+function feedbackProbes(edit, existing) {
+  const entries = el("div", "sv-stack");
+  const add = (probe = "", base = "") => {
+    const id = literal(text(probe)), link = literal(text(base));
+    const record = stack(grid(row("Feedback probe ID", id), row("HTTPS reference base", link)),
+      actions(button("textkey", "Remove feedback probe", () => { record.remove(); addKey.focus(); })));
+    entries.append(record);
+    return id;
+  };
+  const addKey = button("textkey", "Add feedback probe", () => add().focus());
+  for (const [probe, base] of Object.entries(existing)) add(probe, base);
+  edit.raw((out) => {
+    const pairs = new Map();
+    for (const record of entries.children) {
+      const [id, link] = record.querySelectorAll("input");
+      const probe = id.value.trim(), base = link.value.trim();
+      if (!probe || pairs.has(probe)) fieldError(id, "Feedback probe ID", "Enter a unique probe ID.");
+      if (!base.startsWith("https://") || !base.endsWith("/")) fieldError(link, "HTTPS reference base", "Enter an HTTPS address ending in a slash.");
+      pairs.set(probe, base);
+    }
+    if (pairs.size || "feedback" in out.probes) out.probes.feedback = Object.fromEntries(pairs);
   });
   return stack(entries, actions(addKey));
 }
@@ -139,10 +179,12 @@ export function preferences(view, agents, { request, run }) {
   const node = stack(grid(level, engine), section("Tier agents and budgets", hint("With no tier agents selected, the Supervisor runs on code alone."),
     grid(...tiers), el("h3", null, "Budgets"), hint("Budgets set the limits for judgment rounds and fixes when the Supervisor admits work."), grid(...budgets)),
   charter(edit, saved), section("Indicators", part("div", "sv-checks", ...indicators),
-    hint("Outside indicators will use an approved probe to supply their measurements."), outsideIndicators(edit, saved.charter.outside_indicators)),
+    hint("An approved custom probe supplies the metric and its guard."), outsideIndicators(edit, saved.charter.outside_indicators)),
   section("Surface map", hint("Enter one pattern or phrase per line. An edit or removal on a T3 path requires owner sign-off. An addition on the same path requires a T2 review."),
     ...surfaces, actions(preview), previewError, previewResult),
   detectors(edit, saved, view.detector_defaults),
-  section("Standard probes", hint("Choose which standard probes may collect data."), actions(...probes), grid(fileLimit)));
+  section("Standard probes", hint("Choose which standard probes may collect data."), actions(...probes), grid(fileLimit)),
+  section("Feedback probes", hint("Use an approved custom probe and the HTTPS prefix for its numbered references."),
+    feedbackProbes(edit, saved.probes.feedback ?? {})));
   return { node, read: () => edit.read(structuredClone(saved)) };
 }

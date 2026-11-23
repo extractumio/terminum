@@ -97,3 +97,8 @@ pub(super) fn mark_card(tx: &Transaction, task: &Task) -> Result<(), String> {
     tx.execute("INSERT OR IGNORE INTO supervisor_task_marks (task, project, estimate) VALUES (?1, ?2, 0)",
         (&task.key, &task.project)).map(drop).map_err(sql)
 }
+
+pub(super) fn mark_outside(tx: &Transaction, task: &Task) -> Result<(), String> {
+    tx.execute("INSERT INTO supervisor_task_marks (task, project, estimate, outside) VALUES (?1, ?2, 0, 1)",
+        (&task.key, &task.project)).map(drop).map_err(sql)
+}

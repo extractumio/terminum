@@ -50,6 +50,25 @@ fn round(tx: &Transaction) -> (String, Round) {
 }
 
 #[test]
+fn ac262_outside_task_needs_a_human_move_before_a_round() {
+    store("auto-outside").with(|tx| {
+        let outside = task(tx, "Outside feedback fixture", "P2");
+        tx.execute("INSERT INTO supervisor_task_marks (task, project, estimate, outside) VALUES (?1, 'api', 0, 1)",
+            [&outside.key]).map_err(sql)?;
+        assert!(setting(tx).supervisor_tasks);
+        assert_eq!(decide(tx, "api", NOW)?, Due::Nothing);
+        let agent = ops::agent_named(tx, "manager:api:fixture".into(), "Manager fixture")?;
+        for column in ["WAIT FOR HUMAN", "TODO"] { ops::move_to(tx, &agent, &outside.id, column, NOW)?; }
+        ops::log(tx, &outside.key, HUMAN, "comment", "Human comment fixture", None, NOW)?;
+        ops::move_to(tx, HUMAN, &outside.id, "TODO", NOW)?;
+        assert_eq!(decide(tx, "api", NOW)?, Due::Nothing, "an agent move, a human comment and a no-op move cannot promote");
+        for column in ["WAIT FOR HUMAN", "TODO"] { ops::move_to(tx, HUMAN, &outside.id, column, NOW)?; }
+        assert_eq!(round(tx).1.candidates, [outside.id]);
+        Ok(())
+    }).unwrap();
+}
+
+#[test]
 fn ac170_a_round_is_made_for_the_free_slots_and_the_tasks_nobody_holds() {
     store("auto-round").with(|tx| {
         assert_eq!(decide(tx, "api", NOW)?, Due::Nothing, "nothing in TODO");

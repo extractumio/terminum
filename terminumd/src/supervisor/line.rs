@@ -77,10 +77,7 @@ fn origin(text: &str) -> Option<String> {
     let valid = if let Some(ip) = host.strip_prefix('[').and_then(|h| h.strip_suffix(']')) {
         ip.parse::<Ipv6Addr>().is_ok()
     } else {
-        host.trim_end_matches('.').split('.').all(|label| {
-            !label.is_empty() && label.len() <= 63 && !label.starts_with('-') && !label.ends_with('-')
-                && label.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
-        })
+        super::dns_labels(host.trim_end_matches('.'))
     };
     if !valid || !matches!(uri.path(), "" | "/")
         || (authority.as_str() != host && authority.port_u16().is_none())

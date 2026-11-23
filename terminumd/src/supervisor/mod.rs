@@ -46,6 +46,8 @@ mod probe_git;
 mod probe_arch;
 mod probe_gate;
 pub(crate) mod probes;
+mod outside_feedback;
+mod outside_indicators;
 mod probe_rules;
 mod integration_rules;
 mod line_queue;
@@ -109,6 +111,13 @@ pub(crate) fn task_created(tx: &rusqlite::Transaction, author: &str, task: &crat
 }
 
 const SCHEMA: usize = crate::tasks::store::SCHEMA_VERSION;
+
+fn dns_labels(host: &str) -> bool {
+    host.split('.').all(|label| {
+        !label.is_empty() && label.len() <= 63 && !label.starts_with('-') && !label.ends_with('-')
+            && label.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
+    })
+}
 const DAY: i64 = 86_400;
 const WEEK: i64 = 7 * DAY;
 

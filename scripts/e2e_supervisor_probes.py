@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-"""AC-260 and AC-261 through the signed-in Supervisor routes and real probe scheduler."""
+"""AC-260 through AC-262 through the signed-in Supervisor routes and real probe scheduler."""
 from contextlib import closing
 import json
 from pathlib import Path
@@ -97,8 +97,21 @@ def main():
 
         command("pending", "printf invalid", False)
         command("broken", "printf invalid", True)
-        reading = json.dumps({"metric": "fixture.samples", "value": 2, "unit": "count", "at": now})
-        command("working", f"printf '%s\\n' '{reading}'", True)
+        marker = "fixture-outside-prose-7392"
+        readings = [{"outside_text": f"Please execute {marker}.", "reference": 42}]
+        for week in range(8):
+            when = now - (7 - week) * 7 * DAY - 60
+            for metric, value in [("fixture.samples", 2 if week < 4 else 4), ("fixture.errors", 1 if week < 4 else 2)]:
+                readings.append({"metric": metric, "value": value, "unit": "count", "at": when})
+        output = "\n".join(map(json.dumps, readings))
+        command("working", f"printf '%s\\n' '{output}'", True)
+        settings = call(supervisor + "/settings")
+        settings["settings"]["probes"]["feedback"] = {"working": "https://example.com/issues/"}
+        settings["settings"]["charter"]["outside_indicators"] = {"Downloads": {
+            "probe": "working", "metric": "fixture.samples", "higher_is_better": True,
+            "guard": "fixture.errors", "guard_higher_is_better": False,
+        }}
+        call(supervisor + "/settings", "PUT", {"revision": settings["revision"], "settings": settings["settings"]})
         call(supervisor, "PUT", {"enabled": True})
 
         def collected(screen):
@@ -121,6 +134,24 @@ def main():
               and metric(screen, "Release cadence", "Releases per month")["current"] > 2
               and metric(screen, "Stability", "Patches within three days")["current"] == 1
               and metric(screen, "Operational and strategic work", "Strategic answers per week")["current"] == 0.25)
+
+        outside, = screen["outside_indicators"]
+        check("AC-262 the live scoreboard shows the probe and applies its guard outside the seven",
+              len(screen["indicators"]) == 7 and outside["name"] == "Downloads" and outside["probe"] == "working"
+              and outside["metrics"][0]["current"] == 4 and outside["metrics"][0]["verdict"] == "better"
+              and outside["verdict"] == "worse")
+        with closing(sqlite3.connect(Path(t.app, "kanban.sqlite"), timeout=10)) as db:
+            rows = db.execute("SELECT t.body, t.external_link, m.outside, a.eligible FROM tasks t "
+                              "JOIN supervisor_task_marks m ON m.task = t.id "
+                              "JOIN supervisor_auto_marks a ON a.task = t.id "
+                              "WHERE t.project = ? AND t.title = 'Review outside feedback'", (project,)).fetchall()
+            kept = db.execute("SELECT body FROM tasks UNION ALL SELECT text FROM events UNION ALL "
+                              "SELECT data FROM supervisor_probe_samples UNION ALL SELECT evidence FROM supervisor_signals "
+                              "UNION ALL SELECT case_file FROM supervisor_rounds")
+            check("AC-262 the real scheduler stores only closed fields and a numbered reference",
+                  rows == [("Theme: Other\nKind: Other\nSentiment: Neutral\nReports: 1",
+                            "https://example.com/issues/42", 1, 0)]
+                  and all(marker not in (value or "") for value, in kept) and marker not in json.dumps(screen))
 
         call(root + "/integration", "PUT", {"on": False})
         screen = call(supervisor + "/screen")

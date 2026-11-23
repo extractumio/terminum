@@ -495,7 +495,7 @@ use local data and do not fetch.
 Approved commands run in the project's local directory with `/usr/bin:/bin`,
 a fixed locale and timezone, and an empty inherited environment. They run as the
 server user. Approve only commands that read data and produce the same result for
-the same inputs. Each line must be a JSON object containing `metric`, finite
+the same inputs. Each metric line must be a JSON object containing `metric`, finite
 numeric `value`, `unit`, and Unix seconds `at`. Optional `dims` maps short
 identifiers to short identifiers. A command has five seconds and 64 KiB of
 standard output. A failed, timed-out, or invalid probe raises a signal. A missing
@@ -509,6 +509,23 @@ release within 72 hours. The time to DONE remains available from task history.
 The owner-work indicator uses the recorded question kind and reports older unclassified
 answers. The weekly review shows priced usage by task type and untyped spend, with
 target shares when configured.
+
+In **Indicators**, use **Add outside indicator** to name an approved custom probe,
+its metric and its guard metric. Set the favorable direction for each metric. The
+scoreboard shows the probe name and compares the latest reading from each week across
+two four-week periods. Supply undimensioned readings in consistent units. A worsening
+guard cancels a favorable move. The seven project indicators determine the project verdict.
+
+In **Feedback probes**, add the ID of an approved custom probe and an HTTPS reference
+base ending in a slash, such as `https://example.com/issues/`. The command can emit
+feedback objects alongside metric lines. Each feedback object has `outside_text` and
+a positive integer `reference`, for example `{"outside_text":"The navigation is confusing.","reference":42}`.
+The local reader uses English keywords to assign a theme, kind and sentiment from fixed
+lists. Each new reference creates one **Review outside feedback** task with those fields,
+the report count and a link formed from the base and reference. The server discards the
+prose. Move the task between columns to let Auto-Dispatcher consider it under its usual
+settings. A probe may emit up to 32 feedback objects per sample and may output nothing
+when there is no new feedback.
 
 In **Surface map**, enter repository-relative patterns, one per line. Use `*` and `?`
 within a path segment and `**` as a whole segment for any depth. T1 identifies internal

@@ -12,7 +12,7 @@ use tokio::time::{MissedTickBehavior, interval, timeout};
 use crate::{app::Shared, http::off, tasks::{integration::local_dir, ops::{now, project_place, rows, sql}}};
 
 use super::{DAY, SCHEMA, catalog, flow::project_events, probe_arch::{self, Integrated},
-    probe_command::{self, Failure}, probe_gate, probe_git};
+    outside_feedback::{self, ReferenceBase}, probe_command::{self, Failure}, probe_gate, probe_git};
 
 pub(super) const GIT: &str = "git";
 pub(super) const ARCH: &str = "git_architecture";
@@ -37,17 +37,45 @@ struct Metric {
     dims: BTreeMap<String, String>,
 }
 
-fn identifier(s: &str, limit: usize) -> bool {
-    !s.is_empty() && s.len() <= limit && s.bytes().all(|b| b.is_ascii_alphanumeric() || b"_.-".contains(&b))
-        && crate::sent::redact(s) == s
+pub(super) fn identifier(s: &str, limit: usize) -> bool {
+    identifier_syntax(s, limit) && crate::sent::redact(s) == s
 }
 
-fn metrics(bytes: &[u8], at: i64) -> Result<Vec<Metric>, Failure> {
+fn identifier_syntax(s: &str, limit: usize) -> bool {
+    !s.is_empty() && s.len() <= limit && s.bytes().all(|b| b.is_ascii_alphanumeric() || b"_.-".contains(&b))
+}
+
+pub(super) fn probe_id(s: &str) -> bool {
+    !matches!(s, "." | "..") && identifier_syntax(s, 80)
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum ProbeLine {
+    Metric(Metric),
+    Feedback(outside_feedback::Input),
+}
+
+#[derive(Debug, PartialEq)]
+struct Observation {
+    data: String,
+    reports: Vec<outside_feedback::Report>,
+}
+
+fn custom_output(bytes: &[u8], at: i64, feedback: bool) -> Result<Observation, Failure> {
     let text = std::str::from_utf8(bytes).map_err(|_| Failure::Invalid)?;
     let mut rows = Vec::new();
+    let mut reports = Vec::new();
     let mut identities = BTreeSet::new();
     for line in text.lines() {
-        let row: Metric = serde_json::from_str(line).map_err(|_| Failure::Invalid)?;
+        let row = match serde_json::from_str(line).map_err(|_| Failure::Invalid)? {
+            ProbeLine::Metric(row) => row,
+            ProbeLine::Feedback(input) if feedback && reports.len() < outside_feedback::MAX_REPORTS => {
+                reports.push(outside_feedback::read(input)?);
+                continue;
+            }
+            ProbeLine::Feedback(_) => return Err(Failure::Invalid),
+        };
         if !identifier(&row.metric, 80) || !identifier(&row.unit, 24) || !row.value.is_finite()
             || !(1..=at).contains(&row.at) || row.dims.len() > 8
             || row.dims.iter().any(|(k, v)| !identifier(k, 32) || !identifier(v, 80))
@@ -57,8 +85,9 @@ fn metrics(bytes: &[u8], at: i64) -> Result<Vec<Metric>, Failure> {
         }
         rows.push(row);
     }
-    if rows.is_empty() { return Err(Failure::Invalid); }
-    Ok(rows)
+    if rows.is_empty() && !feedback { return Err(Failure::Invalid); }
+    let data = serde_json::to_string(&rows).map_err(|_| Failure::Invalid)?;
+    Ok(Observation { data, reports })
 }
 
 #[derive(Clone, PartialEq, Eq)]
@@ -66,7 +95,7 @@ enum Source {
     Git,
     Architecture(Option<u32>),
     Gate,
-    Custom { id: String, command: String },
+    Custom { id: String, command: String, feedback: Option<ReferenceBase> },
 }
 
 impl Source {
@@ -86,6 +115,7 @@ impl Source {
         if let Some(dir) = dir { hash.update(dir.as_os_str().as_encoded_bytes()); }
         hash.update(b"\0");
         match self {
+            // The feedback base affects publication, and Job::eligible checks it independently.
             Self::Custom { command, .. } => hash.update(command),
             Self::Architecture(Some(cap)) => hash.update(cap.to_le_bytes()),
             _ => (),
@@ -118,9 +148,27 @@ fn standard_sources(tx: &Transaction, project: &str) -> Result<Vec<Source>, Stri
 
 fn scope(tx: &Transaction, project: &str) -> Result<Scope, String> {
     let mut sources = standard_sources(tx, project)?;
-    sources.extend(rows(tx, "SELECT probe, command FROM supervisor_probe_commands WHERE project = ?1 ORDER BY probe",
-        [project], |r| Ok(Source::Custom { id: format!("custom:{}", r.get::<_, String>(0)?), command: r.get(1)? }))?);
+    sources.extend(custom_sources(tx, project)?);
     Ok(Scope { dir: local_project_dir(tx, project)?, sources })
+}
+
+fn custom_sources(tx: &Transaction, project: &str) -> Result<Vec<Source>, String> {
+    rows(tx, "SELECT p.probe, p.command, f.value FROM supervisor_probe_commands p
+        LEFT JOIN supervisor_settings s ON s.project = p.project
+        LEFT JOIN json_each(s.pack, '$.probes.feedback') f ON f.key = p.probe
+        WHERE p.project = ?1 ORDER BY p.probe", [project],
+        |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, Option<String>>(2)?)))?
+        .into_iter().map(|(probe, command, base)| {
+            let feedback = base.map(ReferenceBase::from_saved).transpose()?;
+            Ok(Source::Custom { id: format!("custom:{probe}"), command, feedback })
+        }).collect()
+}
+
+pub(super) fn custom_configs(tx: &Transaction, project: &str) -> Result<BTreeMap<String, String>, String> {
+    let dir = local_project_dir(tx, project)?;
+    Ok(custom_sources(tx, project)?.into_iter().filter_map(|source| {
+        source.name().strip_prefix("custom:").map(|probe| (probe.to_owned(), source.key(dir.as_deref())))
+    }).collect())
 }
 
 struct Job {
@@ -186,19 +234,23 @@ async fn encode(data: impl Serialize + Send + 'static) -> Result<String, Failure
     }).await.map_err(|_| Failure::Invalid)?
 }
 
-async fn collect(source: &Source, dir: Option<&Path>, at: i64, integrated: Vec<Integrated>) -> Result<String, Failure> {
+async fn collect(source: &Source, dir: Option<&Path>, at: i64, integrated: Vec<Integrated>) -> Result<Observation, Failure> {
     let dir = dir.ok_or(Failure::Unavailable)?;
     if !tokio::fs::metadata(dir).await.is_ok_and(|info| info.is_dir()) { return Err(Failure::Unavailable); }
     if integrated.len() > 2048 { return Err(Failure::Output); }
-    match source {
+    let data = match source {
         Source::Git => encode(probe_git::collect(dir, at, integrated).await?).await,
         Source::Architecture(cap) => encode(probe_arch::collect(dir, at, integrated, *cap).await?).await,
         Source::Gate => encode(probe_gate::collect(dir, at).await?).await,
-        Source::Custom { command, .. } => {
+        Source::Custom { command, feedback, .. } => {
             let bytes = probe_command::shell(dir, command, TIMEOUT, LIMIT).await?;
-            encode(metrics(&bytes, at)?).await
+            return tokio::task::spawn_blocking({
+                let enabled = feedback.is_some();
+                move || custom_output(&bytes, at, enabled)
+            }).await.map_err(|_| Failure::Invalid)?;
         }
-    }
+    }?;
+    Ok(Observation { data, reports: Vec::new() })
 }
 
 async fn run_job(app: Shared, job: Job) -> Result<(), String> {
@@ -217,30 +269,37 @@ async fn run_job(app: Shared, job: Job) -> Result<(), String> {
     let result = timeout(Duration::from_secs(28), collect(&job.source, job.dir.as_deref(), at, inputs))
         .await.unwrap_or(Err(Failure::Timeout));
     let writer = app.clone();
-    if off(move || writer.tasks.with(|tx| publish(tx, &job, at, result))).await? {
+    if let Some(tasks) = off(move || writer.tasks.with(|tx| publish(tx, &job, at, result))).await? {
+        if !tasks.is_empty() { crate::tasks::api::told(&app, ""); }
         app.supervisor.wake();
     }
     Ok(())
 }
 
-fn publish(tx: &Transaction, job: &Job, at: i64, result: Result<String, Failure>) -> Result<bool, String> {
-    if !job.eligible(tx)? { return Ok(false); }
+fn publish(tx: &Transaction, job: &Job, at: i64, result: Result<Observation, Failure>) -> Result<Option<Vec<String>>, String> {
+    if !job.eligible(tx)? { return Ok(None); }
     let previous = latest_row(tx, &job.project, job.source.name(), &job.config, at, false)?;
-    let (state, data) = match result {
-        Ok(data) => (MEASURED, Some(data)),
-        Err(error) => (error.code(), None),
+    let (state, data, reports) = match result {
+        Ok(observation) => (MEASURED, Some(observation.data), observation.reports),
+        Err(error) => (error.code(), None, Vec::new()),
     };
     let id = tx.query_row("INSERT OR IGNORE INTO supervisor_probe_samples (project, source, config, at, state, data)
         VALUES (?1, ?2, ?3, ?4, ?5, ?6) RETURNING id",
         (&job.project, job.source.name(), &job.config, at, state, data), |r| r.get::<_, i64>(0)).optional().map_err(sql)?;
-    let Some(id) = id else { return Ok(false); };
+    let Some(id) = id else { return Ok(None); };
+    let mut tasks = Vec::new();
+    if let Source::Custom { feedback: Some(base), .. } = &job.source {
+        for report in reports {
+            tasks.extend(outside_feedback::publish(tx, &job.project, base, report, at)?);
+        }
+    }
     let source = if previous.is_none_or(|row| row.state != state) { "supervisor_probe_status" } else { "supervisor_probe_samples" };
     tx.execute("INSERT INTO supervisor_changes (project, source, source_id) VALUES (?1, ?2, ?3)",
         (&job.project, source, id.to_string())).map_err(sql)?;
     tx.execute("DELETE FROM supervisor_probe_samples WHERE id IN (
         SELECT id FROM supervisor_probe_samples WHERE project = ?1 AND at < ?2 ORDER BY at LIMIT 64)",
         (&job.project, at - RETAIN)).map_err(sql)?;
-    Ok(true)
+    Ok(Some(tasks))
 }
 
 pub(crate) async fn run(app: Shared) {

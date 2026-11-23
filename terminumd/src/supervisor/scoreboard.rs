@@ -230,12 +230,7 @@ impl Metric {
         let (before, current) = (measure(&weeks[..4]), measure(&weeks[4..]));
         let series: Vec<_> = weeks.iter().map(|week| measure(std::slice::from_ref(week))).collect();
         let noise = absolute_noise(&series);
-        let verdict = match (before.zip(current), comparison) {
-            (Some((old, now)), Some(up)) if (now - old).abs() > noise + 1e-9 =>
-                if (now > old) == up { Verdict::Better } else { Verdict::Worse },
-            (Some(_), Some(_)) => Verdict::Flat,
-            _ => Verdict::Unmeasured,
-        };
+        let verdict = compare(before, current, noise, comparison);
         Line { name, before, current, noise, verdict, missing, context: comparison.is_none() }
     }
 }
@@ -267,7 +262,16 @@ fn indicator(name: &'static str, guard: &'static str, weeks: &[Week], metrics: V
     Indicator { name, guard, verdict, lines }
 }
 
-fn guarded(verdict: Verdict, guard: Verdict) -> Verdict {
+pub(super) fn compare(before: Option<f64>, current: Option<f64>, noise: f64, comparison: Option<bool>) -> Verdict {
+    match (before.zip(current), comparison) {
+        (Some((old, now)), Some(up)) if (now - old).abs() > noise + 1e-9 =>
+            if (now > old) == up { Verdict::Better } else { Verdict::Worse },
+        (Some(_), Some(_)) => Verdict::Flat,
+        _ => Verdict::Unmeasured,
+    }
+}
+
+pub(super) fn guarded(verdict: Verdict, guard: Verdict) -> Verdict {
     match (verdict, guard) {
         (Verdict::Better, Verdict::Worse) => Verdict::Worse,
         (Verdict::Better, Verdict::Unmeasured) => Verdict::Unmeasured,

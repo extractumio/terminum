@@ -2,7 +2,7 @@
 import { check, runningIn, until } from "./check.mjs";
 import { drawn, fakeBoard, openPage, ORIGIN, SIZES, serveRenderers, shot, THEME } from "./fake.mjs";
 import { surfacePreview } from "./e2e_surface_preview.mjs";
-import { scorecardFixture, checkScorecard, SMALL_RATE, MISSING_RATE } from "./e2e_supervisor_scorecard.mjs";
+import { scorecardFixture, checkScorecard, outsideSettings, checkOutsideSave, SMALL_RATE, MISSING_RATE } from "./e2e_supervisor_scorecard.mjs";
 import { configFixture, checkConfiguration } from "./e2e_supervisor_config.mjs";
 const ROOT = "/api/task-projects/api/supervisor";
 const RULE = "flow.failed_no_reason";
@@ -238,6 +238,7 @@ async function settingsTab(page, { calls, refuseSave }, suffix, phone) {
     }), phone));
   await openGroup(page, "Surface map");
   await surfacePreview(page, panel, calls, suffix, phone);
+  await outsideSettings(page, panel, suffix, phone);
   await openGroup(page, "Charter and allocation");
   const priorities = panel.getByLabel("Priorities, highest first, one per line");
   await priorities.fill("First project priority\nSecond project priority");
@@ -263,8 +264,7 @@ async function settingsTab(page, { calls, refuseSave }, suffix, phone) {
     keep.settings.charter.priorities[1] === "Second project priority" && keep.settings.tiers.small === "mine"
     && keep.settings.charter.surfaces.t3[0] === "src/storage/**" && keep.settings.guardrails.threshold_percent === 54
     && JSON.stringify(keep.settings.detectors) === JSON.stringify(SETTINGS.detectors));
-  check("AC-222 the review date survives a save in a timezone west of UTC",
-    await panel.getByLabel("Review priorities on").inputValue() === "2027-01-15");
+  await checkOutsideSave(panel, keep.settings);
   await page.locator("#supervisoron").click();
   await until(() => page.getByText("Scan complete. Less than three weeks of history.").isVisible());
   await openGroup(page, "Detectors and mutes");
@@ -405,7 +405,7 @@ async function screen(page, suffix, phone) {
     && await reports.getByRole("button", { name: "Wrong" }).isEnabled());
   if (phone) check("AC-242 verdict keys fit a finger on a phone", await useful.evaluate((key) => key.getBoundingClientRect().height >= 40));
   await checkScorecard(page, reports, suffix, LITERAL);
-  await page.locator("#sv-score summary").click();
+  await page.locator("#sv-score summary").filter({ hasText: "Release cadence" }).click();
   await shot(page, `supervisor-probes-${suffix}`);
   await page.locator("#sv-signals summary").first().click();
   const opened = page.locator("#sv-signals details[open]").first();
