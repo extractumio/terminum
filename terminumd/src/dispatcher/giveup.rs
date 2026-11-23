@@ -46,15 +46,16 @@ pub(super) async fn interrupt(app: &Shared, run: &Run, decided: std::time::Insta
         Ok(()) => "Give up stop instruction delivered.".to_string(),
         Err(why) => format!("Give up stop instruction not delivered: {why}."),
     };
-    let run = run.clone();
+    let to_log = run.clone();
     if let Err(why) = store(app, move |tx| {
-        for id in &run.ids {
+        for id in &to_log.ids {
             ops::log(tx, &ops::key_of(tx, id)?, DISPATCHER, "told", &text, None, ops::now())?;
         }
         Ok(())
     }).await {
         tracing::warn!(event = "dispatcher.give_up", error = %why);
     }
+    super::told_all(app, run);
 }
 
 #[cfg(test)]
