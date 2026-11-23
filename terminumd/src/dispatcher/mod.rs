@@ -31,6 +31,7 @@ pub mod subscriptions;
 pub(crate) mod start;
 mod walk;
 pub(crate) mod supervisor_rounds;
+pub(crate) mod supervisor_talk;
 pub mod waits;
 
 use std::collections::{HashMap, HashSet};

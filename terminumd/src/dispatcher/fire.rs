@@ -56,7 +56,10 @@ pub fn prompt(s: &Schedule, task: &str, title: &str, body: &str, again: bool, by
         parts.push(body.to_string());
     }
     parts.push(budget_words(s.budget_seconds));
-    let form = crate::tasks::closeout::short_form();
+    let form = if s.supervisor_review {
+        parts.push(crate::supervisor::review::DIRECTIONS.into());
+        crate::supervisor::review::FORM.iter().map(|(name, what)| format!("\n{name}: {what}")).collect::<String>()
+    } else { crate::tasks::closeout::short_form() };
     parts.push(format!("This is a scheduled run: its result waits on the board for a human to read. When it is done, call {FINISH} with the result in this form, each on its own line:{form}"));
     parts.push(ASK.to_string());
     parts.join("\n\n")
@@ -107,6 +110,12 @@ fn decide(tx: &rusqlite::Transaction, s: &Schedule, now: i64, closed: bool) -> R
     if !closed && let Some(r) = own_idle(tx, s)? {
         return Ok(Next::Close(r.id));
     }
+    if s.supervisor_review && let Err(why) = crate::supervisor::review::can_run(tx, &s.project, now) {
+        if why == crate::supervisor::governor::JUDGMENT_NOTICE {
+            crate::supervisor::review::budget_card(tx, &s.project, now)?;
+        }
+        return skip(tx, why);
+    }
     advance(tx)?;
     // a start that fails at each firing leaves one card, the last: the one before it never ran
     if let Some((old, _)) = schedules::never_started(tx, s)? {
@@ -124,7 +133,7 @@ fn decide(tx: &rusqlite::Transaction, s: &Schedule, now: i64, closed: bool) -> R
 pub(super) fn own_idle(tx: &rusqlite::Transaction, s: &Schedule) -> Result<Option<runs::Run>, String> {
     let Some(a) = agents::in_project(tx, &s.agent, &s.project)? else { return Ok(None) };   // its press says why it cannot start
     let slots = pool::Slots::read(tx)?;
-    let slot = s.active().then_some(pool::Slot::Schedule);
+    let slot = if s.supervisor_review { Some(pool::Slot::Supervisor) } else { s.active().then_some(pool::Slot::Schedule) };
     if slots.check_in(tx, &a, &s.project, slot, None)?.is_none() {
         return Ok(None);
     }
@@ -183,6 +192,7 @@ pub async fn now(app: &Shared, id: &str, who: &str, manager: Option<&str>) -> Re
                 return Ok(Err((r.id, s.key)));
             }
             let now = ops::now();
+            if s.supervisor_review { crate::supervisor::review::can_run(tx, &s.project, now)?; }
             let (task, fire, place) = made(tx, &s, (now, 0), &format!("{by} ran schedule {} now.", s.key), Some(&requester), now)?;
             Ok(Ok((s, task, fire, place)))
         }).await?;

@@ -75,7 +75,9 @@ def ac231_supervisor_tools_pane_and_token(t, call, typed, tool, tmux, page, proj
     manager, rc = typed(boss, f"{binary} tools")
     catalog = names(manager)
     assert rc == "0" and {"get_task", "send_to_session", "integrate"} <= catalog, manager
-    check("AC-231 the authorization matrix covers all 40 published tools", len(catalog) == 40, sorted(catalog))
+    review_context = "get_supervisor_review"
+    check("AC-231 the authorization matrix covers all 41 published tools",
+          len(catalog) == 41 and review_context in catalog, sorted(catalog))
 
     # The mark wins even though this pane was opened by the human in the project.
     found = wire("probe", {})
@@ -91,11 +93,17 @@ def ac231_supervisor_tools_pane_and_token(t, call, typed, tool, tmux, page, proj
     rc, _, err = cli("tokens", "add", "supervision", "--role", "supervisor", "--project", "Managed")
     check("AC-231 the token command offers only manager or worker", rc == 1 and "worker" in err and "manager" in err, err)
     rc, manager_tools, _ = cli("tools", token=manager_token)
-    check("AC-231 a manager token still discovers the ordinary manager catalog",
-          rc == 0 and "call as a manager" in manager_tools and names(manager_tools) == catalog)
+    check("AC-231 a manager token discovers the ordinary catalog without the Supervisor review context",
+          rc == 0 and "call as a manager" in manager_tools and names(manager_tools) == catalog - {review_context})
+    rc, _, _ = cli("tool", review_context, token=manager_token)
+    check("AC-242 a token cannot read the review context", rc != 0)
+    out, rc = typed(plain, tool(review_context))
+    check("AC-242 an unrelated worker cannot read the review context", rc == "1" and "context belongs" in out, out)
+    out, rc = typed(boss, tool(review_context))
+    check("AC-244 the project's own manager can read its Supervisor context", rc == "0" and project in out, out[:240])
 
     observer = {"list_tasks", "get_task", "get_case_file", "list_signals", "get_signal", "get_metric", "record_finding"}
-    advisor = observer | {"add_comment", "ask_human", "open_problem", "update_problem", "propose_rank"}
+    advisor = observer | {"add_comment", "ask_human", "open_problem", "update_problem", "propose_rank", "propose_decision", "post_incident_answer"}
     operator = advisor | {"run_task", "promote_queued_task", "stop_task", "list_runs", "get_dashboard"}
     view = call(settings)[1]
 

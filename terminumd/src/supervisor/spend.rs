@@ -316,3 +316,24 @@ pub(super) fn ask_rate(q: &Query<'_, '_>) -> Result<Measurements, String> {
 pub(super) fn scorecard(q: &Query<'_, '_>) -> Result<Measurements, String> {
     bands(q, true, &[("failed_run_share", fail_rate), ("questions_per_task", question_rate), ("dollars_per_run", cost_rate)])
 }
+
+pub(super) fn review_rates(tx: &rusqlite::Transaction, project: &str, window: super::Window) -> Result<Vec<serde_json::Value>, String> {
+    use serde_json::json;
+    let detector = super::settings::read(tx, project)?.settings.detector(super::Rule::AgentScorecard);
+    let q = Query { tx, project, detector: &detector, window, historical: false };
+    Ok(samples(&q, true)?.into_iter().map(|((kind, agent), s)| {
+        let tasks = s.tasks.len();
+        let n = s.runs as f64;
+        let failed = s.failed.len();
+        let failure_rate = failed as f64 / n;
+        // Wilson interval, including small and zero-event samples.
+        let z = 1.96_f64;
+        let center = (failure_rate + z * z / (2. * n)) / (1. + z * z / n);
+        let half = z * (failure_rate * (1. - failure_rate) / n + z * z / (4. * n * n)).sqrt() / (1. + z * z / n);
+        json!({"task_type":kind,"agent":agent,"run_sample":s.runs,"task_sample":tasks,
+            "failure_rate":failure_rate,"failure_95_interval":[(center - half).max(0.), (center + half).min(1.)],
+            "questions_per_task":s.questions.len() as f64 / tasks as f64,"priced_sample":s.costs,
+            "dollars_per_run":(s.costs == s.runs).then_some(s.spend.value / n),
+            "rates_can_gate":s.runs >= MIN_RATE_SAMPLE && tasks >= MIN_RATE_SAMPLE})
+    }).collect())
+}

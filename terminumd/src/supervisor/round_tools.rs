@@ -12,7 +12,7 @@ use crate::tasks::{api::store, ops::{self, now, sql}};
 use super::{Evidence, Measure, Rule, Window, register, round_evidence, rounds, settings, signals, task_policy};
 
 pub(crate) const NAMES: &[&str] = &["get_case_file", "list_signals", "get_signal", "get_metric", "record_finding"];
-pub(crate) const ADVISOR: &[&str] = &["open_problem", "update_problem", "propose_rank"];
+pub(crate) const ADVISOR: &[&str] = &["open_problem", "update_problem", "propose_rank", "propose_decision", "post_incident_answer"];
 
 pub(crate) fn known(tool: &str) -> bool {
     NAMES.contains(&tool) || ADVISOR.contains(&tool)
@@ -40,6 +40,7 @@ async fn register_tool(app: &Shared, key: String, project: String, tool: String,
                 register::require_finding(tx, id, marked.run.as_deref())?;
                 json!({"problem": id})
             }
+            "propose_decision" => super::decisions::propose(tx, &project, marked.run.as_deref(), args(value)?, at)?,
             "propose_rank" => {
                 let input: RankArgs = args(value)?;
                 let task = ops::get(tx, &input.task)?;
@@ -98,14 +99,14 @@ struct Finding {
 
 fn run_of(tx: &Transaction, key: &str, project: &str, tool: &str) -> Result<String, String> {
     supervisor::require(tx, key, project, tool)?;
-    tx.query_row("SELECT r.run FROM supervisor_rounds r JOIN supervisor_panes m ON m.round = r.id
-        WHERE m.pane_key = ?1 AND r.project = ?2 AND m.generation = r.generation",
+    tx.query_row("SELECT coalesce(m.talk, (SELECT run FROM supervisor_rounds WHERE id = m.round))
+        FROM supervisor_panes m WHERE m.pane_key = ?1 AND m.project = ?2 AND (m.talk IS NOT NULL OR m.round IS NOT NULL)",
         (key, project), |r| r.get(0)).optional().map_err(sql)?
         .ok_or("There is no live investigation in this pane.".into())
 }
 
 fn case_file(tx: &Transaction, run: &str) -> Result<Value, String> {
-    let case: String = tx.query_row("SELECT case_file FROM supervisor_rounds WHERE run = ?1",
+    let case: String = tx.query_row("SELECT case_file FROM supervisor_rounds WHERE run = ?1 UNION ALL SELECT case_file FROM supervisor_talks WHERE run = ?1",
         [run], |r| r.get(0)).map_err(sql)?;
     serde_json::from_str(&case).map_err(|e| e.to_string())
 }
@@ -115,6 +116,18 @@ fn args<T: DeserializeOwned>(value: Value) -> Result<T, String> {
 }
 
 pub(crate) async fn run(app: &Shared, key: String, project: String, tool: String, value: Value) -> Result<String, String> {
+    if tool == "post_incident_answer" {
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Answer { text: String }
+        let input: Answer = args(value)?;
+        let task = store(app, move |tx| {
+            let run = run_of(tx, &key, &project, &tool)?;
+            super::thread::answer(tx, &project, &run, &input.text, now())
+        }).await?;
+        crate::tasks::api::told(app, &task);
+        return Ok(format!("Answered on {task}."));
+    }
     if ADVISOR.contains(&tool.as_str()) {
         return register_tool(app, key, project, tool, value).await;
     }
@@ -126,7 +139,9 @@ pub(crate) async fn run(app: &Shared, key: String, project: String, tool: String
                 Ok(finding) => {
                     let changed = tx.execute("UPDATE supervisor_rounds SET finding = ?2, found_at = ?3
                         WHERE run = ?1 AND deadline > ?3", (&run, finding, now())).map_err(sql)?;
-                    if changed == 1 { return Ok(Ok("Finding checked and recorded.".into())); }
+                    if changed == 1 {
+                        return Ok(Ok("Finding checked and recorded.".into()));
+                    }
                     "Finding arrived after the deadline.".into()
                 }
                 Err(why) => why,

@@ -39,7 +39,10 @@ async fn ac216_project_off_is_inert_and_a_new_generation_rejects_old_work() {
     let project = ready(store);
     let batch = store.snapshot(SCHEMA, |tx| read_batch(tx, &app, &project, NOW)).unwrap();
     let pending = app.supervisor.sensors.take(PROJECT, project.generation);
+    write(store, "INSERT INTO supervisor_changes (project, source, source_id)
+        VALUES (?1, 'tasks', 'pending-incident-card')", [PROJECT]);
     set_enabled(store, PROJECT, false, NOW).unwrap();
+    assert_eq!(value(store, "SELECT count(*) FROM supervisor_changes"), 0);
     assert!(!commit(store, &project, batch, &pending, || NOW).unwrap().0);
     set_enabled(store, PROJECT, true, NOW).unwrap();
     let stale = Batch { at: NOW, cursor: 100, evaluation: None, points: vec![], sampled: false, baseline: false,

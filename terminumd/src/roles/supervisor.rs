@@ -21,6 +21,7 @@ pub(crate) enum Role {
     #[default]
     Worker,
     Manager,
+    Token { manager: bool },
     Supervisor(Option<Level>),
 }
 
@@ -33,8 +34,8 @@ impl From<bool> for Role {
 impl Role {
     pub fn name(self) -> &'static str {
         match self {
-            Self::Worker => "worker",
-            Self::Manager => "manager",
+            Self::Worker | Self::Token { manager: false } => "worker",
+            Self::Manager | Self::Token { manager: true } => "manager",
             Self::Supervisor(_) => "supervisor",
         }
     }
@@ -54,8 +55,9 @@ impl Role {
             return matches!(self, Self::Supervisor(Some(_)));
         }
         match self {
-            Self::Manager => true,
-            Self::Worker => !super::MANAGER_TOOLS.contains(&tool),
+            Self::Token { .. } if tool == supervisor::review::TOOL => false,
+            Self::Manager | Self::Token { manager: true } => true,
+            Self::Worker | Self::Token { manager: false } => !super::MANAGER_TOOLS.contains(&tool),
             Self::Supervisor(None) => false,
             Self::Supervisor(Some(level)) => {
                 OBSERVER_TOOLS.contains(&tool)
@@ -87,9 +89,10 @@ pub(crate) fn marked(tx: &Transaction, key: &str) -> Result<Option<Mark>, String
         SELECT 1 FROM project_supervisor s WHERE s.project = m.project AND s.enabled = 1 AND s.generation = m.generation
         ) AND NOT EXISTS (
             SELECT 1 FROM supervisor_rounds q WHERE q.id = m.round AND NOT ({active_round})
-        ),
-        (SELECT run FROM supervisor_rounds WHERE id = m.round)
-        FROM supervisor_panes m WHERE m.pane_key = ?1")).map_err(ops::sql)?
+        ) AND (m.talk IS NULL OR EXISTS (SELECT 1 FROM runs r
+            WHERE r.id = m.talk AND r.pane_key = m.pane_key AND {})),
+        coalesce(m.talk, (SELECT run FROM supervisor_rounds WHERE id = m.round))
+        FROM supervisor_panes m WHERE m.pane_key = ?1", crate::supervisor::talk::LIVE)).map_err(ops::sql)?
         .query_row((key, ops::now()), |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).optional().map_err(ops::sql)?;
     row.map(|(project, active, run)| {
         let level = active.then(|| supervisor::level(tx, &project)).transpose()?;
@@ -133,6 +136,9 @@ pub(crate) async fn run(app: &Shared, key: &str, other: bool, mark: Mark, tool: 
     }
     if supervisor::round_tools::known(&tool) {
         return supervisor::round_tools::run(app, key.into(), mark.project, tool, args).await;
+    }
+    if tool == "ask_human" && mark.run.is_some() {
+        return Err("For a Supervisor decision, call propose_decision on this investigation's register problem.".into());
     }
     if matches!(tool.as_str(), "add_comment" | "ask_human" | "promote_queued_task" | "stop_task") {
         let (pane, scope, action, id) = (key.to_owned(), mark.project.clone(), tool.clone(), super::arg(&args, "id")?.to_owned());

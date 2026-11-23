@@ -120,15 +120,6 @@ pub(super) fn not_run_elsewhere(tx: &Transaction, who: &Who, t: &Task) -> Result
     }
 }
 
-/// A main task ends last: refused while a subtask its run took is not DONE (terminum-dispatcher.md AC-185).
-pub(super) fn after_its_subtasks(tx: &Transaction, t: &Task) -> Result<(), String> {
-    let open = crate::dispatcher::runs::subtasks_open(tx, &t.key)?;
-    if open.is_empty() {
-        return Ok(());
-    }
-    Err(format!("{0} is a main task: its subtasks of this run are not DONE: {1}. Finish them first; when a cause that can be removed {2} holds one, ask by execute_tool(\"ask_human\", {{id, questions}}); when one cannot be done at all, move {0} to FAILED with a comment saying why.", t.id, open.join(", "), super::closeout::removable!()))
-}
-
 /// Why an agent's own move to WAIT FOR HUMAN is refused: a card there with no question tells the human nothing.
 fn not_without_questions(id: &str) -> String {
     format!("A task waits for a human only with what it asks: call execute_tool(\"ask_human\", {{\"id\": \"{id}\", \"questions\": ...}}). {} {id} stays where it was.", super::closeout::waits_for_task!())
@@ -223,7 +214,11 @@ pub fn run_with(store: &Store, state_dir: &Path, who: &Who, tool: &str, args: &V
 }
 
 fn run_in(store: &Store, state_dir: &Path, who: &Who, tool: &str, args: &Value, open_most: i64, noted: &mut Option<(String, String)>) -> Result<(String, Vec<String>), String> {
-    if let Some((_, own)) = store.with(|tx| super::auto::round_in_pane(tx, &who.key))? && (!A_ROUNDS.contains(&tool) || (tool == "finish_task" && args["id"].as_str() != Some(&own.id))) {
+    let auto_round = store.with(|tx| {
+        crate::supervisor::review::check_caller(tx, &who.key, tool, args["id"].as_str())?;
+        super::auto::round_in_pane(tx, &who.key)
+    })?;
+    if let Some((_, own)) = auto_round && (!A_ROUNDS.contains(&tool) || (tool == "finish_task" && args["id"].as_str() != Some(&own.id))) {
         return Err(format!("Auto-Dispatcher's round reads tasks, starts them with dispatch_task and finishes its own, {}: {tool} is not its.", own.id));
     }
     match tool {
@@ -319,7 +314,7 @@ fn run_in(store: &Store, state_dir: &Path, who: &Who, tool: &str, args: &Value, 
                     return Err(format!("{id} is what the human ran: finish it, fail it, or ask."));
                 }
                 if to == "DONE" {
-                    after_its_subtasks(tx, &t)?;
+                    super::finish::after_its_subtasks(tx, &t)?;
                 }
                 ops::move_to(tx, &me()?, id, to, at)?;
                 // the wait is this session's run's only for the task it holds; a move of another task of the run, or

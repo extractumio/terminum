@@ -32,7 +32,7 @@ async fn saved_case(State(app): State<Shared>, Path((project, case)): Path<(Stri
 }
 
 async fn signal(State(app): State<Shared>, Path((project, key)): Path<(String, String)>) -> Response {
-    answer(store(&app, move |tx| request(tx, &project, &key)).await)
+    answer(store(&app, move |tx| request(tx, &project, &key, None)).await)
 }
 
 async fn incident(State(app): State<Shared>, Path(id): Path<i64>) -> Response {
@@ -43,14 +43,15 @@ async fn incident(State(app): State<Shared>, Path(id): Path<i64>) -> Response {
             WHERE i.id = ?1 ORDER BY e.level DESC, e.id DESC LIMIT 1", [id],
             |r| Ok((r.get(0)?, r.get(1)?))).optional().map_err(sql)?
             .ok_or("This incident has no retained signal to investigate.")?;
-        request(tx, &project, &key)
+        request(tx, &project, &key, Some(id))
     }).await)
 }
 
-fn request(tx: &Transaction, project: &str, key: &str) -> Result<Value, String> {
+fn request(tx: &Transaction, project: &str, key: &str, incident: Option<i64>) -> Result<Value, String> {
     let sig = signals::get(tx, project, key)?;
     enabled(tx, project)?.ok_or("Enable the project's Supervisor to investigate.")?;
     if let Some(id) = active_id(tx, key)? {
+        if let Some(incident) = incident { super::thread::anchor_live(tx, project, key, incident, now())?; }
         return Ok(json!({"message": format!("Investigation {id} is already open.")}));
     }
     let saved = settings::read(tx, project)?.settings;
@@ -59,8 +60,9 @@ fn request(tx: &Transaction, project: &str, key: &str) -> Result<Value, String> 
     if crate::tasks::ops::project_place(tx, project)?.1.is_some() {
         return Err("Supervisor investigations require a local pool agent for pane identity checks.".into());
     }
-    tx.execute("INSERT INTO supervisor_round_requests (fingerprint, owner_requested)
-        VALUES (?1, 1) ON CONFLICT (fingerprint) DO UPDATE SET owner_requested = 1, reason = NULL", [key]).map_err(sql)?;
+    tx.execute("INSERT INTO supervisor_round_requests (fingerprint, owner_requested, incident)
+        VALUES (?1, 1, ?2) ON CONFLICT (fingerprint) DO UPDATE SET owner_requested = 1, reason = NULL,
+            incident = coalesce(excluded.incident, supervisor_round_requests.incident)", (key, incident)).map_err(sql)?;
     Ok(json!({"message": "Investigation requested. It will start when its slot is free."}))
 }
 
@@ -221,9 +223,12 @@ pub(crate) fn save(tx: &Transaction, run: &str, candidate: Candidate, at: i64, c
         "tools": tools,
         "verification_hold": verify.then_some("No authorized hold with a lower measured cost than waiting."),
     });
-    tx.execute("INSERT INTO supervisor_rounds (id, run, project, generation, fingerprint, signal_revision, case_file, deadline, token_cap, reserved_class)
-        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)", rusqlite::params![id, run, signal.project, generation,
-            signal.fingerprint, revision, case.to_string(), deadline, token_cap as i64, important]).map_err(sql)?;
+    let requested: Option<i64> = tx.query_row("SELECT incident FROM supervisor_round_requests WHERE fingerprint = ?1",
+        [&signal.fingerprint], |r| r.get::<_, Option<i64>>(0)).optional().map_err(sql)?.flatten();
+    let incident = requested.or(super::thread::current(tx, &signal.project, &signal.fingerprint)?);
+    tx.execute("INSERT INTO supervisor_rounds (id, run, project, generation, fingerprint, signal_revision, case_file, deadline, token_cap, reserved_class, incident)
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)", rusqlite::params![id, run, signal.project, generation,
+            signal.fingerprint, revision, case.to_string(), deadline, token_cap as i64, important, incident]).map_err(sql)?;
     tx.execute("DELETE FROM supervisor_round_requests WHERE fingerprint = ?1", [&signal.fingerprint]).map_err(sql)?;
     Ok(id)
 }
@@ -238,14 +243,14 @@ pub(crate) fn check_first_prompt(tx: &Transaction, run: &str) -> Result<(), Stri
     let active = tx.prepare_cached(&format!("SELECT EXISTS (SELECT 1 FROM supervisor_rounds q
         WHERE q.run = ?1 AND ({ACTIVE}))")).map_err(sql)?
         .query_row((run, now()), |r| r.get::<_, bool>(0)).map_err(sql)?;
-    if active { Ok(()) } else { Err("The Supervisor investigation is no longer active.".into()) }
+    if active || super::talk::active(tx, run)? { Ok(()) } else { Err("The Supervisor session is no longer active.".into()) }
 }
 
 pub(crate) fn mark(tx: &Transaction, run: &str, key: &str) -> Result<(), String> {
     check_first_prompt(tx, run)?;
     let changed = tx.execute("INSERT INTO supervisor_panes (pane_key, project, generation, round)
         SELECT ?1, project, generation, id FROM supervisor_rounds WHERE run = ?2", (key, run)).map_err(sql)?;
-    if changed == 1 { Ok(()) } else { Err("The Supervisor investigation is gone.".into()) }
+    if changed == 1 { Ok(()) } else { super::talk::mark(tx, run, key) }
 }
 
 pub(crate) fn failure(tx: &Transaction, run: &str, why: &str, refused: bool) -> Result<(), String> {

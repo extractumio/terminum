@@ -43,13 +43,14 @@ def main():
         if barrier:
             while not os.path.exists(barrier):
                 time.sleep(0.05)
-        subprocess.run([cli, "hook", kind], input=json.dumps({"session_id": session, "cwd": os.getcwd(), "hook_event_name": event, **more}), text=True, capture_output=True, timeout=8)
+        checked = subprocess.run([cli, "hook", kind], input=json.dumps({"session_id": session, "cwd": os.getcwd(), "hook_event_name": event, **more}), text=True, capture_output=True, timeout=8)
         if event == "Stop" and (title := opt("--title", "")):
             sys.stdout.write(f"\x1b]0;{title}\x07")
             sys.stdout.flush()
         if barrier:
             with open(barrier + ".sent", "w", encoding="utf8"):
                 pass
+        return checked.stdout
 
     def draw(body):
         sys.stdout.write("\x1b[2J\x1b[H" + "\r\n".join(body) + "\r\n")
@@ -86,6 +87,21 @@ def main():
 
         call("get_case_file", id="case_foreign")
         case = decoded(call("get_case_file", id=case_id))
+        if opt("--round-mode", "") == "thread":
+            barrier = opt("--thread-barrier", "")
+            deadline = time.monotonic() + 12
+            while not os.path.exists(barrier) and time.monotonic() < deadline:
+                time.sleep(.05)
+            until = time.monotonic() + 5
+            while time.monotonic() < until:
+                notice = hook("PostToolBatch", tool_name="Read")
+                if "new comment" in notice:
+                    with open(opt("--round-log", ""), "a", encoding="utf8") as log:
+                        log.write(json.dumps({"notice": notice}) + "\n")
+                    break
+                time.sleep(.15)
+            call("post_incident_answer", text="The checked fixture explains the incident.")
+            return
         if opt("--round-mode", "") != "finding":
             return
         sig = case["signal"]
@@ -104,6 +120,22 @@ def main():
         if foreign := opt("--foreign-evidence", ""):
             call("record_finding", **{**finding, "evidence": [{"table": "tasks", "id": foreign}]})
         call("record_finding", **finding)
+
+    def review(task):
+        call = lambda name, args: tool("execute_tool", {"name": name, "arguments": args})
+        context = call("get_supervisor_review", {})
+        refused = call("add_comment", {"id": task, "text": "Review fixture cannot post."})
+        sections = ["Decisions waiting for you", "Top three register problems", "Resolved and recurred",
+                    "Effort allocation", "Agent performance", "Owner bottlenecks", "Indicator verdicts",
+                    "Supervisor outcomes and budgets", "Verdict batch"]
+        result = call("finish_task", {"id": task, "result": "\n".join(f"{s}: Measured review fixture." for s in sections)})
+        with open(opt("--round-log", ""), "a", encoding="utf8") as log:
+            log.write(json.dumps({"review": context, "refused": refused, "finished": result}) + "\n")
+
+    def talk(case_id):
+        response = tool("execute_tool", {"name": "get_case_file", "arguments": {"id": case_id}})
+        with open(opt("--round-log", ""), "a", encoding="utf8") as log:
+            log.write(json.dumps({"talk": case_id, **response}) + "\n")
 
     # a result is kept only in its sections (AC-123): the close-out's and a schedule's, both there, as
     # terminumd/src/tasks/closeout.rs names them (SECTIONS, SCHEDULED)
@@ -190,6 +222,12 @@ def main():
                     box()
             if opt("--round-log", "") and (case := re.fullmatch(r"Supervisor case (case_[a-f0-9]+)\..*", prompt)):
                 investigate(case[1])
+            elif opt("--round-log", "") and (case := re.fullmatch(r"Supervisor incident case (case_[a-f0-9]+)\..*", prompt)):
+                talk(case[1])
+                hook("Stop", last_assistant_message="An incident conversation is open.")
+            elif opt("--round-log", "") and "Call get_supervisor_review" in prompt:
+                review(tasks[0])
+                hook("Stop", last_assistant_message="The review is ready.")
             elif round_of:
                 for task in re.findall(TASK_ID, round_of[3])[:int(round_of[2])]:
                     tool("dispatch_task", {"id": task, "why": "RICE 3×2×1÷1 = 6: the first in line"})

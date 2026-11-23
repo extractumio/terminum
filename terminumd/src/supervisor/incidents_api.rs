@@ -2,7 +2,7 @@
 //! AC-224–226: incident reads and owner actions on the signed-in page listener.
 
 use axum::{Json, Router, extract::{Path, Query, State, ws::{Message, WebSocket, WebSocketUpgrade}},
-    http::HeaderMap, response::{IntoResponse, Response}, routing::get};
+    http::HeaderMap, response::{IntoResponse, Response}, routing::{get, post}};
 use rusqlite::{OptionalExtension, Row, Transaction};
 use std::time::Duration;
 use serde::{Deserialize, Serialize};
@@ -19,6 +19,8 @@ pub(super) fn routes() -> Router<Shared> {
     Router::new()
         .route("/api/supervisor/incidents", get(attention))
         .route("/api/supervisor/incidents/watch", get(watch))
+        .route("/api/supervisor/incidents/{id}/talk", post(talk))
+        .route("/api/supervisor/incidents/{id}/ruling", post(ruling))
         .route("/api/supervisor/incidents/{id}", get(timeline).post(act))
         .route("/api/task-projects/{project}/supervisor/incidents", get(history))
 }
@@ -35,6 +37,7 @@ pub(super) struct Incident {
     pub snoozed_until: Option<i64>,
     revision: i64,
     pub happened: String,
+    task: Option<String>,
     held: &'static str,
     needed: &'static str,
     no_answer: &'static str,
@@ -47,7 +50,8 @@ const SUMMARY: &str = "SELECT i.id, i.project, p.name, m.level,
       (SELECT count(*) FROM supervisor_incident_events WHERE incident = i.id AND kind = 'signal'),
       (SELECT related_id FROM supervisor_incident_events WHERE incident = i.id AND kind = 'continued'),
       (SELECT group_concat('Channel ' || channel || ': ' || failure, ' ' ORDER BY channel)
-        FROM supervisor_line_failures WHERE i.subject_kind = 'critical_line' AND i.closed_at IS NULL)
+        FROM supervisor_line_failures WHERE i.subject_kind = 'critical_line' AND i.closed_at IS NULL),
+      (SELECT t.slug FROM tasks t WHERE t.id = i.task AND t.project = i.project)
     FROM supervisor_incidents i JOIN projects p ON p.id = i.project
     JOIN supervisor_incident_events m ON m.id = coalesce(
       (SELECT event FROM supervisor_incident_signals WHERE incident = i.id ORDER BY level DESC, event DESC LIMIT 1),
@@ -78,6 +82,7 @@ fn incident(row: &Row<'_>) -> rusqlite::Result<Incident> {
         id: row.get(0)?, project: row.get(1)?, project_name: row.get(2)?, level: row.get(3)?,
         opened_at: row.get(4)?, closed_at, acknowledged_at, snoozed_until: row.get(7)?, revision: row.get(8)?,
         happened: format!("{status}{measured} {count} {} recorded.{detail}", if count == 1 { "signal" } else { "signals" }),
+        task: row.get(15)?,
         held: "No hold in effect.",
         needed: if acknowledged_at.is_some() { "Acknowledged." } else { "Acknowledge when seen." },
         no_answer: "No automatic action without an answer.",
@@ -219,4 +224,21 @@ async fn act(State(app): State<Shared>, Path(id): Path<i64>, Json(press): Json<P
         }
         summary
     }))
+}
+
+async fn talk(State(app): State<Shared>, Path(id): Path<i64>) -> Response {
+    answer(crate::dispatcher::supervisor_talk::open(&app, id).await)
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Ruling { reason: String }
+
+async fn ruling(State(app): State<Shared>, Path(id): Path<i64>, Json(input): Json<Ruling>) -> Response {
+    let result = store(&app, move |tx| super::thread::rule(tx, id, &input.reason, now())).await;
+    if let Ok(task) = &result {
+        crate::tasks::api::told(&app, task);
+        app.supervisor.incident_changed();
+    }
+    answer(result.map(|task| serde_json::json!({"task":task})))
 }

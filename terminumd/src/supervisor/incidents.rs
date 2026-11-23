@@ -58,6 +58,8 @@ pub(super) fn observe(tx: &Transaction, seen: Observation<'_>) -> Result<(), Str
         Some(m) if level < 3 || same_evidence => (m.incident, false),
         _ => find_or_open(tx, project, finding, at)?,
     };
+    if opened { super::thread::ensure(tx, project, incident, at)?; }
+    super::thread::anchor_live(tx, project, fingerprint, incident, at)?;
     let kind = if level < 3 || same_evidence { "updated" } else { "signal" };
     let event: i64 = tx.query_row("INSERT INTO supervisor_incident_events
         (incident, at, kind, actor, fingerprint, detector, metric, level, value, threshold)
@@ -122,6 +124,7 @@ fn close_if_clear(tx: &Transaction, id: i64, at: i64, continued: Option<i64>, ur
         let (event, notice) = if continued.is_some() { ("continued", Kind::Updated) } else { ("all_clear", Kind::AllClear) };
         tx.execute("INSERT INTO supervisor_incident_events (incident, at, kind, actor, related_id)
             VALUES (?1, ?2, ?3, 'system', ?4)", (id, at, event, continued)).map_err(sql)?;
+        super::thread::clear(tx, id, at)?;
         line_queue::stop_repeats(tx, id)?;
         line_queue::enqueue(tx, id, notice, urgent)?;
     }

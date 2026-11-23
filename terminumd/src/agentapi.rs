@@ -78,6 +78,14 @@ pub async fn agent_on(app: Shared, server: Option<std::sync::Arc<crate::tmux::se
         reply.0["role"] = json!(role);
         return reply;
     }
+    if tool == crate::supervisor::review::TOOL {
+        if caller.other || (if let Some(peer) = local { !roles::peer::in_pane(peer, &server, pane).await } else { false }) {
+            return answer("The weekly review context belongs to its session or the project's manager.", true);
+        }
+        let key = caller.key;
+        return said(crate::http::off(move || app.tasks.snapshot(crate::tasks::store::SCHEMA_VERSION, |tx|
+            crate::supervisor::review::context(tx, &key).map(|value| value.to_string()))).await);
+    }
     if roles::MANAGER_TOOLS.contains(&tool.as_str()) {
         // a manager's tool (AC-174, AC-178): its pane's own record decides, and the call comes from under that pane
         let from_pane = match local {

@@ -525,6 +525,32 @@ breach is exempt. Tasks made by the Supervisor carry a **Supervisor** mark. The 
 round can read advisory ranks. A human or manager action on a task takes precedence
 over Supervisor actions for 24 hours.
 
+#### Decisions, weekly review and incident conversations
+
+**Decisions and reports** on the Supervisor screen links the decision cards.
+A checked, high-impact choice that belongs to you opens a **WAIT FOR HUMAN** card
+with options, evidence and the cost of waiting. Lesser decisions appear together
+in the weekly review. A drift notice, known problem or hold adds one comment per
+signal and task. The linked agent hears about the comment at its next usual hook.
+
+Choose a **Strong** tier agent on an enabled project to create its weekly review
+in **Routines**. Its initial cadence is Monday at 09:00 in the scheduler's local
+time, with a 30-minute budget. Edit its timing and prompt in Routines. The usual
+report task and the Supervisor screen show the review with decisions first.
+**Useful**, **Not useful** and **Wrong** record a verdict on a sampled item. A
+review offers at most ten items, and leaving one alone records no verdict.
+
+The **Exception digest** on the same screen appears only with new live or
+digest-mode signals at level 1 or higher. It shows at most five measurements,
+actions and links, followed by the collector's last successful run. It needs no
+review agent.
+
+Open an incident's **Thread** to comment on its task. A live investigation hears
+the ordinary comment notice and can answer in the thread. Use **Talk** on the
+incident to open the strong-tier agent on this Mac with the incident's case ID.
+**Record owner ruling** saves your reason in the thread and suppresses the same
+evidence. New evidence can raise the signal again.
+
 A critical live signal, failed collector or failed delivery command opens an incident. Related signals within
 15 minutes share a timeline. Signed-in pages show a red bar until you acknowledge it.
 The project board pins the incident at the top of **WAIT FOR HUMAN**, and **Timeline**
@@ -566,7 +592,8 @@ All routes below are relative to `/api/task-projects/<ID>/supervisor`.
 | PUT the base route with `{"enabled": true}` or `{"enabled": false}` | Change the switch for this project. |
 | GET or PUT `/line` | Read or save the owner-wide channel paths, HTTPS origin, quiet hours and ladder. PUT requires the current revision. |
 | POST `/line/test` | Run the saved channel at the zero-based `channel` index with the current `revision`. |
-| GET `/screen` | Project name, enabled scoreboard indicators and the newest page of signals with their evidence. |
+| GET `/screen` | Decisions, review, digest, enabled scoreboard indicators and the newest page of signals. |
+| POST `/verdicts` | Record `verdict` on the `fingerprint` in the weekly review `task`. Values are `useful`, `not_useful` and `wrong`. |
 | GET `/signals?after=<cursor>` | The next page of signals for the same project. |
 | POST `/signals/<fingerprint>/investigate` | Request an investigation of the signal. |
 | GET `/rounds/<case>` | Read the retained case, checked finding or failure, refusal count and end time. |
@@ -582,6 +609,8 @@ All routes below are relative to `/api/task-projects/<ID>/supervisor`.
 
 Use `POST /api/supervisor/incidents/<id>/investigate` to request an
 investigation of the incident's highest-level retained signal.
+`POST /api/supervisor/incidents/<id>/talk` opens its conversation.
+`POST /api/supervisor/incidents/<id>/ruling` records the owner's `reason`.
 
 The export selection for secrets controls redaction of recognized secret formats in free text.
 When commands are selected without secrets, a command that would need redaction is omitted.

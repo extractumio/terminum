@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
+import { oneAtATime } from "./dialogs.js";
+import { actions, part, text } from "./supervisorfields.js";
 import { INCIDENTS, incidentCard, incidentCards, onIncidents } from "./incidents.js";
 import { $, api, button, showError, stamp, timeOf } from "./kanbanutil.js";
 import { el } from "./listparts.js";
@@ -14,7 +16,27 @@ function withTimeline(initial, selected) {
   const more = button("textkey", "Earlier events", () => load(next));
   more.hidden = true;
   details.append(el("summary", "sv-touch", "Timeline"), list, error, more);
-  card.append(details);
+  const ruling = el("details");
+  const reason = text("", "area");
+  reason.required = true;
+  reason.maxLength = 1000;
+  const confirmation = el("p", "incident-state");
+  confirmation.setAttribute("role", "status");
+  const form = part("form", "sv-stack", part("label", "sv-stack", "Reason", reason), confirmation);
+  const save = el("button", "textkey", "Save ruling");
+  save.type = "submit";
+  form.append(actions(save));
+  form.addEventListener("submit", oneAtATime(form, async (ev) => {
+    ev.preventDefault();
+    confirmation.textContent = "";
+    try {
+      await api(`${INCIDENTS}/${initial.id}/ruling`, { method: "POST", body: { reason: reason.value } });
+      reason.value = "";
+      confirmation.textContent = "Ruling saved on the incident thread.";
+    } catch (e) { confirmation.textContent = e.message; }
+  }));
+  ruling.append(el("summary", "sv-touch", "Record owner ruling"), form);
+  card.append(details, ruling);
   let revision = initial.revision, fetched, next, reading = false;
   function keep(i) {
     if (i.revision >= (saved.get(i.id)?.revision ?? 0)) saved.set(i.id, i);

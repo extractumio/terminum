@@ -429,6 +429,7 @@ pub(super) type Ways = (Vec<Task>, Result<Way, String>, Option<String>);
 /// conversation moves from, when it moves (AC-138).
 pub(super) fn ways(tx: &rusqlite::Transaction, id: &str, also: &[String], agent: Option<&str>, fresh: bool, pane: &dyn Fn(&str) -> PaneState) -> Result<Ways, String> {
     let tasks = members(tx, id, also)?;
+    crate::supervisor::review::check_group(tx, &tasks)?;
     let mut lasts = tasks.iter().map(|t| runs::last_of(tx, &t.key)).collect::<Result<Vec<_>, _>>()?;
     let last = lasts[0].clone();
     let its_run = last.as_ref().is_some_and(|r| lasts.iter().all(|l| l.as_ref().is_some_and(|l| l.id == r.id)));

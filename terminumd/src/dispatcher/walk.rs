@@ -73,10 +73,12 @@ type Walked = (Vec<Later>, Vec<String>, HashMap<String, (i64, i64)>);
 fn walk_store(tx: &rusqlite::Transaction, hooks: &Hooks, dispatcher: &Dispatcher, reads: Vec<Read>, now: i64, at: Instant) -> Result<Walked, String> {
     let (mut later, mut changed, mut used) = (Vec::new(), Vec::new(), HashMap::new());
     let live: HashMap<String, Run> = runs::live(tx)?.into_iter().map(|r| (r.id.clone(), r)).collect();
+    let review_overruns = crate::supervisor::review::overruns(tx)?;
     for read in reads {
         let Some(r) = live.get(&read.id).cloned() else { continue };
         tx.execute_batch("SAVEPOINT one_run").map_err(ops::sql)?;
-        let walked = walk_one(tx, hooks, dispatcher, r.clone(), read, now, at);
+        let overrun = review_overruns.contains(&r.id);
+        let walked = walk_one(tx, hooks, dispatcher, r.clone(), read, (now, at), overrun);
         tx.execute_batch(if walked.is_ok() { "RELEASE one_run" } else { "ROLLBACK TO one_run; RELEASE one_run" }).map_err(ops::sql)?;
         match walked {
             Ok((l, c, u)) => {
@@ -104,7 +106,7 @@ fn said_once(tx: &rusqlite::Transaction, r: &Run, words: &str) -> Result<bool, S
     say(tx, r, words).map(|()| true)
 }
 
-fn walk_one(tx: &rusqlite::Transaction, hooks: &Hooks, dispatcher: &Dispatcher, mut r: Run, read: Read, now: i64, at: Instant) -> Result<Walked, String> {
+fn walk_one(tx: &rusqlite::Transaction, hooks: &Hooks, dispatcher: &Dispatcher, mut r: Run, read: Read, (now, at): (i64, Instant), overrun: bool) -> Result<Walked, String> {
     let (mut later, mut changed, mut used) = (Vec::new(), Vec::new(), HashMap::new());
     if r.is_starting() {
         return Ok((later, changed, used));
@@ -128,7 +130,12 @@ fn walk_one(tx: &rusqlite::Transaction, hooks: &Hooks, dispatcher: &Dispatcher, 
         None => false,
     };
     r.last_walk = now;
-    let mut acts = plan::step(&mut r, &facts);
+    let mut acts = if facts.pane && facts.marked && r.status == "IN PROGRESS" && overrun
+    {
+        let mut stop = Vec::new();
+        plan::end_failed(&mut r, &mut stop, "The Supervisor weekly review exceeded its token limit.".into());
+        stop
+    } else { plan::step(&mut r, &facts) };
     if seen > GAP {
         acts.push(Act::Say(format!("Clocks paused {} minutes: no walk saw them pass", seen / 60)));
     }

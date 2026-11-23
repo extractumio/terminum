@@ -76,7 +76,7 @@ fn forward(body: &Value) -> Result<(u16, Option<Value>), Down> {
 fn role(ctx: &Ctx, who: &Caller) -> Result<Role, String> {
     match who {
         Caller::Pane(env) => Ok(mcp::role(env, &forward)),
-        Caller::Token(_) => Ok(Role::from(ask(ctx, who, "probe", &json!({}))? == "manager")),
+        Caller::Token(_) => Ok(Role::Token { manager: ask(ctx, who, "probe", &json!({}))? == "manager" }),
     }
 }
 
