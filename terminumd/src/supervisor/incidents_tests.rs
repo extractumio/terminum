@@ -8,7 +8,7 @@ use super::incidents::{self, Action};
 use super::incidents_api::{self, Event, Incident};
 
 fn finding(subject: &str, level: u8, n: i64) -> Finding {
-    let mut found = Reading::new("project", subject, "failed_deliveries", n as f64, vec![Evidence::Inputs(n)])
+    let mut found = Reading::new("project", subject, "failed_deliveries", n as f64, vec![Evidence::Inputs(n)], super::impact::Source::Present)
         .finding(Threshold::Absolute(0.0), Window { before: NOW - 2, start: NOW - 1, end: NOW }).unwrap();
     found.scores = Scores { impact: level, ..Scores::default() };
     found

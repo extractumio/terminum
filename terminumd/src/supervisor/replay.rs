@@ -123,7 +123,7 @@ fn render(tx: &Transaction, result: &Evaluation, weeks: &[scoreboard::Week], fir
             i + 1, subject(tx, f)?, f.metric, m.value, m.baseline, m.threshold, m.window_start, m.window_end,
             f.scores.impact, f.scores.level(), f.scores.response(false)).unwrap();
         if f.assessment.shares.is_empty() {
-            writeln!(output, "   No attributable weekly project share.").unwrap();
+            writeln!(output, "   No weekly project share: {}", f.assessment.no_share.as_deref().unwrap_or("not measured.")).unwrap();
         } else {
             for share in &f.assessment.shares {
                 writeln!(output, "   Week ending {}: {:.3}/{:.3} {:?} ({:.2}%, weekly noise {:.2}%{})",

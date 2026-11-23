@@ -12,7 +12,7 @@ use super::{WEEK, Scores, evaluate, signals};
 #[test]
 fn ac213_impact_floors_and_ladder() {
     let assess = |fraction, weeks, events, noise, ranked| Assessment {
-        ranked, shares: (0..weeks).map(|week| Share { week, complete: true, unit: Unit::FailureEvents,
+        ranked, no_share: None, shares: (0..weeks).map(|week| Share { week, complete: true, unit: Unit::FailureEvents,
             amount: events, total: events / fraction, noise }).collect(),
     };
     for (share, weeks, events, noise, ranked, impact) in [
@@ -29,7 +29,7 @@ fn ac213_impact_floors_and_ladder() {
         assert_eq!(assess(share, weeks, events, noise, ranked).score(false, false), impact,
             "{share}, {weeks}, {events}, {noise}, {ranked}");
     }
-    let mut pair = Assessment { ranked: true, shares: [Unit::OwnerHours, Unit::Tokens].into_iter()
+    let mut pair = Assessment { ranked: true, no_share: None, shares: [Unit::OwnerHours, Unit::Tokens].into_iter()
         .map(|unit| Share { week: 1, complete: true, unit, amount: 6.0, total: 100.0, noise: 0.0 }).collect() };
     assert_eq!(pair.score(false, false), 2);
     assert_eq!(pair.score(true, false), 1);

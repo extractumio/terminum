@@ -9,7 +9,7 @@ use crate::app::Shared;
 use crate::dispatcher::{runs::STILL, waits};
 use crate::tasks::ops::{rows, sql};
 
-use super::{Comparison, DAY, Evidence, Measurements, Query, Reading, Rule, percentile};
+use super::{Comparison, DAY, Evidence, Measurements, Query, Reading, Rule, impact::Source, percentile};
 
 pub(super) const CADENCE: i64 = 15 * 60;
 const QUEUE: &str = "queue_waits";
@@ -17,6 +17,14 @@ const QUEUE_AGE: &str = "queue_oldest_minutes";
 const QUEUE_BASELINE: &str = "queue_waits_p90";
 const LIMIT: &str = "subscription_used";
 const ETA: &str = "plan_eta";
+
+fn snapshot_reason(metric: &str) -> &'static str {
+    match metric {
+        LIMIT => "A predicted subscription limit is a forecast, not spent quantity; spend is sized by flow.cost_outlier.",
+        ETA => "A growing plan estimate is a state; the delay it causes shows in lead time, which flow.lead_time_shift sizes.",
+        _ => "Dispatcher queue samples are a state; queued tasks' delay is sized by flow.starved and flow.wait_human_age.",
+    }
+}
 
 pub(super) struct Point {
     metric: &'static str,
@@ -145,7 +153,7 @@ pub(super) fn snapshots(q: &Query<'_, '_>) -> Result<Measurements, String> {
         }
         let id = if subject.is_empty() { q.project.to_owned() } else { subject };
         let evidence = points[..used].iter().map(|p| Evidence::SupervisorPoints(p.id)).collect();
-        let reading = Reading::new(subjects, id, metric, value, evidence);
+        let reading = Reading::new(subjects, id, metric, value, evidence, Source::Unsized(snapshot_reason(metric)));
         out.readings.push(if metric == LIMIT {
             reading.comparison(Comparison::AtLeast)
         } else { reading });
@@ -193,7 +201,8 @@ pub(super) fn counters(q: &Query<'_, '_>) -> Result<Measurements, String> {
             _ => "subagent_starts",
         };
         out.readings.push(Reading::new("session", format!("{agent}/{session}"), metric, count,
-            vec![Evidence::SupervisorHookCounts(id)]).history(histories.get(&event).cloned().unwrap_or_default()));
+            vec![Evidence::SupervisorHookCounts(id)],
+            Source::Unsized("A session's tool failures, repeats, compactions and subagents are in no weekly total, and its whole spend would overstate their cost.")).history(histories.get(&event).cloned().unwrap_or_default()));
     }
     let available = q.tx.query_row("SELECT EXISTS (SELECT 1 FROM supervisor_hook_counts
         WHERE project = ?1 AND at <= ?2)", (q.project, q.window.end), |r| r.get::<_, bool>(0)).map_err(sql)?;

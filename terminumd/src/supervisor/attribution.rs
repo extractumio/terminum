@@ -51,10 +51,25 @@ impl<'a> Attribution<'a> {
             }
             let task_days = by_task.entry(task).or_insert_with(|| vec![0.0; weeks.len()]);
             for (i, week) in weeks.iter().enumerate() {
-                let seconds = (until.min(week.end + 1) - from.max(Window::week(week.end).start)).max(0);
-                let days = seconds as f64 / DAY as f64;
+                let days = overlap_days(from, until, week);
                 task_days[i] += days;
                 wait_totals[i] += days;
+            }
+        }
+
+        // A P0 or P1 task is open from creation until its latest DONE or FAILED move, while it is
+        // still in that status, or its archiving. Priority is the task's current one.
+        let priority = rows(tx, &format!("{events}
+            SELECT t.created_at, CASE WHEN t.status IN ('DONE', 'FAILED') THEN coalesce(
+                (SELECT max(e.at) FROM project_events e WHERE e.task = t.id AND e.kind = 'move'
+                    AND json_extract(e.data, '$.to') = t.status), t.updated_at) END, t.archived_at
+            FROM tasks t WHERE t.project = ?1 AND t.severity IN ('P0', 'P1') AND t.created_at BETWEEN 1 AND ?2"),
+            (project, end), |r| Ok((r.get::<_, i64>(0)?, r.get::<_, Option<i64>>(1)?, r.get::<_, Option<i64>>(2)?)))?;
+        let mut priority_totals = vec![0.0; weeks.len()];
+        for (created, closed, archived) in priority {
+            let until = closed.into_iter().chain(archived).min().unwrap_or(end + 1);
+            for (i, week) in weeks.iter().enumerate() {
+                priority_totals[i] += overlap_days(created, until, week);
             }
         }
         let totals = Unit::ALL.into_iter().map(|unit| {
@@ -66,9 +81,11 @@ impl<'a> Attribution<'a> {
                     Unit::OwnerHours => week.load.hours,
                     Unit::TaskDaysOfWait => wait_totals[i],
                     Unit::TaskDaysToDone => week.lead_days(),
+                    Unit::PriorityTaskDays => priority_totals[i],
                     Unit::Tasks => week.todo,
                     Unit::Switches => week.load.switch_count,
                     Unit::Operations => week.operations.iter().sum(),
+                    Unit::StrategicActs => week.strategic_acts(),
                     Unit::Tokens => usage[i].values().map(|r| r.0).sum(),
                     Unit::Spend => usage[i].values().map(|r| r.1).sum::<Option<f64>>()?,
                     Unit::RunEvents => week.launches,
@@ -82,11 +99,16 @@ impl<'a> Attribution<'a> {
     pub fn assess<'r>(&self, detector: &Detector, found: &Finding, readings: impl Iterator<Item = Option<&'r Reading>>) -> Assessment {
         let latest = self.weeks.len() - 1;
         let mut assessment = Assessment::default();
+        let mut dropped = false;
         for (i, (week, reading)) in self.weeks.iter().zip(readings).enumerate() {
             let value = reading.map_or(0.0, |r| r.value);
             let some = |unit, amount| vec![(unit, amount)];
             let amounts = match found.source {
                 Source::WaitDays => some(Unit::TaskDaysOfWait, self.waits.get(&found.subject_id).map_or(0.0, |days| days[i])),
+                Source::OverdueDays => {
+                    let overdue = found.measure.window_end - ((found.measure.value - found.measure.threshold) * 60.0) as i64;
+                    some(Unit::PriorityTaskDays, overlap_days(overdue, found.measure.window_end + 1, week))
+                }
                 Source::BlockingLinks if i == latest => some(Unit::Tasks, found.measure.value),
                 Source::Count(unit) => {
                     let mut amounts = some(unit, value);
@@ -95,12 +117,17 @@ impl<'a> Attribution<'a> {
                     }
                     amounts
                 }
+                Source::RateExcess(unit, _) => some(unit, reading.and_then(|r| match r.source {
+                    Source::RateExcess(_, observations) => r.limits(detector.threshold)
+                        .map(|(band, _)| (r.value - band).max(0.0) * observations),
+                    _ => None,
+                }).unwrap_or(0.0)),
                 Source::BacklogGrowth => some(Unit::Tasks, week.net_growth()),
-                Source::UnclassifiedSpend => some(Unit::Spend, value * self.totals[&Unit::Spend].1[i].unwrap_or_default()),
+                Source::SpendAbove(target) => some(Unit::Spend, (value - target).max(0.0) * self.totals[&Unit::Spend].1[i].unwrap_or_default()),
                 Source::ExcessOwnerHours | Source::ExcessOperations | Source::ExcessSwitches | Source::ExcessOffHours | Source::LeadDays
                     => self.excess(i, found.source, reading),
                 Source::RunUsage => self.report_amounts(i, &found.attributed_runs),
-                _ => Vec::new(),
+                Source::BlockingLinks | Source::Present | Source::Unsized(_) => Vec::new(),
             };
             let measured = amounts.iter().any(|(_, amount)| *amount > 0.0);
             let firing = reading.is_some_and(|r| r.exceeds(detector.threshold).is_some() && !r.evidence.is_empty());
@@ -108,14 +135,24 @@ impl<'a> Attribution<'a> {
             if i + 2 >= self.weeks.len() && (measured || firing || present) {
                 assessment.ranked = true;
             }
-            for (unit, amount) in amounts {
+            for (unit, amount) in amounts.into_iter().filter(|(_, amount)| *amount > 0.0) {
                 let (noise, totals) = &self.totals[&unit];
-                if let Some(total) = totals[i].filter(|total| *total > 0.0 && amount > 0.0 && amount <= *total + 1e-8) {
-                    assessment.shares.push(Share {
+                match totals[i] {
+                    Some(total) if total > 0.0 && amount <= total + 1e-8 => assessment.shares.push(Share {
                         week: week.end, complete: week.covered, unit, amount: amount.min(total), total, noise: *noise,
-                    });
+                    }),
+                    Some(_) => dropped = true,
+                    None => (),
                 }
             }
+        }
+        if assessment.shares.is_empty() {
+            assessment.no_share = Some(match found.source {
+                Source::Unsized(reason) => reason,
+                Source::Present => "A present state has no weekly quantity; it ranks, and only a round's evidence raises its level.",
+                _ if dropped => "A measured amount exceeded its week's project total, so no share was counted.",
+                _ => "No week of the last eight measured an amount above zero.",
+            }.into());
         }
         assessment
     }
@@ -147,4 +184,8 @@ impl<'a> Attribution<'a> {
         };
         pair.into_iter().collect()
     }
+}
+
+fn overlap_days(from: i64, until: i64, week: &Week) -> f64 {
+    (until.min(week.end + 1) - from.max(Window::week(week.end).start)).max(0) as f64 / DAY as f64
 }

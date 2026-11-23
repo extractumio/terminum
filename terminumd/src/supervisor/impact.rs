@@ -14,22 +14,27 @@ pub(super) enum Unit {
     OwnerHours,
     TaskDaysOfWait,
     TaskDaysToDone,
+    /// Open P0 and P1 task-days, by the tasks' current priority.
+    PriorityTaskDays,
     Tasks,
     Switches,
     Operations,
+    StrategicActs,
     Tokens,
     Spend,
 }
 
-#[derive(Clone, Copy, Debug, Default)]
+/// Every reading names its additive quantity, or why it has none (AC-213).
+#[derive(Clone, Copy, Debug)]
 pub(super) enum Source {
-    #[default]
-    Unattributed,
     Count(Unit),
     WaitDays,
+    /// A task's days past its age limit, up to the measurement.
+    OverdueDays,
     BlockingLinks,
     BacklogGrowth,
-    UnclassifiedSpend,
+    /// A share of the week's spend above a target share.
+    SpendAbove(f64),
     RunUsage,
     LeadDays,
     ExcessOwnerHours,
@@ -37,16 +42,24 @@ pub(super) enum Source {
     ExcessSwitches,
     ExcessOperations,
     Present,
+    /// A rate above its band, sized as the excess count over that many observations.
+    RateExcess(Unit, f64),
+    /// A metric with no additive project quantity; the reason is recorded instead of a share.
+    Unsized(&'static str),
 }
 
+pub(super) const OWN_HEALTH: &str = "The Supervisor's own health is in no weekly project total.";
+
 impl Unit {
-    pub const ALL: [Self; 11] = [
+    pub const ALL: [Self; 13] = [
         Self::FailureEvents, Self::ScheduleEvents, Self::RunEvents, Self::OwnerHours, Self::TaskDaysOfWait,
-        Self::TaskDaysToDone, Self::Tasks, Self::Switches, Self::Operations, Self::Tokens, Self::Spend,
+        Self::TaskDaysToDone, Self::PriorityTaskDays, Self::Tasks, Self::Switches, Self::Operations, Self::StrategicActs,
+        Self::Tokens, Self::Spend,
     ];
 
     fn counted_events(self) -> bool {
-        matches!(self, Self::FailureEvents | Self::ScheduleEvents | Self::RunEvents | Self::Switches | Self::Operations)
+        matches!(self, Self::FailureEvents | Self::ScheduleEvents | Self::RunEvents | Self::Switches | Self::Operations
+            | Self::StrategicActs)
     }
 }
 
@@ -79,6 +92,9 @@ impl Share {
 pub(super) struct Assessment {
     pub ranked: bool,
     pub shares: Vec<Share>,
+    /// Why no share was measured, so an unsized signal is said, never silently level 0.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub no_share: Option<String>,
 }
 
 impl Assessment {

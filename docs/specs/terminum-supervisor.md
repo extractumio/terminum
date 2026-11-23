@@ -162,6 +162,16 @@ Scenario: AC-213 edge — a charter "never" is broken
   When code scores it
   Then it has impact 3
 
+Scenario: AC-213 edge — a starved priority task
+  Given 18 open P0 and P1 tasks all week, one of them a P1 in TODO five days past its age limit while slots are free
+  When code scores its flow.starved signal
+  Then its share is those five days of the week's open P0 and P1 task-days, and it has impact 1
+
+Scenario: AC-213 edge — a signal without a share says why
+  Given a firing signal whose metric has no additive project quantity, or whose measured amount exceeds its week's total
+  When code scores it
+  Then its impact basis and the replay state the reason in place of a share
+
 Scenario: AC-213 edge — a round argues for a lower level
   Given a signal at level 2
   When a round proposes level 1 for it
@@ -1402,6 +1412,23 @@ The collector runs off the async workers through a read-only store connection. E
 
 Impact scores use shares of additive quantities: owner hours, events, tokens, task-days of delay, tasks, switches, operations or weekly spend. A rate is sized through its counts or other additive inputs. Measure impact 2 for a share of at least 10% in three of the last eight weeks. When weekly noise exceeds 10%, the share must clear that noise, with 25% sufficient. A share of at least 5% of two quantities at once also qualifies. Breaking one of the charter's "never" rules is impact 3, whatever its measured share. Impact 1 covers 3% up to the high threshold or one high week. Impact 0 covers under 3%. Event shares need at least three events in their week and a problem must still fire in the last two weeks to rank. Short history caps ordinary impact at 1. Confidence landmarks are 1.0 for facts, 0.7 for strong heuristics and 0.5 for unchecked judgment.
 
+Every reading names its quantity or the reason it has none; the reason sits in the signal's impact basis and the replay prints it. An amount larger than its week's total yields no share, and the basis says so. A rate judged against peers is sized by its excess over the band times its observations.
+
+| Rule | Quantity of its share |
+|---|---|
+| `flow.wait_human_age` | Task-days in WAIT FOR HUMAN; blocked tasks. |
+| `flow.failed_no_reason`, `flow.failed_repeat` | Failure events, with tokens and spend of single-task runs. |
+| `flow.rerun_after_done`, `flow.returned` | Run events: launches after DONE, and returned tasks; with tokens and spend for reruns. |
+| `flow.starved`, `product.user_bug_age` | Open P0 and P1 task-days: the task's days past its age limit in each week, of all P0 and P1 tasks' open days by current priority. An age counts back only past the limit, since earlier slot state is not kept. |
+| `flow.lead_time_shift`, `flow.backlog_growth` | Task-days to DONE above the earlier median or p90; net created tasks. |
+| `flow.cost_outlier`, `product.allocation` | Tokens and spend of the runs; spend above the target share and untyped spend. |
+| `flow.schedule_health` | Schedule events; failure events of routine tasks. |
+| `drift.agent_scorecard` | Excess failed runs as failure events, returned runs as run events, dollars per run as spend. |
+| `improve.involvement`, `improve.operations`, `owner.load` | Owner hours, operations, switches and off-hours above the earlier rate. |
+| `owner.priority_churn` | Priority reversals as strategic acts, owner starts as operations, Dispatcher stops as run events. |
+
+The rest size no impact and state why: questions per task (`drift.ask_rate`, `drift.agent_scorecard`), because answers come in several kinds and some stay unanswered; the median answer latency, because a question's wait is not WAIT FOR HUMAN time; concurrent sessions, a peak; red integration rounds and the red target, batches and a present state; Verify verdicts and diff sizes, whose rework `flow.returned` sizes; `arch.*` code-structure risks, whose later failures and returns are sized by the flow rules; gate retries and nightly results; release time and cadence, whole-project measures; guards, which compare indicators that are sized by their own rules; queue, limit and plan snapshots and hook counters, which have no weekly total; and `self.*`, the Supervisor's own health. Such a signal stays at impact 0 unless a round raises its level with evidence.
+
 | Score | Blast radius | Reversibility |
 |---|---|---|
 | 0 | One task or session | Minutes |
@@ -1611,7 +1638,7 @@ Enable none of the runtime cases by default. The stages below list the cases in 
 
 - [x] AC-211 — `supervisor::engine_tests` checks named queries, read-only snapshots, fingerprint repeats, resolution and recurrence, and atomic retry.
 - [ ] AC-212 — `supervisor::catalog_tests` and `ac212_off_missing_and_shadow` cover the store rules, typed thresholds, unavailable inputs and shadow enablement. Remaining catalog and guard inputs are listed in §7.
-- [ ] AC-213 — `ac213_impact_floors_and_ladder` and `ac213_records_per_finding_impact_and_reads_legacy_scores` cover thresholds, floors, level, response and recording. Live charter and escalation inputs remain open.
+- [ ] AC-213 — `ac213_impact_floors_and_ladder` and `ac213_records_per_finding_impact_and_reads_legacy_scores` cover thresholds, floors, level, response and recording; `supervisor::impact_tests` covers each detector's quantity and the stated reason of a signal without a share. Live charter and escalation inputs remain open.
 - [x] AC-214 — `ac214_scoreboard_guard_verdicts` covers four-week comparisons, separate indicators, guards and missing inputs. `ac261_git_release_metrics_and_owner_split` and `e2e_supervisor_probes.py` check retained release, gate and owner inputs.
 - [ ] AC-215 — `ac215_replay_rank_and_schema` covers the CLI ranking, repeatable output, unavailable detectors, project isolation, read-only bytes and schema refusal. Replay of labeled judgment quality remains open.
 - [x] AC-216 — `e2e_supervisor.py` and `ac216_project_off_is_inert_and_a_new_generation_rejects_old_work` cover the signed-in switch, its project scope and disabling during collection. `e2e_supervisor_rounds.py` checks that switch-off ends the active round and frees its slot. `ac245_hold_undo_and_switch_off` covers retained holds.
