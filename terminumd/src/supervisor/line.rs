@@ -7,7 +7,7 @@ use rusqlite::{OptionalExtension, Transaction};
 use serde::{Deserialize, Serialize};
 
 use crate::{app::Shared, tasks::{api::store, ops::{now, rows, sql}}};
-use super::{Evaluation, Evidence, Reading, Rule, SCHEMA, WEEK, Window,
+use super::{Evaluation, Evidence, Reading, Rule, SCHEMA, WEEK, Window, impact::OWN_HEALTH,
     incidents, line_command, line_queue, signals};
 
 const TEST: &str = "Terminum critical line test alert.\n";
@@ -317,7 +317,7 @@ fn report_failure(tx: &Transaction, project: &str, at: i64, failures: Vec<Eviden
     let previous = tx.query_row("SELECT evaluated_at FROM supervisor_evaluations WHERE project = ?1 AND detector = ?2",
         (project, rule.id()), |r| r.get::<_, i64>(0)).optional().map_err(sql)?;
     let at = previous.map_or(at, |last| at.max(last + 1));
-    let reading = Reading::new("critical_line", project, "failed_deliveries", failures.len() as f64, failures);
+    let reading = Reading::new("critical_line", project, "failed_deliveries", failures.len() as f64, failures, OWN_HEALTH);
     let Some(evaluation) = Evaluation::critical(project, rule, reading, Window { before: at, start: at, end: at }) else {
         return Ok(());
     };

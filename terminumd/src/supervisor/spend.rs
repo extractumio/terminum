@@ -6,7 +6,7 @@ use crate::dispatcher::usage;
 use crate::tasks::ops::rows;
 
 use super::flow::{LAUNCH, events, failed_runs, project_events, returned_runs};
-use super::impact::Source;
+use super::impact::{Source, Unit};
 use super::{Comparison, Evidence, Measurements, Query, Reading};
 
 /// Read only the numeric reports and stable row IDs. No usage report's text enters the signal.
@@ -137,13 +137,13 @@ pub(super) fn outliers(q: &Query<'_, '_>) -> Result<Measurements, String> {
         };
         current.evidence.extend(old.iter().flat_map(|sample| sample.evidence.iter().cloned()));
         current.evidence.push(Evidence::Tasks(task.into()));
-        out.readings.push(Reading::new("task", task, "task_dollars", current.value, current.evidence).source(Source::RunUsage)
+        out.readings.push(Reading::new("task", task, "task_dollars", current.value, current.evidence, Source::RunUsage)
             .history(old.iter().map(|sample| sample.value).collect()).attributed_runs(current.runs));
     }
     let [before, now] = failure_spend;
     if !now.evidence.is_empty() {
         let evidence = now.evidence.into_iter().chain(before.evidence).collect();
-        out.readings.push(Reading::new("project", q.project, "failed_run_dollars", now.value, evidence).source(Source::RunUsage)
+        out.readings.push(Reading::new("project", q.project, "failed_run_dollars", now.value, evidence, Source::RunUsage)
             .history(vec![before.value]).attributed_runs(now.runs));
     }
     if missing {
@@ -213,11 +213,10 @@ pub(super) fn allocation(q: &Query<'_, '_>) -> Result<Measurements, String> {
     for row in allocation.rows {
         let Some(share) = row.share else { continue; };
         if row.task_type == "untyped" {
-            out.readings.push(Reading::new("project", q.project, "untyped_share", share, allocation.evidence.clone())
-                .source(Source::UnclassifiedSpend));
+            out.readings.push(Reading::new("project", q.project, "untyped_share", share, allocation.evidence.clone(), Source::SpendAbove(0.0)));
         } else if let Some(target) = row.target {
             out.readings.push(Reading::new("task_type", row.task_type, "allocation_share", share,
-                allocation.evidence.clone()).comparison(Comparison::Deviation(target)));
+                allocation.evidence.clone(), Source::SpendAbove(target)).comparison(Comparison::Deviation(target)));
         }
     }
     Ok(out)
@@ -310,33 +309,37 @@ fn samples(q: &Query<'_, '_>, typed: bool, integration: bool) -> Result<BTreeMap
     Ok(out)
 }
 
-type Rate = fn(&AgentSample) -> Option<f64>;
+/// A rate and the number of observations behind it, so its excess over the band is a count.
+type Rate = fn(&AgentSample) -> Option<(f64, f64)>;
 
-fn question_rate(s: &AgentSample) -> Option<f64> {
-    (s.tasks.len() >= MIN_RATE_SAMPLE).then(|| s.questions.len() as f64 / s.tasks.len() as f64)
+fn rate(count: usize, observations: usize) -> Option<(f64, f64)> {
+    (observations >= MIN_RATE_SAMPLE).then(|| (count as f64 / observations as f64, observations as f64))
 }
-fn fail_rate(s: &AgentSample) -> Option<f64> {
-    (s.runs >= MIN_RATE_SAMPLE).then(|| s.failed.len() as f64 / s.runs as f64)
-}
-fn return_rate(s: &AgentSample) -> Option<f64> {
-    (s.runs >= MIN_RATE_SAMPLE).then(|| s.returned.len() as f64 / s.runs as f64)
-}
-fn cost_rate(s: &AgentSample) -> Option<f64> {
-    (s.costs.len() >= MIN_RATE_SAMPLE && s.costs.len() == s.runs).then(|| s.spend.value / s.costs.len() as f64)
+fn question_rate(s: &AgentSample) -> Option<(f64, f64)> { rate(s.questions.len(), s.tasks.len()) }
+fn fail_rate(s: &AgentSample) -> Option<(f64, f64)> { rate(s.failed.len(), s.runs) }
+fn return_rate(s: &AgentSample) -> Option<(f64, f64)> { rate(s.returned.len(), s.runs) }
+fn cost_rate(s: &AgentSample) -> Option<(f64, f64)> {
+    let priced = s.costs.len();
+    (priced >= MIN_RATE_SAMPLE && priced == s.runs).then(|| (s.spend.value / priced as f64, priced as f64))
 }
 
-fn bands(q: &Query<'_, '_>, typed: bool, integration: bool, metrics: &[(&'static str, Rate)]) -> Result<Measurements, String> {
+const QUESTIONS: &str = "Questions reach the owner as answers of several kinds and some stay unanswered, so no weekly total holds them; owner.answer_latency and improve.operations size the owner's answering.";
+
+/// A metric, its rate and its quantity, or why its excess has no weekly total.
+type Metric = (&'static str, Rate, Result<Unit, &'static str>);
+
+fn bands(q: &Query<'_, '_>, typed: bool, integration: bool, metrics: &[Metric]) -> Result<Measurements, String> {
     let samples = samples(q, typed, integration)?;
     let mut out = Measurements::default();
     let mut missing = samples.is_empty();
     for ((kind, agent), sample) in &samples {
-        for (metric, rate) in metrics {
-            let Some(value) = rate(sample) else {
+        for (metric, rate, unit) in metrics {
+            let Some((value, observations)) = rate(sample) else {
                 missing = true;
                 continue;
             };
             let peers: Vec<_> = samples.iter().filter(|((k, a), _)| k == kind && a != agent)
-                .filter_map(|(_, s)| rate(s).map(|n| (n, s))).collect();
+                .filter_map(|(_, s)| rate(s).map(|(n, _)| (n, s))).collect();
             if peers.is_empty() {
                 missing = true;
                 continue;
@@ -345,7 +348,8 @@ fn bands(q: &Query<'_, '_>, typed: bool, integration: bool, metrics: &[(&'static
                 .flat_map(|s| s.evidence.iter().cloned().chain(s.questions.iter().cloned().map(events)).chain(s.spend.evidence.iter().cloned()))
                 .collect();
             let (subject_kind, subject) = if typed { ("agent_task_type", format!("{agent}/{kind}")) } else { ("agent", agent.clone()) };
-            out.readings.push(Reading::new(subject_kind, subject, metric, value, evidence)
+            let source = unit.map_or_else(Source::Unsized, |unit| Source::RateExcess(unit, observations));
+            out.readings.push(Reading::new(subject_kind, subject, metric, value, evidence, source)
                 .history(peers.iter().map(|(value, _)| *value).collect()));
         }
     }
@@ -356,14 +360,14 @@ fn bands(q: &Query<'_, '_>, typed: bool, integration: bool, metrics: &[(&'static
 }
 
 pub(super) fn ask_rate(q: &Query<'_, '_>) -> Result<Measurements, String> {
-    bands(q, false, false, &[("questions_per_task", question_rate)])
+    bands(q, false, false, &[("questions_per_task", question_rate, Err(QUESTIONS))])
 }
 
 pub(super) fn scorecard(q: &Query<'_, '_>) -> Result<Measurements, String> {
-    let mut metrics: Vec<(&'static str, Rate)> = vec![("failed_run_share", fail_rate),
-        ("questions_per_task", question_rate), ("dollars_per_run", cost_rate)];
+    let mut metrics: Vec<Metric> = vec![("failed_run_share", fail_rate, Ok(Unit::FailureEvents)),
+        ("questions_per_task", question_rate, Err(QUESTIONS)), ("dollars_per_run", cost_rate, Ok(Unit::Spend))];
     let integration = super::catalog::integration_on(q.tx, q.project)?;
-    if integration { metrics.push(("returned_run_share", return_rate)); }
+    if integration { metrics.push(("returned_run_share", return_rate, Ok(Unit::RunEvents))); }
     bands(q, true, integration, &metrics)
 }
 

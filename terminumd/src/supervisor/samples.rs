@@ -9,7 +9,7 @@ use crate::app::Shared;
 use crate::dispatcher::{runs::STILL, waits};
 use crate::tasks::ops::{rows, sql};
 
-use super::{Comparison, DAY, Evidence, Measurements, Query, Reading, Rule, percentile};
+use super::{Comparison, DAY, Evidence, Measurements, Query, Reading, Rule, impact::Source, percentile};
 
 pub(super) const CADENCE: i64 = 15 * 60;
 const QUEUE: &str = "queue_waits";
@@ -92,11 +92,15 @@ struct Sample {
     reset: Option<i64>,
 }
 
-fn snapshot_metric(rule: Rule) -> (&'static str, &'static str) {
+/// A snapshot rule's metric, its subjects and why it sizes no impact share.
+fn snapshot_metric(rule: Rule) -> (&'static str, &'static str, &'static str) {
     match rule {
-        Rule::QueueGrowth => (QUEUE, "project"),
-        Rule::LimitNear => (LIMIT, "subscription"),
-        Rule::StalePlan => (ETA, "session"),
+        Rule::QueueGrowth => (QUEUE, "project",
+            "Dispatcher queue samples are a state; queued tasks' delay is sized by flow.starved and flow.wait_human_age."),
+        Rule::LimitNear => (LIMIT, "subscription",
+            "A predicted subscription limit is a forecast, not spent quantity; spend is sized by flow.cost_outlier."),
+        Rule::StalePlan => (ETA, "session",
+            "A growing plan estimate is a state; the delay it causes shows in lead time, which flow.lead_time_shift sizes."),
         _ => unreachable!("Only snapshot rules use the snapshot query"),
     }
 }
@@ -107,7 +111,7 @@ pub(super) fn first_point(tx: &Transaction, project: &str, rule: Rule, at: i64) 
 }
 
 pub(super) fn snapshots(q: &Query<'_, '_>) -> Result<Measurements, String> {
-    let (metric, subjects) = snapshot_metric(q.detector.rule);
+    let (metric, subjects, no_share) = snapshot_metric(q.detector.rule);
     let mut groups = BTreeMap::<String, Vec<Sample>>::new();
     let samples = rows(q.tx, "SELECT id, subject, at, value, resets_at FROM supervisor_points
         WHERE project = ?1 AND metric = ?2 AND at BETWEEN ?3 AND ?4 ORDER BY subject, at DESC",
@@ -145,7 +149,7 @@ pub(super) fn snapshots(q: &Query<'_, '_>) -> Result<Measurements, String> {
         }
         let id = if subject.is_empty() { q.project.to_owned() } else { subject };
         let evidence = points[..used].iter().map(|p| Evidence::SupervisorPoints(p.id)).collect();
-        let reading = Reading::new(subjects, id, metric, value, evidence);
+        let reading = Reading::new(subjects, id, metric, value, evidence, Source::Unsized(no_share));
         out.readings.push(if metric == LIMIT {
             reading.comparison(Comparison::AtLeast)
         } else { reading });
@@ -193,7 +197,8 @@ pub(super) fn counters(q: &Query<'_, '_>) -> Result<Measurements, String> {
             _ => "subagent_starts",
         };
         out.readings.push(Reading::new("session", format!("{agent}/{session}"), metric, count,
-            vec![Evidence::SupervisorHookCounts(id)]).history(histories.get(&event).cloned().unwrap_or_default()));
+            vec![Evidence::SupervisorHookCounts(id)],
+            Source::Unsized("A session's tool failures, repeats, compactions and subagents are in no weekly total, and its whole spend would overstate their cost.")).history(histories.get(&event).cloned().unwrap_or_default()));
     }
     let available = q.tx.query_row("SELECT EXISTS (SELECT 1 FROM supervisor_hook_counts
         WHERE project = ?1 AND at <= ?2)", (q.project, q.window.end), |r| r.get::<_, bool>(0)).map_err(sql)?;

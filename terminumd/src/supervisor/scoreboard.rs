@@ -54,6 +54,10 @@ impl Week {
         self.lead_days.iter().map(|days| (days - baseline).max(0.0)).sum()
     }
 
+    pub fn strategic_acts(&self) -> f64 {
+        self.strategic.iter().sum()
+    }
+
     pub fn lead_days(&self) -> f64 {
         self.lead_days.iter().sum()
     }
