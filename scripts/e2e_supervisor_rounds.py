@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-"""AC-233–235: private Dispatcher and fake agent, exercising the installed CLI's MCP wire protocol."""
+"""AC-233–235 and AC-263: private Dispatcher and fake agent, exercising the CLI's MCP wire protocol."""
 from contextlib import closing
 import json
 from pathlib import Path
@@ -123,7 +123,7 @@ def main():
         check("AC-233 an unchanged repeat has exactly one round and one prompt",
               db("SELECT count(*) FROM supervisor_rounds WHERE fingerprint = ?", [key]) == [(1,)] and taken() == [typed],
               call(f"{path}/screen")["signals"][0])
-        check("AC-234 an archived case is signed-in and project scoped",
+        check("AC-234 AC-263 an archived case is signed-in and project scoped",
               request(f"{path}/rounds/{case}", signed=False)[0] == 401 and request(f"{expiry_path}/rounds/{case}")[0] != 200)
 
         t.stop()

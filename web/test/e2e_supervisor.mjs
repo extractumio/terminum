@@ -4,6 +4,7 @@ import { drawn, fakeBoard, openPage, ORIGIN, SIZES, serveRenderers, shot, THEME 
 import { surfacePreview } from "./e2e_surface_preview.mjs";
 import { scorecardFixture, checkScorecard, outsideSettings, checkOutsideSave, SMALL_RATE, MISSING_RATE } from "./e2e_supervisor_scorecard.mjs";
 import { configFixture, checkConfiguration } from "./e2e_supervisor_config.mjs";
+import { SCORE, TEMPLATES, templateDraft } from "./e2e_supervisor_templates.mjs";
 const ROOT = "/api/task-projects/api/supervisor";
 const RULE = "flow.failed_no_reason";
 const DATE = 1_790_000_000;
@@ -28,10 +29,6 @@ const INCIDENT = { id: 42, task: "API-40", project: "api", project_name: "API se
   needed: "Acknowledge when seen.", no_answer: "No automatic action without an answer." };
 const HOLD = { id: 5, kind: "pause_integration", label: "Integration queue paused", undo: "Resume integration",
   signal: "0", detector: RULE, reason: LITERAL };
-const SCORE = { name: "Release cadence", verdict: "not measured yet", guard: "Stability", metrics: [
-  { name: "Releases per month", verdict: "not measured yet", missing: "release tags are unavailable" },
-  { name: "Fixture measured series", verdict: "better", missing: null, before: 3, current: 5, noise: 0.5 },
-] };
 const PROBLEM = { id: 42, title: "Repeated failures", state: "confirmed", lens: "flow", impact: 2, share: 0.2,
   indicator: "failure_events", rank: 0.32, hypothesis: LITERAL, disproof: "Failures stop without a change.",
   yardstick: [{ detector: RULE, fingerprint: "fixture-1", threshold: 8, weeks: 4 }],
@@ -78,7 +75,7 @@ async function fixture(page, theme) {
   let failedTest = true, refusedPreview = false;
   let refuseSave;
   const firstSave = new Promise((resolve) => { refuseSave = resolve; });
-  const view = () => ({ revision, settings: saved, detector_defaults: DEFAULTS,
+  const view = () => ({ revision, settings: saved, detector_defaults: DEFAULTS, templates: TEMPLATES,
     unset_probes: candidate ? ["latency"] : [], confirmed_probes: approved ? ["latency"] : [] });
   await page.route(/\/api\/task-projects\/[^/]+\/supervisor(?:[/?]|$)/, async (route) => {
     const req = route.request(), { pathname, searchParams } = new URL(req.url());
@@ -240,6 +237,7 @@ async function settingsTab(page, { calls, refuseSave }, suffix, phone) {
   await surfacePreview(page, panel, calls, suffix, phone);
   await outsideSettings(page, panel, suffix, phone);
   await openGroup(page, "Charter and allocation");
+  await templateDraft(page, panel, calls, suffix);
   const priorities = panel.getByLabel("Priorities, highest first, one per line");
   await priorities.fill("First project priority\nSecond project priority");
   await panel.getByLabel("Review priorities on").fill("2027-01-15");
@@ -264,6 +262,7 @@ async function settingsTab(page, { calls, refuseSave }, suffix, phone) {
     keep.settings.charter.priorities[1] === "Second project priority" && keep.settings.tiers.small === "mine"
     && keep.settings.charter.surfaces.t3[0] === "src/storage/**" && keep.settings.guardrails.threshold_percent === 54
     && JSON.stringify(keep.settings.detectors) === JSON.stringify(SETTINGS.detectors));
+  check("AC-263 Save keeps the edited target", JSON.stringify(keep.settings.charter.indicator_targets) === JSON.stringify({ stability: "Keep the demo ready for user trials." }));
   await checkOutsideSave(panel, keep.settings);
   await page.locator("#supervisoron").click();
   await until(() => page.getByText("Scan complete. Less than three weeks of history.").isVisible());
@@ -406,6 +405,7 @@ async function screen(page, suffix, phone) {
   if (phone) check("AC-242 verdict keys fit a finger on a phone", await useful.evaluate((key) => key.getBoundingClientRect().height >= 40));
   await checkScorecard(page, reports, suffix, LITERAL);
   await page.locator("#sv-score summary").filter({ hasText: "Release cadence" }).click();
+  check("AC-263 a target is visible with the measured indicator", await until(() => page.getByText(`Target · ${SCORE.target}`).isVisible()));
   await shot(page, `supervisor-probes-${suffix}`);
   await page.locator("#sv-signals summary").first().click();
   const opened = page.locator("#sv-signals details[open]").first();

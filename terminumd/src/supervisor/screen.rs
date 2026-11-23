@@ -37,6 +37,8 @@ struct Indicator {
     name: &'static str,
     verdict: &'static str,
     guard: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    target: Option<String>,
     metrics: Vec<Metric>,
 }
 
@@ -91,16 +93,17 @@ fn signal_page(tx: &Transaction, id: &str, after: Option<&str>) -> Result<Signal
     Ok(SignalPage { signals, next, investigations_enabled: rounds::enabled(tx, id)?.is_some() })
 }
 
-fn indicators(tx: &Transaction, id: &str, at: i64, active: [bool; 7]) -> Result<Vec<Indicator>, String> {
-    if !active.contains(&true) {
+fn indicators(tx: &Transaction, id: &str, at: i64, saved: &settings::Settings) -> Result<Vec<Indicator>, String> {
+    if !scoreboard::Key::ALL.into_iter().any(|key| saved.indicator_enabled(key)) {
         return Ok(Vec::new());
     }
     let (first, _) = flow::history_bounds(tx, id, at)?;
     let weeks = scoreboard::read(tx, id, at, first)?;
-    Ok(scoreboard::indicators(&weeks).into_iter().zip(active)
-        .filter(|(_, enabled)| *enabled)
-        .map(|(i, _)| Indicator {
+    Ok(scoreboard::indicators(&weeks).into_iter()
+        .filter(|i| saved.indicator_enabled(i.key))
+        .map(|i| Indicator {
             name: i.name, verdict: i.verdict.label(), guard: i.guard,
+            target: saved.charter.indicator_targets.get(&i.key).cloned(),
             metrics: i.lines.into_iter().map(|m| Metric {
                 name: m.name,
                 verdict: (!m.context).then(|| m.verdict.label()),
@@ -130,7 +133,7 @@ async fn screen(State(app): State<Shared>, Path(id): Path<String>, Query(query):
         let probes = if page.investigations_enabled { super::probes::statuses(tx, &id, at)? } else { Vec::new() };
         Ok(Screen { project_name, scorecard: super::measures::read(tx, &id, at, &spending)?,
             audit: super::audit::shown(tx, &id)?, holds: super::holds::list(tx, &id)?,
-            indicators: indicators(tx, &id, at, saved.enabled_indicators())?,
+            indicators: indicators(tx, &id, at, &saved)?,
             outside_indicators: outside_indicators::read(tx, &id, at, &saved.charter.outside_indicators)?,
             signals: page,
             probes,

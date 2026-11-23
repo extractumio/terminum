@@ -170,6 +170,7 @@ pub(super) async fn test(app: &Shared, project: String, channel: usize, revision
 enum Job {
     Notice(line_queue::Notice),
     Weekly(String),
+    Discarded,
 }
 
 fn claim(tx: &Transaction, at: i64, minute: Option<u16>) -> Result<Option<(Settings, Job)>, String> {
@@ -178,8 +179,10 @@ fn claim(tx: &Transaction, at: i64, minute: Option<u16>) -> Result<Option<(Setti
         return Ok(None);
     }
     let quiet = settings.quiet.is_some() && minute.is_none_or(|minute| settings.quiet_at(minute));
-    if let Some(notice) = line_queue::claim(tx, &settings, at, quiet)? {
-        return Ok(Some((settings, Job::Notice(notice))));
+    match line_queue::claim(tx, &settings, at, quiet)? {
+        line_queue::Claim::Notice(notice) => return Ok(Some((settings, Job::Notice(notice)))),
+        line_queue::Claim::Discarded => return Ok(Some((settings, Job::Discarded))),
+        line_queue::Claim::Empty => {}
     }
     if at - checked_at >= WEEK {
         let project = tx.query_row("SELECT project FROM project_supervisor WHERE enabled ORDER BY project LIMIT 1",
@@ -253,6 +256,7 @@ async fn send_next(app: &Shared) -> Result<bool, String> {
             (notice.project, text, notice.channels, false)
         }
         Job::Weekly(project) => (project, CHECK.into(), settings.channels.len(), true),
+        Job::Discarded => return Ok(true),
     };
     let attempts = deliver(&settings, &text, scheduled, check, line_command::DEADLINE).await;
     record(app, project, attempts, !check).await?;

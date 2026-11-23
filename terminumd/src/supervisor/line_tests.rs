@@ -31,10 +31,11 @@ fn observed(f: &Fixture, at: i64, subjects: &[(&str, bool, u8, i64)]) {
 }
 
 fn take(store: &Store, at: i64, minute: u16) -> Option<Notice> {
-    store.with(|tx| claim(tx, at, Some(minute))).unwrap().map(|(_, job)| match job {
-        Job::Notice(notice) => notice,
-        Job::Weekly(_) => panic!("unexpected weekly check"),
-    })
+    match store.with(|tx| claim(tx, at, Some(minute))).unwrap() {
+        Some((_, Job::Notice(notice))) => Some(notice),
+        Some((_, Job::Weekly(_))) => panic!("unexpected weekly check"),
+        Some((_, Job::Discarded)) | None => None,
+    }
 }
 
 #[test]

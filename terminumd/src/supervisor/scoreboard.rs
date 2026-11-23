@@ -245,21 +245,41 @@ pub(super) struct Line {
     pub context: bool,
 }
 
+#[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(super) enum Key {
+    Involvement,
+    Stability,
+    LeadTime,
+    Releases,
+    Backlog,
+    CognitiveLoad,
+    Operations,
+}
+
+impl Key {
+    pub(super) const ALL: [Self; 7] = [
+        Self::Involvement, Self::Stability, Self::LeadTime, Self::Releases,
+        Self::Backlog, Self::CognitiveLoad, Self::Operations,
+    ];
+}
+
 pub(super) struct Indicator {
+    pub key: Key,
     pub name: &'static str,
     pub guard: &'static str,
     pub verdict: Verdict,
     pub lines: Vec<Line>,
 }
 
-fn indicator(name: &'static str, guard: &'static str, weeks: &[Week], metrics: Vec<Metric>) -> Indicator {
+fn indicator(key: Key, name: &'static str, guard: &'static str, weeks: &[Week], metrics: Vec<Metric>) -> Indicator {
     let lines: Vec<_> = metrics.into_iter().map(|m| m.measure(weeks)).collect();
     let any = |v| lines.iter().any(|l| !l.context && l.verdict == v);
     let verdict = if any(Verdict::Worse) { Verdict::Worse }
         else if any(Verdict::Better) { Verdict::Better }
         else if any(Verdict::Flat) { Verdict::Flat }
         else { Verdict::Unmeasured };
-    Indicator { name, guard, verdict, lines }
+    Indicator { key, name, guard, verdict, lines }
 }
 
 pub(super) fn compare(before: Option<f64>, current: Option<f64>, noise: f64, comparison: Option<bool>) -> Verdict {
@@ -294,11 +314,11 @@ fn ratio(weeks: &[Week], numerator: impl Fn(&Week) -> f64, denominator: impl Fn(
 
 pub(super) fn indicators(weeks: &[Week]) -> [Indicator; 7] {
     use Metric as M;
-    let mut features = indicator("Features per owner hour", "Stability", weeks, vec![
+    let mut features = indicator(Key::Involvement, "Features per owner hour", "Stability", weeks, vec![
         M::compare("Feature tasks DONE per active hour", true, |w| ratio(w, |x| x.features, |x| x.load.hours)),
         M::context("Untyped share of DONE tasks", |w| ratio(w, |x| x.untyped, |x| x.done)),
     ]);
-    let stability = indicator("Stability", "Reference guard", weeks, vec![
+    let stability = indicator(Key::Stability, "Stability", "Reference guard", weeks, vec![
         M::compare("Bugs opened per week", false, |w| mean(w, |x| x.bugs[0])),
         M::compare("P0 Bugs opened per week", false, |w| mean(w, |x| x.bugs[1])),
         M::compare("P1 Bugs opened per week", false, |w| mean(w, |x| x.bugs[2])),
@@ -312,7 +332,7 @@ pub(super) fn indicators(weeks: &[Week]) -> [Indicator; 7] {
     let lead_missing = if !weeks.last().is_some_and(|w| w.integration_on) { INTEGRATION_OFF }
         else if weeks.last().is_none_or(|w| w.releases.is_none()) { GIT_MISSING }
         else { "No measured tasks with a containing release in this window." };
-    let mut lead = indicator("Lead time", "Stability", weeks, vec![
+    let mut lead = indicator(Key::LeadTime, "Lead time", "Stability", weeks, vec![
         M::compare("Median task-days to first DONE", false, |w| percentile(&mut w.iter().flat_map(|x| x.lead_days.iter().copied()).collect::<Vec<_>>(), 50)),
         M::compare("Median task-days to first release", false, |w|
             percentile(&mut w.iter().flat_map(|x| x.release_days.iter().copied()).collect::<Vec<_>>(), 50)).because(lead_missing).probe(),
@@ -321,12 +341,12 @@ pub(super) fn indicators(weeks: &[Week]) -> [Indicator; 7] {
                 else { "A complete Git history is required to confirm unreleased commits." }).probe(),
     ]);
     lead.verdict = guarded(lead.verdict, stability.verdict);
-    let mut release = indicator("Release cadence", "Stability", weeks, vec![
+    let mut release = indicator(Key::Releases, "Release cadence", "Stability", weeks, vec![
         M::compare("Releases per month", true, |w| total(w, |x| x.releases)
             .map(|n| n * probe_rules::MONTH / (7 * w.len()) as f64)).because(GIT_MISSING).probe(),
     ]);
     release.verdict = guarded(release.verdict, stability.verdict);
-    let mut backlog = indicator("Backlog", "Archived without DONE is counted separately", weeks, vec![
+    let mut backlog = indicator(Key::Backlog, "Backlog", "Archived without DONE is counted separately", weeks, vec![
         M::compare("TODO tasks (weekly snapshots)", false, |w| mean(w, |x| x.todo)),
         M::compare("Median TODO age in days", false, |w| percentile(&mut w.iter().flat_map(|x| x.todo_ages.iter().copied()).collect::<Vec<_>>(), 50)),
         M::compare("Tasks made minus first DONE per week", false, |w| mean(w, |x| x.net.values().sum())),
@@ -342,14 +362,14 @@ pub(super) fn indicators(weeks: &[Week]) -> [Indicator; 7] {
         backlog.verdict = Verdict::Flat;
     }
     backlog.verdict = guarded(backlog.verdict, archived);
-    let mut load = indicator("Cognitive load", "Features per owner hour", weeks, vec![
+    let mut load = indicator(Key::CognitiveLoad, "Cognitive load", "Features per owner hour", weeks, vec![
         M::compare("Switches per active hour", false, |w| ratio(w, |x| x.load.switch_count, |x| x.load.hours)),
         M::compare("Active hours per week", false, |w| mean(w, |x| x.load.hours)),
         M::compare("Peak concurrent sessions", false, |w| w.iter().map(|x| x.load.peak).reduce(f64::max)),
         M::compare("Off-hours share", false, |w| ratio(w, |x| x.load.off_hours, |x| x.load.hours)),
     ]);
     load.verdict = guarded(load.verdict, features.verdict);
-    let mut operations = indicator("Operational and strategic work", "Owner retains strategic acts", weeks, vec![
+    let mut operations = indicator(Key::Operations, "Operational and strategic work", "Owner retains strategic acts", weeks, vec![
         M::compare("Owner operations per DONE task", false, |w| ratio(w, |x| x.operations.iter().sum(), |x| x.done)),
         M::context("Operational answers per week", |w| mean(w, |x| x.operations[0])),
         M::context("Runs per week", |w| mean(w, |x| x.operations[1])),

@@ -31,6 +31,8 @@ terminum is built this way: every `Integrate TERM-nnn` commit here went through 
 - **Schedules:** tasks by the clock or a cron line, each with an agent and a time budget.
 - **Managers:** a project's own session runs, answers and stops its tasks: one agent leads the
   others.
+- **[Project Supervisor](docs/USAGE.md#project-supervisor)** (opt-in) measures project health,
+  raises incidents through one critical line and brings decisions to a weekly review.
 
 ### Asked for decisions, shown everything
 

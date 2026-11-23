@@ -7,7 +7,7 @@ use rusqlite::{OptionalExtension, Transaction};
 use serde::{Deserialize, Serialize};
 
 use crate::tasks::ops::sql;
-use super::{Detector, Mode, Rule, Threshold, outside_feedback::ReferenceBase, outside_indicators, probes};
+use super::{Detector, Mode, Rule, Threshold, outside_feedback::ReferenceBase, outside_indicators, probes, scoreboard::Key};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -126,6 +126,8 @@ pub(super) struct Charter {
     pub allocation: BTreeMap<String, f64>,
     pub(super) allocation_review_at: Option<i64>,
     indicators: Indicators,
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub(super) indicator_targets: BTreeMap<Key, String>,
     pub(super) outside_indicators: BTreeMap<String, outside_indicators::Setting>,
     pub(super) surfaces: super::surfaces::Surfaces,
 }
@@ -247,9 +249,17 @@ impl Settings {
         [&self.charter.never, &self.charter.priorities]
     }
 
-    pub(super) fn enabled_indicators(&self) -> [bool; 7] {
+    pub(super) fn indicator_enabled(&self, key: Key) -> bool {
         let i = &self.charter.indicators;
-        [i.involvement, i.stability, i.lead_time, i.releases, i.backlog, i.cognitive_load, i.operations]
+        match key {
+            Key::Involvement => i.involvement,
+            Key::Stability => i.stability,
+            Key::LeadTime => i.lead_time,
+            Key::Releases => i.releases,
+            Key::Backlog => i.backlog,
+            Key::CognitiveLoad => i.cognitive_load,
+            Key::Operations => i.operations,
+        }
     }
 
     pub fn mode(&self, rule: Rule) -> Mode {
@@ -277,6 +287,11 @@ impl Settings {
     }
 
     fn validate(&self) -> Result<(), String> {
+        if self.charter.indicator_targets.values().any(|goal| {
+            goal.trim().is_empty() || goal.len() > 240 || goal.chars().any(char::is_control)
+        }) {
+            return Err("Use nonblank indicator targets of up to 240 bytes each.".into());
+        }
         if self.probes.git_file_line_cap == Some(0) { return Err("The Git source file line limit must be positive.".into()); }
         outside_indicators::validate(&self.charter.outside_indicators)?;
         if self.probes.feedback.len() > 32 || self.probes.feedback.iter().any(|(probe, base)| {

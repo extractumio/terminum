@@ -109,14 +109,15 @@ function feedbackProbes(edit, existing) {
   return stack(entries, actions(addKey));
 }
 
-function charter(edit, saved) {
+function charter(edit, saved, inputs) {
   const fields = [
     ["mission", "Mission"], ["users", "Users, one per line", lines], ["risk_appetite", "Risk appetite"],
     ["priorities", "Priorities, highest first, one per line", lines], ["never", "Never list, one rule per line", lines],
   ].map(([key, label, read]) => {
     const value = saved.charter[key];
-    return edit.field(label, text(Array.isArray(value) ? value.join("\n") : value, "area"),
-      (v, out) => { out.charter[key] = read ? read(v) : v; });
+    const input = text(Array.isArray(value) ? value.join("\n") : value, "area");
+    if (key === "never" || key === "priorities") inputs.set(key, input);
+    return edit.field(label, input, (v, out) => { out.charter[key] = read ? read(v) : v; });
   });
   const date = (label, key) => edit.field(label, text(dateValue(saved.charter[key], "date"), "date"),
     (v, out) => { out.charter[key] = v; }, timeOf);
@@ -124,6 +125,25 @@ function charter(edit, saved) {
     el("h3", null, "Allocation target"),
     hint("Set the intended share of work by task type. Leave all shares empty to measure allocation without a target."),
     allocation(edit, saved), date("Review allocation on", "allocation_review_at"));
+}
+
+function templatePicker(templates, fill) {
+  const choice = select([["", "Choose a project type"], ...templates.map(({ id, name }) => [id, name])], "");
+  const filled = el("p", "msay");
+  filled.setAttribute("role", "status");
+  const apply = button("textkey", "Fill settings draft", () => {
+    const template = templates.find(({ id }) => id === choice.value);
+    fill(template);
+    filled.textContent = `${template.name} settings filled. Review the draft and press Save.`;
+  });
+  apply.disabled = true;
+  choice.addEventListener("change", () => {
+    apply.disabled = !choice.value;
+    filled.textContent = "";
+  });
+  return section("Project template", row("Project type", choice),
+    hint("Fills the never list, priorities, indicator targets, T2 and T3 paths, and standard probe choices in this draft."),
+    actions(apply), filled);
 }
 
 export function preferences(view, agents, { request, run }) {
@@ -141,6 +161,16 @@ export function preferences(view, agents, { request, run }) {
   });
   const indicators = INDICATORS.map(([key, label]) => edit.field(label, check(saved.charter.indicators[key]),
     (v, out) => { out.charter.indicators[key] = v; }));
+  const targetInputs = new Map();
+  const targets = INDICATORS.map(([key, label]) => {
+    const input = text(saved.charter.indicator_targets?.[key]);
+    targetInputs.set(key, input);
+    return edit.field(`${label} target`, input, (v, out) => {
+      const values = out.charter.indicator_targets ??= {};
+      if (v.trim()) values[key] = v.trim();
+      else delete values[key];
+    });
+  });
   const surfaceInputs = new Map();
   const surfaces = [
     ["t1", "T1 internal boundaries"], ["t2", "T2 contracts"], ["t3", "T3 breaking surfaces"],
@@ -150,8 +180,12 @@ export function preferences(view, agents, { request, run }) {
     surfaceInputs.set(key, input);
     return edit.field(label, input, (v, out) => { out.charter.surfaces[key] = lines(v); });
   });
-  const probes = [["git", "Git"], ["gate_record", "Gate records"], ["code_host", "Code host"]].map(([key, label]) =>
-    edit.field(label, check(saved.probes[key]), (v, out) => { out.probes[key] = v; }));
+  const probeInputs = new Map();
+  const probes = [["git", "Git"], ["gate_record", "Gate records"], ["code_host", "Code host"]].map(([key, label]) => {
+    const input = check(saved.probes[key]);
+    probeInputs.set(key, input);
+    return edit.field(label, input, (v, out) => { out.probes[key] = v; });
+  });
   const fileLimit = edit.field("Git source file line limit", number(saved.probes.git_file_line_cap, { min: 1, step: 1 }), (v, out) => {
     out.probes.git_file_line_cap = v;
   }, (field) => field.value === "" ? null : field.valueAsNumber);
@@ -176,14 +210,31 @@ export function preferences(view, agents, { request, run }) {
     }
     return preview;
   }));
-  const node = stack(grid(level, engine), section("Tier agents and budgets", hint("With no tier agents selected, the Supervisor runs on code alone."),
+  const charterInputs = new Map();
+  const charterSection = charter(edit, saved, charterInputs);
+  const indicatorSection = section("Indicators", part("div", "sv-checks", ...indicators),
+    el("h3", null, "Targets"), hint("Targets appear on the scoreboard alongside its measured verdicts."), grid(...targets),
+    hint("An approved custom probe supplies the metric and its guard."), outsideIndicators(edit, saved.charter.outside_indicators));
+  const surfaceSection = section("Surface map", hint("Enter one pattern or phrase per line. An edit or removal on a T3 path requires owner sign-off. An addition on the same path requires a T2 review."),
+    ...surfaces, actions(preview), previewError, previewResult);
+  const probeSection = section("Standard probes", hint("Choose which standard probes may collect data."), actions(...probes), grid(fileLimit));
+
+  const template = view.templates?.length ? templatePicker(view.templates, (candidate) => {
+    const fill = (input, value) => {
+      input.value = Array.isArray(value) ? value.join("\n") : value ?? "";
+      input.dispatchEvent(new Event("input"));
+    };
+    for (const [key, input] of charterInputs) fill(input, candidate[key]);
+    for (const [key, input] of targetInputs) fill(input, candidate.targets[key]);
+    for (const key of ["t2", "t3"]) fill(surfaceInputs.get(key), candidate.surfaces[key]);
+    for (const key of ["git", "gate_record"]) probeInputs.get(key).checked = candidate.probes[key];
+    for (const group of [charterSection, indicatorSection, surfaceSection, probeSection]) group.open = true;
+  }) : null;
+
+  const node = stack(...(template ? [template] : []), grid(level, engine),
+    section("Tier agents and budgets", hint("With no tier agents selected, the Supervisor runs on code alone."),
     grid(...tiers), el("h3", null, "Budgets"), hint("Budgets set the limits for judgment rounds and fixes when the Supervisor admits work."), grid(...budgets)),
-  charter(edit, saved), section("Indicators", part("div", "sv-checks", ...indicators),
-    hint("An approved custom probe supplies the metric and its guard."), outsideIndicators(edit, saved.charter.outside_indicators)),
-  section("Surface map", hint("Enter one pattern or phrase per line. An edit or removal on a T3 path requires owner sign-off. An addition on the same path requires a T2 review."),
-    ...surfaces, actions(preview), previewError, previewResult),
-  detectors(edit, saved, view.detector_defaults),
-  section("Standard probes", hint("Choose which standard probes may collect data."), actions(...probes), grid(fileLimit)),
+  charterSection, indicatorSection, surfaceSection, detectors(edit, saved, view.detector_defaults), probeSection,
   section("Feedback probes", hint("Use an approved custom probe and the HTTPS prefix for its numbered references."),
     feedbackProbes(edit, saved.probes.feedback ?? {})));
   return { node, read: () => edit.read(structuredClone(saved)) };
