@@ -103,9 +103,10 @@ def shared_line(fixture, paths):
           }, expected=400)["error"])
     time.sleep(11)
     with closing(sqlite3.connect(fixture.db)) as db:
-        pending = db.execute("SELECT incident FROM supervisor_line_pending ORDER BY id").fetchall()
+        pending = db.execute("SELECT incident FROM supervisor_line_pending ORDER BY incident").fetchall()
     check("AC-263 the same quiet window defers both projects' notices",
-          not output.exists() and pending == [(low,), (high,)])
+          not output.exists() and pending == [(low,), (high,)],
+          f"pending={pending}, sent={output.exists()}")
     fixture.request(high_path + "/line", "PUT", {"revision": saved["revision"], "settings": {**line, "quiet": None}})
     notices = wait_for(lambda: output.read_text().splitlines() if output.exists() else [],
                        lambda lines: len(lines) >= 2, 20, every=0.25)
