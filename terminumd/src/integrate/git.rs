@@ -3,7 +3,7 @@
 //! unless the user set their own ssh command), never signing what it makes, so one hung command never holds the
 //! engine's one loop for every project (`terminum-integration.md` §9).
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
 fn git(dir: &Path) -> Command {
@@ -52,4 +52,35 @@ pub fn changed(repo: &Path, base: &str, head: &str) -> Result<Vec<String>, Strin
 /// A commit as people read it: its first nine characters.
 pub fn short(sha: &str) -> &str {
     &sha[..9.min(sha.len())]
+}
+
+pub(crate) fn is_commit(value: &str) -> bool {
+    matches!(value.len(), 40 | 64) && value.bytes().all(|b| b.is_ascii_hexdigit())
+}
+
+/// A Supervisor observation reads only local Git objects, including in a partial clone.
+pub(crate) fn local_output(dir: &Path, args: &[&str]) -> Result<String, String> {
+    let o = git(dir).args(["-c", "core.fsmonitor=false"]).env("GIT_NO_LAZY_FETCH", "1").env("GIT_NO_REPLACE_OBJECTS", "1")
+        .args(args).output().map_err(|e| format!("git: {e}"))?;
+    if o.status.success() {
+        String::from_utf8(o.stdout).map_err(|_| "Git returned a path that is not valid UTF-8.".into())
+    } else {
+        Err(said(&o))
+    }
+}
+
+pub(crate) struct Checkout {
+    pub root: PathBuf,
+    pub common: String,
+    pub head: String,
+}
+
+pub(crate) fn checkout(dir: &Path) -> Result<Checkout, String> {
+    let out = local_output(dir, &["rev-parse", "--path-format=absolute", "--show-toplevel", "--git-common-dir", "HEAD"])?;
+    let mut lines = out.lines();
+    let (Some(root), Some(common), Some(head), None) = (lines.next(), lines.next(), lines.next(), lines.next()) else {
+        return Err("Git did not return a checkout and its HEAD.".into());
+    };
+    if !is_commit(head) { return Err("Git did not return a full HEAD commit.".into()); }
+    Ok(Checkout { root: root.into(), common: common.into(), head: head.into() })
 }

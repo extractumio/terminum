@@ -15,7 +15,7 @@ pub(crate) const NAMES: &[&str] = &["get_case_file", "list_signals", "get_signal
 pub(crate) const ADVISOR: &[&str] = &["open_problem", "update_problem", "propose_rank", "propose_decision", "post_incident_answer"];
 
 pub(crate) fn known(tool: &str) -> bool {
-    NAMES.contains(&tool) || ADVISOR.contains(&tool) || tool == super::reflection::TOOL
+    NAMES.contains(&tool) || ADVISOR.contains(&tool) || matches!(tool, super::reflection::TOOL | super::design_gates::RECORD)
 }
 
 #[derive(Deserialize)]
@@ -116,6 +116,14 @@ fn args<T: DeserializeOwned>(value: Value) -> Result<T, String> {
 }
 
 pub(crate) async fn run(app: &Shared, key: String, project: String, tool: String, value: Value) -> Result<String, String> {
+    if tool == super::design_gates::RECORD {
+        let task = store(app, move |tx| {
+            let run = run_of(tx, &key, &project, &tool)?;
+            super::design_reviews::submitted(tx, &project, &run, value, now())
+        }).await?;
+        crate::tasks::api::told(app, &task);
+        return Ok("Design review recorded on the task.".into());
+    }
     if tool == super::reflection::TOOL {
         let card = store(app, move |tx| {
             let run = run_of(tx, &key, &project, &tool)?;

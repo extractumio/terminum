@@ -200,7 +200,9 @@ pub async fn by_token(app: &Shared, body: &Value) -> Result<String, String> {
         let Some(boss) = boss else { return Err(not_yours(&tool)) };
         return run(app, &boss, &tool, &args).await;
     }
-    if !crate::tasks::tools::NAMES.contains(&tool.as_str()) || NEEDS_A_SESSION.contains(&tool.as_str()) {
+    if !crate::tasks::tools::NAMES.contains(&tool.as_str()) || NEEDS_A_SESSION.contains(&tool.as_str())
+        || !(Role::Token { manager: t.manager }).allows(&tool)
+    {
         return Err(format!("{tool} is a session's own: a token has no session."));
     }
     // its files are read and given in its project's folder, on this Mac

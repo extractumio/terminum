@@ -1019,12 +1019,14 @@ Scenario: AC-250 failure — missing or empty map
 Scenario: AC-251 happy path — early review and reuse
   Given an API task's text matches a calibrated T3 term, or its first diff matches a T3 path
   When the Advisor marks it design first
-  Then it posts the fixed comment, links a review blocker and records the reviewer, verdict and rejected advice with reasons; a sufficient existing project review is used once
+  Then it posts the fixed comment, links a blocker when the brief is ready, and records the reviewer, verdict and rejected advice with reasons
+    And a sufficient existing project review is used once
 
 Scenario: AC-251 edge — multiple commits for one design
   Given the task already has a review record for its design
   When more commits of that design reach Verify
-  Then the record is reused and a second review is not required
+  Then the record is reused within the reviewed paths
+    And a newly gated path needs review in a separate design task
 
 Scenario: AC-251 failure — missing record
   Given a T2 contract or T3 surface reaches Verify without its required review evidence
@@ -1320,7 +1322,7 @@ The existing mechanisms in §3 provide inputs or precedents for these open gaps.
 | AC-216 | The project tab switch gates collection and sensors. Stopping rounds belongs to AC-234. The switch lists active holds after switch-off (AC-245). |
 | AC-219 | The watchdog records a signal and exposes its last heartbeat through the project settings endpoint. Line delivery health belongs to AC-229. |
 | AC-221 | Bootstrap keeps high-impact register seeds and exposes hold eligibility. Shadow hold proposals are recorded under AC-245 and checked under AC-246. Charter breach inputs belong to AC-213. |
-| AC-222 | The project tab edits the project pack, runs the switch and manages import, export and probe approval. The critical line and the historical surface preview depend on AC-227–229, AC-250 and AC-263. |
+| AC-222 | The project tab edits the project pack, runs the switch and manages import, export and probe approval. The critical line depends on AC-227–229 and AC-263. |
 | AC-223 | The project screen shows its scoreboard, missing inputs and paged signals with evidence. Holds and the Supervisor scorecard depend on their owning cases. |
 | AC-224 | The line-failure producer depends on AC-229. Round updates belong to AC-234. A project-wide hold opens an incident even at level 2 (AC-245). |
 | AC-225 | The template shows active holds and the signed-in keys. A deadline from an interim verification hold depends on AC-233. |
@@ -1341,9 +1343,9 @@ The existing mechanisms in §3 provide inputs or precedents for these open gaps.
 | AC-247 | A breaker diverts holds, task runs and alerts. Restoring autonomy requires a changed live detector and measurable retained replay. Fixed or present-only detectors without historical replay stay paused. |
 | AC-248 | Independent rounds, retained proposals and closed-incident timelines. Misses depend on AC-255 and proposal adoption on AC-253. |
 | AC-249 | Seven-day agent scorecards with per-metric denominators, intervals and a 30-observation floor. Routing proposals open owner cards. |
-| AC-250 | Surface tier and history sizing. |
-| AC-251 | Design-first and Verify review evidence. |
-| AC-252 | Budgeted reviews and owner escalation. |
+| AC-250 | The preview covers the previous 30 days and shows missing per-task diffs. |
+| AC-251 | Task creation and assigned local worktree diffs can flag T3. The opt-in Verify command checks the pinned submission. |
+| AC-252 | One bounded review workflow per task design, with distinct T3 critics and an authenticated owner choice. |
 | AC-253 | Versioned configuration with replay, shadow and revert. |
 | AC-254 | Protected and expiring mutes. |
 | AC-255 | Independent miss detection. |
@@ -1529,7 +1531,23 @@ Put the collector's last successful run in review status and at the end of the e
 | T2 cross-component contract | Review record before Verify and a compatibility statement. |
 | T3 incompatible persisted, public or irreversible surface | Review design before code, record architecture critic and independent critic, owner sign-off, migration and rollback. |
 
-Map T2 and T3 to globs and incompatible diff shapes, plus calibrated T3 terms for early task checks. Examples include a route contract for T2 and a change to an existing migration that breaks compatibility for T3. Bill once per design and record who reviewed, their verdict and rejected advice with reasons. Verify detects omissions without buying a second review. An unavailable or timed-out review becomes a card and leaves no indefinite hold.
+Map T1, T2 and T3 by repository-relative path globs. The owner's T3 globs identify
+paths where an edit or removal is a breaking shape. An addition to such a path is T2.
+Calibrated phrases are case-insensitive and match complete words at either end. Preview
+counts each task once at its highest matched tier, using its associated integration merge
+and its text. The sample is capped at 400 completed tasks from the preceding 30 days,
+with missing diffs and truncation shown. An unmatched path is T0.
+
+An Advisor flags text matches at creation and tracks the first qualifying diff of an
+assigned local worktree. A T3 design brief records the affected paths, note, migration and
+rollback before a critic can start. An owner-set existing-review path rule routes that design to the
+project's existing reviewers. Their evidence and the Supervisor's saved evidence have the
+same format. The task is the design identity across commits within the reviewed paths. A T3 approval adds a distinct
+independent reviewer and a signed-in owner's decision tied to the recorded brief. The
+judgment governor admits T3 before T2 and accounts for the critic sessions under one
+20-minute design window. A review awaiting owner help releases its temporary blocker.
+Verify checks the stored evidence for the submitted diff and returns a missing-review
+task with a comment. A missing-review return permits a same-commit retry.
 
 | Action | Right evidence | Wrong evidence |
 |---|---|---|
@@ -1626,9 +1644,9 @@ Enable none of the runtime cases by default. The stages below list the cases in 
 - [x] AC-247 — `ac247_two_unchanged_owner_releases_divert_only_that_rules_hold` checks hold isolation. `supervisor::outcomes::tests` checks distinct decisions, grouped alerts and replay. `scripts/e2e_supervisor_outcomes.py` checks the signed-in owner key and socket refusal. `webSupervisor` exercises the incident and replay controls in Chromium and WebKit. `liveSupervisor` repeats the owner workflow against a private terminumd.
 - [x] AC-248 — `supervisor::reflection_tests` checks trigger identity, lease generations and the decision band. `scripts/e2e_supervisor_reflection.py` runs each retained trigger through Dispatcher, private tmux and the proposal-only MCP role. `webSupervisor` shows the retained proposal.
 - [x] AC-249 — `ac249_agent_rates_and_sample_floor` checks measured run, task and price samples. `scripts/e2e_supervisor_reflection.py` checks the owner routing card with missing return data. `webSupervisor` displays a small sample and its interval.
-- [ ] AC-250 — Planned test: `ac250_surface_map_preview_and_diff` covers surface tier and history sizing.
-- [ ] AC-251 — Planned test: `ac251_verify_requires_review_record` covers design-first and Verify review evidence.
-- [ ] AC-252 — Planned test: `ac252_review_priority_and_timeout` covers budgeted reviews and owner escalation.
+- [x] AC-250 — `ac250_surface_map_preview_and_diff` covers a multi-task batch, a new and an edited migration, missing diffs and an empty map. `webSupervisor` exercises unsaved preview and errors.
+- [x] AC-251 — `ac251_design_first_and_verify_requires_review_record` covers the mark, blocker, absent-record comment and repeated Verify with a review. `scripts/e2e_supervisor_design.py` checks the private integration queue and same-commit retry.
+- [x] AC-252 — `ac252_review_priority_budget_escalation_and_timeout` and `ac252_t3_needs_distinct_reviewers_and_the_owners_choice` cover priority, reuse, budget, time and sign-off. `scripts/e2e_supervisor_design.py` exercises the marked critic pane.
 - [ ] AC-253 — Planned test: `ac253_config_classes_replay_and_revert` covers versioned configuration with replay, shadow and revert.
 - [ ] AC-254 — Planned test: `ac254_mute_authority_and_expiry` covers protected and expiring mutes.
 - [ ] AC-255 — Planned test: `ac255_miss_from_owner_and_target_events` covers independent miss detection.

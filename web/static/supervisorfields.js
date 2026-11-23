@@ -105,3 +105,10 @@ export function editor() {
   }
   return { field, raw: (read) => reads.push(read), read: (draft) => { for (const read of reads) read(draft); return draft; } };
 }
+
+export function feedback() {
+  const node = el("p");
+  node.setAttribute("role", "alert");
+  node.hidden = true;
+  return node;
+}

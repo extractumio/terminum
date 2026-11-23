@@ -8,7 +8,7 @@ use serde_json::{Value, json};
 use crate::app::Shared;
 use crate::tasks::{api::{answer, store}, ops::{now, rows, sql}};
 
-use super::{Evidence, Signal, governor, register, signals, settings};
+use super::{Evidence, Signal, design_reviews, governor, register, signals, settings};
 
 const TIME_LIMIT: i64 = 15 * 60;
 const EXCERPT: usize = 1_000;
@@ -132,11 +132,20 @@ pub(crate) fn waiting(tx: &Transaction, at: i64, key: Option<&str>) -> Result<Ve
         SELECT project, fingerprint FROM eligible ORDER BY impact DESC, level DESC, first_seen, fingerprint",
         (week, key), |r| Ok((r.get(0)?, r.get(1)?)))?;
     eligible.extend(super::reflection::waiting(tx, at, key)?);
-    Ok(eligible)
+    if key.is_some_and(|key| !key.starts_with(design_reviews::PREFIX)) { return Ok(eligible); }
+    let mut designs = design_reviews::waiting(tx, at, key)?;
+    designs.extend(eligible);
+    Ok(designs)
+}
+
+enum Purpose {
+    Investigation(Box<Signal>),
+    Reflection,
+    DesignReview(&'static str),
 }
 
 pub(crate) struct Candidate {
-    signal: Option<Signal>,
+    purpose: Purpose,
     key: String,
     project: String,
     generation: i64,
@@ -144,13 +153,13 @@ pub(crate) struct Candidate {
     pub agent: String,
 }
 
-impl Candidate {
-    pub(crate) fn reflection(&self) -> bool { self.signal.is_none() }
-}
-
 pub(crate) fn candidate(tx: &Transaction, project: &str, key: &str) -> Result<Candidate, String> {
     let generation = enabled(tx, project)?.ok_or("The Supervisor is off.")?;
     if let Some(id) = active_id(tx, key)? { return Err(format!("Investigation {id} is already open.")); }
+    if key.starts_with(design_reviews::PREFIX) {
+        let (agent, role) = design_reviews::candidate(tx, project, key, now())?;
+        return Ok(Candidate { purpose: Purpose::DesignReview(role), key: key.into(), project: project.into(), generation, revision: 0, agent });
+    }
     let saved = settings::read(tx, project)?.settings;
     if key.starts_with("reflection_") {
         let agent = saved.tiers.reflection_agent(tx, project)?;
@@ -158,16 +167,17 @@ pub(crate) fn candidate(tx: &Transaction, project: &str, key: &str) -> Result<Ca
             return Err("Choose a different agent from the one whose decision is being reviewed.".into());
         }
         if !saved.investigation_room() { return Err(governor::JUDGMENT_NOTICE.into()); }
-        return Ok(Candidate { signal: None, key: key.into(), project: project.into(), generation, revision: 0, agent });
+        return Ok(Candidate { purpose: Purpose::Reflection, key: key.into(), project: project.into(), generation, revision: 0, agent });
     }
     let signal = signals::get(tx, project, key)?;
     let agent = check_room(&saved, &signal)?.to_owned();
     let revision = tx.query_row("SELECT revision FROM supervisor_signals WHERE fingerprint = ?1",
         [key], |r| r.get(0)).map_err(sql)?;
-    Ok(Candidate { signal: Some(signal), key: key.into(), project: project.into(), generation, revision, agent })
+    Ok(Candidate { purpose: Purpose::Investigation(Box::new(signal)), key: key.into(), project: project.into(), generation, revision, agent })
 }
 
 pub(crate) fn waiting_reason(tx: &Transaction, key: &str, reason: &str) -> Result<(), String> {
+    if key.starts_with(design_reviews::PREFIX) { return design_reviews::admission_failed(tx, key, reason, now()); }
     if key.starts_with("reflection_") { return super::reflection::reason(tx, key, reason); }
     tx.execute("INSERT INTO supervisor_round_requests (fingerprint, reason)
         SELECT fingerprint, ?2 FROM supervisor_signals WHERE fingerprint = ?1
@@ -209,18 +219,25 @@ fn task_data(tx: &Transaction, signal: &Signal) -> Result<Vec<Value>, String> {
 }
 
 pub(crate) fn save(tx: &Transaction, run: &str, candidate: Candidate, at: i64, clock_scale: i64) -> Result<String, String> {
-    let Candidate { signal, key, generation, revision, project, .. } = candidate;
+    let Candidate { mut purpose, key, generation, revision, project, .. } = candidate;
     let id = format!("case_{run}");
-    let important = signal.as_ref().is_some_and(|signal| signal.level >= 2);
+    let important = matches!(&purpose, Purpose::Investigation(signal) if signal.level >= 2);
     let token_cap = governor::admit_round(tx, &project, at, important)?;
-    let reflection = signal.is_none();
-    let seconds = if reflection { super::reflection::TIME_LIMIT } else { TIME_LIMIT };
-    let deadline = at + (seconds / clock_scale).max(1);
-    let (mut case, incident) = if let Some(signal) = signal {
-        investigation_case(tx, signal, at)?
-    } else {
-        (super::reflection::case(tx, &project, &key, at)?, None)
+    let (mut case, incident, seconds, until, prompt) = match &mut purpose {
+        Purpose::DesignReview(role) => {
+            let (case, until) = design_reviews::case(tx, &key, role)?;
+            (case, None, super::design_gates::TIME_LIMIT, Some(until),
+                format!("Supervisor design review case {id}. Call get_case_file with its ID. Review the design as the assigned critic and submit an attributed verdict with record_design_review."))
+        }
+        Purpose::Reflection => (super::reflection::case(tx, &project, &key, at)?, None, super::reflection::TIME_LIMIT, None,
+            format!("Supervisor reflection case {id}. Call get_case_file with its ID. Review the code-built timeline independently. Explain misses, noise and wrong decisions, and submit proposals with record_reflection.")),
+        Purpose::Investigation(signal) => {
+            let (case, incident) = investigation_case(tx, signal, at)?;
+            (case, incident, TIME_LIMIT, None,
+                format!("Supervisor case {id}. Call get_case_file with its ID and report through the Supervisor tools."))
+        }
     };
+    let deadline = (at + (seconds / clock_scale).max(1)).min(until.unwrap_or(i64::MAX));
     for (field, value) in [("id", json!(id)), ("deadline", json!(deadline)),
         ("budget_seconds", json!(seconds)), ("budget_tokens", json!(token_cap))]
     {
@@ -229,15 +246,19 @@ pub(crate) fn save(tx: &Transaction, run: &str, candidate: Candidate, at: i64, c
     tx.execute("INSERT INTO supervisor_rounds (id, run, project, generation, fingerprint, signal_revision, case_file, deadline, token_cap, reserved_class, incident)
         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)",
         rusqlite::params![id, run, project, generation, key, revision, case.to_string(), deadline, token_cap as i64, important, incident]).map_err(sql)?;
-    if reflection {
-        tx.execute("UPDATE supervisor_reflections SET round = ?2, reason = NULL, retry_at = NULL WHERE fingerprint = ?1", (&key, &id)).map_err(sql)?;
-    } else {
-        tx.execute("DELETE FROM supervisor_round_requests WHERE fingerprint = ?1", [&key]).map_err(sql)?;
+    match purpose {
+        Purpose::DesignReview(role) => design_reviews::started(tx, &key, role, &id, at)?,
+        Purpose::Reflection => {
+            tx.execute("UPDATE supervisor_reflections SET round = ?2, reason = NULL, retry_at = NULL WHERE fingerprint = ?1", (&key, &id)).map_err(sql)?;
+        }
+        Purpose::Investigation(_) => {
+            tx.execute("DELETE FROM supervisor_round_requests WHERE fingerprint = ?1", [&key]).map_err(sql)?;
+        }
     }
-    Ok(id)
+    Ok(prompt)
 }
 
-fn investigation_case(tx: &Transaction, mut signal: Signal, at: i64) -> Result<(Value, Option<i64>), String> {
+fn investigation_case(tx: &Transaction, signal: &mut Signal, at: i64) -> Result<(Value, Option<i64>), String> {
     let verify = signal.level >= 2 && signal.scores.confidence < 0.7;
     let saved = settings::read(tx, &signal.project)?.settings;
     let charter = saved.investigation_charter().map(|lines| excerpt(lines.join("\n")));
@@ -257,7 +278,7 @@ fn investigation_case(tx: &Transaction, mut signal: Signal, at: i64) -> Result<(
         "register_problem": problem,
         "register_note": "Use the register tools before submitting the final finding.",
         "charter_data": {"never": charter[0], "priorities": charter[1]},
-        "task_data": task_data(tx, &signal)?, "evidence_rows": evidence, "evidence_count": evidence_count,
+        "task_data": task_data(tx, signal)?, "evidence_rows": evidence, "evidence_count": evidence_count,
         "question": if verify { "Does the named measurement and its evidence confirm the signal?" }
             else { "What caused this signal, what would disprove the cause, and what would address it?" },
         "tools": tools,

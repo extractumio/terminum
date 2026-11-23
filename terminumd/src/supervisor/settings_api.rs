@@ -21,6 +21,7 @@ const MAX_COMMANDS: usize = 32;
 
 pub(super) fn routes() -> Router<Shared> {
     Router::new()
+        .route("/api/task-projects/{id}/supervisor/surfaces/preview", post(surface_preview))
         .route("/api/task-projects/{id}/supervisor/settings", get(shown).put(save))
         .route("/api/task-projects/{id}/supervisor/export", post(export))
         .route("/api/task-projects/{id}/supervisor/import", post(import))
@@ -291,5 +292,17 @@ async fn clear(State(app): State<Shared>, Path((id, probe)): Path<(String, Strin
         check_project(tx, &id)?;
         tx.execute("DELETE FROM supervisor_probe_commands WHERE project = ?1 AND probe = ?2", (&id, &probe)).map_err(sql)?;
         view(tx, &id, settings::read(tx, &id)?)
+    }).await)
+}
+
+async fn surface_preview(State(app): State<Shared>, Path(project): Path<String>, Json(map): Json<super::surfaces::Surfaces>) -> Response {
+    answer(crate::http::off(move || {
+        map.validate()?;
+        let (repo, history) = app.tasks.snapshot(super::SCHEMA, |tx| {
+            check_project(tx, &project)?;
+            if !map.enabled() { return Ok((std::path::PathBuf::new(), Vec::new())); }
+            Ok((super::verify_review::project_dir(tx, &project)?, super::surfaces::history(tx, &project, crate::tasks::ops::now(), &map)?))
+        })?;
+        Ok(super::surfaces::preview(&map, &repo, history))
     }).await)
 }

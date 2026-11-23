@@ -80,6 +80,8 @@ usage: terminum [command]
   integration queue <ID> --result-file <path> [--commit <sha>] [--wait] | wait <ID> | status [<ID>]
                           a task's commit in its project's integration queue; wait exits
                           0 landed, 1 red, 2 conflict, 3 taken out
+  integration verify-review
+                          check this task's design review within the project's Verify stage
   supervisor replay --project <ID> [--at <unix-seconds>]
                           rank Supervisor findings and compare the improvement indicators
                           over retained history without writing to the store

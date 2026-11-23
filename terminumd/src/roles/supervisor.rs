@@ -24,6 +24,7 @@ pub(crate) enum Role {
     Token { manager: bool },
     Supervisor(Option<Level>),
     Reflection(bool),
+    DesignReview(bool),
 }
 
 impl From<bool> for Role {
@@ -39,22 +40,26 @@ impl Role {
             Self::Manager | Self::Token { manager: true } => "manager",
             Self::Supervisor(_) => "supervisor",
             Self::Reflection(_) => "reflection",
+            Self::DesignReview(_) => "design_review",
         }
     }
 
     pub fn level(self) -> Option<Level> {
         match self {
             Self::Supervisor(level) => level,
-            Self::Reflection(true) => Some(Level::Observer),
+            Self::Reflection(true) | Self::DesignReview(true) => Some(Level::Observer),
             _ => None,
         }
     }
 
     pub fn is_supervisor(self) -> bool {
-        matches!(self, Self::Supervisor(_) | Self::Reflection(_))
+        matches!(self, Self::Supervisor(_) | Self::Reflection(_) | Self::DesignReview(_))
     }
 
     pub fn allows(self, tool: &str) -> bool {
+        if let Self::DesignReview(active) = self {
+            return active && matches!(tool, "get_case_file" | supervisor::design_gates::RECORD);
+        }
         if let Self::Reflection(active) = self {
             return active && matches!(tool, "get_case_file" | supervisor::reflection::TOOL);
         }
@@ -69,10 +74,10 @@ impl Role {
             return matches!(self, Self::Supervisor(Some(_)));
         }
         match self {
-            Self::Token { .. } if tool == supervisor::review::TOOL => false,
+            Self::Token { .. } if matches!(tool, supervisor::review::TOOL | supervisor::design_gates::RECORD | supervisor::design_gates::BRIEF) => false,
             Self::Manager | Self::Token { manager: true } => true,
             Self::Worker | Self::Token { manager: false } => !super::MANAGER_TOOLS.contains(&tool),
-            Self::Supervisor(None) | Self::Reflection(_) => false,
+            Self::Supervisor(None) | Self::Reflection(_) | Self::DesignReview(_) => false,
             Self::Supervisor(Some(level)) => {
                 OBSERVER_TOOLS.contains(&tool)
                     || (level != Level::Observer && ADVISOR_TOOLS.contains(&tool))
@@ -84,8 +89,9 @@ impl Role {
     pub fn refusal(self, tool: &str) -> String {
         match self {
             Self::Supervisor(Some(level)) => format!("The {level:?} Supervisor cannot call {tool:?}."),
-            Self::Supervisor(None) | Self::Reflection(false) => "This Supervisor session is inactive.".into(),
+            Self::Supervisor(None) | Self::Reflection(false) | Self::DesignReview(false) => "This Supervisor session is inactive.".into(),
             Self::Reflection(true) => format!("A reflection cannot call {tool:?}."),
+            Self::DesignReview(true) => format!("A design reviewer cannot call {tool:?}."),
             _ => super::not_yours(tool),
         }
     }
@@ -111,6 +117,7 @@ pub(crate) fn marked(tx: &Transaction, key: &str) -> Result<Option<Mark>, String
         .query_row((key, ops::now()), |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).optional().map_err(ops::sql)?;
     row.map(|(project, active, run)| {
         let role = match &run {
+            Some(run) if supervisor::design_reviews::is_round(tx, run)? => Role::DesignReview(active && supervisor::level(tx, &project)? != Level::Observer),
             Some(run) if supervisor::rounds::is_reflection(tx, run)? => Role::Reflection(active),
             _ => Role::Supervisor(active.then(|| supervisor::level(tx, &project)).transpose()?),
         };

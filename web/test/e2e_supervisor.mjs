@@ -2,6 +2,8 @@
 import { check, runningIn, until } from "./check.mjs";
 import { drawn, fakeBoard, openPage, ORIGIN, SIZES, serveRenderers, shot, THEME } from "./fake.mjs";
 
+import { surfacePreview } from "./e2e_surface_preview.mjs";
+
 const ROOT = "/api/task-projects/api/supervisor";
 const RULE = "flow.failed_no_reason";
 const DATE = 1_790_000_000;
@@ -75,7 +77,7 @@ async function fixture(page, theme) {
   let enabled = false, refusal = true, saved = structuredClone(SETTINGS), revision = 0, candidate = false, approved = false, commandViewed = false;
   const calls = [];
   let line = { revision: 0, settings: { channels: [], link_base: null, quiet: [1380, 480], ladder: [10, 30, 60] } };
-  let failedTest = true;
+  let failedTest = true, refusedPreview = false;
   let refuseSave;
   const firstSave = new Promise((resolve) => { refuseSave = resolve; });
   const view = () => ({ revision, settings: saved, detector_defaults: DEFAULTS,
@@ -86,6 +88,13 @@ async function fixture(page, theme) {
     calls.push({ suffix, method, body });
     if (pathname === "/api/task-projects/web/supervisor/screen") {
       return json(route, { project_name: "Web service", indicators: [], signals: [{ ...SIGNAL, metric: "Web signal" }], next: null });
+    }
+    if (suffix === "/surfaces/preview" && method === "POST") {
+      if (body.t3.includes("unavailable/**") && !refusedPreview) {
+        refusedPreview = true;
+        return json(route, { error: "The history could not be read." }, 400);
+      }
+      return json(route, { empty: !body.t3.length, t2: 3, t3: 1, sampled: 12, without_diff: 2, truncated: false });
     }
     if (suffix === "/problems/42/ruling" && method === "POST") {
       ruling = body.reason;
@@ -227,9 +236,7 @@ async function settingsTab(page, { calls, refuseSave }, suffix, phone) {
       return box.left >= 0 && box.right <= innerWidth && (!touch || (box.width >= 40 && box.height >= 40));
     }), phone));
   await openGroup(page, "Surface map");
-  await panel.getByLabel("T3 paths, one pattern per line").fill("src/storage/**");
-  check("AC-222 the surface preview says what it will count", await panel.getByRole("button", { name: "Preview last month" }).isDisabled()
-    && await panel.getByText("The preview will count", { exact: false }).isVisible());
+  await surfacePreview(page, panel, calls, suffix, phone);
   await openGroup(page, "Charter and allocation");
   const priorities = panel.getByLabel("Priorities, highest first, one per line");
   await priorities.fill("First project priority\nSecond project priority");

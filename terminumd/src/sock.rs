@@ -101,6 +101,7 @@ pub fn routes(app: Shared) -> Router {
         .route("/tmux/{action}", post(tmux_action))
         .route("/restore", post(restore))
         .route("/hook", post(hook))
+        .route("/integration/verify-review", post(crate::supervisor::verify_review::run))
         .route("/agent", post(crate::agentapi::agent))
         .route("/tokens", post(crate::roles::tokens::route))
         .route("/folders", post(folders))

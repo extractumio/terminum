@@ -32,7 +32,7 @@ struct Active {
 
 async fn beat(app: &Shared) -> Result<(), String> {
     let a = app.clone();
-    let (active, waiting) = off(move || a.tasks.snapshot(crate::tasks::store::SCHEMA_VERSION, |tx| {
+    let (active, waiting, designs_due) = off(move || a.tasks.snapshot(crate::tasks::store::SCHEMA_VERSION, |tx| {
         let at = now();
         let active = rows(tx, "SELECT r.run, r.deadline <= ?1,
             NOT EXISTS (SELECT 1 FROM project_supervisor p WHERE p.project = r.project
@@ -41,8 +41,12 @@ async fn beat(app: &Shared) -> Result<(), String> {
             FROM supervisor_rounds r WHERE r.ended_at IS NULL", [at],
             |row| Ok(Active { run: row.get(0)?, expired: row.get(1)?, disabled: row.get(2)?,
                 finished: row.get(3)?, failed: row.get(4)? }))?;
-        Ok((active, rounds::waiting(tx, at, None)?))
+        Ok((active, rounds::waiting(tx, at, None)?, crate::supervisor::design_reviews::due(tx, at)?))
     })).await?;
+    if designs_due {
+        let changed = store(app, |tx| crate::supervisor::design_reviews::advance(tx, now())).await?;
+        for id in changed { crate::tasks::api::told(app, &id); }
+    }
     // A launch can link its pane and finish between two awaits. Exclude launches before reading tmux,
     // so a round that just finished opening cannot be paired with an older list.
     let active: Vec<_> = {
@@ -88,7 +92,7 @@ async fn admit(app: &Shared, project: &str, key: &str) -> Result<(), String> {
     let (agent, host, folder, server) = places::place(app, project, Some(desired)).await?;
     let like = Run::of(&agent, host, folder.clone(), project.to_owned(), None);
     let key = key.to_owned();
-    let (run, case, reflection) = store(app, move |tx| {
+    let (run, prompt) = store(app, move |tx| {
         let at = now();
         let candidate = rounds::candidate(tx, &like.project, &key)?;
         let (_, current_host, current_folder) = ops::project_place(tx, &like.project)?;
@@ -102,14 +106,13 @@ async fn admit(app: &Shared, project: &str, key: &str) -> Result<(), String> {
             return Err(full.words);
         }
         let id = runs::add(tx, &like, &[], runs::Started::of(runs::How::Supervisor), at)?;
-        let reflection = candidate.reflection();
-        let case = rounds::save(tx, &id, candidate, at, scale())?;
-        Ok((id, case, reflection))
+        let prompt = rounds::save(tx, &id, candidate, at, scale())?;
+        Ok((id, prompt))
     }).await?;
     let hold = Held::take(app, |d| &d.starting, &run).ok_or("Its start is already watched.")?;
     let (a, project) = (app.clone(), project.to_owned());
     tokio::spawn(async move {
-        let result = launch(&a, &server, &project, &folder, &run, round_prompt(&case, reflection)).await;
+        let result = launch(&a, &server, &project, &folder, &run, prompt).await;
         if let Err(why) = result
             && let Err(error) = store(&a, move |tx| rounds::failure(tx, &run, &why, false)).await
         {
@@ -118,14 +121,6 @@ async fn admit(app: &Shared, project: &str, key: &str) -> Result<(), String> {
         drop(hold);
     });
     Ok(())
-}
-
-fn round_prompt(case: &str, reflection: bool) -> String {
-    if reflection {
-        format!("Supervisor reflection case {case}. Call get_case_file with its ID. Review the code-built timeline independently. Explain misses, noise and wrong decisions, and submit proposals with record_reflection.")
-    } else {
-        format!("Supervisor case {case}. Call get_case_file with its ID and report through the Supervisor tools.")
-    }
 }
 
 async fn launch(app: &Shared, server: &std::sync::Arc<Server>, project: &str, folder: &str, run: &str, text: String) -> Result<(), String> {

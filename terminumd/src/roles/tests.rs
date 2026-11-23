@@ -176,6 +176,13 @@ async fn ac181_a_token_is_kept_as_its_hash_and_names_its_role_and_project() {
     for own in ["take_task", "ask_human", "dispatch_task", "update_session_plan"] {
         assert_eq!(by(&worker, own, json!({"id": task})).await.unwrap_err(), format!("{own} is a session's own: a token has no session."));
     }
+    // AC-251: review evidence needs an attributed local pane, including for manager tokens.
+    for token in [&worker, &manager] {
+        for tool in [crate::supervisor::design_gates::BRIEF, crate::supervisor::design_gates::RECORD] {
+            assert_eq!(by(token, tool, json!({"id": task})).await.unwrap_err(),
+                format!("{tool} is a session's own: a token has no session."));
+        }
+    }
     by(&worker, "add_comment", json!({"id": task, "text": "from ci"})).await.unwrap();
     assert!(app.tasks.with(|tx| ops::history(tx, &task)).unwrap().to_string().contains("\"author_name\":\"token · ci\""), "what it writes carries its name");
     // a manager's token runs the manager's tools, in its project

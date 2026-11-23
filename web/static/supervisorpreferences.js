@@ -4,7 +4,7 @@ import { el } from "./listparts.js";
 import { TYPES } from "./taskattrs.js";
 import { button } from "./kanbanutil.js";
 import { detectors } from "./supervisordetectors.js";
-import { actions, check, editor, fieldError, grid, hint, literal, dateValue, number, part, row, section, select, stack, text, tick, timeOf } from "./supervisorfields.js";
+import { actions, check, editor, feedback, fieldError, grid, hint, literal, dateValue, number, part, row, section, select, stack, text, tick, timeOf } from "./supervisorfields.js";
 
 const LEVELS = [["observer", "Observer"], ["advisor", "Advisor"], ["operator", "Operator"]];
 const TIERS = [["small", "Small"], ["medium", "Medium"], ["strong", "Strong"], ["independent", "Independent"]];
@@ -86,7 +86,7 @@ function charter(edit, saved) {
     allocation(edit, saved), date("Review allocation on", "allocation_review_at"));
 }
 
-export function preferences(view, agents) {
+export function preferences(view, agents, { request, run }) {
   const saved = view.settings, edit = editor();
   const level = edit.field("Level", select(LEVELS, saved.level), (v, out) => { out.level = v; });
   const choices = [["", "None"], ...agents.map((a) => [a.id, a.name])];
@@ -99,18 +99,44 @@ export function preferences(view, agents) {
   });
   const indicators = INDICATORS.map(([key, label]) => edit.field(label, check(saved.charter.indicators[key]),
     (v, out) => { out.charter.indicators[key] = v; }));
-  const surfaces = [["t2", "T2 paths, one pattern per line"], ["t3", "T3 paths, one pattern per line"]].map(([key, label]) =>
-    edit.field(label, literal(text(saved.charter.surfaces[key].join("\n"), "area")), (v, out) => { out.charter.surfaces[key] = lines(v); }));
+  const surfaceInputs = new Map();
+  const surfaces = [
+    ["t1", "T1 internal boundaries"], ["t2", "T2 contracts"], ["t3", "T3 breaking surfaces"],
+    ["t3_terms", "T3 phrases in task text"], ["existing_review", "Paths with an existing review process"],
+  ].map(([key, label]) => {
+    const input = literal(text((saved.charter.surfaces[key] ?? []).join("\n"), "area"));
+    surfaceInputs.set(key, input);
+    return edit.field(label, input, (v, out) => { out.charter.surfaces[key] = lines(v); });
+  });
   const probes = [["git", "Git"], ["gate_record", "Gate records"], ["code_host", "Code host"]].map(([key, label]) =>
     edit.field(label, check(saved.probes[key]), (v, out) => { out.probes[key] = v; }));
-  const preview = button("textkey", "Preview last month");
-  preview.disabled = true;
+  const previewError = feedback();
+  const previewResult = el("p", "msay");
+  previewResult.setAttribute("role", "status");
+  for (const input of surfaceInputs.values()) {
+    input.addEventListener("input", () => { previewResult.textContent = ""; });
+  }
+  const preview = button("textkey", "Preview last month", () => run(previewError, async () => {
+    const draft = () => Object.fromEntries([...surfaceInputs].map(([key, input]) => [key, lines(input.value)]));
+    const candidate = draft();
+    previewResult.textContent = "Reading task history…";
+    try {
+      const result = await request("/surfaces/preview", "POST", candidate);
+      if (JSON.stringify(candidate) !== JSON.stringify(draft())) return;
+      previewResult.textContent = result.empty ? "This map would require no design reviews."
+        : `T2: ${result.t2} · T3: ${result.t3} · ${result.sampled} tasks sampled · ${result.without_diff} without a recorded diff${result.truncated ? " · sample limit reached" : ""}`;
+    } catch (error) {
+      previewResult.textContent = "";
+      throw error;
+    }
+    return preview;
+  }));
   const node = stack(level, section("Tier agents and budgets", hint("With no tier agents selected, the Supervisor runs on code alone."),
     grid(...tiers), el("h3", null, "Budgets"), hint("Budgets set the limits for judgment rounds and fixes when the Supervisor admits work."), grid(...budgets)),
   charter(edit, saved), section("Indicators", part("div", "sv-checks", ...indicators),
     hint("Outside indicators will use an approved probe to supply their measurements."), outsideIndicators(edit, saved.charter.outside_indicators)),
-  section("Surface map", hint("T2 marks changes that will need a review. T3 marks changes that will also need owner sign-off."),
-    ...surfaces, actions(preview), hint("The preview will count tasks the map would have gated in the prior month.")),
+  section("Surface map", hint("Enter one pattern or phrase per line. An edit or removal on a T3 path requires owner sign-off. An addition on the same path requires a T2 review."),
+    ...surfaces, actions(preview), previewError, previewResult),
   detectors(edit, saved, view.detector_defaults),
   section("Standard probes", hint("These settings will control which standard probes may collect data."), actions(...probes)));
   return { node, read: () => edit.read(structuredClone(saved)) };

@@ -87,6 +87,10 @@ def main():
 
         call("get_case_file", id="case_foreign")
         case = decoded(call("get_case_file", id=case_id))
+        if case["kind"] == "design_review":
+            call("record_design_review", id=case["task"], role=case["role"], verdict="approved",
+                 compatibility="Existing clients still work.", rejected_advice="Remove the route | Clients still use it.")
+            return
         if case["kind"] == "reflection":
             call("hold", signal="fixture", kind="pause_dispatch", reason="Reflection fixture.")
             call("run_task", id="TERM-1", agent="Fixture")
@@ -234,7 +238,7 @@ def main():
                 if "QUESTIONS" in prompt or "DEPENDENCY" in prompt:
                     typed = "draft during wait"
                     box()
-            if opt("--round-log", "") and (case := re.fullmatch(r"Supervisor (?:reflection )?case (case_[a-f0-9]+)\..*", prompt)):
+            if opt("--round-log", "") and (case := re.fullmatch(r"Supervisor (?:reflection |design review )?case (case_[a-f0-9]+)\..*", prompt)):
                 investigate(case[1])
             elif opt("--round-log", "") and (case := re.fullmatch(r"Supervisor incident case (case_[a-f0-9]+)\..*", prompt)):
                 talk(case[1])

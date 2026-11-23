@@ -45,7 +45,10 @@ pub fn last(tx: &Transaction) -> Result<i64, String> {
 /// The notices written after row `after`, oldest first, and the newest row read, where the next look starts.
 pub fn since(tx: &Transaction, after: i64) -> Result<(Vec<Notice>, i64), String> {
     let notices = ops::rows(tx, "SELECT e.task, t.slug, t.session_key, coalesce(e.text, ''), json_extract(e.data, '$.left') FROM events e JOIN tasks t ON t.id = e.task
-                   WHERE e.rowid > ?1 AND e.author = ?2 AND e.kind = 'comment' AND json_extract(e.data, '$.notice') IS NOT NULL ORDER BY e.rowid",
+                   WHERE e.rowid > ?1 AND e.kind = 'comment' AND json_extract(e.data, '$.notice') IS NOT NULL
+                     AND (e.author = ?2 OR (e.author = 'supervisor:' || t.project
+                         AND json_extract(e.data, '$.design_gate') IN ('design_first', 'review_missing')))
+                     ORDER BY e.rowid",
         (after, DISPATCHER), |r| Ok(Notice { task: r.get(0)?, id: r.get(1)?, session: r.get(2)?, text: r.get(3)?, left: r.get(4)? }))?;
     Ok((notices, last(tx)?.max(after)))
 }
@@ -78,6 +81,7 @@ pub struct Tree {
     pub id: String,
     pub project: String,
     pub dir: PathBuf,
+    pub session: String,
     pub working: bool,
 }
 
@@ -164,6 +168,7 @@ pub fn walk(store: &Store, home: &Path, trees: &[Tree], sessions: &[(PathBuf, St
     let projects: HashSet<&str> = trees.iter().map(|t| t.project.as_str()).collect();
     for project in projects {
         let p = place(store, home, project)?;
+        if !p.s.on { continue; }
         let Some((remote, branch)) = integration::target_parts(&p.s.target) else { continue };
         let Ok(target) = git::run(&p.repo, &["rev-parse", &format!("refs/remotes/{remote}/{branch}")]) else { continue };
         let common = git::run(&p.repo, &["rev-parse", "--path-format=absolute", "--git-common-dir"]).unwrap_or_default();
@@ -278,9 +283,9 @@ fn plain(name: &str, most: usize) -> String {
 /// A tree's HEAD and the files it changed since the target; none when it is no checkout of the project's repository
 /// (`common`, its common folder) or has nothing of its own.
 fn head_of(t: &Tree, repo: &Path, common: &str, target: &str) -> Option<Head> {
-    let said = git::run(&t.dir, &["rev-parse", "--path-format=absolute", "--git-common-dir", "HEAD"]).ok()?;
-    let (its_common, head) = said.split_once('\n')?;
-    if its_common != common {
+    let tree = git::checkout(&t.dir).ok()?;
+    let head = &tree.head;
+    if tree.common != common {
         return None;
     }
     let files = changed(repo, target, head)?;

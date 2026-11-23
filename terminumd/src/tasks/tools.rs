@@ -16,7 +16,7 @@ use super::query::{self, Query};
 use super::store::{Store, DEFAULT_PROJECT};
 use crate::plans::rules;
 
-pub const NAMES: [&str; 20] = ["list_tasks", "get_task", "create_task", "update_task", "link_task", "take_task", "move_task", "ask_human", "wait_for_task", "add_comment", "attach_file", "get_file", "finish_task", "integrate", "withdraw_integration", "integration_status", "integration_return", "integration_recheck", "integration_add_fix", "dispatch_task"];
+pub const NAMES: [&str; 22] = ["list_tasks", "get_task", "create_task", "update_task", "link_task", "take_task", "move_task", "ask_human", "wait_for_task", "add_comment", "attach_file", "get_file", "finish_task", "integrate", "withdraw_integration", "integration_status", "integration_return", "integration_recheck", "integration_add_fix", "dispatch_task", crate::supervisor::design_gates::BRIEF, crate::supervisor::design_gates::RECORD];
 /// All Auto-Dispatcher's round may call (terminum-dispatcher.md AC-170): it reads, starts by dispatch_task and finishes
 /// its own; a tool added later is not its until named here.
 const A_ROUNDS: [&str; 4] = ["list_tasks", "get_task", "get_file", "finish_task"];
@@ -283,6 +283,11 @@ fn run_in(store: &Store, state_dir: &Path, who: &Who, tool: &str, args: &Value, 
                     integration: false,
                 }, at)?;
                 Ok((format!("Kept as {}, in TODO.", t.id), vec![t.id]))
+            }
+            name @ (crate::supervisor::design_gates::BRIEF | crate::supervisor::design_gates::RECORD) => {
+                let task = visible(tx, who, arg(args, "id")?)?;
+                let text = crate::supervisor::design_gates::task_tool(tx, &task, who, name, args, at)?;
+                Ok((text, vec![task.id]))
             }
             "update_task" => super::groom::update(tx, who, args, at),
             "link_task" => super::groom::link(tx, who, args, at),

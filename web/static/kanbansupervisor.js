@@ -82,7 +82,7 @@ export function supervisorWindow({ getMeta }) {
     if (state !== current) return;
     const opened = new Set([...body.querySelectorAll("details[open]")].map((d) => d.dataset.section));
     const on = (error, work) => run(state, error, work);
-    const fields = preferences(state.view, agentsOf(getMeta(), state.id));
+    const fields = preferences(state.view, agentsOf(getMeta(), state.id), { request: state.request, run: on });
     const probes = probeCommands({ request: state.request, run: on });
     const portable = portableSettings({
       request: state.request, run: on, revision: () => state.view.revision,

@@ -258,14 +258,12 @@ pub fn create(tx: &Transaction, author: &str, new: NewTask, at: i64) -> Result<T
         }
         None => None,
     };
-    // a subtask stands in its parent's project, whatever was asked
     let project = match parent.as_ref() {
         Some((_, p)) => p.clone(),
         None => chosen_project(new.project.as_deref(), TASK_NEEDS_PROJECT)?,
     };
     check_project(tx, &project)?;
     if let Some(most) = new.by_agent {
-        // counted up to the limit only: a project may hold many more
         let open: i64 = tx.query_row("SELECT count(*) FROM (SELECT 1 FROM tasks WHERE project = ?1 AND by_agent = 1 AND archived_at IS NULL AND status <> 'DONE'
             AND id NOT IN (SELECT task FROM supervisor_task_marks) LIMIT ?2)", rusqlite::params![project, most], |r| r.get(0)).map_err(sql)?;
         if open >= most {
@@ -284,7 +282,9 @@ pub fn create(tx: &Transaction, author: &str, new: NewTask, at: i64) -> Result<T
     let slug = super::slugs::assign(tx, &key, &project, if new.scheduled { "S_" } else if new.integration { "I_" } else { "" })?;
     log(tx, &key, author, "made", &format!("{} made it", user_name(tx, author)?), None, at)?;
     super::attrs::apply(tx, author, &key, &new.attrs, at)?;
-    get(tx, &slug)
+    let task = get(tx, &slug)?;
+    crate::supervisor::design_gates::created(tx, author, &task, &new.text, at)?;
+    Ok(task)
 }
 
 pub(super) fn pane_of(key: &str) -> &str {

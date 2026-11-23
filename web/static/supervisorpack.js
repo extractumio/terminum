@@ -2,16 +2,9 @@
 // AC-220 and AC-222: portable preferences and explicit approval of a single, fully displayed command.
 import { el } from "./listparts.js";
 import { button, downloadBlob, showError } from "./kanbanutil.js";
-import { actions, check, grid, hint, literal, row, section, stack, text, tick } from "./supervisorfields.js";
+import { actions, check, feedback, grid, hint, literal, row, section, stack, text, tick } from "./supervisorfields.js";
 
 const named = (id) => encodeURIComponent(id);
-
-function feedback() {
-  const node = el("p");
-  node.setAttribute("role", "alert");
-  node.hidden = true;
-  return node;
-}
 
 export function probeCommands({ request, run }) {
   const id = literal(text("")), command = literal(text("", "area")), rows = el("div", "sv-stack");

@@ -144,9 +144,9 @@ fn ac198_a_lost_verify_window_runs_again() {
 #[test]
 fn ac198_the_line_keeps_each_stages_text_apart() {
     assert_eq!(line_of("", ""), "");
-    assert_eq!(line_of("", "make v # all"), "(\nmake v # all\n) || exit 1");
+    assert_eq!(line_of("", "make v # all"), "(\nmake v # all\n) || { s=$?; [ \"$s\" -eq 73 ] && exit 73; exit 1; }");
     let both = line_of("make p", "make v");
-    assert!(both.starts_with("(\nmake p\n) || { s=$?; [ \"$s\" -eq 2 ] && exit 2; exit 1; }\n(\nmake v\n) || exit 1"), "{both}");
+    assert!(both.starts_with("(\nmake p\n) || { s=$?; [ \"$s\" -eq 2 ] && exit 2; exit 1; }\n(\nmake v\n) || { s=$?; [ \"$s\" -eq 73 ] && exit 73; exit 1; }"), "{both}");
     for (prepare, verify, code) in [("exit 2", "true", 2), ("exit 3", "true", 1), ("true", "exit 2", 1), ("true", "true # c", 0)] {
         let got = std::process::Command::new("/bin/sh").arg("-c").arg(line_of(prepare, verify)).status().unwrap().code();
         assert_eq!(got, Some(code), "{prepare} / {verify}");

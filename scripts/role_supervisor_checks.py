@@ -77,8 +77,8 @@ def ac231_supervisor_tools_pane_and_token(t, call, typed, tool, tmux, page, proj
     catalog = names(manager)
     assert rc == "0" and {"get_task", "send_to_session", "integrate"} <= catalog, manager
     review_context = "get_supervisor_review"
-    check("AC-231 the authorization matrix covers all 41 published tools",
-          len(catalog) == 41 and review_context in catalog, sorted(catalog))
+    check("AC-231 the authorization matrix covers all 43 published tools",
+          len(catalog) == 43 and review_context in catalog, sorted(catalog))
 
     # The mark wins even though this pane was opened by the human in the project.
     found = wire("probe", {})
@@ -94,8 +94,8 @@ def ac231_supervisor_tools_pane_and_token(t, call, typed, tool, tmux, page, proj
     rc, _, err = cli("tokens", "add", "supervision", "--role", "supervisor", "--project", "Managed")
     check("AC-231 the token command offers only manager or worker", rc == 1 and "worker" in err and "manager" in err, err)
     rc, manager_tools, _ = cli("tools", token=manager_token)
-    check("AC-231 a manager token discovers the ordinary catalog without the Supervisor review context",
-          rc == 0 and "call as a manager" in manager_tools and names(manager_tools) == catalog - {review_context})
+    check("AC-231 a manager token discovers the ordinary catalog without the pane-only review tools",
+          rc == 0 and "call as a manager" in manager_tools and names(manager_tools) == catalog - {review_context, "request_design_review", "record_design_review"})
     rc, _, _ = cli("tool", review_context, token=manager_token)
     check("AC-242 a token cannot read the review context", rc != 0)
     out, rc = typed(plain, tool(review_context))
