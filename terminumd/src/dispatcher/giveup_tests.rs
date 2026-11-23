@@ -300,10 +300,10 @@ async fn ac138_give_up_preserves_a_draft_and_durable_notice_precedes_archive_err
     stage.app.tasks.with(|tx| ops::archive(tx, HUMAN, &stage.tasks[0].id, true, 3)).unwrap();
     let reopened = Store::open(stage.database.clone());
     let key = stage.app.tmux.local.key(&stage.pane);
-    let notice = reopened.with(|tx| check_tool(tx, &key, Some(&stage.tasks[0].id))).unwrap_err();
+    let notice = reopened.with(|tx| check_tool(tx, &key, &stage.tasks[0].id)).unwrap_err();
     assert_eq!(notice, words(std::slice::from_ref(&stage.tasks[0].id)));
     let alias = format!("\n {} \t", stage.tasks[0].id.to_lowercase());
-    assert_eq!(reopened.with(|tx| check_tool(tx, &key, Some(&alias))).unwrap_err(), notice);
+    assert_eq!(reopened.with(|tx| check_tool(tx, &key, &alias)).unwrap_err(), notice);
     drop(reopened);
     let who = crate::tasks::tools::Who { key: key.clone(), agent: "claude".into(), title: "Agent".into(), project: None, dir: None, supervisor: false };
     let notice = crate::agentapi::task_tool_of(&stage.app, who, None, false, "finish_task".into(), json!({"id": stage.tasks[0].id, "result": "Done"})).await.unwrap_err();
@@ -311,10 +311,10 @@ async fn ac138_give_up_preserves_a_draft_and_durable_notice_precedes_archive_err
     stage.app.tasks.with(|tx| {
         let id = runs::add(tx, &stage.run, std::slice::from_ref(&stage.tasks[0].key), Default::default(), 4)?;
         runs::change(tx, &id, |run| run.pane_key = Some("tmux:local:other:%9".into()))?;
-        assert!(check_tool(tx, "tmux:local:other:%9", Some(&stage.tasks[0].id)).is_ok());
-        assert!(check_tool(tx, &key, Some(&stage.tasks[0].id)).is_err());
+        assert!(check_tool(tx, "tmux:local:other:%9", &stage.tasks[0].id).is_ok());
+        assert!(check_tool(tx, &key, &stage.tasks[0].id).is_err());
         runs::change(tx, &id, |run| run.pane_key = Some(key.clone()))?;
-        assert!(check_tool(tx, &key, Some(&stage.tasks[0].id)).is_ok());
+        assert!(check_tool(tx, &key, &stage.tasks[0].id).is_ok());
         Ok(())
     }).unwrap();
 }

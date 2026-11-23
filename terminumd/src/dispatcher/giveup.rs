@@ -24,8 +24,7 @@ pub(super) fn was_given_up(tx: &Transaction, run: &str) -> Result<bool, String> 
         (DISPATCHER, run), |row| row.get(0)).map_err(ops::sql)
 }
 
-pub(crate) fn check_tool(tx: &Transaction, pane: &str, id: Option<&str>) -> Result<(), String> {
-    let Some(id) = id else { return Ok(()) };
+pub(crate) fn check_tool(tx: &Transaction, pane: &str, id: &str) -> Result<(), String> {
     let query = format!("SELECT r.rowid, t.slug FROM events e JOIN runs r ON r.id = json_extract(e.data, '$.run')
         JOIN tasks t ON t.id = e.task
         WHERE e.kind = 'gave_up' AND e.author = ?1 AND r.pane_key = ?2 AND e.task = {}
