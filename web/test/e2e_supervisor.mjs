@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 import { check, runningIn, until } from "./check.mjs";
-import { drawn, fakeBoard, openPage, ORIGIN, SIZES, shot, THEME } from "./fake.mjs";
+import { drawn, fakeBoard, openPage, ORIGIN, SIZES, serveRenderers, shot, THEME } from "./fake.mjs";
 
 const ROOT = "/api/task-projects/api/supervisor";
 const RULE = "flow.failed_no_reason";
@@ -42,6 +42,7 @@ const json = (route, obj, status = 200) => route.fulfill({ status, json: obj });
 async function fixture(page, theme) {
   const projects = [{ id: "api", name: "API service", color: 0 }, { id: "web", name: "Web service", color: 1 }];
   const agents = [{ project: "api", id: "mine", name: "API agent" }, { project: "web", id: "foreign", name: "Web agent" }];
+  await serveRenderers(page);
   await fakeBoard(page, { meta: () => ({ projects, agents, theme, users: [], hosts: [], sessions: [] }), tasks: () => [], counts: {} });
   await page.route("**/api/messages/meta", (route) => json(route, { projects, theme }));
   await page.route("**/api/supervisor/incidents", (route) => json(route, []));
@@ -259,6 +260,7 @@ async function screen(page, suffix, phone) {
   await reports.getByText("Decisions waiting (1)", { exact: true }).click();
   await reports.getByText("Weekly review ·", { exact: false }).click();
   await reports.getByText("Exception digest ·", { exact: false }).click();
+  await reports.getByRole("heading", { name: "Decisions waiting for you" }).waitFor();
   const useful = reports.getByRole("button", { name: "Useful", exact: true });
   await useful.click();
   check("AC-240 AC-242 AC-243 the Supervisor screen links decisions and reports and records a verdict",
@@ -266,6 +268,7 @@ async function screen(page, suffix, phone) {
     && await reports.getByRole("link", { name: "API-41" }).getAttribute("href") === "/kanban/API-41"
     && await reports.getByRole("link", { name: "Open API-42 in Routines" }).isVisible()
     && await reports.getByText("Collector last ran", { exact: false }).isVisible()
+    && await reports.getByRole("link", { name: "Findings" }).getAttribute("href") === "/supervisor/?project=api&signal=0#signal-0"
     && await reports.getByRole("button", { name: "Not useful" }).isEnabled()
     && await reports.getByRole("button", { name: "Wrong" }).isEnabled());
   if (phone) check("AC-242 verdict keys fit a finger on a phone", await useful.evaluate((key) => key.getBoundingClientRect().height >= 40));

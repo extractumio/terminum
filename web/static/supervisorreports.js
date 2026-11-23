@@ -18,7 +18,7 @@ function taskLink(task, words) {
 function decisionList(decisions) {
   if (!decisions.length) return null;
   const items = decisions.map(({ task, problem, question }) => {
-    const preview = el("div", "markdown");
+    const preview = el("div", "markdown wrap");
     renderInto(preview, question, { comment: true });
     const title = task ? taskLink(task, task) : el("h3", null, `Register problem ${problem}`);
     return part("li", "sv-stack", title, preview);
@@ -55,7 +55,7 @@ function verdictItem(review, item, path) {
 
 function weekly(review, path) {
   if (!review) return el("p", "msay", "No weekly review published.");
-  const report = el("div", "markdown");
+  const report = el("div", "markdown wrap");
   renderInto(report, review.result, { comment: true });
   const batch = review.items.length
     ? part("ol", "sv-stack sv-evidence", ...review.items.map((item) => verdictItem(review, item, path)))

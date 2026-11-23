@@ -32,9 +32,7 @@ pub fn definitions(role: Role) -> Vec<Value> {
     let read = super::mcp::hints(true, true);
     vec![
         json!({"name": "search_tools", "title": "Search terminum's tools",
-            "description": format!("Finds terminum's tools for an action. query: the action as verb and object, in English, e.g. \"change a task's priority\", \"make a task a subtask of another\", \"attach a screenshot to a task\"; \
-synonyms count. Answers the best tools with their arguments: run one with execute_tool. \
-Areas: {}.", areas(false, role)),
+            "description": format!("Find tools by action in English, such as \"change a task's priority\" or \"attach a screenshot.\" Results give the arguments for execute_tool. Areas: {}.", areas(false, role)),
             "annotations": read,
             "inputSchema": {"type": "object", "required": ["query"], "properties": {
                 "query": {"type": "string", "maxLength": QUERY_MOST, "description": "The action: verb and object, e.g. \"move a task under another task\"."},
