@@ -6,10 +6,9 @@ use rusqlite::{OptionalExtension, Transaction};
 
 use crate::tasks::ops::{self, rows, sql};
 
-pub const TITLE_MOST: usize = 200;
+pub const TITLE_MOST: usize = ops::TITLE_MOST;
 pub const SUMMARY_MOST: usize = 500;
 pub const BODY_MOST: usize = 1 << 20;
-pub const NOTE_MOST: usize = ops::COMMENT_MOST;
 pub const FILES_MOST: i64 = 50;
 /// A worker's session makes at most this many reports an hour, and raises at most one critical line an hour (AC-266).
 pub const SESSION_HOURLY: i64 = 10;
@@ -42,36 +41,39 @@ pub struct New {
     pub follows: Option<String>,
 }
 
-/// A text's control characters but tab and newline dropped, as a task's are; a title on one line.
-fn clean(text: &str, one_line: bool) -> String {
-    let kept: String = text.chars().filter(|c| !crate::termtext::control(*c) || (!one_line && matches!(c, '\n' | '\t'))).collect();
-    if one_line { kept.split_whitespace().collect::<Vec<_>>().join(" ") } else { kept }
+/// A summary on one line, within its limit (AC-265).
+pub fn check_summary(summary: &str) -> Result<String, String> {
+    let one = crate::termtext::clean(summary, false).split_whitespace().collect::<Vec<_>>().join(" ");
+    if one.chars().count() > SUMMARY_MOST { Err(format!("Summary: at most {SUMMARY_MOST} characters")) } else { Ok(one) }
 }
 
-/// The title, summary and body as kept, or the first limit passed, in words (AC-265).
+pub fn check_body(body: &str) -> Result<String, String> {
+    let body = crate::termtext::clean(body, true);
+    if body.len() > BODY_MOST { Err("Body: at most 1 MiB".into()) } else { Ok(body) }
+}
+
+/// The title, summary and body as kept, or the first limit passed, in words (AC-265): a title as a task's.
 pub fn checked(title: &str, summary: &str, body: &str) -> Result<(String, String, String), String> {
-    let (title, summary, body) = (clean(title, true), clean(summary, true), clean(body, false));
-    if title.is_empty() {
-        return Err("Title: 1 to 200 characters".into());
-    }
-    if title.chars().count() > TITLE_MOST {
-        return Err(format!("Title: at most {TITLE_MOST} characters"));
-    }
-    if summary.chars().count() > SUMMARY_MOST {
-        return Err(format!("Summary: at most {SUMMARY_MOST} characters"));
-    }
-    if body.len() > BODY_MOST {
-        return Err("Body: at most 1 MiB".into());
-    }
-    Ok((title, summary, body))
+    Ok((ops::check_title(title)?, check_summary(summary)?, check_body(body)?))
 }
 
 pub fn check_note(text: &str) -> Result<String, String> {
-    let text = clean(text, false);
+    let text = crate::termtext::clean(text, true);
     if text.trim().is_empty() {
         return Err("A comment needs words".into());
     }
-    if text.len() > NOTE_MOST { Err("Comment: at most 256 KiB".into()) } else { Ok(text) }
+    ops::check_comment(&text).map(|()| text)
+}
+
+/// Every write of a report moves the Inbox's revision, which every page hears with the tasks' marks (AC-267): one
+/// row read, never a scan of the reports.
+pub fn bump(tx: &Transaction) -> Result<(), String> {
+    tx.execute("INSERT INTO meta (key, value) VALUES ('reports_rev', '1') ON CONFLICT (key) DO UPDATE SET value = CAST(value AS INTEGER) + 1", [])
+        .map(drop).map_err(sql)
+}
+
+pub fn revision(tx: &Transaction) -> Result<String, String> {
+    Ok(tx.query_row("SELECT value FROM meta WHERE key = 'reports_rev'", [], |r| r.get::<_, String>(0)).optional().map_err(sql)?.unwrap_or_default())
 }
 
 /// Whether a new critical report of `session` raises its line: one an hour per worker's session (AC-266, AC-271).
@@ -92,8 +94,9 @@ pub fn session_full(tx: &Transaction, session: &str, at: i64) -> Result<bool, St
     Ok(made >= SESSION_HOURLY)
 }
 
-/// Keeps a new report: its key and its ID.
-pub fn create(tx: &Transaction, new: New, at: i64) -> Result<(String, String), String> {
+/// Keeps a new report: its key, its ID and its title as kept; the task it is for says so in a comment by its author
+/// (AC-266).
+pub fn create(tx: &Transaction, new: New, at: i64) -> Result<(String, String, String), String> {
     let (title, summary, body) = checked(&new.title, &new.summary, &new.body)?;
     let (slug, number) = crate::tasks::slugs::take_report(tx, &new.project)?;
     let key = crate::auth::crypto::random_hex::<16>();
@@ -102,7 +105,12 @@ pub fn create(tx: &Transaction, new: New, at: i64) -> Result<(String, String), S
             incident, follows, line, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?18)",
         rusqlite::params![key, new.project, number, slug, title, summary, body, new.critical, new.author, new.role, new.session, new.task,
             new.schedule, new.run, new.incident, new.follows, line, at]).map_err(sql)?;
-    Ok((key, slug))
+    // a line of its task's history, never a comment: the task's result stays its agent's last comment
+    if let Some(task) = &new.task {
+        ops::log(tx, task, &new.author, "report", &format!("Report {slug}: {title}"), Some(&serde_json::json!({"report": slug})), at)?;
+    }
+    bump(tx)?;
+    Ok((key, slug, title))
 }
 
 /// A report's key, from its ID; a deleted one too.
@@ -133,25 +141,24 @@ pub fn note(tx: &Transaction, key: &str, author: &str, kind: &str, text: &str, a
     let id = crate::auth::crypto::random_hex::<16>();
     tx.execute("INSERT INTO report_notes (id, report, at, author, kind, text) VALUES (?1, ?2, ?3, ?4, ?5, ?6)", (&id, key, at, author, kind, text)).map_err(sql)?;
     tx.execute("UPDATE reports SET updated_at = ?1 WHERE id = ?2", (at, key)).map_err(sql)?;
+    bump(tx)?;
     Ok(id)
 }
 
-/// Read or unread again (AC-269): whether that changed it. Read closes its line too.
-pub fn set_read(tx: &Transaction, key: &str, read: bool, at: i64) -> Result<bool, String> {
-    let q = if read { "UPDATE reports SET read_at = ?1 WHERE id = ?2 AND read_at IS NULL" } else { "UPDATE reports SET read_at = NULL WHERE id = ?2 AND read_at IS NOT NULL AND ?1 = ?1" };
-    tx.execute(q, (at, key)).map(|n| n > 0).map_err(sql)
+/// Read or unread again, deleted or back (AC-269), a line closed (AC-271): `column` set to `at`, or cleared with
+/// none; whether that changed it.
+pub fn stamp(tx: &Transaction, key: &str, column: Stamp, at: Option<i64>) -> Result<bool, String> {
+    let col = match column { Stamp::Read => "read_at", Stamp::Deleted => "deleted_at", Stamp::LineSeen => "line_seen" };
+    let changed = tx.execute(&format!("UPDATE reports SET {col} = ?1 WHERE id = ?2 AND {col} IS NOT ?1 AND (?1 IS NULL OR {col} IS NULL)"), (at, key))
+        .map_err(sql)? > 0;
+    if changed {
+        bump(tx)?;
+    }
+    Ok(changed)
 }
 
-/// Deleted, or back (AC-269): whether that changed it.
-pub fn set_deleted(tx: &Transaction, key: &str, deleted: bool, at: i64) -> Result<bool, String> {
-    let q = if deleted { "UPDATE reports SET deleted_at = ?1 WHERE id = ?2 AND deleted_at IS NULL" } else { "UPDATE reports SET deleted_at = NULL WHERE id = ?2 AND deleted_at IS NOT NULL AND ?1 = ?1" };
-    tx.execute(q, (at, key)).map(|n| n > 0).map_err(sql)
-}
-
-/// The human closed the report's line (AC-271).
-pub fn line_closed(tx: &Transaction, key: &str, at: i64) -> Result<bool, String> {
-    tx.execute("UPDATE reports SET line_seen = ?1 WHERE id = ?2 AND line = 1 AND line_seen IS NULL", (at, key)).map(|n| n > 0).map_err(sql)
-}
+#[derive(Clone, Copy)]
+pub enum Stamp { Read, Deleted, LineSeen }
 
 /// The critical reports whose line stands (AC-271): unread, not closed, not deleted, newest first; ID, project, words.
 pub fn lines(tx: &Transaction) -> Result<Vec<(String, String, String)>, String> {
@@ -175,6 +182,9 @@ pub fn purge(tx: &Transaction, at: i64) -> Result<Vec<String>, String> {
         tx.execute("DELETE FROM files WHERE report = ?1", [key]).map_err(sql)?;
         tx.execute("UPDATE reports SET follows = NULL WHERE follows = ?1", [key]).map_err(sql)?;
         tx.execute("DELETE FROM reports WHERE id = ?1", [key]).map_err(sql)?;
+    }
+    if !gone.is_empty() {
+        bump(tx)?;
     }
     Ok(files)
 }

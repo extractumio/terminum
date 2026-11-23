@@ -51,10 +51,7 @@ pub(super) fn finish(tx: &Transaction, who: &Who, args: &Value, me: &str, at: i6
     let changed = vec![id.to_string()];
     ops::move_to(tx, me, id, "DONE", at)?;
     let mut said = vec![match crate::reports::sources::routine_result(tx, &t, &result, me, at)? {
-        Some(report) => {
-            crate::reports::sources::tell_task(tx, &t, me, &report, &t.title, at)?;
-            format!("{id} is DONE; its result went to the human's Inbox as {report}.")
-        }
+        Some(report) => format!("{id} is DONE; its result went to the human's Inbox as {report}."),
         None => format!("{id} is DONE, with your result."),
     }];
     crate::dispatcher::runs::finished(tx, &t.key)?;

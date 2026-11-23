@@ -11,7 +11,7 @@ use axum::Router;
 use serde_json::json;
 
 use super::inbox::{self, Filter};
-use super::record;
+use super::record::{self, Stamp};
 use crate::app::Shared;
 use crate::tasks::api::{answer, store};
 use crate::tasks::ops;
@@ -28,11 +28,14 @@ async fn list(State(app): State<Shared>, Query(q): Query<HashMap<String, String>
         project: q.get("project").filter(|p| !p.is_empty()).cloned(),
         deleted: q.get("deleted").is_some_and(|d| d == "1"),
         before: q.get("from").and_then(|n| n.parse().ok()),
-        session: q.get("session").filter(|s| !s.is_empty()).cloned(),
         limit: q.get("limit").and_then(|n| n.parse().ok()),
-        unread_only: false,
+        ..Filter::default()
     };
-    answer(store(&app, move |tx| inbox::list(tx, &f)).await)
+    answer(store(&app, move |tx| {
+        let mut v = inbox::list(tx, &f)?;
+        v["unread"] = inbox::unread(tx)?;
+        Ok(v)
+    }).await)
 }
 
 async fn one(State(app): State<Shared>, Path(id): Path<String>) -> Response {
@@ -40,20 +43,20 @@ async fn one(State(app): State<Shared>, Path(id): Path<String>) -> Response {
 }
 
 async fn remove(State(app): State<Shared>, Path(id): Path<String>) -> Response {
-    changed(&app, store(&app, move |tx| record::set_deleted(tx, &record::key_of(tx, &id)?, true, ops::now())).await)
+    changed(&app, store(&app, move |tx| record::stamp(tx, &record::key_of(tx, &id)?, Stamp::Deleted, Some(ops::now()))).await)
 }
 
 /// read, unread, restore, seen: the human's acts on a report (AC-269, AC-271).
 async fn act(State(app): State<Shared>, Path((id, act)): Path<(String, String)>) -> Response {
     let done = store(&app, move |tx| {
-        let (key, at) = (record::key_of(tx, &id)?, ops::now());
-        match act.as_str() {
-            "read" => record::set_read(tx, &key, true, at),
-            "unread" => record::set_read(tx, &key, false, at),
-            "restore" => record::set_deleted(tx, &key, false, at),
-            "seen" => record::line_closed(tx, &key, at),
-            other => Err(format!("No act {other} on a report")),
-        }
+        let (stamp, at) = match act.as_str() {
+            "read" => (Stamp::Read, Some(ops::now())),
+            "unread" => (Stamp::Read, None),
+            "restore" => (Stamp::Deleted, None),
+            "seen" => (Stamp::LineSeen, Some(ops::now())),
+            other => return Err(format!("No act {other} on a report")),
+        };
+        record::stamp(tx, &record::key_of(tx, &id)?, stamp, at)
     }).await;
     changed(&app, done)
 }

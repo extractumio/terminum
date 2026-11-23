@@ -80,6 +80,10 @@ Scenario: AC-265 happy path — made
   And its number comes from the project's count of task IDs (terminum-kanban.md AC-148), as a schedule's task's does: no task is TERM-7, S_TERM-7 or I_TERM-7, and R_ is no project prefix
   And a severity is "critical or not": a report has no owner, status, budget or column; it is read, not worked
 
+Scenario: AC-265 edge — its project deleted
+  When Terminum is deleted, its tasks moving to Default (terminum-kanban.md AC-110)
+  Then its reports move to Default too, each keeping its ID
+
 Scenario: AC-265 failure — a report's ID is no task's
   When an agent calls get_task, add_comment or any task tool with R_TERM-7
   Then it is refused: "R_TERM-7 is a report: use get_report."
@@ -91,7 +95,7 @@ Scenario: AC-265 edge — follows another
   And follows names a report of the same project, not deleted; else it is refused: "R_TERM-70 is no report of Terminum."
 
 Scenario: AC-265 failure — limits
-  Then a title holds 1 to 200 characters, a summary at most 500, a body at most 1 MiB, a comment at most 256 KiB, a file at most 100 MB (`terminum-kanban.md` AC-109), and 50 files per report
+  Then a title holds 1 to 200 characters as a task's ("Title: 1–200 characters"), a summary at most 500, a body at most 1 MiB, a comment at most 256 KiB, a file at most 100 MB (`terminum-kanban.md` AC-109), and 50 files per report
   And each over its limit is refused in words naming it ("Body: at most 1 MiB"), nothing kept
   And control characters but tab and newline are dropped from each text, as a task's are
 ```
@@ -102,7 +106,7 @@ Scenario: AC-265 failure — limits
 Scenario: AC-266 happy path — a worker reports on its task
   Given worker session %8 running TERM-41 of Terminum (terminum-agents.md AC-174)
   When it calls create_report {title, summary, body, task: "TERM-41"}
-  Then R_TERM-7 is made as AC-265 says, and TERM-41 gets a comment by that agent "Report R_TERM-7: <title>", its ID a link to the report (AC-273)
+  Then R_TERM-7 is made as AC-265 says, and TERM-41's history gets the line "Report R_TERM-7: <title>" by that agent, never a comment: TERM-41's result stays its agent's last comment
   And the tool answers "R_TERM-7 is in the human's Inbox. Finish TERM-41 with finish_task as usual: the report is not its result."
   When it calls finish_task on TERM-41 with its result
   Then TERM-41 is DONE as any task (terminum-dispatcher.md AC-123)

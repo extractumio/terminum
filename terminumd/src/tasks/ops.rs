@@ -123,11 +123,11 @@ pub(super) fn task_of(r: &Row) -> rusqlite::Result<Task> {
 
 /// A task's number, the store's order, from its ID, one it had or its key's start (AC-148).
 pub fn number_of(tx: &Transaction, id: &str) -> Result<i64, String> {
-    super::slugs::resolve(tx, id)?.ok_or_else(|| format!("No task {id}"))
+    super::slugs::resolve(tx, id)?.ok_or_else(|| super::slugs::not_found(id))
 }
 
 fn of_task<T>(tx: &Transaction, id: &str, query: &str, f: impl FnOnce(&Row) -> rusqlite::Result<T>) -> Result<T, String> {
-    tx.query_row(query, [number_of(tx, id)?], f).optional().map_err(sql)?.ok_or_else(|| format!("No task {id}"))
+    tx.query_row(query, [number_of(tx, id)?], f).optional().map_err(sql)?.ok_or_else(|| super::slugs::not_found(id))
 }
 
 /// The row's key of task `id`.
@@ -162,7 +162,7 @@ pub(super) fn top_rank(tx: &Transaction, status: &str, severity: &str) -> Result
 }
 
 /// A title as kept: nothing that hides or reorders it, whoever writes it.
-pub(super) fn check_title(title: &str) -> Result<String, String> {
+pub(crate) fn check_title(title: &str) -> Result<String, String> {
     let cleaned = crate::termtext::clean(title, false);
     let t = cleaned.trim();
     if t.is_empty() || t.chars().count() > TITLE_MOST {
@@ -175,7 +175,7 @@ pub(super) fn check_text(text: &str) -> Result<(), String> {
     if text.len() > TEXT_MOST { Err("Text: at most 1 MiB".into()) } else { Ok(()) }
 }
 
-pub(super) fn check_comment(text: &str) -> Result<(), String> {
+pub(crate) fn check_comment(text: &str) -> Result<(), String> {
     if text.len() > COMMENT_MOST { Err("Comment: at most 256 KiB".into()) } else { Ok(()) }
 }
 

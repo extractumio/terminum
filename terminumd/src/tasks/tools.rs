@@ -221,7 +221,7 @@ fn run_in(store: &Store, state_dir: &Path, who: &Who, tool: &str, args: &Value, 
     }
     if crate::reports::tools::NAMES.contains(&tool) {
         store.with(|tx| check_supervisor(tx, who, tool))?;
-        return crate::reports::tools::run(store, state_dir, who, tool, args).map(|(text, changed, _)| (text, changed));
+        return crate::reports::tools::run(store, state_dir, who, tool, args);
     }
     match tool {
         "attach_file" => return attach_file(store, state_dir, who, args),

@@ -16,7 +16,6 @@ pub struct Filter {
     pub deleted: bool,
     /// below this number of the order: the next page
     pub before: Option<i64>,
-    pub session: Option<String>,
     pub limit: Option<i64>,
     pub unread_only: bool,
 }
@@ -51,34 +50,25 @@ pub fn list(tx: &Transaction, f: &Filter) -> Result<Value, String> {
     let limit = f.limit.unwrap_or(PAGE).clamp(1, PAGE);
     let deleted = if f.deleted { "r.deleted_at IS NOT NULL" } else { "r.deleted_at IS NULL" };
     let order = if f.deleted { "ORDER BY r.deleted_at DESC, r.rowid DESC" } else { ORDER };
-    let query = format!("{ROW} WHERE {deleted} AND (?1 IS NULL OR r.project = ?1) AND (?2 IS NULL OR r.session_key = ?2)
-        AND (?3 = 0 OR r.read_at IS NULL) {order} LIMIT ?4 OFFSET ?5");
+    let query = format!("{ROW} WHERE {deleted} AND (?1 IS NULL OR r.project = ?1) AND (?2 = 0 OR r.read_at IS NULL) {order} LIMIT ?3 OFFSET ?4");
     let offset = f.before.unwrap_or(0).max(0);
-    let mut reports = rows(tx, &query, (f.project.as_deref(), f.session.as_deref(), f.unread_only, limit + 1, offset), row_of)?;
+    let mut reports = rows(tx, &query, (f.project.as_deref(), f.unread_only, limit + 1, offset), row_of)?;
     let more = reports.len() as i64 > limit;
     reports.truncate(limit as usize);
-    Ok(json!({"reports": reports, "more": more, "next": offset + limit, "unread": unread(tx)?}))
+    Ok(json!({"reports": reports, "more": more, "next": offset + limit}))
 }
 
-/// Unread reports not deleted, counted by project, by schedule (`SCH-n`) and by session (AC-267, AC-272, AC-273).
+/// Unread reports not deleted, counted by project (AC-267), by the partial index `reports_unread`.
 pub fn unread(tx: &Transaction) -> Result<Value, String> {
-    let count = |q: &str| -> Result<serde_json::Map<String, Value>, String> {
-        Ok(rows(tx, q, [], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))?.into_iter().map(|(k, n)| (k, json!(n))).collect())
-    };
-    const UNREAD: &str = "r.deleted_at IS NULL AND r.read_at IS NULL";
-    Ok(json!({
-        "projects": count(&format!("SELECT r.project, count(*) FROM reports r WHERE {UNREAD} GROUP BY r.project"))?,
-        "schedules": count(&format!("SELECT 'SCH-' || s.number, count(*) FROM reports r JOIN schedules s ON s.id = r.schedule WHERE {UNREAD} GROUP BY s.number"))?,
-        "sessions": count(&format!("SELECT r.session_key, count(*) FROM reports r WHERE {UNREAD} AND r.session_key IS NOT NULL GROUP BY r.session_key"))?,
-    }))
+    let counts: serde_json::Map<String, Value> = rows(tx, "SELECT project, count(*) FROM reports WHERE deleted_at IS NULL AND read_at IS NULL GROUP BY project",
+        [], |r| Ok((r.get::<_, String>(0)?, json!(r.get::<_, i64>(1)?))))?.into_iter().collect();
+    Ok(json!({"projects": counts}))
 }
 
-/// What every page hears with the tasks' marks: the unread counts, and a revision that moves with any change of a
-/// report (made, changed, read, deleted, a line closed), so an open Inbox reads its list again.
+/// What every page hears with the tasks' marks: the unread counts, and the revision every write of a report moves
+/// (record.rs `bump`), so an open Inbox reads its list again.
 pub fn marks(tx: &Transaction) -> Result<Value, String> {
-    let rev: String = tx.query_row("SELECT count(*) || ':' || coalesce(max(updated_at), 0) || ':' || total(coalesce(read_at, 0)) || ':' || total(coalesce(deleted_at, 0))
-        || ':' || total(coalesce(line_seen, 0)) FROM reports", [], |r| r.get(0)).map_err(sql)?;
-    Ok(json!({"rev": rev, "unread": unread(tx)?}))
+    Ok(json!({"rev": super::record::revision(tx)?, "unread": unread(tx)?}))
 }
 
 /// One report whole (AC-268): its row, its body, comments oldest first, files and links.
@@ -101,8 +91,9 @@ pub fn of_task(tx: &Transaction, task_key: &str) -> Result<Vec<String>, String> 
     rows(tx, "SELECT slug FROM reports WHERE task = ?1 AND deleted_at IS NULL ORDER BY created_at, rowid", [task_key], |r| r.get(0))
 }
 
-/// The newest report of a schedule not deleted, its ID and when made (AC-272).
-pub fn last_of_schedule(tx: &Transaction, schedule: &str) -> Result<Option<(String, i64)>, String> {
-    Ok(rows(tx, "SELECT slug, created_at FROM reports WHERE schedule = ?1 AND deleted_at IS NULL ORDER BY created_at DESC, rowid DESC LIMIT 1",
-        [schedule], |r| Ok((r.get(0)?, r.get(1)?)))?.pop())
+/// Each schedule's newest report not deleted (its ID, when made) and its unread count, in one read (AC-272).
+pub fn by_schedule(tx: &Transaction) -> Result<std::collections::HashMap<String, (String, i64, i64)>, String> {
+    Ok(rows(tx, "SELECT r.schedule, (SELECT n.slug FROM reports n WHERE n.schedule = r.schedule AND n.deleted_at IS NULL ORDER BY n.created_at DESC, n.rowid DESC LIMIT 1),
+            max(r.created_at), sum(r.read_at IS NULL) FROM reports r WHERE r.schedule IS NOT NULL AND r.deleted_at IS NULL GROUP BY r.schedule", [],
+        |r| Ok((r.get::<_, String>(0)?, (r.get(1)?, r.get(2)?, r.get(3)?))))?.into_iter().collect())
 }

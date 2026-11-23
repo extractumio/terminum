@@ -4,7 +4,7 @@
 use serde_json::{json, Value};
 
 use super::inbox::{self, Filter};
-use super::record;
+use super::record::{self, Stamp};
 use crate::dispatcher::runs::{self, Phase, Run};
 use crate::tasks::closeout;
 use crate::tasks::ops::{self, sql, NewTask};
@@ -91,8 +91,8 @@ fn ac265_limits_are_said_in_words() {
     let (s, dir) = fresh("reports-limits");
     running(&s, "Audit", KEY);
     let made = |v: Value| call(&s, &dir, KEY, "create_report", v);
-    assert_eq!(made(json!({"title": " ", "summary": "s", "body": "b"})).unwrap_err(), "Title: 1 to 200 characters");
-    assert_eq!(made(json!({"title": "t".repeat(201), "summary": "s", "body": "b"})).unwrap_err(), "Title: at most 200 characters");
+    assert_eq!(made(json!({"title": " ", "summary": "s", "body": "b"})).unwrap_err(), "Title: 1–200 characters");
+    assert_eq!(made(json!({"title": "t".repeat(201), "summary": "s", "body": "b"})).unwrap_err(), "Title: 1–200 characters");
     assert_eq!(made(json!({"title": "t", "summary": "s".repeat(501), "body": "b"})).unwrap_err(), "Summary: at most 500 characters");
     assert_eq!(made(json!({"title": "t", "summary": "s", "body": "b".repeat((1 << 20) + 1)})).unwrap_err(), "Body: at most 1 MiB");
     assert_eq!(s.with(|tx| inbox::list(tx, &Filter::default())).unwrap()["reports"], json!([]), "nothing kept");
@@ -162,14 +162,16 @@ fn ac269_read_unread_deleted_restored_and_purged_after_30_days() {
     let file = one(&s, &id)["files"][0]["id"].as_str().unwrap().to_string();
     let key = s.with(|tx| record::key_of(tx, &id)).unwrap();
     s.with(|tx| {
-        assert!(record::set_read(tx, &key, true, 10)? && !record::set_read(tx, &key, true, 11)?, "once");
+        let rev = record::revision(tx)?;
+        assert!(record::stamp(tx, &key, Stamp::Read, Some(10))? && !record::stamp(tx, &key, Stamp::Read, Some(11))?, "once");
+        assert_ne!(record::revision(tx)?, rev, "every page hears it by the Inbox's revision");
         assert_eq!(inbox::unread(tx)?["projects"], json!({}));
-        assert!(record::set_read(tx, &key, false, 12)?);
+        assert!(record::stamp(tx, &key, Stamp::Read, None)?);
         assert_eq!(inbox::unread(tx)?["projects"], json!({"api": 1}));
-        assert!(record::set_deleted(tx, &key, true, 13)?);
+        assert!(record::stamp(tx, &key, Stamp::Deleted, Some(13))?);
         assert_eq!(inbox::unread(tx)?["projects"], json!({}), "a deleted report counts nowhere");
-        assert!(record::set_deleted(tx, &key, false, 14)?);
-        record::set_deleted(tx, &key, true, 100)?;
+        assert!(record::stamp(tx, &key, Stamp::Deleted, None)?);
+        record::stamp(tx, &key, Stamp::Deleted, Some(100))?;
         assert!(record::purge(tx, 100 + record::KEPT_DELETED - 1)?.is_empty(), "kept 30 days");
         assert_eq!(record::purge(tx, 101 + record::KEPT_DELETED)?, vec![file], "then it goes with its files");
         assert_eq!(record::key_of(tx, &id).unwrap_err(), format!("No report {id}."));
@@ -193,7 +195,7 @@ fn ac271_only_a_critical_report_raises_a_line_once_an_hour_per_worker_session() 
     // critical unread first in the Inbox
     assert_eq!(s.with(|tx| inbox::list(tx, &Filter::default())).unwrap()["reports"][0]["critical"], json!(true));
     let key = s.with(|tx| record::key_of(tx, &first)).unwrap();
-    s.with(|tx| record::set_read(tx, &key, true, ops::now())).unwrap();
+    s.with(|tx| record::stamp(tx, &key, Stamp::Read, Some(ops::now()))).unwrap();
     assert!(s.with(record::lines).unwrap().is_empty(), "read: its line goes");
     // an incident's report alerts through the incident alone
     s.with(|tx| super::sources::incident(tx, "api", 12, "task API-1", "cost over its bound", 20).map(drop)).unwrap();
@@ -253,4 +255,13 @@ fn running_in(tx: &rusqlite::Transaction) -> Result<String, String> {
     let t = ops::create(tx, HUMAN, NewTask { title: "Which version?".into(), project: Some("api".into()), ..Default::default() }, 6)?;
     ops::move_to(tx, DISPATCHER, &t.id, "WAIT FOR HUMAN", 6)?;
     Ok(t.id)
+}
+
+#[test]
+fn ac265_a_deleted_project_s_reports_move_to_default_keeping_their_ids() {
+    let (s, dir) = fresh("reports-project-gone");
+    running(&s, "Audit", KEY);
+    let id = call(&s, &dir, KEY, "create_report", report("Kept")).unwrap().split_whitespace().next().unwrap().to_string();
+    s.with(|tx| crate::tasks::projects::move_tasks_to_default(tx, "api", "API", 9).map(drop)).unwrap();
+    assert_eq!(one(&s, &id)["project"], json!(crate::tasks::store::DEFAULT_PROJECT), "{id} keeps its ID in Default");
 }

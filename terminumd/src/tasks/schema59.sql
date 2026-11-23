@@ -28,6 +28,9 @@ CREATE TABLE reports (
   body TEXT NOT NULL
 );
 CREATE INDEX reports_inbox ON reports (deleted_at, project, read_at);
+-- what every page's marks read after a change: the unread counts and the critical lines standing
+CREATE INDEX reports_unread ON reports (project) WHERE deleted_at IS NULL AND read_at IS NULL;
+CREATE INDEX reports_lines ON reports (created_at) WHERE line = 1 AND read_at IS NULL AND line_seen IS NULL AND deleted_at IS NULL;
 CREATE INDEX reports_task ON reports (task);
 CREATE INDEX reports_schedule ON reports (schedule);
 CREATE INDEX reports_session ON reports (session_key, created_at);

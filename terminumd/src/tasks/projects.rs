@@ -92,6 +92,7 @@ pub fn move_tasks_to_default(tx: &Transaction, project: &str, name: &str, now: i
         super::slugs::assign(tx, task, DEFAULT_PROJECT, "")?;   // TASK-n; the ID it had still finds it (AC-148)
     }
     tx.execute("UPDATE runs SET project = ?1 WHERE project = ?2", (DEFAULT_PROJECT, project)).map_err(sql)?;   // they go with their tasks
+    tx.execute("UPDATE reports SET project = ?1 WHERE project = ?2", (DEFAULT_PROJECT, project)).map_err(sql)?;   // so do its reports, their IDs kept
     tx.execute("UPDATE schedules SET project = ?1 WHERE project = ?2 AND deleted_at IS NOT NULL", (DEFAULT_PROJECT, project)).map_err(sql)?;
     Ok(tasks.len())
 }

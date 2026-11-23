@@ -6,10 +6,13 @@
 import { icon } from "./icons.js";
 import { el, iconButton, plural, projectInk, read, write } from "./listparts.js";
 import { api } from "./kanbanutil.js";
+import { CHOSEN } from "./kanbanfilters.js";
+import { menuBox } from "./menubox.js";
+import { longPress } from "./rowmenu.js";
+import { taskUrl } from "./tasklink.js";
 
 const SHOWN = 8;                                   // rows before "Show all"
 const FOLDED = "inbox.folded";
-const CHOSEN = "board.project";                    // the board's project choice, this browser's (kanbanfilters.js)
 const UNDO_MS = 8000;
 export const REPORT_EVENT = "tm-report";           // reportpane.js opens the report this names
 export const CHANGED_EVENT = "tm-reports";         // the reports changed: an open pane reads its report again
@@ -40,7 +43,7 @@ function chosen() {
 /** The board's Find, which finds reports too (AC-273). */
 const findWords = () => (new URLSearchParams(location.search).get("q") ?? "").trim().toLowerCase();
 
-const st = { rows: [], more: false, unread: {}, rev: null, deleted: false, all: false, folded: !!read(FOLDED), key: "", undo: null, focus: null };
+const st = { rows: [], more: false, next: 0, failed: "", unread: {}, rev: null, deleted: false, all: false, folded: !!read(FOLDED), key: "", undo: null, focus: null };
 let box = null;
 
 /** terminumd's `taskmarks`: the Inbox's revision and unread counts; a moved revision reads the list again. */
@@ -60,10 +63,10 @@ async function load(older = false) {
   const q = new URLSearchParams();
   if (projects.length === 1) q.set("project", projects[0]);
   if (st.deleted) q.set("deleted", "1");
-  if (older) q.set("from", String(st.read ?? 0));
+  if (older) q.set("from", String(st.next));
   try {
     const got = await api(`/api/reports?${q}`);
-    st.read = got.next;
+    st.next = got.next;
     const rows = got.reports.filter((r) => projects.length < 2 || projects.includes(r.project));
     st.rows = older ? [...st.rows, ...rows] : rows;
     st.more = got.more;
@@ -119,37 +122,39 @@ function rowOf(r) {
   b.addEventListener("click", () => { st.focus = r.id; if (!st.deleted) openReport(r.id); });
   b.addEventListener("focus", () => { st.focus = r.id; });
   const acts = el("span", "racts");
-  if (st.deleted) acts.append(iconButton("icon rrestore", "corner-left-up", `Restore ${r.id}`, "Restore", () => act(r, "restore")));
+  if (st.deleted) acts.append(iconButton("icon rrestore", "corner-left-up", `Restore ${r.id}`, "Restore", () => act(r.id, "restore")));
   else acts.append(
-    iconButton("icon rread", r.read ? "mail" : "mail-open", r.read ? `Mark ${r.id} as unread` : `Mark ${r.id} as read`, r.read ? "Mark as unread (U)" : "Mark as read (U)", () => act(r, r.read ? "unread" : "read")),
-    iconButton("icon rdelete", "x", `Delete ${r.id}`, "Delete (Backspace)", () => remove(r)));
+    iconButton("icon rread", r.read ? "mail" : "mail-open", r.read ? `Mark ${r.id} as unread` : `Mark ${r.id} as read`, r.read ? "Mark as unread (U)" : "Mark as read (U)", () => act(r.id, r.read ? "unread" : "read")),
+    iconButton("icon rdelete", "x", `Delete ${r.id}`, "Delete (Backspace)", () => remove(r.id)));
   li.append(b, acts);
   return li;
 }
 
-/** read, unread, restore: terminumd's word, every page hearing it; a refusal said where it was pressed (AC-269). */
-async function act(r, what) {
-  try { await api(`/api/reports/${encodeURIComponent(r.id)}/${what}`, { method: "POST", body: {} }); }
-  catch (e) { say(`${r.id}: ${e.message}`); }
+/** read, unread, restore of report `id`: terminumd's word, every page hearing it; a refusal said in the Inbox's own
+ *  line, as `whereSaid` says it too (AC-269). Shared with the report's pane. */
+export async function act(id, what, whereSaid = say) {
+  try { await api(`/api/reports/${encodeURIComponent(id)}/${what}`, { method: "POST", body: {} }); }
+  catch (e) { whereSaid(`${id}: ${e.message}`); }
   load();
 }
 
-/** Deleted at once, with Undo for 8 seconds (AC-269). */
-async function remove(r) {
-  st.rows = st.rows.filter((x) => x !== r);
+/** Report `id` deleted at once, with Undo for 8 seconds (AC-269): whether it went. */
+export async function remove(id, whereSaid = say) {
+  st.rows = st.rows.filter((x) => x.id !== id);
   draw();
-  try { await api(`/api/reports/${encodeURIComponent(r.id)}`, { method: "DELETE" }); }
-  catch (e) { say(`${r.id}: ${e.message}`); load(); return; }
-  dispatchEvent(new CustomEvent(CHANGED_EVENT, { detail: { deleted: r.id } }));
-  offerUndo(r);
-}
-
-function offerUndo(r) {
+  try { await api(`/api/reports/${encodeURIComponent(id)}`, { method: "DELETE" }); }
+  catch (e) { whereSaid(`${id}: ${e.message}`); load(); return false; }
   const bar = box.querySelector(".inboxundo");
   clearTimeout(st.undo);
-  bar.replaceChildren(el("span", null, `${r.id} deleted`), Object.assign(el("button", "textkey", "Undo"), { type: "button", onclick: () => { bar.hidden = true; act(r, "restore"); } }));
+  bar.replaceChildren(el("span", null, `${id} deleted`), Object.assign(el("button", "textkey", "Undo"), { type: "button", onclick: () => { bar.hidden = true; act(id, "restore"); } }));
   bar.hidden = false;
   st.undo = setTimeout(() => { bar.hidden = true; }, UNDO_MS);
+  return true;
+}
+
+/** Report `id`'s address on the clipboard, said by `whereSaid`. */
+export function copyLink(id, whereSaid = say) {
+  navigator.clipboard?.writeText(new URL(reportUrl(id), location.href).href).then(() => whereSaid("Link copied"), (e) => whereSaid(e.message));
 }
 
 /** What went wrong, in the Inbox's own line (the page's toast lets clicks through and may stand elsewhere). */
@@ -170,33 +175,24 @@ function onKey(e) {
   const go = (next) => { if (next) { e.preventDefault(); next.querySelector(".report").focus(); } };
   if (e.key === "ArrowDown") go(li.nextElementSibling);
   else if (e.key === "ArrowUp") go(li.previousElementSibling);
-  else if ((e.key === "Backspace" || e.key === "Delete") && !st.deleted) { e.preventDefault(); st.focus = li.nextElementSibling?.dataset.id ?? li.previousElementSibling?.dataset.id ?? null; remove(r); }
-  else if ((e.key === "u" || e.key === "U") && !st.deleted) { e.preventDefault(); act(r, r.read ? "unread" : "read"); }
+  else if ((e.key === "Backspace" || e.key === "Delete") && !st.deleted) { e.preventDefault(); st.focus = li.nextElementSibling?.dataset.id ?? li.previousElementSibling?.dataset.id ?? null; remove(r.id); }
+  else if ((e.key === "u" || e.key === "U") && !st.deleted) { e.preventDefault(); act(r.id, r.read ? "unread" : "read"); }
 }
 
-/** The row's menu, by a right click or a long press (AC-267). */
-function menu(r, x, y) {
-  closeMenu();
-  const m = el("div", "box menurows inboxmenu");
-  m.setAttribute("role", "menu");
-  const item = (text, run) => { const b = el("button", null, text); b.type = "button"; b.setAttribute("role", "menuitem"); b.onclick = () => { closeMenu(); run(); }; m.append(b); };
-  if (st.deleted) item("Restore", () => act(r, "restore"));
-  else {
-    item("Open", () => openReport(r.id));
-    item("Open in new tab", () => window.open(reportUrl(r.id), "_blank", "noopener"));
-    item(r.read ? "Mark as unread" : "Mark as read", () => act(r, r.read ? "unread" : "read"));
-    if (r.source.task) item(`Open source task ${r.source.task}`, () => { location.href = `/kanban/${encodeURIComponent(r.source.task)}`; });
-    item("Copy link", () => navigator.clipboard?.writeText(new URL(reportUrl(r.id), location.href).href).then(() => say("Link copied"), (e) => say(e.message)));
-    item("Delete", () => remove(r));
-  }
-  document.body.append(m);
-  const w = m.offsetWidth, h = m.offsetHeight;
-  m.style.left = `${Math.max(8, Math.min(x, innerWidth - w - 8))}px`;
-  m.style.top = `${Math.max(8, Math.min(y, innerHeight - h - 8))}px`;
-  m.querySelector("button")?.focus();
+/** The row's menu, by a right click or a long press (AC-267): the list's menu box, a sheet on a phone. */
+let menu = null;
+function openMenu(r, x, y, byFinger) {
+  const b = (label, action, run) => menu.button(label, action, () => { menu.hide(); run(); });
+  menu.fill(r.id, ...(st.deleted ? [b("Restore", "restore", () => act(r.id, "restore"))] : [
+    b("Open", "open", () => openReport(r.id)),
+    b("Open in new tab", "tab", () => window.open(reportUrl(r.id), "_blank", "noopener")),
+    b(r.read ? "Mark as unread" : "Mark as read", "read", () => act(r.id, r.read ? "unread" : "read")),
+    r.source.task && b(`Open source task ${r.source.task}`, "task", () => { location.href = taskUrl(r.source.task); }),
+    b("Copy link", "copy", () => copyLink(r.id)),
+    b("Delete", "delete", () => remove(r.id)),
+  ].filter(Boolean)));
+  menu.open(x, y, byFinger);
 }
-
-function closeMenu() { document.querySelector(".inboxmenu")?.remove(); }
 
 function mount(at) {
   box = at;
@@ -217,19 +213,13 @@ function mount(at) {
   undo.hidden = true;
   undo.setAttribute("role", "status");
   rows.addEventListener("keydown", onKey);
-  rows.addEventListener("contextmenu", (e) => { const r = rowData(e.target.closest(".inboxrow")); if (r) { e.preventDefault(); menu(r, e.clientX, e.clientY); } });
-  let hold = 0;
-  rows.addEventListener("pointerdown", (e) => {
-    if (e.pointerType !== "touch") return;
-    const r = rowData(e.target.closest(".inboxrow"));
-    if (r) hold = setTimeout(() => { hold = 0; menu(r, e.clientX, e.clientY); }, 550);
-  });
-  for (const end of ["pointerup", "pointercancel", "pointermove"]) rows.addEventListener(end, () => clearTimeout(hold));
-  addEventListener("click", (e) => { if (!e.target.closest?.(".inboxmenu")) closeMenu(); });
-  addEventListener("keydown", (e) => { if (e.key === "Escape") closeMenu(); });
+  menu = menuBox(document.getElementById("reportmenu"), { open: "mail-open", tab: "copy-plus", read: "mail", task: "board", copy: "copy", delete: "x", restore: "corner-left-up" });
+  rows.addEventListener("contextmenu", (e) => { const r = rowData(e.target.closest(".inboxrow")); if (r) { e.preventDefault(); openMenu(r, e.clientX, e.clientY, false); } });
+  longPress(rows, (e) => rowData(e.target.closest(".inboxrow")), (r, x, y) => openMenu(r, x, y, true));
   box.replaceChildren(head, rows, more, none, undo);
   // the board's project and Find live in its address: a change there reads or filters again
   setInterval(() => {
+    if (document.visibilityState !== "visible") return;
     const key = `${chosen().join(",")}|${findWords()}`;
     if (key !== st.key && st.rev !== null) { const projects = st.key.split("|")[0]; st.key = key; if (projects !== chosen().join(",")) load(); else draw(); }
   }, 1000);
@@ -240,9 +230,6 @@ function mount(at) {
   setInterval(() => { if (live()) load(); }, 30000);
   st.key = `${chosen().join(",")}|${findWords()}`;
 }
-
-// a delete from the report's pane: Undo here, as for a row's
-addEventListener(CHANGED_EVENT, (e) => { if (box && e.detail?.undo) { offerUndo({ id: e.detail.deleted }); load(); } });
 
 const at = document.getElementById("inbox");
 if (at) mount(at);

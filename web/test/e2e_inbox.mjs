@@ -68,7 +68,7 @@ async function onBoard(browser, device, w) {
   await shot(page, `inbox-${w}`);
   // a press: the pane over the board's right part; read after 2 seconds
   await page.click('.inboxrow[data-id="R_API-7"] .report');
-  await page.waitForSelector("#reportpane:not([hidden]) .rptitle", { timeout: 8000 }).catch(async () => console.log("pane:", f.errors.join(" | "), await page.evaluate(() => document.getElementById("reportpane")?.outerHTML.slice(0, 400))));
+  await page.waitForSelector("#reportpane:not([hidden]) .rptitle", { timeout: 8000 });
   await until(async () => (await look(page)).body === "serde", 4000);
   g = await look(page);
   const over = narrow ? g.pane.t <= (g.board?.t ?? g.pane.t) + 1 : g.pane.t <= (g.pool ?? g.board).t + 1 && g.pane.t >= 40 && g.pane.l <= g.board.l + 1 && g.pane.r >= g.board.r - 1;
@@ -101,7 +101,7 @@ async function onBoard(browser, device, w) {
   check(`AC-267 ${w}: a row's delete and read keys are reachable`, await page.isVisible('.inboxrow[data-id="R_API-7"] .rdelete') || await page.isVisible('.inboxrow[data-id="R_API-7"] .rread'));
   if (!narrow) {
     await page.click('.inboxrow[data-id="R_API-7"] .report', { button: "right" });
-    const items = await page.$$eval(".inboxmenu button", (bs) => bs.map((b) => b.textContent));
+    const items = await page.$$eval("#reportmenu[open] button", (bs) => bs.map((b) => b.textContent));
     check(`AC-267 ${w}: a right click offers Open, Mark, Open source task, Copy link, Delete`, ["Open", "Mark as unread", "Open source task API-41", "Copy link", "Delete"].every((x) => items.includes(x)), items.join());
     await page.keyboard.press("Escape");
     // Find filters the Inbox too (AC-273)

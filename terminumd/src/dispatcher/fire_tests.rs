@@ -200,7 +200,7 @@ fn ac272_a_schedule_s_task_s_result_is_a_report_and_none_supersedes_another() {
     let newer = fire(NOW + 25 * 60 + 14, "%8");
     store.with(|tx| {
         assert_eq!((ops::get(tx, &older)?.status, ops::get(tx, &newer)?.status), ("DONE".to_string(), "DONE".to_string()));
-        assert_eq!(crate::reports::inbox::unread(tx)?["schedules"], json!({"SCH-1": 2}), "every report stays, none superseded");
+        assert_eq!(crate::reports::inbox::by_schedule(tx)?.get(&s.id).map(|r| r.2), Some(2), "every report stays, none superseded");
         Ok(())
     }).unwrap();
 }

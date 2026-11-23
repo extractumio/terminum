@@ -96,7 +96,7 @@
 :is(.field, .search) :focus-visible { outline: none; }   /* a wrapper field (.search, .lead) is lit for its input */
 
 /* ---- panes and dialogs: their edges and a shadow that shades what is around them ---- */
-:is(#menu, #hostmenu, #rowmenu, #cardmenu, #updmenu, #findbox, #markbar, .footform, .pick > .box) {   /* the floating buttons' windows: View's (panewin.css) */
+:is(#menu, #hostmenu, #rowmenu, #cardmenu, #reportmenu, #updmenu, #findbox, #markbar, .footform, .pick > .box) {   /* the floating buttons' windows: View's (panewin.css) */
   box-shadow: var(--pane-shadow); }
 dialog.dlg, #marksdlg { box-shadow: var(--dialog-shadow); }
 dialog::backdrop, #panescrim { background: var(--scrim); }

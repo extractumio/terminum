@@ -6,7 +6,7 @@
 import { icon } from "./icons.js";
 import { el, iconButton } from "./listparts.js";
 import { api, button, download, renderInto, stamp } from "./kanbanutil.js";
-import { CHANGED_EVENT, REPORT_EVENT, age, openReport, reportUrl } from "./inbox.js";
+import { CHANGED_EVENT, REPORT_EVENT, act as inboxAct, age, copyLink, openReport, remove as inboxRemove } from "./inbox.js";
 
 const READ_AFTER = 2000;
 const $ = (id) => document.getElementById(id);
@@ -15,7 +15,7 @@ pane.id = "reportpane";
 pane.hidden = true;
 pane.tabIndex = -1;
 pane.setAttribute("aria-label", "Report");
-let shown = null, timer = 0, asked = 0;
+let shown = null, drawn = "", timer = 0, asked = 0;
 
 const addressed = () => new URLSearchParams(location.search).get("report");
 
@@ -66,20 +66,29 @@ export async function open(id, again = false) {
     return;
   }
   if (ask !== asked) return;
-  const scroll = again ? pane.querySelector(".rpbody")?.scrollTop ?? 0 : 0;
   shown = r;
+  const same = JSON.stringify(r);
+  if (again && same === drawn) return;           // another report changed: this one stands as drawn
+  drawn = same;
+  const scroll = again ? pane.querySelector(".rpbody")?.scrollTop ?? 0 : 0;
   await draw(r);
   pane.querySelector(".rpbody").scrollTop = scroll;
   if (!again) pane.focus({ preventScroll: true });
   readSoon(r);
 }
 
-export function close() {
+/** The pane goes; the address keeps or loses the report as the caller says. */
+function hide() {
   clearTimeout(timer);
   asked++;
   shown = null;
+  drawn = "";
   pane.hidden = true;
   document.body.classList.remove("reading");
+}
+
+export function close() {
+  hide();
   address(null);
 }
 
@@ -99,7 +108,7 @@ function head(r, id) {
       () => act(r, r.read ? "unread" : "read")),
     iconButton("icon", "x", "Delete", "Delete (Backspace)", () => remove(r)));
   }
-  if (r) acts.append(iconButton("icon", "copy", "Copy link", "Copy this report's link", () => copyLink(r.id)));
+  if (r) acts.append(iconButton("icon", "copy", "Copy link", "Copy this report's link", () => copyLink(r.id, note)));
   acts.append(iconButton("icon rpclose", "chevron-left", "Close the report", "Close (Esc): the columns again", close));
   h.append(title, acts);
   if (r) {
@@ -117,11 +126,13 @@ function head(r, id) {
 
 const link = (text, go) => button("linklike", text, go);
 
-/** A task's window over the board, at its own address (kanbanroute.js reads it on popstate). */
+/** A task's window over the board, at its own address, which the board's router reads (kanbanroute.js). */
 function openTask(id) {
-  history.pushState({ win: true }, "", `/kanban/${encodeURIComponent(id)}${location.search.replace(/([?&])report=[^&]*&?/, "$1").replace(/[?&]$/, "")}`);
-  pane.hidden = true;
-  document.body.classList.remove("reading");
+  const u = new URL(location.href);
+  u.pathname = `/kanban/${encodeURIComponent(id)}`;
+  u.searchParams.delete("report");
+  hide();
+  history.pushState({ win: true }, "", u);
   dispatchEvent(new PopStateEvent("popstate"));
 }
 
@@ -164,22 +175,9 @@ async function draw(r) {
   await renderInto(md, r.body);
 }
 
-async function act(r, what) {
-  try { await api(`/api/reports/${encodeURIComponent(r.id)}/${what}`, { method: "POST", body: {} }); open(r.id, true); }
-  catch (e) { note(`${r.id}: ${e.message}`); }
-}
-
-async function remove(r) {
-  try {
-    await api(`/api/reports/${encodeURIComponent(r.id)}`, { method: "DELETE" });
-    close();
-    dispatchEvent(new CustomEvent(CHANGED_EVENT, { detail: { deleted: r.id, undo: true } }));
-  } catch (e) { note(`${r.id}: ${e.message}`); }
-}
-
-function copyLink(id) {
-  navigator.clipboard?.writeText(new URL(reportUrl(id), location.href).href).then(() => note("Link copied"), (e) => note(e.message));
-}
+/** The Inbox's own acts, their refusals said in the pane; the pane reads its report again after. */
+const act = (r, what) => inboxAct(r.id, what, note).then(() => open(r.id, true));
+const remove = async (r) => { if (await inboxRemove(r.id, note)) close(); };
 
 function onKey(e) {
   if (pane.hidden || e.target.closest?.("input, textarea, select, [contenteditable], dialog")) return;
@@ -191,8 +189,8 @@ function onKey(e) {
 
 $("main").append(pane);
 addEventListener(REPORT_EVENT, (e) => open(e.detail));
-addEventListener(CHANGED_EVENT, (e) => { if (shown && !e.detail?.deleted) open(shown.id, true); });
-addEventListener("popstate", () => { const id = addressed(); if (id) { if (shown?.id !== id) open(id, true); } else if (!pane.hidden) { clearTimeout(timer); shown = null; pane.hidden = true; document.body.classList.remove("reading"); } });
+addEventListener(CHANGED_EVENT, () => { if (shown) open(shown.id, true); });
+addEventListener("popstate", () => { const id = addressed(); if (id) { if (shown?.id !== id) open(id, true); } else if (!pane.hidden) hide(); });
 addEventListener("keydown", onKey);
 addEventListener("resize", () => { if (!pane.hidden) place(); });
 document.addEventListener("visibilitychange", () => { if (shown && document.visibilityState === "visible") readSoon(shown); });
