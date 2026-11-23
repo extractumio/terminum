@@ -30,6 +30,8 @@ Out of scope (explicit):
 - Several humans' own read state: one sign-in, one human (`terminum-kanban.md` AC-119); `read_at` is that human's.
 - A reply to a report made in a session terminumd did not start (no task, or a task not run by Dispatcher): refused with where to answer; terminumd never types into a session it did not start (`CLAUDE.md` §2).
 - Editing a report by the human: they reply or delete; a manager or the Supervisor edits by its tools.
+- A report's owner, status, budget or column: a report is read, not worked; its severity is critical or not.
+- The requirement's "the reply goes back to the agent, in the same session" holds for reports made in a task's run Dispatcher started; for one made in a session the human opened, a manager's, or by the Supervisor, the reply field says where to answer instead (AC-270): typing into a session terminumd did not start is outside `CLAUDE.md` §2. The owner confirms this narrowing.
 - Folders, labels, search operators in the Inbox: Find and the project filter cover the need.
 
 ## 3. Assumptions, dependencies, open questions
@@ -55,8 +57,8 @@ Open questions: none.
 
 | ID | Priority | Case |
 |---|---|---|
-| AC-265 | [MUST / P0] | A report is a record of its own in the store, never a task: an ID `R_<prefix>-<n>` by its project's own count, a title, a summary, a Markdown body, critical or not, unread or read, its author with role and session, its source (a task, a schedule, a Supervisor digest or incident, or none), files, comments, links to the report it follows and to its follow-ups, when made and changed, deleted or not; limits said in words. |
-| AC-266 | [MUST / P0] | Agents make reports by create_report, add to them by append_to_report and attach_report_file, read them by get_report and list_reports; a worker writes only to reports of its own tasks or session, a manager or the Supervisor of the project to any of it, and only they update_report or delete_report; a report made for a task links it by a comment on the task; finish_task has no report argument, and RUN's prompt and the tools' instructions say when to report. |
+| AC-265 | [MUST / P0] | A report is a record of its own in the store, never a task: an ID `R_<prefix>-<n>` in its project's count of task IDs, as `S_` and `I_` are, a title, a summary, a Markdown body, critical or not, unread or read, its author with role and session, its source (a task, a schedule, a Supervisor digest or incident, or none), files, comments, links to the report it follows and to its follow-ups, when made and changed, deleted or not; limits said in words. |
+| AC-266 | [MUST / P0] | Agents make reports by create_report, add to them by append_to_report and attach_report_file, read them by get_report and list_reports; a worker writes only to reports of its own tasks or session, at most 10 an hour, a manager or the Supervisor of the project to any of it, and only they update_report or delete_report; a report made for a task links it by a comment on the task; finish_task has no report argument, and RUN's prompt and the tools' instructions say when to report. |
 | AC-267 | [MUST / P0] | The Inbox stands above the Sessions in the session list, on the session page, the board and a phone's sheet: its head with the unread count, folding like a group; rows newest first, unread in bold, critical marked red and first while unread, each with title, summary, source and age; it follows the board's project choice; keys, a right-click menu and buttons for every action; an empty Inbox says so. |
 | AC-268 | [MUST / P0] | Pressing a report opens the reading pane over the board's right part (its columns, agents and routines), on the session page by opening the board with it: header, body by the Panel's Markdown rules, files, comments, reply field; a link `/kanban/?report=<ID>` opens it; Esc or × gives the columns back; on a phone it covers the board. |
 | AC-269 | [MUST / P0] | A report open 2 seconds becomes read; the human marks it unread again; Delete (a button, Backspace or Delete, or the menu) hides it at once with Undo in a toast; deleted reports stand under the Inbox's Deleted view for 30 days, restorable, then go with their files. |
@@ -75,8 +77,13 @@ Scenario: AC-265 happy path — made
   Given project Terminum, prefix TERM, its last report R_TERM-6
   When an agent of TERM-41 makes a report "Nightly deps check", summary "2 outdated packages", a body of Markdown, not critical
   Then R_TERM-7 is kept: the project, title, summary, body, critical no, unread, its author (the agent's name, its role worker, its session's key), its source task TERM-41, made and changed now, no files, no comments
-  And its ID never names a task: R_ is no project prefix, and the count is the project's own count of reports
-  And a task's ID and a report's ID with the same number are two things: TERM-7 and R_TERM-7
+  And its number comes from the project's count of task IDs (terminum-kanban.md AC-148), as a schedule's task's does: no task is TERM-7, S_TERM-7 or I_TERM-7, and R_ is no project prefix
+  And a severity is "critical or not": a report has no owner, status, budget or column; it is read, not worked
+
+Scenario: AC-265 failure — a report's ID is no task's
+  When an agent calls get_task, add_comment or any task tool with R_TERM-7
+  Then it is refused: "R_TERM-7 is a report: use get_report."
+  And a page or a link that names R_TERM-7 opens the report, never a task whose ID it holds
 
 Scenario: AC-265 edge — follows another
   When a report is made with follows R_TERM-7
@@ -116,6 +123,16 @@ Scenario: AC-266 happy path — append and attach
 Scenario: AC-266 failure — a worker writes only to its own
   When a worker calls append_to_report or attach_report_file on a report whose task is not its session's and whose session is not its own
   Then it is refused: "R_TERM-5 is not of your task or session: you can read it with get_report."
+  When a worker calls create_report with a task its session does not run, or follows a report not of its task or session
+  Then it is refused: "TERM-40 is not a task of this session: report on your own task, or name none." or "R_TERM-5 is not of your task or session: follow only your own reports."
+
+Scenario: AC-266 failure — a worker's reports are bounded
+  Given worker session %8 made 10 reports in the last hour
+  When it calls create_report
+  Then it is refused: "This session made 10 reports in the last hour: put more in one report, or append to it."
+  Given a critical report of session %8 raised its AC-117 line in the last hour
+  When it makes another critical report
+  Then the report is kept critical, red in the Inbox, and raises no line: one line an hour per session (AC-271)
   When a worker calls update_report or delete_report
   Then the tool is not found for it, as a manager's tool (terminum-agents.md AC-174)
 
@@ -155,6 +172,7 @@ Scenario: AC-267 happy path — above the Sessions
 Scenario: AC-267 happy path — the board's project choice
   Given the board shows project Terminum
   Then the Inbox lists only Terminum's reports and counts only them; with all projects shown it lists them all, each row with its project's stripe as a session row has
+  And the session page's Inbox follows the board's last choice, kept in the browser as the board keeps it; with none it shows all projects
 
 Scenario: AC-267 happy path — folds like a group
   When the user presses the Inbox's head
@@ -186,11 +204,13 @@ Scenario: AC-268 happy path — the reading pane
   When the user presses R_TERM-7 in the Inbox on the board
   Then a pane covers the board's right part (the agents, routines and columns), the list staying beside it
   And its head shows the title, critical when it is, the source as a link (a task opens its window, a routine its card, an incident its card), its author with role, when made and changed, its project's stripe, and the buttons Mark as unread, Delete, Copy link and ×
-  And under it the summary, the body rendered by the Panel's Markdown rules (raw HTML off, `javascript:` links dropped, remote images not loaded, Mermaid in strict mode), its files (images shown, others downloaded, nothing run), "Follows" and "Follow-up" links, its comments oldest first, and the reply field with Send last
+  And under it the summary, the body rendered by the Panel's Markdown rules (raw HTML off, `javascript:` links dropped, remote images not loaded, Mermaid in strict mode), its files (images shown, others downloaded, nothing run), "Follows" and "Follow-up" links, its comments oldest first, and the reply field with Send last when it can be answered (AC-270), else why not
 
 Scenario: AC-268 happy path — from the session page
   When the user presses a report in the Inbox on the session page
-  Then the board opens with that report's pane, in the same tab
+  Then the board opens with that report's pane, in the same tab; ⌘-click or the menu's Open in new tab opens it in another
+  When the user presses the browser's Back
+  Then the session page stands as it was, its session shown
 
 Scenario: AC-268 happy path — a link
   When the browser opens /kanban/?report=R_TERM-7
@@ -244,26 +264,42 @@ Scenario: AC-269 failure — terminumd refuses
 Scenario: AC-270 happy path — a reply goes on in the conversation
   Given R_TERM-7, made in the run of S_TERM-41, now DONE, its session closed
   When the user writes "Which of them break the build?" under R_TERM-7 and presses Send
-  Then the reply is a comment by the user on R_TERM-7, shown at once
-  And S_TERM-41 goes on as a human's RUN of it does (terminum-dispatcher.md AC-122): in its live session, else from its pane's shell, else its conversation resumed in a new window, on its agent's slot or waiting for one (AC-158)
-  And the words it gets are fixed but for the reply: "S_TERM-41: the human replied to your report R_TERM-7. Answer below it by execute_tool(\"append_to_report\", {id: \"R_TERM-7\", text}), or, when they ask for a new report, by execute_tool(\"create_report\", {task: \"S_TERM-41\", follows: \"R_TERM-7\", title, summary, body}); then finish S_TERM-41 as before.\n\n<reply>"
-  And S_TERM-41's history says "<the user> replied to R_TERM-7", and its status moves as RUN moves it
+  Then S_TERM-41 goes on as a human's RUN of it does (terminum-dispatcher.md AC-122): in its live session, else from its pane's shell, else its conversation resumed in a new window, on its agent's slot or waiting for one (AC-158)
+  And the words it gets are fixed but for the reply: "S_TERM-41: the human replied to your report R_TERM-7. Answer below it by execute_tool(\"append_to_report\", {id: \"R_TERM-7\", text}), or, when they ask for a new report, by execute_tool(\"create_report\", {task: \"S_TERM-41\", follows: \"R_TERM-7\", title, summary, body}); then call finish_task on S_TERM-41 as before.\n\n<reply>"
+  And only once the press is accepted is the reply a comment by the user on R_TERM-7, in the transaction that keeps the press, and S_TERM-41's history says "<the user> replied to R_TERM-7"
+
+Scenario: AC-270 failure — refused, nothing kept
+  When Send is refused (the agent works, a draft stands in its box, a RUN of it waits, the gate refuses: terminum-dispatcher.md AC-122)
+  Then no comment is kept on R_TERM-7, the reply stays in its field, and RUN's refusal shows under it in its words
+  When the cause clears and the user presses Send again
+  Then the reply is kept once
 
 Scenario: AC-270 happy path — answering
-  Given the reply sent
+  Given the reply accepted
   Then R_TERM-7's pane and row say "Opus is answering" (its agent's name) while its task is IN PROGRESS or waits for a slot from that reply
   When the agent appends a comment to R_TERM-7, or makes R_TERM-9 that follows it
   Then the answer stands below the reply, or R_TERM-9 stands unread in the Inbox and R_TERM-7 says "Follow-up: R_TERM-9"; an appended answer makes R_TERM-7 unread again
   When the task ends with no answer
-  Then the line goes, and R_TERM-7 says "No answer from Opus: its task is <status>."
+  Then "is answering" goes, and R_TERM-7 says "No answer from Opus: S_TERM-41 is <status>."
 
-Scenario: AC-270 failure — refused
-  When the report has no source task, its task was not run by Dispatcher, is archived, or runs now in another reply or RUN
-  Then Send is refused, the reply kept in its field, in words: "R_TERM-7 was not made in a task's run: answer in its session." with a link to the session when it lives, or RUN's own refusal (AC-122) for a task that cannot go on
-  And the reply goes through the same checks of the §9 gate as a RUN's saved comments do: a reply with a character the gate refuses is refused with its words, nothing typed
+Scenario: AC-270 edge — a reply's run makes no second report
+  Given a run a reply started
+  When its agent calls finish_task with its result
+  Then the task is DONE with that result as a comment, and no report is made from it (AC-272): its answer went by append_to_report or create_report
+
+Scenario: AC-270 edge — a routine's next firing during a reply
+  Given S_TERM-41 of SCH-1 runs from a reply when SCH-1 is due
+  Then that firing is skipped as AC-162 skips one while a task of it runs, the Scheduled page saying why
+
+Scenario: AC-270 failure — no one to answer
+  Given a report whose source is no task Dispatcher ran: a session the human opened, a manager's, the Supervisor's digest or incident
+  Then its pane has no reply field: GET /api/reports/{id} says "replyable": false with why, shown where the field would stand: "R_TERM-7 was made in a session terminum did not start: answer in that session." with a link to it while it lives; "Answer through Talk on incident 12." with Talk (terminum-supervisor.md AC-244); "A digest: nobody to answer."
+  And a reply sent anyway is refused with the same words, nothing kept
+  And a report of a task that is archived says "S_TERM-41 is archived: bring it back to reply."
 
 Scenario: AC-270 edge — only fixed words carry the report
   Then the words name the report by ID only; the report's body, summary and agents' comments are never typed: the agent reads them by get_report
+  And the reply goes through the same checks of the §9 gate as a RUN's saved comments do: a character the gate refuses refuses the reply with its words, nothing typed
 ```
 
 ### AC-271 — Alerts [MUST / P0]
@@ -281,6 +317,7 @@ Scenario: AC-271 happy path — critical
   Then the line goes in every browser at once (AC-117)
   When a manager updates a report to critical while it is unread
   Then its line comes then
+  And a worker's session raises at most one such line an hour; its later critical reports stand red in the Inbox without one (AC-266)
 
 Scenario: AC-271 edge — an incident alerts once
   Given the Supervisor opened incident 12 and made its critical report R_TERM-8 (AC-272)
@@ -292,10 +329,10 @@ Scenario: AC-271 edge — an incident alerts once
 ```gherkin
 Scenario: AC-272 happy path — a routine's run
   Given S_TERM-41 of routine SCH-1 (terminum-schedules.md AC-162)
-  When its agent calls finish_task with its result and made no report in that task
+  When its agent calls finish_task with its result, and its run made no report for S_TERM-41 and was not started by a reply (AC-270)
   Then the result is its comment, S_TERM-41 is DONE, and terminumd makes R_TERM-7: title S_TERM-41's title, summary the Outcome's first line, body the result, source S_TERM-41 and SCH-1, its author the agent
   And the tool answers "S_TERM-41 is DONE; its result went to the human's Inbox as R_TERM-7."
-  When the agent made a report for S_TERM-41 itself before finish_task
+  When the agent made a report for S_TERM-41 itself in that run before finish_task
   Then the result stays a comment and no second report is made
 
 Scenario: AC-272 happy path — the routine's card
@@ -375,43 +412,59 @@ The Inbox is the session list's first section, on both pages, because the list i
 **Store** (`terminumd/src/reports/`), in `kanban.sqlite` of `terminum-kanban.md`:
 
 ```sql
-ALTER TABLE projects ADD COLUMN next_report INTEGER NOT NULL DEFAULT 1;
 CREATE TABLE reports (id TEXT PRIMARY KEY, project TEXT NOT NULL REFERENCES projects, number INTEGER NOT NULL, slug TEXT NOT NULL UNIQUE,
   title TEXT NOT NULL, summary TEXT NOT NULL, body TEXT NOT NULL, critical INTEGER NOT NULL DEFAULT 0,
   author TEXT NOT NULL REFERENCES users, role TEXT NOT NULL, session_key TEXT, task TEXT REFERENCES tasks, schedule TEXT REFERENCES schedules,
-  incident INTEGER, follows TEXT REFERENCES reports, read_at INTEGER, line_seen INTEGER, deleted_at INTEGER, replied_at INTEGER,
-  created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, UNIQUE (project, number));
+  run TEXT, incident INTEGER, follows TEXT REFERENCES reports, read_at INTEGER, line INTEGER NOT NULL DEFAULT 0, line_seen INTEGER,
+  deleted_at INTEGER, replied_at INTEGER, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
 CREATE TABLE report_notes (id TEXT PRIMARY KEY, report TEXT NOT NULL REFERENCES reports ON DELETE CASCADE, at INTEGER NOT NULL,
   author TEXT NOT NULL REFERENCES users, kind TEXT NOT NULL, text TEXT NOT NULL);   -- kind: comment, reply, change
 ALTER TABLE files ADD COLUMN report TEXT REFERENCES reports;
 ```
 
-The ID is `R_<prefix>-<number>`, the prefix the project's as the report is made; a project's new prefix leaves older reports' IDs as they were (they are looked up by `slug`). `role`: `human`, `worker`, `manager`, `supervisor`, `terminum`. A report's files are task files (`terminum-kanban.md` AC-109) whose row names the report instead of a task. `replied_at` is the last reply's time: "is answering" while the report's task is IN PROGRESS or waits for room and no agent note or follow-up came after it. The hourly sweep deletes reports with `deleted_at` 30 days past, their notes, files and bytes; a follow-up's `follows` is set to NULL.
+The ID is `R_<prefix>-<number>`, the number taken from the project's `next_seq` as a task's is (`slugs.rs`), so no task's ID holds it; a project's new prefix leaves older reports' IDs as they were (they are looked up by `slug`), and the count stays above every report's number too. `run`: the Dispatcher run the report was made in, so AC-272 knows a run's own report and AC-270 a reply's run. `line`: 1 when it raises AC-117's line (critical, not an incident's, within its session's one an hour); `line_seen` the time a human closed it. `role`: `human`, `worker`, `manager`, `supervisor`, `terminum`. A report's files are task files (`terminum-kanban.md` AC-109) whose row names the report instead of a task. `replied_at` is the last reply's time: "is answering" while the report's task is IN PROGRESS or waits for room and no agent note or follow-up came after it. The hourly sweep deletes reports with `deleted_at` 30 days past, their notes, and their files through `files.rs`'s own deletion (bytes set aside, then the row); a follow-up's `follows` is set to NULL. The 7-day sweep of files joined to nothing skips a report's. A file row names a task or a report, never both: the code that writes them keeps it so (a `CHECK` would rebuild `files`, whose rows task history points at).
 
 **Routes**, each write with the exact Host, Origin and Content-Type checks of every write (`SECURITY.md`):
 
 ```text
 GET    /api/reports?project=<id>&deleted=1&before=<number>&session=<key> → {"reports": [{"id": "R_TERM-7", "project", "title", "summary", "critical", "read", "source": {"task": "S_TERM-41", "schedule": "SCH-1", "name": "Nightly deps check"}, "author_name", "role", "session", "created_at", "updated_at", "answering", "deleted_at"}], "unread": {"<project>": n}, "more": true}
-GET    /api/reports/{id} → the same, with "body", "notes": [{"id", "at", "author_name", "kind", "text"}], "files": [{"id", "name", "bytes", "mime"}], "follows", "follow_ups": [], "agent": "Opus"
+GET    /api/reports/{id} → the same, with "body", "notes": [{"id", "at", "author_name", "kind", "text"}], "files": [{"id", "name", "bytes", "mime"}], "follows", "follow_ups": [], "agent": "Opus", "replyable": true | false, "why_not": "…"
 POST   /api/reports/{id}/read      POST /api/reports/{id}/unread
 DELETE /api/reports/{id}           POST /api/reports/{id}/restore
 POST   /api/reports/{id}/reply {text} → {"task": "S_TERM-41"} or 400 with why (AC-270)
 POST   /api/reports/{id}/seen {key}   (the AC-117 line closed)
 ```
 
-Every page hears `{"t": "reports"}` when one changes; the Inbox reads `GET /api/reports` again then, and every 2 s while its page is visible (`terminum-kanban.md`'s refresh). A critical report's line joins the `taskmarks` message's `lines` with `"report": true`.
+The list's answer carries the unread counts by project, by schedule and by session, so neither a routine's card nor a session row asks again. Every page hears `{"t": "reports"}` when one changes; the Inbox reads `GET /api/reports` again then, and when its page becomes visible. A critical report's line joins the `taskmarks` message's `lines` with `"report": true`.
 
 **Tools** (`terminum mcp`, `terminum tool`): `create_report {task?, title, summary, body, critical?, follows?}`, `append_to_report {id, text}`, `attach_report_file {id, path | name + text}`, `get_report {id}`, `list_reports {unread?, limit?}`, manager and Supervisor only: `update_report {id, title?, summary?, body?, critical?}`, `delete_report {id}`. Roles by `terminum-agents.md` AC-174 and `terminum-supervisor.md` AC-231.
 
-**Reply** (`POST …/reply`): checks the report has a task Dispatcher ran (a run row), not archived; keeps the reply as a `reply` note; then presses the task's RUN with the reply's fixed words as its message, through `terminum-dispatcher.md`'s press and §9 gate unchanged: the gate's checks of a saved comment apply to the reply. Nothing else is typed.
+**Reply** (`POST …/reply`): checks the report is replyable (a task Dispatcher ran, not archived); presses the task's RUN with the reply's fixed words as its message, through `terminum-dispatcher.md`'s press and §9 gate unchanged: the gate's checks of a saved comment apply to the reply; only an accepted press keeps the reply as a `reply` note, in the press's transaction, and sets `replied_at`. The run it starts is marked a reply's, so its finish_task makes no report (AC-272). Nothing else is typed.
 
-**Security.** The reply is a human's message carried by a human's RUN (`CLAUDE.md` §2, `SECURITY.md`): only a signed-in page sends it, only into the pane of a task Dispatcher started, through the §9 gate, in fixed words naming the report's ID with the human's text; an agent's report text is never typed. A report's body is agents' text: the page shows it only through the Panel's Markdown rules. An agent's report tools write only to its project's reports, a worker only to its own.
+**What replaces AC-264.**
+
+| Piece of before | Now |
+|---|---|
+| `finish_task`'s `report: "yes"` | refused with what to call instead (AC-266) |
+| a schedule's task waiting with its report; one superseding the older | a report made from its result, its task DONE; none superseded (AC-272) |
+| `tasks/report.rs`: `waits!`, `run_status!`, `untouched`, `waits_on` in the runs, tools, family, choices, window | removed: no task waits with a report once AC-274 ran |
+| `POST /api/tasks/{id}/read`, the window's Done | removed; read by opening the report (AC-269) |
+| `terminum-kanban.md` AC-149's "Report" section | a task's window lists its reports (AC-273) |
+| `terminum-schedules.md` AC-163's "waits for you" for a report | the last report and its unread count (AC-272) |
+| RUN's prompt and finish_task's description on reports | create_report's words (AC-266) |
+| `terminum-dispatcher.md` AC-185's exception for a waiting report | gone with it |
+| the RUN words "the human read your report and commented below" | a reply's words (AC-270) |
+
+**Security.** The reply is a human's message carried by a human's RUN, named in `CLAUDE.md` §2's list as "a human's reply to a report (`terminum-reports.md` AC-270): through the §9 gate, as a RUN of the report's task Dispatcher ran, fixed words with the report's ID and the human's text, never the report's text", and in `SECURITY.md`: only a signed-in page sends it, only into the pane of a task Dispatcher started, through the §9 gate; an agent's report text is never typed. A worker's reports are bounded (10 an hour, one critical line an hour per session) so a misled agent cannot flood the Inbox or the human's attention. A report's body is agents' text: the page shows it only through the Panel's Markdown rules. An agent's report tools write only to its project's reports, a worker only to its own.
 
 **Limits.** Title 200 characters, summary 500, body 1 MiB, comment 256 KiB, 50 files of 100 MB each; the Inbox reads 100 rows a page; deleted reports kept 30 days.
 
 ## 10. Delivery stages
 
-Single stage.
+| Stage | Cases | Exit |
+|---|---|---|
+| 1 | AC-265, 266, 267, 268, 269, 271, 272, 274 and the removal of AC-264's pieces | landed green; the reading pane's foot offers "Continue in S_TERM-41" (its window, RUN with a comment) instead of a reply field |
+| 2 | AC-270 (with `CLAUDE.md` §2 and `SECURITY.md`, independently reviewed), AC-273 | landed green |
 
 ## 11. Checklist with Definition of Done
 
@@ -420,7 +473,7 @@ Single stage.
 - [ ] AC-267 — `web/test/e2e_all.mjs` (`inbox`), Chromium and WebKit, wide and phone
 - [ ] AC-268 — `web/test/e2e_all.mjs` (`inbox`), `web/test/e2e_live.mjs` (`reports`)
 - [ ] AC-269 — `cargo test reports::store`, `web/test/e2e_all.mjs` (`inbox`)
-- [ ] AC-270 — `cargo test reports::reply`, `web/test/e2e_live.mjs` (`reports`)
+- [ ] AC-270 — `cargo test reports::reply`, `web/test/e2e_live.mjs` (`reports`); `CLAUDE.md` §2 and `SECURITY.md` name the reply, reviewed by the `pragmatic` agent
 - [ ] AC-271 — `cargo test reports::alerts`, `web/test/e2e_all.mjs` (`inbox`)
 - [ ] AC-272 — `cargo test reports::sources`, `cargo test dispatcher::fire`
 - [ ] AC-273 — `web/test/e2e_all.mjs` (`inbox`)
