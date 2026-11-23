@@ -178,6 +178,17 @@ fn ac211_window_inputs_are_not_repeats() {
     assert_eq!(counts("judgment_round_tokens"), [(NOW + 30, 2)]);
 }
 
+// AC-235: each refused finding is a repeat, though each cites the same round row.
+#[test]
+fn ac235_each_refusal_counts() {
+    let f = Fixture::new("refusals");
+    for (n, at) in [(1., NOW), (2., NOW + 5), (3., NOW + 9)] {
+        f.store.with(|tx| signals::round_failed(tx, PROJECT, "round-1", "refused_findings", n, at)).unwrap();
+    }
+    let counts = signals(&f.store, PROJECT).unwrap().into_iter().map(|s| (s.metric, s.last_seen, s.count)).collect::<Vec<_>>();
+    assert_eq!(counts, [("refused_findings".to_string(), NOW + 9, 3)]);
+}
+
 // AC-211: validate the catalog before opening SQLite, reject mismatches, and refuse detector writes.
 #[test]
 fn ac211_validation_and_readonly_snapshot() {

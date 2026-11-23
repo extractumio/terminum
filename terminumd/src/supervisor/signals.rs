@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-//! AC-211, AC-236 and AC-255: retained signals and code-owned yardstick observations.
+//! AC-211, AC-235, AC-236 and AC-255: retained signals, the refusal signal and code-owned yardstick observations.
 
 use rusqlite::{OptionalExtension, Transaction, params};
 use serde::{Deserialize, Serialize};
@@ -81,7 +81,7 @@ const ACTIVE: &str = "state IN ('new', 'shadow', 'raised', 'recurred')";
 
 /// AC-211: a repeat is the condition back after it resolved, or, where `counted` holds, an evidence row the signal
 /// did not hold. A counted reading's rows are its events; other readings' rows are inputs to a level or a window
-/// total, so a persisting condition only moves last seen.
+/// total, so a persisting condition only moves last seen. `self.round_failed` counts every call (`diagnostic`).
 fn repeated_count(counted: &str) -> String {
     format!("count + (state = 'resolved' OR ({counted} AND EXISTS (SELECT 1 FROM json_each(excluded.evidence) n
         WHERE n.value NOT IN (SELECT o.value FROM json_each(supervisor_signals.evidence) o))))")
@@ -272,7 +272,9 @@ pub(super) fn get(tx: &Transaction, project: &str, key: &str) -> Result<Signal, 
 }
 
 
-/// A point event is retained by case and never resolves unrelated failures.
+/// A point event is retained by case and never resolves unrelated failures. Each call is an event of its own
+/// (a refused finding, or a round's one failure) citing the same round row, so every call is a repeat (AC-235);
+/// its value must change per event, since an unchanged reading writes nothing.
 pub(super) fn round_failed(tx: &Transaction, project: &str, id: &str, metric: &str, value: f64, at: i64) -> Result<(), String> {
     diagnostic(tx, project, "self.round_failed", ("round", id, metric),
         &[Evidence::SupervisorRounds(id.into())], (value, 0.), at)
@@ -282,6 +284,7 @@ pub(super) fn round_failed(tx: &Transaction, project: &str, id: &str, metric: &s
 pub(super) fn diagnostic(tx: &Transaction, project: &str, detector: &str, subject: (&str, &str, &str),
     evidence: &[Evidence], (value, threshold): (f64, f64), at: i64) -> Result<(), String> {
     let (kind, id, metric) = subject;
+    let repeat = if detector == "self.round_failed" { "count + 1".into() } else { repeated_count("1") };
     let key = fingerprint(project, detector, subject);
     let evidence = encode(&evidence)?;
     let measure = encode(&Measure { value, baseline: 0., threshold, window_start: at, window_end: at })?;
@@ -292,7 +295,7 @@ pub(super) fn diagnostic(tx: &Transaction, project: &str, detector: &str, subjec
         ON CONFLICT (fingerprint) DO UPDATE SET measure = excluded.measure, evidence = excluded.evidence,
             last_seen = excluded.last_seen, count = {}, state = 'raised'
         WHERE (state, evidence, json_extract(measure, '$.value'), json_extract(measure, '$.threshold'))
-            IS NOT (excluded.state, excluded.evidence, ?11, ?12)", repeated_count("1")),
+            IS NOT (excluded.state, excluded.evidence, ?11, ?12)", repeat),
         params![key, project, detector, kind, id, metric, evidence, measure, scores, at, value, threshold]).map_err(sql)?;
     if detector == "self.miss" {
         super::reflection::enqueue(tx, project, ("miss", &key, Some(&key)), "miss",
