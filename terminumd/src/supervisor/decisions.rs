@@ -55,6 +55,11 @@ pub(super) fn pending(tx: &Transaction, project: &str) -> Result<Vec<Decision>, 
         |r| Ok(Decision { id: r.get(0)?, problem: r.get(1)?, question: r.get(2)?, task: r.get(3)?, cost: r.get(4)? }))
 }
 
+/// Deferred choices appear together within the weekly review.
+pub(super) fn cards(tx: &Transaction, project: &str) -> Result<Vec<Decision>, String> {
+    Ok(pending(tx, project)?.into_iter().filter(|decision| decision.task.is_some()).collect())
+}
+
 fn prose(text: &str) -> Result<String, String> {
     let clean = crate::plans::rules::clean_with(text, false);
     if clean.is_empty() || clean.chars().count() > 600 {

@@ -117,7 +117,7 @@ async fn screen(State(app): State<Shared>, Path(id): Path<String>, Query(query):
         Ok(Screen { project_name, indicators: indicators(tx, &id)?, signals: page,
             problems: register::ranked(tx, &id, at, true)?, spending: governor::spending(tx, &id, at)?,
             marked_tasks_eligible: crate::tasks::auto::setting(tx, &id)?.supervisor_tasks,
-            decisions: super::decisions::pending(tx, &id)?, digest: super::digest::latest(tx, &id)?,
+            decisions: super::decisions::cards(tx, &id)?, digest: super::digest::latest(tx, &id)?,
             review: super::review::latest(tx, &id)?, review_setup_error })
 
     })).await)

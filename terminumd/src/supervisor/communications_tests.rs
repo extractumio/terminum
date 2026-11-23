@@ -56,6 +56,7 @@ fn ac240_decision_card_routing() {
         assert_eq!(cards.len(), 1);
         assert_eq!(ops::get(tx, &cards[0])?.status, "WAIT FOR HUMAN");
         assert_eq!(decisions::pending(tx, PROJECT)?.iter().filter(|d| d.task.is_none()).count(), 2);
+        assert_eq!(decisions::cards(tx, PROJECT)?.len(), 1, "deferred decisions appear only in the weekly list");
         assert!(decisions::advance(tx, PROJECT, NOW + 2)?.is_empty());
         Ok(())
     }).unwrap();
