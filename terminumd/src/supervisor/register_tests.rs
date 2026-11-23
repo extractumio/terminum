@@ -196,6 +196,67 @@ fn ac236_ac238_a_round_proposal_needs_a_checked_finding() {
     }).unwrap();
 }
 
+fn seeded(f: &Fixture, key: &str, (detector, kind, subject, metric): (&str, &str, &str, &str), measure: serde_json::Value, evidence: serde_json::Value) {
+    let scores = json!({"impact":2,"blast":0,"reversibility":0,"confidence":1.0,"charter_breach":false,
+        "impact_basis":{"ranked":true,"shares":[{"week":1,"complete":true,"unit":"tasks","amount":30.0,"total":100.0,"noise":0.0}]}});
+    f.write("INSERT INTO supervisor_signals (fingerprint, project, detector, subject_kind, subject_id, metric,
+        evidence, measure, scores, first_seen, last_seen, count, state)
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?10, 1, 'new')",
+        (key, PROJECT, detector, kind, subject, metric, evidence.to_string(), measure.to_string(), scores.to_string(), NOW));
+    f.write("INSERT INTO supervisor_attach_seeds (fingerprint, seeded_at) VALUES (?1, ?2)", (key, NOW));
+}
+
+#[test]
+fn ac236_ac238_an_automatic_fix_task_names_its_measure_weeks_share_and_evidence() {
+    let f = Fixture::new("automatic-fix");
+    enabled(&f, json!({"fixes_ceiling": 2.0}));
+    f.task("baseline", Some("Feature"), "P2", "DONE", NOW - DAY);
+    f.run("baseline", "baseline-run", "agent", NOW - DAY);
+    f.cost("baseline-run", NOW - DAY, 100_000);
+    f.task("made-1", None, "P2", "TODO", NOW - DAY);
+    f.write("UPDATE tasks SET slug = 'TERM-1' WHERE id = 'made-1'", []);
+    let made = f.event("made-1", NOW - DAY, "human", "made", "", None);
+    seeded(&f, "backlog", ("flow.backlog_growth", "project", PROJECT, "growing_weeks"),
+        json!({"value":4,"threshold":3,"baseline":3,"window_start":NOW-4*WEEK,"window_end":NOW}),
+        json!([{"table":"events","id":made},{"table":"tasks","id":"made-1"}]));
+    let many: Vec<_> = (0..25).map(|n| json!({"table":"runs","id":format!("run-{n}")})).collect();
+    seeded(&f, "waits", ("flow.wait_human_age", "task", "made-1", "wait_minutes"),
+        json!({"value":300.5,"threshold":240,"baseline":200,"window_start":NOW-2*WEEK,"window_end":NOW}), json!(many));
+    f.store.with(|tx| {
+        let changed = fix_tasks::advance(tx, PROJECT, NOW)?;
+        assert_eq!(changed.len(), 2);
+        let tasks = changed.iter().map(|id| ops::get(tx, id)).collect::<Result<Vec<_>, _>>()?;
+        let titles = tasks.iter().map(|t| t.title.as_str()).collect::<std::collections::BTreeSet<_>>();
+        assert_eq!(titles, ["Bug: Backlog growth: 4 growing weeks, threshold 3",
+            "Bug: Wait human age: 300.5 wait minutes on TERM-1, threshold 240"].into());
+        let backlog = tasks.iter().find(|t| t.name.starts_with("Backlog")).unwrap();
+        let text = ops::text_of(tx, &backlog.id)?;
+        crate::tasks::template::check(&text, crate::tasks::template::DEFAULT_TEMPLATE)?;
+        for words in [
+            "Backlog growth: 4 growing weeks in the weeks from 2026-12-18 to 2027-01-15, against its limit of 3.",
+            "[signal](/supervisor/?project=default&signal=backlog#signal-backlog)",
+            "At its peak it was 30% of the project's tasks in a week.",
+            &format!("- [TERM-1](/kanban/TERM-1): events row {made}, kind made, on 2027-01-14\n"),
+            "- [TERM-1](/kanban/TERM-1), severity P2, status TODO\n",
+            "> No investigation has run yet: code opened this problem from the flow.backlog_growth measure alone",
+            "> Growing weeks stays within the threshold of 3 for 4 weeks with no change made.",
+            "- growing weeks within 3 for 4 weeks",
+        ] {
+            assert!(text.contains(words), "{words:?} missing from:\n{text}");
+        }
+        assert!(!text.contains("is contributing to this problem"), "{text}");
+        let waits = tasks.iter().find(|t| t.name.starts_with("Wait")).unwrap();
+        let text = ops::text_of(tx, &waits.id)?;
+        assert!(text.contains("against a baseline of 200 and a threshold of 240."), "{text}");
+        assert!(text.contains("Evidence rows (25):\n- runs row run-0, not found in this project\n")
+            && text.contains("- runs row run-19, not found in this project\n- 5 more on the [signal]("), "{text}");
+        assert!(!text.contains("run-20"), "only the first rows are written: {text}");
+        let register = register::ranked(tx, PROJECT, NOW, false)?;
+        assert!(register.iter().all(|p| p.hypothesis.starts_with("No investigation has run yet")));
+        Ok(())
+    }).unwrap();
+}
+
 #[test]
 fn ac239_marked_task_policy_and_override() {
     let f = Fixture::new("override");

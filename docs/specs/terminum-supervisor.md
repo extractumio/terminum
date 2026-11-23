@@ -715,6 +715,13 @@ Scenario: AC-238 edge — critical exception
   When code applies the fix gate
   Then the breach gets a fix task immediately and the task and spend exception are visible
 
+Scenario: AC-238 edge — a fix task from a measure alone
+  Given code opened a problem from a detector's measure with no round, as when no tier agent is chosen
+  When the fix gate makes its task
+  Then its title starts with its type and names what fired with its number and threshold, such as "Bug: Backlog growth: 4 growing weeks, threshold 3"
+  And its text, in the project's task sections, names each measure against its baseline with its weeks, the impact share, and a link to each evidence row and its signal
+  And its hypothesis says that no investigation has run yet and what an investigation would check
+
 Scenario: AC-238 failure — important work remains at the ceiling
   Given three eligible problems compete for a budget that can pay for one
   When it pays for the highest ranked one
@@ -1332,7 +1339,7 @@ These cases have remaining behavior or verification gaps. Section 11 names the c
 | AC-233 | Verification below confidence 0.7 needs a measured comparison of holding and waiting, and a bounded hold when holding costs less. |
 | AC-234 | Investigation cases need the bounded, project-scoped excerpt from indexed project memory. |
 | AC-237 | A private run still needs to prove that exhaustion stops judgment, leaves detectors and paging active, and publishes the budget decision in a due weekly review. |
-| AC-238 | Live charter breach evidence is needed to exercise the critical exception at the fixes ceiling (AC-213). |
+| AC-238 | Live charter breach evidence is needed to exercise the critical exception at the fixes ceiling (AC-213). A fix task's text uses the default task sections even where the project keeps its own template (terminum-kanban.md AC-145). |
 | AC-240 | Two drifting sessions can still go to the weekly list instead of opening the specified decision card. Standing-rule reports need to attribute changes in recurring questions to the accepted rule. |
 | AC-241 | A hold needs to trigger the fixed task comment and undo notice when its signal has no other nudge trigger. |
 | AC-244 | The owner's manager session started with the Supervisor skill needs the project-scoped signal reader. Talk already has its own scoped path. |
@@ -1636,7 +1643,7 @@ Enable none of the runtime cases by default. The stages below list the cases in 
 - [x] AC-235 — `e2e_supervisor_rounds.py` refuses a wrong number and an unresolved row, records the refusal signal and keeps the finding after the named query and evidence pass.
 - [x] AC-236 — `ac236_register_rank_ruling_and_recurrence` covers measured ranking, owner rulings, scoped evidence and protected yardsticks. The Supervisor browser check exercises the register and ruling form.
 - [ ] AC-237 — `ac237_judgment_reserve_and_caps` covers the investigation reserve, shared day and round caps, and overrun signals. The due-review exhaustion drill remains open.
-- [ ] AC-238 — `ac238_fix_budget_and_critical_exception` covers admission order, the single decision card, a seeded charter exception and attribution by run. The live charter exception depends on AC-213.
+- [ ] AC-238 — `ac238_fix_budget_and_critical_exception` covers admission order, the single decision card, a seeded charter exception and attribution by run. `ac236_ac238_an_automatic_fix_task_names_its_measure_weeks_share_and_evidence` covers the title, measures, weeks, share, evidence links and hypothesis of a task made from a measure alone. The live charter exception depends on AC-213.
 - [x] AC-239 — `ac239_marked_task_policy_and_override` covers marked eligibility, advisory ranks and the timed override. The role end-to-end check exercises the Supervisor tools on a private board.
 - [ ] AC-240 — `ac240_decision_card_routing` verifies the finding and impact gates, a deferred routine choice and deduplication. `ac242_review_schedule_and_charter_due_once` covers the charter review date. See §7 for drift and standing rules.
 - [ ] AC-241 — `ac241_nudge_updates_one_comment` checks a level 0 refusal, a visible comment without a linked agent, and an in-place update. AC-209 covers ordinary hook delivery. The hold-only trigger remains open.

@@ -78,8 +78,8 @@ pub(crate) struct Problem {
     pub impact: u8,
     pub exception: bool,
     pub action_ready: bool,
-    share: f64,
-    indicator: Option<super::impact::Unit>,
+    pub(super) share: f64,
+    pub(super) indicator: Option<super::impact::Unit>,
     pub rank: f64,
     pub yardstick: Vec<Yardstick>,
     pub tasks: Vec<String>,
@@ -300,14 +300,13 @@ fn seed(tx: &Transaction, project: &str, at: i64) -> Result<(), String> {
           ORDER BY s.first_seen, s.fingerprint", [project], |r| r.get::<_, String>(0))?;
     for key in keys {
         let s = signals::get(tx, project, &key)?;
-        let Ok(detector) = Rule::named(&s.detector) else { continue };
-        let title = format!("{}: {}", s.metric.replace('_', " "), s.subject_kind.replace('_', " "));
+        if Rule::named(&s.detector).is_err() { continue }
         let lens = s.detector.split('.').next().unwrap_or_default();
+        let (hypothesis, disproof, fix) = super::problem_text::unexplained(&s, YARDSTICK_WEEKS);
         open(tx, project, Draft {
-            title, lens: match lens { "product" | "owner" => lens, "drift" => "architecture", _ => "flow" }.into(),
-            hypothesis: format!("The condition measured by {} is contributing to this problem.", detector.id()),
-            disproof: "The detector remains clear during the observation window without the proposed change.".into(),
-            fix_options: vec![Fix { layer: "check".into(), action: "Confirm the cause in the retained evidence and fix the measured condition.".into() }],
+            title: super::problem_text::title(tx, &s)?,
+            lens: match lens { "product" | "owner" => lens, "drift" => "architecture", _ => "flow" }.into(),
+            hypothesis, disproof, fix_options: vec![fix],
             confidence: s.scores.confidence, effort: 1, signals: vec![key],
         }, at)?;
     }

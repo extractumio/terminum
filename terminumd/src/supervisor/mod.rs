@@ -78,6 +78,7 @@ mod rate_intervals;
 pub(crate) mod governor;
 pub(crate) mod register;
 pub(crate) mod fix_tasks;
+mod problem_text;
 pub(crate) mod task_policy;
 #[cfg(test)]
 mod engine_tests;
