@@ -425,6 +425,7 @@ Scenario: AC-224 happy path — critical and health triggers
   Given an enabled project's target turns critically red, or its collector or line fails
   When code records the signal
   Then it opens an incident even with no round agents selected
+  And the owner's Inbox gets the incident's critical report, which alerts through the incident alone (terminum-reports.md AC-271, AC-272)
 
 Scenario: AC-224 edge — nearby firings on one subject
   Given API's grouping window is the default 15 minutes
@@ -886,6 +887,7 @@ Scenario: AC-243 happy path — new signals
   Given one or more new level 1 or higher signals arrive since the last digest
   When the next daily digest runs
   Then code sends at most five signal lines with what, number against baseline, action and link to the review destination, ending with the collector's last run
+  And the digest is also a report in the owner's Inbox, not critical (terminum-reports.md AC-272)
 
 Scenario: AC-243 edge — quiet project
   Given there is no new qualifying signal

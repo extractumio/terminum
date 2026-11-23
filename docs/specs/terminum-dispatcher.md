@@ -87,12 +87,11 @@ Open questions:
 | AC-205 | [MUST / P0] | A run Dispatcher started whose task was IN PROGRESS when its tmux server ended resumes by itself once the server is back, as RUN would, with fixed words that say so; a window closed by hand, a task not in progress, a run with nothing to resume, and a server that ends again within an hour of such a resume do not. |
 | AC-156 | [MUST / P0] | A run starts its agent's command as the operator wrote it, its permissions and model included; Dispatcher adds only the inline TUI in the agent's own process with Codex's update menu off (§9), the effort and, going on, the resume of its conversation; going on starts the agent's command as the pool has it then. |
 | AC-157 | [MUST / P0] | An agent that needs a human asks by `ask_human`: its questions, written for a newcomer as why a person is needed (one sentence), the recommended answers with why and the other options, then the whole issue (one paragraph), stay on the task, the task waits for the human, and once the agent's turn is over its session closes; the task keeps its agent and conversation, and RUN resumes that conversation with the human's answers. Recorded options and choices: terminum-supervisor.md AC-230. |
-| AC-264 | [MUST / P0] | A result that is a report for a person to read (`finish_task` with `report: "yes"`, and every schedule's task's) waits for its human in WAIT FOR HUMAN, shown first as "Report", terminum-kanban.md AC-117 reminding; it is finished work for its run, whose session closes as after DONE (AC-125); no agent moves it; the human's Done moves it to DONE, the one move a human makes but RUN, and a comment with RUN goes on in its conversation. |
 | AC-158 | [MUST / P0] | A RUN the human queued at an agent or project limit (AC-169), or a schedule's task with no room (terminum-schedules.md AC-161), waits for a slot, schedules first, then in queue order. A human can cancel it. Moving or archiving its primary task or deleting its agent also cancels it. While it waits, agents can read and comment on every task it carries, and requests to move or finish any member are refused. |
 | AC-210 | [MUST / P0] | An agent whose task cannot go on before other tasks of its project are DONE says so by `wait_for_task`, never by asking a human: they join its Blocked by with its reason, the task waits in TODO with no clock and no queue place, its session closes once the turn is over, and Dispatcher goes on with it in the same conversation, as who started the run, once every one is DONE; one of them FAILED, archived or deleted asks a human instead. |
 | AC-169 | [MUST / P0] | A RUN at a limit is offered its agent's queue and waits only once the human agrees; the agent's card shows a pale dot for each queued task, a ring for each free slot and a dashed ring for each kept one, and a key that opens its window at the queue, where tasks are dragged or moved by arrows into another order and taken out, on a Mac and on a phone. |
 | AC-170 | [SHOULD / P1] | Auto-Dispatcher, off until a human turns it on for a project with the switch in the board's bar: it takes TODO tasks of the severities chosen that stand for the wait set; with free slots and such tasks Dispatcher starts a round, one more session of the chosen agent that takes no slot; that agent scores the candidates by RICE and starts the best, one a free slot, each on the agent named in the task or the setting's default, told only its ID; or, set to priority and saved order, terminumd starts them itself top down with no agent; a failing round or two failing tasks turn it off, said on the board. |
-| AC-185 | [MUST / P0] | A main task runs with its subtasks: a RUN of it, a human's, a manager's or Auto-Dispatcher's, takes its subtasks not DONE into the same session; the agent is told to do them all one after another in the order it decides, the main task last, done only when each subtask is; one held by a cause that can be removed waits for a human with the rest still in progress, one that cannot be done at all fails with what depends on it and its main task, and the main task's next RUN runs again what is not DONE, but a report that waits for its human (AC-264). |
+| AC-185 | [MUST / P0] | A main task runs with its subtasks: a RUN of it, a human's, a manager's or Auto-Dispatcher's, takes its subtasks not DONE into the same session; the agent is told to do them all one after another in the order it decides, the main task last, done only when each subtask is; one held by a cause that can be removed waits for a human with the rest still in progress, one that cannot be done at all fails with what depends on it and its main task, and the main task's next RUN runs again what is not DONE. |
 | AC-183 | [MUST / P0] | A run keeps who asked for it and how: the user's ID for a human's Run (the Run key, a card dropped on an agent, the new-task window's Run, + Session), Dispatcher for a schedule's firing and Auto-Dispatcher's start; a page never starts a run as Dispatcher's. |
 | AC-166 | [SHOULD / P1] | RUN's prompt asks the agent to close its task out: what it noticed goes to tasks, the tasks it made are reviewed, and its result has fixed sections, written in the project's language (English when none is set); a task's end says on it which tasks its session made, and finishing says which IDs its result names that the board lacks. |
 | AC-131 | [MUST / P0] | Dispatcher is one named system user, walks its tasks on a fixed beat, goes on where it was after terminumd restarts, and never acts on time it did not see pass. |
@@ -573,7 +572,7 @@ Scenario: AC-209 happy path — a fresh start carries the comments
 ```gherkin
 Scenario: AC-123 happy path — the agent says so
   When the agent calls finish_task {id: "API-12", result}, the result holding every section of its form
-  Then API-12 is DONE with the result as a comment, whatever the Unread flag says (terminum-agents.md AC-93); a report waits for its human instead (AC-264)
+  Then API-12 is DONE with the result as a comment, whatever the Unread flag says (terminum-agents.md AC-93); a report for a person to read goes to their Inbox by create_report, the task DONE as any (terminum-reports.md AC-266, AC-272)
   And the form is AC-166's sections, or for a schedule's task the form its firing's prompt names (terminum-schedules.md AC-162)
   And a section is a line that starts, past Markdown's marks ("#", "*", "_", "-", "+", ">", a number with "." or ")") and spaces, with its name in any case, then the line's end, ":", "*" or "_"
 
@@ -1453,62 +1452,6 @@ Scenario: AC-157 failure — not Dispatcher's session
 Scenario: AC-157 failure — not its task
   When the agent calls ask_human on a task of another session
   Then it is refused: "API-13 belongs to session %8: only its agent asks on it. You can comment."; one with no session: "API-13 has no session: take_task first, or comment."
-```
-
-### AC-264 — A report waits for its human [MUST / P0]
-
-```gherkin
-Scenario: AC-264 happy path — a report
-  Given API-12 IN PROGRESS in a session Dispatcher started, its deliverable a report for the human
-  When the agent calls finish_task {id: "API-12", result, report: "yes"}, the result holding every section of its form (AC-123)
-  Then the result is a comment by the agent and API-12 is WAIT FOR HUMAN, its history "<agent> moved it from IN PROGRESS to WAIT FOR HUMAN: a report to read", and terminum-kanban.md AC-117 reminds "API-12 waits for you"
-  And the tool answers "API-12 waits for the human to read your report.", AC-166's lines after it
-  And for its run it is finished work, as DONE is: its session closes as AC-125 says, 5 minutes on with the agent idle, keeping no screen, its slot then free (AC-141); a session not Dispatcher's stays
-
-Scenario: AC-264 failure — no agent moves a waiting report
-  Given API-12 waits with its report
-  When an agent, its own or the project's manager, calls move_task, finish_task, ask_human, wait_for_task or integrate on API-12
-  Then it is refused: "API-12 waits for the human to read its report: only their Done or RUN moves it. You can comment.", and API-12 stays
-
-Scenario: AC-264 happy path — a schedule's task is a report
-  Given S_TERM-41 of schedule SCH-1 (terminum-schedules.md AC-162)
-  When its agent calls finish_task with its result, with report or without it
-  Then S_TERM-41 waits with its report as above, and SCH-1's card says "waits for you" (terminum-schedules.md AC-163)
-  And a task of SCH-1 left unread holds back no firing: only one IN PROGRESS does (terminum-schedules.md AC-162)
-  When S_TERM-44 of SCH-1 waits with its report while S_TERM-41's still waits unread
-  Then Dispatcher moves S_TERM-41 to DONE with "Superseded by S_TERM-44's report.": one report of a schedule waits at a time
-
-Scenario: AC-264 happy path — reading it
-  Given API-12 waits with its report
-  When the user opens its window
-  Then the report stands first under "Report" (terminum-kanban.md AC-149), the comment field under it, and Done stands beside RUN at the window's foot
-  When the user presses Done
-  Then API-12 is DONE, its history "<the user> moved it from WAIT FOR HUMAN to DONE: the report was read", every page shows it within 2 s, and its AC-117 line goes
-  When the user writes "Add the March numbers" and presses RUN instead
-  Then RUN goes on in its conversation (AC-122), its words "API-12: the human read your report and commented below. Go on with the task, taking it into account." with each human comment since the report
-
-Scenario: AC-264 failure — Done on a wait that is no report
-  Given API-12 in WAIT FOR HUMAN with its agent's questions (AC-157), or moved there by a wait in its window (AC-124)
-  Then its window shows no Done
-  When a page sends POST /api/tasks/API-12/read
-  Then the answer is 400 "API-12 has questions for you, not a report: answer them under Comment and press RUN." and nothing moves
-  And a task in another column, or one that left the wait for its report and came back to it another way, gets 400 "API-12 has no report waiting: a task moves by running it."
-
-Scenario: AC-264 edge — what the agent is told
-  Then RUN's prompt says after its finish_task line (AC-121) "When the deliverable is a report for a person to read (a review, an audit, an answer to a question), pass report: "yes" with the result: it waits for the human to read it.", and finish_task's description says the same
-  And finish_task without report, or with another value, is AC-123's DONE
-  And a result refused for its sections or its Outcome (AC-123) waits for nothing: report changes no check
-  And integrate takes no report: work that lands through the integration queue is DONE (terminum-integration.md AC-187)
-
-Scenario: AC-264 edge — a run of several tasks
-  Given a run of API-12 with its subtasks API-13 and API-14 (AC-185)
-  When the agent finishes API-13 with report: "yes" and API-14 without it
-  Then API-13 waits with its report and API-14 is DONE; the run goes on and nothing else waits with API-13
-  And a waiting report counts as finished work for its main task: finish_task on API-12 is not refused for API-13
-  When API-12 is DONE
-  Then the session closes as AC-125 says
-  And API-12's next RUN does not take API-13 again: its own RUN goes on with it
-  And a task that waits on API-13 by wait_for_task (AC-210) goes on once API-13 is DONE, at the human's Done
 ```
 
 ### AC-158 — Waiting for room [MUST / P0]
@@ -2423,5 +2366,4 @@ Depends on `terminum-kanban.md`'s Stage 1. All three stages belong to terminum's
 - [x] AC-166 — `cargo test tasks::closeout`, `cargo test tasks::tools`, `cargo test dispatcher::press`, `cargo test cli::mcp`, `web/test/e2e_livedispatcher.mjs`, `web/test/e2e_liveboardids.mjs`
 - [x] AC-205 — `cargo test dispatcher::plan` (a pane gone, or another's, under a server started anew resumes a run at work; the same server is a window closed by hand; WAIT FOR HUMAN, TODO, INTEGRATION, an agent ended or being ended, no conversation, a server never seen, + Session's: not resumed; a link dropped when its server started anew counts as its end, however old the run; the walk keeps the server its marked pane stands in), `cargo test dispatcher::resume` (the fixed words with the open tasks' IDs; one end resumes all it cut off, another within the hour none, an hour on again; the hour starts only once a resume passed its checks), `scripts/e2e_resume.py` on a private terminumd and tmux with `scripts/fake_agent.py` (a window closed by hand: FAILED; the server killed with two runs at work and one slot: one resumed, the other FAILED with the limit's words and nothing queued; the one resumed in a new window, the pool's command with --resume of its conversation, the words typed through the gate, IN PROGRESS, said; killed again within the hour: FAILED with why); not checked: a host's server, an agent deleted from the pool (cargo only by its words), a real machine restart
 - [x] AC-210 — `cargo test ac210` (`tasks::waitfor`: Blocked by with the reason, TODO, the kept press as its run's starter with IDs only and no agent's words, the session's close, the card's mark, no queue place, every refusal; `dispatcher::waits`: waits while a blocker works, holds no place, goes on once DONE, a blocker FAILED, archived or deleted asks a human in three parts, a human's move calls it off; `dispatcher::after`: the fixed words), `cargo test cli::mcp` (search finds it), `node --test web/test/cardstate.test.mjs` (the card's words); to come: a live run on a private terminumd and tmux with `scripts/fake_agent.py`, the resume typed through the gate
-- [x] AC-264 — `cargo test ac264` (`tasks::report`: finish_task with report waits, finished for its run, refused to every agent, Done and its refusals, another value or a refused result no report, a run of several; `dispatcher::fire`: a schedule's task always a report, a newer one superseding one unread, no firing held back; `dispatcher::recent`: RUN's words after a report), `cargo test cli::mcp` (finish_task's report argument), `node web/test/e2e_all.mjs webTaskWin` (the Report heading, Done at the foot posting the read, none for questions)
 - [x] AC-144 — `cargo test tasks::store`, `cargo test tasks::agents` (a project or an agent deleted), `cargo test dispatcher::runs`, `web/test/e2e_livedispatcher.mjs`

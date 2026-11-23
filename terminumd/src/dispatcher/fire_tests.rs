@@ -176,7 +176,7 @@ fn ac162_once_pauses_itself_after_it_fires() {
     }).unwrap();
 }
 
-/// terminum-dispatcher.md AC-264: a schedule's task is always a report; a newer one supersedes an older one unread.
+/// terminum-reports.md AC-272: a schedule's task's result is a report, its task DONE; none supersedes another.
 #[test]
 fn ac272_a_schedule_s_task_s_result_is_a_report_and_none_supersedes_another() {
     let dir = crate::testutil::fresh_dir("fire-report");

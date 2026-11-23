@@ -324,16 +324,17 @@ export async function liveSchedules(page, live) {
   await shot("schedules-long");
   for (const id of many) await j(`/api/tasks/${id}/archive`, "POST", { on: true });
 
-  // AC-162: due, fired on the fake agent, its task waiting with its result as a report (terminum-dispatcher.md AC-264)
+  // AC-162: due, fired on the fake agent, its result a report in the Inbox and its task DONE (terminum-reports.md AC-272)
+  const reportOf = async (task) => (await j("/api/reports")).reports.find((r) => r.source.task === task);
   let s, task;
   for (let firing = 0; firing < 2; firing++) {
     // AC-163: exercise the next firing with a finished predecessor, without relying on a minute boundary.
     s = (await j("/api/schedules")).schedules.find((x) => x.title === "Nightly deps check");
     if (s.last) {
       intoStore(live.app, `UPDATE schedules SET cron = '0 0 1 1 *' WHERE id = '${s.id}'`);
-      check("AC-163 AC-264 the previous firing waits with its report and its session closed before the next is due", await until(async () => {
+      check("AC-163 AC-272 the previous firing is DONE with its report, its session closed before the next is due", await until(async () => {
         const t = await j(`/api/tasks/${s.last.task}`);
-        return t.status === "WAIT FOR HUMAN" && t.report && t.session?.closed;
+        return t.status === "DONE" && t.session?.closed && !!await reportOf(s.last.task);
       }, 45000), s.last.task);
     }
     intoStore(live.app, `UPDATE schedules SET cron = '*/1 * * * *', last_due = last_due - 3600 WHERE id = '${s.id}'`);
@@ -345,9 +346,9 @@ export async function liveSchedules(page, live) {
     check("AC-183 a firing's run keeps Dispatcher and the schedule", await until(() => startOf(live.app, task) === "dispatcher schedule", 15000), startOf(live.app, task));
     intoStore(live.app, `UPDATE schedules SET cron = '0 0 1 1 *' WHERE id = '${s.id}'`);   // no second firing a minute on, under the checks below
     check("AC-162 its task says a schedule made it, and was never in TODO", /^S_[A-Z][A-Z0-9]*-\d+$/.test(task) && !(await j(`/api/tasks/${task}`)).history.some((e) => /TODO/.test(e.text ?? "")), task);
-    check("AC-162 AC-264 the agent gives its result: it waits for the human as a report", await until(async () => { const r = await j(`/api/tasks/${task}`); return r.status === "WAIT FOR HUMAN" && r.report; }, 20000), JSON.stringify((await j(`/api/tasks/${task}`)).history?.map((e) => e.text)));
-    // AC-264: a newer report of the schedule supersedes the one left unread
-    if (s.last) check("AC-264 the previous firing's unread report is DONE, superseded", (await j(`/api/tasks/${s.last.task}`)).status === "DONE", s.last.task);
+    check("AC-162 AC-272 the agent gives its result: its task is DONE and its result a report in the Inbox, never WAIT FOR HUMAN", await until(async () => { const r = await j(`/api/tasks/${task}`); return r.status === "DONE" && !!await reportOf(task); }, 20000), JSON.stringify((await j(`/api/tasks/${task}`)).history?.map((e) => e.text)));
+    // AC-272: no report supersedes another: the previous firing's stays unread beside it
+    if (s.last) check("AC-272 the previous firing's report stays, unread", (await reportOf(s.last.task))?.read === false, s.last.task);
     const t = await j(`/api/tasks/${task}`);
     check("AC-162 its history says the schedule and its due time", t.history.some((e) => /^Dispatcher made it from schedule SCH-\d+, due \w{3} \d+ \w{3} \d\d:\d\d\.$/.test(e.text ?? "")), JSON.stringify(t.history.map((e) => e.text)));
     check("AC-163 its window names the schedule", t.schedule?.key === s.key);

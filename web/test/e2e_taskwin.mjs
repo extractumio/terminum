@@ -33,8 +33,8 @@ const ASKED = { ...TASK, id: "API-14", files: [], history: [
   said("a4", "system", "Dispatcher", AT - 20, "Session started."),
   said("a5", "agent", "Claude Opus", AT - 10, "v1 or v2?", { questions: true }),
 ] };
-// a task that waits with its agent's report (terminum-dispatcher.md AC-264)
-const REPORTED = { ...TASK, id: "API-16", files: [], report: true, history: [
+// a finished task with a report it made (terminum-reports.md AC-273): no report waits on a task any more
+const REPORTED = { ...TASK, id: "API-16", status: "DONE", files: [], reports: ["R_API-20"], history: [
   said("r1", "system", "Dispatcher", AT - 20, "Session started."),
   said("r2", "agent", "Claude Opus", AT - 10, "Outcome: ok"),
 ] };
@@ -95,7 +95,8 @@ const reported = (page) => page.evaluate(async () => {
   await window.taskwin.tryClose();
   await window.taskwin.open("API-16");
   const shown = { heading: body.querySelector(".leads h3")?.textContent, lead: body.querySelector(".leads .history > li")?.querySelector(".markdown, .evtext")?.textContent.trim(),
-    field: body.querySelector(".newcomment textarea").placeholder, keys: keys("#taskacts > button"), bar: keys("#taskbox .barkeys > button") };
+    field: body.querySelector(".newcomment textarea").placeholder, keys: keys("#taskacts > button"), bar: keys("#taskbox .barkeys > button"),
+    reports: [...body.querySelectorAll(".taskfrom")].map((e) => e.textContent).join() };
   [...document.querySelectorAll(FOOT)].find((b) => b.textContent === "Done")?.click();
   await new Promise((go) => setTimeout(go, 300));
   await window.taskwin.tryClose();
@@ -195,10 +196,10 @@ export async function webTaskWin(browser, name) {
       c.asked.told.join("|") === "|waiting to tell the session|not told the session" && c.read.told === "told the session"
       && c.asked.toldColors[0] !== c.asked.toldColors[1], told);
     const rep = await reported(f.page), repSaid = JSON.stringify({ ...rep, read });
-    check("AC-264 a report that waits stands first under Report, the comment field under it asking for a comment",
-      rep.heading === "Report" && rep.lead === "Outcome: ok" && /^Comment/.test(rep.field), repSaid);
-    check("AC-264 Done stands beside Run at the window's foot and posts the read; a wait with questions has no Done",
-      (phone ? rep.bar === "Save,Run,Done" : rep.keys === "Archive,Save,Run,Done") && read === "POST /api/tasks/API-16/read" && !rep.askedDone, repSaid);
+    check("AC-273 a finished task's window leads with its result and lists its reports",
+      rep.heading === "Result" && rep.lead === "Outcome: ok" && rep.reports.endsWith("Reports: R_API-20") && /^Comment/.test(rep.field), repSaid);
+    check("AC-265 no Done reads a report on a task's window, nor on one with questions: a report is no task",
+      (phone ? rep.bar === "Save,Run" : rep.keys === "Archive,Save,Run") && read === null && !rep.askedDone, repSaid);
     await f.page.evaluate(async () => { await window.taskwin.tryClose(); await window.taskwin.open("API-12"); });
     await f.page.click("#taskbody .tasktext .markdown");
     const ring = await f.page.$eval("#taskbody .tasktext .markdown", (text) => [document.activeElement === text, getComputedStyle(text).outlineStyle]);

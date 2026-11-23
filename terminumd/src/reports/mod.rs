@@ -34,4 +34,5 @@ pub async fn sweeping(app: Shared) {
 }
 
 #[cfg(test)]
+#[path = "reports_tests.rs"]
 mod tests;

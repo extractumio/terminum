@@ -57,7 +57,7 @@ Open questions: none.
 | AC-105 | [MUST / P0] | `/kanban/` shows TODO as a column of its own and the other columns (IN PROGRESS, WAIT FOR HUMAN, INTEGRATION where a shown project's integration is on: `terminum-integration.md` AC-193, FAILED, DONE) one at a time in a panel beside it under their tabs, each tab with its count, WAIT FOR HUMAN's and FAILED's pulsing while they hold tasks; each column sorted by recent updates or by priority then recent updates, chosen by a segmented control of two icons before its count and remembered per project in this browser; a tablet's head is one row; `/sessions/` is the session list, `/` leads to it; a phone shows one column at a time. |
 | AC-159 | [MUST / P0] | TODO and DONE show each card as one line, its ID, severity, title and its state's dot; a press shows one whole, folding the one before; the other columns show cards whole. |
 | AC-106 | [MUST / P0] | A window makes a task (title, Markdown with preview, files dropped or pasted, project, severity, owner, parent), in TODO unless said; a draft survives closing; a selection in a terminal can start one. |
-| AC-107 | [MUST / P0] | A human moves a task only by running it (terminum-dispatcher.md AC-138), but for Done on a report that waits for them (terminum-dispatcher.md AC-264); agents and Dispatcher move it; every change is kept in the task's history with who and when. |
+| AC-107 | [MUST / P0] | A human moves a task only by running it (terminum-dispatcher.md AC-138), agents and Dispatcher move it; every change is kept in the task's history with who and when. |
 | AC-108 | [MUST / P0] | A task holds Markdown comments with files, by humans, agents and Dispatcher; a human's comment is kept by SAVE or goes with RUN. |
 | AC-109 | [MUST / P0] | Files up to 100 MB each stay with their task: images shown, other files downloaded, nothing run; a human can purge a file or a text. |
 | AC-110 | [MUST / P0] | The session list and the board share projects; a project needs no session, its last session closing leaves it; Default holds what has no project and is no real project; deleting a project moves its sessions and tasks to Default. |
@@ -70,7 +70,7 @@ Open questions: none.
 | AC-154 | [SHOULD / P1] | An agent grooms its project's board with `update_task`: the severity, parent and AC-199's details of any task it reaches, a human's with its reason; the title and text of an agents' task; such a task archived with its reason; an agent's change of title, type or severity never sets a bug below P2. |
 | AC-199 | [SHOULD / P1] | A task has a type (Feature, Bug, Debt, Story) shown as its title's first word, an external link, a target, and the tasks of its project that block it and that follow it, each with its reason: set in a folded Details part of the new-task and task windows, the new-task window's Type beside its Severity, none chosen until picked (lists by + with a search and ×, never typed IDs) and by `create_task`, `update_task` and `link_task`. |
 | AC-116 | [SHOULD / P1] | A bookmark or reminder becomes a TODO task in one small window (severity, project, session), its text linking its session, the board not opened; the record goes once the task is kept. |
-| AC-117 | [MUST / P0] | WAIT FOR HUMAN and FAILED raise the banner of waiting agents and counts of cards on the Kanban tab, yellow and red, the same in every browser: terminumd keeps which lines a human closed or saw; so does a task returned from integration with no live agent (`terminum-integration.md` AC-192). |
+| AC-117 | [MUST / P0] | WAIT FOR HUMAN and FAILED raise the banner of waiting agents and counts of cards on the Kanban tab, yellow and red, the same in every browser: terminumd keeps which lines a human closed or saw; so does a task returned from integration with no live agent (`terminum-integration.md` AC-192), and a critical report until it is read (`terminum-reports.md` AC-271); a report not critical raises none. |
 | AC-118 | [SHOULD / P1] | Archive hides a task from the board and can return it; DONE archives itself after 2 days; each project has an Archived list. |
 | AC-119 | [MUST / P0] | One SQLite file holds tasks and projects; writes are atomic; authors and roles name users, so a central store can follow; an unreadable file is set aside and said, never overwritten. |
 | AC-136 | [MUST / P0] | A card says what became of its session's agent: working, waiting, failed with why, stopped with its task open, gone; the task's history says so once; nothing moves by it unless Dispatcher started the session. |
@@ -275,11 +275,6 @@ Scenario: AC-107 happy path — a task moves by running
   Then Dispatcher moves it as its agent goes, every page shows it within 2 s and its history adds "Dispatcher moved it from TODO to IN PROGRESS" with the time
   And a drag to another column does nothing: the column does not light and the card stays; the integration queue's two drops are not moves of a column but its keys: on INTEGRATION a task is queued, from it to IN PROGRESS it is taken out (terminum-integration.md AC-193)
   And the human's way to take a task off the board is Archive (AC-118); its display order follows the column's sort (AC-105)
-
-Scenario: AC-107 edge — a report read
-  Given API-12 in WAIT FOR HUMAN with its agent's report (terminum-dispatcher.md AC-264)
-  When the user presses Done in its window
-  Then API-12 is DONE, its history naming the user: the one move a human makes but by running, only for a report that waits for them
 
 Scenario: AC-107 failure — a route with a column
   When a page sends PATCH /api/tasks/API-12 {"status": "DONE"}
@@ -1243,9 +1238,10 @@ Scenario: AC-149 happy path — a comment's label lines read as sections
   And a task opened is shown from its start
 
 Scenario: AC-149 happy path — what the human reacts to stands first
-  Given API-12 waits for its human: WAIT FOR HUMAN with its agent's questions or its report (terminum-dispatcher.md AC-264), DONE with its agent's last comment (its result), or FAILED with the last comment of its agent or Dispatcher (why)
+  Given API-12 waits for its human: WAIT FOR HUMAN with its agent's questions, DONE with its agent's last comment (its result), or FAILED with the last comment of its agent or Dispatcher (why)
   When the user opens its window
-  Then that comment stands first under its heading (Asks you, Report, Result, Why it failed), the comment field right under it (for questions: "Your answer…"), the window's keys at its foot, Done among them for a report
+  Then that comment stands first under its heading (Asks you, Result, Why it failed), the comment field right under it (for questions: "Your answer…"), the window's keys at its foot
+  And a report the task made is no comment to react to: it is read in the Inbox, and the window lists it under its dates (terminum-reports.md AC-273)
   And then the task itself, then the rest of the conversation newest first under "Earlier", then its subtasks
   When it has no such comment, or stands in TODO or IN PROGRESS
   Then it reads as a conversation, above

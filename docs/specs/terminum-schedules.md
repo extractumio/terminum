@@ -18,7 +18,7 @@ A snapshot of what terminum must do, not a record of how it came to be: git hold
 
 **Expected outcome.** A schedule holds a title, a text, a project, a severity, an agent of its project's pool, a cadence and a time budget. When it is due, terminumd makes a new task from it as it is then, IN PROGRESS, and runs it on its agent in the project's folder; that task waits for a human, is done or fails as any other, never standing in TODO, and its result is read on its card. The agent keeps one slot for every two schedules, shared by them all; a schedule's task starts at once when there is room, and with none it waits ahead of every other wait. Every firing is listed in the Message history's Scheduled page with what went in and what came out.
 
-**Scenario.** Alex sets "Nightly deps check" in Billing, on Opus reviewer, every day at 03:00, 30 minutes. At 03:00 S_TERM-41 is made, runs, and waits in WAIT FOR HUMAN with its report, "Outcome: attention" and two outdated packages, until Alex reads it and presses Done. The next night the Mac sleeps until 08:12: that firing is missed and says so, nothing runs on wake. The night after, S_TERM-44 asks which major version to take and waits in WAIT FOR HUMAN; the schedule goes on, and Alex answers and presses RUN when he reads it.
+**Scenario.** Alex sets "Nightly deps check" in Billing, on Opus reviewer, every day at 03:00, 30 minutes. At 03:00 S_TERM-41 is made, runs and is DONE; its result, "Outcome: attention" and two outdated packages, waits unread in Alex's Inbox as report R_TERM-42 (terminum-reports.md). The next night the Mac sleeps until 08:12: that firing is missed and says so, nothing runs on wake. The night after, S_TERM-44 asks which major version to take and waits in WAIT FOR HUMAN; the schedule goes on, and Alex answers and presses RUN when he reads it.
 
 ## 2. Scope and non-goals
 
@@ -251,7 +251,7 @@ Scenario: AC-162 happy path — the project's manager's words are its own
 
 Scenario: AC-162 happy path — the result
   When the agent calls finish_task with its result
-  Then S_TERM-41 waits in WAIT FOR HUMAN with that comment, a report (terminum-dispatcher.md AC-264), and the user reads it in its window and presses Done
+  Then S_TERM-41 is DONE with that comment, and its result is a report in the Inbox unless its run made one (terminum-reports.md AC-272), read there
   When the agent asks a human (AC-157)
   Then S_TERM-41 is WAIT FOR HUMAN, its session closes, and the user's RUN resumes it as AC-161 starts a schedule's task
   When its budget ends or its agent fails
@@ -342,6 +342,7 @@ Scenario: AC-163 happy path — folded
 Scenario: AC-163 happy path — its cards
   Then its cards stand on the board's tracks (terminum-kanban.md AC-105), each a track wide, four to a row; a board under 1500 px keeps one row that scrolls
   And a card shows SCH-1, its severity, its title, its cadence in words ("Every day at 03:00"), its next run ("next Tue 03:00") or "paused" with why, its agent in its color, and its last task as a box of its ID in its status's color, "waits for you" when that one is WAIT FOR HUMAN, "skipped N" since it last made one, and why its last task did not start
+  And beside it its last report's ID and age, a press opening it, and how many of its reports are unread (terminum-reports.md AC-272)
   And every card of the pool and of the section stands whole, however long the columns under them: the columns take the room that is left, at least 45% of the window's height, and only then do the pool and the section scroll
   When the user presses the box
   Then that task's window opens

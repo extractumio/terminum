@@ -224,14 +224,14 @@ def main():
               and scheds[0]["author_name"] == "Shell · manager", (out, scheds))
         out, rc = typed(boss, tool("run_schedule", schedule="SCH-1"), 40)
         check("AC-182 run_schedule makes the schedule's task and starts it now", rc == "0" and "SCH-1 ran now: its task S_" in out, out)
-        # a schedule's result is a report: it waits for the human (terminum-dispatcher.md AC-264)
-        ran = wait_for(lambda: call("/api/schedules")[1]["schedules"][0]["last"], lambda last: last and last["status"] == "WAIT FOR HUMAN", 30, 0.3, last=True)
-        check("AC-182 AC-264 its task runs to its end on the schedule's agent, its report waiting, the cadence as it was", ran and ran["status"] == "WAIT FOR HUMAN" and call("/api/schedules")[1]["schedules"][0]["cron"] == "0 3 * * *", ran)
+        # a schedule's result is a report in the Inbox, its task DONE (terminum-reports.md AC-272)
+        ran = wait_for(lambda: call("/api/schedules")[1]["schedules"][0], lambda s: s["last"] and s["last"]["status"] == "DONE" and s["report"], 30, 0.3, last=True)
+        check("AC-182 AC-272 its task runs to its end on the schedule's agent, DONE, its result a report, the cadence as it was", ran and ran["last"]["status"] == "DONE" and ran["report"] and ran["cron"] == "0 3 * * *", ran)
         # its last run's session holds the one slot: the task waits, and once that session is a minute quiet
         # (terminum-dispatcher.md AC-141) it is closed for it and the task runs (terminum-schedules.md AC-161)
         st, said = call(f"/api/schedules/{scheds[0]['id']}/run", "POST", {})
         check("AC-182 Run now on its card does the same for a human", st == 200 and said.get("task", "").startswith("S_"), said)
-        wait_for(lambda: call("/api/schedules")[1]["schedules"][0]["last"], lambda last: last and last["task"] == said.get("task") and last["status"] == "WAIT FOR HUMAN", 150, 0.5)
+        wait_for(lambda: call("/api/schedules")[1]["schedules"][0]["last"], lambda last: last and last["task"] == said.get("task") and last["status"] == "DONE", 150, 0.5)
         supervisor_page = t.page(secret)
         try:
             ac231_supervisor_tools_pane_and_token(t, call, typed, tool, tmux, supervisor_page, project, work, boss, plain, cli, waiting, token)

@@ -152,7 +152,7 @@ Scenario: AC-266 happy path — read
 
 Scenario: AC-266 edge — what the agent is told
   Then RUN's prompt says after its finish_task line "When the deliverable is a report for a person to read (a review, an audit, an answer to a question), give it by execute_tool(\"create_report\", {task, title, summary, body}) before finish_task: it goes to the human's Inbox, and the task is DONE as any."
-  And the MCP server's instructions and create_report's description say the same; finish_task's description says nothing of reports
+  And create_report's description says the same, and finish_task's: "A report for the human to read goes first by create_report; a routine's result also goes to their Inbox as one."
 
 Scenario: AC-266 failure — finish_task's old report argument
   When an agent calls finish_task with report: "yes"
@@ -171,7 +171,7 @@ Scenario: AC-267 happy path — above the Sessions
 
 Scenario: AC-267 happy path — the board's project choice
   Given the board shows project Terminum
-  Then the Inbox lists only Terminum's reports and counts only them; with all projects shown it lists them all, each row with its project's stripe as a session row has
+  Then the Inbox lists only Terminum's reports and counts only them; with all projects shown it lists them all, each row with its project's color in a dot as a session row's
   And the session page's Inbox follows the board's last choice, kept in the browser as the board keeps it; with none it shows all projects
 
 Scenario: AC-267 happy path — folds like a group
@@ -194,7 +194,7 @@ Scenario: AC-267 edge — empty
 
 Scenario: AC-267 edge — a phone
   Given a window narrower than 861 px, where the list is a sheet (terminum.md AC-18)
-  Then the Inbox stands at the top of that sheet, as above, and its count stands on the list's button while any report is unread
+  Then the Inbox stands at the top of that sheet, as above, and the list's button wears a dot while any report is unread
 ```
 
 ### AC-268 — Reading a report [MUST / P0]
@@ -203,7 +203,7 @@ Scenario: AC-267 edge — a phone
 Scenario: AC-268 happy path — the reading pane
   When the user presses R_TERM-7 in the Inbox on the board
   Then a pane covers the board's right part (the agents, routines and columns), the list staying beside it
-  And its head shows the title, critical when it is, the source as a link (a task opens its window, a routine its card, an incident its card), its author with role, when made and changed, its project's stripe, and the buttons Mark as unread, Delete, Copy link and ×
+  And its head shows the title, critical when it is, the source as a link (a task opens its window, a routine its card, an incident its card), its author with role, when made and changed, its project's name, and the buttons Mark as unread, Delete, Copy link and Close
   And under it the summary, the body rendered by the Panel's Markdown rules (raw HTML off, `javascript:` links dropped, remote images not loaded, Mermaid in strict mode), its files (images shown, others downloaded, nothing run), "Follows" and "Follow-up" links, its comments oldest first, and the reply field with Send last when it can be answered (AC-270), else why not
 
 Scenario: AC-268 happy path — from the session page
@@ -247,7 +247,7 @@ Scenario: AC-269 happy path — delete and undo
   Then R_TERM-5 stands again where it stood, read or unread as it was
 
 Scenario: AC-269 happy path — restore later
-  When the user picks Deleted in the Inbox's head menu
+  When the user presses Deleted reports in the Inbox's head
   Then the Inbox lists the deleted reports, newest deletion first, each with Restore and the day it goes for good
   When the user presses Restore
   Then it stands in the Inbox again
@@ -364,8 +364,8 @@ Scenario: AC-273 happy path — from a session
   Then its row in the session list shows an envelope with 1; a press on it opens R_TERM-7, several open the Inbox filtered to them
 
 Scenario: AC-273 happy path — Find
-  When the user types "R_TERM-7" or a word of a report's title or summary in Find
-  Then the report is among the results, marked as a report, and opens its pane
+  When the user types "R_TERM-7" or a word of a report's title or summary in the board's Find
+  Then the Inbox shows only the reports it matches, as the columns show only the tasks it matches; a press opens its pane
 ```
 
 ### AC-274 — Waiting reports move to the Inbox [MUST / P0]
@@ -401,7 +401,10 @@ sequenceDiagram
 
 ## 7. Current behavior and gaps
 
-None open.
+| Case | Gap |
+|---|---|
+| AC-270 | Replying is not built: a report's pane offers "Continue in <task>", its task's window, where a comment and RUN go on in the same conversation (`terminum-dispatcher.md` AC-122). |
+| AC-273 | A session row shows no envelope of its unread reports, and a report's ID in a comment or result is not a link; a task's window lists its reports and Find finds them. |
 
 ## 8. Recommendation and ownership
 
@@ -427,33 +430,19 @@ The ID is `R_<prefix>-<number>`, the number taken from the project's `next_seq` 
 **Routes**, each write with the exact Host, Origin and Content-Type checks of every write (`SECURITY.md`):
 
 ```text
-GET    /api/reports?project=<id>&deleted=1&before=<number>&session=<key> → {"reports": [{"id": "R_TERM-7", "project", "title", "summary", "critical", "read", "source": {"task": "S_TERM-41", "schedule": "SCH-1", "name": "Nightly deps check"}, "author_name", "role", "session", "created_at", "updated_at", "answering", "deleted_at"}], "unread": {"<project>": n}, "more": true}
-GET    /api/reports/{id} → the same, with "body", "notes": [{"id", "at", "author_name", "kind", "text"}], "files": [{"id", "name", "bytes", "mime"}], "follows", "follow_ups": [], "agent": "Opus", "replyable": true | false, "why_not": "…"
+GET    /api/reports?project=<id>&deleted=1&from=<n>&session=<key>&limit=<n> → {"reports": [{"id": "R_TERM-7", "number", "project", "project_name", "project_color", "title", "summary", "critical", "read", "source": {"task": "S_TERM-41", "schedule": "SCH-1", "incident": null, "name": "Nightly deps check"}, "author_name", "role", "session", "created_at", "updated_at", "deleted_at"}], "unread": {"projects": {"<project>": n}, "schedules": {"SCH-1": n}, "sessions": {"<key>": n}}, "more": true, "next": 100}
+GET    /api/reports/{id} → the same, with "body", "notes": [{"id", "at", "author_name", "author_kind", "kind", "text"}], "files": [{"id", "name", "bytes", "mime"}], "follows", "follow_ups": []
 POST   /api/reports/{id}/read      POST /api/reports/{id}/unread
 DELETE /api/reports/{id}           POST /api/reports/{id}/restore
 POST   /api/reports/{id}/reply {text} → {"task": "S_TERM-41"} or 400 with why (AC-270)
 POST   /api/reports/{id}/seen {key}   (the AC-117 line closed)
 ```
 
-The list's answer carries the unread counts by project, by schedule and by session, so neither a routine's card nor a session row asks again. Every page hears `{"t": "reports"}` when one changes; the Inbox reads `GET /api/reports` again then, and when its page becomes visible. A critical report's line joins the `taskmarks` message's `lines` with `"report": true`.
+The list's answer carries the unread counts by project, by schedule and by session, so neither a routine's card nor a session row asks again. Every page hears the tasks' marks (`taskmarks`, `terminum-kanban.md` AC-113) with `"reports": {"rev", "unread"}`: `rev` moves with any change of a report (made, changed, read, deleted, a line closed), and the Inbox reads `GET /api/reports` again then; also when its page becomes visible and every 30 s while it is, for what the Supervisor makes without a task's change. A critical report's line joins the marks' `lines` with `"report": true`; its × posts `…/seen`.
 
 **Tools** (`terminum mcp`, `terminum tool`): `create_report {task?, title, summary, body, critical?, follows?}`, `append_to_report {id, text}`, `attach_report_file {id, path | name + text}`, `get_report {id}`, `list_reports {unread?, limit?}`, manager and Supervisor only: `update_report {id, title?, summary?, body?, critical?}`, `delete_report {id}`. Roles by `terminum-agents.md` AC-174 and `terminum-supervisor.md` AC-231.
 
 **Reply** (`POST …/reply`): checks the report is replyable (a task Dispatcher ran, not archived); presses the task's RUN with the reply's fixed words as its message, through `terminum-dispatcher.md`'s press and §9 gate unchanged: the gate's checks of a saved comment apply to the reply; only an accepted press keeps the reply as a `reply` note, in the press's transaction, and sets `replied_at`. The run it starts is marked a reply's, so its finish_task makes no report (AC-272). Nothing else is typed.
-
-**What replaces AC-264.**
-
-| Piece of before | Now |
-|---|---|
-| `finish_task`'s `report: "yes"` | refused with what to call instead (AC-266) |
-| a schedule's task waiting with its report; one superseding the older | a report made from its result, its task DONE; none superseded (AC-272) |
-| `tasks/report.rs`: `waits!`, `run_status!`, `untouched`, `waits_on` in the runs, tools, family, choices, window | removed: no task waits with a report once AC-274 ran |
-| `POST /api/tasks/{id}/read`, the window's Done | removed; read by opening the report (AC-269) |
-| `terminum-kanban.md` AC-149's "Report" section | a task's window lists its reports (AC-273) |
-| `terminum-schedules.md` AC-163's "waits for you" for a report | the last report and its unread count (AC-272) |
-| RUN's prompt and finish_task's description on reports | create_report's words (AC-266) |
-| `terminum-dispatcher.md` AC-185's exception for a waiting report | gone with it |
-| the RUN words "the human read your report and commented below" | a reply's words (AC-270) |
 
 **Security.** The reply is a human's message carried by a human's RUN, named in `CLAUDE.md` §2's list as "a human's reply to a report (`terminum-reports.md` AC-270): through the §9 gate, as a RUN of the report's task Dispatcher ran, fixed words with the report's ID and the human's text, never the report's text", and in `SECURITY.md`: only a signed-in page sends it, only into the pane of a task Dispatcher started, through the §9 gate; an agent's report text is never typed. A worker's reports are bounded (10 an hour, one critical line an hour per session) so a misled agent cannot flood the Inbox or the human's attention. A report's body is agents' text: the page shows it only through the Panel's Markdown rules. An agent's report tools write only to its project's reports, a worker only to its own.
 
@@ -463,18 +452,18 @@ The list's answer carries the unread counts by project, by schedule and by sessi
 
 | Stage | Cases | Exit |
 |---|---|---|
-| 1 | AC-265, 266, 267, 268, 269, 271, 272, 274 and the removal of AC-264's pieces | landed green; the reading pane's foot offers "Continue in S_TERM-41" (its window, RUN with a comment) instead of a reply field |
-| 2 | AC-270 (with `CLAUDE.md` §2 and `SECURITY.md`, independently reviewed), AC-273 | landed green |
+| 2 | AC-270 (with `CLAUDE.md` §2 and `SECURITY.md`, independently reviewed), the rest of AC-273 | landed green |
+| 3 | The Supervisor's use of reports, the maintainer's addition (TERM-822): a critical report as a signal and incident, reports as detector evidence, the weekly review and the quarterly audit as reports, reading in the owner's burden, the report tools by the Supervisor's level; its cases written here first, agreed with `terminum-supervisor.md`'s open work | landed green |
 
 ## 11. Checklist with Definition of Done
 
-- [ ] AC-265 — `cargo test reports::store`
-- [ ] AC-266 — `cargo test reports::tools`, `cargo test cli::mcp`
-- [ ] AC-267 — `web/test/e2e_all.mjs` (`inbox`), Chromium and WebKit, wide and phone
-- [ ] AC-268 — `web/test/e2e_all.mjs` (`inbox`), `web/test/e2e_live.mjs` (`reports`)
-- [ ] AC-269 — `cargo test reports::store`, `web/test/e2e_all.mjs` (`inbox`)
+- [x] AC-265 — `cargo test reports` (`ac265_…`: the shared count, a report's ID refused by task tools, limits in words)
+- [x] AC-266 — `cargo test reports` (`ac266_…`: a worker's own and its 10 an hour, several tasks, a manager's change and delete, finish_task's report refused), `cargo test cli::mcp_tasks` (the call's shape), `cargo test roles` (`ac231_…`: the tools by role)
+- [x] AC-267 — `web/test/e2e_all.mjs` (`webInbox`), Chromium and WebKit, wide and phone
+- [x] AC-268 — `web/test/e2e_all.mjs` (`webInbox`: the pane over the board, its address, Esc, from the session page, a phone's sheet)
+- [x] AC-269 — `cargo test reports` (`ac269_…`: read, unread, deleted, restored, purged at 30 days with its files), `web/test/e2e_all.mjs` (`webInbox`: read after 2 s, U, Backspace, Undo)
 - [ ] AC-270 — `cargo test reports::reply`, `web/test/e2e_live.mjs` (`reports`); `CLAUDE.md` §2 and `SECURITY.md` name the reply, reviewed by the `pragmatic` agent
-- [ ] AC-271 — `cargo test reports::alerts`, `web/test/e2e_all.mjs` (`inbox`)
-- [ ] AC-272 — `cargo test reports::sources`, `cargo test dispatcher::fire`
-- [ ] AC-273 — `web/test/e2e_all.mjs` (`inbox`)
-- [ ] AC-274 — `cargo test reports::migrate`
+- [x] AC-271 — `cargo test reports` (`ac271_…`: only critical, one an hour per worker's session, read takes it, an incident's none), `web/test/e2e_all.mjs` (`webInbox`: a line opens the report, its × the report's route)
+- [x] AC-272 — `cargo test reports` (`ac272_…`), `cargo test dispatcher::fire` (`ac272_…`: none superseded), `web/test/e2e_liveschedules.mjs`, `scripts/e2e_roles.py`
+- [ ] AC-273 — `web/test/e2e_all.mjs` (`webTaskWin`: a task's window lists its reports; `webInbox`: Find); the session row's envelope and ID links not built (§7)
+- [x] AC-274 — `cargo test reports` (`ac274_…`: moved once, its task DONE and linked, a question's task stays)

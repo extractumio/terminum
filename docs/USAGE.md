@@ -303,9 +303,9 @@ A task moves only by running.
   issue). The task waits in WAIT FOR HUMAN and its session closes. Press an option in the task
   window to save that answer, or write a comment in your own words. Press Run to resume the same
   conversation with the saved answer and any comments.
-- **A report** for you to read (`finish_task` with `report: "yes"`; every schedule's task) waits
-  in WAIT FOR HUMAN under "Report" and its session closes as after DONE. Press Done once you read
-  it, or comment and press Run to go on in the same conversation.
+- **A report** for you to read (a review, an audit, an answer) goes to the **Inbox** by
+  `create_report`, and the task is DONE as any; a schedule's result becomes one by itself. See
+  "The Inbox" below.
 - **A wait for another task** comes with `wait_for_task` (a prerequisite whose change it needs;
   work that only overlaps another task's just integrates): the task joins that task's Blocked by,
   waits in TODO ("waits for TERM-9") and its session closes; once TERM-9 is DONE Dispatcher goes on
@@ -374,9 +374,9 @@ Routines, the board's word for them, are a strip over the columns; its + opens o
   three runs are shown.
 - **A firing** makes a task S_TERM-8 (S_ and the project's next ID), IN PROGRESS, never in TODO, in
   the project's folder, and runs it on
-  the schedule's agent; its result has Outcome, Summary, Details and For the human and waits for
-  you as a report (a newer one of the same schedule takes an unread one's place), or it asks you
-  with `ask_human`. Its card says SCH-1.
+  the schedule's agent; its result has Outcome, Summary, Details and For the human, its task goes
+  to DONE and the result waits unread in your Inbox as a report (every one stays), or it asks you
+  with `ask_human`. Its card says SCH-1, its last report and how many are unread.
 - **No run**: a firing while a task of it still runs is skipped (counted on the card); one while
   a task of it waits for room replaces that wait, unless you ran that task yourself; one missed while the Mac slept is not run on wake; one that cannot start (no folder, no hooks,
   agent gone) fails its task and says why, and the next firing tries again.
@@ -387,6 +387,30 @@ Routines, the board's word for them, are a strip over the columns; its + opens o
 - You and a project's manager make schedules; a worker cannot.
 - `/scheduled/` (Scheduled beside History): every firing, newest first, with the prompt that went
   in and the result that came out, or why nothing ran.
+
+### The Inbox
+
+Reports, what agents, routines and the Supervisor give you to read, stand in the **Inbox** at the
+top of the session list, on both pages and in a phone's list sheet: unread in bold, critical in
+red and first, the count of unread in its head. WAIT FOR HUMAN keeps only what needs your answer.
+
+- **Read**: press a report; on the board its pane covers the agents, routines and columns
+  (`/kanban/?report=R_TERM-7`, a link to share), from the session page the board opens with it.
+  Open 2 seconds, it is read. × or Esc gives the columns back.
+- **Keys** on a row: ↑ ↓, Enter opens, U marks read or unread, Backspace or Delete deletes. A
+  right click (a long press on a phone) and the row's buttons do the same, and Copy link, Open
+  source task, Open in new tab.
+- **Delete** hides it at once with Undo; the clock button in the Inbox's head shows the deleted
+  ones, restorable for 30 days, then they go with their files.
+- **Alerts**: none, but for a critical report: a red line as a waiting task's, until you read it
+  or close the line. A Supervisor incident's report alerts through the incident alone.
+- **Going on**: a report made in a task's run has "Continue in TERM-41": its window, where a
+  comment and Run go on in the same conversation.
+- **Find** on the board finds reports too; the Inbox follows the board's project.
+- Agents report by `create_report` (title, summary, Markdown body, files by `attach_report_file`,
+  comments by `append_to_report`); a worker only on its own task, at most 10 an hour; a manager or
+  the Supervisor also changes or deletes reports of its project. A report's ID, R_TERM-7, is in
+  the project's count of task IDs.
 
 ### Integration
 
