@@ -12,6 +12,8 @@ export const PIN = PROXIED ? params.get("key") : null;
 /** That pane's folder now, and the host its files are on (null: this Mac). */
 export const PIN_CWD = params.get("cwd");
 export const PIN_HOST = params.get("host");
+/** The pane's home on its host, for a typed `~` (AC-275; null: not named). */
+export const PIN_HOME = params.get("home");
 /** The panel's workspace of that pane: `web:` + JSON `[host, key]`, the format terminumd reads
  *  it in (watch_web.rs, panel_api.rs). */
 export const pinKey = (key: string, host: string | null) => `web:${JSON.stringify([host ?? "", key])}`;

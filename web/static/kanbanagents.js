@@ -21,7 +21,7 @@ const KINDS = ["claude", "codex"];                 // their commands are their n
  *  agent; `run(tasks, agent)`; `readings()`: each kind's subscription windows (AC-168); `openTask(id)`; `composer`: + Session's
  *  dock with a first prompt (AC-204), opened by a card's own key. */
 export function agentsSection({ getMeta, chosen, reload, refreshQueue, slots: counted, liveRow, dragging, given, run, openSession, readings, openTask, composer }) {
-  // on the columns' tracks: an agent a column wide, the add tile after the last, the hint in the fifth (kanban.css .tracks)
+  // on the columns' tracks: an agent a column wide, the add tile after the last, the selection hint below (kanban.css .tracks)
   const box = el("section", "agents tracks"), list = el("div", "agentlist trackitems"), side = el("div", "trackside");
   box.id = "agentgrid";
   const addKey = iconButton("addtile", "plus", "Add agent", "Add an agent to a project's pool", () => open(), 16);

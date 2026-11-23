@@ -6,12 +6,13 @@
 import "./style.css";
 import {
   api, apiOrToast, ApiError, basename, CLIENT, copyText, DEFAULT_PREFS, dirname, isPane, isRevision, isUnder,
-  proofRefusal, PROXIED, scope, setScope, SORTS, toast,
+  proofRefusal, PROXIED, scope, setScope, shownOf, SORTS, toast,
   type FsChange, type Pane, type Prefs, type TermState,
 } from "./api";
 import { renderOffer } from "./host-offer";
 import { contextMenu } from "./context-menu";
 import { acceptFromPage, emptiedOutside, escapedOutside, openOutside, PIN, PIN_CWD, PIN_HOST, pinKey, revealOutside } from "./embed";
+import { Browse } from "./browse";
 import { applyTheme } from "./theme";
 import { redrawDiagrams } from "./mermaid";
 import { initSplitter } from "./splitter";
@@ -24,6 +25,7 @@ import { Stream } from "./stream";
 import { Upgrade } from "./upgrade";
 import { commitPath, trashPaths } from "./file-actions";
 import { refreshScope } from "./panel-refresh";
+import { PrefsSaver } from "./prefs-save";
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -35,6 +37,7 @@ let term: TermState = { version: -1, bridge: false, mode: PIN_HOST ? "remote" : 
 let updateNote = "";                  // an upgrade waits for unsaved work (AC-16)
 let key: string | null = null;        // the panel's workspace key of the pane shown: web:[host, pane key]
 let ws: Pane | null = null;           // its workspace as last read or written
+let browsing = "";                    // the folder the user chose to show instead of the pane's (AC-275)
 let workspaceRun = 0;                // orders reads and accepted write replies, even after a revision reset
 let prefs: Prefs = { ...DEFAULT_PREFS };
 let saveTimer = 0;
@@ -65,7 +68,8 @@ function snapshot(): Pane | null {
   if (!ws) return null;
   return {
     ...ws,
-    root: tree.root?.path ?? ws.root,
+    root: browsing ? ws.root : tree.root?.path ?? ws.root,
+    browse: browsing,
     expanded: [...tree.expanded],
     selected: [...tree.selected],
     scroll: Math.round(tree.scroll),
@@ -154,11 +158,12 @@ async function loadWorkspace(k: string) {
 
 async function applyWorkspace(pane: Pane) {
   const paneKey = key;
-  const sameTree = ws?.root === pane.root && tree.root?.path === pane.root &&
+  const sameTree = ws && shownOf(ws) === shownOf(pane) && tree.root?.path === shownOf(pane) &&
     JSON.stringify([...tree.expanded].sort()) === JSON.stringify([...pane.expanded].sort());
   ws = pane; // restoring it below is then a no-op for saveNow
+  browsing = pane.browse;
   if (sameTree) { tree.pick(); tree.selected = new Set(pane.selected); tree.queue(); }
-  else await tree.setRoot(pane.root, pane.expanded, pane.selected, pane.scroll);
+  else await tree.setRoot(shownOf(pane), pane.expanded, pane.selected, pane.scroll);
   if (key !== paneKey || ws !== pane) return;
   viewer.refreshTools();
   if (JSON.stringify(viewer.tabs) !== JSON.stringify(pane.tabs) || viewer.active !== pane.active_tab) viewer.setTabs(pane.tabs, pane.active_tab);
@@ -169,11 +174,12 @@ async function applyWorkspace(pane: Pane) {
 
 function renderHeader(s: TermState) {
   $("dot").className = "dot" + (!s.bridge ? " off" : s.stale ? " stale" : "");
-  $("dot").title = !s.bridge ? "terminumd not connected" : s.stale ? "folder unavailable" : "following the shown pane";
+  $("dot").title = !s.bridge ? "terminumd not connected" : s.stale ? "folder unavailable" : browsing ? "showing a chosen folder, not the pane's" : "following the shown pane";
   $("mode").textContent = s.mode ?? "—";
   $("mode").className = "badge" + (s.mode === "remote" ? " warn" : "");
   $("title").textContent = s.remote?.name ?? s.title ?? "";
-  const cwd = ws?.root ?? s.cwd ?? "";
+  const cwd = ws ? browsing || ws.root : s.cwd ?? "";
+  browse.render(!!browsing);
   const home = scope ? undefined : cwd.match(/^\/Users\/[^/]+/)?.[0];
   const head = (scope ? `${s.remote?.name ?? scope}:` : "") + (cwd === "/" ? "" : dirname(cwd).replace(/\/?$/, "/"));
   const b = Object.assign(document.createElement("b"), { textContent: basename(cwd) });
@@ -201,7 +207,7 @@ function onState(s: TermState) {
   if (!VIEW) renderHeader(term);
   // terminumd is back: send what a failed save left behind
   void saveNow();
-  if (prefsUnsaved) savePrefs();
+  if (prefsSaver.unsaved) prefsSaver.save();
 }
 
 /** A host's pane: its files offer (AC 83), read when the panel connects and whenever terminumd
@@ -312,25 +318,7 @@ const terminal = (action: "insert" | "cd", body: object) =>
 
 // ── layout ───────────────────────────────────────────────────────────────────
 
-/** Preferences not yet saved (a failed PUT): the next change or reconnect sends them again. One
- *  PUT at a time, as the workspace's (saveNow), so terminumd keeps the newest. */
-let prefsUnsaved = false, prefsSaving: Promise<void> = Promise.resolve();
-const savePrefs = () => {
-  prefsUnsaved = true;
-  prefsSaving = prefsSaving.then(sendPrefs, sendPrefs);
-};
-
-async function sendPrefs() {
-  if (!prefsUnsaved) return;   // an earlier PUT in the queue sent them already
-  const sent = JSON.stringify(prefs);
-  try {
-    await api("PUT", "/api/prefs", { body: prefs });
-    warned.delete("prefs");
-    if (JSON.stringify(prefs) === sent) prefsUnsaved = false;
-  } catch (e) {
-    failed("prefs", `Preferences not saved: ${(e as Error).message}`);
-  }
-}
+const prefsSaver = new PrefsSaver(() => prefs, (error) => (error ? failed("prefs", error) : warned.delete("prefs")));
 
 function setSplit(r: number) {
   prefs.split = Math.min(0.85, Math.max(0.15, r));
@@ -350,7 +338,7 @@ const tree = new Tree($("tree"), {
   context: (p, isDir, ev) => void contextMenu(p, isDir, ev, {
     tree, term: () => term, switchedSince, open: openFile, openWindow, trash: () => void trashSelected(),
     copy: (t) => void copyPaths(t), relative, terminal,
-    sort: () => prefs.sort, setSort: (s) => { prefs.sort = s; tree.setSort(s); savePrefs(); },
+    sort: () => prefs.sort, setSort: (s) => { prefs.sort = s; tree.setSort(s); prefsSaver.save(); },
   }),
   commit,
   notify: toast,
@@ -360,6 +348,21 @@ bindHold($("tree"));
 bindDrag($("tree"), (p) => (tree.selected.has(p) ? [p, ...[...tree.selected].filter((q) => q !== p)] : [p]), () => scope);
 // files dragged from Finder upload into the folder under the pointer, by the tree's host (AC-95)
 bindDrop($("tree"), { root: () => tree.root?.path ?? null, host: () => scope, readOnly: (d) => tree.readOnly(d), mark: (d) => tree.setDrop(d), toast });
+
+/** Open folder… and Back (AC-275): the tree shows the chosen folder from its start, said to
+ *  terminumd at once (a cd reloads this frame, and a debounced save would be lost with it). */
+const browse = new Browse({
+  shown: () => tree.root?.path ?? (ws ? shownOf(ws) : ""),
+  pane: () => ws?.root ?? "",
+  focusTree: () => tree.focus(),
+  async go(path) {
+    if (!ws) return;
+    browsing = path === ws.root ? "" : path ?? "";
+    const shown = tree.setRoot(browsing || ws.root, [], [], 0);
+    renderHeader(term); void saveNow();
+    await shown;
+  },
+});
 
 const viewer = new Viewer($("tabs"), $("tools"), $("vbody"), {
   changed: scheduleSave,
@@ -416,7 +419,7 @@ $("hidden").onclick = () => {
   prefs.hidden = !prefs.hidden;
   $("hidden").classList.toggle("on", !prefs.hidden);
   tree.setShowHidden(prefs.hidden);
-  savePrefs();
+  prefsSaver.save();
 };
 $("maximize").onclick = () => $("app").classList.toggle("max");
 
@@ -475,7 +478,7 @@ if (!PROXIED) notice("Not served by terminumd", "Open Files from terminum's page
 (async () => {
   if (VIEW) return startViewer(VIEW);
   initSplitter($("splitter"), () => ({ top: $("tree").getBoundingClientRect().top, bottom: $("app").getBoundingClientRect().bottom }),
-    setSplit, savePrefs);
+    setSplit, () => prefsSaver.save());
   renderHeader(term);
   // this panel starts from the latest layout; changing it later updates the default only
   let denied = "";
