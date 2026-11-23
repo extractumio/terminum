@@ -66,9 +66,13 @@ pub fn unread(tx: &Transaction) -> Result<Value, String> {
 }
 
 /// What every page hears with the tasks' marks: the unread counts, and the revision every write of a report moves
-/// (record.rs `bump`), so an open Inbox reads its list again.
+/// (record.rs `bump`), so an open Inbox reads its list again; nothing while no report was ever written.
 pub fn marks(tx: &Transaction) -> Result<Value, String> {
-    Ok(json!({"rev": super::record::revision(tx)?, "unread": unread(tx)?}))
+    let rev = super::record::revision(tx)?;
+    if rev.is_empty() {
+        return Ok(Value::Null);
+    }
+    Ok(json!({"rev": rev, "unread": unread(tx)?}))
 }
 
 /// One report whole (AC-268): its row, its body, comments oldest first, files and links.

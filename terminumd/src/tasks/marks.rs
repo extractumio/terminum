@@ -185,7 +185,11 @@ impl Marks {
         let held = self.held.lock();
         let lines: Vec<_> = held.attention.iter().filter(|a| a.due).map(|a| json!({"id": a.id, "project": a.project, "failed": a.failed, "words": a.words, "key": a.key, "report": a.report})).collect();
         let (waiting, failed) = held.cards;
-        json!({"t": "taskmarks", "marks": held.sessions, "counts": held.counts, "waiting": waiting, "failed": failed, "lines": lines, "reports": held.reports}).to_string()
+        let mut told = json!({"t": "taskmarks", "marks": held.sessions, "counts": held.counts, "waiting": waiting, "failed": failed, "lines": lines});
+        if !held.reports.is_null() {
+            told["reports"] = held.reports.clone();      // the Inbox's, once a report was written (terminum-reports.md AC-267)
+        }
+        told.to_string()
     }
 }
 

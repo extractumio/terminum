@@ -48,8 +48,8 @@ let box = null;
 
 /** terminumd's `taskmarks`: the Inbox's revision and unread counts; a moved revision reads the list again. */
 export function inboxMarks(m) {
-  const r = m.reports;
-  if (!r || !box) return;
+  const r = m.reports ?? { rev: "", unread: {} };   // none while no report was ever written
+  if (!box) return;
   st.unread = r.unread ?? {};
   if (r.rev === st.rev) { drawHead(); return; }
   if (st.rev !== null) dispatchEvent(new CustomEvent(CHANGED_EVENT));
