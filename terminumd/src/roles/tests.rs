@@ -301,7 +301,8 @@ fn session_tools() -> impl Iterator<Item = &'static str> {
 #[test]
 fn ac231_ac232_each_level_allows_exactly_its_list_of_the_catalog() {
     use crate::supervisor::Level::{Advisor, Observer, Operator};
-    let observer = ["list_tasks", "get_task"].into_iter()
+    // every level reports to the owner (terminum-reports.md AC-266)
+    let observer = ["list_tasks", "get_task"].into_iter().chain(crate::reports::tools::NAMES)
         .chain(crate::supervisor::round_tools::NAMES.iter().copied()).collect::<Vec<_>>();
     let advisor = ["add_comment", "ask_human"].into_iter()
         .chain(crate::supervisor::round_tools::ADVISOR.iter().copied()).collect::<Vec<_>>();
@@ -320,7 +321,8 @@ fn ac231_ac232_each_level_allows_exactly_its_list_of_the_catalog() {
         assert!(!Role::Supervisor(Some(Operator)).allows(never), "{never} at Operator");
     }
     assert!(session_tools().chain(MANAGER_TOOLS).all(|t| !Role::Supervisor(None).allows(t)), "an inactive mark allows nothing");
-    assert!(session_tools().all(|t| Role::Worker.allows(t)) && MANAGER_TOOLS.iter().all(|t| !Role::Worker.allows(t)), "a worker's reach");
+    let managers = crate::reports::tools::MANAGERS;
+    assert!(session_tools().all(|t| Role::Worker.allows(t) != managers.contains(&t)) && MANAGER_TOOLS.iter().all(|t| !Role::Worker.allows(t)), "a worker's reach: no report's change or delete");
     assert!(session_tools().chain(MANAGER_TOOLS).all(|t| Role::Manager.allows(t)), "a manager's reach");
     assert!(crate::supervisor::round_tools::NAMES.iter().chain(crate::supervisor::round_tools::ADVISOR).all(|t| !Role::Worker.allows(t) && !Role::Manager.allows(t)));
 }

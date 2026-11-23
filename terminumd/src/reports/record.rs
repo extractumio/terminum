@@ -153,6 +153,16 @@ pub fn line_closed(tx: &Transaction, key: &str, at: i64) -> Result<bool, String>
     tx.execute("UPDATE reports SET line_seen = ?1 WHERE id = ?2 AND line = 1 AND line_seen IS NULL", (at, key)).map(|n| n > 0).map_err(sql)
 }
 
+/// The critical reports whose line stands (AC-271): unread, not closed, not deleted, newest first; ID, project, words.
+pub fn lines(tx: &Transaction) -> Result<Vec<(String, String, String)>, String> {
+    rows(tx, "SELECT slug, project, title FROM reports WHERE line = 1 AND read_at IS NULL AND line_seen IS NULL AND deleted_at IS NULL
+        ORDER BY created_at DESC, rowid DESC", [], |r| {
+        let id: String = r.get(0)?;
+        let words = format!("{id} critical: {}", r.get::<_, String>(2)?);
+        Ok((id, r.get(1)?, words))
+    })
+}
+
 /// Deleted reports kept this long, then purged with their notes and files (AC-269).
 pub const KEPT_DELETED: i64 = 30 * 24 * 3600;
 

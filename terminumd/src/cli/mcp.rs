@@ -25,8 +25,7 @@ const DEFAULT_VERSION: &str = "2025-06-18";
 pub const INSTRUCTIONS: &str = "terminum shows the user your plan and task board. Keep a plan with your \
 own plan tool, else update_session_plan; send doing and eta_minutes each step and every 10 \
 minutes. Only the main agent calls update_session_plan; subagents report to it. Other tools: execute_tool(name, \
-arguments), found by search_tools. Your task: execute_tool(\"finish_task\", {id, result}) before stopping; a report \
-for the human to read goes first by execute_tool(\"create_report\", {task, title, summary, body}). Left to \
+arguments), found by search_tools. Your task: execute_tool(\"finish_task\", {id, result}) before stopping. Left to \
 do: execute_tool(\"create_task\", {title, severity, text}), a Bug: never below P2. A tool says not in terminum: stop calling.";
 
 /// What a manager's session is told besides (AC-174): its tools are the way it acts on its project.

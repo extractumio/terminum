@@ -75,10 +75,8 @@ fn asks(tx: &Transaction, one: Option<&str>) -> Result<Vec<Asks>, String> {
 
 /// Critical reports' lines, in FAILED's red until read or closed (terminum-reports.md AC-271).
 fn critical_reports(tx: &Transaction) -> Result<Vec<Asks>, String> {
-    rows(tx, "SELECT slug, project, title FROM reports WHERE line = 1 AND read_at IS NULL AND line_seen IS NULL AND deleted_at IS NULL ORDER BY created_at DESC", [], |r| {
-        let id: String = r.get(0)?;
-        Ok(Asks { words: format!("{id} critical: {}", r.get::<_, String>(2)?), key: format!("report|{id}"), id, project: r.get(1)?, failed: true, due: true, report: true })
-    })
+    Ok(crate::reports::record::lines(tx)?.into_iter().map(|(id, project, words)|
+        Asks { key: format!("report|{id}"), id, project, words, failed: true, due: true, report: true }).collect())
 }
 
 /// A reason's first line that says something: blank and invisible characters round it dropped, a blank line

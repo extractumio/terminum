@@ -178,11 +178,11 @@ fn ac162_once_pauses_itself_after_it_fires() {
 
 /// terminum-dispatcher.md AC-264: a schedule's task is always a report; a newer one supersedes an older one unread.
 #[test]
-fn ac264_a_schedule_s_task_is_a_report_and_a_newer_one_supersedes_one_unread() {
+fn ac272_a_schedule_s_task_s_result_is_a_report_and_none_supersedes_another() {
     let dir = crate::testutil::fresh_dir("fire-report");
     let store = Store::open(dir.join("kanban.sqlite"));
     let s = store.with(|tx| Ok(schedule(tx, 2, every_15()))).unwrap();
-    // each firing's task made, linked to its pane and finished with no report argument
+    // each firing's task made, linked to its pane and finished: DONE, its result a report in the Inbox (terminum-reports.md AC-272)
     let fire = |due: i64, pane: &str| {
         let key = format!("tmux:local:t:{pane}");
         let id = store.with(|tx| {
@@ -192,16 +192,15 @@ fn ac264_a_schedule_s_task_is_a_report_and_a_newer_one_supersedes_one_unread() {
         }).unwrap();
         let who = crate::tasks::tools::Who { key, agent: "claude".into(), title: "t".into(), project: None, dir: None, supervisor: false };
         let result = json!({"id": id, "result": "Outcome: ok\nSummary: s\nDetails: d\nFor the human: nothing"});
-        assert_eq!(crate::tasks::tools::run(&store, &dir, &who, "finish_task", &result).unwrap().0, format!("{id} waits for the human to read your report."));
+        let said = crate::tasks::tools::run(&store, &dir, &who, "finish_task", &result).unwrap().0;
+        assert!(said.starts_with(&format!("{id} is DONE; its result went to the human's Inbox as R_")), "{said}");
         id
     };
     let older = fire(NOW + 10 * 60 + 14, "%7");
     let newer = fire(NOW + 25 * 60 + 14, "%8");
     store.with(|tx| {
-        assert_eq!(ops::get(tx, &newer)?.status, "WAIT FOR HUMAN", "an unread report held back no firing");
-        assert_eq!(ops::get(tx, &older)?.status, "DONE", "one report of a schedule waits at a time");
-        let history = ops::history(tx, &older)?;
-        assert!(history.as_array().unwrap().iter().any(|e| e["text"] == format!("Superseded by {newer}'s report.") && e["author_name"] == "Dispatcher"), "{history:?}");
+        assert_eq!((ops::get(tx, &older)?.status, ops::get(tx, &newer)?.status), ("DONE".to_string(), "DONE".to_string()));
+        assert_eq!(crate::reports::inbox::unread(tx)?["schedules"], json!({"SCH-1": 2}), "every report stays, none superseded");
         Ok(())
     }).unwrap();
 }
