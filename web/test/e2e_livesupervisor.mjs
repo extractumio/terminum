@@ -34,12 +34,14 @@ export async function liveSupervisor(page, opts) {
   const goal = panel.getByLabel("Release cadence target", { exact: true });
   await goal.fill("Publish a safe update each week.");
   await panel.getByLabel("Never list, one rule per line").fill("Never ship without review");
+  await panel.getByLabel("An existing migration file is edited").selectOption("Never ship without review");
   check("AC-263 filling the real settings form leaves the saved pack and switch alone",
     (await j(`${api.path}/settings`)).revision === 0 && !(await j(api.path)).enabled);
   await page.click("#supervisorok");
-  check("AC-222 the live tab keeps settings in the correct project", await until(async () => {
+  check("AC-222, AC-213 the live tab keeps settings, and the never rule tied to a checked fact, in the correct project", await until(async () => {
     const a = await j(`${api.path}/settings`), b = await j(`${web.path}/settings`);
     return a.settings.level === "observer" && a.settings.charter.never[0] === "Never ship without review"
+      && a.settings.charter.never_checks?.["arch.migration_edited"] === "Never ship without review"
       && a.settings.charter.indicator_targets.releases === "Publish a safe update each week."
       && a.settings.charter.surfaces.t3.includes("billing/**") && !a.confirmed_probes.length
       && b.settings.level === "operator" && !b.settings.charter.never.length;

@@ -42,6 +42,7 @@ pub(crate) struct Signal {
     pub scores: Scores,
     pub(super) impact_basis: Assessment,
     pub(super) charter_breach: bool,
+    pub(super) charter_never: Option<String>,
     pub level: u8,
     pub response: &'static str,
     pub first_seen: i64,
@@ -67,6 +68,9 @@ pub(super) struct RecordedScores {
     pub impact_basis: Assessment,
     #[serde(default)]
     pub charter_breach: bool,
+    /// The owner's never line whose checked fact set `charter_breach` (AC-213).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub charter_never: Option<String>,
 }
 
 struct PreparedFinding<'a> {
@@ -132,7 +136,8 @@ pub(super) fn prepare(evaluation: &Evaluation) -> Result<Prepared<'_>, String> {
             Ok::<_, String>(PreparedFinding {
                 key: fingerprint(&evaluation.project, rule, found.key()), found,
                 evidence: encode(&found.evidence)?, measure: encode(&found.measure)?,
-                scores: encode(&RecordedScores { scores: found.scores, impact_basis: found.assessment.clone(), charter_breach: found.charter_breach })?,
+                scores: encode(&RecordedScores { scores: found.scores, impact_basis: found.assessment.clone(),
+                    charter_breach: found.charter_breach, charter_never: found.charter_never.clone() })?,
             })
         }).collect::<Result<_, _>>()?;
         let keys = encode(&findings.iter().map(|f| &f.key).collect::<Vec<_>>())?;
@@ -254,13 +259,13 @@ const COLUMNS: &str = "fingerprint, detector, subject_kind, subject_id, metric, 
     first_seen, last_seen, count, json_quote(state)";
 
 fn read(project: &str, r: &rusqlite::Row<'_>) -> rusqlite::Result<Signal> {
-    let RecordedScores { scores, impact_basis, charter_breach } = decode(r, 7)?;
+    let RecordedScores { scores, impact_basis, charter_breach, charter_never } = decode(r, 7)?;
     let level = scores.level();
     let count = r.get(10)?;
     Ok(Signal {
         fingerprint: r.get(0)?, project: project.into(), detector: r.get(1)?, subject_kind: r.get(2)?,
         subject_id: r.get(3)?, metric: r.get(4)?, evidence: decode(r, 5)?, measure: decode(r, 6)?,
-        scores, impact_basis, charter_breach, level, response: scores.response(count > 1),
+        scores, impact_basis, charter_breach, charter_never, level, response: scores.response(count > 1),
         first_seen: r.get(8)?, last_seen: r.get(9)?, count, state: decode(r, 11)?,
     })
 }
@@ -302,7 +307,7 @@ pub(super) fn diagnostic(tx: &Transaction, project: &str, detector: &str, subjec
     let evidence = encode(&rows)?;
     let fresh = detector == "self.round_failed" || fresh_rows(tx, &key, &evidence, rows)?;
     let measure = encode(&Measure { value, baseline: 0., threshold, window_start: at, window_end: at })?;
-    let scores = encode(&RecordedScores { scores: Scores { impact: 1, ..Scores::default() }, impact_basis: Default::default(), charter_breach: false })?;
+    let scores = encode(&RecordedScores { scores: Scores { impact: 1, ..Scores::default() }, impact_basis: Default::default(), charter_breach: false, charter_never: None })?;
     tx.execute(&format!("INSERT INTO supervisor_signals (fingerprint, project, detector, subject_kind, subject_id,
         metric, evidence, measure, scores, first_seen, last_seen, count, state)
         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?10, 1, 'raised')

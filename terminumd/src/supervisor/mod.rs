@@ -16,6 +16,7 @@ mod reflection_timeline;
 mod reflection_tests;
 mod outcome_evidence;
 mod attribution;
+mod breach;
 mod catalog;
 mod decisions;
 pub(crate) mod config_changes;
@@ -161,6 +162,8 @@ pub(crate) struct Detector {
     pub threshold: Threshold,
     pub allocation: BTreeMap<String, f64>,
     pub scores: Scores,
+    /// The charter's never line the owner tied to this detector (AC-213); only a checkable one has it.
+    pub never: Option<String>,
 }
 
 impl Detector {
@@ -171,7 +174,7 @@ impl Detector {
     fn for_rule(rule: Rule) -> Self {
         let threshold = rule.defaults();
         let window_days = if rule == Rule::FailedWithoutReason { 7 } else { 28 };
-        Self { rule, mode: Mode::Off, window_days, threshold, allocation: BTreeMap::new(), scores: Scores::default() }
+        Self { rule, mode: Mode::Off, window_days, threshold, allocation: BTreeMap::new(), scores: Scores::default(), never: None }
     }
 
     /// Initial attachment can set its mode in the pack. Enabling an additional rule always starts here.
@@ -256,6 +259,8 @@ pub(crate) struct Finding {
     attributed_runs: BTreeSet<String>,
     source: impact::Source,
     charter_breach: bool,
+    /// The owner's never line this finding's checked fact breaks.
+    charter_never: Option<String>,
     assessment: impact::Assessment,
     scores: Scores,
 }
@@ -379,7 +384,7 @@ impl Reading {
         self.evidence.dedup();
         Some(Finding {
             subject_kind: self.subject_kind, subject_id: self.subject_id, metric: self.metric,
-            evidence: self.evidence, attributed_runs: self.attributed_runs, source: self.source, charter_breach: false,
+            evidence: self.evidence, attributed_runs: self.attributed_runs, source: self.source, charter_breach: false, charter_never: None,
             assessment: Default::default(), scores: Scores::default(), measure: Measure {
                 value: self.value, baseline, threshold: limit,
                 window_start: window.start, window_end: window.end,

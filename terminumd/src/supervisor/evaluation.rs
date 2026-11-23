@@ -106,6 +106,11 @@ pub(super) fn measure_detector(
 pub(super) fn collect_findings(data: &mut Measurements, detector: &Detector, window: Window, current_state: bool) -> Vec<Finding> {
     std::mem::take(&mut data.readings).into_iter()
         .filter(|reading| current_state || !matches!(reading.source, impact::Source::Present))
-        .filter_map(|reading| reading.finding(detector.threshold, window)).collect()
+        .filter_map(|reading| reading.finding(detector.threshold, window))
+        .map(|mut found| {
+            found.charter_never = super::breach::line(detector, &found);
+            found.charter_breach = found.charter_never.is_some();
+            found
+        }).collect()
 }
 

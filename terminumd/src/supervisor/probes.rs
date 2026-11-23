@@ -371,6 +371,13 @@ pub(super) fn statuses(tx: &Transaction, project: &str, at: i64) -> Result<Vec<S
     }).collect()
 }
 
+/// A test publishes one retained observation of a standard source, as a collected sample would.
+#[cfg(test)]
+pub(super) fn publish_sample(tx: &Transaction, source: &str, at: i64, data: String) -> Result<(), String> {
+    let job = due(tx, at)?.into_iter().find(|j| j.source.name() == source).ok_or("No due probe job.")?;
+    publish(tx, &job, at, Ok(Observation { data, reports: Vec::new() })).map(drop)
+}
+
 #[cfg(test)]
 #[path = "probes_tests.rs"]
 mod tests;

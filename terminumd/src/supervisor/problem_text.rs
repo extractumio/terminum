@@ -102,9 +102,12 @@ fn row(tx: &Transaction, project: &str, e: &Evidence) -> Result<String, String> 
 }
 
 /// The measure against its baseline, the weeks it covers, and a link to every evidence row.
+fn signal_link(project: &str, fp: &str) -> String {
+    format!("/supervisor/?project={}&signal={fp}#signal-{fp}", utf8_percent_encode(project, ENCODED))
+}
+
 fn measured(tx: &Transaction, project: &str, s: &Signal) -> Result<String, String> {
-    let link = format!("/supervisor/?project={}&signal={fp}#signal-{fp}",
-        utf8_percent_encode(project, ENCODED), fp = s.fingerprint);
+    let link = signal_link(project, &s.fingerprint);
     let m = &s.measure;
     let against = if m.baseline == m.threshold { format!("its limit of {}", number(m.threshold)) }
         else { format!("a baseline of {} and a threshold of {}", number(m.baseline), number(m.threshold)) };
@@ -134,11 +137,17 @@ pub(super) fn task(tx: &Transaction, project: &str, p: &Problem) -> Result<Strin
         let unit = serde_json::to_value(unit).ok().and_then(|v| v.as_str().map(words)).unwrap_or_default();
         format!("At its peak it was {:.0}% of the project's {unit} in a week.", p.share * 100.0)
     });
+    let exception = if !p.exception { String::new() } else if p.breaches.is_empty() {
+        "A verified charter rule was breached. This fix is exempt from the spend limit.\n\n".into()
+    } else {
+        let broken = p.breaches.iter().map(|b| format!("- \"{}\": detector `{}`, [signal]({})",
+            b.never, b.detector, signal_link(project, &b.fingerprint))).collect::<Vec<_>>().join("\n");
+        format!("A verified charter rule was breached. This fix is exempt from the spend limit. The charter's never rule and the checked fact that broke it:\n{broken}\n\n")
+    };
     let options = p.fix_options.iter().map(|f| format!("- {}: {}", f.layer, f.action)).collect::<Vec<_>>().join("\n");
-    Ok(format!("{}Supervisor register problem {} (impact {}).\n\n## Problem or goal\n{}. {share}\n\n{}\n\n\
+    Ok(format!("{exception}Supervisor register problem {} (impact {}).\n\n## Problem or goal\n{}. {share}\n\n{}\n\n\
         ## Context\nHypothesis, to test rather than trust:\n{}\n\nWhat would disprove it:\n{}\n\nFix options:\n{options}\n\n\
         ## Expected result\nThe cause is named with the evidence rows and fixed, and the Supervisor's yardstick holds:\n{}\n\n\
         ## Prerequisites\nNone recorded.",
-        if p.exception { "A verified charter rule was breached. This fix is exempt from the spend limit.\n\n" } else { "" },
         p.id, p.impact, p.title, measures.join("\n\n"), quote(&p.hypothesis), quote(&p.disproof), watch.join("\n")))
 }

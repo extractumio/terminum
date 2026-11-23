@@ -11,7 +11,8 @@ use crate::tasks::ops::{rows, sql};
 use super::{Mode, Rule, WEEK, settings::Settings};
 
 pub(super) fn protected(tx: &Transaction, project: &str, rule: Rule, settings: &Settings) -> Result<bool, String> {
-    if !rule.configurable() { return Ok(true); }
+    // A detector the owner tied to a never line keeps the owner's coverage: only the owner turns it down (AC-213).
+    if !rule.configurable() || settings.detector(rule).never.is_some() { return Ok(true); }
     let protected: bool = tx.query_row("SELECT EXISTS (SELECT 1 FROM supervisor_signals s
         WHERE s.project = ?1 AND s.detector = ?2 AND (
             max(json_extract(s.scores, '$.impact'), json_extract(s.scores, '$.blast'),

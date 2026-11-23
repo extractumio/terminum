@@ -2,7 +2,7 @@
 // AC-222 project preferences. The unchanged parts of the server pack travel with a revisioned save.
 import { el } from "./listparts.js";
 import { TYPES } from "./taskattrs.js";
-import { button } from "./kanbanutil.js";
+import { button, fillSelect } from "./kanbanutil.js";
 import { detectors } from "./supervisordetectors.js";
 import { actions, check, editor, feedback, fieldError, grid, hint, literal, dateValue, number, part, row, section, select, stack, text, tick, timeOf } from "./supervisorfields.js";
 
@@ -109,7 +109,30 @@ function feedbackProbes(edit, existing) {
   return stack(entries, actions(addKey));
 }
 
-function charter(edit, saved, inputs) {
+// AC-213: a never line breaks only when a checked fact the owner tied to it fires.
+function neverChecks(edit, saved, checks, never) {
+  const tied = saved.charter.never_checks ?? {};
+  const choices = checks.map(({ detector, fact }) => {
+    const node = el("select", "field");
+    const fill = (value) => {
+      const options = [["", "Not tied to a never rule"], ...lines(never.value).map((line) => [line, line])];
+      if (value && !options.some(([line]) => line === value)) options.push([value, `${value} (not in the never list)`]);
+      fillSelect(node, options, value);
+    };
+    fill(tied[detector] ?? "");
+    never.addEventListener("input", () => fill(node.value));
+    return { detector, node, field: row(fact, node) };
+  });
+  edit.raw((out) => {
+    const next = Object.fromEntries(choices.filter(({ node }) => node.value).map(({ detector, node }) => [detector, node.value]));
+    if (JSON.stringify(next) !== JSON.stringify(tied)) out.charter.never_checks = next;
+  });
+  return choices.length ? [el("h3", null, "Checked never rules"),
+    hint("A fact tied to a never rule makes its signal a charter breach: impact 3, and its fix is exempt from the spending limit."),
+    ...choices.map(({ field }) => field)] : [];
+}
+
+function charter(edit, saved, inputs, checks) {
   const fields = [
     ["mission", "Mission"], ["users", "Users, one per line", lines], ["risk_appetite", "Risk appetite"],
     ["priorities", "Priorities, highest first, one per line", lines], ["never", "Never list, one rule per line", lines],
@@ -121,7 +144,8 @@ function charter(edit, saved, inputs) {
   });
   const date = (label, key) => edit.field(label, text(dateValue(saved.charter[key], "date"), "date"),
     (v, out) => { out.charter[key] = v; }, timeOf);
-  return section("Charter and allocation", ...fields, date("Review priorities on", "priority_review_at"),
+  return section("Charter and allocation", ...fields, ...neverChecks(edit, saved, checks, inputs.get("never")),
+    date("Review priorities on", "priority_review_at"),
     el("h3", null, "Allocation target"),
     hint("Set the intended share of work by task type. Leave all shares empty to measure allocation without a target."),
     allocation(edit, saved), date("Review allocation on", "allocation_review_at"));
@@ -211,7 +235,7 @@ export function preferences(view, agents, { request, run }) {
     return preview;
   }));
   const charterInputs = new Map();
-  const charterSection = charter(edit, saved, charterInputs);
+  const charterSection = charter(edit, saved, charterInputs, view.never_checks ?? []);
   const indicatorSection = section("Indicators", part("div", "sv-checks", ...indicators),
     el("h3", null, "Targets"), hint("Targets appear on the scoreboard alongside its measured verdicts."), grid(...targets),
     hint("An approved custom probe supplies the metric and its guard."), outsideIndicators(edit, saved.charter.outside_indicators));

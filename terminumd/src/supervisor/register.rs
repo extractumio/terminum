@@ -77,6 +77,8 @@ pub(crate) struct Problem {
     pub state: String,
     pub impact: u8,
     pub exception: bool,
+    /// The checked facts that made it a charter breach (AC-213, AC-238).
+    pub breaches: Vec<Breach>,
     pub action_ready: bool,
     pub(super) share: f64,
     pub(super) indicator: Option<super::impact::Unit>,
@@ -87,6 +89,14 @@ pub(crate) struct Problem {
     ruling: Option<String>,
     new_evidence: Option<String>,
     history: Vec<Event>,
+}
+
+/// A never line of the owner's charter, the detector whose fact broke it, and the signal with its evidence rows.
+#[derive(Serialize)]
+pub(crate) struct Breach {
+    pub never: String,
+    pub detector: String,
+    pub fingerprint: String,
 }
 
 impl Problem {
@@ -206,7 +216,7 @@ pub(crate) fn get(tx: &Transaction, project: &str, id: i64, at: i64) -> Result<P
         .map(|(title, lens, hypothesis, disproof, options, confidence, effort, state, opened_at, ruling, new_evidence, action_ready)| {
             Ok::<_, String>(Problem { id, title, lens, hypothesis, disproof,
                 fix_options: serde_json::from_str(&options).map_err(|e| e.to_string())?,
-                confidence, effort, state, impact: 0, exception: false, action_ready, share: 0., indicator: None, rank: 0., yardstick: vec![],
+                confidence, effort, state, impact: 0, exception: false, breaches: vec![], action_ready, share: 0., indicator: None, rank: 0., yardstick: vec![],
                 tasks: vec![], opened_at, ruling, new_evidence, history: vec![] })
         }).transpose()?.ok_or("No such problem in this project.")?;
     let signals: Vec<(_, _, signals::RecordedScores)> = rows(tx, "SELECT y.fingerprint, s.detector, y.threshold, y.weeks,
@@ -216,9 +226,12 @@ pub(crate) fn get(tx: &Transaction, project: &str, id: i64, at: i64) -> Result<P
             r.get::<_, i64>(5)?, signals::decode(r, 6)?)))?;
     let mut first = p.opened_at;
     for (yardstick, first_seen, recorded) in signals {
-        p.yardstick.push(yardstick);
         p.impact = p.impact.max(recorded.scores.impact);
         p.exception |= recorded.charter_breach;
+        if let Some(never) = recorded.charter_never {
+            p.breaches.push(Breach { never, detector: yardstick.detector.clone(), fingerprint: yardstick.fingerprint.clone() });
+        }
+        p.yardstick.push(yardstick);
         first = first.min(first_seen);
         // Signal evidence can overlap. Take the strongest measured indicator share without adding it twice.
         for share in recorded.impact_basis.shares {

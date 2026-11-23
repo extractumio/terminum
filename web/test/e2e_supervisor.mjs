@@ -5,39 +5,7 @@ import { surfacePreview } from "./e2e_surface_preview.mjs";
 import { scorecardFixture, checkScorecard, outsideSettings, checkOutsideSave, SMALL_RATE, MISSING_RATE } from "./e2e_supervisor_scorecard.mjs";
 import { configFixture, checkConfiguration } from "./e2e_supervisor_config.mjs";
 import { SCORE, TEMPLATES, templateDraft } from "./e2e_supervisor_templates.mjs";
-const ROOT = "/api/task-projects/api/supervisor";
-const RULE = "flow.failed_no_reason";
-const DATE = 1_790_000_000;
-const COMMAND = "printf '%s\\n' 'test fixture only'\ntrue";
-const LITERAL = "<img src=x onerror='window.fixtureRan=1'>" + "long-".repeat(25);
-const SETTINGS = {
-  level: "operator", tiers: { small: null, medium: null, strong: null, independent: null },
-  budgets: { judgment_percent: 3, fixes_percent: 10, judgment_floor_tokens: 1_000_000, investigation_reserve_percent: 30 },
-  charter: { mission: "", users: [], risk_appetite: "", never: [], priorities: [], allocation: {}, surfaces: { t2: [], t3: [] },
-    indicators: { involvement: true, stability: true, lead_time: true, releases: true, backlog: true, cognitive_load: true, operations: true },
-    outside_indicators: {} },
-  detectors: { [RULE]: { mute: null } }, probes: { git: true, gate_record: true, code_host: true },
-  guardrails: { threshold_percent: 54 }, language: "English",
-};
-const DEFAULTS = { [RULE]: { mode: "live", window_days: 7, threshold: { baseline: { percentile: 90, floor: 1 } } } };
-const SIGNAL = { fingerprint: "one", project: "api", detector: RULE, subject_id: LITERAL, subject_kind: "project",
-  metric: "Unexplained failures", level: 1, state: "raised", count: 2, response: "digest", last_seen: DATE,
-  measure: { value: 12, baseline: 4, threshold: 8, window_start: DATE - 1000, window_end: DATE },
-  evidence: [{ table: "tasks", id: "API-2" }, { table: "events", id: LITERAL }, { table: "supervisor_line", id: { channel: 2, failure: "Exit status 17." } }] };
-const INCIDENT = { id: 42, task: "API-40", project: "api", project_name: "API service", level: 3, revision: 1,
-  happened: "The collector missed successive heartbeats.", held: "No hold in effect.",
-  needed: "Acknowledge when seen.", no_answer: "No automatic action without an answer." };
-const HOLD = { id: 5, kind: "pause_integration", label: "Integration queue paused", undo: "Resume integration",
-  signal: "0", detector: RULE, reason: LITERAL };
-const PROBLEM = { id: 42, title: "Repeated failures", state: "confirmed", lens: "flow", impact: 2, share: 0.2,
-  indicator: "failure_events", rank: 0.32, hypothesis: LITERAL, disproof: "Failures stop without a change.",
-  yardstick: [{ detector: RULE, fingerprint: "fixture-1", threshold: 8, weeks: 4 }],
-  fix_options: [{ layer: "test", action: "Exercise retries." }], tasks: ["API-2"], action_ready: true };
-const SPENDING = {
-  judgment: { tokens: 16000, held_tokens: 0, limit_tokens: 100000, day_tokens: 6000,
-    day_limit_tokens: 20000, round_limit_tokens: 4000, investigation_left: 14000, routine_left: 0 },
-  fixes: { dollars: 10.25, held_dollars: 8, limit_dollars: 20, estimated_dollars_per_run: 8, unpriced_runs: 1 },
-};
+import { ROOT, RULE, DATE, COMMAND, LITERAL, SETTINGS, DEFAULTS, SIGNAL, INCIDENT, HOLD, PROBLEM, SPENDING } from "./e2e_supervisor_fixtures.mjs";
 const json = (route, obj, status = 200) => route.fulfill({ status, json: obj });
 async function fixture(page, theme) {
   const configuration = configFixture(RULE, DATE);
@@ -449,8 +417,10 @@ async function screen(page, suffix, phone) {
   await panel.getByText("Failures stop without a change.").waitFor();
   await page.getByText("16,000 of 100,000 tokens used", { exact: false }).waitFor();
   await page.getByText("$10.25 of $20.00 used", { exact: false }).waitFor();
-  check("AC-236 AC-237 AC-238 the screen shows the problem, protected yardstick and both spends",
+  check("AC-213 AC-236 AC-237 AC-238 the screen shows the problem, its checked never rule, protected yardstick and both spends",
     await panel.getByText("Failures stop without a change.").isVisible()
+    && await panel.getByText("Never: Lose user data.", { exact: false }).isVisible()
+    && await panel.getByRole("link", { name: "Signal · arch.migration_edited" }).isVisible()
     && await panel.getByText("fixture-1", { exact: false }).isVisible()
     && await panel.getByRole("link", { name: "API-2" }).isVisible()
     && await panel.locator("img").count() === 0
