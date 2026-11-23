@@ -21,7 +21,7 @@ const SIGNAL = { fingerprint: "one", project: "api", detector: RULE, subject_id:
   metric: "Unexplained failures", level: 1, state: "raised", count: 2, response: "digest", last_seen: DATE,
   measure: { value: 12, baseline: 4, threshold: 8, window_start: DATE - 1000, window_end: DATE },
   evidence: [{ table: "tasks", id: "API-2" }, { table: "events", id: LITERAL }, { table: "supervisor_line", id: { channel: 2, failure: "Exit status 17." } }] };
-const INCIDENT = { id: 42, project: "api", project_name: "API service", level: 3, revision: 1,
+const INCIDENT = { id: 42, task: "API-40", project: "api", project_name: "API service", level: 3, revision: 1,
   happened: "The collector missed successive heartbeats.", held: "No hold in effect.",
   needed: "Acknowledge when seen.", no_answer: "No automatic action without an answer." };
 const SCORE = { name: "Release cadence", verdict: "not measured yet", guard: "Stability", metrics: [
@@ -46,6 +46,8 @@ async function fixture(page, theme) {
   await page.route("**/api/messages/meta", (route) => json(route, { projects, theme }));
   await page.route("**/api/supervisor/incidents", (route) => json(route, []));
   await page.route("**/api/supervisor/incidents/42/investigate", (route) => json(route, { message: "Incident investigation requested." }));
+  await page.route("**/api/supervisor/incidents/42/talk", (route) => json(route, { error: "The marked pane changed." }, 400));
+  await page.route("**/api/supervisor/incidents/42/ruling", (route) => json(route, { task: INCIDENT.task }));
   let ruling = null;
   let enabled = false, refusal = true, saved = structuredClone(SETTINGS), revision = 0, candidate = false, approved = false, commandViewed = false;
   const calls = [];
@@ -66,8 +68,13 @@ async function fixture(page, theme) {
       ruling = body.reason;
       return json(route, { ok: true });
     }
+    if (suffix === "/verdicts" && method === "POST") return json(route, { verdict: body.verdict });
     if (suffix === "/screen") return json(route, { project_name: "API service", indicators: [SCORE],
       investigations_enabled: true, spending: SPENDING, marked_tasks_eligible: false,
+      decisions: [{ id: 1, task: "API-41", problem: 42, question: "Choose a fix based on the recorded evidence." }],
+      review: { task: "API-42", at: DATE, result: "## Decisions waiting for you\n\nRead the pending card.",
+        items: [{ fingerprint: "0", detector: RULE, metric: SIGNAL.metric, verdict: null }] },
+      digest: { at: DATE, last_ok: DATE - 10, entries: [{ ...SIGNAL, fingerprint: "0", action: "Raised for review" }] },
       problems: [{ ...PROBLEM, ...(ruling ? { state: "accepted", ruling } : {}) }],
       signals: Array.from({ length: 50 }, (_, i) => ({ ...SIGNAL, fingerprint: String(i), metric: i ? `Signal ${i}` : SIGNAL.metric })), next: "49" });
     if (suffix === "/incidents") return json(route, { rows: [INCIDENT], next: null });
@@ -248,6 +255,21 @@ async function screen(page, suffix, phone) {
   await page.getByRole("link", { name: "Open Supervisor screen" }).click();
   await page.getByRole("heading", { name: "API service · Supervisor" }).waitFor();
   await shot(page, `supervisor-screen-${suffix}`);
+  const reports = page.locator("#sv-reports");
+  await reports.getByText("Decisions waiting (1)", { exact: true }).click();
+  await reports.getByText("Weekly review ·", { exact: false }).click();
+  await reports.getByText("Exception digest ·", { exact: false }).click();
+  const useful = reports.getByRole("button", { name: "Useful", exact: true });
+  await useful.click();
+  check("AC-240 AC-242 AC-243 the Supervisor screen links decisions and reports and records a verdict",
+    await until(async () => await useful.getAttribute("aria-pressed") === "true")
+    && await reports.getByRole("link", { name: "API-41" }).getAttribute("href") === "/kanban/API-41"
+    && await reports.getByRole("link", { name: "Open API-42 in Routines" }).isVisible()
+    && await reports.getByText("Collector last ran", { exact: false }).isVisible()
+    && await reports.getByRole("button", { name: "Not useful" }).isEnabled()
+    && await reports.getByRole("button", { name: "Wrong" }).isEnabled());
+  if (phone) check("AC-242 verdict keys fit a finger on a phone", await useful.evaluate((key) => key.getBoundingClientRect().height >= 40));
+  await shot(page, `supervisor-reports-${suffix}`);
   await page.locator("#sv-score summary").click();
   await page.locator("#sv-signals summary").first().click();
   const opened = page.locator("#sv-signals details[open]").first();
@@ -268,6 +290,11 @@ async function screen(page, suffix, phone) {
     await until(async () => await incident.getByRole("status").textContent() === "Incident investigation requested."));
   if (phone) check("AC-233 the incident investigation key fits a finger on a phone",
     await incidentInvestigate.evaluate((node) => node.getBoundingClientRect().height >= 44));
+  const talk = incident.getByRole("button", { name: "Talk", exact: true });
+  await talk.click();
+  check("AC-244 the incident task and the Talk refusal remain visible together",
+    await until(() => incident.getByText("The marked pane changed.").isVisible())
+    && await incident.getByRole("link", { name: "Thread" }).getAttribute("href") === "/kanban/API-40");
   await shot(page, `supervisor-investigation-${suffix}`);
   const investigate = opened.getByRole("button", { name: "Investigate now", exact: true });
   await investigate.click();

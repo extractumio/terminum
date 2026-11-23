@@ -118,7 +118,7 @@ pub fn warn_due(run: &Run) -> bool {
 
 /// The task fails first, so the end Dispatcher causes counts for nothing; then the agent ends. Ending until it is
 /// done: a restart does it again, new work or Give up calls it off (AC-126).
-fn end_failed(run: &mut Run, acts: &mut Vec<Act>, words: String) {
+pub(super) fn end_failed(run: &mut Run, acts: &mut Vec<Act>, words: String) {
     run.state = Phase::Ending;
     acts.push(Act::Move { to: "FAILED", words });
     acts.push(Act::End);

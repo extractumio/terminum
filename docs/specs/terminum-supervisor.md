@@ -1316,11 +1316,11 @@ The existing mechanisms in §3 provide inputs or precedents for these open gaps.
 | AC-237 | Weekly review admission and its decision card depend on AC-242. Token caps are enforced when a usage report reaches the daemon. |
 | AC-238 | Weekly reporting depends on AC-242. Verifying a charter breach depends on the inputs in AC-213. |
 | AC-239 | The outside-text eligibility gate also depends on AC-262. |
-| AC-240 | Immediate and deferred decision cards. |
-| AC-241 | Deduplicated nudge through the comment path. |
-| AC-242 | Scheduled review and optional verdicts. |
-| AC-243 | Bounded code-only digest. |
-| AC-244 | Incident thread and human Talk prompt. |
+| AC-240 | Decision proposals wait for a checked finding, then qualifying cards open and the remaining decisions go to the weekly list. |
+| AC-241 | The collector retains a single ordinary comment per signal and task and uses the existing hook notice. |
+| AC-242 | A strong-tier selection creates a Routines schedule. The review's stored batch supplies the verdict keys. |
+| AC-243 | The collector publishes up to five new findings in the Supervisor report destination. The watchdog can publish with the actual stale heartbeat. |
+| AC-244 | A retained task carries each incident's comments. The signed-in Talk press uses the first-prompt gate and a separate marked conversation. |
 | AC-245 | Reversible holds and switch-off behavior. |
 | AC-246 | Later decision judging and undecided signal. |
 | AC-247 | Per-rule breaker and owner-only reset. |
@@ -1597,11 +1597,11 @@ Enable none of the runtime cases by default. Land the specification after indepe
 - [ ] AC-237 — `ac237_judgment_reserve_and_caps` covers the investigation reserve, shared day and round caps, and overrun signals.
 - [ ] AC-238 — `ac238_fix_budget_and_critical_exception` covers admission order, the single decision card, charter exceptions and attribution by run. Weekly reporting depends on AC-242.
 - [x] AC-239 — `ac239_marked_task_policy_and_override` covers marked eligibility, advisory ranks and the timed override. The role end-to-end check exercises the Supervisor tools on a private board.
-- [ ] AC-240 — Planned test: `ac240_decision_card_routing` covers immediate and deferred decision cards.
-- [ ] AC-241 — Planned test: `ac241_nudge_updates_one_comment` covers deduplicated nudge through the comment path.
-- [ ] AC-242 — Planned test: `ac242_weekly_review_and_verdict_batch` covers scheduled review and optional verdicts.
-- [ ] AC-243 — Planned test: `ac243_digest_only_when_new` covers bounded code-only digest.
-- [ ] AC-244 — Planned test: `ac244_incident_thread_and_talk_in_private_tmux` covers incident thread and human Talk prompt.
+- [ ] AC-240 — `ac240_decision_card_routing` verifies the finding and impact gates, a deferred routine choice and deduplication. `ac242_review_schedule_and_charter_due_once` covers the charter review date.
+- [ ] AC-241 — `ac241_nudge_updates_one_comment` checks a level 0 refusal, a visible comment without a linked agent, and an in-place update. AC-209 covers the ordinary hook delivery.
+- [ ] AC-242 — `scripts/e2e_supervisor_comms.py` runs a Routines task on a fake agent and checks the nine sections, project scope, ten-item cap and three recorded verdicts.
+- [ ] AC-243 — `ac243_digest_only_when_new` checks the daily cap, quiet day, five-item bound and retained stale heartbeat. `scripts/e2e_supervisor_comms.py` checks the quiet and live APIs.
+- [ ] AC-244 — `scripts/e2e_supervisor_comms.py` checks the signed-in Talk press, the retained case prompt in private tmux, the hook notice and answer on the incident task.
 - [ ] AC-245 — Planned test: `ac245_hold_undo_and_switch_off` covers reversible holds and switch-off behavior.
 - [ ] AC-246 — Planned test: `ac246_later_outcome_and_immediate_override` covers later decision judging and undecided signal.
 - [ ] AC-247 — Planned test: `ac247_rule_breaker_and_reopen_key` covers per-rule breaker and owner-only reset.

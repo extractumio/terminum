@@ -86,7 +86,13 @@ fn token_count(n: f64) -> u64 {
 fn judgment_for(tx: &Transaction, project: &str, budgets: &settings::Budgets, uses: &HashMap<String, Usage>, at: i64) -> Result<Judgment, String> {
     let rounds = rows(tx, "SELECT run, reserved_class, coalesce(token_cap, 0), ended_at
         FROM supervisor_rounds WHERE project = ?1 AND (ended_at IS NULL OR ended_at > ?2 OR run IN
-          (SELECT u.run FROM usage u JOIN runs r ON r.id = u.run WHERE r.project = ?1 AND u.at > ?2))",
+          (SELECT u.run FROM usage u JOIN runs r ON r.id = u.run WHERE r.project = ?1 AND u.at > ?2))
+        UNION ALL
+        SELECT q.run, 0, q.cap, CASE WHEN r.state IN ('ending','gone','closed','left') OR NOT EXISTS (SELECT 1 FROM run_tasks m WHERE m.run = q.run AND m.result = 0)
+            THEN r.last_walk END
+        FROM supervisor_review_runs q JOIN runs r ON r.id = q.run WHERE q.project = ?1
+        AND (r.state NOT IN ('gone','closed','left') OR r.last_walk > ?2 OR EXISTS (
+            SELECT 1 FROM usage u WHERE u.run = q.run AND u.at > ?2))",
         (project, at - WEEK), |r| Ok((r.get::<_, String>(0)?, r.get::<_, bool>(1)?,
             r.get::<_, i64>(2)?, r.get::<_, Option<i64>>(3)?)))?;
     let floor = budgets.judgment_floor_tokens;
@@ -138,6 +144,15 @@ pub(crate) fn judge_usage(tx: &Transaction, run: &str, at: i64) -> Result<(), St
                 &[Evidence::SupervisorRounds(id.clone())], (tokens, cap as f64), at)?;
         }
     }
+    let changed = tx.execute("UPDATE supervisor_review_runs SET overrun = 1 WHERE run = ?1 AND NOT overrun
+        AND cap < (SELECT coalesce(sum(0.0 + input + output + cache_write + cache_read), 0) FROM usage WHERE run = ?1)",
+        [run]).map_err(sql)?;
+    if changed != 0 {
+        let (project, cap, used): (String, i64, f64) = tx.query_row("SELECT project, cap,
+            (SELECT sum(0.0 + input + output + cache_write + cache_read) FROM usage WHERE run = ?1)
+            FROM supervisor_review_runs WHERE run = ?1", [run], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).map_err(sql)?;
+        signals::diagnostic(tx, &project, "self.budget", ("run", run, "weekly_review_tokens"), &[], (used, cap as f64), at)?;
+    }
     Ok(())
 }
 
@@ -149,6 +164,7 @@ fn fixes_for(tx: &Transaction, project: &str, budgets: &settings::Budgets, uses:
             coalesce(r.started_by, '') = 'supervisor:' || ?1 OR f.run IS NOT NULL OR EXISTS (SELECT 1 FROM run_tasks t JOIN supervisor_task_marks m ON m.task = t.task
                 WHERE t.run = r.id AND m.project = ?1),
             EXISTS (SELECT 1 FROM supervisor_rounds q WHERE q.run = r.id)
+             OR EXISTS (SELECT 1 FROM supervisor_review_runs v WHERE v.run = r.id)
         FROM runs r LEFT JOIN supervisor_fix_runs f ON f.run = r.id WHERE r.project = ?1
           AND (r.state NOT IN ('closed', 'left', 'gone') OR (f.run IS NOT NULL AND r.last_walk >= ?2)
             OR EXISTS (SELECT 1 FROM usage u WHERE u.run = r.id AND u.at >= ?2))",

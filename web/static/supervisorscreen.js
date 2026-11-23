@@ -6,6 +6,7 @@ import { api, loadMeta } from "./msgpage.js";
 import { $, button, showError, stamp } from "./kanbanutil.js";
 import { el } from "./listparts.js";
 import { boardUrl, taskUrl } from "./tasklink.js";
+import { reportCards } from "./supervisorreports.js";
 import { incidentHistory } from "./supervisorincidents.js";
 import { actions, part, stack, text } from "./supervisorfields.js";
 
@@ -62,7 +63,7 @@ function evidence({ table, id }) {
 
 function signal(record, enabled) {
   const { detector, metric, subject_id, subject_kind, state, level, count, response, last_seen, measure } = record;
-  return folding(`Level ${level} · ${metric} · ${state}`, () => {
+  const panel = folding(`Level ${level} · ${metric} · ${state}`, () => {
     const feedback = note(record.investigation ?? "");
     feedback.setAttribute("role", "status");
     const error = el("p", "incident-error");
@@ -89,6 +90,9 @@ function signal(record, enabled) {
       el("h3", null, "Evidence"), record.evidence.length ? part("ul", "sv-evidence", ...record.evidence.map(evidence)) : note("No evidence rows retained."),
       controls, feedback, error);
   });
+  panel.id = `signal-${record.fingerprint}`;
+  if (location.hash === `#${panel.id}`) panel.open = true;
+  return panel;
 }
 
 const currency = new Intl.NumberFormat(undefined, { style: "currency", currency: "USD" });
@@ -173,8 +177,10 @@ async function readScreen() {
   showError(error, "");
   showError($("sv-more-error"), "");
   try {
-    const data = await api(`${path}/screen`);
+    const target = new URLSearchParams(location.search).get("signal");
+    const data = await api(`${path}/screen${target ? `?${new URLSearchParams({ signal: target })}` : ""}`);
     $("sv-title").textContent = `${data.project_name} · Supervisor`;
+    $("sv-reports").replaceChildren(...reportCards(data, path));
     if (data.spending) $("sv-spending").replaceChildren(...spending(data.spending, data.marked_tasks_eligible));
     const problems = data.problems ?? [];
     $("sv-problems").replaceChildren(...(problems.length ? problems.map(problem) : [note("No problems in the register.")]));

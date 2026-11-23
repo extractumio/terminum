@@ -141,31 +141,55 @@ pub(super) async fn session(app: &Shared, project: &str, body: AdHoc) -> Result<
         let key = launch(app, &run, &server, project, &dir, &a, &[]).await?;
         return Ok(json!({"run": run, "key": key}));
     };
-    // its start is this request's until the prompt went in or missed: a walk's watch would take an empty box as AC-142's
-    // and leave nothing to type into; on a task of its own, so a page that goes away cuts no paste short
-    let hold = Held::take(app, |d| &d.starting, &run).ok_or("its start is already watched")?;
-    let (app, project) = (app.clone(), project.to_string());
-    tokio::spawn(async move {
-        let key = open_run(&app, &run, &server, &project, &dir, &a, &[]).await?;
-        let typed = firstprompt::type_once(&app, &run, &text, firstprompt::Scope::Human).await;
-        drop(hold);
-        start::watch(&app, &run);                    // after the prompt: a run it made Working is no more its to type in
-        Ok(json!({"run": run, "key": key, "typed": typed.is_ok(), "why": typed.err()}))
-    }).await.map_err(|e| format!("+ Session stopped: {e}"))?
+    Prompted { run, server, project: project.into(), dir, agent: a }
+        .open(app, text, firstprompt::Scope::Human).await
+}
+
+pub(super) struct Prompted {
+    pub run: String,
+    pub server: Arc<Server>,
+    pub project: String,
+    pub dir: String,
+    pub agent: Agent,
+}
+
+impl Prompted {
+    pub(super) async fn open(self, app: &Shared, text: String, scope: firstprompt::Scope) -> Result<Value, String> {
+        // Keep the request's claim through the only first-prompt attempt, even if its page disconnects.
+        let hold = Held::take(app, |d| &d.starting, &self.run).ok_or("Its start is already watched.")?;
+        let app = app.clone();
+        tokio::spawn(async move {
+            let Prompted { run, server, project, dir, agent } = self;
+            let key = open_run(&app, &run, &server, (&project, &dir), &agent, &[], scope).await?;
+            let typed = firstprompt::type_once(&app, &run, &text, scope).await;
+            if typed.is_err() && matches!(scope, firstprompt::Scope::Supervisor) {
+                let id = run.clone();
+                store(&app, move |tx| runs::change(tx, &id, |r| r.state = Phase::Left).map(drop)).await?;
+                app.dispatcher.release_pane(&key, &run);
+            } else {
+                drop(hold);
+                start::watch(&app, &run);
+            }
+            Ok(json!({"run": run, "key": key, "typed": typed.is_ok(), "why": typed.err()}))
+        }).await.map_err(|e| format!("The session stopped while opening: {e}"))?
+    }
 }
 
 /// The window of a run just added: opened at its place and watched; one that does not open closes its run. Its key.
 pub(super) async fn launch(app: &Shared, run: &str, server: &Arc<Server>, project: &str, dir: &str, a: &Agent, tasks: &[String]) -> Result<String, String> {
-    let key = open_run(app, run, server, project, dir, a, tasks).await?;
+    let key = open_run(app, run, server, (project, dir), a, tasks, firstprompt::Scope::Human).await?;
     start::watch(app, run);
     Ok(key)
 }
 
 /// The window of a run just added, opened at its place, not yet watched; one that does not open closes its run.
-async fn open_run(app: &Shared, run: &str, server: &Arc<Server>, project: &str, dir: &str, a: &Agent, tasks: &[String]) -> Result<String, String> {
+async fn open_run(app: &Shared, run: &str, server: &Arc<Server>, (project, dir): (&str, &str), a: &Agent, tasks: &[String], scope: firstprompt::Scope) -> Result<String, String> {
     let named = project_named(app, project);
     let opening = start::Opening { server, project: named.as_ref().map(|(i, n)| (i.as_str(), n.as_str())), folder: dir, command: &a.line, run, tasks, program: &a.kind, agent: &a.id };
-    let opened = start::open(app, opening).await;
+    let opened = match scope {
+        firstprompt::Scope::Human => start::open(app, opening).await,
+        firstprompt::Scope::Supervisor => start::open_supervisor(app, opening).await,
+    };
     if opened.is_err() {
         let r = run.to_string();
         let _ = store(app, move |tx| runs::change(tx, &r, |now| now.state = Phase::Closed).map(drop)).await;

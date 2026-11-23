@@ -86,6 +86,10 @@ fn after_name<'a>(h: &'a str, name: &str) -> Option<&'a str> {
     (start.eq_ignore_ascii_case(name) && (rest.is_empty() || rest.starts_with([':', '*', '_']))).then(|| rest.trim_start_matches([':', '*', '_', ' ']))
 }
 
+pub(crate) fn matches_heading(line: &str, name: &str) -> bool {
+    after_name(head(line), name).is_some()
+}
+
 /// The sections of `form` that `result` lacks, in order (AC-123, AC-166): a section is a line starting, past Markdown's
 /// marks and spaces, with its name in any case, then the line's end, `:`, `*` or `_`.
 pub fn missing<'a>(result: &str, form: &[(&'a str, &str)]) -> Vec<&'a str> {

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // AC-225–226: one signed-in incident feed and the same owner keys on every surface.
 import { held, prove, protocols, socketUrl } from "./signin.js";
+import { sessionUrl, taskUrl } from "./tasklink.js";
 import { oneAtATime } from "./dialogs.js";
 import { api, button, placeChildren, showError, stamp } from "./kanbanutil.js";
 import { el, part, textKey } from "./listparts.js";
@@ -76,6 +77,8 @@ export function incidentCard(initial, surface) {
   const snooze = button(KEY, "Snooze 1 hour", () => write("snooze"));
   const keys = part("div", "incident-actions", ack, snooze);
   card.append(keys);
+  const thread = el("a", KEY, "Thread");
+  textKey(thread);
   if (surface !== "bar") {
     const feedback = el("p", "incident-state");
     feedback.setAttribute("role", "status");
@@ -86,7 +89,23 @@ export function incidentCard(initial, surface) {
         feedback.textContent = saved.message;
       } catch (e) { showError(error, e.message); }
     }));
-    keys.append(investigate);
+    const talk = button(KEY, "Talk", oneAtATime(card, async () => {
+      showError(error, "");
+      feedback.textContent = "Opening the Supervisor session…";
+      try {
+        const saved = await api(`${INCIDENTS}/${i.id}/talk`, { method: "POST" });
+        if (saved.typed) { location.href = sessionUrl(saved.key); return; }
+        feedback.replaceChildren();
+        const open = el("a", KEY, "Open session");
+        open.href = sessionUrl(saved.key);
+        feedback.append(open);
+        showError(error, saved.why);
+      } catch (e) {
+        feedback.textContent = "";
+        showError(error, e.message);
+      }
+    }));
+    keys.append(investigate, talk, thread);
     card.append(feedback);
   }
   if (surface !== "screen") {
@@ -102,6 +121,8 @@ export function incidentCard(initial, surface) {
     put(title, `${i.project_name} · Incident ${i.id} · Level ${i.level}`);
     put(happened, i.happened);
     put(state, [i.held, i.needed, snoozed && `Repeats snoozed until ${stamp(i.snoozed_until)}.`, i.no_answer].filter(Boolean).join(" "));
+    thread.hidden = !i.task;
+    if (i.task) thread.href = taskUrl(i.task);
     ack.hidden = Boolean(i.acknowledged_at);
     snooze.hidden = Boolean(i.acknowledged_at || i.closed_at || snoozed);
   }

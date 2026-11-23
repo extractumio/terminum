@@ -459,7 +459,9 @@ async fn first_run(app: &Shared, tasks: &[Task], kept: Press, comment: Option<St
             }
         }
         super::waits::remove(tx, &keys[0])?;
-        let run = runs::add(tx, &Run::of(&ag, host, f, project, Some(prompt)), &keys, kept.started(), ops::now())?;
+        let at = ops::now();
+        let run = runs::add(tx, &Run::of(&ag, host, f, project, Some(prompt)), &keys, kept.started(), at)?;
+        if let [task] = keys.as_slice() { crate::supervisor::review::bind_run(tx, task, &run, at)?; }
         recent::stage(tx, &run, &recent::through(tx, &now)?)?;
         supervisor::record(tx, &kept, &now, &run, estimate)?;
         if !kept.auto && kept.how != How::Integration {

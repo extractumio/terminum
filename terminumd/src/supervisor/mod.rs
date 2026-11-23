@@ -4,8 +4,15 @@
 mod attach;
 mod attribution;
 mod catalog;
+mod decisions;
+mod nudges;
+mod digest;
+pub(crate) mod review;
+mod review_data;
 mod impact;
 mod incidents;
+pub(crate) mod thread;
+pub(crate) mod talk;
 mod incidents_api;
 pub(crate) mod line;
 mod line_api;
@@ -23,6 +30,8 @@ mod signals;
 pub(crate) mod rounds;
 pub(crate) mod round_tools;
 mod round_evidence;
+#[cfg(test)]
+mod communications_tests;
 mod settings;
 mod settings_api;
 mod spend;
@@ -472,18 +481,6 @@ impl Evaluation {
             rule, mode: Mode::Live, unavailable: Vec::new(), findings: vec![finding],
             thresholds: Default::default(), complete_metrics: Vec::new(), measured: None, observations: Default::default(),
         }] })
-    }
-
-    fn ranked_findings(&self) -> (Vec<(&'static str, &Finding)>, usize) {
-        let (mut ranked, inactive): (Vec<_>, Vec<_>) = self.detectors.iter().flat_map(|d| {
-            d.findings.iter().map(|f| (d.rule.id(), f))
-        }).partition(|(_, f)| f.assessment.ranked || f.charter_breach);
-        ranked.sort_by(|(a_rule, a), (b_rule, b)| {
-            b.scores.impact.cmp(&a.scores.impact)
-                .then_with(|| b.assessment.peak_share().total_cmp(&a.assessment.peak_share()))
-                .then_with(|| (a_rule, a.key()).cmp(&(b_rule, b.key())))
-        });
-        (ranked, inactive.len())
     }
 
     pub(crate) fn record(&self, store: &Store) -> Result<(), String> {

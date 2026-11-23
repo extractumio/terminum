@@ -349,6 +349,7 @@ pub fn candidates(tx: &Transaction, project: &str, s: &Setting, now: i64, only: 
                    AND t.id NOT IN (SELECT task FROM blocked_marks)
                    AND NOT EXISTS (SELECT 1 FROM run_waits w WHERE w.task = t.id) AND NOT EXISTS (SELECT 1 FROM auto_rounds r WHERE r.task = t.id)
                    AND NOT EXISTS (SELECT 1 FROM schedule_fires f WHERE f.task = t.id)
+                   AND NOT EXISTS (SELECT 1 FROM supervisor_incidents i WHERE i.task = t.id)
                    AND NOT EXISTS (SELECT 1 FROM tasks p WHERE p.id = t.parent AND p.archived_at IS NULL AND p.status <> 'DONE')
                    AND NOT EXISTS (SELECT 1 FROM to_do k WHERE k.parent = t.id
                      AND (k.status <> 'TODO' OR k.session_key IS NOT NULL OR k.id IN (SELECT task FROM blocked_marks) OR EXISTS (SELECT 1 FROM run_waits w WHERE w.task = k.id))))

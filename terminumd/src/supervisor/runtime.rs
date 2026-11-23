@@ -77,6 +77,7 @@ pub(crate) fn routes() -> Router<Shared> {
         .merge(super::incidents_api::routes())
         .merge(super::rounds::routes())
         .merge(super::line_api::routes())
+        .merge(super::review::routes())
 }
 
 async fn shown(State(app): State<Shared>, Path(id): Path<String>) -> Response {
@@ -99,6 +100,7 @@ async fn set(State(app): State<Shared>, Path(id): Path<String>, Json(switch): Js
         let _scope = runtime.scopes.lock();
         if let Some(generation) = set_enabled(&app.tasks, &id, switch.enabled, now())? {
             runtime.sensors.set(&id, generation, switch.enabled);
+            crate::tasks::schedulesapi::heard(&app);
             runtime.wake();
         }
         Ok(switch.enabled)
@@ -108,7 +110,7 @@ async fn set(State(app): State<Shared>, Path(id): Path<String>, Json(switch): Js
 fn set_enabled(store: &Store, project: &str, on: bool, at: i64) -> Result<Option<i64>, String> {
     store.with(|tx| {
         check_project(tx, project)?;
-        if on {
+        let generation = if on {
             tx.query_row("INSERT INTO project_supervisor (project, enabled, generation, enabled_at) VALUES (?1, 1, 1, ?2)
                 ON CONFLICT (project) DO UPDATE SET enabled = 1, generation = generation + 1, enabled_at = excluded.enabled_at,
                     last_ok = NULL, reported_dead = 0 WHERE enabled = 0 RETURNING generation",
@@ -118,7 +120,9 @@ fn set_enabled(store: &Store, project: &str, on: bool, at: i64) -> Result<Option
                 SELECT fingerprint FROM supervisor_signals WHERE project = ?1)", [project]).map_err(sql)?;
             tx.query_row("UPDATE project_supervisor SET enabled = 0, generation = generation + 1, reported_dead = 0
                 WHERE project = ?1 AND enabled = 1 RETURNING generation", [project], |r| r.get(0)).optional().map_err(sql)
-        }
+        }?;
+        if generation.is_some() { super::review::sync_on_enable(tx, project, at)?; }
+        Ok(generation)
     })
 }
 
@@ -156,6 +160,18 @@ impl Runtime {
 }
 
 pub(crate) async fn collect(app: Shared) {
+    let migrated = app.clone();
+    match off(move || migrated.tasks.with(|tx| {
+        let mut changed = false;
+        for project in enabled(tx)? {
+            changed |= super::review::sync_on_enable(tx, &project.id, now())?;
+        }
+        Ok(changed)
+    })).await {
+        Ok(true) => crate::tasks::schedulesapi::heard(&app),
+        Ok(false) => (),
+        Err(error) => tracing::warn!(event = "supervisor.review_schedules", %error),
+    }
     let mut clock = interval(Duration::from_secs(BEAT as u64));
     clock.set_missed_tick_behavior(MissedTickBehavior::Skip);
     loop {
@@ -258,18 +274,30 @@ fn collect_project(app: &Shared, project: &Project, clock: impl Fn() -> i64) -> 
         (current && due).then(|| read_batch(tx, app, project, at)).transpose()
     })?;
     let Some(batch) = batch else { return Ok(()) };
+    let evaluated = batch.evaluation.is_some().then_some(batch.at);
     let pending = app.supervisor.sensors.take(&project.id, project.generation);
     let (committed, incidents_changed) = commit(&app.tasks, project, batch, &pending, &clock)?;
-    if committed {
-        pending.committed();
-        let changed = app.tasks.with(|tx| {
-            if rounds::enabled(tx, &project.id)? != Some(project.generation) { return Ok(Vec::new()); }
-            super::fix_tasks::advance(tx, &project.id, clock())
-        })?;
-        for id in changed { crate::tasks::api::told(app, &id); }
-    }
     if incidents_changed {
         app.supervisor.incident_changed();
+    }
+    if committed {
+        pending.committed();
+        let (changed, nudges) = app.tasks.with(|tx| {
+            if rounds::enabled(tx, &project.id)? != Some(project.generation) { return Ok((Vec::new(), Vec::new())); }
+            let at = clock();
+            let mut changed = super::fix_tasks::advance(tx, &project.id, at)?;
+            changed.extend(super::decisions::advance(tx, &project.id, at)?);
+            if evaluated.is_some() { changed.extend(super::decisions::retro(tx, &project.id, at)?); }
+            changed.extend(super::thread::backfill(tx, &project.id, at)?);
+            let nudges = evaluated.map(|tick| super::nudges::collected(tx, &project.id, tick, at)).transpose()?.unwrap_or_default();
+            super::digest::publish(tx, &project.id, at)?;
+            Ok((changed, nudges))
+        })?;
+        for id in changed { crate::tasks::api::told(app, &id); }
+        for (id, event) in nudges {
+            if let Some(event) = event { crate::tasks::notify::comment_added(app, &id, &event, None); }
+            crate::tasks::api::told(app, &id);
+        }
     }
     Ok(())
 }
@@ -325,13 +353,21 @@ pub(crate) async fn watch(app: Shared) {
 
 fn check_heartbeat(store: &Store, at: i64) -> Result<bool, String> {
     let stale = store.snapshot(SCHEMA, |tx| {
-        Ok(enabled(tx)?.into_iter().filter(|p| !p.reported_dead && at - p.last_ok.unwrap_or(p.enabled_at) >= DEAD_AFTER).collect::<Vec<_>>())
+        Ok(enabled(tx)?.into_iter().filter(|p| at - p.last_ok.unwrap_or(p.enabled_at) >= DEAD_AFTER).collect::<Vec<_>>())
     })?;
     let mut changed = false;
     for project in stale {
-        match report_dead(store, &project, at) {
-            Ok(written) => changed |= written,
-            Err(error) => tracing::warn!(event = "supervisor.watchdog", project = %project.id, %error),
+        if !project.reported_dead {
+            match report_dead(store, &project, at) {
+                Ok(written) => changed |= written,
+                Err(error) => tracing::warn!(event = "supervisor.watchdog", project = %project.id, %error),
+            }
+        }
+        if let Err(error) = store.with(|tx| {
+            if rounds::enabled(tx, &project.id)? != Some(project.generation) { return Ok(false); }
+            super::digest::publish(tx, &project.id, at)
+        }) {
+            tracing::warn!(event = "supervisor.digest", project = %project.id, %error);
         }
     }
     Ok(changed)

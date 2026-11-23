@@ -59,6 +59,10 @@ struct Screen {
     problems: Vec<register::Problem>,
     spending: governor::Spending,
     marked_tasks_eligible: bool,
+    decisions: Vec<super::decisions::Decision>,
+    digest: Option<super::digest::Digest>,
+    review: Option<super::review::Published>,
+    review_setup_error: Option<String>,
     #[serde(flatten)]
     signals: SignalPage,
 }
@@ -95,14 +99,26 @@ fn indicators(tx: &Transaction, id: &str) -> Result<Vec<Indicator>, String> {
         }).collect())
 }
 
-async fn screen(State(app): State<Shared>, Path(id): Path<String>) -> Response {
+#[derive(Deserialize)]
+struct ScreenQuery { signal: Option<String> }
+
+async fn screen(State(app): State<Shared>, Path(id): Path<String>, Query(query): Query<ScreenQuery>) -> Response {
     answer(off(move || app.tasks.snapshot(SCHEMA, |tx| {
         check_project(tx, &id)?;
         let (project_name, _, _) = project_place(tx, &id)?;
         let at = now();
-        Ok(Screen { project_name, indicators: indicators(tx, &id)?, signals: signal_page(tx, &id, None)?,
+        let mut page = signal_page(tx, &id, None)?;
+        if let Some(key) = query.signal.filter(|key| page.signals.iter().all(|entry| entry.signal.fingerprint != *key)) {
+            let signal = signals::get(tx, &id, &key)?;
+            page.signals.insert(0, ShownSignal { signal, investigation: rounds::status(tx, &key)? });
+        }
+        let review_setup_error = tx.query_row("SELECT (SELECT review_setup_error FROM project_supervisor WHERE project = ?1)",
+            [&id], |r| r.get(0)).map_err(crate::tasks::ops::sql)?;
+        Ok(Screen { project_name, indicators: indicators(tx, &id)?, signals: page,
             problems: register::ranked(tx, &id, at, true)?, spending: governor::spending(tx, &id, at)?,
-            marked_tasks_eligible: crate::tasks::auto::setting(tx, &id)?.supervisor_tasks })
+            marked_tasks_eligible: crate::tasks::auto::setting(tx, &id)?.supervisor_tasks,
+            decisions: super::decisions::pending(tx, &id)?, digest: super::digest::latest(tx, &id)?,
+            review: super::review::latest(tx, &id)?, review_setup_error })
 
     })).await)
 }

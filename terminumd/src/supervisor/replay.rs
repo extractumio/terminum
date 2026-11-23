@@ -77,7 +77,7 @@ fn render(tx: &Transaction, result: &Evaluation, weeks: &[scoreboard::Week], fir
         writeln!(output, "Limited history: ordinary impact capped at 1.").unwrap();
     }
 
-    let (ranked, inactive) = result.ranked_findings();
+    let (ranked, inactive) = ranked_findings(result);
     writeln!(output, "\nRanked findings ({}, {inactive} past-window findings outside rank)", ranked.len()).unwrap();
     for (i, (rule, f)) in ranked.iter().enumerate() {
         let m = &f.measure;
@@ -134,4 +134,16 @@ fn render(tx: &Transaction, result: &Evaluation, weeks: &[scoreboard::Week], fir
     };
     writeln!(output, "Period improved: {outcome}.").unwrap();
     Ok(output)
+}
+
+fn ranked_findings(evaluation: &super::Evaluation) -> (Vec<(&'static str, &super::Finding)>, usize) {
+    let (mut ranked, inactive): (Vec<_>, Vec<_>) = evaluation.detectors.iter().flat_map(|d| {
+        d.findings.iter().map(|f| (d.rule.id(), f))
+    }).partition(|(_, f)| f.assessment.ranked || f.charter_breach);
+    ranked.sort_by(|(a_rule, a), (b_rule, b)| {
+        b.scores.impact.cmp(&a.scores.impact)
+            .then_with(|| b.assessment.peak_share().total_cmp(&a.assessment.peak_share()))
+            .then_with(|| (a_rule, a.key()).cmp(&(b_rule, b.key())))
+    });
+    (ranked, inactive.len())
 }

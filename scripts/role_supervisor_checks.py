@@ -95,7 +95,7 @@ def ac231_supervisor_tools_pane_and_token(t, call, typed, tool, tmux, page, proj
           rc == 0 and "call as a manager" in manager_tools and names(manager_tools) == catalog)
 
     observer = {"list_tasks", "get_task", "get_case_file", "list_signals", "get_signal", "get_metric", "record_finding"}
-    advisor = observer | {"add_comment", "ask_human", "open_problem", "update_problem", "propose_rank"}
+    advisor = observer | {"add_comment", "ask_human", "open_problem", "update_problem", "propose_rank", "propose_decision", "post_incident_answer"}
     operator = advisor | {"run_task", "promote_queued_task", "stop_task", "list_runs", "get_dashboard"}
     view = call(settings)[1]
 

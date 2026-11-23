@@ -132,6 +132,9 @@ impl Prepared<'_> {
             ON CONFLICT (fingerprint) DO UPDATE SET evidence = excluded.evidence, measure = excluded.measure,
             scores = excluded.scores, last_seen = excluded.last_seen, count = count + 1,
             state = CASE
+                WHEN state = 'muted' AND EXISTS (SELECT 1 FROM supervisor_incident_rulings r
+                    WHERE r.fingerprint = supervisor_signals.fingerprint AND r.evidence = supervisor_signals.evidence
+                      AND r.evidence <> excluded.evidence) THEN excluded.state
                 WHEN state IN ('held', 'muted', 'rejected') THEN state
                 WHEN excluded.state = 'shadow' THEN 'shadow'
                 WHEN state = 'shadow' THEN 'new'
@@ -164,7 +167,11 @@ impl Prepared<'_> {
                     WHERE fingerprint = ?1 AND (clear_at, clear_seen) IS NOT (?2, ?3)",
                     (&key, since, clear.then_some(evaluation.at))).map_err(sql)?;
             }
+            let mut ruling = tx.prepare_cached("SELECT EXISTS (SELECT 1 FROM supervisor_incident_rulings
+                WHERE fingerprint = ?1 AND evidence = ?2)").map_err(sql)?;
             for row in findings {
+                let ruled: bool = ruling.query_row((&row.key, &row.evidence), |r| r.get(0)).map_err(sql)?;
+                if ruled { continue; }
                 let accepted: bool = upsert.query_row(params![row.key, evaluation.project, rule, row.found.subject_kind,
                     row.found.subject_id, row.found.metric, row.evidence, row.measure, row.scores, evaluation.at,
                     if checked.mode == Mode::Shadow { "shadow" } else { "new" }], |r| r.get(0)).map_err(sql)?;
@@ -187,7 +194,9 @@ impl Prepared<'_> {
                 }
             }
             let resolved = tx.execute(&format!("UPDATE supervisor_signals SET state = 'resolved'
-                WHERE project = ?1 AND detector = ?2 AND {ACTIVE}
+                WHERE project = ?1 AND detector = ?2 AND ({ACTIVE} OR (state = 'muted' AND EXISTS (
+                    SELECT 1 FROM supervisor_incident_rulings r
+                    WHERE r.fingerprint = supervisor_signals.fingerprint AND r.evidence = supervisor_signals.evidence)))
                 AND fingerprint NOT IN (SELECT value FROM json_each(?3))
                 AND (?4 OR metric IN (SELECT value FROM json_each(?5)) OR fingerprint IN (SELECT value FROM json_each(?6)))"),
                 (&evaluation.project, rule, keys, checked.unavailable.is_empty() && checked.measured.is_none(),

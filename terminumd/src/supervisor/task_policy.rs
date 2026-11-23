@@ -84,3 +84,9 @@ pub(crate) fn check_marked(tx: &Transaction, task: &Task, allow: bool) -> Result
     tx.query_row("SELECT NOT EXISTS (SELECT 1 FROM supervisor_auto_marks m WHERE m.task = ?1 AND NOT (?2 AND m.eligible))",
         (&task.key, allow), |r| r.get(0)).map_err(sql)
 }
+
+/// Owner cards are identified as Supervisor work without reserving fix spend.
+pub(super) fn mark_card(tx: &Transaction, task: &Task) -> Result<(), String> {
+    tx.execute("INSERT OR IGNORE INTO supervisor_task_marks (task, project, estimate) VALUES (?1, ?2, 0)",
+        (&task.key, &task.project)).map(drop).map_err(sql)
+}
