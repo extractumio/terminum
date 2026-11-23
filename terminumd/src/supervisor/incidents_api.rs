@@ -116,7 +116,7 @@ fn incident(row: &Row<'_>) -> rusqlite::Result<Incident> {
         task: row.get(15)?,
         held, needed: if !holds.is_empty() { "Keep or release the hold." } else if acknowledged_at.is_some() { "Acknowledged." } else { "Acknowledge when seen." },
         no_answer: if holds.is_empty() { "No automatic action without an answer." }
-            else if interim_only { "Without an answer the hold ends with its verification, unless verification confirms the signal." }
+            else if interim_only { super::holds::INTERIM_END }
             else { "Without an answer the hold stays." },
         holds, alerts,
     })

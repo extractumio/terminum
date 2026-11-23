@@ -14,6 +14,8 @@ use super::{Evidence, Level, Mode, Rule, Signal, attach::{self, HoldState}, inci
 
 pub(crate) const TOOLS: &[&str] = &["hold", "release_hold"];
 const PAUSED_DISPATCH: &str = "Paused by the Supervisor.";
+/// What follows an interim verification hold without an answer (AC-225), on every surface.
+pub(super) const INTERIM_END: &str = "Without an answer the hold ends with its verification, unless verification confirms the signal.";
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
@@ -183,7 +185,7 @@ fn apply_as(tx: &Transaction, project: &str, request: Request, actor: &str, at: 
     if request.task.is_some() == kind.project_wide() {
         return Err("Name a task for a run or queue-entry hold only.".into());
     }
-    if signal.scores.confidence < 0.7 && !shadow && !interim {
+    if signal.scores.confidence < super::STRONG && !shadow && !interim {
         return Err("This signal needs verification before a hold can apply.".into());
     }
     let task = request.task.as_deref().map(|id| scoped_task(tx, project, id)).transpose()?;
@@ -286,7 +288,7 @@ fn insert(tx: &Transaction, s: &Signal, kind: Kind, target: &str, audit: (&str, 
 /// Cost outliers can stop only the marked task run named in the actual retained usage evidence.
 pub(super) fn automatic(tx: &Transaction, project: &str, fingerprint: &str, at: i64) -> Result<Option<Disposition>, String> {
     let signal = signals::get(tx, project, fingerprint)?;
-    if signal.detector != Rule::CostOutlier.id() || signal.level != 3 || signal.scores.confidence < 0.7
+    if signal.detector != Rule::CostOutlier.id() || signal.level != 3 || signal.scores.confidence < super::STRONG
         || signal.subject_kind != "task" || signal.metric != "task_dollars"
     {
         return Ok(None);

@@ -1,10 +1,10 @@
 -- SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 -- AC-233: a verification round's interim hold ends with its round (`until` is the round's deadline) unless code
--- confirms its signal; `comparison` keeps the modeled cost of holding against the cost of waiting.
+-- confirms its signal; the round's case file keeps the comparison that justified it.
 ALTER TABLE supervisor_holds ADD COLUMN round TEXT;
 ALTER TABLE supervisor_holds ADD COLUMN until INTEGER;
-ALTER TABLE supervisor_holds ADD COLUMN comparison TEXT;
 ALTER TABLE supervisor_holds ADD COLUMN end_failed TEXT;
+CREATE INDEX supervisor_holds_interim ON supervisor_holds (round) WHERE until IS NOT NULL;
 -- AC-213: a checked round's critical escalation, which stands while its signal keeps the evidence it was judged on.
 CREATE TABLE supervisor_escalations (
     fingerprint TEXT PRIMARY KEY,

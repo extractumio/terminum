@@ -50,7 +50,7 @@ impl Request {
         if self.level != CRITICAL || signal.level >= CRITICAL {
             return Err("A round's escalation raises a signal below level 3 to level 3, the critical level.".into());
         }
-        if confidence < 0.7 {
+        if confidence < super::STRONG {
             return Err("A critical escalation needs a finding with confidence of at least 0.7.".into());
         }
         Ok(())
@@ -74,5 +74,5 @@ pub(super) fn record(tx: &Transaction, signal: &Signal, round: &str, request: &R
             score = excluded.score, evidence = excluded.evidence, reason = excluded.reason, at = excluded.at",
         (&signal.fingerprint, &signal.project, round, request.score.name(), &evidence, &request.reason, at)).map_err(sql)?;
     let raised = super::signals::get(tx, &signal.project, &signal.fingerprint)?;
-    super::incidents::escalate(tx, &raised, &evidence, at)
+    super::incidents::escalate(tx, &raised, at)
 }

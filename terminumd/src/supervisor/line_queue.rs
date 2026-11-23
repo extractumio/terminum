@@ -50,13 +50,13 @@ impl Notice {
         if !self.holds.is_empty() && matches!(self.kind, Kind::Opened | Kind::Updated | Kind::Repeat) {
             use std::fmt::Write;
             for (hold, interim) in &self.holds {
-                let _ = writeln!(text, "{}{}", hold.label(), if *interim { " while its verification runs, for up to 15 minutes." } else { "." });
+                let _ = match interim {
+                    true => writeln!(text, "{} while its verification runs, for up to {} minutes.", hold.label(), super::rounds::TIME_LIMIT / 60),
+                    false => writeln!(text, "{}.", hold.label()),
+                };
             }
-            text.push_str(if self.holds.iter().all(|(_, interim)| *interim) {
-                "Keep or release in Terminum. Without an answer the hold ends with its verification, unless verification confirms the signal.\n"
-            } else {
-                "Keep or release in Terminum. Without an answer the hold stays.\n"
-            });
+            let end = if self.holds.iter().all(|(_, interim)| *interim) { super::holds::INTERIM_END } else { "Without an answer the hold stays." };
+            let _ = writeln!(text, "Keep or release in Terminum. {end}");
         }
         // Only generated project IDs are eligible for the outbound deep link.
         if let Some(base) = link_base

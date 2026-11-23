@@ -59,6 +59,12 @@ fn status(f: &Fixture) -> String {
     f.store.with(|tx| Ok(ops::get(tx, "FIX-1")?.status)).unwrap()
 }
 
+/// A recorded finding as `record_finding` stores it, at `confidence`.
+fn finding(confidence: f64) -> Value {
+    json!({"cause": "A cause.", "confidence": confidence, "disproof": "A disproof.", "fix_proposal": "A fix.",
+        "evidence": [{"table": "runs", "id": "failed-1"}], "measurements": []})
+}
+
 /// The verification round the hold belongs to, ended with `finding`.
 fn round(f: &Fixture, finding: Option<Value>, at: i64) {
     f.agent("verifier");
@@ -79,14 +85,12 @@ fn ac233_holding_costs_less_than_waiting_takes_the_task_out_until_the_deadline()
     let found = compare(&f, at);
     assert_eq!((found.wait_share, found.hold_share), (Some(0.2), Some(0.05)), "the share times confidence; one of 20 tasks");
     assert_eq!(found.task.as_deref(), Some("FIX-1"));
-    assert_eq!(found.until, Some(at + 900));
     assert!(found.decision.starts_with("Holding costs less"), "{}", found.decision);
     assert_eq!(status(&f), "IN PROGRESS", "taken out of the queue");
-    let (round, until, kept): (String, i64, String) = f.store.with(|tx| tx.query_row(
-        "SELECT round, until, comparison FROM supervisor_holds WHERE id = ?1", [found.hold.unwrap()],
-        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).map_err(sql)).unwrap();
-    assert_eq!((round.as_str(), until), ("case_verify", at + 900));
-    assert_eq!(serde_json::from_str::<Value>(&kept).unwrap()["wait_share"], json!(0.2));
+    let (round, until): (String, i64) = f.store.with(|tx| tx.query_row(
+        "SELECT round, until FROM supervisor_holds WHERE id = ?1", [found.hold.unwrap()],
+        |r| Ok((r.get(0)?, r.get(1)?))).map_err(sql)).unwrap();
+    assert_eq!((round.as_str(), until), ("case_verify", at + 900), "the round's deadline bounds the hold");
 }
 
 #[test]
@@ -115,7 +119,7 @@ fn ac233_an_unconfirmed_verification_ends_its_hold_even_after_a_human_comment() 
     signal(&f, 0.40, at);
     compare(&f, at);
     f.event("lead", at + 10, "human", "comment", "Looking at it.", None);
-    round(&f, Some(json!({"confidence": 0.4})), at);
+    round(&f, Some(finding(0.4)), at);
     let told = f.store.with(|tx| interim::round_ended(tx, RUN, at + 20)).unwrap();
     assert_eq!(told.as_deref(), Some("FIX-1"));
     assert_eq!(status(&f), "INTEGRATION", "queued again with its commit");
@@ -148,7 +152,7 @@ fn ac233_a_strong_finding_without_a_firing_recomputation_does_not_keep_the_hold(
     project(&f, 20, at);
     signal(&f, 0.40, at);
     compare(&f, at);
-    round(&f, Some(json!({"confidence": 0.9})), at);
+    round(&f, Some(finding(0.9)), at);
     f.store.with(|tx| interim::round_ended(tx, RUN, at + 20)).unwrap();
     assert_eq!(status(&f), "INTEGRATION", "the model's confidence alone is no confirmation");
 }
@@ -165,7 +169,7 @@ fn ac225_an_interim_hold_says_its_deadline_on_the_incident_and_the_line() {
     f.write("INSERT INTO supervisor_incident_events (id, incident, at, kind, actor, fingerprint, detector, metric, level, value, threshold)
         VALUES (1, 1, ?1, 'signal', 'system', ?2, ?3, 'failed_runs', 3, 5, 4)", (at, KEY, Rule::FailedRepeat.id()));
     f.write("INSERT INTO supervisor_incident_signals VALUES (?1, 1, 3, x'00', 5, 4, 1, 0)", [KEY]);
-    let found = compare(&f, at);
+    compare(&f, at);
     let incident = f.store.with(|tx| {
         let view = incidents_api::pending(tx)?.into_iter().next().expect("a level 3 hold joins an incident");
         Ok(serde_json::to_value(view).unwrap())
@@ -174,7 +178,7 @@ fn ac225_an_interim_hold_says_its_deadline_on_the_incident_and_the_line() {
     assert_eq!(incident["held"], "Task taken out of integration while its verification runs.");
     assert_eq!(incident["no_answer"], "Without an answer the hold ends with its verification, unless verification confirms the signal.");
     let notice = line_queue::Notice { project: PROJECT.into(), incident: 1, kind: line_queue::Kind::Updated, level: 3,
-        signals: 1, channels: 1, budget: None, holds: vec![(super::holds::Kind::TakeOut, found.until.is_some())] };
+        signals: 1, channels: 1, budget: None, holds: vec![(super::holds::Kind::TakeOut, true)] };
     let text = notice.render(None);
     assert!(text.contains("Task taken out of integration while its verification runs, for up to 15 minutes."), "{text}");
     assert!(text.contains("the hold ends with its verification"), "{text}");
@@ -192,7 +196,7 @@ fn ac233_a_verification_code_confirms_keeps_its_hold_as_an_ordinary_one() {
     signal(&f, 0.40, at);
     let found = compare(&f, at);
     assert!(found.hold.is_some(), "{}", found.decision);
-    round(&f, Some(json!({"confidence": 0.8})), at);
+    round(&f, Some(finding(0.8)), at);
     f.store.with(|tx| interim::round_ended(tx, RUN, at + 20)).unwrap();
     let (until, released): (Option<i64>, Option<i64>) = f.store.with(|tx| tx.query_row(
         "SELECT until, released_at FROM supervisor_holds WHERE id = ?1", [found.hold.unwrap()],

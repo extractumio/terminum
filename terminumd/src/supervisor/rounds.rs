@@ -10,7 +10,7 @@ use crate::tasks::{api::{answer, store}, ops::{now, rows, sql}};
 
 use super::{Evidence, Signal, design_reviews, governor, register, signals, settings};
 
-const TIME_LIMIT: i64 = 15 * 60;
+pub(super) const TIME_LIMIT: i64 = 15 * 60;
 const EXCERPT: usize = 1_000;
 const CASE_EVIDENCE: usize = 128;
 
@@ -248,12 +248,14 @@ pub(crate) fn save(tx: &Transaction, run: &str, candidate: Candidate, at: i64, c
     {
         case[field] = value;
     }
-    let mut held = None;
-    if let Purpose::Investigation(signal) = &purpose && case["kind"] == "verification" {
-        let comparison = super::interim::verification_hold(tx, signal, &id, deadline, at)?;
-        held = comparison.task.clone();
-        case["verification_hold"] = json!(comparison);
-    }
+    let held = match &purpose {
+        Purpose::Investigation(signal) if case["kind"] == "verification" => {
+            let comparison = super::interim::verification_hold(tx, signal, &id, deadline, at)?;
+            case["verification_hold"] = json!(comparison);
+            comparison.task
+        }
+        _ => None,
+    };
     tx.execute("INSERT INTO supervisor_rounds (id, run, project, generation, fingerprint, signal_revision, case_file, deadline, token_cap, reserved_class, incident)
         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)",
         rusqlite::params![id, run, project, generation, key, revision, case.to_string(), deadline, token_cap as i64, important, incident]).map_err(sql)?;
@@ -270,7 +272,7 @@ pub(crate) fn save(tx: &Transaction, run: &str, candidate: Candidate, at: i64, c
 }
 
 fn investigation_case(tx: &Transaction, signal: &mut Signal, at: i64) -> Result<(Value, Option<i64>), String> {
-    let verify = signal.level >= 2 && signal.scores.confidence < 0.7;
+    let verify = signal.level >= 2 && signal.scores.confidence < super::STRONG;
     let saved = settings::read(tx, &signal.project)?.settings;
     let charter = saved.investigation_charter().map(|lines| excerpt(lines.join("\n")));
     let problem = register::case_context(tx, &signal.project, &signal.fingerprint, at)?;

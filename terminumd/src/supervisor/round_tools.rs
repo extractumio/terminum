@@ -88,9 +88,9 @@ struct Claim {
 
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
-struct Finding {
+pub(super) struct Finding {
     cause: String,
-    confidence: f64,
+    pub(super) confidence: f64,
     disproof: String,
     fix_proposal: String,
     evidence: Vec<Evidence>,
@@ -185,14 +185,15 @@ pub(crate) async fn run(app: &Shared, key: String, project: String, tool: String
             let run = run_of(tx, &key, &project, &tool)?;
             let case = case_file(tx, &run)?;
             let why = match accept(tx, &project, &case, value) {
-                Ok((finding, escalate)) => {
+                Ok(finding) => {
                     let at = now();
+                    let text = serde_json::to_string(&finding).map_err(|e| e.to_string())?;
                     let changed = tx.execute("UPDATE supervisor_rounds SET finding = ?2, found_at = ?3
-                        WHERE run = ?1 AND deadline > ?3 AND finding IS NULL", (&run, finding, at)).map_err(sql)?;
+                        WHERE run = ?1 AND deadline > ?3 AND finding IS NULL", (&run, text, at)).map_err(sql)?;
                     if changed == 1 {
                         if let Some(s) = super::action_tasks::run_signal(tx, &project, &run)? {
                             super::outcomes::record(tx, &s, super::outcomes::Kind::Cause, &run, &s.fingerprint, "", at)?;
-                            if let Some(request) = &escalate {
+                            if let Some(request) = &finding.escalate {
                                 let round = case["id"].as_str().unwrap_or_default();
                                 super::escalations::record(tx, &s, round, request, at)?;
                             }
@@ -284,7 +285,7 @@ pub(super) fn metric(tx: &Transaction, project: &str, case: &Value, query: &str,
         window_start: start, window_end: end }, evidence: entry.evidence, fires })
 }
 
-fn accept(tx: &Transaction, project: &str, case: &Value, value: Value) -> Result<(String, Option<super::escalations::Request>), String> {
+fn accept(tx: &Transaction, project: &str, case: &Value, value: Value) -> Result<Finding, String> {
     let mut finding: Finding = args(value)?;
     let reason = finding.escalate.as_mut().map(|e| &mut e.reason);
     for prose in [&mut finding.cause, &mut finding.disproof, &mut finding.fix_proposal].into_iter().chain(reason) {
@@ -301,30 +302,32 @@ fn accept(tx: &Transaction, project: &str, case: &Value, value: Value) -> Result
     {
         return Err("Supply confidence between zero and one, one to 128 evidence IDs and at most 16 measurements.".into());
     }
-    let own = finding.measurements.iter().find(|claim| case["signal"]["fingerprint"] == claim.signal);
-    if case["kind"] == "verification" && own.is_none() {
+    let own = |claim: &Claim| case["signal"]["fingerprint"] == claim.signal;
+    let cites_own = finding.measurements.iter().any(own);
+    if case["kind"] == "verification" && !cites_own {
         return Err("A verification must cite the recomputed measurement for its signal.".into());
     }
     if let Some(request) = &finding.escalate {
         let signal = signals::get(tx, project, case["signal"]["fingerprint"].as_str().unwrap_or_default())?;
         request.check(&signal, finding.confidence)?;
-        let own = own.ok_or("A critical escalation must cite the recomputed measurement for its signal.")?;
-        if !metric(tx, project, case, &own.query, &own.signal)?.fires {
-            return Err("A critical escalation needs its signal's recomputed measurement to still cross its threshold.".into());
-        }
+        if !cites_own { return Err("A critical escalation must cite the recomputed measurement for its signal.".into()); }
     }
     for (i, id) in finding.evidence.iter().enumerate() {
         if round_evidence::resolve(tx, project, id)?.is_none() {
             return Err(format!("Evidence item {} does not resolve to a row in this project.", i + 1));
         }
     }
+    let mut own_fires = false;
     for (i, claim) in finding.measurements.iter().enumerate() {
         let reading = metric(tx, project, case, &claim.query, &claim.signal)?;
         if claim.value != reading.measure.value {
             return Err(format!("Measurement {} claims {} but the named query returned {}.",
                 i + 1, claim.value, reading.measure.value));
         }
+        own_fires |= own(claim) && reading.fires;
     }
-    let escalate = finding.escalate.clone();
-    serde_json::to_string(&finding).map(|text| (text, escalate)).map_err(|e| e.to_string())
+    if finding.escalate.is_some() && !own_fires {
+        return Err("A critical escalation needs its signal's recomputed measurement to still cross its threshold.".into());
+    }
+    Ok(finding)
 }

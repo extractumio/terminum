@@ -207,6 +207,9 @@ pub(crate) struct Scores {
     pub confidence: f64,
 }
 
+/// The confidence of a strong heuristic (AC-213): below it a level 2 or 3 signal is verified first (AC-233).
+pub(super) const STRONG: f64 = 0.7;
+
 impl Default for Scores {
     fn default() -> Self {
         Self { impact: 0, blast: 0, reversibility: 0, confidence: 1.0 }
