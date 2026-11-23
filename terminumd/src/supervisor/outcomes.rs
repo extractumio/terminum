@@ -130,7 +130,7 @@ pub(super) fn check(tx: &Transaction, project: &str, at: i64) -> Result<(), Stri
 
 // An action is one sample. The latest scheduled check updates the summary, while
 // an explicit wrong verdict and the historical observations remain permanent.
-const LATEST: &str = "LEFT JOIN supervisor_outcomes o ON o.action = a.id AND o.days = (
+pub(super) const LATEST: &str = "LEFT JOIN supervisor_outcomes o ON o.action = a.id AND o.days = (
     SELECT v.days FROM supervisor_outcomes v WHERE v.action = a.id ORDER BY (v.days = 0) DESC, v.days DESC LIMIT 1)";
 
 #[derive(Serialize)]

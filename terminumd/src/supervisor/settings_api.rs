@@ -84,8 +84,7 @@ async fn save(State(app): State<Shared>, Path(id): Path<String>, Json(body): Jso
     let result = store(&app, move |tx| {
         check_project(tx, &id)?;
         let saved = settings::write(tx, &id, body.revision, body.settings, false)?;
-        super::review::sync(tx, &id, crate::tasks::ops::now())?;
-        tx.execute("UPDATE project_supervisor SET review_setup_error = NULL WHERE project = ?1", [&id]).map_err(sql)?;
+        super::review::sync_on_enable(tx, &id, crate::tasks::ops::now())?;
         view(tx, &id, saved)
     }).await;
     if result.is_ok() {

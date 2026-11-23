@@ -13,7 +13,8 @@ use super::{Level, Rule, Signal, WEEK, settings, signals};
 const MAX_SIGNALS: usize = 16;
 const MAX_TEXT: usize = 1_000;
 const YARDSTICK_WEEKS: u8 = 4;
-const STATES: [&str; 4] = ["suspected", "confirmed", "fix_in_work", "watching"];
+pub(super) const FRESH_EVIDENCE: i64 = 30 * 60;
+const STATES: [&str; 3] = ["suspected", "confirmed", "fix_in_work"];
 
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -45,7 +46,6 @@ pub(super) struct Update {
     pub confidence: Option<f64>,
     pub effort: Option<u8>,
     pub state: Option<String>,
-    pub observation_weeks: Option<u8>,
 }
 
 #[derive(Serialize)]
@@ -166,18 +166,12 @@ pub(super) fn update(tx: &Transaction, project: &str, change: Update, at: i64) -
     let p = get(tx, project, change.id, at)?;
     if !p.active() { return Err("A closed problem needs new evidence before it can change.".into()); }
     let state = change.state.as_deref().unwrap_or(&p.state);
-    if state != p.state && !STATES.contains(&state) {
-        return Err("Only the yardstick or an owner ruling can close a problem.".into());
+    if state != p.state && (!STATES.contains(&state) || matches!(p.state.as_str(), "watching" | "recurred")) {
+        return Err("Only the yardstick or an owner ruling can change a measured problem state.".into());
     }
     let confidence = change.confidence.unwrap_or(p.confidence);
     let effort = change.effort.unwrap_or(p.effort);
     check_rank(confidence, effort)?;
-    if let Some(weeks) = change.observation_weeks {
-        if weeks > 52 || p.yardstick.iter().any(|y| weeks < y.weeks) {
-            return Err("Observation can be lengthened up to 52 weeks, but never shortened.".into());
-        }
-        tx.execute("UPDATE supervisor_problem_signals SET weeks = ?2 WHERE problem = ?1", (p.id, weeks)).map_err(sql)?;
-    }
     tx.execute("UPDATE supervisor_problems SET hypothesis = ?2, disproof = ?3,
         options = ?4, confidence = ?5, effort = ?6, state = ?7 WHERE id = ?1",
         (p.id, check_words(change.hypothesis.as_deref().unwrap_or(&p.hypothesis))?,
@@ -331,10 +325,10 @@ pub(super) fn advance(tx: &Transaction, project: &str, at: i64) -> Result<(), St
         ORDER BY s.fingerprint LIMIT 1),
         EXISTS (SELECT 1 FROM supervisor_problem_signals y WHERE y.problem = p.id)
         AND NOT EXISTS (SELECT 1 FROM supervisor_problem_signals y WHERE y.problem = p.id
-            AND (y.clear_at IS NULL OR y.clear_at + y.weeks * ?3 > ?2 OR y.clear_seen <= ?2 - 1800)),
+            AND (y.clear_at IS NULL OR y.clear_at + y.weeks * ?3 > ?2 OR y.clear_seen <= ?2 - ?4)),
         EXISTS (SELECT 1 FROM supervisor_problem_signals y WHERE y.problem = p.id AND y.clear_at IS NOT NULL)
         AND NOT EXISTS (SELECT 1 FROM supervisor_problem_signals y WHERE y.problem = p.id AND y.clear_at IS NULL)
-        FROM supervisor_problems p WHERE p.project = ?1", (project, at, WEEK), |r| Ok((
+        FROM supervisor_problems p WHERE p.project = ?1", (project, at, WEEK, FRESH_EVIDENCE), |r| Ok((
             r.get::<_, i64>(0)?, r.get::<_, String>(1)?, r.get::<_, Option<String>>(2)?, r.get::<_, bool>(3)?, r.get::<_, bool>(4)?)))?;
     for (id, state, new, cleared, watching) in changes {
         let next = if let Some(ref key) = new {

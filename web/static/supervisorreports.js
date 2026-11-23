@@ -6,6 +6,13 @@ import { el } from "./listparts.js";
 import { taskUrl } from "./tasklink.js";
 import { actions, part, stack } from "./supervisorfields.js";
 
+let activeFrom = document.hidden ? null : performance.now(), activeTotal = 0;
+const activeTime = () => activeTotal + (activeFrom == null ? 0 : performance.now() - activeFrom);
+document.addEventListener("visibilitychange", () => {
+  activeTotal = activeTime();
+  activeFrom = document.hidden ? null : performance.now();
+});
+
 const VERDICTS = [["useful", "Useful"], ["not_useful", "Not useful"], ["wrong", "Wrong"]];
 const number = new Intl.NumberFormat(undefined, { maximumSignificantDigits: 6 });
 
@@ -26,7 +33,7 @@ function decisionList(decisions) {
   return part("details", "sv-panel", el("summary", "sv-touch", `Decisions waiting (${items.length})`), part("ol", "sv-stack sv-evidence", ...items));
 }
 
-function verdictItem(review, item, path) {
+function verdictItem(review, item, path, elapsed) {
   const keys = actions();
   const subject = el("p", null, `${item.metric} · ${item.detector}`);
   keys.setAttribute("role", "group");
@@ -37,7 +44,7 @@ function verdictItem(review, item, path) {
     showError(error, "");
     try {
       const saved = await api(`${path}/verdicts`, {
-        method: "POST", body: { task: review.batch_task ?? review.task, fingerprint: item.fingerprint, verdict },
+        method: "POST", body: { task: review.batch_task ?? review.task, fingerprint: item.fingerprint, verdict, active_seconds: elapsed() },
       });
       paint(saved.verdict);
     } catch (e) { showError(error, e.message); }
@@ -55,11 +62,20 @@ function weekly(review, path) {
   if (!review) return el("p", "msay", "No weekly review published.");
   const report = el("div", "markdown wrap");
   renderInto(report, review.result, { comment: true });
+  let started = null;
+  const elapsed = () => {
+    if (started == null) return null;
+    const now = activeTime(), seconds = Math.round((now - started) / 1000);
+    started = now;
+    return Math.min(1800, seconds);
+  };
   const batch = review.items.length
-    ? part("ol", "sv-stack sv-evidence", ...review.items.map((item) => verdictItem(review, item, path)))
+    ? part("ol", "sv-stack sv-evidence", ...review.items.map((item) => verdictItem(review, item, path, elapsed)))
     : el("p", "msay", "No items to rate in this review.");
-  return part("details", "sv-panel", el("summary", "sv-touch", `Weekly review · ${stamp(review.at)}`),
+  const panel = part("details", "sv-panel", el("summary", "sv-touch", `Weekly review · ${stamp(review.at)}`),
     stack(actions(taskLink(review.task, `Open ${review.task} in Routines`)), report, batch));
+  panel.addEventListener("toggle", () => { started = panel.open ? activeTime() : null; });
+  return panel;
 }
 
 function exceptionDigest(digest) {
@@ -113,8 +129,18 @@ function configuration(data, path, refresh) {
   return panel;
 }
 
+function auditReport(audit) {
+  if (!audit) return null;
+  const { latest, status, last_due } = audit;
+  const summary = latest ? `Quarterly audit · ${stamp(latest.at)}` : "Quarterly audit";
+  const note = status && el("p", "msay", last_due && latest?.at < last_due ? `${stamp(last_due)} · ${status}` : status);
+  const report = latest && stack(actions(taskLink(latest.task, `Open ${latest.task} in Routines`)),
+    el("pre", "sv-command", latest.report));
+  return part("details", "sv-panel", el("summary", "sv-touch", summary), stack(...[note, report].filter(Boolean)));
+}
+
 export function reportCards(data, path, refresh) {
   const setup = data.review_setup_error && el("p", "merr", data.review_setup_error);
   if (setup) setup.setAttribute("role", "alert");
-  return [decisionList(data.decisions ?? []), setup, weekly(data.review, path), configuration(data, path, refresh), exceptionDigest(data.digest)].filter(Boolean);
+  return [decisionList(data.decisions ?? []), setup, weekly(data.review, path), auditReport(data.audit), configuration(data, path, refresh), exceptionDigest(data.digest)].filter(Boolean);
 }

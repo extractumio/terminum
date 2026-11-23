@@ -24,6 +24,7 @@ pub(crate) enum Role {
     Token { manager: bool },
     Supervisor(Option<Level>),
     Reflection(bool),
+    Audit(bool),
     DesignReview(bool),
 }
 
@@ -40,6 +41,7 @@ impl Role {
             Self::Manager | Self::Token { manager: true } => "manager",
             Self::Supervisor(_) => "supervisor",
             Self::Reflection(_) => "reflection",
+            Self::Audit(_) => "supervisor_audit",
             Self::DesignReview(_) => "design_review",
         }
     }
@@ -47,16 +49,20 @@ impl Role {
     pub fn level(self) -> Option<Level> {
         match self {
             Self::Supervisor(level) => level,
-            Self::Reflection(true) | Self::DesignReview(true) => Some(Level::Observer),
+            Self::Reflection(true) | Self::Audit(true) | Self::DesignReview(true) => Some(Level::Observer),
             _ => None,
         }
     }
 
     pub fn is_supervisor(self) -> bool {
-        matches!(self, Self::Supervisor(_) | Self::Reflection(_) | Self::DesignReview(_))
+        matches!(self, Self::Supervisor(_) | Self::Reflection(_) | Self::Audit(_) | Self::DesignReview(_))
     }
 
     pub fn allows(self, tool: &str) -> bool {
+        if let Self::Audit(active) = self {
+            return active && matches!(tool, supervisor::audit::TOOL | "finish_task");
+        }
+        if tool == supervisor::audit::TOOL { return false; }
         if let Self::DesignReview(active) = self {
             return active && matches!(tool, "get_case_file" | supervisor::design_gates::RECORD);
         }
@@ -77,7 +83,7 @@ impl Role {
             Self::Token { .. } if matches!(tool, supervisor::review::TOOL | supervisor::design_gates::RECORD | supervisor::design_gates::BRIEF) => false,
             Self::Manager | Self::Token { manager: true } => true,
             Self::Worker | Self::Token { manager: false } => !super::MANAGER_TOOLS.contains(&tool),
-            Self::Supervisor(None) | Self::Reflection(_) | Self::DesignReview(_) => false,
+            Self::Supervisor(None) | Self::Reflection(_) | Self::Audit(_) | Self::DesignReview(_) => false,
             Self::Supervisor(Some(level)) => {
                 OBSERVER_TOOLS.contains(&tool)
                     || (level != Level::Observer && ADVISOR_TOOLS.contains(&tool))
@@ -89,7 +95,8 @@ impl Role {
     pub fn refusal(self, tool: &str) -> String {
         match self {
             Self::Supervisor(Some(level)) => format!("The {level:?} Supervisor cannot call {tool:?}."),
-            Self::Supervisor(None) | Self::Reflection(false) | Self::DesignReview(false) => "This Supervisor session is inactive.".into(),
+            Self::Supervisor(None) | Self::Reflection(false) | Self::Audit(false) | Self::DesignReview(false) => "This Supervisor session is inactive.".into(),
+            Self::Audit(true) => format!("A quarterly audit cannot call {tool:?}."),
             Self::Reflection(true) => format!("A reflection cannot call {tool:?}."),
             Self::DesignReview(true) => format!("A design reviewer cannot call {tool:?}."),
             _ => super::not_yours(tool),
@@ -105,6 +112,9 @@ pub(crate) struct Mark {
 
 /// Even an old mark wins over a human's project membership or a + Session run.
 pub(crate) fn marked(tx: &Transaction, key: &str) -> Result<Option<Mark>, String> {
+    if let Some((project, run, active)) = supervisor::audit::marked(tx, key)? {
+        return Ok(Some(Mark { project, role: Role::Audit(active), run: Some(run) }));
+    }
     let active_round = supervisor::rounds::ACTIVE;
     let row: Option<(String, bool, Option<String>)> = tx.prepare_cached(&format!("SELECT m.project, EXISTS(
         SELECT 1 FROM project_supervisor s WHERE s.project = m.project AND s.enabled = 1 AND s.generation = m.generation
@@ -126,7 +136,8 @@ pub(crate) fn marked(tx: &Transaction, key: &str) -> Result<Option<Mark>, String
 }
 
 pub(crate) fn marked_panes(tx: &Transaction) -> Result<Vec<String>, String> {
-    ops::rows(tx, "SELECT pane_key FROM supervisor_panes", [], |r| r.get(0))
+    ops::rows(tx, &format!("SELECT pane_key FROM supervisor_panes UNION {}", supervisor::audit::MARKED_PANES),
+        [], |r| r.get(0))
 }
 
 pub(crate) const PEER_UNKNOWN: &str = "terminumd cannot tell which process calls, so while a Supervisor session is open it runs no pane's tool for it.";
@@ -158,6 +169,23 @@ pub(crate) async fn run(app: &Shared, key: &str, other: bool, mark: Mark, tool: 
     }
     if other && !super::reads(&tool) {
         return Err("Only the Supervisor's main agent changes the project.".into());
+    }
+    if matches!(mark.role, Role::Audit(_)) {
+        let who = Who { key: key.into(), project: Some(mark.project.clone()), title: "Quarterly audit".into(),
+            agent: "supervisor_audit".into(), dir: None, supervisor: false };
+        if tool == "finish_task" { return crate::agentapi::task_tool_of(app, who, None, other, tool, args).await; }
+        let key = key.to_owned();
+        let run = mark.run.ok_or("The audit has no live run.")?;
+        let app = app.clone();
+        return crate::http::off(move || app.tasks.snapshot(crate::tasks::store::SCHEMA_VERSION, |tx| {
+            if marked(tx, &key)?.is_none_or(|current| current.project != mark.project
+                || current.run.as_deref() != Some(&run) || !current.role.allows(&tool))
+            {
+                return Err("This quarterly audit is inactive.".into());
+            }
+            supervisor::audit::check_start(tx, &run)?;
+            supervisor::audit::context(tx, &mark.project, &run, args).map(|value| value.to_string())
+        })).await;
     }
     if supervisor::holds::TOOLS.contains(&tool.as_str()) || tool == "stop_task" {
         return supervisor::holds_api::tool(app, key.into(), mark.project, tool, args).await;

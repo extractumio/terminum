@@ -55,9 +55,7 @@ fn ac236_register_rank_ruling_and_recurrence() {
         assert_eq!(ranked[0].impact, 2);
         assert!((ranked[0].rank - 0.176).abs() < 1e-9);
 
-        let update = |weeks| serde_json::from_value(json!({"id":high, "observation_weeks": weeks})).unwrap();
-        assert!(register::update(tx, PROJECT, update(2), NOW).is_err());
-        register::update(tx, PROJECT, update(5), NOW)?;
+        assert!(serde_json::from_value::<register::Update>(json!({"id":high, "observation_weeks":5})).is_err());
         register::rule(tx, PROJECT, high, "Accept only the evidence already seen.", NOW)?;
         tx.execute("UPDATE supervisor_signals SET count = count + 1 WHERE fingerprint = 'high'", []).map_err(sql)?;
         register::advance(tx, PROJECT, NOW + 1)?;
@@ -68,8 +66,8 @@ fn ac236_register_rank_ruling_and_recurrence() {
         assert_eq!(register::get(tx, PROJECT, high, NOW + 2)?.state, "recurred");
         let set_clear = |at| tx.execute("UPDATE supervisor_problem_signals SET clear_at = ?2, clear_seen = ?3 WHERE problem = ?1",
             (high, NOW, at)).map_err(sql);
-        set_clear(NOW + 4 * WEEK)?;
-        register::advance(tx, PROJECT, NOW + 4 * WEEK)?;
+        set_clear(NOW + 4 * WEEK - 1)?;
+        register::advance(tx, PROJECT, NOW + 4 * WEEK - 1)?;
         assert_eq!(register::get(tx, PROJECT, high, NOW + 4 * WEEK)?.state, "watching");
         register::advance(tx, PROJECT, NOW + 5 * WEEK)?;
         assert!(register::get(tx, PROJECT, high, NOW + 5 * WEEK)?.active(), "an old sample cannot resolve a problem");

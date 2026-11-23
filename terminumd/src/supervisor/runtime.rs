@@ -305,6 +305,7 @@ fn collect_project(app: &Shared, project: &Project, clock: impl Fn() -> i64) -> 
             let at = clock();
             if sunset_due { super::config_lifecycle::advance(tx, &project.id, project.enabled_at, at)?; }
             let mut changed = super::fix_tasks::advance(tx, &project.id, at)?;
+            if evaluated.is_some() { super::measures::observe_resolutions(tx, &project.id, at)?; }
             changed.extend(super::decisions::advance(tx, &project.id, at)?);
             if evaluated.is_some() { changed.extend(super::decisions::retro(tx, &project.id, at)?); }
             changed.extend(super::thread::backfill(tx, &project.id, at)?);
@@ -422,6 +423,11 @@ fn report_dead(store: &Store, project: &Project, at: i64) -> Result<bool, String
             (&project.id, project.generation, project.last_ok)).map_err(sql)?;
         if stale != 0 {
             prepared.write(tx, false)?;
+            let paged = tx.query_row("SELECT EXISTS (SELECT 1 FROM supervisor_incident_events e
+                JOIN supervisor_incidents i ON i.id = e.incident AND i.project = ?1
+                WHERE e.detector = ?2 AND e.at = ?3 AND e.level = 3 AND e.kind IN ('signal','updated'))",
+                (&project.id, rule.id(), at), |r| r.get::<_, bool>(0)).map_err(sql)?;
+            if paged { super::misses::watchdog(tx, &project.id, at, since + DEAD_AFTER)?; }
         }
         Ok(stale != 0)
     })?;

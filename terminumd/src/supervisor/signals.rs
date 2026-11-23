@@ -161,7 +161,7 @@ impl Prepared<'_> {
                         Some(reading) => reading.is_some_and(|(value, compare)| !compare.fires(value, threshold)),
                         None => complete || checked.complete_metrics.iter().any(|m| *m == subject.2),
                     };
-                let since = clear.then(|| previous.filter(|_| sampled.is_some_and(|t| evaluation.at - t <= 30 * 60))
+                let since = clear.then(|| previous.filter(|_| sampled.is_some_and(|t| evaluation.at - t <= super::register::FRESH_EVIDENCE))
                     .unwrap_or(evaluation.at));
                 tx.execute("UPDATE supervisor_problem_signals SET clear_at = ?2, clear_seen = ?3
                     WHERE fingerprint = ?1 AND (clear_at, clear_seen) IS NOT (?2, ?3)",

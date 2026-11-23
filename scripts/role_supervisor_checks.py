@@ -138,6 +138,29 @@ def ac231_supervisor_tools_pane_and_token(t, call, typed, tool, tmux, page, proj
                   and set(card["inputSchema"]["required"]) == {"id", "agent"}
                   and set(card["example"]["arguments"]["arguments"]) == {"id", "agent"})
 
+        protected = {
+            "set_supervisor_level": {"level": "operator"},
+            "set_supervisor_budgets": {"judgment_ceiling": 99999},
+            "set_scorecard": {"window": 1},
+            "set_yardstick": {"threshold": 99},
+            "record_owner_verdict": {"verdict": "useful"},
+            "edit_ledger": {"row": 1},
+            "set_charter": {"never": [], "priorities": []},
+            "set_guardrails": {"threshold_percent": 99},
+            "set_channels": {"channels": []},
+            "set_probes": {"git": True},
+            "revert_config_change": {"id": 1},
+        }
+        before = call(settings)[1]
+        denied = raw(pane, [(name, args, {}) for name, args in protected.items()])
+        check(f"AC-258 {level} refuses every protected target from its own pane",
+              all(reply["error"] and "cannot call" in reply["text"] for reply in denied)
+              and call(settings)[1] == before)
+        denied = raw(pane, [(name, args, {"token": manager_token}) for name, args in protected.items()])
+        check(f"AC-258 {level} cannot use token authority for any protected target",
+              all(reply["error"] and "outside terminum" in reply["text"] for reply in denied)
+              and call(settings)[1] == before)
+
         requests = sorted(catalog | hold_tools)
         answers = raw(pane, [(name, {}, {}) for name in requests])
         assert len(answers) == len(requests)

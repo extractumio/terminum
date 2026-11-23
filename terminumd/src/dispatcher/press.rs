@@ -207,6 +207,7 @@ impl Facts {
             // its first run is the firing's or a Run now's; any after is a RUN, the human's or the manager's
             let by = if self.manager { Initiator::Manager } else if *again { Initiator::Human } else { self.schedule_initiator };
             let run = fire::prompt(s, &t.id, &t.title, body, *again, by);
+            if s.supervisor_audit { return run; }
             return match said { Some(m) => format!("{m}\n\n{run}"), None => run };
         }
         let mut parts = vec![format!("{who} ran task {}: {}", t.id, t.title)];

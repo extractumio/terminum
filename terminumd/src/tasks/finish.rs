@@ -20,11 +20,17 @@ pub(super) fn finish(tx: &Transaction, who: &Who, args: &Value, me: &str, at: i6
     }
     super::integration_queue::stays_queued(tx, &t)?;
     after_its_subtasks(tx, &t)?;
-    let result = rules::clean(arg(args, "result")?);
+    let raw = arg(args, "result")?;
+    let result = rules::clean(raw);
     let review = crate::supervisor::review::of_task(tx, &t.key)?;
-    if let Some(project) = &review {
+    if let Some((project, audit)) = &review {
         crate::supervisor::review::require(tx, &who.key, project, &t.id)?;
-        if !crate::supervisor::review::complete(tx, &t, project, me, &result, at)? {
+        if *audit {
+            let (_, run, _) = crate::supervisor::audit::marked(tx, &who.key)?
+                .ok_or("The quarterly audit is inactive.")?;
+            crate::supervisor::audit::check_start(tx, &run)?;
+            crate::supervisor::audit::complete(tx, project, &t, me, raw, at)?;
+        } else if !crate::supervisor::review::complete(tx, &t, project, me, &result, at)? {
             return Ok(("Use the nine Supervisor review sections in the order shown in the task prompt.".into(), Vec::new()));
         }
     } else {

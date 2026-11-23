@@ -283,7 +283,7 @@ pub fn create(tx: &Transaction, author: &str, new: NewTask, at: i64) -> Result<T
     log(tx, &key, author, "made", &format!("{} made it", user_name(tx, author)?), None, at)?;
     super::attrs::apply(tx, author, &key, &new.attrs, at)?;
     let task = get(tx, &slug)?;
-    crate::supervisor::design_gates::created(tx, author, &task, &new.text, at)?;
+    crate::supervisor::task_created(tx, author, &task, &new.text, at)?;
     Ok(task)
 }
 

@@ -40,6 +40,7 @@ pub async fn agent(State(app): State<Shared>, seen: axum::http::Extensions, Json
     let peer = seen.get::<axum::extract::ConnectInfo<Peer>>().map_or(Peer(None), |c| c.0);
     // a program outside a pane names itself by a token (AC-181): on this Mac's socket alone, never a host's link
     if body["token"].is_string() {
+        if let Err(why) = roles::check_token_peer(&app, peer).await { return answer(&why, true); }
         // a session of terminum is its pane's session, whatever token its environment holds
         if roles::peer::in_any_pane(&app, peer).await {
             tracing::warn!(event = "tokens.used_in_pane");

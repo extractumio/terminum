@@ -60,6 +60,8 @@ struct Screen {
     holds: Vec<super::holds::Hold>,
     breakers: Vec<super::breakers::Open>,
     outcomes: Vec<super::outcomes::Score>,
+    scorecard: serde_json::Value,
+    audit: serde_json::Value,
     agent_rates: Vec<serde_json::Value>,
     reflections: Vec<serde_json::Value>,
     indicators: Vec<Indicator>,
@@ -123,11 +125,13 @@ async fn screen(State(app): State<Shared>, Path(id): Path<String>, Query(query):
         }
         let review_setup_error = tx.query_row("SELECT (SELECT review_setup_error FROM project_supervisor WHERE project = ?1)",
             [&id], |r| r.get(0)).map_err(crate::tasks::ops::sql)?;
-        Ok(Screen { project_name, holds: super::holds::list(tx, &id)?, indicators: indicators(tx, &id)?, signals: page,
+        let spending = governor::spending(tx, &id, at)?;
+        Ok(Screen { project_name, scorecard: super::measures::read(tx, &id, at, &spending)?,
+            audit: super::audit::shown(tx, &id)?, holds: super::holds::list(tx, &id)?, indicators: indicators(tx, &id)?, signals: page,
             breakers: super::breakers::list(tx, &id)?, outcomes: super::outcomes::scores(tx, &id)?,
             agent_rates: super::spend::review_rates(tx, &id, super::review_data::window(at))?,
             reflections: super::reflection::shown(tx, &id)?,
-            problems: register::ranked(tx, &id, at, true)?, spending: governor::spending(tx, &id, at)?,
+            problems: register::ranked(tx, &id, at, true)?, spending,
             marked_tasks_eligible: crate::tasks::auto::setting(tx, &id)?.supervisor_tasks,
             decisions: super::decisions::cards(tx, &id)?, digest: super::digest::latest(tx, &id)?,
             config_changes: super::config_changes::list(tx, &id, 0)?,

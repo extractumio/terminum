@@ -659,6 +659,33 @@ cost uses priced runs. An interval and a sample size accompany each measured
 rate. Fewer than 30 observations are advisory only. Return data is unavailable
 when integration is off. A routing proposal opens a decision card for the owner.
 
+#### Supervisor scorecard and quarterly audit
+
+**Supervisor scorecard** shows decisions judged right, fixes that stayed resolved,
+misses, detection times, overrides, refused findings and owner usefulness verdicts.
+Each number shows its sample. Shares include a 95% interval and samples below 30
+are advisory. A fix counts as stayed resolved once the signals meet the recorded
+yardsticks for the full window after landing. The score tracks recurrence after
+landing. Its incomplete count includes fixes whose observation window is still open.
+
+Terminum checks owner-created P0 and P1 Bugs, verified red target commits and
+level 3 collector watchdog pages for earlier signals on the same subject. For a
+Bug, a parent or follow-up link can identify the existing work it reports. The
+scorecard keeps the earliest supported time and whether the evidence was already
+raised, in shadow or muted. Observations start when this version receives those
+events. Judgment and fix spend, cards, delivered pages and verdict activity cover
+the last seven days. Verdict minutes count time with the review open in a visible
+tab, up to 30 minutes per press, and show how many presses supplied timing.
+
+The chosen **Independent** agent runs the project's **Supervisor quarterly audit**
+on the first day of January, April, July and October at 09:00 in the Mac’s local time.
+It uses routine judgment budget. Its tools page through the project’s ledger,
+signals, misses and register. The signed-in Supervisor screen and the scheduled
+task show the auditor’s full report. The screen shows the reason when a firing
+cannot run. The audit sees no earlier reflections. Only the owner can change
+the Supervisor's authority and protected settings. Code owns the score formulas,
+existing yardsticks and historical ledger.
+
 #### Supervisor configuration changes
 
 Advisor, Operator and independent reflection rounds can call
@@ -699,10 +726,10 @@ JSON object and use the versioned change shown on the Supervisor screen.
 | PUT the base route with `{"enabled": true}` or `{"enabled": false}` | Change the switch for this project and return its active holds. |
 | GET or PUT `/line` | Read or save the owner-wide channel paths, HTTPS origin, quiet hours and ladder. PUT requires the current revision. |
 | POST `/line/test` | Run the saved channel at the zero-based `channel` index with the current `revision`. |
-| GET `/screen` | Active holds, decisions, review, digest, scoreboard indicators, pool agent scorecards, the newest reflections and the newest page of signals. |
+| GET `/screen` | Active holds, decisions, review, digest, scoreboard indicators, pool agent scorecards, the Supervisor scorecard, quarterly audit status and report, the newest reflections and the newest page of signals. |
 | GET `/holds` | This project's active holds and their undo keys. |
 | POST `/holds/<id>/release` | Use the held action's undo as the owner. |
-| POST `/verdicts` | Record `verdict` on the `fingerprint` in the weekly review `task`. Values are `useful`, `not_useful` and `wrong`. |
+| POST `/verdicts` | Record `verdict` on the `fingerprint` in the weekly review `task`. Values are `useful`, `not_useful` and `wrong`. The optional `active_seconds` records visible review time up to 1800 seconds. |
 | GET `/signals?after=<cursor>` | The next page of signals for the same project. |
 | POST `/signals/<fingerprint>/investigate` | Request an investigation of the signal. |
 | GET `/rounds/<case>` | Read the retained case, result or failure, refusal count and end time. |

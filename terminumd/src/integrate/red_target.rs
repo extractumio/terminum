@@ -84,6 +84,9 @@ pub(super) fn judge(tx: &Transaction, home: &Path, run: &Run, target: &str, code
     let red = match code { 0 => Some(Vec::new()), 1 => red, _ => None };
     let all = red.as_ref().is_some_and(|red| steps.iter().all(|s| red.iter().any(|r| r == s)));
     // the red target's own task, red still: its fix does not mend them yet, and it never waits behind itself
+    if red.as_ref().is_some_and(|failed| !failed.is_empty()) {
+        crate::supervisor::misses::target_red(tx, &run.project, &s.target, target, &run.task, now)?;
+    }
     let itself = all && open_bug(tx, &run.project)?.as_deref() == Some(id.as_str());
     let words = match &red {
         Some(_) if itself => format!("{id} returned: red check: its Verify failed {failed}, which fail on {at} too, and {id} is the red target's own task: its commit does not mend them yet. {logs}"),

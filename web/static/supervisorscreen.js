@@ -6,6 +6,7 @@ import { api, loadMeta } from "./msgpage.js";
 import { $, alertLine, button, showError, stamp } from "./kanbanutil.js";
 import { el } from "./listparts.js";
 import { boardUrl, taskUrl } from "./tasklink.js";
+import { drawScorecard } from "./supervisorscorecard.js";
 import { drawRuleOutcomes } from "./supervisoroutcomes.js";
 import { drawAgentRates, drawReflections } from "./supervisorreflection.js";
 import { reportCards } from "./supervisorreports.js";
@@ -220,6 +221,7 @@ async function readScreen() {
     const data = await api(`${path}/screen${target ? `?${new URLSearchParams({ signal: target })}` : ""}`);
     $("sv-title").textContent = `${data.project_name} · Supervisor`;
     drawHolds(data.holds ?? []);
+    drawScorecard(data.scorecard);
     drawRuleOutcomes(data, path, readScreen);
     drawReflections(data.reflections ?? [], path);
     drawAgentRates(data.agent_rates ?? []);

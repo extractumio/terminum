@@ -225,7 +225,7 @@ fn in_kept(tx: &Transaction, ids: &[&str], kept: &BTreeMap<String, Kept>) -> Res
     let ids = runs::listed_keys(ids);
     let scheduled: Vec<(String, String)> = rows(tx, "SELECT DISTINCT r.id, r.agent_id, r.rowid FROM runs r JOIN run_tasks rt ON rt.run = r.id JOIN schedule_fires f ON f.task = rt.task JOIN schedules s ON s.id = f.schedule
                  WHERE r.id IN (SELECT value FROM json_each(?1)) AND s.agent_id = r.agent_id AND s.paused = 0 AND s.deleted_at IS NULL
-                   AND NOT EXISTS (SELECT 1 FROM supervisor_reviews v WHERE v.schedule = s.id)
+                   AND NOT EXISTS (SELECT 1 FROM supervisor_scheduled_reviews v WHERE v.schedule = s.id)
                    AND (SELECT count(*) FROM run_tasks x WHERE x.run = r.id) = 1 ORDER BY r.rowid",
             [&ids], |r| Ok((r.get(0)?, r.get(1)?)))?;
     let integrating: Vec<(String, String)> = rows(tx, "SELECT DISTINCT r.id, r.agent_id, r.rowid FROM runs r JOIN run_tasks rt ON rt.run = r.id JOIN integration_batches b ON b.task = rt.task

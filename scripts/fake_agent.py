@@ -154,6 +154,16 @@ def main():
         with open(opt("--round-log", ""), "a", encoding="utf8") as log:
             log.write(json.dumps({"review": context, "refused": refused, "finished": result}) + "\n")
 
+    def audit(task):
+        call = lambda name, args: tool("execute_tool", {"name": name, "arguments": args})
+        pages = {name: call("get_supervisor_audit", {"section": name})
+                 for name in ("ledger", "signals", "misses", "register")}
+        denied = call("get_supervisor_review", {})
+        report = "  Missed issues\n\n  Noise and unsupported conclusions.\n"
+        result = call("finish_task", {"id": task, "result": report})
+        with open(opt("--round-log", ""), "a", encoding="utf8") as log:
+            log.write(json.dumps({"audit": pages, "denied": denied, "finished": result, "report": report}) + "\n")
+
     def talk(case_id):
         response = tool("execute_tool", {"name": "get_case_file", "arguments": {"id": case_id}})
         with open(opt("--round-log", ""), "a", encoding="utf8") as log:
@@ -247,6 +257,9 @@ def main():
             elif opt("--round-log", "") and (case := re.fullmatch(r"Supervisor incident case (case_[a-f0-9]+)\..*", prompt)):
                 talk(case[1])
                 hook("Stop", last_assistant_message="An incident conversation is open.")
+            elif opt("--round-log", "") and "Call get_supervisor_audit" in prompt:
+                audit(tasks[0])
+                hook("Stop", last_assistant_message="The audit is ready.")
             elif opt("--round-log", "") and "Call get_supervisor_review" in prompt:
                 review(tasks[0])
                 hook("Stop", last_assistant_message="The review is ready.")

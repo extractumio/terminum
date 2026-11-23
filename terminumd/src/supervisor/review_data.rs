@@ -8,6 +8,10 @@ use crate::tasks::ops::{rows, sql};
 use super::{Rule, WEEK, Window, decisions as cards, flow, governor, measure_detector, people, register, scoreboard, settings, signals};
 
 pub(super) fn decisions(tx: &Transaction, project: &str, at: i64) -> Result<String, String> {
+    decisions_with_spending(tx, project, at, &governor::spending(tx, project, at)?)
+}
+
+fn decisions_with_spending(tx: &Transaction, project: &str, at: i64, spending: &governor::Spending) -> Result<String, String> {
     let pending = cards::pending(tx, project)?;
     let budget = rows(tx, "WITH cards AS (
         SELECT project, task FROM supervisor_budget_cards UNION ALL SELECT project, task FROM supervisor_charter_questions
@@ -19,7 +23,6 @@ pub(super) fn decisions(tx: &Transaction, project: &str, at: i64) -> Result<Stri
 
         (project, at - WEEK), |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?;
     let mut lines = Vec::new();
-    let spending = governor::spending(tx, project, at)?;
     if spending.judgment.tokens >= spending.judgment.limit_tokens
         || spending.judgment.day_tokens >= spending.judgment.day_limit_tokens || spending.judgment.round_limit_tokens == 0
     {
@@ -107,10 +110,12 @@ pub(super) fn context(tx: &Transaction, project: &str, task: &str, at: i64) -> R
     let misses = rows(tx, "SELECT detector, count(*) FROM supervisor_signals
         WHERE project = ?1 AND detector LIKE 'self.%' AND last_seen > ?2
         GROUP BY detector ORDER BY detector", (project, at-WEEK), |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))?;
+    let spending = governor::spending(tx, project, at)?;
+    let scorecard = super::measures::read(tx, project, at, &spending)?;
     let owner_hours = people::owner_load(tx, project, at - WEEK + 1, at)?.hours;
-    Ok(json!({"task":task,"project":project,"decisions":decisions(tx, project, at)?,"problems":problems,
+    Ok(json!({"task":task,"project":project,"decisions":decisions_with_spending(tx, project, at, &spending)?,"problems":problems,
         "top_problem_signals":top_evidence,"charter_data":saved.charter,"allocation":{"readings":allocation_rows,"missing":allocation.unavailable},"agent_rates":rates,"indicators":indicators,
         "any_improved_without_regression":scoreboard::period_improved(&board),"weeks_measured":weeks.len(),
-        "owner_hours":owner_hours,"owner_bottlenecks":bottlenecks(tx, project, at)?,"spending":governor::spending(tx, project, at)?,
+        "owner_hours":owner_hours,"owner_bottlenecks":bottlenecks(tx, project, at)?,"spending":spending,"scorecard":scorecard,
         "supervisor_diagnostics":misses,"collector_last_ok":last_ok}))
 }

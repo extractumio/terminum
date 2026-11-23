@@ -25,6 +25,7 @@ struct Usage {
 #[derive(Default, Serialize)]
 pub(crate) struct Judgment {
     pub tokens: u64,
+    pub sampled_runs: usize,
     pub held_tokens: u64,
     pub limit_tokens: u64,
     pub day_tokens: u64,
@@ -51,6 +52,7 @@ pub(crate) struct Fixes {
     pub held_dollars: f64,
     pub limit_dollars: f64,
     pub unpriced_runs: usize,
+    pub priced_runs: usize,
     pub exception_dollars: f64,
     pub estimated_dollars_per_run: f64,
 }
@@ -102,10 +104,13 @@ fn judgment_for(tx: &Transaction, project: &str, budgets: &settings::Budgets, us
     let routine_limit = token_count(limit as f64 * (100. - budgets.investigation_reserve_percent) / 100.);
     let day_limit = budgets.daily_token_ceiling.unwrap_or(limit);
     let (mut week, mut day, mut routine, mut held, mut held_today) = (0_u64, 0_u64, 0_u64, 0_u64, 0_u64);
+    let mut sampled_runs = 0;
     for (run, reserved, cap, ended) in rounds {
-        let spent = uses.get(&run).map_or(0, |u| token_count(u.tokens));
-        let daily = uses.get(&run).map_or(0, |u| token_count(u.daily));
-        let awaiting_usage = !uses.contains_key(&run) && ended.is_some_and(|t| t > at - WEEK);
+        let observed = uses.get(&run);
+        sampled_runs += usize::from(observed.is_some());
+        let spent = observed.map_or(0, |u| token_count(u.tokens));
+        let daily = observed.map_or(0, |u| token_count(u.daily));
+        let awaiting_usage = observed.is_none() && ended.is_some_and(|t| t > at - WEEK);
         let remaining = if ended.is_none() || awaiting_usage { (cap as u64).saturating_sub(spent) } else { 0 };
         if ended.is_none_or(|t| t > at - DAY) {
             held_today = held_today.saturating_add(remaining);
@@ -118,7 +123,7 @@ fn judgment_for(tx: &Transaction, project: &str, budgets: &settings::Budgets, us
     let investigation_left = limit.saturating_sub(week.saturating_add(held))
         .min(day_limit.saturating_sub(day.saturating_add(held_today)));
     Ok(Judgment {
-        tokens: week, held_tokens: held, limit_tokens: limit, day_tokens: day, day_limit_tokens: day_limit,
+        tokens: week, sampled_runs, held_tokens: held, limit_tokens: limit, day_tokens: day, day_limit_tokens: day_limit,
         routine_left: investigation_left.min(routine_limit.saturating_sub(routine)),
         investigation_left, round_limit_tokens: budgets.round_token_ceiling.unwrap_or(DEFAULT_ROUND_TOKENS).min(i64::MAX as u64),
     })
@@ -183,6 +188,7 @@ fn fixes_for(tx: &Transaction, project: &str, budgets: &settings::Budgets, uses:
             if exception { out.exception_dollars += dollars; }
             let unpriced = observed.map_or(active || estimate > 0.0, |u| u.unpriced);
             if unpriced { out.unpriced_runs += 1; }
+            if observed.is_some_and(|u| !u.unpriced) { out.priced_runs += 1; }
             if active || unpriced { out.held_dollars += (estimate - dollars).max(0.); }
         } else if !judgment && !active && observed.is_some_and(|u| !u.unpriced) && dollars > 0. {
             comparable += dollars;
