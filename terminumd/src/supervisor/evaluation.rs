@@ -39,7 +39,7 @@ pub(super) fn evaluate_snapshot(
                     .or_insert_with(|| attach::Range::new(limit));
             }
         }
-        let measured = matches!(detector.rule, Rule::LimitNear | Rule::StalePlan).then(|| {
+        let measured = matches!(detector.rule, Rule::LimitNear | Rule::StalePlan | Rule::ProbeFailed).then(|| {
             data.readings.iter().map(|r| (r.subject_kind, r.subject_id.clone(), r.metric)).collect()
         });
         let observations = if current_state {

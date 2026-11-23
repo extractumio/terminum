@@ -153,13 +153,14 @@ impl Default for Indicators {
 #[serde(default, deny_unknown_fields)]
 struct Probes {
     git: bool,
+    git_file_line_cap: Option<u32>,
     gate_record: bool,
     code_host: bool,
 }
 
 impl Default for Probes {
     fn default() -> Self {
-        Self { git: true, gate_record: true, code_host: true }
+        Self { git: true, git_file_line_cap: None, gate_record: true, code_host: true }
     }
 }
 
@@ -275,6 +276,7 @@ impl Settings {
     }
 
     fn validate(&self) -> Result<(), String> {
+        if self.probes.git_file_line_cap == Some(0) { return Err("The Git source file line limit must be positive.".into()); }
         self.charter.surfaces.validate()?;
         if !self.budgets.valid() {
             return Err("Invalid Supervisor budget.".into());

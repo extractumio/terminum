@@ -17,7 +17,7 @@ pub(crate) const FORM: &[(&str, &str)] = &[
     ("Decisions waiting for you", "decisions by cost of waiting, supplied by Terminum"),
     ("Top three register problems", "evidence, weekly cost, cause, options and recommendation"),
     ("Resolved and recurred", "problems that stayed resolved and those that came back"),
-    ("Effort allocation", "effort by task type against the charter target"),
+    ("Effort allocation", "priced spend by task type against the charter target, supplied by Terminum"),
     ("Agent performance", "rates by task type, sample sizes, uncertainty and routing proposals"),
     ("Owner bottlenecks", "only measures above the owner's usual range, supplied by Terminum"),
     ("Indicator verdicts", "seven indicators, guards, what limits them, what to build and stop"),
@@ -198,6 +198,7 @@ pub(crate) fn complete(tx: &Transaction, task: &ops::Task, project: &str, by: &s
         let end = headings.get(index + 1).map_or(words.len(), |p| p.1);
         let body = match index {
             0 => super::review_data::decisions(tx, project, at)?,
+            3 => super::review_data::allocation(tx, project, at)?,
             5 => super::review_data::bottlenecks(tx, project, at)?,
             7 => {
                 let mut body = words[*start..end].split_once('\n').map_or("", |(_, body)| body).to_owned();

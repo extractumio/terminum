@@ -77,7 +77,7 @@ export async function liveSupervisor(page, opts) {
     && !await page.getByText(theirs.evidence[0].id, { exact: false }).count());
   await page.locator("#sv-score summary").filter({ hasText: "Release cadence" }).click();
   check("AC-223 the live scoreboard says which data is missing",
-    await until(() => page.getByText("Not measured yet (release tags are unavailable)", { exact: true }).isVisible()));
+    await until(() => page.getByText("Not measured yet (Git release tags are unavailable.)", { exact: true }).isVisible()));
   await j(api.path, "PUT", { enabled: false });
   await j(web.path, "PUT", { enabled: false });
   await liveBreaker(page, opts, j, web);

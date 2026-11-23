@@ -230,7 +230,11 @@ fn read_batch(
     let previous = project.last_evaluation.unwrap_or(0);
     let first_run = project.last_ok.is_none();
     let (settings_revision, expired) = settings::recall_due(tx, &project.id, previous, at)?;
-    let scan_due = first_run || project.settings_revision != Some(settings_revision) || expired;
+    let sources_changed = cursor != project.cursor && tx.query_row("SELECT EXISTS(
+        SELECT 1 FROM supervisor_changes WHERE project = ?1 AND seq > ?2
+            AND source IN ('supervisor_probe_status', 'project_integration'))",
+        (&project.id, project.cursor), |r| r.get::<_, bool>(0)).map_err(sql)?;
+    let scan_due = first_run || project.settings_revision != Some(settings_revision) || expired || sources_changed;
     let changed = cursor != project.cursor || sampled || scan_due;
     let samples_ready = project.last_sample.is_some_and(|last| last >= previous);
     let hooks_ready = tx.query_row("SELECT EXISTS (SELECT 1 FROM supervisor_hook_counts WHERE project = ?1 AND at >= ?2)",

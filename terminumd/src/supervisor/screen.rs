@@ -65,6 +65,7 @@ struct Screen {
     agent_rates: Vec<serde_json::Value>,
     reflections: Vec<serde_json::Value>,
     indicators: Vec<Indicator>,
+    probes: Vec<super::probes::Status>,
     problems: Vec<register::Problem>,
     spending: governor::Spending,
     marked_tasks_eligible: bool,
@@ -126,8 +127,10 @@ async fn screen(State(app): State<Shared>, Path(id): Path<String>, Query(query):
         let review_setup_error = tx.query_row("SELECT (SELECT review_setup_error FROM project_supervisor WHERE project = ?1)",
             [&id], |r| r.get(0)).map_err(crate::tasks::ops::sql)?;
         let spending = governor::spending(tx, &id, at)?;
+        let probes = if page.investigations_enabled { super::probes::statuses(tx, &id, at)? } else { Vec::new() };
         Ok(Screen { project_name, scorecard: super::measures::read(tx, &id, at, &spending)?,
             audit: super::audit::shown(tx, &id)?, holds: super::holds::list(tx, &id)?, indicators: indicators(tx, &id)?, signals: page,
+            probes,
             breakers: super::breakers::list(tx, &id)?, outcomes: super::outcomes::scores(tx, &id)?,
             agent_rates: super::spend::review_rates(tx, &id, super::review_data::window(at))?,
             reflections: super::reflection::shown(tx, &id)?,

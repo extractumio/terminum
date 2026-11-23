@@ -30,13 +30,22 @@ pub const VERIFY_MOST: usize = 3;
 /// either is 1 (a red check). Verify preserves the design-review status for a matching typed failure.
 /// Each line stands on lines of its own, so nothing it holds (a `#`, a quote) reaches the frame; lines hold no line ends.
 pub(crate) fn line_of(prepare: &str, verify: &str) -> String {
+    stages_line(prepare, verify, false)
+}
+
+const OWN_VERIFY_GREEN: i32 = 78;
+const OWN_VERIFY_RED: i32 = 79;
+
+fn stages_line(prepare: &str, verify: &str, own: bool) -> String {
     let mut parts = Vec::new();
     if !prepare.is_empty() {
         parts.push(format!("(\n{prepare}\n) || {{ s=$?; [ \"$s\" -eq 2 ] && exit 2; exit 1; }}"));
     }
     if !verify.is_empty() {
         let code = verify_review::MISSING_EXIT;
-        parts.push(format!("(\n{verify}\n) || {{ s=$?; [ \"$s\" -eq {code} ] && exit {code}; exit 1; }}"));
+        let red = if own { OWN_VERIFY_RED } else { 1 };
+        parts.push(format!("(\n{verify}\n) || {{ s=$?; [ \"$s\" -eq {code} ] && exit {code}; exit {red}; }}"));
+        if own { parts.push(format!("exit {OWN_VERIFY_GREEN}")); }
     }
     parts.join("\n")
 }
@@ -123,12 +132,22 @@ fn follow(store: &Store, runner: &dyn Runner, home: &Path, run: &Run, now: i64) 
         finish(store, home, run)?;
         return Ok(false);
     }
+    // Keep each own Verify outcome even when its failing steps will be checked on the target.
+    let verified = match code { OWN_VERIFY_GREEN => Some(true), OWN_VERIFY_RED => Some(false), _ => None };
+    let code = match verified { Some(true) => 0, Some(false) => 1, None => code };
     // read before the tree moves to the target
     let failed = (code == 1).then(|| retry_notes::failed(&tree)).flatten();
     let notes = retry_notes::read(&tree);
     let skipped = retry_notes::skipped(&tree).filter(|_| code == 0);
     let (id, log) = (&run.id, log.display());
     store.with(|tx| {
+        if let Some(passed) = verified {
+            tx.execute("INSERT OR IGNORE INTO integration_verify_results (attempt, project, task, commit_sha, passed, at, agent)
+                SELECT ?1, e.project, e.task, e.commit_sha, ?5, ?6,
+                    CASE WHEN e.author GLOB 'agent:pool:*' THEN substr(e.author, length('agent:pool:') + 1) END
+                FROM integration_entries e WHERE e.project = ?2 AND e.task = ?3 AND e.commit_sha = ?4",
+                (&run.attempt, &run.project, &run.task, &run.commit, passed, now)).map_err(sql)?;
+        }
         if let Some(notes) = &notes {
             ops::notice(tx, DISPATCHER, id, &format!("{id}'s Verify has retry diagnostics (AC-197).\nCheck output (data):\n{notes}"), serde_json::json!({"retry": "verify"}), now)?;
         }
@@ -178,7 +197,7 @@ fn ready(tx: &Transaction, task: &str) -> Result<(), String> {
 /// A task's tree made at its commit and its Prepare and Verify started there; one that cannot start goes back.
 fn start(store: &Store, runner: &dyn Runner, home: &Path, task: &str, project: &str, commit: &str, now: i64) -> Result<(), String> {
     let p = place(store, home, project)?;
-    let line = line_of(&p.s.prepare, &p.s.verify);
+    let line = stages_line(&p.s.prepare, &p.s.verify, true);
     if line.is_empty() {
         return store.with(|tx| ready(tx, task));   // the settings changed since it was queued
     }

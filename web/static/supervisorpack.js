@@ -53,7 +53,7 @@ export function probeCommands({ request, run }) {
     rows.replaceChildren(...view.unset_probes.map(pending), ...confirmed);
   }
 
-  const node = section("Probe commands", hint("Approved commands will provide input for the named probes. Review each command before approving it."),
+  const node = section("Probe commands", hint("Approved commands run daily while the Supervisor is on. Review each command before approving it."),
     grid(row("Probe ID", id), row("Command", command)), actions(add), addError, rows);
   return { node, draw };
 }

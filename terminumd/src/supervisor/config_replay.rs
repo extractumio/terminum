@@ -37,6 +37,9 @@ pub(super) struct Count {
 }
 
 fn source(tx: &Transaction, project: &str, rule: Rule, at: i64) -> Result<(&'static str, Option<i64>), String> {
+    if let Some(source) = rule.probe_source() {
+        return Ok(("retained probe samples", super::probes::first_sample(tx, project, source, at)?));
+    }
     match rule {
         Rule::QueueGrowth | Rule::LimitNear | Rule::StalePlan =>
             Ok(("retained snapshots", samples::first_point(tx, project, rule, at)?)),

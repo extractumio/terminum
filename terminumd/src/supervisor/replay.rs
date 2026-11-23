@@ -61,6 +61,10 @@ pub(super) fn cutoffs(
     mut visit: impl FnMut(i64, bool, &[&str], Vec<Finding>) -> Result<(), String>,
 ) -> Result<(), String> {
     if detector.mode == super::Mode::Off { return Ok(()); }
+    let first = if let Some(source) = detector.rule.probe_source() {
+        let Some(sample) = super::probes::first_sample(tx, project, source, end)? else { return Ok(()); };
+        first.max(sample)
+    } else { first };
     while end >= first && end > 0 {
         let window = Window::of(end, detector.window_days);
         let mut data = measure_detector(tx, project, detector, window, false)?;

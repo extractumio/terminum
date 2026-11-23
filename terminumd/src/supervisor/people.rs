@@ -112,15 +112,20 @@ pub(super) fn load(q: &Query<'_, '_>) -> Result<Measurements, String> {
 }
 
 pub(super) const QUESTIONS: &str = "questions AS (
-    SELECT e.id, e.task, e.at, e.seq,
+    SELECT e.id, e.task, e.at, e.seq, json_extract(e.data, '$.question.kind') AS kind,
         (SELECT min(n.seq) FROM project_events n WHERE n.task = e.task AND n.seq > e.seq
             AND n.kind = 'comment' AND json_extract(n.data, '$.questions') IS NOT NULL) AS next
     FROM project_events e WHERE e.kind = 'comment' AND json_extract(e.data, '$.questions') IS NOT NULL
 ), answers AS (
-    SELECT q.id AS question, q.task, q.at AS asked_at, q.next, a.id AS answer, a.at AS answered_at
-    FROM questions q LEFT JOIN project_events a ON a.seq = (SELECT min(h.seq) FROM project_events h
-        WHERE h.task = q.task AND h.seq > q.seq AND (q.next IS NULL OR h.seq < q.next)
-          AND h.kind = 'comment' AND h.author = 'human' AND h.text IS NOT NULL AND h.at >= q.at)
+    SELECT q.id AS question, q.task, q.at AS asked_at, q.next, a.id AS answer, a.at AS answered_at,
+        q.kind, json_extract(a.data, '$.choice.option') AS chosen
+    FROM questions q LEFT JOIN project_events a ON a.seq = coalesce(
+        (SELECT min(h.seq) FROM project_events h WHERE h.task = q.task AND h.seq > q.seq
+            AND h.kind = 'comment' AND h.author = 'human' AND h.at >= q.at
+            AND json_extract(h.data, '$.choice.question') = q.id),
+        (SELECT min(h.seq) FROM project_events h WHERE h.task = q.task AND h.seq > q.seq
+            AND (q.next IS NULL OR h.seq < q.next) AND h.kind = 'comment' AND h.author = 'human'
+            AND h.text IS NOT NULL AND h.at >= q.at AND json_extract(h.data, '$.choice.question') IS NULL))
 )";
 
 pub(super) fn answer_latency(q: &Query<'_, '_>) -> Result<Measurements, String> {
@@ -177,7 +182,7 @@ pub(super) fn operations(q: &Query<'_, '_>) -> Result<Measurements, String> {
         if kind.is_operation() {
             counts[period] += 1;
             evidence.push(id);
-        } else {
+        } else if kind.is_strategic() {
             strategic[period] += 1;
             strategic_evidence.push(id);
         }
@@ -187,7 +192,6 @@ pub(super) fn operations(q: &Query<'_, '_>) -> Result<Measurements, String> {
     let [earlier, recent] = strategic;
     out.readings.push(Reading::new("project", q.project, "recorded_strategic_acts", f64::from(recent),
         strategic_evidence).history(vec![f64::from(earlier)]).comparison(Comparison::Below));
-    out.unavailable.push("Question kinds and recorded design sign-offs are unavailable.");
     out.complete_metrics.extend(["operations_per_done", "recorded_strategic_acts"]);
     Ok(out)
 }
@@ -200,11 +204,17 @@ fn owner_starts(tx: &rusqlite::Transaction, project: &str, from: i64, until: i64
 }
 
 #[derive(Clone, Copy)]
-pub(super) enum OwnerAction { Answer, Run, Move, Edit, Priority, PlanWork }
+pub(super) enum OwnerAction {
+    OperationalAnswer, StrategicAnswer, DesignSignoff, UnknownAnswer, Run, Move, Edit, Priority, PlanWork,
+}
 
 impl OwnerAction {
     pub fn is_operation(self) -> bool {
-        !matches!(self, Self::Priority | Self::PlanWork)
+        matches!(self, Self::OperationalAnswer | Self::Run | Self::Move | Self::Edit)
+    }
+
+    fn is_strategic(self) -> bool {
+        matches!(self, Self::StrategicAnswer | Self::DesignSignoff | Self::Priority | Self::PlanWork)
     }
 }
 
@@ -212,7 +222,14 @@ pub(super) fn owner_actions(tx: &rusqlite::Transaction, project: &str, from: i64
     use OwnerAction as A;
     let events_sql = project_events();
     let mut out = rows(tx, &format!("{events_sql}, {QUESTIONS}
-        SELECT answer, answered_at, 'answer' FROM answers WHERE answered_at >= ?3 GROUP BY answer
+        SELECT a.answer, a.answered_at, CASE
+            WHEN a.kind = 'operational' THEN 'operational'
+            WHEN a.kind = 'strategic' AND a.chosen = 'approve' AND EXISTS (
+                SELECT 1 FROM supervisor_design_gates g WHERE g.project = ?1
+                  AND g.blocker = a.task AND g.owner_question = a.question) THEN 'signoff'
+            WHEN a.kind = 'strategic' THEN 'strategic'
+            ELSE 'unknown' END
+        FROM answers a WHERE a.answered_at >= ?3
         UNION ALL
         SELECT e.id, e.at, CASE WHEN ({PRIORITY_EDIT}) THEN 'priority' ELSE e.kind END
         FROM project_events e JOIN tasks t ON t.id = e.task
@@ -220,7 +237,10 @@ pub(super) fn owner_actions(tx: &rusqlite::Transaction, project: &str, from: i64
             OR (e.kind = 'made' AND t.type IN ('Feature', 'Story')))"),
         (project, until, from), |r| {
             let kind = match r.get::<_, String>(2)?.as_str() {
-                "answer" => A::Answer,
+                "operational" => A::OperationalAnswer,
+                "strategic" => A::StrategicAnswer,
+                "signoff" => A::DesignSignoff,
+                "unknown" => A::UnknownAnswer,
                 "move" => A::Move,
                 "edit" => A::Edit,
                 "priority" => A::Priority,
@@ -274,7 +294,7 @@ pub(super) fn guard_broken(q: &Query<'_, '_>) -> Result<Measurements, String> {
     let events_sql = project_events();
     let done = done(q)?;
     let loads = load_windows(q)?;
-    let mut out = Measurements::missing("Release, CI, integration and strategic guard measurements are unavailable in the store catalog.");
+    let mut out = Measurements::default();
     let Some([old, now]) = feature_rates(q, loads, &done) else {
         out.unavailable.push("The store guard needs measured owner time in both windows.");
         return Ok(out);

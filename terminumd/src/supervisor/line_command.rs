@@ -11,11 +11,9 @@ pub(super) async fn send(path: &str, check: bool, text: &str, limit: Duration) -
     if check {
         cmd.arg("--check");
     }
-    let child = cmd.env_clear().env("PATH", "/usr/bin:/bin").env("LANG", "C").current_dir("/")
-        .stdin(Stdio::piped()).stdout(Stdio::null()).stderr(Stdio::null())
-        .process_group(0).kill_on_drop(true).spawn()
-        .map_err(|_| "Could not start the command.".to_string())?;
-    let mut group = Group { pid: child.id().map(|pid| pid as libc::pid_t), child };
+    cmd.env_clear().env("PATH", "/usr/bin:/bin").env("LANG", "C").current_dir("/")
+        .stdin(Stdio::piped()).stdout(Stdio::null()).stderr(Stdio::null());
+    let mut group = Group::spawn(&mut cmd).map_err(|_| "Could not start the command.".to_string())?;
     let mut input = group.child.stdin.take().expect("piped stdin");
     let result = timeout(limit, async {
         let wrote = input.write_all(text.as_bytes()).await;
@@ -36,13 +34,18 @@ pub(super) async fn send(path: &str, check: bool, text: &str, limit: Duration) -
     wrote.map_err(|_| "Command did not accept the notice.".into())
 }
 
-struct Group {
+pub(super) struct Group {
     pid: Option<libc::pid_t>,
-    child: Child,
+    pub(super) child: Child,
 }
 
 impl Group {
-    async fn exited(&self) -> io::Result<()> {
+    pub(super) fn spawn(cmd: &mut Command) -> io::Result<Self> {
+        let child = cmd.process_group(0).kill_on_drop(true).spawn()?;
+        Ok(Self { pid: child.id().map(|pid| pid as libc::pid_t), child })
+    }
+
+    pub(super) async fn exited(&self) -> io::Result<()> {
         let pid = self.pid.expect("new child has a process ID");
         while !ready_to_reap(pid)? {
             sleep(Duration::from_millis(20)).await;
@@ -50,7 +53,7 @@ impl Group {
         Ok(())
     }
 
-    fn kill(&mut self) {
+    pub(super) fn kill(&mut self) {
         if let Some(pid) = self.pid.take() {
             // SAFETY: process_group(0) created this group for the unreaped child.
             unsafe { libc::killpg(pid, libc::SIGKILL) };

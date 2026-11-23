@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 
-use super::{Measurements, Query, Threshold, flow, people, samples, spend};
+use super::{Measurements, Query, Threshold, flow, integration_rules, people, probe_rules, samples, spend};
 
 macro_rules! catalog {
     ($($name:ident, $id:literal, $query:literal, $threshold:expr, $run:path;)+) => {
@@ -56,10 +56,17 @@ catalog! {
     AnswerLatency, "owner.answer_latency", "answer_latency", change(60.0), people::answer_latency;
     PriorityChurn, "owner.priority_churn", "priority_churn", baseline(90, 1.0), people::churn;
     OwnerLoad, "owner.load", "owner_load", change(0.0), people::load;
-    Returned, "flow.returned", "integration_returns", Absolute(0.0), integration;
-    VerifyRed, "drift.verify_red", "verify_failures", Absolute(0.0), integration;
-    DiffOutlier, "drift.diff_outlier", "diff_outliers", Absolute(0.0), integration;
+    Returned, "flow.returned", "integration_returns", change(0.0), integration_rules::returned;
+    VerifyRed, "drift.verify_red", "verify_failures", Absolute(0.0), integration_rules::verify;
+    DiffOutlier, "drift.diff_outlier", "diff_outliers", baseline(95, 100.0), integration_rules::diffs;
     Misrouted, "drift.misrouted", "misrouted_tasks", Absolute(0.0), integration;
+    Flaky, "flow.flaky", "gate_failures", Absolute(0.0), probe_rules::flaky;
+    Hotspot, "arch.hotspot", "git_hotspots", baseline(95, 1000000.0), probe_rules::hotspots;
+    Dependency, "arch.dependency", "git_dependencies", Absolute(0.0), probe_rules::dependencies;
+    MigrationEdited, "arch.migration_edited", "git_migrations", Absolute(0.0), probe_rules::migrations;
+    ReleaseTime, "improve.release_time", "task_release_lead_time", change(1.0), probe_rules::release_time;
+    Releases, "improve.releases", "release_cadence", change(0.0), probe_rules::releases;
+    ProbeFailed, "self.probe_failed", "probe_failures", Absolute(0.0), probe_rules::failures;
     QueueGrowth, "flow.queue_growth", "queue_growth", Absolute(0.0), samples::snapshots;
     LimitNear, "flow.limit_near", "subscription_limits", Absolute(100.0), samples::snapshots;
     StalePlan, "drift.stale_plan", "stale_plans", Absolute(0.0), samples::snapshots;
@@ -70,8 +77,18 @@ catalog! {
 }
 
 impl Rule {
+    pub(super) fn probe_source(self) -> Option<&'static str> {
+        use super::probes::{ARCH, GATE, GIT};
+        match self {
+            Self::Hotspot | Self::Dependency | Self::MigrationEdited | Self::DiffOutlier => Some(ARCH),
+            Self::ReleaseTime | Self::Releases => Some(GIT),
+            Self::Flaky => Some(GATE),
+            _ => None,
+        }
+    }
+
     pub(super) fn configurable(self) -> bool {
-        !matches!(self, Self::CollectorDead | Self::LineDead)
+        !matches!(self, Self::CollectorDead | Self::LineDead | Self::ProbeFailed)
     }
 
     pub(super) fn present_only(self) -> bool {
@@ -79,15 +96,16 @@ impl Rule {
     }
 
     pub(super) fn needs_weekly_samples(self) -> bool {
-        !self.present_only() && !matches!(self, Self::WaitHuman | Self::CostOutlier | Self::QueueGrowth | Self::LimitNear | Self::StalePlan | Self::Loop | Self::Subagents | Self::CollectorDead | Self::LineDead)
+        !self.present_only() && !matches!(self, Self::WaitHuman | Self::CostOutlier | Self::QueueGrowth | Self::LimitNear | Self::StalePlan | Self::Loop | Self::Subagents | Self::CollectorDead | Self::LineDead | Self::ProbeFailed)
     }
 
     pub(super) fn has_historical_query(self) -> bool {
-        !self.present_only() && !matches!(self, Self::Returned | Self::VerifyRed | Self::DiffOutlier | Self::Misrouted
+        !self.present_only() && !matches!(self, Self::Misrouted
             | Self::CollectorDead | Self::LineDead)
     }
 
     pub(super) fn supports(self, threshold: Threshold) -> bool {
+        if self == Self::Returned && matches!(threshold, Threshold::Absolute(_)) { return true; }
         match self.defaults() {
             Threshold::Change { .. } => matches!(threshold, Threshold::Change { .. }),
             Threshold::Baseline { .. } => !matches!(threshold, Threshold::Change { .. }),
@@ -119,19 +137,13 @@ fn line_health(_: &Query<'_, '_>) -> Result<Measurements, String> {
 }
 
 pub(super) const UNAVAILABLE: &[(&str, &str)] = &[
-    ("flow.flaky", "Nightly and gate probe history is unavailable."),
     ("flow.main_red", "CI probe history is unavailable."),
     ("drift.rule_break", "Lint probe history is unavailable."),
     ("drift.scope", "Scope judgments require a recorded case."),
     ("arch.surface_touched", "Historical integration and git surface data are unavailable."),
-    ("arch.migration_edited", "Git probe history is unavailable."),
-    ("arch.dependency", "Git probe history is unavailable."),
-    ("arch.hotspot", "Git probe history is unavailable."),
     ("arch.spec_drift", "Git probe history is unavailable."),
     ("arch.bug_cluster", "Task-to-commit history is unavailable."),
     ("arch.review_missing", "Historical Verify review records are unavailable."),
-    ("improve.release_time", "Task commits and release tags are unavailable."),
-    ("improve.releases", "Release tags are unavailable."),
     ("product.external", "No historical external metric probe is available."),
     ("product.feedback_age", "No historical feedback probe is available."),
     ("process.handoff_overdue", "Indexed handoff observations are unavailable."),

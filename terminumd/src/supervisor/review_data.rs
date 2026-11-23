@@ -99,9 +99,7 @@ pub(super) fn context(tx: &Transaction, project: &str, task: &str, at: i64) -> R
     let indicators = board.iter().map(|i| json!({"name":i.name,"verdict":i.verdict.label(),"guard":i.guard,
         "measures":i.lines.iter().map(|line| json!({"name":line.name,"current":line.current,"usual":line.before,
             "noise":line.noise,"missing":line.missing})).collect::<Vec<_>>()})).collect::<Vec<_>>();
-    let allocation = measure_detector(tx, project, &saved.detector(Rule::Allocation), window(at), true)?;
-    let allocation_rows = allocation.readings.into_iter().map(|r| json!({"task_type":r.subject_id,
-        "metric":r.metric,"value":r.value,"comparison":r.history})).collect::<Vec<_>>();
+    let allocation = super::spend::allocation_view(tx, project, at - WEEK + 1, at, &saved.charter.allocation)?;
     let rates = super::spend::review_rates(tx, project, window(at))?;
     let problems = register::ranked(tx, project, at, true)?;
     let top_evidence = problems.iter().filter(|p| p.active()).take(3).flat_map(|p| &p.yardstick)
@@ -114,8 +112,22 @@ pub(super) fn context(tx: &Transaction, project: &str, task: &str, at: i64) -> R
     let scorecard = super::measures::read(tx, project, at, &spending)?;
     let owner_hours = people::owner_load(tx, project, at - WEEK + 1, at)?.hours;
     Ok(json!({"task":task,"project":project,"decisions":decisions_with_spending(tx, project, at, &spending)?,"problems":problems,
-        "top_problem_signals":top_evidence,"charter_data":saved.charter,"allocation":{"readings":allocation_rows,"missing":allocation.unavailable},"agent_rates":rates,"indicators":indicators,
+        "top_problem_signals":top_evidence,"charter_data":saved.charter,"allocation":allocation,"agent_rates":rates,"indicators":indicators,
         "any_improved_without_regression":scoreboard::period_improved(&board),"weeks_measured":weeks.len(),
         "owner_hours":owner_hours,"owner_bottlenecks":bottlenecks(tx, project, at)?,"spending":spending,"scorecard":scorecard,
         "supervisor_diagnostics":misses,"collector_last_ok":last_ok}))
+}
+
+pub(super) fn allocation(tx: &Transaction, project: &str, at: i64) -> Result<String, String> {
+    let targets = &settings::read(tx, project)?.settings.charter.allocation;
+    let measured = super::spend::allocation_view(tx, project, at - WEEK + 1, at, targets)?;
+    let mut lines = Vec::new();
+    if let Some(reason) = measured.missing { lines.push(reason.into()); }
+    if targets.is_empty() { lines.push("No allocation target is set.".into()); }
+    lines.extend(measured.rows.into_iter().filter(|r| r.share.is_some() || r.target.is_some()).map(|row| {
+        let share = row.share.map_or_else(|| "unavailable".into(), |v| format!("{:.1}%", v * 100.0));
+        let target = row.target.map_or_else(String::new, |v| format!(" · target {:.1}%", v * 100.0));
+        format!("- {} · ${:.2} priced spend · {share}{target}", row.task_type, row.dollars)
+    }));
+    Ok(lines.join("\n"))
 }
