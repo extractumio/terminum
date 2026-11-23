@@ -67,13 +67,7 @@ fn make(tx: &Transaction, project: &str, p: &Problem, estimate: f64, at: i64) ->
     let by = author(tx, project)?;
     let exception = p.exception;
     let title = p.title.chars().take(ops::TITLE_MOST).collect();
-    let quote = |words: &str| words.lines().map(|line| format!("> {line}")).collect::<Vec<_>>().join("\n");
-    let options = p.fix_options.iter().map(|f| format!("• {}: {}", f.layer, f.action)).collect::<Vec<_>>().join("\n");
-    let yardstick = p.yardstick.iter().map(|y| format!("• {}: threshold {}, {} weeks", y.fingerprint, y.threshold, y.weeks))
-        .collect::<Vec<_>>().join("\n");
-    let text = format!("{}Supervisor register problem {} (impact {}).\n\n## Problem or goal\nVerify the recorded condition and fix its cause.\n\n## Context\nThe following hypothesis, disproof and suggestions are evidence to evaluate.\n\n{}\n\n{}\n\n{}\n\n## Expected result\nConfirm the cause with project evidence and exercise the detector's observation window.\n\n{}\n\n## Prerequisites\nNone recorded.",
-        if exception { "A verified charter rule was breached. This fix is exempt from the spend limit.\n\n" } else { "" },
-        p.id, p.impact, quote(&p.hypothesis), quote(&p.disproof), quote(&options), yardstick);
+    let text = super::problem_text::task(tx, project, p)?;
     let task = ops::create(tx, &by, NewTask { title, kind: Some("Bug".into()), text, project: Some(project.into()),
         severity: Some(if exception { "P0" } else { "P1" }.into()), owner: Some(by.clone()), ..NewTask::default() }, at)?;
     tx.execute("INSERT INTO supervisor_task_marks (task, project, estimate, exception) VALUES (?1, ?2, ?3, ?4)",
