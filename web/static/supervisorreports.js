@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // AC-240, AC-242, AC-243: the project's decisions, scheduled review and code digest.
 import { oneAtATime } from "./dialogs.js";
-import { api, button, renderInto, showError, stamp } from "./kanbanutil.js";
+import { alertLine, api, button, renderInto, showError, stamp } from "./kanbanutil.js";
 import { el } from "./listparts.js";
 import { taskUrl } from "./tasklink.js";
 import { actions, part, stack } from "./supervisorfields.js";
@@ -31,9 +31,7 @@ function verdictItem(review, item, path) {
   const subject = el("p", null, `${item.metric} · ${item.detector}`);
   keys.setAttribute("role", "group");
   keys.setAttribute("aria-label", `Verdict for ${item.metric}`);
-  const error = el("p", "merr");
-  error.hidden = true;
-  error.setAttribute("role", "alert");
+  const error = alertLine();
   const paint = (verdict) => [...keys.children].forEach((key) => key.setAttribute("aria-pressed", String(key.value === verdict)));
   const press = oneAtATime(keys, async (verdict) => {
     showError(error, "");

@@ -59,7 +59,7 @@ fn card(tx: &Transaction, project: &str, blocked: &[Problem], at: i64) -> Result
     ask(tx, &by, &task, &words, at)?;
     tx.execute("INSERT INTO supervisor_budget_cards (project, kind, task) VALUES (?1, ?2, ?3)
         ON CONFLICT (project, kind) DO UPDATE SET task = excluded.task", (project, FIX, &task.key)).map_err(sql)?;
-    tx.execute("INSERT INTO supervisor_task_marks (task, project, estimate) VALUES (?1, ?2, 0)", (&task.key, project)).map_err(sql)?;
+    task_policy::mark_card(tx, &task)?;
     Ok(Some(task.id))
 }
 

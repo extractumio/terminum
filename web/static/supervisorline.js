@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // AC-227–229. This revision and save are shared across projects.
-import { button, showError } from "./kanbanutil.js";
+import { alertLine, button, showError } from "./kanbanutil.js";
 import { el } from "./listparts.js";
 import { actions, check, fieldError, grid, hint, literal, number, row, section, select, stack, text, tick } from "./supervisorfields.js";
 
@@ -13,8 +13,7 @@ const minutes = (value) => {
 
 export function criticalLine(request, run) {
   const body = stack();
-  const error = el("p", "merr");
-  error.setAttribute("role", "alert");
+  const error = alertLine();
   const result = el("p", "msay");
   result.setAttribute("role", "status");
   const node = section("Critical line", hint("Delivery settings apply to every project."), body, error, result);

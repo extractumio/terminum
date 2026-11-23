@@ -309,8 +309,8 @@ A task moves only by running.
 - **A wait for another task** comes with `wait_for_task` (a prerequisite whose change it needs;
   work that only overlaps another task's just integrates): the task joins that task's Blocked by,
   waits in TODO ("waits for TERM-9") and its session closes; once TERM-9 is DONE Dispatcher goes on
-  with it in the same conversation, no one asked. Only a task it waited for that ends FAILED or
-  archived comes to you.
+  with it in the same conversation, no one asked. Only a task it waited for that ends FAILED,
+  archived or deleted comes to you.
 - **The result** comes in fixed sections (Outcome, Done, Checked, Not done, Needs a human, New
   tasks, Tasks changed, Issues and discoveries, Further recommendations), in the project's
   "Language of agents' writing on the board" (empty: English), also used for its tasks and
@@ -480,7 +480,7 @@ numeric totals per session. Turning the Supervisor off stops collection and acti
 investigations. It keeps settings, signals, measurements and earlier cases.
 
 In **Import and export**, export saved preferences or choose a file and import it. Import
-replaces the project preferences and keeps the switch, tier agents and approved probe
+replaces the project preferences and keeps the switch, level, tier agents and approved probe
 commands. In **Probe commands**, use **View command** to read the full text and then
 **Approve command** to set it. Commands from an import start unset.
 
@@ -680,7 +680,7 @@ All routes below are relative to `/api/task-projects/<ID>/supervisor`.
 | GET `/settings` | Pack, revision, detector defaults and confirmed and unset probe IDs. |
 | PUT `/settings` with `revision` and `settings` | Replace the project's preferences. Use the latest revision. |
 | POST `/export` with `{}` | Download a versioned JSON text file. Select `include_commands` and `include_secrets` independently. |
-| POST `/import` with `revision` and the text `file` | Copy preferences and stage proposed probe commands as unset. Keep the destination switch, tier agents and approved commands. The owner-wide critical line stays outside the file. |
+| POST `/import` with `revision` and the text `file` | Copy preferences and stage proposed probe commands as unset. Keep the destination switch, level, tier agents and approved commands. The owner-wide critical line stays outside the file. |
 | POST `/probe-candidates/<probe>` with `command` | Stage a new probe command for approval. |
 | POST `/probe-candidates/<probe>/preview` with `{}` | Read the full proposed command and obtain its approval value. |
 | POST `/probe-candidates/<probe>/confirm` with `approval` | Set that command after a separate owner confirmation. Restaging or reimporting invalidates old approvals. |

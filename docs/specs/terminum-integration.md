@@ -867,6 +867,8 @@ sequenceDiagram
 | AC | Gap | Evidence |
 |---|---|---|
 | AC-187 | Queueing with a title where a session has no task (the tool's and `--title`): not built; the tools, `terminum integration queue <ID> --result-file <path>|wait|status`, `make land` queueing its tree, the Integrate key of the task's window and a human's card menu and drop (AC-193) are. | `terminumd/src/tasks/integration_queue.rs`, `terminumd/src/cli/integration.rs` |
+| AC-187 | The queued notice says the place and the expected batch's tasks, not which batch it follows nor the conflicts foreseen ("after batch 7 ends. Conflicts foreseen: none."). | `terminumd/src/tasks/integration_queue.rs` |
+| AC-189 | The held-back notice names the batch and the tasks it does not merge with, not the files and lines. | `terminumd/src/integrate/store.rs` |
 | AC-190 | A check's process group is ended by the runner, read from `ps`; nothing proves it ends a group that left its pane's tree. | `terminumd/src/integrate/runner.rs` |
 | AC-192 | Over 30 trees in a project, the column's head does not say that only the newest 30 are compared; a task whose session's row is gone from the list counts its tree as one with no task. | `terminumd/src/integrate/notices.rs` |
 | AC-194 | The integration task's text names each task with its ID and commit, not its session or the files it changed (its agent's prompt names the files). | `terminumd/src/integrate/store.rs` |
@@ -944,9 +946,9 @@ Overlap notices remember the other task's key or the other tree's resolved folde
 
 | Notice | Words |
 |---|---|
-| overlap | "API-12: its commits and API-13's (session web-2, IN PROGRESS) change the same lines: <files and lines>. They cannot be in one batch. Do not wait for API-13: integrate as soon as your work is ready. The first queued lands first; the queue returns the other with the files to merge." |
+| overlap | "API-12: its commits and API-13's (IN PROGRESS) change the same files: <files>. They cannot be in one batch. Do not wait for API-13: integrate as soon as your work is ready. The first queued lands first; the queue returns the other with the files to merge." |
 | overlap, the other queued | "… API-13 is queued for integration (2nd). Do not wait for it: integrate when your work is ready; the queue holds yours until API-13's batch ends and returns it with the files to merge if it no longer merges." |
-| target moved | "API-12: origin/main moved to <sha> (batch 7: <tasks>) in files you changed: <files>. Merge origin/main now, before you queue." |
+| target moved | "API-12: origin/main moved to <sha> in files you changed: <files>. Merge origin/main now, before you queue.", then "It conflicts in: <files>." when its commits no longer merge |
 | queued | "API-12 is queued 3rd for integration into origin/main. Expected batch: with API-9 and API-10, after batch 7 ends. Conflicts foreseen: none." |
 | held back | "API-12 is held back: it does not merge with API-9 of batch 8 in <files and lines>. Nothing to do until API-9's batch ends; it is judged again then." |
 | in a batch | "API-12 is in batch 8 with API-9 and API-10: its check runs." |

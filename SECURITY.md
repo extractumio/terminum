@@ -99,7 +99,7 @@ Three things hold everywhere below:
 
 - **Typing**: only in a pane it started and marked, at that agent's empty box, and only what the
   typing gate of `terminum-dispatcher.md` §9 lists: task IDs with fixed words; the prompt of a
-  human's RUN, including recent human comments on a continuation (AC-122); a schedule's; a project's manager's; the integration
+  human's RUN, with the human comments saved since its previous run on a continuation (AC-122) and, on a fresh start, the humans' and the project's manager's comments, each said to be whose (AC-209); a schedule's; a project's manager's; the integration
   queue's own words; your first prompt in + Session's box, once, into the pane that request
   started (`terminum-dispatcher.md` AC-204). A task's words never reach the shell an agent leaves. **Left**: in one
   session of several tasks an agent-written task can still sway the others once read.
@@ -160,8 +160,8 @@ pane; while a Supervisor pane is marked, a call whose process the system does no
 Only the signed-in owner's settings can change the level. Project imports preserve it.
 Tokens keep their own roles.
 
-Observer can list and read its project's tasks. Advisor can also create a task, add
-comments and ask on a task linked to its pane. Operator can also list runs, read the
+Observer can list and read its project's tasks. Advisor can also add comments and ask on
+a task linked to its pane; a round never creates a task, terminumd's governor does. Operator can also list runs, read the
 project dashboard, promote a queued task, give up a run and start a free task on a
 named project agent. Dispatcher supplies the start prompt from the task IDs and fixed
 words. Give up frees the slot and leaves the window. Every level refuses terminal
