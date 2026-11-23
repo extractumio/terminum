@@ -37,7 +37,7 @@ async fn beat(app: &Shared) -> Result<(), String> {
         let active = rows(tx, "SELECT r.run, r.deadline <= ?1,
             NOT EXISTS (SELECT 1 FROM project_supervisor p WHERE p.project = r.project
                 AND p.enabled = 1 AND p.generation = r.generation),
-            coalesce(r.found_at < ?1, false), r.failure IS NOT NULL
+            coalesce(r.found_at <= ?1 - 5, false), r.failure IS NOT NULL
             FROM supervisor_rounds r WHERE r.ended_at IS NULL", [at],
             |row| Ok(Active { run: row.get(0)?, expired: row.get(1)?, disabled: row.get(2)?,
                 finished: row.get(3)?, failed: row.get(4)? }))?;

@@ -26,7 +26,7 @@ fn observed(f: &Fixture, at: i64, subjects: &[(&str, bool, u8, i64)]) {
     }).collect();
     Evaluation { project: PROJECT.into(), at, detectors: vec![Checked {
         rule: Rule::FailedWithoutReason, mode: Mode::Live, findings, unavailable: Vec::new(),
-        thresholds: Default::default(), complete_metrics: Vec::new(), measured: None,
+        thresholds: Default::default(), complete_metrics: Vec::new(), measured: None, observations: Default::default(),
     }] }.record(&f.store).unwrap();
 }
 
@@ -53,6 +53,9 @@ fn ac227_templates_exclude_case_prose_and_use_only_a_validated_origin() {
     let update = take(&f.store, NOW + 121, 600).unwrap();
     assert_eq!(update.render(None), format!("Update on incident {id} · Level 3. Active signals: 1.\n"));
     let base = origin("https://terminum.example:8443/").unwrap();
+    let exhausted = Notice { budget: Some(crate::supervisor::governor::JUDGMENT_NOTICE),
+        project: initial.project.clone(), ..initial };
+    assert!(exhausted.render(None).starts_with(crate::supervisor::governor::JUDGMENT_NOTICE), "AC-237");
     let sample = Notice { project: "9feed0123456".into(), ..initial };
     assert!(sample.render(Some(&base)).ends_with(&format!(
         "https://terminum.example:8443/supervisor/?project=9feed0123456&incident={id}#incident-{id}\n")));

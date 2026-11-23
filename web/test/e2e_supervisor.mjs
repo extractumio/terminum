@@ -28,6 +28,15 @@ const SCORE = { name: "Release cadence", verdict: "not measured yet", guard: "St
   { name: "Releases per month", verdict: "not measured yet", missing: "release tags are unavailable" },
   { name: "Fixture measured series", verdict: "better", missing: null, before: 3, current: 5, noise: 0.5 },
 ] };
+const PROBLEM = { id: 42, title: "Repeated failures", state: "confirmed", lens: "flow", impact: 2, share: 0.2,
+  indicator: "failure_events", rank: 0.32, hypothesis: LITERAL, disproof: "Failures stop without a change.",
+  yardstick: [{ detector: RULE, fingerprint: "fixture-1", threshold: 8, weeks: 4 }],
+  fix_options: [{ layer: "test", action: "Exercise retries." }], tasks: ["API-2"], action_ready: true };
+const SPENDING = {
+  judgment: { tokens: 16000, held_tokens: 0, limit_tokens: 100000, day_tokens: 6000,
+    day_limit_tokens: 20000, round_limit_tokens: 4000, investigation_left: 14000, routine_left: 0 },
+  fixes: { dollars: 10.25, held_dollars: 8, limit_dollars: 20, estimated_dollars_per_run: 8, unpriced_runs: 1 },
+};
 const json = (route, obj, status = 200) => route.fulfill({ status, json: obj });
 
 async function fixture(page, theme) {
@@ -37,6 +46,7 @@ async function fixture(page, theme) {
   await page.route("**/api/messages/meta", (route) => json(route, { projects, theme }));
   await page.route("**/api/supervisor/incidents", (route) => json(route, []));
   await page.route("**/api/supervisor/incidents/42/investigate", (route) => json(route, { message: "Incident investigation requested." }));
+  let ruling = null;
   let enabled = false, refusal = true, saved = structuredClone(SETTINGS), revision = 0, candidate = false, approved = false, commandViewed = false;
   const calls = [];
   let line = { revision: 0, settings: { channels: [], link_base: null, quiet: [1380, 480], ladder: [10, 30, 60] } };
@@ -52,8 +62,13 @@ async function fixture(page, theme) {
     if (pathname === "/api/task-projects/web/supervisor/screen") {
       return json(route, { project_name: "Web service", indicators: [], signals: [{ ...SIGNAL, metric: "Web signal" }], next: null });
     }
+    if (suffix === "/problems/42/ruling" && method === "POST") {
+      ruling = body.reason;
+      return json(route, { ok: true });
+    }
     if (suffix === "/screen") return json(route, { project_name: "API service", indicators: [SCORE],
-      investigations_enabled: true,
+      investigations_enabled: true, spending: SPENDING, marked_tasks_eligible: false,
+      problems: [{ ...PROBLEM, ...(ruling ? { state: "accepted", ruling } : {}) }],
       signals: Array.from({ length: 50 }, (_, i) => ({ ...SIGNAL, fingerprint: String(i), metric: i ? `Signal ${i}` : SIGNAL.metric })), next: "49" });
     if (suffix === "/incidents") return json(route, { rows: [INCIDENT], next: null });
     if (suffix === "/signals/0/investigate" && method === "POST") {
@@ -241,7 +256,7 @@ async function screen(page, suffix, phone) {
     await page.getByText("Not measured yet (release tags are unavailable)", { exact: true }).isVisible()
     && await page.getByText("Prior 3 · Latest 5 · Weekly noise 0.5", { exact: true }).isVisible()
     && await opened.getByRole("heading", { name: "Evidence", exact: true }).isVisible() && await opened.getByRole("link", { name: "API-2" }).isVisible()
-    && (await page.locator(".sv-evidence").first().textContent()).includes(LITERAL)
+    && (await opened.locator(".sv-evidence").textContent()).includes(LITERAL)
     && await page.locator("#sv-signals img").count() === 0 && !await page.evaluate(() => window.fixtureRan)
     && !await page.getByText("Web signal", { exact: false }).count());
   check("AC-229 the Supervisor screen spells out the channel and exit status in signal evidence",
@@ -264,6 +279,34 @@ async function screen(page, suffix, phone) {
     && await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
   if (phone) check("AC-223 a long signal's summary remains finger-sized",
     await page.locator("#sv-signals summary").first().evaluate((node) => node.getBoundingClientRect().height >= 44));
+  const panel = page.locator("#sv-problems details").first();
+  await panel.locator("summary").click();
+  await page.locator("#sv-spending summary").first().click();
+  await page.locator("#sv-spending summary").last().click();
+  await panel.getByText("Failures stop without a change.").waitFor();
+  await page.getByText("16,000 of 100,000 tokens used", { exact: false }).waitFor();
+  await page.getByText("$10.25 of $20.00 used", { exact: false }).waitFor();
+  check("AC-236 AC-237 AC-238 the screen shows the problem, protected yardstick and both spends",
+    await panel.getByText("Failures stop without a change.").isVisible()
+    && await panel.getByText("fixture-1", { exact: false }).isVisible()
+    && await panel.getByRole("link", { name: "API-2" }).isVisible()
+    && await panel.locator("img").count() === 0
+    && await page.getByText("16,000 of 100,000 tokens used", { exact: false }).isVisible()
+    && await page.getByText("$10.25 of $20.00 used", { exact: false }).isVisible()
+    && await page.getByText("Auto-Dispatcher is set to exclude Supervisor tasks.").isVisible()
+    && !/\bnull\b/.test(await page.locator("#sv-spending").textContent() + await panel.textContent()));
+  await shot(page, `supervisor-register-${suffix}`);
+  const accept = panel.getByRole("button", { name: "Accept as is" });
+  if (phone) check("AC-236 the ruling button fits a finger and the register fits a phone",
+    await accept.evaluate((key) => key.getBoundingClientRect().height >= 40)
+    && await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+  await panel.getByLabel("Reason to accept this problem as is").fill("Leave this condition until there is new evidence.");
+  await accept.click();
+  await panel.getByText("Owner ruling", { exact: false }).waitFor();
+  check("AC-236 the owner ruling is recorded and the new status retains focus",
+    await panel.locator("summary").evaluate((node) => node === document.activeElement && node.textContent.includes("Accepted as is")));
+  await page.locator("#sv-signals summary").first().click();
+  await opened.getByRole("heading", { name: "Evidence", exact: true }).waitFor();
   await page.click("#sv-more");
   check("AC-223 more signals can be read without losing the opened evidence",
     await until(() => page.getByText("Last signal", { exact: false }).isVisible())

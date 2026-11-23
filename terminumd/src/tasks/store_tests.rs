@@ -447,27 +447,28 @@ fn ac198_upgrading_running_verifies_assigns_distinct_persistent_attempts() {
 
 #[test]
 fn ac230_upgrading_keeps_old_question_and_free_text_answer_events() {
-    use crate::tasks::{comments, ops};
+    use crate::tasks::ops;
     use serde_json::json;
     let path = fresh("tasks-before-choices");
     let mut conn = Connection::open(&path).unwrap();
     upgrade(&mut conn, &path, &MIGRATIONS[..45]).unwrap();
     let tx = conn.transaction().unwrap();
-    let task = ops::create(&tx, HUMAN, ops::NewTask { title: "Old question".into(), ..Default::default() }, 1).unwrap();
-    let question = comments::questions(&tx, DISPATCHER, &task.id, "Which version?", 2).unwrap();
-    ops::move_to(&tx, DISPATCHER, &task.id, "WAIT FOR HUMAN", 3).unwrap();
-    let answer = ops::comment(&tx, HUMAN, &task.id, "Version 2", 4).unwrap();
+    let (key, id) = ("old-question", "TERM-1");
+    tx.execute("INSERT INTO tasks (id, slug, number, project, title, body, status, severity, rank, owner, created_at, updated_at)
+        VALUES (?1, ?2, 1, 'default', 'Old question', '', 'WAIT FOR HUMAN', 'P2', 0, 'human', 1, 3)", (key, id)).unwrap();
+    let question = ops::log(&tx, key, DISPATCHER, "comment", "Which version?", Some(&json!({"questions":true})), 2).unwrap();
+    let answer = ops::log(&tx, key, HUMAN, "comment", "Version 2", None, 4).unwrap();
     tx.commit().unwrap();
     drop(conn);
     let s = Store::open(path.clone());
     assert_eq!(s.problem(), None);
     assert!(path.with_file_name("kanban.sqlite.bak-45").exists());
     s.with(|tx| {
-        let history = ops::history(tx, &task.id)?;
+        let history = ops::history(tx, id)?;
         let e = history.as_array().unwrap();
         assert!(e.iter().any(|e| e["id"] == question && e["questions"] == json!(true) && e.get("question").is_none()));
         assert!(e.iter().any(|e| e["id"] == answer && e.get("choice").is_none()));
-        assert_eq!(ops::answers(tx, &task.id)?.unwrap(), ["Version 2"]);
+        assert_eq!(ops::answers(tx, id)?.unwrap(), ["Version 2"]);
         let index: i64 = tx.query_row("SELECT count(*) FROM sqlite_schema WHERE name = 'events_question_choice'", [], |r| r.get(0)).map_err(ops::sql)?;
         assert_eq!(index, 1);
         Ok(())

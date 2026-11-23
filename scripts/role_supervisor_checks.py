@@ -95,7 +95,7 @@ def ac231_supervisor_tools_pane_and_token(t, call, typed, tool, tmux, page, proj
           rc == 0 and "call as a manager" in manager_tools and names(manager_tools) == catalog)
 
     observer = {"list_tasks", "get_task", "get_case_file", "list_signals", "get_signal", "get_metric", "record_finding"}
-    advisor = observer | {"create_task", "add_comment", "ask_human"}
+    advisor = observer | {"add_comment", "ask_human", "open_problem", "update_problem", "propose_rank"}
     operator = advisor | {"run_task", "promote_queued_task", "stop_task", "list_runs", "get_dashboard"}
     view = call(settings)[1]
 
@@ -149,9 +149,12 @@ def ac231_supervisor_tools_pane_and_token(t, call, typed, tool, tmux, page, proj
             comment = wire("add_comment", {"id": local, "text": "The fixture has been reviewed."})
             check("AC-231 Advisor comments in its project under its own role",
                   not comment["error"] and any(e["author_name"] == "Supervisor" for e in call(f"/api/tasks/{local}")[1]["history"]), comment)
-            body = "## Problem or goal\nExercise task creation.\n\n## Context\nPrivate test.\n\n## Expected result\nA card.\n\n## Prerequisites\nNone."
-            made = wire("create_task", {"title": "Feat: Advisor fixture card", "text": body, "severity": "P1"})
-            check("AC-231 Advisor creates a task in its project", not made["error"], made)
+            made = wire("create_task", {"title": "Feat: Advisor fixture card", "text": "Fixture", "severity": "P1"})
+            check("AC-238 Advisor cannot bypass the ranked register with create_task", made["error"], made)
+            empty = wire("open_problem", {"title": "Fixture problem", "lens": "flow", "hypothesis": "A repeated failure.",
+                                         "disproof": "The check passes twice.", "effort": 1, "confidence": 0.8,
+                                         "fix_options": [], "signals": []})
+            check("AC-236 Advisor cannot open a problem with no signal", empty["error"], empty)
             questions = "Why you are needed: choose the fixture's format.\nRecommended:\n1. Text: easy to read. Other options: table.\nDetails: both fixtures cover the case."
             asked = wire("ask_human", {"id": question, "questions": questions})
             check("AC-231 Advisor can ask on its own task", not asked["error"] and call(f"/api/tasks/{question}")[1]["status"] == "WAIT FOR HUMAN", asked)
@@ -162,6 +165,28 @@ def ac231_supervisor_tools_pane_and_token(t, call, typed, tool, tmux, page, proj
     cli_args, rc = typed(pane, tool("run_task", id=task, agent="Fake", comment="fixture"))
     check("AC-231 CLI preserves the Supervisor's run_task argument restriction",
           rc == "1" and "takes only a task ID and an agent" in cli_args, cli_args)
+    # Private fixture: age the human's queue action and supply a checked, high-impact problem.
+    db("UPDATE events SET at = at - 86401 WHERE task = (SELECT id FROM tasks WHERE slug = ?)", [queued])
+    goal = db("SELECT id FROM tasks WHERE slug = ?", [task])[0][0]
+    why = db("SELECT id FROM events WHERE task = ? AND kind = 'made'", [goal])[0][0]
+    db("INSERT INTO supervisor_signals (fingerprint, project, detector, subject_kind, subject_id, metric, evidence, "
+       "measure, scores, first_seen, last_seen, count, state) VALUES ('role-fixture', ?, 'flow.failed_repeat', 'task', ?, "
+       "'failed_runs', ?, ?, ?, 1, 1, 1, 'new')", (
+           project, goal, json.dumps([{"table": "events", "id": why}]),
+           json.dumps({"value": 3, "threshold": 2, "baseline": 2, "window_start": 0, "window_end": 1}),
+           json.dumps({"impact": 2, "blast": 0, "reversibility": 0, "confidence": 1.0}),
+       ))
+    p = db("INSERT INTO supervisor_problems (project, title, lens, hypothesis, disproof, options, confidence, effort, state, opened_at) "
+           "VALUES (?, 'Role fixture', 'flow', 'The check fails twice.', 'It passes from a clean store.', '[]', 1, 1, 'confirmed', 1) "
+           "RETURNING id", [project])[0][0]
+    db("INSERT INTO supervisor_problem_signals (problem, fingerprint, threshold, weeks) VALUES (?, 'role-fixture', 2, 4)", [p])
+    ranked = wire("propose_rank", {"problem": p, "task": task})
+    check("AC-239 the checked tool proposes a rank without editing a human's task",
+          not ranked["error"] and call(f"/api/tasks/{task}")[1]["title"] == "Supervisor dispatch fixture", ranked)
+    pack = view["settings"]
+    pack["budgets"]["fixes_ceiling"] = 1
+    status, view = call(settings, "PUT", {"revision": view["revision"], "settings": pack})
+    assert status == 200, view
     promoted = wire("promote_queued_task", {"id": queued})
     check("AC-231 Operator promotes an existing wait",
           not promoted["error"] and queue()[0] == queued, promoted)
@@ -179,6 +204,14 @@ def ac231_supervisor_tools_pane_and_token(t, call, typed, tool, tmux, page, proj
     panes = tmux("list-panes", "-a", "-F", "#{pane_id}").split()
     check("AC-231 Operator's Give up frees the run and leaves its window",
           not stopped["error"] and run_pane in panes and call(f"/api/tasks/{task}")[1]["status"] == "FAILED", stopped)
+
+    status, _ = call(f"/api/tasks/{task}", "PATCH", {"status": "TODO"})
+    assert status == 200
+    overridden = wire("propose_rank", {"problem": p, "task": task})
+    check("AC-239 the owner's move immediately blocks a fresh rank and records self.fights",
+          overridden["error"] and "24 hours" in overridden["text"]
+          and db("SELECT count FROM supervisor_signals WHERE project = ? AND detector = 'self.fights' AND subject_id = ?",
+                 [project, task]) == [(1,)], overridden)
 
     status, view = call(settings, "PUT", {"revision": view["revision"], "settings": {**view["settings"], "level": "observer"}})
     assert status == 200, view

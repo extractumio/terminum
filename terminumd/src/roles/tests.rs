@@ -296,24 +296,26 @@ fn ac231_ac232_each_level_allows_exactly_its_list_of_the_catalog() {
     use crate::supervisor::Level::{Advisor, Observer, Operator};
     let observer = ["list_tasks", "get_task"].into_iter()
         .chain(crate::supervisor::round_tools::NAMES.iter().copied()).collect::<Vec<_>>();
-    let advisor = ["create_task", "add_comment", "ask_human"];
+    let advisor = ["add_comment", "ask_human"].into_iter()
+        .chain(crate::supervisor::round_tools::ADVISOR.iter().copied()).collect::<Vec<_>>();
     let operator = ["run_task", "promote_queued_task", "stop_task", "list_runs", "get_dashboard"];
     let expected = [(Observer, observer.len()), (Advisor, observer.len() + advisor.len()), (Operator, observer.len() + advisor.len() + operator.len())];
     for (level, count) in expected {
         let wanted: Vec<&str> = observer.iter().chain(advisor.iter().filter(|_| level != Observer))
             .chain(operator.iter().filter(|_| level == Operator)).copied().collect();
-        let allowed: Vec<&str> = session_tools().chain(MANAGER_TOOLS).chain(crate::supervisor::round_tools::NAMES.iter().copied()).filter(|t| Role::Supervisor(Some(level)).allows(t)).collect();
+        let allowed: Vec<&str> = session_tools().chain(MANAGER_TOOLS).chain(crate::supervisor::round_tools::NAMES.iter().copied())
+            .chain(crate::supervisor::round_tools::ADVISOR.iter().copied()).filter(|t| Role::Supervisor(Some(level)).allows(t)).collect();
         assert_eq!(allowed.len(), count, "{level:?}: {allowed:?}");
         assert!(wanted.iter().all(|t| allowed.contains(t)), "{level:?}: {allowed:?}");
     }
     for never in ["send_to_session", "close_session", "create_agent", "update_agent", "delete_agent", "create_schedule", "update_schedule",
-        "delete_schedule", "run_schedule", "get_session", "get_file", "attach_file", "update_task", "integrate", "dispatch_task", "probe"] {
+        "delete_schedule", "run_schedule", "get_session", "get_file", "attach_file", "create_task", "update_task", "integrate", "dispatch_task", "probe"] {
         assert!(!Role::Supervisor(Some(Operator)).allows(never), "{never} at Operator");
     }
     assert!(session_tools().chain(MANAGER_TOOLS).all(|t| !Role::Supervisor(None).allows(t)), "an inactive mark allows nothing");
     assert!(session_tools().all(|t| Role::Worker.allows(t)) && MANAGER_TOOLS.iter().all(|t| !Role::Worker.allows(t)), "a worker's reach");
     assert!(session_tools().chain(MANAGER_TOOLS).all(|t| Role::Manager.allows(t)), "a manager's reach");
-    assert!(crate::supervisor::round_tools::NAMES.iter().all(|t| !Role::Worker.allows(t) && !Role::Manager.allows(t)));
+    assert!(crate::supervisor::round_tools::NAMES.iter().chain(crate::supervisor::round_tools::ADVISOR).all(|t| !Role::Worker.allows(t) && !Role::Manager.allows(t)));
 }
 
 #[test]

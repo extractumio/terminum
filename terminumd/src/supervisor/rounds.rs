@@ -8,7 +8,7 @@ use serde_json::{Value, json};
 use crate::app::Shared;
 use crate::tasks::{api::{answer, store}, ops::{now, rows, sql}};
 
-use super::{Evidence, Signal, signals, settings};
+use super::{Evidence, Signal, governor, register, signals, settings};
 
 const TIME_LIMIT: i64 = 15 * 60;
 const EXCERPT: usize = 1_000;
@@ -55,6 +55,7 @@ fn request(tx: &Transaction, project: &str, key: &str) -> Result<Value, String> 
     }
     let saved = settings::read(tx, project)?.settings;
     check_room(&saved, &sig)?;
+    governor::admit_round(tx, project, now(), sig.level >= 2)?;
     if crate::tasks::ops::project_place(tx, project)?.1.is_some() {
         return Err("Supervisor investigations require a local pool agent for pane identity checks.".into());
     }
@@ -98,7 +99,7 @@ pub(super) fn status(tx: &Transaction, key: &str) -> Result<Option<String>, Stri
 
 fn check_room<'a>(settings: &'a settings::Settings, signal: &Signal) -> Result<&'a str, String> {
     if !settings.investigation_room() {
-        return Err("The Supervisor's judgment budget has no room for an investigation.".into());
+        return Err(governor::JUDGMENT_NOTICE.into());
     }
     let (tier, agent) = settings.tiers.investigation(signal.level);
     agent.ok_or_else(|| format!("Choose a {tier}-tier pool agent to investigate."))
@@ -116,10 +117,13 @@ pub(crate) fn waiting(tx: &Transaction, at: i64, key: Option<&str>) -> Result<Ve
         WHERE p.enabled = 1 AND (?2 IS NULL OR s.fingerprint = ?2) AND NOT EXISTS (
             SELECT 1 FROM supervisor_rounds r WHERE r.fingerprint = s.fingerprint AND r.ended_at IS NULL)
         AND (q.owner_requested = 1 OR (
-            s.state IN ('new', 'raised', 'recurred', 'held') AND s.detector <> 'self.round_failed'
+            s.state IN ('new', 'raised', 'recurred', 'held') AND s.detector NOT IN ('self.round_failed','self.budget','self.fights')
             AND NOT EXISTS (SELECT 1 FROM supervisor_rounds r WHERE r.fingerprint = s.fingerprint
                 AND (r.signal_revision = s.revision OR (level = 1 AND r.finding IS NOT NULL)))
-            AND (level >= 2 OR (level = 1 AND 3 <= (
+            AND (level >= 2 OR (level = 1 AND NOT EXISTS (
+                SELECT 1 FROM supervisor_problem_signals y JOIN supervisor_problems p ON p.id = y.problem
+                WHERE y.fingerprint = s.fingerprint AND p.state IN ('confirmed','fix_in_work','watching','accepted'))
+              AND 3 <= (
                 SELECT count(*) FROM supervisor_signal_weeks w
                 WHERE w.fingerprint = s.fingerprint AND w.week BETWEEN ?1 - 7 AND ?1)))))
         )
@@ -192,6 +196,13 @@ pub(crate) fn save(tx: &Transaction, run: &str, candidate: Candidate, at: i64, c
     let saved = settings::read(tx, &signal.project)?.settings;
     let charter = saved.investigation_charter().map(|lines| excerpt(lines.join("\n")));
     let deadline = at + (TIME_LIMIT / clock_scale).max(1);
+    let important = signal.level >= 2;
+    let token_cap = governor::admit_round(tx, &signal.project, at, important)?;
+    let problem = register::case_context(tx, &signal.project, &signal.fingerprint, at)?;
+    let role = crate::roles::Role::Supervisor(Some(settings::level(tx, &signal.project)?));
+    let tools = super::round_tools::NAMES.iter().chain(super::round_tools::ADVISOR)
+        .filter(|name| role.allows(name))
+        .copied().collect::<Vec<_>>();
     let evidence_count = signal.evidence.len();
     signal.evidence.truncate(CASE_EVIDENCE);
     let mut evidence = Vec::new();
@@ -200,17 +211,19 @@ pub(crate) fn save(tx: &Transaction, run: &str, candidate: Candidate, at: i64, c
     }
     let case = json!({
         "id": id, "kind": if verify { "verification" } else { "investigation" },
-        "signal": signal, "deadline": deadline, "budget_seconds": TIME_LIMIT,
+        "signal": signal, "deadline": deadline, "budget_seconds": TIME_LIMIT, "budget_tokens": token_cap,
+        "register_problem": problem,
+        "register_note": "Use the register tools before submitting the final finding.",
         "charter_data": {"never": charter[0], "priorities": charter[1]},
         "task_data": task_data(tx, &signal)?, "evidence_rows": evidence, "evidence_count": evidence_count,
         "question": if verify { "Does the named measurement and its evidence confirm the signal?" }
             else { "What caused this signal, what would disprove the cause, and what would address it?" },
-        "tools": super::round_tools::NAMES,
+        "tools": tools,
         "verification_hold": verify.then_some("No authorized hold with a lower measured cost than waiting."),
     });
-    tx.execute("INSERT INTO supervisor_rounds (id, run, project, generation, fingerprint, signal_revision, case_file, deadline)
-        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)", rusqlite::params![id, run, signal.project, generation,
-            signal.fingerprint, revision, case.to_string(), deadline]).map_err(sql)?;
+    tx.execute("INSERT INTO supervisor_rounds (id, run, project, generation, fingerprint, signal_revision, case_file, deadline, token_cap, reserved_class)
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)", rusqlite::params![id, run, signal.project, generation,
+            signal.fingerprint, revision, case.to_string(), deadline, token_cap as i64, important]).map_err(sql)?;
     tx.execute("DELETE FROM supervisor_round_requests WHERE fingerprint = ?1", [&signal.fingerprint]).map_err(sql)?;
     Ok(id)
 }

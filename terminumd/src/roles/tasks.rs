@@ -64,6 +64,7 @@ pub(super) async fn promote_queued(app: &Shared, boss: &Boss, args: &Value, supe
         let w = waits::of_task(tx, &t.key)?.ok_or_else(|| format!("{} has no waiting run of its own: use a queued primary task from list_runs.", t.id))?;
         if supervised {
             supervisor::require(tx, &b.key, &b.project, "promote_queued_task")?;
+            crate::supervisor::task_policy::check(tx, &t, ops::now())?;
             if w.scheduled {
                 return Err("The Supervisor cannot promote a schedule's task.".into());
             }
@@ -100,8 +101,9 @@ pub(super) async fn stop(app: &Shared, boss: &Boss, args: &Value, supervised: bo
     let (scope, actor) = (boss.clone(), boss.clone());
     let who = if supervised { "The project's Supervisor" } else { "The project's manager" };
     let stopped = crate::dispatcher::letgo::gave_up_checked(app, &id, who, move |tx, wanted| {
-        in_project(tx, &scope, wanted)?;
+        let task = in_project(tx, &scope, wanted)?;
         if supervised {
+            crate::supervisor::task_policy::check(tx, &task, ops::now())?;
             supervisor::require(tx, &scope.key, &scope.project, "stop_task")?;
         }
         Ok(())
@@ -110,7 +112,11 @@ pub(super) async fn stop(app: &Shared, boss: &Boss, args: &Value, supervised: bo
             supervisor::author(tx, &actor.project)?;
         }
         for id in ids {
-            let key = if supervised { in_project(tx, &actor, id)?.key } else { ops::key_of(tx, id)? };
+            let key = if supervised {
+                let affected = in_project(tx, &actor, id)?;
+                crate::supervisor::task_policy::check(tx, &affected, ops::now())?;
+                affected.key
+            } else { ops::key_of(tx, id)? };
             ops::log(tx, &key, &actor.user, "why", &format!("{} stopped it.", actor.name), None, ops::now())?;
         }
         Ok(())

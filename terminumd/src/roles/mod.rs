@@ -87,6 +87,25 @@ pub fn boss(tx: &Transaction, key: &str) -> Result<Option<Boss>, String> {
     Ok(Some(Boss { key: key.to_string(), user: agent_named(tx, id, &name)?, project, name }))
 }
 
+/// Record manager authority separately from the author shown in task history.
+pub(crate) fn task_write_start(tx: &Transaction, key: &str) -> Result<Option<i64>, String> {
+    let manager = if let Some(id) = key.strip_prefix("token:") {
+        tx.query_row("SELECT EXISTS (SELECT 1 FROM tokens WHERE id = ?1 AND role = 'manager'
+            AND (expires_at IS NULL OR expires_at > ?2))", (id, crate::tasks::ops::now()), |r| r.get(0)).map_err(crate::tasks::ops::sql)?
+    } else { manages(tx, key)?.is_some() };
+    manager.then(|| tx.query_row("SELECT coalesce(max(rowid), 0) FROM events", [], |r| r.get(0))
+        .map_err(crate::tasks::ops::sql)).transpose()
+}
+
+pub(crate) fn task_write_end(tx: &Transaction, start: Option<i64>) -> Result<(), String> {
+    if let Some(start) = start {
+        tx.execute("UPDATE events SET data = json_set(coalesce(data, '{}'), '$.by', 'manager')
+            WHERE rowid > ?1 AND author IN (SELECT id FROM users WHERE kind = 'agent')",
+            [start]).map_err(crate::tasks::ops::sql)?;
+    }
+    Ok(())
+}
+
 /// A manager token's caller (AC-181).
 pub fn boss_of_token(tx: &Transaction, t: &tokens::Token) -> Result<Boss, String> {
     let name = format!("{} · token", t.name);

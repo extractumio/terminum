@@ -7,7 +7,7 @@ import { $, button, showError, stamp } from "./kanbanutil.js";
 import { el } from "./listparts.js";
 import { boardUrl, taskUrl } from "./tasklink.js";
 import { incidentHistory } from "./supervisorincidents.js";
-import { actions, part, stack } from "./supervisorfields.js";
+import { actions, part, stack, text } from "./supervisorfields.js";
 
 const project = new URLSearchParams(location.search).get("project");
 const path = `/api/task-projects/${encodeURIComponent(project)}/supervisor`;
@@ -91,6 +91,77 @@ function signal(record, enabled) {
   });
 }
 
+const currency = new Intl.NumberFormat(undefined, { style: "currency", currency: "USD" });
+const percent = new Intl.NumberFormat(undefined, { style: "percent", maximumFractionDigits: 1 });
+const shown = (...nodes) => stack(...nodes.filter(Boolean));
+const problemState = (state) => state === "accepted" ? "Accepted as is" : state.replaceAll("_", " ");
+
+function spending({ judgment, fixes }, eligible) {
+  return [
+    folding("Judgment · last 7 days", () => stack(
+      note(`${numbers.format(judgment.tokens)} of ${numbers.format(judgment.limit_tokens)} tokens used · ${numbers.format(judgment.held_tokens)} reserved`),
+      note(`Last 24 hours: ${numbers.format(judgment.day_tokens)} of ${numbers.format(judgment.day_limit_tokens)} tokens`),
+      note(`Per round: up to ${numbers.format(judgment.round_limit_tokens)} tokens`),
+      note(judgment.investigation_left === 0 || judgment.round_limit_tokens === 0
+        ? "Judgment limit reached. Code-only work continues."
+        : `${numbers.format(judgment.routine_left)} tokens left for routine work · ${numbers.format(judgment.investigation_left)} for level 2 and 3 investigations`))),
+    folding("Fixes · last 7 days", () => shown(
+      note(`${currency.format(fixes.dollars)} of ${currency.format(fixes.limit_dollars)} used · ${currency.format(fixes.held_dollars)} reserved`),
+      note(`Estimated cost per run: ${currency.format(fixes.estimated_dollars_per_run)}`),
+      fixes.unpriced_runs ? note(`Actual cost unavailable for ${fixes.unpriced_runs} ${fixes.unpriced_runs === 1 ? "run" : "runs"}.`) : null,
+      fixes.exception_dollars ? note(`Charter exceptions: ${currency.format(fixes.exception_dollars)}`) : null,
+      note(eligible ? "Supervisor tasks are eligible for Auto-Dispatcher." : "Auto-Dispatcher is set to exclude Supervisor tasks."))),
+  ];
+}
+
+function rulingControls(p) {
+  const input = text("", "area");
+  input.required = true;
+  input.maxLength = 1000;
+  const feedback = el("p", "merr");
+  feedback.setAttribute("role", "alert");
+  feedback.hidden = true;
+  const controls = actions();
+  const form = part("form", "sv-stack", part("label", "sv-stack", "Reason to accept this problem as is", input), controls, feedback);
+  const accept = el("button", "textkey", "Accept as is");
+  controls.append(accept);
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (!input.value.trim()) return showError(feedback, "Enter a reason for this ruling.");
+    accept.disabled = true;
+    showError(feedback, "");
+    try {
+      await api(`${path}/problems/${p.id}/ruling`, { method: "POST", body: { reason: input.value } });
+      await readScreen();
+      const panel = document.querySelector(`[data-problem="${p.id}"]`);
+      if (panel) { panel.open = true; panel.querySelector("summary").focus(); }
+    } catch (e) { showError(feedback, e.message); }
+    finally { accept.disabled = false; }
+  });
+  return form;
+}
+
+function problem(p) {
+  const panel = folding(`Impact ${p.impact} · ${p.title} · ${problemState(p.state)}`, () => shown(
+    note(p.indicator ? `${percent.format(p.share)} of ${p.indicator.replaceAll("_", " ")} · rank ${numbers.format(p.rank)} · ${p.lens}` : p.lens),
+    el("h3", null, "Hypothesis"), note(p.hypothesis),
+    el("h3", null, "What would disprove it"), note(p.disproof),
+    el("h3", null, "Observation window"),
+    part("ul", "sv-evidence", ...p.yardstick.map(y => el("li", null,
+      `${y.detector} · ${y.fingerprint} · threshold ${numbers.format(y.threshold)} for ${y.weeks} weeks${y.clear_at == null ? "" : ` · clear since ${stamp(y.clear_at)}`}`))),
+    p.fix_options.length ? stack(el("h3", null, "Fix options"),
+      part("ul", "sv-evidence", ...p.fix_options.map(f => el("li", null, `${f.layer} · ${f.action}`)))) : null,
+    p.tasks.length ? stack(el("h3", null, "Fix tasks"),
+      part("ul", "sv-evidence", ...p.tasks.map(id => part("li", null, reference(id))))) : null,
+    p.exception ? note("Verified charter breach. Its fix is exempt from the spending limit.") : null,
+    p.action_ready === false && p.state !== "resolved" && p.state !== "accepted" ? note("Proposed fixes need a checked finding.") : null,
+    p.new_evidence ? note(p.new_evidence) : null,
+    p.ruling ? note(`Owner ruling · ${p.ruling}`) : null,
+    p.state === "accepted" || p.state === "resolved" ? null : rulingControls(p)));
+  panel.dataset.problem = String(p.id);
+  return panel;
+}
+
 function addSignals(data) {
   $("sv-signals").append(...data.signals.map((record) => signal(record, data.investigations_enabled)));
   next = data.next;
@@ -104,6 +175,9 @@ async function readScreen() {
   try {
     const data = await api(`${path}/screen`);
     $("sv-title").textContent = `${data.project_name} · Supervisor`;
+    if (data.spending) $("sv-spending").replaceChildren(...spending(data.spending, data.marked_tasks_eligible));
+    const problems = data.problems ?? [];
+    $("sv-problems").replaceChildren(...(problems.length ? problems.map(problem) : [note("No problems in the register.")]));
     $("sv-score").replaceChildren(...(data.indicators.length ? data.indicators.map(indicator) : [note("All scoreboard indicators are off.")]));
     $("sv-signals").replaceChildren();
     $("sv-investigate-note").hidden = !data.signals.length || data.investigations_enabled;

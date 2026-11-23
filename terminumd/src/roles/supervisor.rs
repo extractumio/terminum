@@ -9,7 +9,7 @@ use crate::supervisor::{self, Level};
 use crate::tasks::{api::store, ops, tools::Who};
 
 const OBSERVER_TOOLS: &[&str] = &["list_tasks", "get_task"];
-const ADVISOR_TOOLS: &[&str] = &["create_task", "add_comment", "ask_human"];
+const ADVISOR_TOOLS: &[&str] = &["add_comment", "ask_human"];
 const OPERATOR_TOOLS: &[&str] = &["run_task", "promote_queued_task", "stop_task", "list_runs", "get_dashboard"];
 
 pub(crate) fn task_tool(tool: &str) -> bool {
@@ -47,6 +47,9 @@ impl Role {
     }
 
     pub fn allows(self, tool: &str) -> bool {
+        if supervisor::round_tools::ADVISOR.contains(&tool) {
+            return matches!(self, Self::Supervisor(Some(Level::Advisor | Level::Operator)));
+        }
         if supervisor::round_tools::NAMES.contains(&tool) {
             return matches!(self, Self::Supervisor(Some(_)));
         }
@@ -128,8 +131,18 @@ pub(crate) async fn run(app: &Shared, key: &str, other: bool, mark: Mark, tool: 
     if other && !super::reads(&tool) {
         return Err("Only the Supervisor's main agent changes the project.".into());
     }
-    if supervisor::round_tools::NAMES.contains(&tool.as_str()) {
+    if supervisor::round_tools::known(&tool) {
         return supervisor::round_tools::run(app, key.into(), mark.project, tool, args).await;
+    }
+    if matches!(tool.as_str(), "add_comment" | "ask_human" | "promote_queued_task" | "stop_task") {
+        let (pane, scope, action, id) = (key.to_owned(), mark.project.clone(), tool.clone(), super::arg(&args, "id")?.to_owned());
+        let blocked = store(app, move |tx| {
+            require(tx, &pane, &scope, &action)?;
+            let task = ops::get(tx, &id)?;
+            if task.project != scope { return Err("The task is outside this project.".into()); }
+            supervisor::task_policy::record_override(tx, &task, ops::now())
+        }).await?;
+        if let Some(why) = blocked { return Err(why); }
     }
     if task_tool(&tool) {
         let who = Who { key: key.into(), project: Some(mark.project), title: "Supervisor".into(),

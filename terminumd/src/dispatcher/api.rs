@@ -138,7 +138,7 @@ impl Press {
 
     /// Who asked for the run it starts, and how (AC-183): a manager's press is its own user's.
     pub(super) fn started(&self) -> Started<'_> {
-        match &self.manager {
+        match self.supervisor.as_ref().map(|caller| &caller.user).or(self.manager.as_ref()) {
             Some(user) => Started { by: user, how: self.how },
             None => Started::of(self.how),
         }
@@ -417,7 +417,7 @@ async fn first_run(app: &Shared, tasks: &[Task], kept: Press, comment: Option<St
     let (ag, f, project, at) = (a.clone(), dir.clone(), t.project.clone(), app.clone());
     let next = store(app, move |tx| {
         let now: Vec<Task> = all.iter().map(|t| ops::get(tx, &t.id)).collect::<Result<_, _>>()?;
-        supervisor::check(tx, &kept, &now)?;
+        let mut estimate = supervisor::check(tx, &kept, &now)?;
         supervisor::check_family(tx, &kept, &now)?;
         if !kept.order_allows(tx, &now[0].project)? {
             return Ok(None);
@@ -425,6 +425,15 @@ async fn first_run(app: &Shared, tasks: &[Task], kept: Press, comment: Option<St
         kept.still_waits(tx, &now[0].key)?;
         for t in &now {
             way(t, runs::last_of(tx, &t.key)?, true, &|k| at.tmux.pane_state(k))?;
+        }
+        if kept.auto && kept.supervisor.is_none() && kept.how == How::Auto {
+            let setting = crate::tasks::auto::setting(tx, &now[0].project)?;
+            for task in &now {
+                if !crate::supervisor::task_policy::check_marked(tx, task, setting.supervisor_tasks)? {
+                    return Err(format!("{} is excluded by Auto-Dispatcher's Supervisor task setting.", task.id));
+                }
+            }
+            estimate = crate::supervisor::fix_tasks::auto_reservation(tx, &now, ops::now())?;
         }
         let goes = kept.first_words(tx, &now)?;
         // the one check that counts: in the transaction that takes the slots; a press that closed a holder
@@ -452,7 +461,12 @@ async fn first_run(app: &Shared, tasks: &[Task], kept: Press, comment: Option<St
         super::waits::remove(tx, &keys[0])?;
         let run = runs::add(tx, &Run::of(&ag, host, f, project, Some(prompt)), &keys, kept.started(), ops::now())?;
         recent::stage(tx, &run, &recent::through(tx, &now)?)?;
-        supervisor::record(tx, &kept, &now[0])?;
+        supervisor::record(tx, &kept, &now, &run, estimate)?;
+        if !kept.auto && kept.how != How::Integration {
+            for task in &now {
+                ops::log(tx, &task.key, kept.by(), "why", "Requested a run.", None, ops::now())?;
+            }
+        }
         Ok(Some(Next::Run(run)))
     }).await?;
     let run = match next {

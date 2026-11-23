@@ -394,7 +394,7 @@ pub fn checked(tool: &str, args: &Value) -> Result<Value, String> {
     if !args.is_object() {
         return Err("arguments must be an object".into());
     }
-    if crate::supervisor::round_tools::NAMES.contains(&tool) {
+    if crate::supervisor::round_tools::known(tool) {
         return Ok(args.clone());
     }
     if crate::tasks::tools::NAMES.contains(&tool) {

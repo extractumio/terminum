@@ -26,6 +26,10 @@ mod round_evidence;
 mod settings;
 mod settings_api;
 mod spend;
+pub(crate) mod governor;
+pub(crate) mod register;
+pub(crate) mod fix_tasks;
+pub(crate) mod task_policy;
 
 #[cfg(test)]
 mod engine_tests;
@@ -41,6 +45,9 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::tasks::{ops::check_project, store::Store};
+
+#[cfg(test)]
+mod register_tests;
 
 pub(crate) use catalog::Rule;
 pub(crate) use signals::Signal;
@@ -206,6 +213,7 @@ pub(crate) struct Checked {
     thresholds: BTreeMap<&'static str, attach::Range>,
     complete_metrics: Vec<&'static str>,
     measured: MeasuredSubjects,
+    observations: signals::Observations,
 }
 
 /// A detector returns measured subjects; an unavailable input cannot prove anything resolved.
@@ -236,7 +244,7 @@ struct Reading {
     source: impact::Source,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 enum Comparison { Above, AtLeast, Below, Deviation(f64) }
 
 impl Reading {
@@ -293,13 +301,7 @@ impl Reading {
 
     fn exceeds(&self, threshold: Threshold) -> Option<(f64, f64)> {
         let (baseline, limit) = self.limits(threshold)?;
-        let fires = match self.comparison {
-            Comparison::Above => self.value > limit,
-            Comparison::AtLeast => self.value >= limit,
-            Comparison::Below => self.value < limit,
-            Comparison::Deviation(target) => (self.value - target).abs() > limit,
-        };
-        fires.then_some((baseline, limit))
+        self.comparison.fires(self.value, limit).then_some((baseline, limit))
     }
 
     fn finding(mut self, threshold: Threshold, window: Window) -> Option<Finding> {
@@ -395,11 +397,15 @@ fn evaluate_snapshot(
         let measured = matches!(detector.rule, Rule::LimitNear | Rule::StalePlan).then(|| {
             data.readings.iter().map(|r| (r.subject_kind, r.subject_id.clone(), r.metric)).collect()
         });
+        let observations = if current_state {
+            data.readings.iter().map(|r| ((r.subject_kind.to_owned(), r.subject_id.clone(), r.metric.to_owned()),
+                r.limits(detector.threshold).map(|_| (r.value, r.comparison)))).collect()
+        } else { BTreeMap::new() };
         let mut findings = collect_findings(&mut data, detector, window, current_state);
         findings.sort_by(|a, b| a.key().cmp(&b.key()));
         checked.push(Checked {
             rule: detector.rule, mode: detector.mode, unavailable: data.unavailable,
-            findings, thresholds, complete_metrics: data.complete_metrics, measured,
+            findings, thresholds, complete_metrics: data.complete_metrics, measured, observations,
         });
     }
     let mut result = Evaluation { project: project.into(), at, detectors: checked };
@@ -464,7 +470,7 @@ impl Evaluation {
         finding.scores = Scores { impact: 3, ..Scores::default() };
         Some(Self { project: project.into(), at: window.end, detectors: vec![Checked {
             rule, mode: Mode::Live, unavailable: Vec::new(), findings: vec![finding],
-            thresholds: Default::default(), complete_metrics: Vec::new(), measured: None,
+            thresholds: Default::default(), complete_metrics: Vec::new(), measured: None, observations: Default::default(),
         }] })
     }
 

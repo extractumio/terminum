@@ -15,7 +15,7 @@ use crate::http::off;
 use crate::tasks::{api::answer, ops::{check_project, now, rows, sql}, store::Store};
 
 use super::{DAY, Evaluation, EvaluationInputs, Evidence, Mode, Reading, Rule, SCHEMA, Window,
-    attach, evaluate_snapshot, flow, incidents, samples, sensors::{Pending, Sensors}, settings, settings_api, signals};
+    attach, evaluate_snapshot, flow, incidents, rounds, samples, sensors::{Pending, Sensors}, settings, settings_api, signals};
 
 const BEAT: i64 = 10;
 const DEAD_AFTER: i64 = 2 * BEAT;
@@ -259,9 +259,14 @@ fn collect_project(app: &Shared, project: &Project, clock: impl Fn() -> i64) -> 
     })?;
     let Some(batch) = batch else { return Ok(()) };
     let pending = app.supervisor.sensors.take(&project.id, project.generation);
-    let (committed, incidents_changed) = commit(&app.tasks, project, batch, &pending, clock)?;
+    let (committed, incidents_changed) = commit(&app.tasks, project, batch, &pending, &clock)?;
     if committed {
         pending.committed();
+        let changed = app.tasks.with(|tx| {
+            if rounds::enabled(tx, &project.id)? != Some(project.generation) { return Ok(Vec::new()); }
+            super::fix_tasks::advance(tx, &project.id, clock())
+        })?;
+        for id in changed { crate::tasks::api::told(app, &id); }
     }
     if incidents_changed {
         app.supervisor.incident_changed();

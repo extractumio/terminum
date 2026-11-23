@@ -18,7 +18,7 @@ fn record(store: &Store, project: &str, at: i64, mode: Mode, findings: Vec<Findi
     Evaluation { project: project.into(), at, detectors: vec![Checked {
         rule: Rule::LineDead, mode, findings,
         unavailable: if unavailable { vec!["Pending reading"] } else { vec![] },
-        thresholds: Default::default(), complete_metrics: vec![], measured: None,
+        thresholds: Default::default(), complete_metrics: vec![], measured: None, observations: Default::default(),
     }] }.record(store).unwrap();
 }
 

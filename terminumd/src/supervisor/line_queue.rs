@@ -32,6 +32,7 @@ pub(super) struct Notice {
     pub level: u8,
     pub signals: i64,
     pub channels: usize,
+    pub(super) budget: Option<&'static str>,
 }
 
 impl Notice {
@@ -52,7 +53,7 @@ impl Notice {
             use std::fmt::Write;
             let _ = writeln!(text, "{base}/supervisor/?project={}&incident={incident}#incident-{incident}", self.project);
         }
-        text
+        match self.budget { Some(budget) => format!("{budget}\n{text}"), None => text }
     }
 }
 
@@ -108,11 +109,19 @@ pub(super) fn claim(tx: &Transaction, settings: &Settings, at: i64, quiet: bool)
           AND coalesce(i.snoozed_until, 0) <= ?1 AND r.last_at + ?3 <= ?1
         GROUP BY i.id HAVING NOT ?2 OR max(m.urgent)
     ) SELECT pending, incident, project, kind, level, signals, escalated
+      , (SELECT s.metric FROM supervisor_signals s WHERE s.project = ready.project AND s.detector = 'self.budget'
+            AND s.state = 'raised' AND s.metric IN ('judgment_tokens','fix_dollars')
+          ORDER BY s.metric = 'judgment_tokens' DESC LIMIT 1)
       FROM ready ORDER BY level DESC, incident, pending LIMIT 1", (at, quiet, first), |r| {
         let kind = Kind::read(&r.get::<_, String>(3)?);
         let escalated: bool = r.get(6)?;
         let notice = Notice { incident: r.get(1)?, project: r.get(2)?, kind,
-            level: r.get(4)?, signals: r.get(5)?, channels: if kind == Kind::Repeat && escalated { 2 } else { 1 } };
+            level: r.get(4)?, signals: r.get(5)?, channels: if kind == Kind::Repeat && escalated { 2 } else { 1 },
+            budget: match r.get::<_, Option<String>>(7)?.as_deref() {
+                Some("judgment_tokens") => Some(super::governor::JUDGMENT_NOTICE),
+                Some("fix_dollars") => Some(super::governor::FIX_NOTICE),
+                _ => None,
+            } };
         Ok((r.get::<_, Option<i64>>(0)?, notice, escalated))
     }).optional().map_err(sql)?;
     let Some((pending, notice, escalated)) = selected else { return Ok(None) };

@@ -19,7 +19,7 @@ fn store(name: &str) -> Store {
 fn ac170_a_projects_setting_is_off_until_a_human_sets_it() {
     store("auto-setting").with(|tx| {
         let made = setting(tx, "api")?;
-        assert_eq!(made, Setting { on: false, agent: None, default: None, off_why: None, on_at: 0, severities: vec!["P0".into(), "P1".into()], wait: 10, day_most: 10, mode: AGENT.into() }, "as a project is made");
+        assert_eq!(made, Setting { on: false, agent: None, default: None, off_why: None, on_at: 0, severities: vec!["P0".into(), "P1".into()], wait: 10, day_most: 10, mode: AGENT.into(), supervisor_tasks: true }, "as a project is made");
         assert!(due_for(tx)?.is_empty());
         let put = |body: Value, at: i64| setting(tx, "api")?.with(&body).and_then(|new| set(tx, "api", &new, at));
         assert_eq!(put(json!({"on": true}), 5).unwrap_err(), "Choose the agent that picks first: its settings.");
@@ -52,7 +52,7 @@ fn ac170_a_projects_setting_is_off_until_a_human_sets_it() {
         // it turns itself off: its agent stays chosen, and on again counts anew
         turn_off(tx, "api", "its round API-3 failed.")?;
         assert_eq!(setting(tx, "api")?, Setting { off_why: Some("its round API-3 failed.".into()), on_at: 7, default: None, ..chosen.clone() });
-        assert_eq!(super::super::projectapi::settings(tx)?["api"]["auto"], json!({"on": false, "agent": "p", "default": null, "severities": ["P0", "P2"], "wait_minutes": 0, "day_most": 3, "mode": "agent", "started_day": 0, "off_why": "its round API-3 failed."}));
+        assert_eq!(super::super::projectapi::settings(tx)?["api"]["auto"], json!({"on": false, "agent": "p", "default": null, "severities": ["P0", "P2"], "wait_minutes": 0, "day_most": 3, "mode": "agent", "supervisor_tasks": true, "started_day": 0, "off_why": "its round API-3 failed."}));
         put(json!({"wait_minutes": 0}), 11)?;
         assert_eq!(setting(tx, "api")?.off_why.as_deref(), Some("its round API-3 failed."), "saved while off, why stays");
         put(json!({"on": true}), 12)?;

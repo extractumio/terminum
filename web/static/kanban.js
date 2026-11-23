@@ -196,7 +196,8 @@ function card(t, under = "") {
     proj.style.setProperty("--proj", projectInk(p));
     foot.append(proj);
   }
-  if (!t.agent) foot.append(el("span", "cowner", t.by_agent ? `by agent · ${t.owner_name}` : t.owner_name));   // on an agent, the agent says who
+  if (t.supervisor_marked) foot.append(el("span", "cowner", "Supervisor"));
+  else if (!t.agent) foot.append(el("span", "cowner", t.by_agent ? `by agent · ${t.owner_name}` : t.owner_name));   // on an agent, the agent says who
   if (t.subtasks) foot.append(el("span", "csubs", `${t.subtasks_done}/${t.subtasks}`));
   // its subtasks as boxes, each its ID on its status's color; a press opens one (AC-112)
   const boxes = t.boxes?.length ? el("div", "cboxes") : null;

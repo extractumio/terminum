@@ -504,6 +504,27 @@ alerts go out independently. Task and comment excerpts appear in capped data fie
 in the retained case. Terminum verifies evidence references and reruns each named
 query before keeping the finding.
 
+The **Problem register** ranks measured problems and keeps their signal fingerprints,
+hypothesis, disproof, fix options and linked tasks. Open a problem to see the detectors'
+thresholds and observation windows. **Accept as is** records your reason. A materially
+new evidence row can reopen the problem, while a repeated reading alone leaves the ruling
+in force. Advisor and Operator rounds can use `open_problem`, `update_problem` and
+`propose_rank`. Their proposed fixes wait for a checked finding. The round can lengthen
+the observation window.
+
+**Budgets** shows judgment tokens and fix dollars used and reserved in the last seven
+days. Judgment has a daily and per-round token cap and reserves room for level 2 and 3
+investigations. Token caps act when the agent reports usage. When a limit stops new
+rounds, code keeps collecting signals and sending incident notices.
+
+The Supervisor funds the highest-impact eligible fixes first. At the fixes ceiling,
+one card in **WAIT FOR HUMAN** lists the unfunded problems. Choose to let them wait
+a week, or raise the ceiling in the project's Supervisor settings. A verified charter
+breach is exempt. Tasks made by the Supervisor carry a **Supervisor** mark. The project's
+**Auto-Dispatch** tab controls whether they can start automatically. The picker's
+round can read advisory ranks. A human or manager action on a task takes precedence
+over Supervisor actions for 24 hours.
+
 A critical live signal, failed collector or failed delivery command opens an incident. Related signals within
 15 minutes share a timeline. Signed-in pages show a red bar until you acknowledge it.
 The project board pins the incident at the top of **WAIT FOR HUMAN**, and **Timeline**
