@@ -117,4 +117,7 @@ async function liveBreaker(page, opts, j, { id, path }) {
   check("AC-247 the live owner key restores the reviewed detector and retains its verdict",
     measured && await until(() => page.getByText("No open breakers.").isVisible())
     && await page.locator("#sv-outcomes").getByText(/1 wrong/).isVisible());
+  const acknowledge = page.locator("#sv-incidents").getByRole("button", { name: "Acknowledge", exact: true });
+  await acknowledge.click();
+  await page.locator(".incident-bar").waitFor({ state: "hidden" });
 }
