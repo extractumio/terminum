@@ -40,7 +40,7 @@ pub async fn run_task(app: &Shared, boss: &Boss, args: &Value) -> Result<String,
     }).await?;
     let comment = args["comment"].as_str().map(crate::plans::rules::clean).filter(|c| !c.trim().is_empty());
     let name = agent.as_ref().map(|a| a.name.clone());
-    let done = crate::dispatcher::api::press_by_manager(app, &id, &boss.user, agent.map(|a| a.id), comment, (yes(args, "fresh"), yes(args, "queue"))).await?;
+    let done = crate::dispatcher::api::press_by_manager(app, &id, &boss.user, agent.map(|a| a.id), comment, (yes(args, "fresh"), yes(args, "queue"), yes(args, "reopen"))).await?;
     let on = name.map(|n| format!(" on {n}")).unwrap_or_default();
     Ok(if let Some(words) = done["waits"].as_str() {
         format!("{id} waits for a slot: {words}")

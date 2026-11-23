@@ -165,16 +165,18 @@ pub fn unshaped(id: &str, questions: &str) -> Option<String> {
     (!lacks.is_empty()).then(|| format!("Not asked: the questions lack {}. {id} stays where it was. Write them {}, each part a line \"Name:\" or a heading, then call it again.", lacks.join(", "), questions_shape!()))
 }
 
+/// The first Outcome content line, on its Markdown heading or the next nonempty line.
+pub(crate) fn outcome(result: &str) -> Option<&str> {
+    let mut lines = result.lines();
+    let rest = lines.by_ref().find_map(|l| after_name(head(l), "Outcome"))?;
+    // its words, on its heading's line or the next one: read as text, since "Not done" is also a section's name
+    Some(if rest.trim().is_empty() { lines.find(|l| !l.trim().is_empty()).unwrap_or_default() } else { rest })
+}
+
 /// Whether a close-out's Outcome says its work is not done, by its first words in English as the form asks: such a
 /// result is no DONE (AC-123).
 pub fn not_done(result: &str) -> bool {
-    let mut lines = result.lines();
-    let Some(rest) = lines.by_ref().find_map(|l| after_name(head(l), "Outcome")) else {
-        return false;
-    };
-    // its words, on its heading's line or the next one: read as text, since "Not done" is also a section's name
-    let words = if rest.trim().is_empty() { lines.find(|l| !l.trim().is_empty()).unwrap_or_default() } else { rest };
-    let o = head(words).to_ascii_lowercase();
+    let o = head(outcome(result).unwrap_or_default()).to_ascii_lowercase();
     o.starts_with("partly") || o.starts_with("not done")
 }
 

@@ -170,6 +170,16 @@ def main():
               done == "DONE" and mine.startswith(f"The project's manager ran task {task}") and "The project's manager's message: keep it short" in mine and "The human" not in mine.split("\n\n")[0], (done, prompts))
         history = json.dumps(call(f"/api/tasks/{task}")[1], ensure_ascii=False)
         check("AC-179 its message is kept on the task under the manager's name", "keep it short" in history and "Shell · manager" in history, [e for e in call(f"/api/tasks/{task}")[1]["history"] if e["kind"] == "comment"])
+        before = call(f"/api/tasks/{task}")[1]
+        out, rc = typed(boss, tool("run_task", id=task, agent="Fake", fresh="yes", queue="yes", comment="Do it again"))
+        check("AC-179 a stale manager cannot reopen DONE, even with fresh and queue", rc == "1" and f"{task} is DONE" in out and 'reopen "yes"' in out, out)
+        after = call(f"/api/tasks/{task}")[1]
+        fields = ("status", "history", "updated_at", "owner")
+        check("AC-179 refusal leaves the DONE card, session and history unchanged", all(after[field] == before[field] for field in fields) and after["session"]["key"] == before["session"]["key"], after)
+        out, rc = typed(boss, tool("run_task", id=task, agent="Fake", fresh="yes", reopen="yes"), 40)
+        check("AC-179 explicit reopen starts a new worker session", rc == "0" and f"{task} runs on Fake" in out, out)
+        reopened = wait_for(lambda: call(f"/api/tasks/{task}")[1], lambda card: card["status"] == "DONE" and card["session"]["key"] != before["session"]["key"], 30, 0.3, last=True)
+        check("AC-179 explicitly reopened work completes in its new private pane", reopened and reopened["status"] == "DONE" and reopened["session"]["key"] != before["session"]["key"], reopened)
         out, rc = typed(boss, tool("list_runs"))
         check("AC-179 list_runs shows the project's runs", rc == "0" and '"kind":"session"' in out, out)
 

@@ -454,6 +454,18 @@ Scenario: AC-179 happy path — a task started, followed, answered
   When the manager calls promote_queued_task {id: "BILL-12"} on a waiting task of its project
   Then its whole press moves to the front of its agent's queue under terminum-dispatcher.md AC-169; list_runs lists waits in that order
 
+Scenario: AC-179 failure — a stale manager read cannot reopen a DONE task
+  Given BILL-12 is DONE after another manager's work integrated at acc9e390 at 19:50
+  When the manager calls run_task {id: "BILL-12"} without reopen "yes", including with fresh "yes" or queue "yes"
+  Then it is refused: "BILL-12 is DONE (Integrated into origin/main at acc9e390 in batch 2.; 19:50). To run it again on purpose, call run_task with reopen \"yes\"."
+  And the refusal names the latest result's Outcome line or landing line and its local time when one exists; without either it says "BILL-12 is DONE. To run it again on purpose, call run_task with reopen \"yes\"."
+  And nothing starts, queues, saves a comment or changes on the card
+  And its DONE status is checked again when a prepared press takes its slot or continues a live conversation
+  When the manager calls run_task {id: "BILL-12", reopen: "yes"}
+  Then the task reopens and runs as before
+  And a human's RUN of a DONE task needs no reopen argument (terminum-dispatcher.md AC-122)
+  And a manager's run_task on FAILED or any other column is unchanged
+
 Scenario: AC-179 happy path — stopped, read
   When the manager calls stop_task {id: "BILL-12"}
   Then its run is given up as a human's Give up (terminum-dispatcher.md AC-138), or its wait called off, and the task's history says "Opus · manager stopped it."
@@ -787,7 +799,7 @@ MCP tools:
 
 The catalog (every tool above but the first three, with the task tools of `terminum-kanban.md` §9) and each tool's card: `terminumd/src/cli/mcp_catalog.rs`; the index: `mcp_search.rs`.
 
-A manager's tools (AC-174), every argument a string: `list_runs`; `run_task` `id`, `agent`, `comment`, `fresh` yes|no, `queue` yes|no; `promote_queued_task` `id`; `stop_task` `id`; `list_agents`; `create_agent` `name`, `kind` claude|codex, `command`, `effort`, `at_once`, `week_limit`, `month_limit`; `update_agent` `agent` and the same; `delete_agent` `agent`; `list_schedules`; `create_schedule` `title`, `text`, `agent`, `cron` or `once_at` (unix seconds), `budget_minutes`, `severity`, `paused` yes|no; `update_schedule` `schedule` and the same; `delete_schedule`, `run_schedule` `schedule`; `list_sessions`; `get_session` `session`, `lines`; `send_to_session` `session`, `text` (≤ 20,000 bytes), `enter` yes|no; `close_session` `session`; `get_dashboard` `tab` you|system|costs, `period` day|2w|month|quarter|year. Definitions and cards: `terminumd/src/cli/mcp_manager.rs`; what each does: `terminumd/src/roles/`.
+A manager's tools (AC-174), every argument a string: `list_runs`; `run_task` `id`, `agent`, `comment`, `fresh` yes|no, `queue` yes|no, `reopen` yes|no; `promote_queued_task` `id`; `stop_task` `id`; `list_agents`; `create_agent` `name`, `kind` claude|codex, `command`, `effort`, `at_once`, `week_limit`, `month_limit`; `update_agent` `agent` and the same; `delete_agent` `agent`; `list_schedules`; `create_schedule` `title`, `text`, `agent`, `cron` or `once_at` (unix seconds), `budget_minutes`, `severity`, `paused` yes|no; `update_schedule` `schedule` and the same; `delete_schedule`, `run_schedule` `schedule`; `list_sessions`; `get_session` `session`, `lines`; `send_to_session` `session`, `text` (≤ 20,000 bytes), `enter` yes|no; `close_session` `session`; `get_dashboard` `tab` you|system|costs, `period` day|2w|month|quarter|year. Definitions and cards: `terminumd/src/cli/mcp_manager.rs`; what each does: `terminumd/src/roles/`.
 
 Commands (AC-181): `terminum tools [search <words> | info <name>…]`, `terminum tool <name> ['<json>' | -]`, `terminum tokens [add <name> --role manager|worker --project <project> [--days N] | remove <name>]`. The private socket: `POST /agent` takes `{token, tool, args}` in place of a pane; `POST /tokens {action: list|add|remove, name, role, project, days}`. A probe answers `role`. Store: table `tokens` (`tasks/schema21.sql`).
 
@@ -862,7 +874,7 @@ All cases are shipped; nothing is staged.
 - [x] AC-155 — `cargo test cli::mcp` (`terminumd/src/cli/mcp_meta_tests.rs`, `mcp_search.rs`, `mcp_tests.rs`, `mcp_tasks.rs`), `cargo test tasks::tools` (`ac145_an_agent_s_text_follows_its_project_s_template`), `web/test/e2e_liveplans.mjs`
 - [x] AC-174 — `cargo test roles`, `cargo test tasks::ops` (a run's pane across a restore), `cargo test cli::mcp` (`mcp_tests.rs`, `mcp_manager.rs`), `scripts/e2e_roles.py`
 - [x] AC-178 — `cargo test roles`, `scripts/e2e_roles.py` (a pane naming the manager's)
-- [x] AC-179 — `cargo test roles`, `cargo test dispatcher::press`, `scripts/e2e_roles.py`
+- [x] AC-179 — `cargo test roles`, `cargo test dispatcher::press`, `cargo test ac179_`, `scripts/e2e_roles.py`
 - [x] AC-180 — `cargo test roles`, `scripts/e2e_roles.py`
 - [x] AC-181 — `cargo test roles`, `cargo test cli::tool`, `scripts/e2e_roles.py`
 - [x] AC-207 — `cargo test codexdaemon` (a shell with a shared server's words starts the real binary's checks, a pane in its environment), `cargo test cli::`
