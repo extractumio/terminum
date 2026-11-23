@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 //! A session whose coding agent took a message goes to the top of where the list shows it
 //! (AC-92): of its project, kept in the store; else of its tmux group, whose order is its
-//! windows' (AC-07), moved as a drag moves them. A session the user attached by name (AC-89),
-//! on this Mac or a host, is left as it is.
+//! windows' (AC-07), moved as a drag moves them, also a session the user attached by name (AC-89).
 
 use serde_json::Value;
 
@@ -60,9 +59,6 @@ pub async fn raise(app: &Shared, key: &str) {
     let moving = { let ps = app.projects.lock(); to_raise(rows, row, |k| ps.of(k).is_some()) };
     let Some((top, free)) = moving else { return };
     let Some((server, session)) = super::sessions::group(app, wid) else { return };
-    if server.users(&session) {
-        return;
-    }
     match super::sessions::to_top(&server, &session, &top, &free).await {
         Ok(true) => { crate::lists::request(app, &server); }
         Ok(false) => {}

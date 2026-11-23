@@ -70,9 +70,13 @@ async fn ac92_a_session_outside_projects_goes_to_its_groups_top() {
     let windows: Vec<String> = s.read(&["list-windows", "-t", "main", "-F", "#{window_id}"]).lines().map(str::to_string).collect();
     let key = |pane: &str| server.key(pane);
     let pane_of = |i: usize| if i == 1 { 1 } else { 0 };
-    let mut items: Vec<Value> = (0..4).map(|i| row(&key(&p[i]), &windows[i], pane_of(i))).collect();
-    items.push(row(&key(&split), &windows[1], 2));
-    *app.layout.write() = json!([{"wid": "devbox/main", "items": items}]);
+    // the list as the page draws it, its rows in `order` (places in `p`)
+    let lay = |order: [usize; 4]| {
+        let mut items: Vec<Value> = order.iter().map(|&i| row(&key(&p[i]), &windows[i], pane_of(i))).collect();
+        items.push(row(&key(&split), &windows[1], 2));
+        *app.layout.write() = json!([{"wid": "devbox/main", "items": items}]);
+    };
+    lay([0, 1, 2, 3]);
     let id = app.projects.lock().create("api", Some("devbox".into()), String::new()).unwrap();
     app.projects.lock().add_to(&key(&p[2]), &id, None).unwrap();
 
@@ -89,8 +93,9 @@ async fn ac92_a_session_outside_projects_goes_to_its_groups_top() {
     assert_eq!(panes_in_order(&s), pick(&p, [1, 3, 2, 0]), "a split's other pane raises its window, the others keep their order");
 
     *server.only.lock() = Some(vec!["main".into()]);
+    lay([1, 3, 2, 0]);
     raise(&app, &key(&p[0])).await;
-    assert_eq!(panes_in_order(&s), pick(&p, [1, 3, 2, 0]), "a session the user attached by name (AC-89): its windows stay");
+    assert_eq!(panes_in_order(&s), pick(&p, [0, 1, 2, 3]), "a session the user attached by name (AC-89), here or on a host, rises too");
     drop(app);
     std::fs::remove_dir_all(root).unwrap();
 }
