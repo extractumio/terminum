@@ -148,7 +148,7 @@ pub(super) fn reasonless(q: &Query<'_, '_>) -> Result<Measurements, String> {
 }
 
 // The run lifecycle state describes the pane, not its task's disposition. A FAILED transition names
-// the run that held its task; else it goes to the latest launch of a run carrying that task.
+// the run it failed in; else it goes to the latest launch of a run carrying that task.
 pub(super) fn failed_runs() -> String {
     run_events("failed_runs", "e.kind = 'move' AND json_extract(e.data, '$.to') = 'FAILED'")
 }
@@ -159,19 +159,16 @@ pub(super) fn returned_runs() -> String {
     run_events("returned_runs", RETURNED)
 }
 
-// Events keep seconds and launches milliseconds: a latest launch inside the event's own second may
-// have come after it, so without a recorded run the event's run is unknown (`ambiguous`).
+// A named run is the event's, if launched. Else events keep seconds and launches milliseconds: a latest
+// launch inside the event's own second may have come after it, so the event's run is unknown.
 fn run_events(name: &str, condition: &str) -> String {
-    let launched = format!("FROM run_tasks m JOIN runs r ON r.id = m.run JOIN inputs i ON i.run = r.id AND {LAUNCH}
-        WHERE m.task = e.task AND r.project = ?1 AND i.at <= e.at * 1000 + 999");
     format!("{name} AS (
-    SELECT id, task, at, coalesce(recorded, CASE WHEN latest_at < at * 1000 THEN latest END) AS run,
-        coalesce(recorded IS NULL AND latest_at >= at * 1000, 0) AS ambiguous
-    FROM (SELECT e.id, e.task, e.at,
-        (SELECT r.id {launched} AND r.id = json_extract(e.data, '$.run') LIMIT 1) AS recorded,
-        (SELECT r.id {launched} ORDER BY i.at DESC, i.id DESC LIMIT 1) AS latest,
-        (SELECT max(i.at) {launched}) AS latest_at
-    FROM project_events e WHERE {condition})
+    SELECT e.id, e.task, e.at, (SELECT CASE WHEN json_extract(e.data, '$.run') IS NOT NULL OR i.at < e.at * 1000 THEN r.id END
+        FROM run_tasks m JOIN runs r ON r.id = m.run JOIN inputs i ON i.run = r.id AND {LAUNCH}
+        WHERE m.task = e.task AND r.project = ?1 AND i.at <= e.at * 1000 + 999
+            AND r.id = coalesce(json_extract(e.data, '$.run'), r.id)
+        ORDER BY i.at DESC, i.id DESC LIMIT 1) AS run
+    FROM project_events e WHERE {condition}
 )")
 }
 
@@ -179,16 +176,16 @@ pub(super) fn failed_repeat(q: &Query<'_, '_>) -> Result<Measurements, String> {
     let events_sql = project_events();
     let failed = failed_runs();
     let rows = rows(q.tx, &format!("{events_sql}, {failed} SELECT task, run, id,
-            (SELECT count(*) FROM run_tasks WHERE run = f.run) = 1, ambiguous FROM failed_runs f
+            (SELECT count(*) FROM run_tasks WHERE run = f.run) = 1 FROM failed_runs f
         WHERE at >= ?3 ORDER BY task, at, id"), (q.project, q.window.end, q.window.start),
-        |r| Ok((r.get::<_, String>(0)?, r.get::<_, Option<String>>(1)?, r.get::<_, String>(2)?, r.get::<_, bool>(3)?, r.get::<_, bool>(4)?)))?;
+        |r| Ok((r.get::<_, String>(0)?, r.get::<_, Option<String>>(1)?, r.get::<_, String>(2)?, r.get::<_, bool>(3)?)))?;
     let mut groups = BTreeMap::<String, BTreeMap<String, (String, bool)>>::new();
     let mut out = Measurements::default();
-    for (task, run, event, sole_task, ambiguous) in rows {
-        match run {
-            Some(run) => { groups.entry(task).or_default().insert(run, (event, sole_task)); }
-            None if ambiguous => unavailable(&mut out, "Some failures share their second with a launch of their task."),
-            None => unavailable(&mut out, "Some failures lack a retained run launch."),
+    for (task, run, event, sole_task) in rows {
+        if let Some(run) = run {
+            groups.entry(task).or_default().insert(run, (event, sole_task));
+        } else {
+            out.unavailable = vec!["Some failures lack a retained run launch, or share their second with one."];
         }
     }
     for (task, runs) in groups {
@@ -199,12 +196,6 @@ pub(super) fn failed_repeat(q: &Query<'_, '_>) -> Result<Measurements, String> {
             .attributed_runs(attributed).comparison(Comparison::AtLeast));
     }
     Ok(out)
-}
-
-fn unavailable(out: &mut Measurements, reason: &'static str) {
-    if !out.unavailable.contains(&reason) {
-        out.unavailable.push(reason);
-    }
 }
 
 pub(super) fn rerun(q: &Query<'_, '_>) -> Result<Measurements, String> {

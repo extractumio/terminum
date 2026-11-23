@@ -293,18 +293,22 @@ fn ac187_dispatcher_fails_a_session_s_work_but_never_a_queued_commit() {
     }).unwrap();
 }
 
-// terminum-supervisor.md AC-212: a FAILED move names the run that held its task, so a launch later in
-// its second is never taken for that run; a task no run holds names none.
+// terminum-supervisor.md AC-212: a FAILED move names the run its task failed in, also one already let go
+// or past its turn, so a launch later in its second is never taken for that run; a task no run had names none.
 #[test]
-fn ac212_a_failed_move_names_the_run_that_held_its_task() {
+fn ac212_a_failed_move_names_the_run_it_failed_in() {
     store("runs-failed-names-run").with(|tx| {
         let (r, t) = working(tx, "a", &["held"]);
+        let (given_up, g) = working(tx, "b", &["given up"]);
         let alone = task(tx, "alone");
+        change(tx, &r.id, |r| r.turn_ended = true)?;
         ops::move_to(tx, HUMAN, &t[0].id, "FAILED", 3)?;
+        give_up(tx, &g[0].key)?;
         ops::move_to(tx, HUMAN, &alone.id, "FAILED", 3)?;
         let named = |key: &str| tx.query_row("SELECT json_extract(data, '$.run') FROM events WHERE task = ?1 AND kind = 'move'
             AND json_extract(data, '$.to') = 'FAILED'", [key], |x| x.get::<_, Option<String>>(0)).map_err(ops::sql);
-        assert_eq!(named(&t[0].key)?, Some(r.id.clone()));
+        assert_eq!(named(&t[0].key)?, Some(r.id.clone()), "past its turn");
+        assert_eq!(named(&g[0].key)?, Some(given_up.id.clone()), "let go before its task failed");
         assert_eq!(named(&alone.key)?, None);
         Ok(())
     }).unwrap();

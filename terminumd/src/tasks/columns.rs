@@ -80,8 +80,8 @@ fn place_marked(tx: &Transaction, author: &str, task: &Task, status: &str, mark:
     tx.execute("UPDATE tasks SET status = ?1, rank = ?2, updated_at = ?3 WHERE id = ?4", (status, rank, at, &task.key)).map_err(sql)?;
     let who = user_name(tx, author)?;
     let mut data = json!({"from": task.status, "to": status});
-    // the run that held it when it failed: a launch later in the same second is not that run (terminum-supervisor.md §9)
-    if status == "FAILED" && let Some(run) = crate::dispatcher::runs::holding(tx, &task.key)? {
+    // the run it failed in, its latest, ended or not: a launch later in its second is not that run (terminum-supervisor.md §9)
+    if status == "FAILED" && let Some(run) = crate::dispatcher::runs::last_of(tx, &task.key)? {
         data["run"] = json!(run.id);
     }
     let mut words = format!("{who} moved it from {} to {status}", task.status);

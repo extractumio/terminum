@@ -1390,7 +1390,7 @@ The collector runs off the async workers through a read-only store connection. E
 | Rule | Measurement and input |
 |---|---|
 | `flow.wait_human_age` | Wait over the age threshold or blocking other tasks. Store. |
-| `flow.failed_no_reason`, `flow.failed_repeat`, `flow.rerun_after_done` | Reasonless failures above baseline, two or more failed runs on one task, and reruns after DONE. A failure belongs to the run its FAILED move names, the run holding the task then; else to the task's latest launch in an earlier second; with a launch of the task in the failure's own second and no named run, its run is unavailable. Store. |
+| `flow.failed_no_reason`, `flow.failed_repeat`, `flow.rerun_after_done` | Reasonless failures above baseline, two or more failed runs on one task, and reruns after DONE. A failure belongs to the run its FAILED move names, the task's latest run then, when that run launched; else to the task's latest launch in an earlier second. A named run never launched, or a launch in the failure's own second with no named run, leaves its run unavailable. Store. |
 | `flow.returned` | Returned tasks above baseline, red rounds or a red target. Integration. |
 | `flow.starved` | P0 or P1 TODO age beyond its limit while slots are free. Store. |
 | `flow.lead_time_shift`, `flow.backlog_growth` | Median or p90 lead time shift, and created tasks outnumbering closed tasks for the configured number of weeks. Store. |
@@ -1643,7 +1643,7 @@ Enable none of the runtime cases by default. The stages below list the cases in 
 ## 11. Checklist with Definition of Done
 
 - [x] AC-211 — `supervisor::engine_tests` checks named queries, read-only snapshots, fingerprint repeats, resolution and recurrence, and atomic retry.
-- [ ] AC-212 — `supervisor::catalog_tests` and `ac212_off_missing_and_shadow` cover the store rules, typed thresholds, unavailable inputs and shadow enablement; `ac212_a_failure_and_a_later_launch_in_one_second` and `ac212_a_failed_move_names_the_run_that_held_its_task` cover a failure's run beside a launch in its second. Remaining catalog and guard inputs are listed in §7.
+- [ ] AC-212 — `supervisor::catalog_tests` and `ac212_off_missing_and_shadow` cover the store rules, typed thresholds, unavailable inputs and shadow enablement; `ac212_a_failure_and_a_later_launch_in_one_second` and `ac212_a_failed_move_names_the_run_it_failed_in` cover a failure's run beside a launch in its second. Remaining catalog and guard inputs are listed in §7.
 - [ ] AC-213 — `ac213_impact_floors_and_ladder` and `ac213_records_per_finding_impact_and_reads_legacy_scores` cover thresholds, floors, level, response and recording; `supervisor::impact_tests` covers each detector's quantity and the stated reason of a signal without a share. Live charter and escalation inputs remain open.
 - [x] AC-214 — `ac214_scoreboard_guard_verdicts` covers four-week comparisons, separate indicators, guards and missing inputs. `ac261_git_release_metrics_and_owner_split` and `e2e_supervisor_probes.py` check retained release, gate and owner inputs.
 - [ ] AC-215 — `ac215_replay_rank_and_schema` covers the CLI ranking, repeatable output, unavailable detectors, project isolation, read-only bytes and schema refusal. Replay of labeled judgment quality remains open.
