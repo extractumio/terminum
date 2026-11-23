@@ -45,6 +45,9 @@ fn observe(tx: &Transaction, project: &str, source: &str, (kind, subject): (&str
           ON s.project = ?1 AND s.subject_kind = 'task' AND s.subject_id = k.value
     ), matched AS (
         SELECT s.fingerprint, s.state, s.detector, s.first_seen,
+          coalesce((SELECT min(e.at) FROM json_each(s.evidence) proof JOIN events e
+              ON json_extract(proof.value,'$.table') = 'events' AND json_extract(proof.value,'$.id') = e.id
+              JOIN tasks t ON t.id = e.task AND t.project = ?1 WHERE e.at <= s.first_seen), s.first_seen) AS first_proof,
           max(json_extract(s.scores,'$.impact'), json_extract(s.scores,'$.blast'),
               json_extract(s.scores,'$.reversibility')) AS level,
           coalesce((SELECT min(e.at) FROM supervisor_incident_events e JOIN supervisor_incidents i ON i.id = e.incident
@@ -52,10 +55,10 @@ fn observe(tx: &Transaction, project: &str, source: &str, (kind, subject): (&str
             CASE WHEN s.episode_raised_at < ?4 THEN s.episode_raised_at END) AS raised
         FROM candidates s
         WHERE s.first_seen < ?4
-          AND s.detector NOT IN ('self.miss','self.collector_dead')
+          AND s.detector <> 'self.miss' AND (?6 <> 'watchdog' OR s.detector = 'self.collector_dead')
           AND s.state <> 'resolved'
-    ) SELECT fingerprint, state, min(first_seen) OVER (), raised, level, detector FROM matched
-      ORDER BY raised IS NULL, first_seen, fingerprint LIMIT 1", (project, kind, subject, at, super::signals::encode(&task_keys)?),
+    ) SELECT fingerprint, state, min(first_proof) OVER (), raised, level, detector FROM matched
+      ORDER BY raised IS NULL, first_seen, fingerprint LIMIT 1", (project, kind, subject, at, super::signals::encode(&task_keys)?, source),
         |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, i64>(2)?,
             r.get::<_, Option<i64>>(3)?, r.get::<_, Option<i64>>(4)?, r.get::<_, String>(5)?))).optional().map_err(sql)?;
     let (signal, state, first, raised, level) = match prior {

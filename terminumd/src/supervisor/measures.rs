@@ -84,7 +84,10 @@ fn overrides(tx: &Transaction, project: &str) -> Result<(i64, i64), String> {
 fn delays(tx: &Transaction, project: &str) -> Result<Vec<Value>, String> {
     // An actual event or task date supports a delay. Evaluation window bounds alone do not.
     rows(tx, "WITH evidence AS (
-        SELECT s.fingerprint, s.first_seen AS raised,
+        SELECT s.fingerprint, coalesce(s.episode_raised_at, (
+          SELECT min(i.at) FROM supervisor_incident_events i JOIN supervisor_incidents p ON p.id = i.incident
+          WHERE p.project = s.project AND i.fingerprint = s.fingerprint AND i.kind IN ('signal','updated','continued')
+        )) AS raised,
           max(json_extract(s.scores,'$.impact'),json_extract(s.scores,'$.blast'),
               json_extract(s.scores,'$.reversibility')) AS level,
           min(coalesce(e.at,t.created_at)) AS first_at

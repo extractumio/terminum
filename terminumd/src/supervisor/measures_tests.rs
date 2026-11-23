@@ -33,7 +33,9 @@ fn ac255_miss_from_owner_and_target_events() {
     }, NOW - 100)).unwrap();
     let raised = parent("A reported failure".into());
     let shadow = parent("A shadow failure".into());
-    signal(&f, "raised", ("task", &raised.key), "raised", "[]", NOW - 20);
+    let earlier = f.event(&raised.key, NOW - 80, DISPATCHER, "comment", "Retained failure evidence.", None);
+    signal(&f, "raised", ("task", &raised.key), "raised",
+        &json!([{"table":"events","id":earlier}]).to_string(), NOW - 20);
     signal(&f, "shadow", ("task", &shadow.key), "shadow", "[]", NOW - 30);
     signal(&f, "at-the-same-time", ("target", "main"), "raised", "[]", NOW);
     signal(&f, "muted", ("target", "next"), "muted", "[]", NOW - 40);
@@ -51,7 +53,7 @@ fn ac255_miss_from_owner_and_target_events() {
             FROM supervisor_miss_checks WHERE project = ?1 AND source = ?2 AND subject_id = ?3",
             (PROJECT, source, subject), |r| Ok((r.get::<_, i64>(0)?, r.get::<_, Option<String>>(1)?, r.get::<_, Option<i64>>(2)?))).map_err(sql);
         assert_eq!(read("owner_bug", &unsignaled.key)?, (NOW, None, None));
-        assert_eq!(read("owner_bug", &raised_bug.key)?, (NOW-20, Some("raised".into()), Some(NOW-20)));
+        assert_eq!(read("owner_bug", &raised_bug.key)?, (NOW-80, Some("raised".into()), Some(NOW-20)));
         assert_eq!(read("owner_bug", &shadow_bug.key)?, (NOW-30, Some("shadow".into()), None));
         assert_eq!(read("target_red", "main")?, (NOW, None, None));
         assert_eq!(read("target_red", "next")?, (NOW-40, Some("muted".into()), None));
@@ -85,7 +87,7 @@ fn ac256_supervisor_scorecard_denominators() {
             Some(json!({"left":"landed","notice":true})));
     }
     let proof = f.event("fix", NOW, HUMAN, "comment", "Earlier evidence.", None);
-    signal(&f, "fixed", ("task", "fix"), "resolved", &json!([{"table":"events","id":proof}]).to_string(), NOW + 60);
+    signal(&f, "fixed", ("task", "fix"), "new", &json!([{"table":"events","id":proof}]).to_string(), NOW + 60);
     signal(&f, "watching", ("task", "fix-watching"), "new", "[]", as_of - 9);
     f.agent("worker");
     f.run("fix", "fix-run", "worker", NOW);
