@@ -79,6 +79,8 @@ async function onBoard(browser, device, w) {
   check(`AC-269 ${w}: not read before 2 seconds`, !st.asked.includes("POST /api/reports/R_API-7/read"), st.asked.join());
   await shot(page, `inbox-pane-${w}`);
   check(`AC-269 ${w}: read once open 2 seconds`, await until(() => st.asked.includes("POST /api/reports/R_API-7/read"), 4000), st.asked.join());
+  // AC-270, as built so far (its §7 gap): no reply field, the report's task's window to go on in, by RUN with a comment
+  check(`AC-270 ${w}: the pane's foot offers to continue in the report's task`, (await page.textContent(".rpfoot").catch(() => "")) === "Continue in API-41");
   await page.keyboard.press("Escape");
   check(`AC-268 ${w}: Esc gives the columns back and the address loses the report`, await until(async () => !await page.isVisible("#reportpane") && !page.url().includes("report="), 2000), page.url());
   // keys on a row: U, Backspace, Undo
