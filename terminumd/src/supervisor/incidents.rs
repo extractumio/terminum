@@ -32,7 +32,9 @@ struct Member {
 
 pub(super) fn observe(tx: &Transaction, seen: Observation<'_>) -> Result<(), String> {
     let Observation { project, rule, fingerprint, finding, evidence, at } = seen;
-    let level = finding.scores.level();
+    // A round's standing escalation raises the level (AC-213); urgency stays the detector's own scores.
+    let level = super::escalations::standing(tx, fingerprint, evidence)?
+        .map_or(finding.scores, |score| score.raise(finding.scores)).level();
     let urgent = finding.charter_breach() || finding.scores.reversibility == 3;
     let mut member = tx.prepare_cached("SELECT incident, level, evidence_hash, value, threshold, urgent
         FROM supervisor_incident_signals WHERE fingerprint = ?1").map_err(sql)?;
@@ -141,6 +143,25 @@ pub(super) fn attach_hold(tx: &Transaction, signal: &super::Signal, hold: i64, p
     tx.execute("UPDATE supervisor_holds SET incident = ?2 WHERE id = ?1", (hold, id)).map_err(sql)?;
     append_hold_event(tx, id, hold, "hold_applied", actor, at)?;
     line_queue::enqueue(tx, id, if opened { Kind::Opened } else { Kind::Updated }, false)
+}
+
+/// A checked round's critical escalation (AC-213) opens or raises its signal's incident at once.
+pub(super) fn escalate(tx: &Transaction, signal: &super::Signal, evidence: &str, at: i64) -> Result<(), String> {
+    if super::breakers::divert(tx, signal, "alert", "", "A round escalated the signal to a critical alert.", at)?.is_some() {
+        return Ok(());
+    }
+    let prior = tx.query_row("SELECT m.incident FROM supervisor_incident_signals m
+        JOIN supervisor_incidents i ON i.id = m.incident WHERE m.fingerprint = ?1 AND i.closed_at IS NULL",
+        [&signal.fingerprint], |r| r.get(0)).optional().map_err(sql)?;
+    let (incident, opened) = match prior {
+        Some(id) => (id, false),
+        None => find_or_open(tx, &signal.project, (&signal.subject_kind, &signal.subject_id), at)?,
+    };
+    if opened { super::thread::ensure(tx, &signal.project, incident, at)?; }
+    let member = Member { incident, level: signal.level, value: signal.measure.value, threshold: signal.measure.threshold,
+        urgent: signal.charter_breach || signal.scores.reversibility == 3, evidence_hash: Sha256::digest(evidence).to_vec() };
+    record_signal(tx, &signal.project, &signal.fingerprint, (&signal.detector, &signal.metric, "escalated"), member, at)?;
+    line_queue::enqueue(tx, incident, if opened { Kind::Opened } else { Kind::Updated }, false)
 }
 
 fn append_hold_event(tx: &Transaction, incident: i64, hold: i64, kind: &str, actor: &str, at: i64) -> Result<(), String> {

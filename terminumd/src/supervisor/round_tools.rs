@@ -95,6 +95,9 @@ struct Finding {
     fix_proposal: String,
     evidence: Vec<Evidence>,
     measurements: Vec<Claim>,
+    /// A typed request for a critical escalation, checked against the retained evidence (AC-213).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    escalate: Option<super::escalations::Request>,
 }
 
 fn run_of(tx: &Transaction, key: &str, project: &str, tool: &str) -> Result<String, String> {
@@ -182,13 +185,17 @@ pub(crate) async fn run(app: &Shared, key: String, project: String, tool: String
             let run = run_of(tx, &key, &project, &tool)?;
             let case = case_file(tx, &run)?;
             let why = match accept(tx, &project, &case, value) {
-                Ok(finding) => {
+                Ok((finding, escalate)) => {
                     let at = now();
                     let changed = tx.execute("UPDATE supervisor_rounds SET finding = ?2, found_at = ?3
                         WHERE run = ?1 AND deadline > ?3 AND finding IS NULL", (&run, finding, at)).map_err(sql)?;
                     if changed == 1 {
                         if let Some(s) = super::action_tasks::run_signal(tx, &project, &run)? {
                             super::outcomes::record(tx, &s, super::outcomes::Kind::Cause, &run, &s.fingerprint, "", at)?;
+                            if let Some(request) = &escalate {
+                                let round = case["id"].as_str().unwrap_or_default();
+                                super::escalations::record(tx, &s, round, request, at)?;
+                            }
                         }
                         return Ok(Ok("Finding checked and recorded.".into()));
                     }
@@ -246,13 +253,15 @@ struct Scope {
 }
 
 #[derive(Serialize)]
-struct Reading {
+pub(super) struct Reading {
     query: &'static str,
     measure: Measure,
     evidence: Vec<Evidence>,
+    /// Whether code's recomputation still crosses the detector's threshold.
+    pub fires: bool,
 }
 
-fn metric(tx: &Transaction, project: &str, case: &Value, query: &str, fingerprint: &str) -> Result<Reading, String> {
+pub(super) fn metric(tx: &Transaction, project: &str, case: &Value, query: &str, fingerprint: &str) -> Result<Reading, String> {
     let rule = Rule::named(query)?;
     let case_signal = &case["signal"];
     let scope: Scope = if case_signal["fingerprint"] == fingerprint {
@@ -270,13 +279,15 @@ fn metric(tx: &Transaction, project: &str, case: &Value, query: &str, fingerprin
     let entry = measure.readings.into_iter().find(|r| r.key() == (&*scope.subject_kind, &*scope.subject_id, &*scope.metric))
         .ok_or("The named query cannot currently recompute the signal's measure.")?;
     let (baseline, threshold) = entry.limits(detector.threshold).ok_or("The query has no comparable baseline.")?;
+    let fires = entry.exceeds(detector.threshold).is_some();
     Ok(Reading { query: rule.id(), measure: Measure { value: entry.value, baseline, threshold,
-        window_start: start, window_end: end }, evidence: entry.evidence })
+        window_start: start, window_end: end }, evidence: entry.evidence, fires })
 }
 
-fn accept(tx: &Transaction, project: &str, case: &Value, value: Value) -> Result<String, String> {
+fn accept(tx: &Transaction, project: &str, case: &Value, value: Value) -> Result<(String, Option<super::escalations::Request>), String> {
     let mut finding: Finding = args(value)?;
-    for prose in [&mut finding.cause, &mut finding.disproof, &mut finding.fix_proposal] {
+    let reason = finding.escalate.as_mut().map(|e| &mut e.reason);
+    for prose in [&mut finding.cause, &mut finding.disproof, &mut finding.fix_proposal].into_iter().chain(reason) {
         if prose.trim().is_empty() || prose.chars().count() > MOST_PROSE {
             return Err("Supply a cause, what would disprove it, and a fix proposal within 2,000 characters each.".into());
         }
@@ -290,10 +301,17 @@ fn accept(tx: &Transaction, project: &str, case: &Value, value: Value) -> Result
     {
         return Err("Supply confidence between zero and one, one to 128 evidence IDs and at most 16 measurements.".into());
     }
-    if case["kind"] == "verification" && !finding.measurements.iter()
-        .any(|claim| case["signal"]["fingerprint"] == claim.signal)
-    {
+    let own = finding.measurements.iter().find(|claim| case["signal"]["fingerprint"] == claim.signal);
+    if case["kind"] == "verification" && own.is_none() {
         return Err("A verification must cite the recomputed measurement for its signal.".into());
+    }
+    if let Some(request) = &finding.escalate {
+        let signal = signals::get(tx, project, case["signal"]["fingerprint"].as_str().unwrap_or_default())?;
+        request.check(&signal, finding.confidence)?;
+        let own = own.ok_or("A critical escalation must cite the recomputed measurement for its signal.")?;
+        if !metric(tx, project, case, &own.query, &own.signal)?.fires {
+            return Err("A critical escalation needs its signal's recomputed measurement to still cross its threshold.".into());
+        }
     }
     for (i, id) in finding.evidence.iter().enumerate() {
         if round_evidence::resolve(tx, project, id)?.is_none() {
@@ -307,5 +325,6 @@ fn accept(tx: &Transaction, project: &str, case: &Value, value: Value) -> Result
                 i + 1, claim.value, reading.measure.value));
         }
     }
-    serde_json::to_string(&finding).map_err(|e| e.to_string())
+    let escalate = finding.escalate.clone();
+    serde_json::to_string(&finding).map(|text| (text, escalate)).map_err(|e| e.to_string())
 }
