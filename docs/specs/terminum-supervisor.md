@@ -1315,7 +1315,7 @@ The existing mechanisms in §3 provide inputs or precedents for these open gaps.
 
 | AC | Open gap |
 |---|---|
-| AC-212 | The 19 store-backed rules, typed thresholds and shadow enablement are implemented. Snapshot and counter rules use retained inputs. Integration, probes and structured question and design guards need their owning stages. |
+| AC-212 | Store, snapshot, counter, integration and probe rules use retained inputs, typed thresholds and shadow enablement. The detector catalog lists their source requirements. |
 | AC-213 | Charter breach inputs and round execution belong to their owning stages. |
 | AC-214 | Release tags, task commits, nightly history, question kinds and design sign-offs need their owning inputs. |
 | AC-215 | Probe and judgment quality replay require retained inputs from their owning stages. |
@@ -1345,8 +1345,8 @@ The existing mechanisms in §3 provide inputs or precedents for these open gaps.
 | AC-250 | The preview covers the previous 30 days and shows missing per-task diffs. |
 | AC-251 | Task creation and assigned local worktree diffs can flag T3. The opt-in Verify command checks the pinned submission. |
 | AC-252 | One bounded review workflow per task design, with distinct T3 critics and an authenticated owner choice. |
-| AC-260 | Owner probes and failure signals. |
-| AC-261 | Git release metrics, owner split and allocation. |
+| AC-260 | Independent daily Git, gate and owner-approved command probes, bounded output and failure signals. |
+| AC-261 | Containing-release lead time, cadence, quick patches, recorded owner-act kinds and priced allocation. |
 | AC-262 | Quarantined reader and human task eligibility. |
 | AC-263 | Project templates, shared line and data isolation. |
 
@@ -1433,7 +1433,7 @@ A detector sets blast radius and reversibility; its measured `escalate` rules ma
 | 6. Cognitive load | Switches per active hour, active hours, concurrent sessions and off-hours share. | Features per owner hour |
 | 7. Operational and strategic work | Answers, runs, moves and edits per DONE task. Strategic acts include design sign-offs, owner Feature and Story creation and priorities set. | Strategic acts remain with the owner and do not fall. |
 
-Compare the latest four weeks to the preceding four and show changes against the project's own weekly noise. Improvement in a period requires one better indicator and none worse. A favorable move whose guard is worse is itself worse. Question kind comes from AC-230. Additional indicators use the owner's charter and probe; missing optional inputs are visible.
+Compare the latest four weeks to the preceding four and show changes against the project's own weekly noise. Improvement in a period requires one better indicator and none worse. A favorable move whose guard is worse is itself worse. Question kind comes from AC-230. Older answers stay unknown. Count a recorded design sign-off once as a strategic act. Use tagged release dates and task commit ancestry. Count a stable patch tag if it follows the previous release within 72 hours and normalize cadence to an average calendar month. Integration off leaves release lead time unavailable. Additional indicators use the owner's charter and probe; missing optional inputs are visible.
 
 ### Project settings and attach
 
@@ -1505,7 +1505,7 @@ The weekly review's sections, in order:
 1. Decisions by cost of waiting.
 2. Three highest-ranked problems with evidence, cost per week, cause, options and recommendation.
 3. Problems that stayed resolved and those that recurred.
-4. Effort allocation by type against target.
+4. Priced usage by task type, including untyped spend, against the charter target when configured. Terminum supplies the measures and labels incomplete pricing.
 5. Agents' rates by task type, sample sizes and routing proposals.
 6. Owner bottlenecks above baseline, with data, cost and one proposal each.
 7. Seven indicator verdicts with guards, limiting register problems and what to build or stop.
@@ -1570,7 +1570,7 @@ Version every accepted change and record its one-key revert. A project-scoped re
 
 ### Probes, isolation and logging
 
-An owner-set probe is read-only, idempotent and bounded by time and output size. Run with a fixed environment and parse only metric lines matching name, numeric value, unit, timestamp and allowed dimensions. For example, `{"metric":"product.active_workspaces","value":63,"unit":"count","at":1800000120,"dims":{"plan":"standard"}}`. Malformed output, failure and timeout raise a signal. Standard probes use git and the gate record, and can query code-host metrics where configured. Optional project probes can supply guarded product series.
+An owner-set probe is read-only, idempotent and bounded by time and output size. Run with a fixed environment and parse only metric lines matching name, numeric value, unit, timestamp and allowed dimensions. For example, `{"metric":"product.active_workspaces","value":63,"unit":"count","at":1800000120,"dims":{"plan":"standard"}}`. Malformed output, failure and timeout raise a signal. Standard probes read local Git and gate records. Custom commands use the local project directory and a fixed locale, timezone and PATH, with five seconds and 64 KiB of stdout. The same-user security boundary makes read-only and idempotent behavior an owner contract. Retain checked samples and availability for 90 days. A probe detector can replay only from the first retained sample of its source. Optional project probes can supply guarded product series.
 
 Raw outside text goes to a tool-free reader. Accept only closed categories such as theme, kind and sentiment, plus counts and a validated reference link. No outside prose passes into tasks, comments or case files. An outside-marked task cannot enter Auto-Dispatcher until moved by a human. For project reuse, only general detector definitions and lessons cross to the engine board. The owner can share the line and quiet hours across projects, with incidents ordered by level. Private charter, ledger, register, case files and baselines stay scoped to the project and out of tracked files. The threat model in [SECURITY.md](../../SECURITY.md) describes the residual access of a process running as the same user.
 
@@ -1646,7 +1646,7 @@ Enable none of the runtime cases by default. The stages below list the cases in 
 - [x] AC-257 — `ac257_sunset_age_and_exemptions` checks the eight- and sixteen-week boundaries, acted-on findings and protected scope. `webSupervisor` shows the removal proposal.
 - [x] AC-258 — `ac258_protected_state_denials` checks each level from its marked pane and with a manager token presented from that pane. Typed argument checks preserve the detector yardstick.
 - [x] AC-259 — `ac259_quarterly_audit_unedited_result` checks cadence, independence, budget and exact publication. `scripts/e2e_supervisor_reflection.py` exercises the real scheduled run and its tool scope.
-- [ ] AC-260 — Planned test: `ac260_probe_valid_invalid_timeout` covers owner probes and failure signals.
-- [ ] AC-261 — Planned test: `ac261_git_release_metrics_and_owner_split` covers git release metrics, owner split and allocation.
+- [x] AC-260 — `ac260_probe_valid_invalid_timeout` checks approval, bounds, failures and discarded stale results. `ac260_standard_architecture_and_gate_detectors` checks real Git and gate inputs. `e2e_supervisor_probes.py` exercises the signed-in routes and independent collector.
+- [x] AC-261 — `ac261_git_release_metrics_and_owner_split` checks commit ancestry, tags, the owner split and allocation. `ac261_only_an_own_verify_records_its_outcome` distinguishes Verify from Prepare. `e2e_supervisor_probes.py` checks the live scoreboard with integration on and off.
 - [ ] AC-262 — Planned test: `ac262_outside_fields_and_dispatch_gate` covers quarantined reader and human task eligibility.
 - [ ] AC-263 — Planned test: `ac263_two_project_attachment_and_line` covers project templates, shared line and data isolation.

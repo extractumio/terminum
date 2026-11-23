@@ -10,7 +10,8 @@ use crate::tasks::ops::{rows, sql};
 use super::flow::{FIRST_DONE, project_events};
 use super::impact::absolute_noise;
 use super::people::{Load, OwnerAction, owner_actions, owner_load};
-use super::{WEEK, Window, percentile};
+use super::{WEEK, Window, catalog, percentile, probes,
+    probe_gate::Gate, probe_git::Releases, probe_rules::{self, GATE_MISSING, GIT_MISSING, INTEGRATION_OFF}};
 
 pub(super) const WEEKS: usize = 8;
 
@@ -24,7 +25,13 @@ pub(super) struct Week {
     untyped: f64,
     bugs: [f64; 3],
     pub failures: f64,
-    integration_reds: f64,
+    integration_reds: Option<f64>,
+    releases: Option<f64>,
+    patches: Option<f64>,
+    nightly_reds: Option<f64>,
+    release_days: Vec<f64>,
+    unreleased: Option<f64>,
+    integration_on: bool,
     lead_days: Vec<f64>,
     pub todo: f64,
     todo_ages: Vec<f64>,
@@ -32,7 +39,8 @@ pub(super) struct Week {
     archived: f64,
     pub load: Load,
     pub operations: [f64; 4],
-    strategic: [f64; 2],
+    strategic: [f64; 4],
+    unknown_answers: f64,
     pub schedule_events: f64,
     pub launches: f64,
 }
@@ -52,17 +60,34 @@ impl Week {
 }
 
 pub(super) fn read(tx: &Transaction, project: &str, at: i64, first: i64) -> Result<Vec<Week>, String> {
+    let integration = catalog::integration_on(tx, project)?;
+    let git = probes::read::<Releases>(tx, project, probes::GIT, at)?.map(|(_, data)| data);
+    let gate = probes::read::<Gate>(tx, project, probes::GATE, at)?.map(|(_, data)| data);
     (0..WEEKS).rev().map(|weeks_ago| {
         let end = at - weeks_ago as i64 * WEEK;
         let start = Window::week(end).start;
         let window = Window { before: start.max(first), start: start.max(first), end };
-        collect(tx, project, window, start >= first)
+        let mut week = collect(tx, project, window, start >= first, integration)?;
+        if let Some(git) = &git {
+            let (releases, patches) = probe_rules::release_counts(git, start, end);
+            week.releases = Some(releases);
+            week.patches = Some(patches);
+            if integration {
+                week.release_days.extend(probe_rules::release_days(git, start, end));
+                if !git.shallow {
+                    week.unreleased = Some(git.tasks.values().filter(|t| t.first_tag.is_none()
+                        && (start..=end).contains(&t.landed)).count() as f64);
+                }
+            }
+        }
+        if let Some(gate) = &gate { week.nightly_reds = probe_rules::nightly_reds(gate, start, end); }
+        Ok(week)
     }).collect()
 }
 
-fn collect(tx: &Transaction, project: &str, window: Window, covered: bool) -> Result<Week, String> {
+fn collect(tx: &Transaction, project: &str, window: Window, covered: bool, integration_on: bool) -> Result<Week, String> {
     let (start, end) = (window.start, window.end);
-    let mut week = Week { end, covered, available: start <= end, ..Week::default() };
+    let mut week = Week { end, covered, integration_on, available: start <= end, ..Week::default() };
     if !week.available {
         return Ok(week);
     }
@@ -98,8 +123,10 @@ fn collect(tx: &Transaction, project: &str, window: Window, covered: bool) -> Re
     }
     week.failures = count(&format!("{events} SELECT count(*) FROM project_events
         WHERE at >= ?3 AND kind = 'move' AND json_extract(data, '$.to') = 'FAILED'"))?;
-    week.integration_reds = count("SELECT count(*) FROM integration_rounds r JOIN integration_batches b ON b.id = r.batch
-        WHERE b.project = ?1 AND r.ended BETWEEN ?3 AND ?2 AND r.result = 'red'")?;
+    if integration_on {
+        week.integration_reds = Some(count("SELECT count(*) FROM integration_rounds r JOIN integration_batches b ON b.id = r.batch
+            WHERE b.project = ?1 AND r.ended BETWEEN ?3 AND ?2 AND r.result = 'red'")?);
+    }
     week.schedule_events = count("SELECT coalesce(sum(1 + missed), 0) FROM schedule_fires f JOIN schedules s ON s.id = f.schedule
         WHERE s.project = ?1 AND f.at BETWEEN ?3 AND ?2")?;
     week.launches = count(&format!("SELECT count(DISTINCT r.id) FROM runs r JOIN inputs i ON i.run = r.id
@@ -137,7 +164,10 @@ fn owner(tx: &Transaction, project: &str, start: i64, week: &mut Week) -> Result
     week.load = owner_load(tx, project, start, week.end)?;
     for (kind, _, _) in owner_actions(tx, project, start, week.end)? {
         match kind {
-            OwnerAction::Answer => week.operations[0] += 1.0,
+            OwnerAction::OperationalAnswer => week.operations[0] += 1.0,
+            OwnerAction::UnknownAnswer => week.unknown_answers += 1.0,
+            OwnerAction::StrategicAnswer => week.strategic[2] += 1.0,
+            OwnerAction::DesignSignoff => week.strategic[3] += 1.0,
             OwnerAction::Run => week.operations[1] += 1.0,
             OwnerAction::Move => week.operations[2] += 1.0,
             OwnerAction::Edit => week.operations[3] += 1.0,
@@ -169,27 +199,34 @@ struct Metric {
     compare: Option<bool>,
     read: Measure,
     missing: &'static str,
+    probe: bool,
 }
 
 impl Metric {
     fn compare(name: &'static str, higher_is_better: bool, read: Measure) -> Self {
-        Self { name, compare: Some(higher_is_better), read, missing: "insufficient history or denominator" }
+        Self { name, compare: Some(higher_is_better), read, missing: "insufficient history or denominator", probe: false }
     }
 
     fn context(name: &'static str, read: Measure) -> Self {
         Self { compare: None, ..Self::compare(name, false, read) }
     }
 
-    fn missing(name: &'static str, reason: &'static str) -> Self {
-        Self { name, compare: Some(false), read: |_| None, missing: reason }
+    fn because(mut self, reason: &'static str) -> Self {
+        self.missing = reason;
+        self
+    }
+
+    fn probe(mut self) -> Self {
+        self.probe = true;
+        self
     }
 
     fn measure(self, weeks: &[Week]) -> Line {
-        Self::line(self.name, self.compare, self.missing, weeks, self.read)
+        Self::line(self.name, self.compare, self.missing, weeks, self.probe, self.read)
     }
 
-    fn line(name: &'static str, comparison: Option<bool>, missing: &'static str, weeks: &[Week], read: impl Fn(&[Week]) -> Option<f64>) -> Line {
-        let measure = |weeks: &[Week]| weeks.iter().all(|w| w.covered).then(|| read(weeks)).flatten();
+    fn line(name: &'static str, comparison: Option<bool>, missing: &'static str, weeks: &[Week], probe: bool, read: impl Fn(&[Week]) -> Option<f64>) -> Line {
+        let measure = |weeks: &[Week]| (probe || weeks.iter().all(|w| w.covered)).then(|| read(weeks)).flatten();
         let (before, current) = (measure(&weeks[..4]), measure(&weeks[4..]));
         let series: Vec<_> = weeks.iter().map(|week| measure(std::slice::from_ref(week))).collect();
         let noise = absolute_noise(&series);
@@ -242,6 +279,10 @@ fn mean(weeks: &[Week], extract: impl Fn(&Week) -> f64) -> Option<f64> {
     Some(weeks.iter().map(extract).sum::<f64>() / weeks.len() as f64)
 }
 
+fn total(weeks: &[Week], extract: impl Fn(&Week) -> Option<f64>) -> Option<f64> {
+    weeks.iter().map(extract).sum()
+}
+
 fn ratio(weeks: &[Week], numerator: impl Fn(&Week) -> f64, denominator: impl Fn(&Week) -> f64) -> Option<f64> {
     let total: f64 = weeks.iter().map(denominator).sum();
     (total > 0.0).then(|| weeks.iter().map(numerator).sum::<f64>() / total)
@@ -258,19 +299,29 @@ pub(super) fn indicators(weeks: &[Week]) -> [Indicator; 7] {
         M::compare("P0 Bugs opened per week", false, |w| mean(w, |x| x.bugs[1])),
         M::compare("P1 Bugs opened per week", false, |w| mean(w, |x| x.bugs[2])),
         M::compare("FAILED share of DONE and FAILED transitions", false, |w| ratio(w, |x| x.failures, |x| x.done + x.failures)),
-        M::compare("Red integration rounds per week", false, |w| mean(w, |x| x.integration_reds)),
-        M::missing("Nightly reds", "nightly gate history is unavailable"),
-        M::missing("Patches within three days", "release tags are unavailable"),
+        M::compare("Red integration rounds per week", false, |w| total(w, |x| x.integration_reds).map(|n| n / w.len() as f64))
+            .because(INTEGRATION_OFF),
+        M::compare("Nightly reds", false, |w| total(w, |x| x.nightly_reds)).because(GATE_MISSING).probe(),
+        M::compare("Patches within three days", false, |w| total(w, |x| x.patches)).because(GIT_MISSING).probe(),
     ]);
     features.verdict = guarded(features.verdict, stability.verdict);
+    let lead_missing = if !weeks.last().is_some_and(|w| w.integration_on) { INTEGRATION_OFF }
+        else if weeks.last().is_none_or(|w| w.releases.is_none()) { GIT_MISSING }
+        else { "No measured tasks with a containing release in this window." };
     let mut lead = indicator("Lead time", "Stability", weeks, vec![
         M::compare("Median task-days to first DONE", false, |w| percentile(&mut w.iter().flat_map(|x| x.lead_days.iter().copied()).collect::<Vec<_>>(), 50)),
-        M::missing("Task-days to first release", "task commits and release tags are unavailable"),
+        M::compare("Median task-days to first release", false, |w|
+            percentile(&mut w.iter().flat_map(|x| x.release_days.iter().copied()).collect::<Vec<_>>(), 50)).because(lead_missing).probe(),
+        M::context("Unreleased tasks with known commits", |w| total(w, |x| x.unreleased))
+            .because(if lead_missing == INTEGRATION_OFF || lead_missing == GIT_MISSING { lead_missing }
+                else { "A complete Git history is required to confirm unreleased commits." }).probe(),
     ]);
     lead.verdict = guarded(lead.verdict, stability.verdict);
-    let release = indicator("Release cadence", "Stability", weeks, vec![
-        M::missing("Releases per month", "release tags are unavailable"),
+    let mut release = indicator("Release cadence", "Stability", weeks, vec![
+        M::compare("Releases per month", true, |w| total(w, |x| x.releases)
+            .map(|n| n * probe_rules::MONTH / (7 * w.len()) as f64)).because(GIT_MISSING).probe(),
     ]);
+    release.verdict = guarded(release.verdict, stability.verdict);
     let mut backlog = indicator("Backlog", "Archived without DONE is counted separately", weeks, vec![
         M::compare("TODO tasks (weekly snapshots)", false, |w| mean(w, |x| x.todo)),
         M::compare("Median TODO age in days", false, |w| percentile(&mut w.iter().flat_map(|x| x.todo_ages.iter().copied()).collect::<Vec<_>>(), 50)),
@@ -278,7 +329,7 @@ pub(super) fn indicators(weeks: &[Week]) -> [Indicator; 7] {
         M::compare("Archived without DONE per week", false, |w| mean(w, |x| x.archived)),
     ]);
     for kind in crate::tasks::attrs::TYPES.map(|(kind, _)| kind).into_iter().chain(["untyped"]) {
-        backlog.lines.push(M::line(kind, None, "insufficient history", weeks,
+        backlog.lines.push(M::line(kind, None, "insufficient history", weeks, false,
             |range| mean(range, |week| week.net.get(kind).copied().unwrap_or_default())));
     }
     let archived = backlog.lines[3].verdict;
@@ -296,20 +347,22 @@ pub(super) fn indicators(weeks: &[Week]) -> [Indicator; 7] {
     load.verdict = guarded(load.verdict, features.verdict);
     let mut operations = indicator("Operational and strategic work", "Owner retains strategic acts", weeks, vec![
         M::compare("Owner operations per DONE task", false, |w| ratio(w, |x| x.operations.iter().sum(), |x| x.done)),
-        M::context("Answers per week", |w| mean(w, |x| x.operations[0])),
+        M::context("Operational answers per week", |w| mean(w, |x| x.operations[0])),
         M::context("Runs per week", |w| mean(w, |x| x.operations[1])),
         M::context("Moves per week", |w| mean(w, |x| x.operations[2])),
         M::context("Edits per week", |w| mean(w, |x| x.operations[3])),
-        M::compare("Owner priority settings per week", true, |w| mean(w, |x| x.strategic[0])),
-        M::compare("Owner Feature and Story creation per week", true, |w| mean(w, |x| x.strategic[1])),
-        M::missing("Design sign-offs and strategic answers", "recorded design sign-offs and question kinds are unavailable"),
+        M::compare("Strategic acts per week", true, |w| mean(w, |x| x.strategic.iter().sum())),
+        M::context("Owner priority settings per week", |w| mean(w, |x| x.strategic[0])),
+        M::context("Owner Feature and Story creation per week", |w| mean(w, |x| x.strategic[1])),
+        M::context("Strategic answers per week", |w| mean(w, |x| x.strategic[2] + x.strategic[3])),
+        M::context("Design sign-offs per week", |w| mean(w, |x| x.strategic[3])),
+        M::context("Answers without a recorded kind per week", |w| mean(w, |x| x.unknown_answers)),
+        M::context("Share of answers without a recorded kind", |w|
+            ratio(w, |x| x.unknown_answers, |x| x.operations[0] + x.strategic[2] + x.strategic[3] + x.unknown_answers)),
     ]);
-    let strategic = if operations.lines[5..7].iter().any(|line| line.verdict == Verdict::Worse) {
-        Verdict::Worse
-    } else {
-        Verdict::Unmeasured
-    };
-    operations.verdict = guarded(operations.lines[0].verdict, strategic);
+    let strategic = operations.lines[5].verdict;
+    operations.verdict = if strategic == Verdict::Worse { Verdict::Worse }
+        else { guarded(operations.lines[0].verdict, strategic) };
     [features, stability, lead, release, backlog, load, operations]
 }
 
@@ -330,7 +383,8 @@ mod tests {
     #[test]
     fn ac214_scoreboard_guard_verdicts() {
         let mut weeks: Vec<_> = (0..8).map(|i| Week {
-            covered: true, features: if i < 4 { 2.0 } else { 5.0 },
+            covered: true, integration_on: true, integration_reds: Some(0.0),
+            features: if i < 4 { 2.0 } else { 5.0 },
             done: 10.0, load: test_load(), ..Week::default()
         }).collect();
         let board = indicators(&weeks);
@@ -338,11 +392,11 @@ mod tests {
         assert_eq!((board[0].lines[0].before, board[0].lines[0].current), (Some(0.2), Some(0.5)));
         assert_eq!(board[0].verdict, Verdict::Better);
         assert_eq!(board[3].verdict, Verdict::Unmeasured);
-        assert!(board[3].lines[0].missing.contains("release tags"));
+        assert!(board[3].lines[0].missing.to_lowercase().contains("release tags"));
         assert!(period_improved(&board));
 
         for week in &mut weeks[4..] {
-            week.integration_reds = 3.0;
+            week.integration_reds = Some(3.0);
         }
         let board = indicators(&weeks);
         assert_eq!(board[0].guard, "Stability");

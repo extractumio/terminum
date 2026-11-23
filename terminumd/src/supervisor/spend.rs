@@ -152,40 +152,72 @@ pub(super) fn outliers(q: &Query<'_, '_>) -> Result<Measurements, String> {
     Ok(out)
 }
 
+#[derive(serde::Serialize)]
+pub(super) struct Allocation {
+    pub rows: Vec<AllocationRow>,
+    pub missing: Option<&'static str>,
+    pub unpriced_runs: usize,
+    #[serde(skip)]
+    evidence: Vec<Evidence>,
+}
+
+#[derive(serde::Serialize)]
+pub(super) struct AllocationRow {
+    pub task_type: &'static str,
+    pub dollars: f64,
+    pub share: Option<f64>,
+    pub target: Option<f64>,
+}
+
+pub(super) fn allocation_view(tx: &rusqlite::Transaction, project: &str, start: i64, end: i64,
+    targets: &BTreeMap<String, f64>) -> Result<Allocation, String>
+{
+    let assignments = rows(tx, "WITH spent AS (SELECT DISTINCT u.run FROM usage u JOIN runs r ON r.id = u.run
+            WHERE r.project = ?1 AND u.at BETWEEN ?2 AND ?3)
+        SELECT DISTINCT s.run, coalesce(t.type, 'untyped') FROM spent s
+        LEFT JOIN run_tasks m ON m.run = s.run LEFT JOIN tasks t ON t.id = m.task AND t.project = ?1", (project, start, end),
+        |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?;
+    let mut kinds = BTreeMap::<String, &str>::new();
+    for (run, kind) in &assignments {
+        kinds.entry(run.clone()).and_modify(|k| *k = "untyped").or_insert(kind);
+    }
+    let mut buckets = BTreeMap::<&str, f64>::new();
+    let mut evidence = Vec::new();
+    let mut unpriced = BTreeSet::new();
+    for usage in usage_reports(tx, project, start, end)? {
+        if let Some(dollars) = usage.dollars {
+            let kind = kinds.get(&usage.run).copied().unwrap_or("untyped");
+            *buckets.entry(kind).or_default() += dollars;
+            evidence.push(Evidence::Usage(usage.id));
+        } else {
+            unpriced.insert(usage.run);
+        }
+    }
+    let total = buckets.values().sum::<f64>();
+    let missing = if !unpriced.is_empty() { Some("Some runs lack prices. The amounts below include priced usage only.") }
+        else if total <= 0.0 { Some("No priced task spend is recorded for this window.") }
+        else { None };
+    let actual = crate::tasks::attrs::TYPES.into_iter().map(|(kind, _)| kind).chain(["untyped"])
+        .map(|kind| {
+            let dollars = buckets.get(kind).copied().unwrap_or(0.0);
+            AllocationRow { task_type: kind, dollars, share: (total > 0.0).then(|| dollars / total),
+                target: targets.get(kind).copied() }
+        }).collect();
+    Ok(Allocation { rows: actual, missing, unpriced_runs: unpriced.len(), evidence })
+}
+
 pub(super) fn allocation(q: &Query<'_, '_>) -> Result<Measurements, String> {
-    let usage = usage_rows(q)?;
-    let mut buckets = BTreeMap::<Option<&str>, f64>::new();
-    let mut measured = vec![];
-    let mut total = 0.0;
-    let mut missing = false;
-    let runs = runs(q)?;
-    for run in runs.iter().filter(|run| q.window.current(run.at)) {
-        let Some(spend) = usage.get(&run.id).filter(|s| s.complete) else {
-            missing = true;
-            continue;
-        };
-        let kind = &run.tasks[0].1;
-        let consistent = run.total_tasks == run.tasks.len() as i64 && run.tasks.iter().all(|(_, k)| k == kind);
-        *buckets.entry(if consistent { kind.as_deref() } else { None }).or_default() += spend.dollars;
-        total += spend.dollars;
-        measured.push(Evidence::Runs(run.id.clone()));
-        measured.extend(spend.evidence.iter().cloned());
-    }
-    if missing || usage.is_empty() || total == 0.0 {
-        return Ok(Measurements::missing("Allocation needs priced Dispatcher spend in the window."));
-    }
+    let allocation = allocation_view(q.tx, q.project, q.window.start, q.window.end, &q.detector.allocation)?;
+    if let Some(reason) = allocation.missing { return Ok(Measurements::missing(reason)); }
     let mut out = Measurements::default();
-    if let Some(untyped) = buckets.get(&None) {
-        out.readings.push(Reading::new("project", q.project, "untyped_share", untyped / total, measured.clone()).source(Source::UnclassifiedSpend));
-    }
-    if q.detector.allocation.is_empty() {
-        out.unavailable.push("No project allocation targets are configured.");
-        out.complete_metrics.push("untyped_share");
-    } else {
-        for (kind, target) in &q.detector.allocation {
-            let share = buckets.get(&Some(kind.as_str())).copied().unwrap_or(0.0) / total;
-            out.readings.push(Reading::new("task_type", kind, "allocation_share", share,
-                measured.clone()).comparison(Comparison::Deviation(*target)));
+    for row in allocation.rows {
+        let Some(share) = row.share else { continue; };
+        if row.task_type == "untyped" {
+            out.readings.push(Reading::new("project", q.project, "untyped_share", share, allocation.evidence.clone())
+                .source(Source::UnclassifiedSpend));
+        } else if let Some(target) = row.target {
+            out.readings.push(Reading::new("task_type", row.task_type, "allocation_share", share,
+                allocation.evidence.clone()).comparison(Comparison::Deviation(target)));
         }
     }
     Ok(out)

@@ -115,7 +115,7 @@ def append(root, entry):
         return
     try:
         with file.open("a") as out:
-            out.write(json.dumps({"at": now(), **entry}, sort_keys=True) + "\n")
+            out.write(json.dumps({"at": now(), "at_unix": int(time.time()), **entry}, sort_keys=True) + "\n")
     except OSError as e:
         print(f"record: not written: {e}")
 

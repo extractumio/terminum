@@ -413,12 +413,14 @@ pub fn done_all(tx: &Transaction, b: &Batch, target: &str, candidate: &str, at: 
     let pairs: Vec<(&String, String)> = b.tasks.iter().filter_map(|k| slug(tx, k).ok().map(|id| (k, id))).collect();
     let ids: Vec<String> = pairs.iter().map(|(_, id)| id.clone()).collect();
     for (k, id) in pairs.iter().map(|(k, id)| (*k, id.clone())) {
-        let kept: Option<(String, String)> = tx.query_row("SELECT result, author FROM integration_entries WHERE task = ?1", [k], |r| Ok((r.get(0)?, r.get(1)?))).optional().map_err(sql)?;
-        let Some((result, author)) = kept else { continue };
+        let kept: Option<(String, String, String)> = tx.query_row("SELECT result, author, commit_sha FROM integration_entries WHERE task = ?1",
+            [k], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).optional().map_err(sql)?;
+        let Some((result, author, commit)) = kept else { continue };
         ops::comment(tx, &author, &id, &result, at)?;
         let mates: Vec<&str> = ids.iter().map(String::as_str).filter(|i| *i != id).collect();
         let with = if mates.is_empty() { String::new() } else { format!(", with {}", and_list(&mates)) };
-        ops::left_queue(tx, DISPATCHER, &id, &format!("Integrated into {target} at {} in batch {}{with}.", short(candidate), b.number), "landed", at)?;
+        ops::notice(tx, DISPATCHER, &id, &format!("Integrated into {target} at {} in batch {}{with}.", short(candidate), b.number),
+            serde_json::json!({"left": "landed", "commit": commit, "batch": b.id}), at)?;
         let t = ops::get(tx, &id)?;
         ops::place(tx, DISPATCHER, &t, "DONE", at)?;
     }

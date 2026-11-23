@@ -37,6 +37,14 @@ pub(super) fn resolve(tx: &Transaction, project: &str, id: &Evidence) -> Result<
             FROM messages WHERE project = ?1 AND id = ?2", (project, id)),
         Evidence::SupervisorPoints(id) => select(tx, "SELECT json_object('metric', metric, 'at', at, 'value', value)
             FROM supervisor_points WHERE project = ?1 AND id = ?2", (project, id)),
+        Evidence::SupervisorProbes(id) => select(tx, "SELECT json_object('source', source, 'at', at, 'state', state)
+            FROM supervisor_probe_samples WHERE project = ?1 AND id = ?2", (project, id)),
+        Evidence::IntegrationRound { batch, round } => select(tx, "SELECT json_object('round', r.round, 'ended_at', r.ended, 'result', r.result)
+            FROM integration_rounds r JOIN integration_batches b ON b.id = r.batch
+            WHERE b.project = ?1 AND r.batch = ?2 AND r.round = ?3", (project, batch, round)),
+        Evidence::IntegrationVerify(attempt) => select(tx, "SELECT json_object('task', t.slug, 'at', v.at, 'passed', v.passed)
+            FROM integration_verify_results v JOIN tasks t ON t.id = v.task AND t.project = v.project
+            WHERE v.project = ?1 AND v.attempt = ?2", (project, attempt)),
         Evidence::SupervisorHookCounts(id) => select(tx, "SELECT json_object('event', event, 'at', at, 'count', count)
             FROM supervisor_hook_counts WHERE project = ?1 AND id = ?2", (project, id)),
         Evidence::SupervisorHeartbeat { project: id, last_ok } => select(tx, "SELECT json_object('last_ok', last_ok, 'enabled_at', enabled_at)

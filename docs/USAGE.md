@@ -484,6 +484,32 @@ replaces the project preferences and keeps the switch, level, tier agents and ap
 commands. In **Probe commands**, use **View command** to read the full text and then
 **Approve command** to set it. Commands from an import start unset.
 
+Enabled projects sample the selected **Git** and **Gate records** sources and approved commands
+once a day, independently of the collector heartbeat. The Supervisor screen shows each
+source's last status. Git reads local stable `vMAJOR.MINOR.PATCH` tags and local history.
+Gate records come from `terminum-gate.jsonl` in Git's common directory. The optional
+**Git source file line limit** flags supported source files at 90% of the limit.
+The dependency check reads Cargo and npm lockfile additions. Git and gate probes
+use local data and do not fetch.
+
+Approved commands run in the project's local directory with `/usr/bin:/bin`,
+a fixed locale and timezone, and an empty inherited environment. They run as the
+server user. Approve only commands that read data and produce the same result for
+the same inputs. Each line must be a JSON object containing `metric`, finite
+numeric `value`, `unit`, and Unix seconds `at`. Optional `dims` maps short
+identifiers to short identifiers. A command has five seconds and 64 KiB of
+standard output. A failed, timed-out, or invalid probe raises a signal. A missing
+source leaves its measurements unavailable and other sources continue.
+
+The scoreboard reports the median task-days from creation to the earliest containing
+release, and lists known unreleased commits separately. Task-to-release time requires
+integration. Release cadence and quick patches only need tags. Cadence is normalized to
+an average calendar month. A patch counts as quick when it follows the preceding
+release within 72 hours. The time to DONE remains available from task history.
+The owner-work indicator uses the recorded question kind and reports older unclassified
+answers. The weekly review shows priced usage by task type and untyped spend, with
+target shares when configured.
+
 In **Surface map**, enter repository-relative patterns, one per line. Use `*` and `?`
 within a path segment and `**` as a whole segment for any depth. T1 identifies internal
 boundaries. T2 contracts require an architecture review. A change or deletion on a T3 path

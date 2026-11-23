@@ -58,6 +58,25 @@ pub(crate) fn is_commit(value: &str) -> bool {
     matches!(value.len(), 40 | 64) && value.bytes().all(|b| b.is_ascii_hexdigit())
 }
 
+pub(crate) const FIRST_PARENT_FORMAT: &str = "--format=%H%x09%P%x09%s";
+
+pub(crate) struct CommitEdge<'a> {
+    pub sha: &'a str,
+    pub first: &'a str,
+    pub second: Option<&'a str>,
+    pub subject: &'a str,
+}
+
+pub(crate) fn commit_edge(line: &str) -> Option<CommitEdge<'_>> {
+    let (sha, rest) = line.split_once('\t')?;
+    let (parents, subject) = rest.split_once('\t')?;
+    let mut parents = parents.split_ascii_whitespace();
+    let first = parents.next()?;
+    let mut second = parents.next();
+    if parents.next().is_some() { second = None; }
+    Some(CommitEdge { sha, first, second, subject })
+}
+
 /// A Supervisor observation reads only local Git objects, including in a partial clone.
 pub(crate) fn local_output(dir: &Path, args: &[&str]) -> Result<String, String> {
     let o = git(dir).args(["-c", "core.fsmonitor=false"]).env("GIT_NO_LAZY_FETCH", "1").env("GIT_NO_REPLACE_OBJECTS", "1")

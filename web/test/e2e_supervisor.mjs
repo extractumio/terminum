@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 import { check, runningIn, until } from "./check.mjs";
 import { drawn, fakeBoard, openPage, ORIGIN, SIZES, serveRenderers, shot, THEME } from "./fake.mjs";
-
 import { surfacePreview } from "./e2e_surface_preview.mjs";
 import { scorecardFixture, checkScorecard, SMALL_RATE, MISSING_RATE } from "./e2e_supervisor_scorecard.mjs";
 import { configFixture, checkConfiguration } from "./e2e_supervisor_config.mjs";
@@ -129,7 +128,7 @@ async function fixture(page, theme) {
       ...configuration.screen(),
       outcomes: [{ detector: RULE, response: "R5", right: 0, wrong: Number(wrong), undecided: 2, pending: 0 }],
       breakers: breaker ? [{ id: 5, detector: RULE, response: "R5", opened_at: DATE, cards: ["API-41"] }] : [], indicators: [SCORE], holds: activeHolds(),
-      investigations_enabled: true, spending: SPENDING, marked_tasks_eligible: false,
+      investigations_enabled: true, spending: SPENDING, marked_tasks_eligible: false, probes: [{ source: "gate_record", state: "source unavailable" }],
       decisions: [{ id: 1, task: "API-41", problem: 42, question: "Choose a fix based on the recorded evidence." }],
       review: { task: "API-42", at: DATE, result: "## Decisions waiting for you\n\nRead the pending card.",
         items: [{ fingerprint: "0", detector: RULE, metric: SIGNAL.metric, verdict: null }] },
@@ -407,12 +406,13 @@ async function screen(page, suffix, phone) {
   if (phone) check("AC-242 verdict keys fit a finger on a phone", await useful.evaluate((key) => key.getBoundingClientRect().height >= 40));
   await checkScorecard(page, reports, suffix, LITERAL);
   await page.locator("#sv-score summary").click();
+  await shot(page, `supervisor-probes-${suffix}`);
   await page.locator("#sv-signals summary").first().click();
   const opened = page.locator("#sv-signals details[open]").first();
   await opened.getByRole("heading", { name: "Evidence", exact: true }).waitFor();
-  check("AC-223 the scoreboard explains missing data and the signal has measures and literal evidence",
+  check("AC-223 AC-260 the scoreboard explains missing data, names unavailable probes and shows literal evidence",
     await page.getByText("Not measured yet (release tags are unavailable)", { exact: true }).isVisible()
-    && await page.getByText("Prior 3 · Latest 5 · Weekly noise 0.5", { exact: true }).isVisible()
+    && await page.getByText("Prior 3 · Latest 5 · Weekly noise 0.5", { exact: true }).isVisible() && await page.getByText("Gate record · source unavailable", { exact: true }).isVisible()
     && await opened.getByRole("heading", { name: "Evidence", exact: true }).isVisible() && await opened.getByRole("link", { name: "API-2" }).isVisible()
     && (await opened.locator(".sv-evidence").textContent()).includes(LITERAL)
     && await page.locator("#sv-signals img").count() === 0 && !await page.evaluate(() => window.fixtureRan)

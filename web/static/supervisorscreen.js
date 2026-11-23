@@ -230,6 +230,15 @@ async function readScreen() {
     const problems = data.problems ?? [];
     $("sv-problems").replaceChildren(...(problems.length ? problems.map(problem) : [note("No problems in the register.")]));
     $("sv-score").replaceChildren(...(data.indicators.length ? data.indicators.map(indicator) : [note("All scoreboard indicators are off.")]));
+    const probes = data.probes ?? [];
+    const labels = { git: "Git releases", git_architecture: "Git architecture", gate_record: "Gate record" };
+    $("sv-probes").hidden = !probes.length;
+    $("sv-probes").replaceChildren(...probes.map(({ source, state, at }) => {
+      const item = document.createElement("li");
+      const name = labels[source] ?? source.replace(/^custom:/, "");
+      item.textContent = `${name} · ${state}${at == null ? "" : ` · ${new Date(at * 1000).toLocaleString()}`}`;
+      return item;
+    }));
     $("sv-signals").replaceChildren();
     $("sv-investigate-note").hidden = !data.signals.length || data.investigations_enabled;
     if (!data.signals.length) $("sv-signals").append(note("No signals recorded for this project."));

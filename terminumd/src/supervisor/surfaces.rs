@@ -232,13 +232,11 @@ fn merge_edges(repo: &Path, base: &str, candidate: &str) -> std::collections::Ha
     if !git::is_commit(base) || !git::is_commit(candidate) { return Default::default(); }
     let range = format!("{base}..{candidate}");
     let Ok(log) = git::local_output(repo, &["log", "--first-parent", "--merges", "-n", "128",
-        "--format=%H%x09%P%x09%s", &range, "--"]) else { return Default::default() };
+        git::FIRST_PARENT_FORMAT, &range, "--"]) else { return Default::default() };
     log.lines().filter_map(|line| {
-        let mut fields = line.splitn(3, '\t');
-        let merge = fields.next()?;
-        let parents: Vec<_> = fields.next()?.split_ascii_whitespace().collect();
-        let id = fields.next()?.strip_prefix(crate::integrate::batch::MERGE_SUBJECT)?;
-        (parents.len() == 2).then(|| (id.into(), (parents[0].into(), merge.into())))
+        let edge = git::commit_edge(line)?;
+        let id = edge.subject.strip_prefix(crate::integrate::batch::MERGE_SUBJECT)?;
+        edge.second.map(|_| (id.into(), (edge.first.into(), edge.sha.into())))
     }).collect()
 }
 

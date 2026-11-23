@@ -41,6 +41,13 @@ mod incidents_api;
 pub(crate) mod line;
 mod line_api;
 mod line_command;
+mod probe_command;
+mod probe_git;
+mod probe_arch;
+mod probe_gate;
+pub(crate) mod probes;
+mod probe_rules;
+mod integration_rules;
 mod line_queue;
 mod replay;
 pub(crate) mod runtime;
@@ -207,6 +214,9 @@ pub(crate) enum Evidence {
     UserInteraction(i64),
     Messages(i64),
     SupervisorPoints(i64),
+    SupervisorProbes(i64),
+    IntegrationRound { batch: i64, round: i64 },
+    IntegrationVerify(String),
     SupervisorHookCounts(i64),
     SupervisorHeartbeat { project: String, last_ok: Option<i64> },
     SupervisorRounds(String),

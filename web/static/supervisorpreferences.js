@@ -112,6 +112,9 @@ export function preferences(view, agents, { request, run }) {
   });
   const probes = [["git", "Git"], ["gate_record", "Gate records"], ["code_host", "Code host"]].map(([key, label]) =>
     edit.field(label, check(saved.probes[key]), (v, out) => { out.probes[key] = v; }));
+  const fileLimit = edit.field("Git source file line limit", number(saved.probes.git_file_line_cap, { min: 1, step: 1 }), (v, out) => {
+    out.probes.git_file_line_cap = v;
+  }, (field) => field.value === "" ? null : field.valueAsNumber);
   const previewError = feedback();
   const previewResult = el("p", "msay");
   previewResult.setAttribute("role", "status");
@@ -140,6 +143,6 @@ export function preferences(view, agents, { request, run }) {
   section("Surface map", hint("Enter one pattern or phrase per line. An edit or removal on a T3 path requires owner sign-off. An addition on the same path requires a T2 review."),
     ...surfaces, actions(preview), previewError, previewResult),
   detectors(edit, saved, view.detector_defaults),
-  section("Standard probes", hint("These settings will control which standard probes may collect data."), actions(...probes)));
+  section("Standard probes", hint("Choose which standard probes may collect data."), actions(...probes), grid(fileLimit)));
   return { node, read: () => edit.read(structuredClone(saved)) };
 }

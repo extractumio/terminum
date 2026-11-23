@@ -2,6 +2,7 @@
 //! Prepare and Verify before a batch, and Cleanup after one (terminum-integration.md AC-198), on real repositories;
 //! the windows stood in for by `sh`.
 use super::*;
+use rusqlite::OptionalExtension;
 use crate::integrate::engine::tests::{batch, go, on_origin, queued_with, said, status, world, Sh, World};
 use crate::tasks::integration::Settings;
 
@@ -64,6 +65,23 @@ fn ac198_a_queued_task_is_prepared_and_verified_in_its_own_tree_before_its_batch
     assert_eq!(status(&w, &a), "DONE", "verified, then batched and published");
     assert_eq!(on_origin(&w), "a.txt\nb.txt", "Prepare's file stays in its own tree, never published");
     assert!(!w.root.join("home/integration/api/verify-1").exists(), "its tree removed");
+}
+
+#[test]
+fn ac261_only_an_own_verify_records_its_outcome() {
+    for (prepare, verify, expected) in [
+        ("true", "true", Some(true)),
+        ("true", "false", Some(false)),
+        ("false", "true", None),
+    ] {
+        let w = world("typed-verify", Settings { prepare: prepare.into(), verify: verify.into(), ..Settings::default() });
+        let task = queued_with(&w, 1, "verify.txt", "verify fixture", true);
+        go(&w, &Sh::default(), 4);
+        let measured = w.s.with(|tx| tx.query_row("SELECT passed FROM integration_verify_results v
+            JOIN tasks t ON t.id = v.task WHERE t.slug = ?1", [&task], |r| r.get::<_, bool>(0))
+            .optional().map_err(sql)).unwrap();
+        assert_eq!(measured, expected, "{prepare} / {verify}");
+    }
 }
 
 #[test]
