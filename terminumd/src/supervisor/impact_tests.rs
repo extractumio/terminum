@@ -1,21 +1,34 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-//! AC-213: each detector sizes its share in its own additive quantity, or says why it has none.
+//! AC-213: each detector sizes its share in its own additive quantity on a seeded store, or says why it has none.
 
 use serde_json::json;
 
 use super::engine_tests::{Fixture, NOW, PROJECT};
 use super::impact::{Assessment, Unit};
-use super::{DAY, WEEK, Finding, evaluate};
+use super::{DAY, Detector, WEEK, Finding, evaluate};
+
+fn findings_of(f: &Fixture, detector: Detector) -> Vec<Finding> {
+    evaluate(&f.store, PROJECT, NOW, &[detector]).unwrap().detectors.remove(0).findings
+}
 
 fn findings(f: &Fixture, name: &str) -> Vec<Finding> {
-    let detector = Fixture::detector(name);
-    evaluate(&f.store, PROJECT, NOW, &[detector]).unwrap().detectors.remove(0).findings
+    findings_of(f, Fixture::detector(name))
 }
 
 fn assessed(f: &Fixture, name: &str, metric: &str) -> (Assessment, u8) {
     let found = findings(f, name).into_iter().find(|found| found.metric == metric)
         .unwrap_or_else(|| panic!("{name} did not fire {metric}"));
     (found.assessment, found.scores.impact)
+}
+
+/// Each firing metric of a detector with the units of its shares.
+fn units(f: &Fixture, name: &str) -> Vec<(&'static str, Vec<Unit>)> {
+    findings(f, name).into_iter().map(|found| {
+        assert!(found.assessment.shares.iter().all(|s| s.amount > 0.0 && s.amount <= s.total), "{name}");
+        let mut units: Vec<_> = found.assessment.shares.iter().map(|s| s.unit).collect();
+        units.dedup();
+        (found.metric, units)
+    }).collect()
 }
 
 fn amount(assessment: &Assessment, unit: Unit) -> f64 {
@@ -122,7 +135,7 @@ fn ac213_allocation_sizes_spend_above_its_target() {
     let mut detector = Fixture::detector("product.allocation");
     detector.allocation.insert("Bug".into(), 0.8);
     detector.allocation.insert("Feature".into(), 0.2);
-    let found = evaluate(&f.store, PROJECT, NOW, &[detector]).unwrap().detectors.remove(0).findings;
+    let found = findings_of(&f, detector);
     let feature = found.iter().find(|f| f.subject_id == "Feature").unwrap();
     let [share] = feature.assessment.shares.as_slice() else { panic!("{:?}", feature.assessment.shares) };
     assert_eq!(share.unit, Unit::Spend);
@@ -167,4 +180,72 @@ fn ac213_metric_without_a_quantity_says_why() {
     assert!(median.shares.is_empty());
     assert_eq!(impact, 0);
     assert!(median.no_share.unwrap().contains("A median has no additive count"));
+}
+
+#[test]
+fn ac213_failures_reruns_and_cost_outliers_share_events_and_spend() {
+    let f = Fixture::new("impact-failures");
+    f.agent("agent");
+    f.task("failed", Some("Bug"), "P2", "IN PROGRESS", NOW - 200);
+    f.failed_run("failed", "one", NOW - 120);
+    f.failed_run("failed", "two", NOW - 80);
+    f.transition("failed", NOW - 60, "FAILED", "DONE");
+    f.run("failed", "three", "agent", NOW - 40);
+    f.cost("three", NOW - 39, 3_000_000);
+    assert_eq!(units(&f, "flow.failed_no_reason"), [("reasonless_failures", vec![Unit::FailureEvents])]);
+    assert_eq!(units(&f, "flow.rerun_after_done"), [("runs_after_done", vec![Unit::RunEvents, Unit::Tokens, Unit::Spend])]);
+
+    let old = NOW - 5 * WEEK;
+    f.task("cheap", Some("Feature"), "P2", "IN PROGRESS", old - 1);
+    f.run("cheap", "cheap-run", "agent", old);
+    f.cost("cheap-run", old + 1, 10_000);
+    f.task("expensive", Some("Feature"), "P2", "IN PROGRESS", NOW - 100);
+    f.run("expensive", "expensive-run", "agent", NOW - 90);
+    f.cost("expensive-run", NOW - 89, 3_000_000);
+    assert!(units(&f, "flow.cost_outlier").contains(&("task_dollars", vec![Unit::Tokens, Unit::Spend])));
+}
+
+#[test]
+fn ac213_lead_time_and_backlog_share_task_days_and_tasks() {
+    let f = Fixture::new("impact-delivery");
+    let old = NOW - 5 * WEEK;
+    f.task("quick", Some("Feature"), "P2", "IN PROGRESS", old - 600);
+    f.transition("quick", old, "IN PROGRESS", "DONE");
+    // Each weekly sample compares with the week before it, which needs its own DONE task.
+    f.task("prior", Some("Feature"), "P2", "IN PROGRESS", NOW - 8 * DAY - 600);
+    f.transition("prior", NOW - 8 * DAY, "IN PROGRESS", "DONE");
+    f.task("slow", Some("Feature"), "P2", "IN PROGRESS", NOW - 3 * WEEK);
+    f.transition("slow", NOW - DAY, "IN PROGRESS", "DONE");
+    for (i, at) in [NOW - DAY, NOW - 8 * DAY, NOW - 15 * DAY].into_iter().enumerate() {
+        for n in 0..2 {
+            f.task(&format!("waiting-{i}-{n}"), None, "P2", "TODO", at);
+        }
+    }
+    assert_eq!(units(&f, "flow.lead_time_shift"), [("p90_lead_minutes", vec![Unit::TaskDaysToDone])]);
+    assert_eq!(units(&f, "flow.backlog_growth"), [("growing_weeks", vec![Unit::Tasks])]);
+}
+
+#[test]
+fn ac213_schedule_health_shares_schedule_and_failure_events() {
+    let f = Fixture::new("impact-routine");
+    f.task("failed-a", None, "P2", "IN PROGRESS", NOW - 100);
+    f.task("failed-b", None, "P2", "IN PROGRESS", NOW - 100);
+    f.write("INSERT INTO schedules (id, number, project, title, body, severity, agent_id, once_at, budget_seconds, last_due, author, created_at, updated_at)
+        VALUES ('routine', 1, 'default', '', '', 'P2', 'agent', ?1, 600, ?1, 'human', ?1, ?1)", [NOW - 100]);
+    for (task, state) in [(Some("failed-a"), "started"), (Some("failed-b"), "started"), (None, "skipped"), (None, "failed")] {
+        f.write("INSERT INTO schedule_fires (schedule, due_at, at, task, state) VALUES ('routine', ?1, ?1, ?2, ?3)", (NOW - 80, task, state));
+        if let Some(task) = task {
+            f.transition(task, NOW - 40, "IN PROGRESS", "FAILED");
+        }
+    }
+    assert_eq!(units(&f, "flow.schedule_health"),
+        [("failed_routine_tasks", vec![Unit::FailureEvents]), ("skipped_or_failed_fires", vec![Unit::ScheduleEvents])]);
+}
+
+#[test]
+fn ac213_wait_shares_task_days_of_wait() {
+    let f = Fixture::new("impact-wait");
+    f.task("old-wait", None, "P2", "IN PROGRESS", NOW - 3 * DAY);
+    f.transition("old-wait", NOW - 2 * DAY, "IN PROGRESS", "WAIT FOR HUMAN");
+    assert_eq!(units(&f, "flow.wait_human_age"), [("wait_minutes", vec![Unit::TaskDaysOfWait])]);
 }

@@ -252,7 +252,7 @@ pub(super) fn starved(q: &Query<'_, '_>) -> Result<Measurements, String> {
         }
         if free {
             let evidence = std::iter::once(task(&id)).chain(event.map(events)).collect();
-            out.readings.push(Reading::new("task", id, "todo_minutes", (q.window.end - entered) as f64 / 60.0, evidence, Source::OverdueDays));
+            out.readings.push(Reading::new("task", id, "todo_minutes", (q.window.end - entered) as f64 / 60.0, evidence, Source::AgeSince(entered)));
         }
     }
     Ok(out)
@@ -268,7 +268,7 @@ pub(super) fn bugs(q: &Query<'_, '_>) -> Result<Measurements, String> {
         AND type = 'Bug' AND severity IN ('P0','P1') AND status NOT IN ('DONE','FAILED') AND created_at BETWEEN 1 AND ?2",
         (q.project, q.window.end), |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))?;
     Ok(Measurements { readings: bugs.into_iter().map(|(id, at)| Reading::new(
-        "task", &id, "open_bug_minutes", (q.window.end - at) as f64 / 60.0, vec![task(&id)], Source::OverdueDays)).collect(), ..Measurements::default() })
+        "task", &id, "open_bug_minutes", (q.window.end - at) as f64 / 60.0, vec![task(&id)], Source::AgeSince(at))).collect(), ..Measurements::default() })
 }
 
 pub(super) fn lead_time(q: &Query<'_, '_>) -> Result<Measurements, String> {

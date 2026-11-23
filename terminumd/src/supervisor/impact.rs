@@ -29,8 +29,8 @@ pub(super) enum Unit {
 pub(super) enum Source {
     Count(Unit),
     WaitDays,
-    /// A task's days past its age limit, up to the measurement.
-    OverdueDays,
+    /// An age in minutes since this time: the task's days past its limit, up to the measurement.
+    AgeSince(i64),
     BlockingLinks,
     BacklogGrowth,
     /// A share of the week's spend above a target share.
@@ -48,7 +48,7 @@ pub(super) enum Source {
     Unsized(&'static str),
 }
 
-pub(super) const OWN_HEALTH: &str = "The Supervisor's own health is in no weekly project total.";
+pub(super) const OWN_HEALTH: Source = Source::Unsized("The Supervisor's own health is in no weekly project total.");
 
 impl Unit {
     pub const ALL: [Self; 13] = [

@@ -325,8 +325,10 @@ fn cost_rate(s: &AgentSample) -> Option<(f64, f64)> {
 
 const QUESTIONS: &str = "Questions reach the owner as answers of several kinds and some stay unanswered, so no weekly total holds them; owner.answer_latency and improve.operations size the owner's answering.";
 
-/// A metric's quantity, or none when its excess has no weekly total.
-fn bands(q: &Query<'_, '_>, typed: bool, integration: bool, metrics: &[(&'static str, Rate, Option<Unit>)]) -> Result<Measurements, String> {
+/// A metric, its rate and its quantity, or why its excess has no weekly total.
+type Metric = (&'static str, Rate, Result<Unit, &'static str>);
+
+fn bands(q: &Query<'_, '_>, typed: bool, integration: bool, metrics: &[Metric]) -> Result<Measurements, String> {
     let samples = samples(q, typed, integration)?;
     let mut out = Measurements::default();
     let mut missing = samples.is_empty();
@@ -346,7 +348,7 @@ fn bands(q: &Query<'_, '_>, typed: bool, integration: bool, metrics: &[(&'static
                 .flat_map(|s| s.evidence.iter().cloned().chain(s.questions.iter().cloned().map(events)).chain(s.spend.evidence.iter().cloned()))
                 .collect();
             let (subject_kind, subject) = if typed { ("agent_task_type", format!("{agent}/{kind}")) } else { ("agent", agent.clone()) };
-            let source = unit.map_or(Source::Unsized(QUESTIONS), |unit| Source::RateExcess(unit, observations));
+            let source = unit.map_or_else(Source::Unsized, |unit| Source::RateExcess(unit, observations));
             out.readings.push(Reading::new(subject_kind, subject, metric, value, evidence, source)
                 .history(peers.iter().map(|(value, _)| *value).collect()));
         }
@@ -358,14 +360,14 @@ fn bands(q: &Query<'_, '_>, typed: bool, integration: bool, metrics: &[(&'static
 }
 
 pub(super) fn ask_rate(q: &Query<'_, '_>) -> Result<Measurements, String> {
-    bands(q, false, false, &[("questions_per_task", question_rate, None)])
+    bands(q, false, false, &[("questions_per_task", question_rate, Err(QUESTIONS))])
 }
 
 pub(super) fn scorecard(q: &Query<'_, '_>) -> Result<Measurements, String> {
-    let mut metrics: Vec<(&'static str, Rate, Option<Unit>)> = vec![("failed_run_share", fail_rate, Some(Unit::FailureEvents)),
-        ("questions_per_task", question_rate, None), ("dollars_per_run", cost_rate, Some(Unit::Spend))];
+    let mut metrics: Vec<Metric> = vec![("failed_run_share", fail_rate, Ok(Unit::FailureEvents)),
+        ("questions_per_task", question_rate, Err(QUESTIONS)), ("dollars_per_run", cost_rate, Ok(Unit::Spend))];
     let integration = super::catalog::integration_on(q.tx, q.project)?;
-    if integration { metrics.push(("returned_run_share", return_rate, Some(Unit::RunEvents))); }
+    if integration { metrics.push(("returned_run_share", return_rate, Ok(Unit::RunEvents))); }
     bands(q, true, integration, &metrics)
 }
 

@@ -154,7 +154,7 @@ pub(super) fn failures(q: &Query<'_, '_>) -> Result<Measurements, String> {
         let Some(id) = status.id else { continue; };
         if status.state == super::probe_command::Failure::Unavailable.code() || status.state == probes::OVERDUE { continue; }
         let failed = status.state != probes::MEASURED;
-        out.readings.push(Reading::new("probe", status.source, "probe_failed", f64::from(failed), evidence(id), Source::Unsized(super::impact::OWN_HEALTH))
+        out.readings.push(Reading::new("probe", status.source, "probe_failed", f64::from(failed), evidence(id), super::impact::OWN_HEALTH)
             .fixed(Threshold::Absolute(0.0)));
     }
     Ok(out)

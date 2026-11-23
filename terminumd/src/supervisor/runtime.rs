@@ -415,7 +415,7 @@ fn report_dead(store: &Store, project: &Project, at: i64) -> Result<bool, String
     let since = project.last_ok.unwrap_or(project.enabled_at);
     let rule = Rule::CollectorDead;
     let reading = Reading::new("project", &project.id, "missed_beats", ((at - since) / BEAT) as f64,
-        vec![Evidence::SupervisorHeartbeat { project: project.id.clone(), last_ok: project.last_ok }], super::impact::Source::Unsized(super::impact::OWN_HEALTH))
+        vec![Evidence::SupervisorHeartbeat { project: project.id.clone(), last_ok: project.last_ok }], super::impact::OWN_HEALTH)
         .comparison(super::Comparison::AtLeast);
     let Some(evaluation) = Evaluation::critical(&project.id, rule, reading, Window { before: since, start: since, end: at }) else {
         return Ok(false);

@@ -88,8 +88,6 @@ mod replay_tests;
 #[cfg(test)]
 mod impact_tests;
 #[cfg(test)]
-mod impact_store_tests;
-#[cfg(test)]
 mod incidents_tests;
 
 use rusqlite::Transaction;

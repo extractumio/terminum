@@ -63,8 +63,9 @@ impl<'a> Attribution<'a> {
             SELECT t.created_at, CASE WHEN t.status IN ('DONE', 'FAILED') THEN coalesce(
                 (SELECT max(e.at) FROM project_events e WHERE e.task = t.id AND e.kind = 'move'
                     AND json_extract(e.data, '$.to') = t.status), t.updated_at) END, t.archived_at
-            FROM tasks t WHERE t.project = ?1 AND t.severity IN ('P0', 'P1') AND t.created_at BETWEEN 1 AND ?2"),
-            (project, end), |r| Ok((r.get::<_, i64>(0)?, r.get::<_, Option<i64>>(1)?, r.get::<_, Option<i64>>(2)?)))?;
+            FROM tasks t WHERE t.project = ?1 AND t.severity IN ('P0', 'P1') AND t.created_at BETWEEN 1 AND ?2
+                AND coalesce(t.archived_at, ?2) >= ?3 AND (t.status NOT IN ('DONE', 'FAILED') OR t.updated_at >= ?3)"),
+            (project, end, start), |r| Ok((r.get::<_, i64>(0)?, r.get::<_, Option<i64>>(1)?, r.get::<_, Option<i64>>(2)?)))?;
         let mut priority_totals = vec![0.0; weeks.len()];
         for (created, closed, archived) in priority {
             let until = closed.into_iter().chain(archived).min().unwrap_or(end + 1);
@@ -105,8 +106,8 @@ impl<'a> Attribution<'a> {
             let some = |unit, amount| vec![(unit, amount)];
             let amounts = match found.source {
                 Source::WaitDays => some(Unit::TaskDaysOfWait, self.waits.get(&found.subject_id).map_or(0.0, |days| days[i])),
-                Source::OverdueDays => {
-                    let overdue = found.measure.window_end - ((found.measure.value - found.measure.threshold) * 60.0) as i64;
+                Source::AgeSince(since) => {
+                    let overdue = since + (found.measure.threshold * 60.0) as i64;
                     some(Unit::PriorityTaskDays, overlap_days(overdue, found.measure.window_end + 1, week))
                 }
                 Source::BlockingLinks if i == latest => some(Unit::Tasks, found.measure.value),
@@ -117,11 +118,7 @@ impl<'a> Attribution<'a> {
                     }
                     amounts
                 }
-                Source::RateExcess(unit, _) => some(unit, reading.and_then(|r| match r.source {
-                    Source::RateExcess(_, observations) => r.limits(detector.threshold)
-                        .map(|(band, _)| (r.value - band).max(0.0) * observations),
-                    _ => None,
-                }).unwrap_or(0.0)),
+                Source::RateExcess(unit, _) => some(unit, reading.and_then(|r| rate_excess(r, detector)).unwrap_or(0.0)),
                 Source::BacklogGrowth => some(Unit::Tasks, week.net_growth()),
                 Source::SpendAbove(target) => some(Unit::Spend, (value - target).max(0.0) * self.totals[&Unit::Spend].1[i].unwrap_or_default()),
                 Source::ExcessOwnerHours | Source::ExcessOperations | Source::ExcessSwitches | Source::ExcessOffHours | Source::LeadDays
@@ -184,6 +181,13 @@ impl<'a> Attribution<'a> {
         };
         pair.into_iter().collect()
     }
+}
+
+/// A week's own sample carries its observations; the excess over the band is a count.
+fn rate_excess(reading: &Reading, detector: &Detector) -> Option<f64> {
+    let Source::RateExcess(_, observations) = reading.source else { return None };
+    let (band, _) = reading.limits(detector.threshold)?;
+    Some((reading.value - band).max(0.0) * observations)
 }
 
 fn overlap_days(from: i64, until: i64, week: &Week) -> f64 {

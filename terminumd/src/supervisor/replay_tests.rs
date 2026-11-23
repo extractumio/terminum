@@ -12,8 +12,8 @@ use super::{WEEK, Scores, evaluate, signals};
 #[test]
 fn ac213_impact_floors_and_ladder() {
     let assess = |fraction, weeks, events, noise, ranked| Assessment {
-        ranked, no_share: None, shares: (0..weeks).map(|week| Share { week, complete: true, unit: Unit::FailureEvents,
-            amount: events, total: events / fraction, noise }).collect(),
+        ranked, shares: (0..weeks).map(|week| Share { week, complete: true, unit: Unit::FailureEvents,
+            amount: events, total: events / fraction, noise }).collect(), ..Assessment::default()
     };
     for (share, weeks, events, noise, ranked, impact) in [
         (0.14, 3, 8.0, 0.08, true, 2),
@@ -29,8 +29,8 @@ fn ac213_impact_floors_and_ladder() {
         assert_eq!(assess(share, weeks, events, noise, ranked).score(false, false), impact,
             "{share}, {weeks}, {events}, {noise}, {ranked}");
     }
-    let mut pair = Assessment { ranked: true, no_share: None, shares: [Unit::OwnerHours, Unit::Tokens].into_iter()
-        .map(|unit| Share { week: 1, complete: true, unit, amount: 6.0, total: 100.0, noise: 0.0 }).collect() };
+    let mut pair = Assessment { ranked: true, shares: [Unit::OwnerHours, Unit::Tokens].into_iter()
+        .map(|unit| Share { week: 1, complete: true, unit, amount: 6.0, total: 100.0, noise: 0.0 }).collect(), ..Assessment::default() };
     assert_eq!(pair.score(false, false), 2);
     assert_eq!(pair.score(true, false), 1);
     pair.shares[1].week = 2;
