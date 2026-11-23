@@ -73,6 +73,42 @@ fn ac212_distinct_failures_reasons_reruns_and_project_boundaries() {
     assert_eq!(findings[0].evidence.len(), 2);
 }
 
+// AC-212, AC-213: events keep seconds, launches milliseconds. A FAILED followed by another launch in
+// its second belongs to the run it names; one that names none, or a run never launched, is unavailable.
+#[test]
+fn ac212_a_failure_and_a_later_launch_in_one_second() {
+    let repeat = |name: &str, named: Option<&str>| {
+        let f = Fixture::new(name);
+        f.task("flaky", Some("Bug"), "P2", "IN PROGRESS", NOW - 300);
+        f.failed_run("flaky", "zero", NOW - 200);
+        f.run("flaky", "one", "agent", NOW - 100);
+        f.write("INSERT INTO runs (id, task, project, agent_id, kind, command, folder, state)
+            SELECT 'unlaunched', id, project, 'agent', 'codex', '', '', 'closed' FROM tasks WHERE id = 'flaky'", []);
+        f.write("INSERT INTO run_tasks (run, task) VALUES ('unlaunched', 'flaky')", []);
+        f.write("UPDATE tasks SET status = 'FAILED' WHERE id = 'flaky'", []);
+        let mut data = json!({"from": "IN PROGRESS", "to": "FAILED"});
+        if let Some(run) = named { data["run"] = json!(run); }
+        let failed = f.event("flaky", NOW - 50, "dispatcher", "move", "", Some(data));
+        f.run("flaky", "two", "agent", NOW - 50);
+        f.write("UPDATE inputs SET at = at + 400 WHERE run = 'two'", []);
+        let evaluation = evaluate(&f.store, PROJECT, NOW, &[Fixture::detector("flow.failed_repeat")]).unwrap();
+        (evaluation.detectors[0].findings.clone(), evaluation.detectors[0].unavailable.clone(), failed)
+    };
+    for (name, named) in [("same-second-unknown", None), ("same-second-unlaunched", Some("unlaunched"))] {
+        let (findings, unavailable, _) = repeat(name, named);
+        assert!(findings.is_empty(), "{name}: neither the later run nor an earlier one is blamed");
+        assert_eq!(unavailable, ["Some failures lack a retained run launch, or share their second with one."], "{name}");
+    }
+
+    let (findings, unavailable, failed) = repeat("same-second-named", Some("one"));
+    assert!(unavailable.is_empty());
+    assert_eq!(findings.len(), 1);
+    assert_eq!(findings[0].measure.value, 2.0);
+    assert!(findings[0].evidence.contains(&Evidence::Runs("one".into())) && findings[0].evidence.contains(&Evidence::Events(failed)));
+    assert!(!findings[0].evidence.contains(&Evidence::Runs("two".into())), "the run launched after the failure");
+    assert_eq!(findings[0].attributed_runs, BTreeSet::from(["zero".to_string(), "one".to_string()]));
+}
+
 #[test]
 fn ac212_lead_time_and_consecutive_backlog_growth() {
     let f = Fixture::new("delivery");

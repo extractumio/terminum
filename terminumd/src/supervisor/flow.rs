@@ -147,8 +147,8 @@ pub(super) fn reasonless(q: &Query<'_, '_>) -> Result<Measurements, String> {
     Ok(one(Reading::new("project", q.project, "reasonless_failures", value, evidence, Source::Count(Unit::FailureEvents)).history(history)))
 }
 
-// The run lifecycle state describes the pane, not its task's disposition. Link a FAILED transition
-// to the latest launch of a run carrying that task, with its retained run row as evidence.
+// The run lifecycle state describes the pane, not its task's disposition. A FAILED transition names
+// the run it failed in; else it goes to the latest launch of a run carrying that task.
 pub(super) fn failed_runs() -> String {
     run_events("failed_runs", "e.kind = 'move' AND json_extract(e.data, '$.to') = 'FAILED'")
 }
@@ -159,11 +159,14 @@ pub(super) fn returned_runs() -> String {
     run_events("returned_runs", RETURNED)
 }
 
+// A named run is the event's, if launched. Else events keep seconds and launches milliseconds: a latest
+// launch inside the event's own second may have come after it, so the event's run is unknown.
 fn run_events(name: &str, condition: &str) -> String {
     format!("{name} AS (
-    SELECT e.id, e.task, e.at, (SELECT r.id FROM run_tasks m JOIN runs r ON r.id = m.run
-        JOIN inputs i ON i.run = r.id AND {LAUNCH}
+    SELECT e.id, e.task, e.at, (SELECT CASE WHEN json_extract(e.data, '$.run') IS NOT NULL OR i.at < e.at * 1000 THEN r.id END
+        FROM run_tasks m JOIN runs r ON r.id = m.run JOIN inputs i ON i.run = r.id AND {LAUNCH}
         WHERE m.task = e.task AND r.project = ?1 AND i.at <= e.at * 1000 + 999
+            AND r.id = coalesce(json_extract(e.data, '$.run'), r.id)
         ORDER BY i.at DESC, i.id DESC LIMIT 1) AS run
     FROM project_events e WHERE {condition}
 )")
@@ -182,7 +185,7 @@ pub(super) fn failed_repeat(q: &Query<'_, '_>) -> Result<Measurements, String> {
         if let Some(run) = run {
             groups.entry(task).or_default().insert(run, (event, sole_task));
         } else {
-            out.unavailable = vec!["Some failures lack a retained run launch."];
+            out.unavailable = vec!["Some failures lack a retained run launch, or share their second with one."];
         }
     }
     for (task, runs) in groups {

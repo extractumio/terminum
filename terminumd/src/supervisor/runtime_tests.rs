@@ -317,7 +317,7 @@ async fn ac254_collector_resumes_at_mute_expiry_without_new_events() {
     let f = Fixture::in_path(root.join("state/kanban.sqlite"));
     f.task("repeat", Some("Bug"), "P2", "IN PROGRESS", NOW - 2 * WEEK);
     for i in 0..3 {
-        f.failed_run("repeat", &format!("failed-{i}"), NOW - 60 + i);
+        f.failed_run("repeat", &format!("failed-{i}"), NOW - 60 + 2 * i);   // a launch apart from the previous FAILED second
     }
     let store = &app.tasks;
     set_enabled(store, PROJECT, true, NOW).unwrap();
