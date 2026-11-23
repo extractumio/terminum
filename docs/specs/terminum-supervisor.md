@@ -1302,16 +1302,16 @@ The existing mechanisms in §3 provide inputs or precedents for these open gaps.
 | AC-213 | Charter breach inputs and round execution belong to their owning stages. |
 | AC-214 | Release tags, task commits, nightly history, question kinds and design sign-offs need their owning inputs. |
 | AC-215 | Probe and judgment quality replay require retained inputs from their owning stages. |
-| AC-216 | The project tab switch gates collection and sensors. Stopping rounds and listing remaining holds belong to AC-234 and AC-245. |
+| AC-216 | The project tab switch gates collection and sensors. Stopping rounds belongs to AC-234. The switch lists active holds after switch-off (AC-245). |
 | AC-219 | The watchdog records a signal and exposes its last heartbeat through the project settings endpoint. Line delivery health belongs to AC-229. |
-| AC-221 | Bootstrap keeps high-impact register seeds and exposes hold eligibility. Recording proposed holds and checking their verdicts belong to AC-245 and AC-246. Charter breach inputs belong to AC-213. |
+| AC-221 | Bootstrap keeps high-impact register seeds and exposes hold eligibility. Shadow hold proposals are recorded under AC-245. Judging their outcomes belongs to AC-246. Charter breach inputs belong to AC-213. |
 | AC-222 | The project tab edits the project pack, runs the switch and manages import, export and probe approval. The critical line and the historical surface preview depend on AC-227–229, AC-250 and AC-263. |
 | AC-223 | The project screen shows its scoreboard, missing inputs and paged signals with evidence. Holds and the Supervisor scorecard depend on their owning cases. |
-| AC-224 | The line-failure producer depends on AC-229. Incident updates from rounds and holds depend on AC-234 and AC-245. |
-| AC-225 | The template reports an active hold and its deadline when the hold ledger is available (AC-245). |
+| AC-224 | The line-failure producer depends on AC-229. Round updates belong to AC-234. A project-wide hold opens an incident even at level 2 (AC-245). |
+| AC-225 | The template shows active holds and the signed-in keys. A deadline from an interim verification hold depends on AC-233. |
 | AC-227 | The incident thread produces answer notices under AC-244. |
-| AC-231 | The store-backed pane role checks the existing catalog at discovery and execution. Round and Talk registration, case-file access and finding tools belong to AC-234, AC-235 and AC-244. Future hold and decision tools carry their own rule checks. |
-| AC-233 | Interim holds depend on AC-245. |
+| AC-231 | The store-backed pane role checks the existing catalog at discovery and execution. Round and Talk registration, case-file access and finding tools belong to AC-234, AC-235 and AC-244. Hold tools carry their own scope, signal and rule checks (AC-245). |
+| AC-233 | Interim holds below confidence 0.7 still need an explicit comparison of the cost of holding and waiting. |
 | AC-234 | Talk context depends on AC-244. Investigation launches require local pane ancestry. |
 | AC-237 | Weekly review admission and its decision card depend on AC-242. Token caps are enforced when a usage report reaches the daemon. |
 | AC-238 | Weekly reporting depends on AC-242. Verifying a charter breach depends on the inputs in AC-213. |
@@ -1321,7 +1321,7 @@ The existing mechanisms in §3 provide inputs or precedents for these open gaps.
 | AC-242 | A strong-tier selection creates a Routines schedule. The review's stored batch supplies the verdict keys. |
 | AC-243 | The collector publishes up to five new findings in the Supervisor report destination. The watchdog can publish with the actual stale heartbeat. |
 | AC-244 | A retained task carries each incident's comments. The signed-in Talk press uses the first-prompt gate and a separate marked conversation. |
-| AC-245 | Reversible holds and switch-off behavior. |
+| AC-245 | Code can hold the current marked run on a qualifying critical task cost signal. The cost detector needs an authorized level 3 escalation before it can produce that signal itself. |
 | AC-246 | Later decision judging and undecided signal. |
 | AC-247 | Per-rule breaker and owner-only reset. |
 | AC-248 | Independent reflection. |
@@ -1450,7 +1450,7 @@ A signed-in switch starts a scan within seconds: read available integrations, co
 |---|---|
 | Observer | Read its project signals, metrics and tasks, and record scoped findings and reports. Record a proposal concerning project rules or settings for review. Code delivers incidents. |
 | Advisor | Observer plus `open_problem`, `update_problem`, `propose_decision`, `propose_rank`, `request_review` and `propose_config_change`. The governor creates authorized high-impact tasks from the ranked register after a checked finding or deterministic seed. Advisors can comment; mark design first under AC-251. |
-| Operator | Advisor plus `hold`, `release_hold`, `run_task`, `promote_queued_task`, `stop_task`, `list_runs` and `get_dashboard`, under their scope, rule, signal and budget checks. Its `run_task` takes the task ID and agent alone and starts the task as Auto-Dispatcher's started task, told only its ID in fixed words (terminum-dispatcher.md AC-170); its `stop_task` is a Give up (terminum-dispatcher.md AC-138). No word of the caller reaches a pane. |
+| Operator | Advisor plus `hold`, `release_hold`, `run_task`, `promote_queued_task`, `stop_task`, `list_runs` and `get_dashboard`, under their scope, rule, signal and budget checks. Its `run_task` takes the task ID and agent alone and starts the task as Auto-Dispatcher's started task, told only its ID in fixed words (terminum-dispatcher.md AC-170); its `stop_task` applies a stop-run hold through Give up (terminum-dispatcher.md AC-138) and takes the signal and reason. No word of the caller reaches a pane. |
 
 `list_signals`, `get_signal`, `get_metric` and `record_finding` use the project's data and checked IDs. A live round can fetch its case file by ID. Tool discovery and each execution use the server's current role, project, level and round authority. The launcher's store mark binds the pane to its project and enabled generation before the agent starts. A surviving pane with a stale mark has no tools. Local process ancestry must match the mark. A round's session and a Talk press's session are the project's Supervisor caller, neither worker nor manager (terminum-agents.md AC-174), though a human starts Talk's. There is no Supervisor token: a token caller is a manager and is offered no Supervisor tool. The Supervisor cannot impersonate a manager. A session the owner opens with the Supervisor's skill is the owner's own, a manager under AC-174, which may also call the Supervisor's read tools for its project. Comments and case-file text confer no additional authority. Its tools cannot type, close sessions, change pool agents, schedules, commands or other protected settings, delete tasks, data or trees, read secrets or transcripts, publish, tag or release, or send a page directly. When session counters point at drift worth mining, it opens a decision card proposing that the owner run `/retro` on the named sessions (AC-240).
 
@@ -1479,7 +1479,7 @@ Rank problems by impact level and, within it, `share × weeks standing × confid
 | Pause integration or take a queued task out | The corresponding queue action (terminum-integration.md AC-193). |
 | Design first (Advisor) | Unlink the review blocker. This is distinct from an Operator's runtime hold. |
 
-An Operator hold names a level 2 or higher signal, the rule and undo. A human or an authorized Supervisor release uses the hold's own key. Disabling the Supervisor stops its work and lists every hold still in force.
+An Operator hold names a current signal at level 2 or higher, its detector and response, and its undo. A task hold requires evidence naming that task. The ledger records the actor and time of application and release, and records shadow proposals without effect. The signed-in owner or authorized Operator uses the hold's undo. Requeuing from the hold restores the withdrawn commit and result for a waiting entry outside an active batch. RUN reopens the tasks that were still open when the run was stopped. A project's pause joins the incident as an active cause until released. Disabling the Supervisor stops its work and lists every hold still in force.
 
 ### Incident line, decisions and reports
 
@@ -1582,7 +1582,7 @@ Enable none of the runtime cases by default. Land the specification after indepe
 - [ ] AC-222 — `webSupervisor` in `web/test/e2e_supervisor.mjs` and `liveSupervisor` in `web/test/e2e_livesupervisor.mjs` cover the settings tab, switch, project pool, draft after refusal, and portable settings. Critical-line actions and surface preview follow their owning cases.
 - [ ] AC-223 — `webSupervisor` covers the scoreboard and paged literal evidence at desktop and phone widths in Chromium and WebKit. `liveSupervisor` verifies the two-project collector and screen. The other sections and investigation action follow their owning cases.
 - [ ] AC-224 — `ac224_incident_grouping_and_clear` and `ac224_distinct_fingerprints_share_subject_and_clear_independently` cover grouping, level changes, missing input and recovery. `liveIncidents` covers an actual collector outage and recovery. The line's producer follows AC-229.
-- [ ] AC-225 — `liveIncidents` in `web/test/e2e_liveincidents.mjs` drills a level 3 signal with two signed-in browsers and standalone Files, the pinned card and its timeline. Hold details follow AC-245.
+- [ ] AC-225 — `liveIncidents` in `web/test/e2e_liveincidents.mjs` drills a level 3 signal with two signed-in browsers and standalone Files, the pinned card and its timeline. Hold labels and action keys are exercised under AC-245.
 - [x] AC-226 — `ac226_owner_keys_are_audited_once_and_do_not_clear_the_cause` and `liveIncidents` cover snooze, acknowledgment, the recorded actor and time, and refusal without sign-in.
 - [ ] AC-227 — `ac227_bounded_channel_stdin_and_exit` and `ac227_templates_exclude_case_prose_and_use_only_a_validated_origin` cover execution and the four templates. `scripts/e2e_supervisor.py` exercises signed-in configuration, the watchdog's notice and its all-clear. The answer producer follows AC-244.
 - [x] AC-228 — `ac228_repeat_escalation_snooze_and_acknowledgment`, `ac228_acknowledged_incident_updates_keep_the_cool_down` and `ac228_quiet_hours_defer_ordinary_notices_and_keep_all_incidents` exercise the ladder, the updates' cool-down after acknowledgment and quiet hours on a short clock.
@@ -1602,7 +1602,7 @@ Enable none of the runtime cases by default. Land the specification after indepe
 - [ ] AC-242 — `scripts/e2e_supervisor_comms.py` runs a Routines task on a fake agent and checks the nine sections, project scope, ten-item cap and three recorded verdicts.
 - [ ] AC-243 — `ac243_digest_only_when_new` checks the daily cap, quiet day, five-item bound and retained stale heartbeat. `scripts/e2e_supervisor_comms.py` checks the quiet and live APIs.
 - [ ] AC-244 — `scripts/e2e_supervisor_comms.py` checks the signed-in Talk press, the retained case prompt in private tmux, the hook notice and answer on the incident task.
-- [ ] AC-245 — Planned test: `ac245_hold_undo_and_switch_off` covers reversible holds and switch-off behavior.
+- [x] AC-245 — `ac245_hold_undo_and_switch_off` in `scripts/e2e_roles.py` covers the four holds and their undo, audit, project incidents, shadow and switch-off. The same drill checks role refusals. `supervisor::holds_tests` covers grouped runs, retry after a failed launch, incident closure and a seeded level 3 signal without a round. `webSupervisor` exercises the hold and incident controls in Chromium and WebKit.
 - [ ] AC-246 — Planned test: `ac246_later_outcome_and_immediate_override` covers later decision judging and undecided signal.
 - [ ] AC-247 — Planned test: `ac247_rule_breaker_and_reopen_key` covers per-rule breaker and owner-only reset.
 - [ ] AC-248 — Planned test: `ac248_reflection_trigger_and_family` covers independent reflection.

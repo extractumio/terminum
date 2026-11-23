@@ -48,6 +48,9 @@ impl Role {
     }
 
     pub fn allows(self, tool: &str) -> bool {
+        if supervisor::holds::TOOLS.contains(&tool) {
+            return self == Self::Supervisor(Some(Level::Operator));
+        }
         if supervisor::round_tools::ADVISOR.contains(&tool) {
             return matches!(self, Self::Supervisor(Some(Level::Advisor | Level::Operator)));
         }
@@ -134,13 +137,16 @@ pub(crate) async fn run(app: &Shared, key: &str, other: bool, mark: Mark, tool: 
     if other && !super::reads(&tool) {
         return Err("Only the Supervisor's main agent changes the project.".into());
     }
+    if supervisor::holds::TOOLS.contains(&tool.as_str()) || tool == "stop_task" {
+        return supervisor::holds_api::tool(app, key.into(), mark.project, tool, args).await;
+    }
     if supervisor::round_tools::known(&tool) {
         return supervisor::round_tools::run(app, key.into(), mark.project, tool, args).await;
     }
     if tool == "ask_human" && mark.run.is_some() {
         return Err("For a Supervisor decision, call propose_decision on this investigation's register problem.".into());
     }
-    if matches!(tool.as_str(), "add_comment" | "ask_human" | "promote_queued_task" | "stop_task") {
+    if matches!(tool.as_str(), "add_comment" | "ask_human" | "promote_queued_task") {
         let (pane, scope, action, id) = (key.to_owned(), mark.project.clone(), tool.clone(), super::arg(&args, "id")?.to_owned());
         let blocked = store(app, move |tx| {
             require(tx, &pane, &scope, &action)?;
@@ -160,7 +166,6 @@ pub(crate) async fn run(app: &Shared, key: &str, other: bool, mark: Mark, tool: 
     match tool.as_str() {
         "run_task" => start(app, actor, &args).await,
         "promote_queued_task" => super::tasks::promote_queued(app, &actor, &args, true).await,
-        "stop_task" => super::tasks::stop(app, &actor, &args, true).await,
         "list_runs" => super::tasks::list_runs(app, &actor).await,
         "get_dashboard" => super::tasks::dashboard(app, &actor, &args).await,
         _ => Err(mark.role.refusal(&tool)),

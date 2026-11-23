@@ -38,10 +38,14 @@ pub(super) struct Incident {
     revision: i64,
     pub happened: String,
     task: Option<String>,
-    held: &'static str,
+    held: String,
+    holds: Vec<IncidentHold>,
     needed: &'static str,
     no_answer: &'static str,
 }
+
+#[derive(Debug, Serialize)]
+struct IncidentHold { id: i64, label: &'static str }
 
 const SUMMARY: &str = "SELECT i.id, i.project, p.name, m.level,
       i.opened_at, i.closed_at, i.acknowledged_at, i.snoozed_until,
@@ -51,7 +55,9 @@ const SUMMARY: &str = "SELECT i.id, i.project, p.name, m.level,
       (SELECT related_id FROM supervisor_incident_events WHERE incident = i.id AND kind = 'continued'),
       (SELECT group_concat('Channel ' || channel || ': ' || failure, ' ' ORDER BY channel)
         FROM supervisor_line_failures WHERE i.subject_kind = 'critical_line' AND i.closed_at IS NULL),
-      (SELECT t.slug FROM tasks t WHERE t.id = i.task AND t.project = i.project)
+      (SELECT t.slug FROM tasks t WHERE t.id = i.task AND t.project = i.project),
+      (SELECT json_group_array(json_array(h.id, h.kind) ORDER BY h.id)
+        FROM supervisor_holds h WHERE h.incident = i.id AND h.shadow = 0 AND h.released_at IS NULL)
     FROM supervisor_incidents i JOIN projects p ON p.id = i.project
     JOIN supervisor_incident_events m ON m.id = coalesce(
       (SELECT event FROM supervisor_incident_signals WHERE incident = i.id ORDER BY level DESC, event DESC LIMIT 1),
@@ -78,14 +84,20 @@ fn incident(row: &Row<'_>) -> rusqlite::Result<Incident> {
         (Some(_), None) => "All-clear. ".into(),
         (None, None) => String::new(),
     };
+    let raw: Vec<(i64, String)> = super::signals::decode(row, 16)?;
+    let holds: Vec<_> = raw.into_iter().map(|(id, kind)| IncidentHold {
+        id, label: super::holds::Kind::read(&kind).label(),
+    }).collect();
+    let held = if holds.is_empty() { "No hold in effect.".into() }
+        else { format!("{}.", holds.iter().map(|h| h.label).collect::<Vec<_>>().join(". ")) };
     Ok(Incident {
         id: row.get(0)?, project: row.get(1)?, project_name: row.get(2)?, level: row.get(3)?,
         opened_at: row.get(4)?, closed_at, acknowledged_at, snoozed_until: row.get(7)?, revision: row.get(8)?,
         happened: format!("{status}{measured} {count} {} recorded.{detail}", if count == 1 { "signal" } else { "signals" }),
         task: row.get(15)?,
-        held: "No hold in effect.",
-        needed: if acknowledged_at.is_some() { "Acknowledged." } else { "Acknowledge when seen." },
-        no_answer: "No automatic action without an answer.",
+        held, needed: if !holds.is_empty() { "Keep or release the hold." } else if acknowledged_at.is_some() { "Acknowledged." } else { "Acknowledge when seen." },
+        no_answer: if holds.is_empty() { "No automatic action without an answer." } else { "Without an answer the hold stays." },
+        holds,
     })
 }
 
@@ -195,6 +207,9 @@ pub(super) fn events(tx: &Transaction, id: i64, before: Option<i64>) -> Result<V
                 "continued" => format!("Continued in incident {}.", r.get::<_, i64>(8)?),
                 "acknowledged" => "Acknowledged.".into(),
                 "snoozed" => "Snoozed for one hour.".into(),
+                "hold_applied" => format!("Hold {} applied.", r.get::<_, i64>(8)?),
+                "hold_kept" => format!("Hold {} kept.", r.get::<_, i64>(8)?),
+                "hold_released" => format!("Hold {} released.", r.get::<_, i64>(8)?),
                 _ => unreachable!("incident event kind checked by the store"),
             };
             Ok(Event { id: r.get(0)?, at: r.get(1)?, kind, actor: r.get(3)?, level, words })
@@ -208,22 +223,49 @@ async fn timeline(State(app): State<Shared>, Path(id): Path<i64>, Query(cursor):
 }
 
 #[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct Press { action: Action }
+#[serde(rename_all = "snake_case")]
+enum Key { Acknowledge, Snooze, KeepHold, ReleaseHold }
 
-async fn act(State(app): State<Shared>, Path(id): Path<i64>, Json(press): Json<Press>) -> Response {
-    let result = store(&app, move |tx| {
-        let changed = incidents::act(tx, id, press.action, now())?;
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Press { action: Key, hold: Option<i64> }
+
+async fn owner_press(app: &Shared, id: i64, press: Press) -> Result<Incident, String> {
+    let with_hold = matches!(press.action, Key::KeepHold | Key::ReleaseHold);
+    if with_hold != press.hold.is_some() { return Err("Choose the key and its hold.".into()); }
+    if matches!(press.action, Key::ReleaseHold) {
+        let project = store(app, move |tx| {
+            tx.query_row("SELECT project FROM supervisor_incidents WHERE id = ?1", [id], |r| r.get::<_, String>(0))
+                .optional().map_err(sql)?.ok_or_else(|| "Incident not found.".into())
+        }).await?;
+        super::holds_api::release(app, project, press.hold.unwrap(), None, Some(id)).await?;
+    }
+    let (summary, changed) = store(app, move |tx| {
+        let at = now();
+        let changed = match press.action {
+            Key::Acknowledge => incidents::act(tx, id, Action::Acknowledge, at)?,
+            Key::Snooze => incidents::act(tx, id, Action::Snooze, at)?,
+            Key::KeepHold => {
+                let hold = press.hold.unwrap();
+                let active: bool = tx.query_row("SELECT EXISTS (SELECT 1 FROM supervisor_holds
+                    WHERE id = ?1 AND incident = ?2 AND shadow = 0 AND released_at IS NULL)",
+                    (hold, id), |r| r.get(0)).map_err(sql)?;
+                if !active { return Err("That hold is no longer in effect on this incident.".into()); }
+                incidents::hold_event(tx, id, hold, "hold_kept", crate::tasks::store::HUMAN, at)?;
+                true
+            }
+            Key::ReleaseHold => false, // its transaction already sent the update
+        };
         let summary = tx.query_row(&format!("{SUMMARY} WHERE i.id = ?1"), [id], incident)
             .optional().map_err(sql)?.ok_or("Incident not found.")?;
         Ok((summary, changed))
-    }).await;
-    answer(result.map(|(summary, changed)| {
-        if changed {
-            app.supervisor.incident_changed();
-        }
-        summary
-    }))
+    }).await?;
+    if changed { app.supervisor.incident_changed(); }
+    Ok(summary)
+}
+
+async fn act(State(app): State<Shared>, Path(id): Path<i64>, Json(press): Json<Press>) -> Response {
+    answer(owner_press(&app, id, press).await)
 }
 
 async fn talk(State(app): State<Shared>, Path(id): Path<i64>) -> Response {

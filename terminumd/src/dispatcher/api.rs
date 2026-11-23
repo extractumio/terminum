@@ -27,6 +27,9 @@ use crate::tasks::store::HUMAN;
 mod offer;
 #[path = "api_supervisor.rs"]
 mod supervisor;
+#[path = "api_hold.rs"]
+pub(super) mod hold;
+pub(crate) use hold::resume as resume_hold;
 pub(crate) use supervisor::press_by_supervisor;
 
 pub fn routes() -> Router<Shared> {
@@ -60,6 +63,8 @@ pub(super) struct Press {
     auto: bool,
     #[serde(skip)]
     supervisor: Option<crate::roles::Boss>,
+    #[serde(skip)]
+    pub(super) hold_release: Option<hold::Release>,
     /// the project that picked this task by order, checked again when the press takes a slot
     #[serde(skip)]
     order_project: Option<String>,
@@ -417,6 +422,7 @@ async fn first_run(app: &Shared, tasks: &[Task], kept: Press, comment: Option<St
     let (ag, f, project, at) = (a.clone(), dir.clone(), t.project.clone(), app.clone());
     let next = store(app, move |tx| {
         let now: Vec<Task> = all.iter().map(|t| ops::get(tx, &t.id)).collect::<Result<_, _>>()?;
+        let release_actor = kept.hold_release.as_ref().map(|r| r.check(tx, &now)).transpose()?;
         let mut estimate = supervisor::check(tx, &kept, &now)?;
         supervisor::check_family(tx, &kept, &now)?;
         if !kept.order_allows(tx, &now[0].project)? {
@@ -460,10 +466,11 @@ async fn first_run(app: &Shared, tasks: &[Task], kept: Press, comment: Option<St
         }
         super::waits::remove(tx, &keys[0])?;
         let at = ops::now();
-        let run = runs::add(tx, &Run::of(&ag, host, f, project, Some(prompt)), &keys, kept.started(), at)?;
+        let run = runs::add(tx, &Run::of(&ag, host, f, project, Some(prompt)), &keys, kept.started_as(release_actor.as_deref()), at)?;
         if let [task] = keys.as_slice() { crate::supervisor::review::bind_run(tx, task, &run, at)?; }
         recent::stage(tx, &run, &recent::through(tx, &now)?)?;
         supervisor::record(tx, &kept, &now, &run, estimate)?;
+        hold::admitted(tx, &kept, &now, release_actor.as_deref(), &run)?;
         if !kept.auto && kept.how != How::Integration {
             for task in &now {
                 ops::log(tx, &task.key, kept.by(), "why", "Requested a run.", None, ops::now())?;

@@ -34,6 +34,10 @@ export function supervisorWindow({ getMeta }) {
         : attached.limited_history ? "Scan complete. Less than three weeks of history."
         : "Scan complete."
       : "The Supervisor is off.";
+    if (!status.enabled && status.holds?.length) {
+      const labels = status.holds.map((h) => h.task ? `${h.label} · ${h.task}` : h.label);
+      scan.textContent += ` Holds still in effect: ${labels.join(" · ")}.`;
+    }
     detectorStatus(body, attached);
   }
 

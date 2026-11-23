@@ -220,13 +220,14 @@ impl Dispatcher {
     }
 
     /// Pane `key` holds `run` from now on, in the transaction that says so (AC-131).
-    fn pane_opened(&self, tx: &rusqlite::Transaction, run: &str, key: &str) -> Result<runs::Run, String> {
+    fn pane_opened(&self, tx: &rusqlite::Transaction, run: &str, key: &str) -> Result<(runs::Run, bool), String> {
         let r = runs::change(tx, run, |r| r.pane_key = Some(key.to_string()))?;
+        let released = crate::supervisor::holds::run_launched(tx, run, ops::now())?;
         self.track_pane(key, &r.id, &r.project);
         if r.manages() && self.managers.lock().insert(key.to_string()) {
             self.managers_changed.store(true, std::sync::atomic::Ordering::Relaxed);
         }
-        Ok(r)
+        Ok((r, released))
     }
 
     /// The runs a walk goes by, and the panes they hold, in one transaction (AC-131).

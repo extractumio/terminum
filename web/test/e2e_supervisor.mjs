@@ -24,6 +24,8 @@ const SIGNAL = { fingerprint: "one", project: "api", detector: RULE, subject_id:
 const INCIDENT = { id: 42, task: "API-40", project: "api", project_name: "API service", level: 3, revision: 1,
   happened: "The collector missed successive heartbeats.", held: "No hold in effect.",
   needed: "Acknowledge when seen.", no_answer: "No automatic action without an answer." };
+const HOLD = { id: 5, kind: "pause_integration", label: "Integration queue paused", undo: "Resume integration",
+  signal: "0", detector: RULE, reason: LITERAL };
 const SCORE = { name: "Release cadence", verdict: "not measured yet", guard: "Stability", metrics: [
   { name: "Releases per month", verdict: "not measured yet", missing: "release tags are unavailable" },
   { name: "Fixture measured series", verdict: "better", missing: null, before: 3, current: 5, noise: 0.5 },
@@ -49,7 +51,19 @@ async function fixture(page, theme) {
   await page.route("**/api/supervisor/incidents/42/investigate", (route) => json(route, { message: "Incident investigation requested." }));
   await page.route("**/api/supervisor/incidents/42/talk", (route) => json(route, { error: "The marked pane changed." }, 400));
   await page.route("**/api/supervisor/incidents/42/ruling", (route) => json(route, { task: INCIDENT.task }));
-  let ruling = null;
+  let ruling = null, held = true, stopped = true;
+  const incident = () => held ? { ...INCIDENT, held: "Integration queue paused.", holds: [{ id: HOLD.id, label: HOLD.label }],
+    needed: "Keep or release the hold.", no_answer: "Without an answer the hold stays." }
+    : { ...INCIDENT, revision: 2 };
+  await page.route("**/api/supervisor/incidents/42", (route) => {
+    const body = route.request().postDataJSON();
+    if (body?.hold === HOLD.id) {
+      if (body.action === "release_hold") held = false;
+      if (body.action === "keep_hold" || body.action === "release_hold") return json(route, incident());
+    }
+    return json(route, { rows: [], next: null });
+  });
+  const activeHolds = () => [held && HOLD, stopped && { ...HOLD, id: 8, label: "Run stopped", task: "API-2", undo: "RUN" }].filter(Boolean);
   let enabled = false, refusal = true, saved = structuredClone(SETTINGS), revision = 0, candidate = false, approved = false, commandViewed = false;
   const calls = [];
   let line = { revision: 0, settings: { channels: [], link_base: null, quiet: [1380, 480], ladder: [10, 30, 60] } };
@@ -70,7 +84,13 @@ async function fixture(page, theme) {
       return json(route, { ok: true });
     }
     if (suffix === "/verdicts" && method === "POST") return json(route, { verdict: body.verdict });
-    if (suffix === "/screen") return json(route, { project_name: "API service", indicators: [SCORE],
+    if (suffix === "/holds") return json(route, activeHolds());
+    if (suffix === "/holds/8/release" && method === "POST") {
+      if (stopped === true) { stopped = "retry"; return json(route, { error: "The queue is busy. Try its board key again." }, 400); }
+      stopped = false;
+      return json(route, { id: 8, released: true });
+    }
+    if (suffix === "/screen") return json(route, { project_name: "API service", indicators: [SCORE], holds: activeHolds(),
       investigations_enabled: true, spending: SPENDING, marked_tasks_eligible: false,
       decisions: [{ id: 1, task: "API-41", problem: 42, question: "Choose a fix based on the recorded evidence." }],
       review: { task: "API-42", at: DATE, result: "## Decisions waiting for you\n\nRead the pending card.",
@@ -78,7 +98,7 @@ async function fixture(page, theme) {
       digest: { at: DATE, last_ok: DATE - 10, entries: [{ ...SIGNAL, fingerprint: "0", action: "Raised for review" }] },
       problems: [{ ...PROBLEM, ...(ruling ? { state: "accepted", ruling } : {}) }],
       signals: Array.from({ length: 50 }, (_, i) => ({ ...SIGNAL, fingerprint: String(i), metric: i ? `Signal ${i}` : SIGNAL.metric })), next: "49" });
-    if (suffix === "/incidents") return json(route, { rows: [INCIDENT], next: null });
+    if (suffix === "/incidents") return json(route, { rows: [incident()], next: null });
     if (suffix === "/signals/0/investigate" && method === "POST") {
       return json(route, { message: "Investigation requested." });
     }
@@ -91,7 +111,7 @@ async function fixture(page, theme) {
       if (method === "PUT") enabled = body.enabled;
       const attachment = enabled ? { limited_history: true, detectors: { [RULE]: { can_run: true, mode: "shadow", unavailable: [],
         observed_thresholds: { failure_count: { min: 2, max: 3 } } } } } : null;
-      return json(route, { enabled, attachment });
+      return json(route, { enabled, attachment, holds: activeHolds() });
     }
     if (suffix === "/line") {
       if (method === "PUT") line = { revision: line.revision + 1, settings: body.settings };
@@ -141,6 +161,8 @@ async function settingsTab(page, { calls, refuseSave }, suffix, phone) {
   check("AC-222 the project tab has its own switch, level and save control",
     await page.isVisible("#supervisorpanel") && await level.inputValue() === "operator" && !await page.isChecked("#supervisoron")
     && await page.isVisible("#supervisorok") && await page.isHidden("#projectok"));
+  check("AC-245 the off tab lists the holds that remain in force",
+    await panel.getByText("The Supervisor is off. Holds still in effect: Integration queue paused · Run stopped · API-2.", { exact: true }).isVisible());
   await openGroup(page, "Tier agents and budgets");
   const small = panel.getByLabel("Small tier");
   check("AC-222 a tier starts empty and offers only this project's pool",
@@ -255,6 +277,38 @@ async function settingsTab(page, { calls, refuseSave }, suffix, phone) {
 async function screen(page, suffix, phone) {
   await page.getByRole("link", { name: "Open Supervisor screen" }).click();
   await page.getByRole("heading", { name: "API service · Supervisor" }).waitFor();
+  const holds = page.locator("#sv-holds article");
+  const hold = holds.filter({ hasText: "Run stopped" });
+  const integrationHold = holds.filter({ hasText: "Integration queue paused" });
+  const incidentHold = page.locator("#sv-incidents [data-incident='42']");
+  const keep = incidentHold.getByRole("button", { name: "Keep the hold" });
+  const release = incidentHold.getByRole("button", { name: "Release the hold" });
+  const undo = hold.getByRole("button", { name: "RUN", exact: true });
+  await undo.waitFor();
+  await keep.waitFor();
+  await shot(page, `supervisor-holds-${suffix}`);
+  check("AC-245 holds show their reason, signal and one undo with the incident's keys",
+    await hold.getByText(LITERAL, { exact: true }).isVisible() && await hold.locator("img").count() === 0
+    && await hold.getByRole("link", { name: /Signal/ }).getAttribute("href") === "?project=api&signal=0#signal-0"
+    && await release.isVisible() && await integrationHold.getByRole("button", { name: "Resume integration" }).isVisible());
+  if (phone) {
+    for (const key of [undo, keep, release]) {
+      check("AC-245 a hold key fits a finger and its card fits the phone",
+        await key.evaluate((el) => el.getBoundingClientRect().height >= 44
+          && document.documentElement.scrollWidth <= innerWidth));
+    }
+  }
+  await keep.click();
+  await release.click();
+  await integrationHold.waitFor({ state: "detached" });
+  check("AC-245 releasing from an incident also removes that hold from the same screen", await release.isHidden());
+  await undo.click();
+  check("AC-245 a failed release shows the server's reason beside the hold",
+    await until(() => hold.getByRole("alert").isVisible()) && (await hold.getByRole("alert").textContent()).includes("queue is busy"));
+  await undo.click();
+  await page.getByText("No holds in effect.", { exact: true }).waitFor();
+  check("AC-245 a successful release updates the list and focuses its heading",
+    await until(() => page.locator("#sv-holds-title").evaluate((el) => el === document.activeElement)));
   await shot(page, `supervisor-screen-${suffix}`);
   const reports = page.locator("#sv-reports");
   await reports.getByText("Decisions waiting (1)", { exact: true }).click();

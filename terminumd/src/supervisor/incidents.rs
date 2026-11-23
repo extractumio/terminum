@@ -56,21 +56,12 @@ pub(super) fn observe(tx: &Transaction, seen: Observation<'_>) -> Result<(), Str
     // against unchanged evidence updates the current incident, even after that window.
     let (incident, opened) = match &prior {
         Some(m) if level < 3 || same_evidence => (m.incident, false),
-        _ => find_or_open(tx, project, finding, at)?,
+        _ => find_or_open(tx, project, (finding.subject_kind, &finding.subject_id), at)?,
     };
     if opened { super::thread::ensure(tx, project, incident, at)?; }
-    super::thread::anchor_live(tx, project, fingerprint, incident, at)?;
     let kind = if level < 3 || same_evidence { "updated" } else { "signal" };
-    let event: i64 = tx.query_row("INSERT INTO supervisor_incident_events
-        (incident, at, kind, actor, fingerprint, detector, metric, level, value, threshold)
-        VALUES (?1, ?2, ?3, 'system', ?4, ?5, ?6, ?7, ?8, ?9) RETURNING id",
-        params![incident, at, kind, fingerprint, rule.id(), finding.metric, level, value, threshold],
-        |r| r.get(0)).map_err(sql)?;
-    tx.execute("INSERT INTO supervisor_incident_signals VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
-        ON CONFLICT (fingerprint) DO UPDATE SET incident = excluded.incident, level = excluded.level,
-          evidence_hash = excluded.evidence_hash, value = excluded.value, threshold = excluded.threshold,
-          event = excluded.event, urgent = excluded.urgent",
-        (fingerprint, incident, level, &evidence_hash[..], value, threshold, event, urgent)).map_err(sql)?;
+    record_signal(tx, project, fingerprint, (rule.id(), finding.metric, kind),
+        Member { incident, level, value, threshold, urgent, evidence_hash: evidence_hash.to_vec() }, at)?;
     line_queue::enqueue(tx, incident, if opened { Kind::Opened } else { Kind::Updated }, false)?;
     if let Some(old) = prior.filter(|m| m.incident != incident)
         && !close_if_clear(tx, old.incident, at, Some(incident), old.urgent)?
@@ -83,11 +74,28 @@ pub(super) fn observe(tx: &Transaction, seen: Observation<'_>) -> Result<(), Str
     Ok(())
 }
 
-fn find_or_open(tx: &Transaction, project: &str, finding: &Finding, at: i64) -> Result<(i64, bool), String> {
+fn record_signal(tx: &Transaction, project: &str, fingerprint: &str, words: (&str, &str, &str),
+    member: Member, at: i64) -> Result<(), String>
+{
+    super::thread::anchor_live(tx, project, fingerprint, member.incident, at)?;
+    let event: i64 = tx.query_row("INSERT INTO supervisor_incident_events
+        (incident, at, kind, actor, fingerprint, detector, metric, level, value, threshold)
+        VALUES (?1, ?2, ?3, 'system', ?4, ?5, ?6, ?7, ?8, ?9) RETURNING id",
+        params![member.incident, at, words.2, fingerprint, words.0, words.1, member.level, member.value, member.threshold],
+        |r| r.get(0)).map_err(sql)?;
+    tx.execute("INSERT INTO supervisor_incident_signals VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+        ON CONFLICT (fingerprint) DO UPDATE SET incident = excluded.incident, level = excluded.level,
+          evidence_hash = excluded.evidence_hash, value = excluded.value, threshold = excluded.threshold,
+          event = excluded.event, urgent = excluded.urgent",
+        (fingerprint, member.incident, member.level, &member.evidence_hash, member.value,
+            member.threshold, event, member.urgent)).map(drop).map_err(sql)
+}
+
+fn find_or_open(tx: &Transaction, project: &str, subject: (&str, &str), at: i64) -> Result<(i64, bool), String> {
     let related = tx.query_row("SELECT id FROM supervisor_incidents
         WHERE project = ?1 AND subject_kind = ?2 AND subject_id = ?3 AND closed_at IS NULL
           AND last_firing_at BETWEEN ?4 AND ?5 ORDER BY last_firing_at DESC, id DESC LIMIT 1",
-        (project, finding.subject_kind, &finding.subject_id, at - GROUP_WINDOW, at), |r| r.get::<_, i64>(0))
+        (project, subject.0, subject.1, at - GROUP_WINDOW, at), |r| r.get::<_, i64>(0))
         .optional().map_err(sql)?;
     if let Some(id) = related {
         tx.execute("UPDATE supervisor_incidents SET last_firing_at = ?2 WHERE id = ?1", (id, at)).map_err(sql)?;
@@ -95,8 +103,49 @@ fn find_or_open(tx: &Transaction, project: &str, finding: &Finding, at: i64) -> 
     } else {
         tx.query_row("INSERT INTO supervisor_incidents (project, subject_kind, subject_id, opened_at, last_firing_at)
             VALUES (?1, ?2, ?3, ?4, ?4) RETURNING id",
-            (project, finding.subject_kind, &finding.subject_id, at), |r| Ok((r.get(0)?, true))).map_err(sql)
+            (project, subject.0, subject.1, at), |r| Ok((r.get(0)?, true))).map_err(sql)
     }
+}
+
+/// A project-wide hold opens an incident even when its signal is at level 2.
+pub(super) fn attach_hold(tx: &Transaction, signal: &super::Signal, hold: i64, project_wide: bool,
+    actor: &str, at: i64) -> Result<(), String>
+{
+    let prior = tx.query_row("SELECT m.incident FROM supervisor_incident_signals m
+        JOIN supervisor_incidents i ON i.id = m.incident WHERE m.fingerprint = ?1 AND i.closed_at IS NULL",
+        [&signal.fingerprint], |r| r.get(0)).optional().map_err(sql)?;
+    let (id, opened) = match prior {
+        Some(id) => (id, false),
+        None if !project_wide => return Ok(()),
+        None => {
+            let (id, opened) = find_or_open(tx, &signal.project, (&signal.subject_kind, &signal.subject_id), at)?;
+            if opened { super::thread::ensure(tx, &signal.project, id, at)?; }
+            let evidence: String = tx.query_row("SELECT evidence FROM supervisor_signals WHERE fingerprint = ?1",
+                [&signal.fingerprint], |r| r.get(0)).map_err(sql)?;
+            let member = Member { incident: id, level: signal.level, value: signal.measure.value,
+                threshold: signal.measure.threshold, urgent: signal.charter_breach || signal.scores.reversibility == 3,
+                evidence_hash: Sha256::digest(evidence).to_vec() };
+            record_signal(tx, &signal.project, &signal.fingerprint,
+                (&signal.detector, &signal.metric, "signal"), member, at)?;
+            (id, opened)
+        }
+    };
+    tx.execute("UPDATE supervisor_holds SET incident = ?2 WHERE id = ?1", (hold, id)).map_err(sql)?;
+    append_hold_event(tx, id, hold, "hold_applied", actor, at)?;
+    line_queue::enqueue(tx, id, if opened { Kind::Opened } else { Kind::Updated }, false)
+}
+
+fn append_hold_event(tx: &Transaction, incident: i64, hold: i64, kind: &str, actor: &str, at: i64) -> Result<(), String> {
+    tx.execute("INSERT INTO supervisor_incident_events (incident, at, kind, actor, related_id)
+        VALUES (?1, ?2, ?3, ?4, ?5)", (incident, at, kind, actor, hold)).map(drop).map_err(sql)
+}
+
+pub(super) fn hold_event(tx: &Transaction, incident: i64, hold: i64, kind: &str, actor: &str, at: i64) -> Result<(), String> {
+    append_hold_event(tx, incident, hold, kind, actor, at)?;
+    if kind == "hold_released" && !close_if_clear(tx, incident, at, None, false)? {
+        line_queue::enqueue(tx, incident, Kind::Updated, false)?;
+    }
+    Ok(())
 }
 
 /// Called after signal resolution in the same transaction. Unavailable readings leave the signal standing.
@@ -119,7 +168,8 @@ pub(super) fn clear_resolved(tx: &Transaction, project: &str, rule: Rule, at: i6
 fn close_if_clear(tx: &Transaction, id: i64, at: i64, continued: Option<i64>, urgent: bool) -> Result<bool, String> {
     let changed = tx.execute("UPDATE supervisor_incidents SET closed_at = ?2
         WHERE id = ?1 AND closed_at IS NULL
-          AND NOT EXISTS (SELECT 1 FROM supervisor_incident_signals WHERE incident = ?1)", (id, at)).map_err(sql)?;
+          AND NOT EXISTS (SELECT 1 FROM supervisor_incident_signals WHERE incident = ?1)
+          AND NOT EXISTS (SELECT 1 FROM supervisor_holds WHERE incident = ?1 AND shadow = 0 AND released_at IS NULL)", (id, at)).map_err(sql)?;
     if changed != 0 {
         let (event, notice) = if continued.is_some() { ("continued", Kind::Updated) } else { ("all_clear", Kind::AllClear) };
         tx.execute("INSERT INTO supervisor_incident_events (incident, at, kind, actor, related_id)

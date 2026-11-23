@@ -25,6 +25,7 @@ impl Kind {
     }
 }
 
+#[derive(Clone)]
 pub(super) struct Notice {
     pub project: String,
     pub incident: i64,
@@ -33,6 +34,7 @@ pub(super) struct Notice {
     pub signals: i64,
     pub channels: usize,
     pub(super) budget: Option<&'static str>,
+    pub(super) holds: Vec<super::holds::Kind>,
 }
 
 impl Notice {
@@ -44,6 +46,11 @@ impl Notice {
             Kind::AllClear => format!("All-clear on incident {incident}.\n"),
             Kind::Answer => format!("An answer on incident {incident}.\n"),
         };
+        if !self.holds.is_empty() && matches!(self.kind, Kind::Opened | Kind::Updated | Kind::Repeat) {
+            use std::fmt::Write;
+            for hold in &self.holds { let _ = writeln!(text, "{}.", hold.label()); }
+            text.push_str("Keep or release in Terminum. Without an answer the hold stays.\n");
+        }
         // Only generated project IDs are eligible for the outbound deep link.
         if let Some(base) = link_base
             && (self.project == "default"
@@ -66,7 +73,9 @@ pub(super) fn enqueue(tx: &Transaction, incident: i64, kind: Kind, ended_urgent:
             SELECT max(id) FROM supervisor_line_pending WHERE incident = ?1)", [incident]).map_err(sql)?;
     }
     tx.execute("INSERT INTO supervisor_line_pending (incident, kind, level, signals, urgent)
-        SELECT i.id, ?2, coalesce(max(m.level), 0), count(m.fingerprint), (?3 OR coalesce(max(m.urgent), 0))
+        SELECT i.id, ?2, coalesce(max(m.level), (
+            SELECT max(level) FROM supervisor_holds WHERE incident = i.id AND shadow = 0 AND released_at IS NULL), 0),
+            count(m.fingerprint), (?3 OR coalesce(max(m.urgent), 0))
         FROM supervisor_incidents i LEFT JOIN supervisor_incident_signals m ON m.incident = i.id
         WHERE i.id = ?1 AND i.subject_kind <> 'critical_line'
           AND EXISTS (SELECT 1 FROM supervisor_line WHERE json_array_length(settings, '$.channels') > 0)
@@ -76,8 +85,10 @@ pub(super) fn enqueue(tx: &Transaction, incident: i64, kind: Kind, ended_urgent:
 /// When the first channel is saved, start with current unacknowledged incidents.
 pub(super) fn seed(tx: &Transaction) -> Result<(), String> {
     tx.execute("INSERT INTO supervisor_line_pending (incident, kind, level, signals, urgent)
-        SELECT i.id, 'opened', max(m.level), count(*), max(m.urgent)
-        FROM supervisor_incidents i JOIN supervisor_incident_signals m ON m.incident = i.id
+        SELECT i.id, 'opened', coalesce(max(m.level), (
+            SELECT max(level) FROM supervisor_holds WHERE incident = i.id AND shadow = 0 AND released_at IS NULL), 0),
+            count(m.fingerprint), coalesce(max(m.urgent), 0)
+        FROM supervisor_incidents i LEFT JOIN supervisor_incident_signals m ON m.incident = i.id
         WHERE i.closed_at IS NULL AND i.acknowledged_at IS NULL AND i.subject_kind <> 'critical_line'
         GROUP BY i.id", []).map(drop).map_err(sql)
 }
@@ -101,10 +112,12 @@ pub(super) fn claim(tx: &Transaction, settings: &Settings, at: i64, quiet: bool)
           AND q.id = (SELECT min(id) FROM supervisor_line_pending WHERE incident = i.id)
           AND (q.kind <> 'updated' OR r.last_at IS NULL OR r.last_at + ?3 <= ?1 OR i.closed_at IS NOT NULL)
         UNION ALL
-        SELECT NULL, i.id, i.project, 'repeat', max(m.level), count(*), r.escalated
+        SELECT NULL, i.id, i.project, 'repeat', coalesce(max(m.level), (
+            SELECT max(level) FROM supervisor_holds WHERE incident = i.id AND shadow = 0 AND released_at IS NULL), 0),
+            count(m.fingerprint), r.escalated
         FROM supervisor_line_repeats r JOIN supervisor_incidents i ON i.id = r.incident
         JOIN project_supervisor s ON s.project = i.project AND s.enabled
-        JOIN supervisor_incident_signals m ON m.incident = i.id
+        LEFT JOIN supervisor_incident_signals m ON m.incident = i.id
         WHERE r.due_at <= ?1 AND i.closed_at IS NULL AND i.acknowledged_at IS NULL
           AND coalesce(i.snoozed_until, 0) <= ?1 AND r.last_at + ?3 <= ?1
         GROUP BY i.id HAVING NOT ?2 OR max(m.urgent)
@@ -121,11 +134,14 @@ pub(super) fn claim(tx: &Transaction, settings: &Settings, at: i64, quiet: bool)
                 Some("judgment_tokens") => Some(super::governor::JUDGMENT_NOTICE),
                 Some("fix_dollars") => Some(super::governor::FIX_NOTICE),
                 _ => None,
-            } };
+            }, holds: Vec::new() };
         Ok((r.get::<_, Option<i64>>(0)?, notice, escalated))
     }).optional().map_err(sql)?;
-    let Some((pending, notice, escalated)) = selected else { return Ok(None) };
+    let Some((pending, mut notice, escalated)) = selected else { return Ok(None) };
     let id = notice.incident;
+    notice.holds = crate::tasks::ops::rows(tx, "SELECT kind FROM supervisor_holds
+        WHERE incident = ?1 AND shadow = 0 AND released_at IS NULL ORDER BY id", [id],
+        |r| Ok(super::holds::Kind::read(&r.get::<_, String>(0)?)))?;
     if let Some(row) = pending {
         tx.execute("DELETE FROM supervisor_line_pending WHERE id = ?1", [row]).map_err(sql)?;
     }

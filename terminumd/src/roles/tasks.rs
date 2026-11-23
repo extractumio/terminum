@@ -93,30 +93,13 @@ pub(super) async fn promote_queued(app: &Shared, boss: &Boss, args: &Value, supe
 }
 
 pub async fn stop_task(app: &Shared, boss: &Boss, args: &Value) -> Result<String, String> {
-    stop(app, boss, args, false).await
-}
-
-pub(super) async fn stop(app: &Shared, boss: &Boss, args: &Value, supervised: bool) -> Result<String, String> {
     let id = arg(args, "id")?.to_string();
     let (scope, actor) = (boss.clone(), boss.clone());
-    let who = if supervised { "The project's Supervisor" } else { "The project's manager" };
-    let stopped = crate::dispatcher::letgo::gave_up_checked(app, &id, who, move |tx, wanted| {
-        let task = in_project(tx, &scope, wanted)?;
-        if supervised {
-            crate::supervisor::task_policy::check(tx, &task, ops::now())?;
-            supervisor::require(tx, &scope.key, &scope.project, "stop_task")?;
-        }
-        Ok(())
+    let stopped = crate::dispatcher::letgo::gave_up_checked(app, &id, "The project's manager", move |tx, wanted| {
+        in_project(tx, &scope, wanted).map(drop)
     }, move |tx, ids| {
-        if supervised {
-            supervisor::author(tx, &actor.project)?;
-        }
         for id in ids {
-            let key = if supervised {
-                let affected = in_project(tx, &actor, id)?;
-                crate::supervisor::task_policy::check(tx, &affected, ops::now())?;
-                affected.key
-            } else { ops::key_of(tx, id)? };
+            let key = ops::key_of(tx, id)?;
             ops::log(tx, &key, &actor.user, "why", &format!("{} stopped it.", actor.name), None, ops::now())?;
         }
         Ok(())

@@ -5,6 +5,10 @@ use serde_json::{Value, json};
 use super::mcp_catalog::Card;
 
 pub(super) const CARDS: &[Card] = &[
+    Card { name: "hold", area: "supervisor", keywords: "hold stop run pause auto dispatcher integration take out",
+        example: r#"{"signal":"fingerprint","kind":"pause_integration","reason":"The target is red."}"# },
+    Card { name: "release_hold", area: "supervisor", keywords: "release undo hold resume integration run",
+        example: r#"{"id":42}"# },
     Card { name: "get_supervisor_review", area: "supervisor", keywords: "read weekly review context register decisions verdicts", example: "{}" },
     Card { name: "get_case_file", area: "supervisor", keywords: "get case file read investigation context",
         example: r#"{"id":"case_0042"}"# },
@@ -33,6 +37,12 @@ fn tool(name: &str, description: &str, properties: Value, required: &[&str], rea
         "inputSchema": {"type": "object", "properties": properties, "required": required, "additionalProperties": false} })
 }
 
+pub(super) fn stop_tool() -> Value {
+    let text = json!({"type":"string"});
+    tool("stop_task", "Apply a stop_run hold to a marked task run using a level 2 or 3 signal.",
+        json!({"id":text,"signal":text,"reason":text}), &["id","signal","reason"], false)
+}
+
 pub(super) fn tools() -> Vec<Value> {
     let text = json!({"type": "string"});
     let id = json!({"type":"integer","minimum":1});
@@ -43,6 +53,11 @@ pub(super) fn tools() -> Vec<Value> {
         "properties":{"layer":{"enum":["check","test","hook","setting","documentation","memory"]},"action":text}
     }});
     vec![
+        tool("hold", "Apply one reversible hold in this project using a current level 2 or 3 signal. Shadow holds are recorded without changing work.",
+            json!({"signal":text,"kind":{"enum":["stop_run","pause_dispatch","pause_integration","take_out"]},
+                "task":text,"reason":text}), &["signal","kind","reason"], false),
+        tool("release_hold", "Use the held action's undo in this project. The hold ID identifies its qualifying signal and saved target.",
+            json!({"id":id}), &["id"], false),
         tool("get_supervisor_review", "Read the measured context for the live Supervisor weekly review task or your own project as its manager.", json!({}), &[], true),
         tool("open_problem", "Open a problem with recorded project signals. Code derives impact and the yardstick.",
             json!({"title":text,"lens":{"enum":["flow","architecture","product","owner"]},"hypothesis":text,"disproof":text,

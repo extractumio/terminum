@@ -140,16 +140,19 @@ async fn open_pane(app: &Shared, o: Opening<'_>, staged: bool) -> Result<String,
         if staged {
             crate::supervisor::rounds::mark(tx, &run, &k)?;
             runs::change(tx, &run, |r| r.pane_key = Some(k.clone()))?;
-            return Ok(());
+            return Ok(false);
         }
-        let r = a.dispatcher.pane_opened(tx, &run, &k)?;
-        say(tx, &r, &words)
+        let (r, released) = a.dispatcher.pane_opened(tx, &run, &k)?;
+        say(tx, &r, &words)?;
+        Ok(released)
     }).await;
-    if let Err(why) = linked {
-        if staged {
-            let _ = marked_command(o.server, &pane, o.run, &format!("kill-pane -t {pane}")).await;
+    match linked {
+        Ok(true) => app.supervisor.incident_changed(),
+        Ok(false) => {}
+        Err(why) => {
+            if staged { let _ = marked_command(o.server, &pane, o.run, &format!("kill-pane -t {pane}")).await; }
+            return Err(why);
         }
-        return Err(why);
     }
     // a member only once its run names it: a project's pane no run names is a human's, its manager (AC-174)
     if let Some((project, _)) = o.project {

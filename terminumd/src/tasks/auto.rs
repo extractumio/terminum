@@ -392,10 +392,18 @@ async fn set_auto(State(app): State<Shared>, Path(project): Path<String>, Json(b
         if let Some(why) = was.off_why.as_ref().filter(|why| body["off_why"].as_str() != Some(why)) {
             return Err(format!("It turned itself off meanwhile: {why} Read why, then turn it on again."));
         }
-        set(tx, &project, &was.with(&body)?, ops::now()).map(|()| json!({"ok": true}))
+        let at = ops::now();
+        let next = was.with(&body)?;
+        set(tx, &project, &next, at)?;
+        if next.on {
+            use crate::supervisor::holds::{Kind, board_release};
+            board_release(tx, &project, Kind::PauseDispatch, "", super::store::HUMAN, at)?;
+        }
+        Ok(json!({"ok": true}))
     }).await;
     if done.is_ok() {
         app.dispatcher.soon();
+        app.supervisor.incident_changed();
     }
     told_projects(&app, done)
 }

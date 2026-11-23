@@ -54,7 +54,7 @@ fn ac227_templates_exclude_case_prose_and_use_only_a_validated_origin() {
     assert_eq!(update.render(None), format!("Update on incident {id} · Level 3. Active signals: 1.\n"));
     let base = origin("https://terminum.example:8443/").unwrap();
     let exhausted = Notice { budget: Some(crate::supervisor::governor::JUDGMENT_NOTICE),
-        project: initial.project.clone(), ..initial };
+        ..initial.clone() };
     assert!(exhausted.render(None).starts_with(crate::supervisor::governor::JUDGMENT_NOTICE), "AC-237");
     let sample = Notice { project: "9feed0123456".into(), ..initial };
     assert!(sample.render(Some(&base)).ends_with(&format!(

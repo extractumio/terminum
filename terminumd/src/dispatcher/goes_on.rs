@@ -39,8 +39,9 @@ pub(super) async fn resume_with_slot(app: &Shared, r: &Run, tasks: &[Task], agai
     };
     on_reserved();
     let (project, ids) = (project_named(app, &t.project), tasks.iter().map(|t| t.id.clone()).collect::<Vec<_>>());
-    start::open(app, start::Opening { server: &server, project: project.as_ref().map(|(i, n)| (i.as_str(), n.as_str())), folder: &r.folder, command: &line, run: &new, tasks: &ids, program: &r.kind, agent: &r.agent_id }).await?;
+    let opened = start::open(app, start::Opening { server: &server, project: project.as_ref().map(|(i, n)| (i.as_str(), n.as_str())), folder: &r.folder, command: &line, run: &new, tasks: &ids, program: &r.kind, agent: &r.agent_id }).await;
     start::watch(app, &new);
+    opened?;
     Ok(json!({"run": new}))
 }
 
@@ -82,7 +83,8 @@ pub(super) async fn from_shell(app: &Shared, r: &Run, server: &Arc<Server>, pane
     done?;
     let (a, key, n) = (app.clone(), server.key(pane), new.clone());
     app.dispatcher.track_pane(&key, &new, &r.project);    // its agent's first hooks
-    store(app, move |tx| a.dispatcher.pane_opened(tx, &n, &key).map(drop)).await?;
+    let (_, released) = store(app, move |tx| a.dispatcher.pane_opened(tx, &n, &key)).await?;
+    if released { app.supervisor.incident_changed(); }
     start::watch(app, &new);
     Ok(json!({"run": new}))
 }
@@ -126,6 +128,7 @@ pub(super) async fn went_on(app: &Shared, r: &Run, tasks: &[Task], manager: bool
 async fn next_run(app: &Shared, r: &Run, tasks: &[Task], again: Again, kept: Press) -> Result<Next, String> {
     let (old, all) = (r.clone(), tasks.to_vec());
     store(app, move |tx| {
+        let release_actor = kept.hold_release.as_ref().map(|r| r.check(tx, &all)).transpose()?;
         kept.still_waits(tx, &all[0].key)?;
         for t in &all {
             if runs::last_of(tx, &t.key)?.is_none_or(|latest| latest.id != old.id) {
@@ -145,22 +148,28 @@ async fn next_run(app: &Shared, r: &Run, tasks: &[Task], again: Again, kept: Pre
         if agent.is_none() {
             say(tx, &old, &format!("{} is no longer in the pool: this goes on with the settings it started with.", old.agent_name))?;
         }
+        let preserve = kept.hold_release.is_some();
         runs::change(tx, &old.id, |was| {
-            // A closed run still names its exited pane so it stays a worker's pane (AC-174).
-            if was.state != Phase::Closed {
-                was.state = Phase::Closed;
+            // Given up or closed, the old pane can still be open. Keep its worker identity (AC-174).
+            if !preserve && !matches!(was.state, Phase::Closed | Phase::Left) {
                 was.pane_key = None;
             }
+            was.state = Phase::Closed;
         })?;
-        for other in old.ids.iter().filter(|other| !all.iter().any(|t| t.id == **other)) {
-            ops::link(tx, super::DISPATCHER, other, None, ops::now())?;
+        if kept.hold_release.is_none() {
+            for other in old.ids.iter().filter(|other| !all.iter().any(|t| t.id == **other)) {
+                ops::link(tx, super::DISPATCHER, other, None, ops::now())?;
+            }
         }
         for t in &all {
             bring_back(tx, &t.id)?;
             super::waits::remove(tx, &t.key)?;
         }
         let keys: Vec<String> = all.iter().map(|t| t.key.clone()).collect();
-        let (from, id) = (old.id.clone(), runs::add(tx, &Run { prompt: Some(again.words), ..old }, &keys, kept.started(), ops::now())?);
+        let at = ops::now();
+        let (from, id) = (old.id.clone(), runs::add(tx, &Run { prompt: Some(again.words), ..old }, &keys,
+            kept.started_as(release_actor.as_deref()), at)?);
+        super::api::hold::admitted(tx, &kept, &all, release_actor.as_deref(), &id)?;
         super::usage::carry(tx, &from, &id)?;
         recent::stage(tx, &id, &again.through)?;
         Ok(Next::Run(id))
