@@ -3,7 +3,7 @@
 import { oneAtATime } from "./dialogs.js";
 import { boardFor } from "./sections.js";
 import { api, loadMeta } from "./msgpage.js";
-import { $, button, showError, stamp } from "./kanbanutil.js";
+import { $, alertLine, button, showError, stamp } from "./kanbanutil.js";
 import { el } from "./listparts.js";
 import { boardUrl, taskUrl } from "./tasklink.js";
 import { drawRuleOutcomes } from "./supervisoroutcomes.js";
@@ -125,9 +125,7 @@ function rulingControls(p) {
   const input = text("", "area");
   input.required = true;
   input.maxLength = 1000;
-  const feedback = el("p", "merr");
-  feedback.setAttribute("role", "alert");
-  feedback.hidden = true;
+  const feedback = alertLine();
   const controls = actions();
   const form = part("form", "sv-stack", part("label", "sv-stack", "Reason to accept this problem as is", input), controls, feedback);
   const accept = el("button", "textkey", "Accept as is");
@@ -170,9 +168,7 @@ function problem(p) {
 }
 
 function heldAction(hold) {
-  const error = el("p", "merr");
-  error.setAttribute("role", "alert");
-  error.hidden = true;
+  const error = alertLine();
   const keys = actions();
   const release = button("textkey", hold.undo, oneAtATime(keys, async () => {
     showError(error, "");

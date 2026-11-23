@@ -96,12 +96,11 @@ impl Problem {
 }
 
 fn check_words(s: &str) -> Result<String, String> {
-    let clean = crate::sent::redact(&crate::plans::rules::clean(s));
-    let clean = clean.trim();
+    let clean = crate::plans::rules::clean(s);
     if clean.is_empty() || clean.chars().count() > MAX_TEXT {
         return Err("Give problem text between 1 and 1000 characters.".into());
     }
-    Ok(clean.into())
+    Ok(clean)
 }
 
 fn checked_options(mut options: Vec<Fix>) -> Result<String, String> {

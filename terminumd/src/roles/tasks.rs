@@ -91,7 +91,7 @@ pub(super) async fn promote_queued(app: &Shared, boss: &Boss, args: &Value, supe
             waits::reorder(tx, &w.agent, &order)?;
             let at = ops::now();
             let event = ops::log(tx, &t.key, &b.user, "why", &format!("{} moved it to the front of {}'s queue.", b.name, a.name), None, at)?;
-            if supervised { crate::supervisor::action_tasks::record_promotion(tx, &t, &b.key, &event, at)?; }
+            if supervised { crate::supervisor::action_tasks::record_run(tx, &t, Some(&b.key), &event, "", at)?; }
         }
         Ok(Ok((t.id, a.name, moved, front > 0)))
     }).await?;

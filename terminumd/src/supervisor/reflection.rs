@@ -124,7 +124,7 @@ struct ResultDraft {
 }
 
 fn prose(value: &str) -> Result<String, String> {
-    let clean = crate::sent::redact(&crate::plans::rules::clean_with(value, false));
+    let clean = crate::plans::rules::clean_with(value, false);
     if clean.is_empty() || clean.chars().count() > 1_000 {
         Err("Give each reflection explanation in 1–1000 characters.".into())
     } else { Ok(clean) }

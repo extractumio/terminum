@@ -15,6 +15,7 @@ use parking_lot::Mutex;
 use serde_json::{json, Value};
 
 use crate::app::Shared;
+use crate::idle_exit::ask as tmux;
 use crate::page::Page;
 use crate::process::codex::{self, may_attach, NO_ATTACH, NO_DAEMON, OWN_OPTION, STOP_SERVER};
 use crate::process::{foreground, program_at, Foreground};
@@ -30,8 +31,6 @@ pub const KINDS: [&str; 2] = [CODEX_SHARED, FULL_SCREEN];
 const SETTLED: u64 = 5;
 /// How long Claude Code's hidden cursor must hold: a program redrawing hides it too (the page's `!`, AC-05).
 const TUI_HOLD: Duration = Duration::from_millis(400);
-/// How long tmux is given to answer.
-const WAIT: Duration = Duration::from_secs(5);
 /// What is read of the pane, tab-separated; the option last (the user's tmux may hold anything there).
 const FIELDS: &str = "#{alternate_on}\t#{cursor_flag}\t#{pane_current_command}\t#{pane_tty}\t#{@tm-noticed}";
 
@@ -81,11 +80,6 @@ pub fn ask(app: &Shared, page: &Arc<Page>, server: &Arc<Server>, key: &str) {
         }
         LOOKING.lock().get_or_insert_default().remove(&key);
     });
-}
-
-/// tmux's answer to `line`, within WAIT.
-async fn tmux(server: &Server, line: String) -> Result<Vec<String>, String> {
-    tokio::time::timeout(WAIT, server.run(line)).await.unwrap_or_else(|_| Err("tmux does not answer".into()))
 }
 
 /// The pane's fields (alternate screen, cursor, program, tty, mark) and its foreground run, read now.

@@ -70,10 +70,6 @@ pub(crate) fn comment(tx: &Transaction, task: &Task, pane: &str, event: &str, qu
     outcomes::unattributed(tx, &task.project, kind, event, &task.key, at)
 }
 
-pub(crate) fn record_promotion(tx: &Transaction, task: &Task, pane: &str, event: &str, at: i64) -> Result<(), String> {
-    record_run(tx, task, Some(pane), event, "", at)
-}
-
 pub(crate) fn divert_group(tx: &Transaction, tasks: &[Task], pane: Option<&str>, at: i64)
     -> Result<Vec<String>, String>
 {

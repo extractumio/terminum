@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-import { $, api, showError, stamp } from "./kanbanutil.js";
+import { $, alertLine, api, showError, stamp } from "./kanbanutil.js";
 import { el, textKey } from "./listparts.js";
 import { taskUrl } from "./tasklink.js";
 import { part, stack } from "./supervisorfields.js";
@@ -56,9 +56,7 @@ export function drawAgentRates(rates) {
 
 function timeline(path, id) {
   const contents = stack(), control = panel("Case timeline", contents);
-  const error = el("p", "merr");
-  error.setAttribute("role", "alert");
-  error.hidden = true;
+  const error = alertLine();
   contents.append(error);
   const read = async () => {
     if (!control.open) return;
