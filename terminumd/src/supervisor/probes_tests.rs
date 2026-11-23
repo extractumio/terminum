@@ -310,9 +310,9 @@ fn ac212_ac221_hotspot_baseline_ranks_the_projects_fixed_files() {
     enabled(&f, f.path.parent().unwrap());
     let job = job(&f, ARCH, NOW - 10);
     let mut at = NOW - 10;
-    let mut seed = |name: &str, files: &[(String, u64, u64, u64)]| {
+    let mut fired = |name: &str, files: Vec<(String, u64, u64, u64)>| {
         let mut arch = Architecture { since: NOW - 90 * DAY, ..Architecture::default() };
-        for (path, size, churn, fixes) in files.iter().cloned() {
+        for (path, size, churn, fixes) in files {
             arch.sizes.insert(path.clone(), size);
             arch.changes.push(Changed { at: NOW - 40 * DAY, path: path.clone(), churn, fix: false });
             arch.changes.push(Changed { at: NOW - DAY, path: path.clone(), churn, fix: false });
@@ -322,14 +322,14 @@ fn ac212_ac221_hotspot_baseline_ranks_the_projects_fixed_files() {
         let observation = Observation { data: serde_json::to_string(&arch).unwrap(), reports: Vec::new() };
         assert!(f.store.with(|tx| publish(tx, &job, at, Ok(observation))).unwrap().is_some(), "{name}");
         let found = evaluate(&f.store, PROJECT, NOW, &[Fixture::detector("arch.hotspot")]).unwrap();
-        found.detectors[0].findings.iter().filter(|s| s.metric == "churn_size_fix_count").map(|s| s.subject_id.clone()).collect::<Vec<_>>()
+        let mut hot = found.detectors[0].findings.iter().filter(|s| s.metric == "churn_size_fix_count").map(|s| s.subject_id.clone()).collect::<Vec<_>>();
+        hot.sort();
+        hot
     };
     let files = |prefix: &str, n: usize, size, churn, fixes| (0..n).map(|i| (format!("src/{prefix}{i}.rs"), size, churn, fixes)).collect::<Vec<_>>();
     let mut ranked = [files("plain", 1000, 10_000, 100, 0), files("fixed", 38, 10_000, 200, 1)].concat();
     ranked.extend([("src/hot.rs".into(), 50_000, 2_000, 5), ("src/hotter.rs".into(), 80_000, 3_000, 9)]);
-    let mut hot = seed("ranked", &ranked);
-    hot.sort();
-    assert_eq!(hot, ["src/hot.rs", "src/hotter.rs"], "the floor alone would flag all 40 fixed files");
+    assert_eq!(fired("ranked", ranked), ["src/hot.rs", "src/hotter.rs"], "the floor alone would flag all 40 fixed files");
     let small = [files("small", 39, 100, 100, 1), files("top", 1, 1_000, 100, 5)].concat();
-    assert!(seed("under floor", &small).is_empty(), "a top score under the floor never fires");
+    assert!(fired("under floor", small).is_empty(), "a top score under the floor never fires");
 }

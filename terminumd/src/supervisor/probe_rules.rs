@@ -121,21 +121,19 @@ pub(super) fn hotspots(q: &Query<'_, '_>) -> Result<Measurements, String> {
         totals.1 += f64::from(row.fix);
     }
     let score = |path: &str, (churn, fixes): (f64, f64)| {
-        arch.sizes.get(path).map(|bytes| churn * *bytes as f64 * fixes)
+        arch.sizes.get(path).map(|bytes| churn * *bytes as f64 * fixes).filter(|value| *value > 0.0)
     };
     // AC-212, AC-221: the baseline ranks every file a fix touched in either period, so a project
     // whose fixes are known only inside the current window still fires on its top few percent.
     let history = match q.detector.threshold {
         Threshold::Baseline { percentile: p, .. } => {
-            let mut scores = periods.iter().flatten().filter_map(|(path, stats)| score(path, *stats))
-                .filter(|value| *value > 0.0).collect::<Vec<_>>();
+            let mut scores = periods.iter().flatten().filter_map(|(path, stats)| score(path, *stats)).collect::<Vec<_>>();
             percentile(&mut scores, p).into_iter().collect::<Vec<_>>()
         }
         _ => Vec::new(),
     };
     let [_, recent] = periods;
     let mut readings = recent.into_iter().filter_map(|(path, stats)| score(path, stats).map(|value| (path, value)))
-        .filter(|(_, value)| *value > 0.0)
         .map(|(path, value)| Reading::new("file", path, "churn_size_fix_count", value, evidence(id), Source::Unsized(CODE)).history(history.clone()))
         .collect::<Vec<_>>();
     let mut out = Measurements { complete_metrics: (arch.since <= q.window.start).then_some("churn_size_fix_count")
