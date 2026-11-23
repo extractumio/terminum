@@ -175,9 +175,10 @@ impl Store {
     }
 
     /// The bridge reports the pane's cwd. A new root clears the tree state but keeps tabs, unless
-    /// the tree shows a folder the user chose (AC-275): that tree stays as it is; true when the root changed.
+    /// the tree shows a folder the user chose (AC-275): that tree stays as it is; true when the
+    /// folder shown changed (what is watched).
     pub fn set_root(&self, key: &str, root: &str) -> bool {
-        let rev = {
+        let (rev, moved) = {
             let mut data = self.data.lock();
             let p = data.panes.entry(key.to_string()).or_default();
             if p.root == root {
@@ -191,10 +192,10 @@ impl Store {
             }
             p.rev += 1;
             p.updated = now();
-            p.rev
+            (p.rev, p.browse.is_empty())
         };
         self.touched(key, rev, None);
-        true
+        moved
     }
 
     /// Replace a pane's state if the client saw the latest revision (else the current one) and

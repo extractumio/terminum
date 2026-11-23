@@ -6,13 +6,13 @@
 import "./style.css";
 import {
   api, apiOrToast, ApiError, basename, CLIENT, copyText, DEFAULT_PREFS, dirname, isPane, isRevision, isUnder,
-  proofRefusal, PROXIED, scope, setScope, SORTS, toast,
+  proofRefusal, PROXIED, scope, setScope, shownOf, SORTS, toast,
   type FsChange, type Pane, type Prefs, type TermState,
 } from "./api";
 import { renderOffer } from "./host-offer";
 import { contextMenu } from "./context-menu";
-import { acceptFromPage, emptiedOutside, escapedOutside, openOutside, PIN, PIN_CWD, PIN_HOME, PIN_HOST, pinKey, revealOutside } from "./embed";
-import { Browse, shownOf } from "./browse";
+import { acceptFromPage, emptiedOutside, escapedOutside, openOutside, PIN, PIN_CWD, PIN_HOST, pinKey, revealOutside } from "./embed";
+import { Browse } from "./browse";
 import { applyTheme } from "./theme";
 import { redrawDiagrams } from "./mermaid";
 import { initSplitter } from "./splitter";
@@ -161,7 +161,7 @@ async function applyWorkspace(pane: Pane) {
   const sameTree = ws && shownOf(ws) === shownOf(pane) && tree.root?.path === shownOf(pane) &&
     JSON.stringify([...tree.expanded].sort()) === JSON.stringify([...pane.expanded].sort());
   ws = pane; // restoring it below is then a no-op for saveNow
-  browsing = pane.browse ?? "";
+  browsing = pane.browse;
   if (sameTree) { tree.pick(); tree.selected = new Set(pane.selected); tree.queue(); }
   else await tree.setRoot(shownOf(pane), pane.expanded, pane.selected, pane.scroll);
   if (key !== paneKey || ws !== pane) return;
@@ -207,7 +207,7 @@ function onState(s: TermState) {
   if (!VIEW) renderHeader(term);
   // terminumd is back: send what a failed save left behind
   void saveNow();
-  if (prefsSaver.unsaved) savePrefs();
+  if (prefsSaver.unsaved) prefsSaver.save();
 }
 
 /** A host's pane: its files offer (AC 83), read when the panel connects and whenever terminumd
@@ -319,7 +319,6 @@ const terminal = (action: "insert" | "cd", body: object) =>
 // ── layout ───────────────────────────────────────────────────────────────────
 
 const prefsSaver = new PrefsSaver(() => prefs, (error) => (error ? failed("prefs", error) : warned.delete("prefs")));
-const savePrefs = () => prefsSaver.save();
 
 function setSplit(r: number) {
   prefs.split = Math.min(0.85, Math.max(0.15, r));
@@ -339,7 +338,7 @@ const tree = new Tree($("tree"), {
   context: (p, isDir, ev) => void contextMenu(p, isDir, ev, {
     tree, term: () => term, switchedSince, open: openFile, openWindow, trash: () => void trashSelected(),
     copy: (t) => void copyPaths(t), relative, terminal,
-    sort: () => prefs.sort, setSort: (s) => { prefs.sort = s; tree.setSort(s); savePrefs(); },
+    sort: () => prefs.sort, setSort: (s) => { prefs.sort = s; tree.setSort(s); prefsSaver.save(); },
   }),
   commit,
   notify: toast,
@@ -355,11 +354,10 @@ bindDrop($("tree"), { root: () => tree.root?.path ?? null, host: () => scope, re
 const browse = new Browse({
   shown: () => tree.root?.path ?? (ws ? shownOf(ws) : ""),
   pane: () => ws?.root ?? "",
-  home: PIN_HOME,
   focusTree: () => tree.focus(),
   async go(path) {
     if (!ws) return;
-    browsing = path ?? "";
+    browsing = path === ws.root ? "" : path ?? "";
     const shown = tree.setRoot(browsing || ws.root, [], [], 0);
     renderHeader(term); void saveNow();
     await shown;
@@ -421,7 +419,7 @@ $("hidden").onclick = () => {
   prefs.hidden = !prefs.hidden;
   $("hidden").classList.toggle("on", !prefs.hidden);
   tree.setShowHidden(prefs.hidden);
-  savePrefs();
+  prefsSaver.save();
 };
 $("maximize").onclick = () => $("app").classList.toggle("max");
 
@@ -480,7 +478,7 @@ if (!PROXIED) notice("Not served by terminumd", "Open Files from terminum's page
 (async () => {
   if (VIEW) return startViewer(VIEW);
   initSplitter($("splitter"), () => ({ top: $("tree").getBoundingClientRect().top, bottom: $("app").getBoundingClientRect().bottom }),
-    setSplit, savePrefs);
+    setSplit, () => prefsSaver.save());
   renderHeader(term);
   // this panel starts from the latest layout; changing it later updates the default only
   let denied = "";

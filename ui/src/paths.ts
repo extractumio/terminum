@@ -29,7 +29,8 @@ export function decodePath(url: string): string {
 }
 
 /** A folder typed by the user (AC-275): a full path, `~` or `~/…` from the pane's home, or a
- *  path relative to `base`; `.` and `..` resolved. Why not, when it cannot be one. */
+ *  path relative to `base`; `.` and `..` resolved (the page reads a printed path by the same rule:
+ *  web/static/links.js absolutePath). Why not, when it cannot be one. */
 export function typedFolder(text: string, base: string, home: string | null): { path: string } | { error: string } {
   const t = text.trim();
   if (!t) return { error: "Type a folder's path" };

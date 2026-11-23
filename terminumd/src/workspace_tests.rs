@@ -72,7 +72,7 @@ async fn ac275_a_chosen_folder_stays_through_a_cd_until_back() {
     p.expanded = vec!["/opt/logs/app".into()];
     assert_eq!(s.put("p1", p.clone(), None).ok(), Some((2, true)), "another folder shown: watched");
     assert_eq!(s.get("p1", None).shown(), "/opt/logs");
-    assert!(s.set_root("p1", "/b"), "the pane's folder moved");
+    assert!(!s.set_root("p1", "/b"), "the pane's folder moved, the folder shown did not");
     let p = s.get("p1", None);
     assert_eq!((p.root.as_str(), p.shown(), p.expanded.as_slice()), ("/b", "/opt/logs", &["/opt/logs/app".to_string()][..]));
     // Back: the pane's folder again, its tree from the start

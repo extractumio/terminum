@@ -66,7 +66,7 @@ pub fn plan(panes: Vec<(Option<String>, Pane)>) -> (watcher::Paths, HashMap<Stri
     let mut local = watcher::Paths::default();
     let mut remote: HashMap<String, RemoteWatch> = HashMap::new();
     for (host, p) in panes {
-        let root = p.shown().to_string();
+        let root = if p.browse.is_empty() { p.root } else { p.browse };
         let files = p.tabs.into_iter().map(|t| t.path);
         let Some(h) = host else {
             local.extend(watcher::wanted(&root, &p.expanded, files));

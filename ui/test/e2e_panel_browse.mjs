@@ -8,7 +8,6 @@ const url = (cwd) => `${base}/fb/?${new URLSearchParams({ key: PANE_B, cwd, home
 const row = (p) => `#tree .row[data-p="${SB}/${p}"]`;
 
 export async function panelBrowse(page) {
-  const headers = { "X-TM-Session": await page.evaluate(() => localStorage.getItem("tm.session")) };
   const read = async () => (await page.request.get(`${base}/fb/api/workspace?${new URLSearchParams({ key: wsKey(PANE_B) })}`, { headers })).json();
   const crumbs = () => page.getAttribute("#crumbs", "title");
   const back = () => page.isVisible("#back");
@@ -16,6 +15,7 @@ export async function panelBrowse(page) {
 
   await page.goto(url(`${SB}/src`));
   await page.waitForSelector(row("src/main.rs"));
+  const headers = { "X-TM-Session": await page.evaluate(() => localStorage.getItem("tm.session")) };
   check("AC-275 following the pane: no Back", !(await back()));
   await page.click("#browse");
   check("AC-275 Open folder… shows the field with the shown folder", await page.isVisible("#goto")

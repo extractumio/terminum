@@ -79,9 +79,11 @@ export interface Stamp { path: string; etag: string | null }
 export interface FsChange { dirs: string[]; files: Stamp[]; moved: { from: string; to: string }[]; host?: string }
 export interface Tab { path: string; view: "auto" | "rendered" | "source" }
 export interface Pane {
-  rev: number; root: string; browse?: string; expanded: string[]; selected: string[]; scroll: number;
+  rev: number; root: string; browse: string; expanded: string[]; selected: string[]; scroll: number;
   tabs: Tab[]; active_tab: number | null; updated: number;
 }
+/** The folder a pane's tree shows: the one the user chose (AC-275), else the pane's. */
+export const shownOf = (p: Pick<Pane, "root" | "browse">) => p.browse || p.root;
 /** Looks like a pane's state as terminumd answers it (`api`'s `is`). */
 export const isPane = (p: unknown): p is Pane => {
   const q = p as Partial<Pane> | null;
