@@ -73,12 +73,12 @@ pub const CARDS: &[Card] = &[
         example: r#"{"why": "a port was held by a stale process: ended it"}"# },
     Card { name: "integration_add_fix", area: "tasks", keywords: "fix the target, main is red, add my commit to the candidate",
         example: r#"{"commit": "9c1d0aa"}"# },
+    Card { name: "dispatch_task", area: "tasks", keywords: "start a task on an agent, dispatch, Auto-Dispatcher's round, pick the next tasks, fill a free slot",
+        example: r#"{"id": "TERM-12", "why": "RICE 8×2×0.8÷1 = 12.8; tasks/ops.rs moves; a small fix many sessions hit"}"# },
     Card { name: crate::supervisor::design_gates::BRIEF, area: "tasks", keywords: "request design first architecture review migration rollback brief",
         example: r#"{"id":"API-12","design_note":"Version the settings document.","migration":"Read both versions.","rollback":"Keep writing the old version until verification.","paths":"store/settings.json"}"# },
     Card { name: crate::supervisor::design_gates::RECORD, area: "tasks", keywords: "record design review architecture critic verdict rejected advice",
         example: r#"{"id":"API-12","role":"architecture","verdict":"approved","compatibility":"Both readers accept the old form.","rejected_advice":"None"}"# },
-    Card { name: "dispatch_task", area: "tasks", keywords: "start a task on an agent, dispatch, Auto-Dispatcher's round, pick the next tasks, fill a free slot",
-        example: r#"{"id": "TERM-12", "why": "RICE 8×2×0.8÷1 = 12.8; tasks/ops.rs moves; a small fix many sessions hit"}"# },
 ];
 
 /// The cards a role finds (AC-174, AC-231).

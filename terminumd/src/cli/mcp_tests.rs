@@ -115,8 +115,8 @@ fn a_line_too_long_is_dropped_to_its_newline() {
 /// terminum-dispatcher.md AC-137: the pool is not an agent's to read or change.
 #[test]
 fn ac137_no_tool_reaches_a_projects_agents() {
-    assert_eq!(tool_names(), ["update_session_plan", "get_session_plan", "list_tasks", "get_task", "create_task", "update_task", "link_task", "take_task", "move_task", "ask_human", "wait_for_task", "add_comment", "attach_file", "get_file", "finish_task", "integrate", "withdraw_integration", "integration_status", "integration_return", "integration_recheck", "integration_add_fix", "dispatch_task"],
-               "the last starts a task on an agent of the pool (AC-170), and changes none; the integration queue's reach no agent");
+    assert_eq!(tool_names(), ["update_session_plan", "get_session_plan", "list_tasks", "get_task", "create_task", "update_task", "link_task", "take_task", "move_task", "ask_human", "wait_for_task", "add_comment", "attach_file", "get_file", "finish_task", "integrate", "withdraw_integration", "integration_status", "integration_return", "integration_recheck", "integration_add_fix", "dispatch_task", "request_design_review", "record_design_review"],
+               "dispatch_task starts a task on a pool agent (AC-170). The catalog provides no tool that changes the pool");
 }
 
 #[test]
@@ -196,6 +196,8 @@ fn outside_a_pane_each_tool_says_so_and_nothing_is_sent() {
                 "integration_recheck" => json!({}),
                 "integration_add_fix" => json!({"commit": "abc"}),
                 "link_task" => json!({"id": "T-1", "list": "blocked_by", "task": "T-2"}),
+                "request_design_review" | "record_design_review" =>
+                    serde_json::from_str(crate::cli::mcp_catalog::card(t).unwrap().example).unwrap(),
                 _ => json!({"id": "T-1"}),
             };
             let (r, sent) = tool(t, args, env, Err(()));
