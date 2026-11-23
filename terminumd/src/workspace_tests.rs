@@ -59,3 +59,29 @@ async fn ac71_a_put_must_be_a_panes_state() {
     assert!(s.set_prefs(serde_json::json!({"hidden": true})).is_ok());
     fs::remove_dir_all(dir).unwrap();
 }
+
+/// AC-275: a chosen folder replaces the tree's root until Back; a cd meanwhile moves the pane's
+/// root alone, the chosen tree kept; the PUT checks it and counts it as watched.
+#[tokio::test]
+async fn ac275_a_chosen_folder_stays_through_a_cd_until_back() {
+    let dir = crate::testutil::fresh_dir("ws-browse");
+    let s = Store::load(dir.join("workspaces.json"), 14, Bus::new());
+    s.set_root("p1", "/a");
+    let mut p = s.get("p1", None);
+    p.browse = "/opt/logs".into();
+    p.expanded = vec!["/opt/logs/app".into()];
+    assert_eq!(s.put("p1", p.clone(), None).ok(), Some((2, true)), "another folder shown: watched");
+    assert_eq!(s.get("p1", None).shown(), "/opt/logs");
+    assert!(s.set_root("p1", "/b"), "the pane's folder moved");
+    let p = s.get("p1", None);
+    assert_eq!((p.root.as_str(), p.shown(), p.expanded.as_slice()), ("/b", "/opt/logs", &["/opt/logs/app".to_string()][..]));
+    // Back: the pane's folder again, its tree from the start
+    let back = Pane { browse: String::new(), expanded: vec![], ..p.clone() };
+    assert_eq!(s.put("p1", back, None).ok(), Some((4, true)));
+    assert_eq!(s.get("p1", None).shown(), "/b");
+    for bad in ["logs", "/opt/../etc"] {
+        let p = Pane { browse: bad.into(), ..s.get("p1", None) };
+        assert!(matches!(s.put("p1", p, None), Err(Refused::Bad(m)) if m.contains("chosen folder")), "{bad}");
+    }
+    let _ = fs::remove_dir_all(&dir);
+}

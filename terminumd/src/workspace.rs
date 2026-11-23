@@ -32,6 +32,9 @@ pub struct Pane {
     pub rev: u64,
     #[serde(default)]
     pub root: String,
+    /// a folder the user chose to show instead of the pane's (empty: the tree follows the pane, AC-275)
+    #[serde(default)]
+    pub browse: String,
     #[serde(default)]
     pub expanded: Vec<String>,
     #[serde(default)]
@@ -44,6 +47,13 @@ pub struct Pane {
     pub active_tab: Option<usize>,
     #[serde(default)]
     pub updated: u64,
+}
+
+impl Pane {
+    /// The folder the tree shows: the one the user chose, else the pane's.
+    pub fn shown(&self) -> &str {
+        if self.browse.is_empty() { &self.root } else { &self.browse }
+    }
 }
 
 #[derive(Serialize, Deserialize, Default)]
@@ -164,8 +174,8 @@ impl Store {
         }
     }
 
-    /// The bridge reports the pane's cwd. A new root clears the tree state but keeps tabs;
-    /// true when the root changed.
+    /// The bridge reports the pane's cwd. A new root clears the tree state but keeps tabs, unless
+    /// the tree shows a folder the user chose (AC-275): that tree stays as it is; true when the root changed.
     pub fn set_root(&self, key: &str, root: &str) -> bool {
         let rev = {
             let mut data = self.data.lock();
@@ -174,9 +184,11 @@ impl Store {
                 return false;
             }
             p.root = root.to_string();
-            p.expanded.clear();
-            p.selected.clear();
-            p.scroll = 0.0;
+            if p.browse.is_empty() {
+                p.expanded.clear();
+                p.selected.clear();
+                p.scroll = 0.0;
+            }
             p.rev += 1;
             p.updated = now();
             p.rev
@@ -196,7 +208,7 @@ impl Store {
             if pane.rev != cur.rev || (!cur.root.is_empty() && pane.root != cur.root) {
                 return Err(Refused::Stale(cur.clone()));
             }
-            let watched = pane.root != cur.root || pane.expanded != cur.expanded
+            let watched = pane.shown() != cur.shown() || pane.expanded != cur.expanded
                 || !pane.tabs.iter().map(|t| &t.path).eq(cur.tabs.iter().map(|t| &t.path));
             pane.rev = cur.rev + 1;
             pane.updated = now();
@@ -252,11 +264,14 @@ impl Store {
     }
 }
 
-/// A pane's state as a panel may write it: an absolute root (or none yet), tabs in a known
+/// A pane's state as a panel may write it: an absolute root (or none yet) and chosen folder (or none), tabs in a known
 /// view, the active tab one of them.
 fn checked(p: &Pane) -> Result<(), String> {
     if !p.root.is_empty() && !p.root.starts_with('/') {
         return Err(format!("The root is not a full path: {}", p.root));
+    }
+    if !p.browse.is_empty() && crate::http::abs(&p.browse).is_err() {
+        return Err(format!("The chosen folder is not a full path without '..': {}", p.browse));
     }
     if let Some(t) = p.tabs.iter().find(|t| !VIEWS.contains(&t.view.as_str())) {
         return Err(format!("A tab's view is one of {}: {}", VIEWS.join(", "), t.view));

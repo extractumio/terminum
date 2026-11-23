@@ -66,13 +66,14 @@ pub fn plan(panes: Vec<(Option<String>, Pane)>) -> (watcher::Paths, HashMap<Stri
     let mut local = watcher::Paths::default();
     let mut remote: HashMap<String, RemoteWatch> = HashMap::new();
     for (host, p) in panes {
+        let root = p.shown().to_string();
         let files = p.tabs.into_iter().map(|t| t.path);
         let Some(h) = host else {
-            local.extend(watcher::wanted(&p.root, &p.expanded, files));
+            local.extend(watcher::wanted(&root, &p.expanded, files));
             continue;
         };
         let w = remote.entry(h).or_default();
-        if w.root.is_empty() { w.root = p.root } else if !p.root.is_empty() { w.expanded.push(p.root) }
+        if w.root.is_empty() { w.root = root } else if !root.is_empty() { w.expanded.push(root) }
         w.expanded.extend(p.expanded);
         w.files.extend(files);
     }
@@ -126,6 +127,15 @@ mod tests {
         let (_, remote) = plan(vec![(Some("devbox.example".into()), pane("/home/alex/a", &[], &[])),
             (Some("devbox.example".into()), pane("/home/alex/b", &[], &[]))]);
         assert_eq!(remote["devbox.example"].root, "/home/alex/a");
+        assert_eq!(remote["devbox.example"].expanded, vec!["/home/alex/b".to_string()]);
+    }
+
+    #[test]
+    fn ac275_a_chosen_folder_is_watched_in_the_panes_place() {
+        let chosen = |root: &str, browse: &str| Pane { browse: browse.into(), ..pane(root, &[], &[]) };
+        let (_, remote) = plan(vec![(Some("devbox.example".into()), chosen("/home/alex/a", "/var/log")),
+            (Some("devbox.example".into()), chosen("/home/alex/b", ""))]);
+        assert_eq!(remote["devbox.example"].root, "/var/log");
         assert_eq!(remote["devbox.example"].expanded, vec!["/home/alex/b".to_string()]);
     }
 

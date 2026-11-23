@@ -27,3 +27,16 @@ export const hasScheme = (u: string) => /^[a-z][a-z0-9+.-]*:/i.test(u);
 export function decodePath(url: string): string {
   try { return decodeURIComponent(url); } catch { return url; }
 }
+
+/** A folder typed by the user (AC-275): a full path, `~` or `~/…` from the pane's home, or a
+ *  path relative to `base`; `.` and `..` resolved. Why not, when it cannot be one. */
+export function typedFolder(text: string, base: string, home: string | null): { path: string } | { error: string } {
+  const t = text.trim();
+  if (!t) return { error: "Type a folder's path" };
+  if (t === "~" || t.startsWith("~/")) {
+    if (!home) return { error: "The pane's home is not known here: type a full path" };
+    return { path: resolvePath(home, t.slice(2)) };
+  }
+  if (t.startsWith("~")) return { error: "Only your own home (~ or ~/…) is known here: type a full path" };
+  return { path: resolvePath(base || "/", t) };
+}
