@@ -85,6 +85,9 @@ export async function openPage(browser, { device = WIDE, secret = null, stored =
     // a request with a credential of another boot is refused, as terminumd does (401)
     const sign = req.headers()["x-tm-session"];
     if (sign && !knows(sign)) return route.fulfill({ status: 401, contentType: "application/json", body: JSON.stringify({ error: "bad_session" }) });
+    if (p === "/api/supervisor/incidents") {
+      return route.fulfill({ contentType: "application/json", body: "[]" });
+    }
     if (p === "/custom.css") return route.fulfill({ contentType: "text/css", body: typeof css === "function" ? css() : css });
     if (p.startsWith("/fb/")) return route.fulfill({ status: 404, body: "" });
     // the tasks made in the session shown (terminum-kanban.md AC-150): none here
@@ -116,6 +119,8 @@ export async function openPage(browser, { device = WIDE, secret = null, stored =
     if (settings) say({ t: "settings", ...settings });
     say({ t: "layout", groups: layout });
   });
+  // Browser fixtures have no incident feed unless the test supplies one.
+  await page.routeWebSocket(`${ORIGIN.replace("http", "ws")}/api/supervisor/incidents/watch`, () => {});
   await page.goto(ORIGIN + url);
   return { page, context, sent, requests, sockets, errors, credential: () => credentialOf(secret, boot), restart: () => { boot = crypto.randomBytes(32).toString("hex"); }, say: (m) => say(m), close: () => context.close() };
 }
