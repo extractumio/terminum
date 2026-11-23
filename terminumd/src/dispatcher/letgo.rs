@@ -30,13 +30,16 @@ pub(crate) fn let_go_of(app: &Shared, r: Run) -> Vec<String> {
 
 /// The human gives up on a run they cannot reach or no longer want (AC-138).
 pub(super) async fn give_up(State(app): State<Shared>, Path(id): Path<String>) -> Response {
-    answer(gave_up(&app, &id, "The human").await.map(|ids| json!({"ok": true, "ids": ids})))
+    answer(gave_up(&app, &id).await.map(|ids| json!({"ok": true, "ids": ids})))
 }
+
+#[derive(Clone, Copy, PartialEq)]
+pub(crate) enum Giver { Human, Manager }
 
 /// `who` gives up on task `id`: a wait is called off, the task where it stood (AC-158); else its run is given up.
 /// The tasks it concerned.
-pub(crate) async fn gave_up(app: &Shared, id: &str, who: &'static str) -> Result<Vec<String>, String> {
-    gave_up_checked(app, id, who, |_, _| Ok(()), |tx, ids| {
+pub(crate) async fn gave_up(app: &Shared, id: &str) -> Result<Vec<String>, String> {
+    gave_up_checked(app, id, Giver::Human, |_, _| Ok(()), |tx, ids| {
         for id in ids {
             let key = ops::key_of(tx, id)?;
             ops::log(tx, &key, crate::tasks::store::HUMAN, "why", "The human gave up on its run.", None, ops::now())?;
@@ -46,10 +49,11 @@ pub(crate) async fn gave_up(app: &Shared, id: &str, who: &'static str) -> Result
 }
 
 pub(crate) async fn gave_up_checked(
-    app: &Shared, id: &str, who: &'static str,
+    app: &Shared, id: &str, giver: Giver,
     check: impl FnOnce(&rusqlite::Transaction, &str) -> Result<(), String> + Send + 'static,
     record: impl FnOnce(&rusqlite::Transaction, &[String]) -> Result<(), String> + Send + 'static,
 ) -> Result<Vec<String>, String> {
+    let who = match giver { Giver::Human => "The human", Giver::Manager => "The project's manager" };
     let wanted = id.to_string();
     let done = store(app, move |tx| {
         check(tx, &wanted)?;
@@ -61,6 +65,9 @@ pub(crate) async fn gave_up_checked(
             Ok(None)
         } else {
             let run = runs::give_up(tx, &key)?;
+            if giver == Giver::Human {
+                super::giveup::record(tx, &run)?;
+            }
             record(tx, &run.ids)?;
             Ok(Some(run))
         }
@@ -70,7 +77,13 @@ pub(crate) async fn gave_up_checked(
             told(app, id);
             vec![id.to_string()]
         }
-        Some(r) => let_go_of(app, r),
+        Some(r) => {
+            let ids = let_go_of(app, r.clone());
+            if giver == Giver::Human {
+                super::giveup::interrupt(app, &r).await;
+            }
+            ids
+        }
     })
 }
 

@@ -1003,6 +1003,49 @@ Scenario: AC-138 edge — giving up
   When the user presses Give up in API-12's window and confirms
   Then its open tasks are FAILED "The human gave up on it." but one whose commit is queued, which stays queued (`terminum-integration.md` AC-187), its slot is free, and Dispatcher lets go of the window, which stays
 
+Scenario Outline: AC-138 happy path — giving up interrupts the linked agent
+  Given API-12's run has <agent> running in front in the pane it started and marked
+  When the human confirms Give up while its agent is working
+  Then Dispatcher sends Esc only to that marked pane outside a tmux mode
+  And once its empty input box is ready, Dispatcher sends one fixed line through the §9 gate
+  And the line is "[terminum Dispatcher] API-12: The human gave up on this task. Stop your background work and subagents, start nothing new, and end your turn."
+  And no task title, text or comment enters the line
+  And its conversation, shell and window stay open; Dispatcher sends no exit command or process signal
+  Examples:
+    | agent       |
+    | Claude Code |
+    | Codex       |
+
+Scenario: AC-138 edge — the agent already idle
+  Given API-12's linked agent is idle with an empty input box
+  When the human confirms Give up
+  Then the same guarded Esc and fixed line reach that agent once
+  And an input box holding a draft is preserved and no line is pasted
+
+Scenario Outline: AC-138 edge — giving up cannot type into another program
+  Given API-12's linked pane <condition>
+  When the human confirms Give up
+  Then its tasks and slot are released as above, with no Esc, paste or Enter in that pane
+  And the task says why the stop instruction could not be delivered
+  Examples:
+    | condition                                  |
+    | has recorded its agent's exit               |
+    | runs a shell or another program in front    |
+    | is in a tmux mode                           |
+    | no longer bears this run's mark             |
+
+Scenario: AC-138 failure — interruption cannot reach an empty box
+  Given API-12's marked agent takes Esc but shows a draft, question or unknown screen, or remains working for 5 seconds
+  When Dispatcher tries to deliver the stop instruction
+  Then it types no line and records "Give up stop instruction not delivered: <reason>."
+  And it never retries typing after Give up
+
+Scenario: AC-138 edge — the next task tool call after Give up
+  Given the human gave up API-12 in this session, then archived it or ran it in another session
+  When the old agent calls a terminum task tool on API-12
+  Then the call changes nothing and answers the same fixed Give up line
+  And this notice survives a terminumd restart and does not block the new session's calls
+
 Scenario: AC-138 edge — an agent deleted
   Given API-12 DONE on Opus reviewer
   When the agent is deleted
@@ -2326,11 +2369,13 @@ Codex's main UserPromptSubmit confirms its conversation ID. A SessionStart or an
 **The typing gate.** All in order, on the pane's typing queue so a human's keys cannot interleave; any miss types nothing, or no Enter, and the task says "Not delivered: <which>", but a miss of the request for a result says nothing: a later walk asks again (AC-123):
 
 1. The pane's `@terminum-run` is this run's.
-2. The hooks say the turn ended (for the first prompt: Claude Code's SessionStart, or a box empty for 2 s should its hook have gone unheard: the prompt's own hook proves them); no exit is recorded and `pane_current_command` is no shell; the pane is in no tmux mode. The run's kind says whose screen it is: `pane_current_command` is a version number for Claude Code.
+2. The hooks say the turn ended (for the first prompt: Claude Code's SessionStart, or a box empty for 2 s should its hook have gone unheard: the prompt's own hook proves them); no exit is recorded and `pane_current_command` is no shell; the pane is in no tmux mode. The run's kind says whose screen it is: `pane_current_command` is a version number for Claude Code. Give up (AC-138) first sends Esc under this queue, guarded by the run mark, no exit, no mode, a known input box and a foreground program of the run's kind (`claude`, its version number, or `codex`); it waits up to 5 seconds for an empty box without the current turn's "esc to interrupt" indicator. This stop instruction alone bypasses the released run's stale turn-ended flag and hooks' working lease: an interrupted turn may fire no Stop, and background subagents still need its instruction. The same foreground command, mark, exit and mode are checked by tmux at Esc, paste and Enter. Human input queued after the decision cancels delivery; drafts and questions receive no paste. A miss is recorded on its tasks; no retry types later, including after restart. Ordinary prompts recheck the durable Give up fact before paste and Enter.
 3. The screen reads as a known, empty input box of that kind (AS-125). Anything else, a new version's changed screen included, is not empty.
 4. Paste with `paste-buffer -p`, no Enter; tmux itself reads the mark and the exit in the same command (`if-shell -F` with both branches, the other one printing a refusal: tmux answers it twice, and the control client gives the branch's answer to the gate and the next command its own), so an agent ending just before leaves nothing on its shell's line.
 5. Read the screen again until the text or Claude's fold marker stands in the box, with no dialog, within its time below (a first prompt's longer: an agent still starting shows it late).
 6. Enter.
+
+Give up (AC-138) also passes one fixed stop instruction with the run's task IDs, never stored text. Its typing queue wait is bounded to 5 seconds; tmux commands retain the control client's answer timeout, and the gate cleans up its paste buffer on delivery failure. A failure keeps the run released and is recorded on its tasks. A `gave_up` event with the run ID preserves the next task-tool response for that run's original pane, including after archive or a new run in another pane. A later run in the same pane replaces that caller identity.
 
 Only the following pass: a task's ID with fixed words, never a title or a comment, Auto-Dispatcher's two prompts among them (AC-170: a round's with its candidates' IDs, a started task's with its own and its subtasks', AC-185), and the integration queue's two return notices and its round's words (`terminum-integration.md` AC-192, AC-194); the prompt of a batch's integration task: its project's saved Prompt with terminumd's facts filled in (`terminum-integration.md` §9); the prompt of a human's RUN: for one task its title and text, for several, a main task with its subtasks among them (AC-185), their numbers, the human's message, the humans' answers, the human comments saved since the previous run on a continuation (AC-122), and the humans' and the project's manager's comments a fresh start carries, each said to be whose, with the agents' counted in fixed words (AC-138, AC-209); the prompt of a schedule's firing: the schedule's own title and text, as a human saved them or its project's manager made them, with fixed words that name who set it, a human or the project's manager (`terminum-schedules.md` AC-162); the message of a project's manager's run_task, said to be the manager's, with the task's title and text, the humans' answers and the comments a fresh start carries (`terminum-agents.md` AC-179, AC-209); the resume after a tmux server's end in fixed words with the open tasks' IDs (AC-205); the going on of a task that waited for other tasks, in fixed words with its and their IDs (AC-210); the close-out of AC-166 in fixed words with the project's language, a name of letters, spaces, hyphens and brackets that a human set; the first prompt of a human's + Session, its words and its files' lines, once, into the pane that request started, the request holding the run's start until it went in or missed (AC-204); a Supervisor round's first prompt, fixed words with its case file's ID, once, into its marked round pane (terminum-supervisor.md AC-234); a human's Talk press's first prompt, fixed words with the incident's case file ID, once, into the pane that press started, as AC-204 (terminum-supervisor.md AC-244). terminumd keeps what it typed for 5 minutes and matches it to the hook's `prompt`, on that field's first 20,000 characters: such a prompt is not new work (AC-122) and is no activity (AC-123). Each paste and the window's command are rows of the input log, as Dispatcher's (terminum.md AC-147).
 
@@ -2394,7 +2439,7 @@ Depends on `terminum-kanban.md`'s Stage 1. All three stages belong to terminum's
 ## 11. Checklist with Definition of Done
 
 - [x] AC-121 — `web/test/e2e_taskrun.mjs` (Run in the task's window: at once, or the dialog for an agent's words, subtasks, no agent, no room, a refusal), `cargo test dispatcher::press` (a linked session holds RUN only while open; its server not read now is said), `cargo test lists::` (a pane open, then closed, on a real tmux), `cargo test dispatcher::screen`, `cargo test tmux::control` (the gate's guarded paste and Enter get their own answers), `web/test/e2e_livedispatcher.mjs` on `scripts/fake_agent.py`; on the real programs, outside every gate as it spends model calls: `TM_TEST_REAL_AGENTS=1 TM_TEST_CLOCK_SCALE=1 node web/test/e2e_live.mjs board` (`TM_TEST_REAL_CODEX=1` too); `SECURITY.md` carries Dispatcher's typing
-- [x] AC-138 — `cargo test dispatcher::runs`, `cargo test dispatcher::press`, `cargo test tasks::agents`, `web/test/e2e_liveboardagents.mjs`, `web/test/e2e_liveschedules.mjs` (`node web/test/e2e_live.mjs folded`: wide then phone, RUN's close controls and keyboard Run through a held board refresh), `web/test/cardstate.test.mjs` (a dot at work)
+- [x] AC-138 — `cargo test dispatcher::giveup` (guarded Esc and fixed stop prompt, native Claude/Codex stand-ins, refusal paths and durable tool notice), `cargo test dispatcher::runs`, `cargo test dispatcher::press`, `cargo test tasks::agents`, `web/test/e2e_liveboardagents.mjs`, `web/test/e2e_liveschedules.mjs` (`node web/test/e2e_live.mjs folded`: wide then phone, RUN's close controls and keyboard Run through a held board refresh), `web/test/cardstate.test.mjs` (a dot at work)
 - [x] AC-137 — `cargo test tasks::agents`, `cargo test tasks::store` (`ac137_one_pool_s_agents_each_go_to_a_project`), `cargo test tasks::auto` (`ac137_a_task_names_an_agent_of_its_own_project_alone`), `cargo test roles`, `cargo test cli::mcp`, `cargo test auth::checks`, `web/test/e2e_liveboardagents.mjs`, `web/test/astyped.test.mjs`, `SECURITY.md` carries a project agent's command
 - [x] AC-122 — `cargo test dispatcher::hooks`, `cargo test dispatcher::acts` (RUN cancels a waiting close already decided), `cargo test ac122_save_twice` (Save, Save, Run through the real task routes and private tmux, then no replay), `cargo test codex_run_` (RUN after hook review and the missing-session diagnostic, through the task routes and private tmux), `web/test/e2e_taskrun.mjs` (all columns, held sessions, queue and refusals; one press in the task's window, Run from scratch), `web/test/e2e_livewaiting.mjs` (answer before closing and Save, Save, Run, `e2e_live.mjs waiting`), `web/test/e2e_livedispatcher.mjs` (answer after closing), `web/test/e2e_livearchived.mjs` (a human's prompt restores archived DONE and IN PROGRESS cards), `cargo test messages::own` (a turn it scheduled itself), `cargo test cli::hook` (its scheduled prompt and source), its real run as AC-121's
 - [x] AC-209 — `cargo test tasks::notify` (the words, plain names, who hears, several and edited comments, an ended session, the marks, a comment's way end to end), `cargo test tasks::tell` (lines not heard go again), `cargo test dispatcher::carry`, `cargo test dispatcher::press` (`ac209_a_fresh_start_carries_the_humans_and_the_manager_s_comments_and_counts_the_agents`, the press's message once, an answer once), `web/test/e2e_taskwin.mjs` (`node web/test/e2e_all.mjs webTaskWin`: each comment's mark), `scripts/e2e_comment_notice.py` (real terminum hook commands with synthetic events for both agents: tool context, idle prompt context, older hooks' fallback and Heard on the task, a pane closed without SessionEnd, and a restart with a notice waiting)
