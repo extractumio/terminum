@@ -81,7 +81,7 @@ const ACTIVE: &str = "state IN ('new', 'shadow', 'raised', 'recurred')";
 
 /// AC-211: a repeat is the condition back after it resolved, or, where `counted` holds, an evidence row the signal
 /// did not hold. A counted reading's rows are its events; other readings' rows are inputs to a level or a window
-/// total, so a persisting condition only moves last seen.
+/// total, so a persisting condition only moves last seen. `self.round_failed` counts every call (`diagnostic`).
 fn repeated_count(counted: &str) -> String {
     format!("count + (state = 'resolved' OR ({counted} AND EXISTS (SELECT 1 FROM json_each(excluded.evidence) n
         WHERE n.value NOT IN (SELECT o.value FROM json_each(supervisor_signals.evidence) o))))")
@@ -273,22 +273,18 @@ pub(super) fn get(tx: &Transaction, project: &str, key: &str) -> Result<Signal, 
 
 
 /// A point event is retained by case and never resolves unrelated failures. Each call is an event of its own
-/// (a refused finding, or a round's one failure) citing the same round row, so every call is a repeat (AC-235).
+/// (a refused finding, or a round's one failure) citing the same round row, so every call is a repeat (AC-235);
+/// its value must change per event, since an unchanged reading writes nothing.
 pub(super) fn round_failed(tx: &Transaction, project: &str, id: &str, metric: &str, value: f64, at: i64) -> Result<(), String> {
-    record_diagnostic(tx, project, "self.round_failed", ("round", id, metric),
-        &[Evidence::SupervisorRounds(id.into())], (value, 0.), at, "count + 1")
+    diagnostic(tx, project, "self.round_failed", ("round", id, metric),
+        &[Evidence::SupervisorRounds(id.into())], (value, 0.), at)
 }
 
 /// A code-owned diagnostic carries typed evidence and a fixed metric.
 pub(super) fn diagnostic(tx: &Transaction, project: &str, detector: &str, subject: (&str, &str, &str),
-    evidence: &[Evidence], measured: (f64, f64), at: i64) -> Result<(), String> {
-    record_diagnostic(tx, project, detector, subject, evidence, measured, at, &repeated_count("1"))
-}
-
-#[allow(clippy::too_many_arguments)]
-fn record_diagnostic(tx: &Transaction, project: &str, detector: &str, subject: (&str, &str, &str),
-    evidence: &[Evidence], (value, threshold): (f64, f64), at: i64, repeat: &str) -> Result<(), String> {
+    evidence: &[Evidence], (value, threshold): (f64, f64), at: i64) -> Result<(), String> {
     let (kind, id, metric) = subject;
+    let repeat = if detector == "self.round_failed" { "count + 1".into() } else { repeated_count("1") };
     let key = fingerprint(project, detector, subject);
     let evidence = encode(&evidence)?;
     let measure = encode(&Measure { value, baseline: 0., threshold, window_start: at, window_end: at })?;
