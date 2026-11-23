@@ -21,6 +21,7 @@ pub(crate) enum Role {
     #[default]
     Worker,
     Manager,
+    Token { manager: bool },
     Supervisor(Option<Level>),
 }
 
@@ -33,8 +34,8 @@ impl From<bool> for Role {
 impl Role {
     pub fn name(self) -> &'static str {
         match self {
-            Self::Worker => "worker",
-            Self::Manager => "manager",
+            Self::Worker | Self::Token { manager: false } => "worker",
+            Self::Manager | Self::Token { manager: true } => "manager",
             Self::Supervisor(_) => "supervisor",
         }
     }
@@ -54,8 +55,9 @@ impl Role {
             return matches!(self, Self::Supervisor(Some(_)));
         }
         match self {
-            Self::Manager => true,
-            Self::Worker => !super::MANAGER_TOOLS.contains(&tool),
+            Self::Token { .. } if tool == supervisor::review::TOOL => false,
+            Self::Manager | Self::Token { manager: true } => true,
+            Self::Worker | Self::Token { manager: false } => !super::MANAGER_TOOLS.contains(&tool),
             Self::Supervisor(None) => false,
             Self::Supervisor(Some(level)) => {
                 OBSERVER_TOOLS.contains(&tool)

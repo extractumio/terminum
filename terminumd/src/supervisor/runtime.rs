@@ -116,6 +116,7 @@ fn set_enabled(store: &Store, project: &str, on: bool, at: i64) -> Result<Option
                     last_ok = NULL, reported_dead = 0 WHERE enabled = 0 RETURNING generation",
                 (project, at), |r| r.get(0)).optional().map_err(sql)
         } else {
+            tx.execute("DELETE FROM supervisor_changes WHERE project = ?1", [project]).map_err(sql)?;
             tx.execute("DELETE FROM supervisor_round_requests WHERE fingerprint IN (
                 SELECT fingerprint FROM supervisor_signals WHERE project = ?1)", [project]).map_err(sql)?;
             tx.query_row("UPDATE project_supervisor SET enabled = 0, generation = generation + 1, reported_dead = 0
@@ -161,13 +162,19 @@ impl Runtime {
 
 pub(crate) async fn collect(app: Shared) {
     let migrated = app.clone();
-    match off(move || migrated.tasks.with(|tx| {
-        let mut changed = false;
-        for project in enabled(tx)? {
-            changed |= super::review::sync_on_enable(tx, &project.id, now())?;
-        }
-        Ok(changed)
-    })).await {
+    match off(move || {
+        let projects = migrated.tasks.snapshot(SCHEMA, enabled)?;
+        if projects.is_empty() { return Ok(false); }
+        migrated.tasks.with(|tx| {
+            let mut changed = false;
+            for project in projects {
+                if rounds::enabled(tx, &project.id)? == Some(project.generation) {
+                    changed |= super::review::sync_on_enable(tx, &project.id, now())?;
+                }
+            }
+            Ok(changed)
+        })
+    }).await {
         Ok(true) => crate::tasks::schedulesapi::heard(&app),
         Ok(false) => (),
         Err(error) => tracing::warn!(event = "supervisor.review_schedules", %error),

@@ -154,7 +154,7 @@ pub fn example(role: Role, c: &Card) -> &'static str {
 
 /// A role's search index: a tool's name, its keywords, its area and text, its arguments' names.
 pub fn index(role: Role) -> &'static Index {
-    static INDEXES: [OnceLock<Index>; 6] = [const { OnceLock::new() }; 6];
+    static INDEXES: [OnceLock<Index>; 8] = [const { OnceLock::new() }; 8];
     let slot = match role {
         Role::Worker => 0,
         Role::Manager => 1,
@@ -162,6 +162,8 @@ pub fn index(role: Role) -> &'static Index {
         Role::Supervisor(Some(Level::Advisor)) => 3,
         Role::Supervisor(Some(Level::Operator)) => 4,
         Role::Supervisor(None) => 5,
+        Role::Token { manager: false } => 6,
+        Role::Token { manager: true } => 7,
     };
     INDEXES[slot].get_or_init(|| {
         let docs: Vec<(String, String, &Card)> = cards(role).filter_map(|c| {
