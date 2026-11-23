@@ -1343,7 +1343,6 @@ These cases have remaining behavior or verification gaps. Section 11 names the c
 | AC-240 | Two drifting sessions can still go to the weekly list instead of opening the specified decision card. Standing-rule reports need to attribute changes in recurring questions to the accepted rule. |
 | AC-241 | A hold needs to trigger the fixed task comment and undo notice when its signal has no other nudge trigger. |
 | AC-244 | The owner's manager session started with the Supervisor skill needs the project-scoped signal reader. Talk already has its own scoped path. |
-| AC-246 | Run outcomes need to recognize typed conflicts and withdrawals from integration as well as red target returns. |
 
 ## 8. Recommendation and ownership
 
@@ -1546,7 +1545,7 @@ task with a comment. A missing-review return permits a same-commit retry.
 |---|---|---|
 | Hold | Target stays red during the hold, or the stopped run takes another approach. | Human releases the unchanged target or task; successful work on that same subject corroborates it. |
 | Fix task made | Done and stayed resolved. | Archived unrun or done and recurred. |
-| Task started or promoted | Done without return. | Failed, stopped by the human or returned. |
+| Task started or promoted | Done without return. | Failed, stopped by the human, or returned from integration by a typed red, conflict or out exit (`terminum-integration.md` AC-187) between its launch and the next one. |
 | Alert | Owner acted or hold proved right. | Owner marked Wrong. |
 | Cause | Fix built on it held. | Problem recurred with fix in place. |
 | Decision card | Answered and chosen yardstick held. | Closed unanswered, or recommended answer's yardstick failed. |
@@ -1651,7 +1650,7 @@ Enable none of the runtime cases by default. The stages below list the cases in 
 - [x] AC-243 — `ac243_digest_only_when_new` checks the daily cap, quiet day, five-item bound and retained stale heartbeat. `scripts/e2e_supervisor_comms.py` checks the quiet and live APIs.
 - [ ] AC-244 — `scripts/e2e_supervisor_comms.py` checks the signed-in Talk press, the retained case prompt in private tmux, the hook notice and answer on the incident task. The manager skill path remains open.
 - [x] AC-245 — `ac245_hold_undo_and_switch_off` in `scripts/e2e_roles.py` covers the four holds and their undo, audit, project incidents, shadow and switch-off. The same drill checks role refusals. `supervisor::holds_tests` covers grouped runs, retry after a failed launch, incident closure and a seeded level 3 signal without a round. `webSupervisor` exercises the hold and incident controls in Chromium and WebKit.
-- [ ] AC-246 — `supervisor::outcomes::tests` checks each decision type, three scheduled horizons and `self.unjudged`. `scripts/e2e_supervisor_outcomes.py` exercises the real collector with due decisions in a private store. Conflict and withdrawal outcomes remain open.
+- [x] AC-246 — `supervisor::outcomes::tests` checks each decision type, three scheduled horizons and `self.unjudged`. `scripts/e2e_supervisor_outcomes.py` exercises the real collector with due decisions in a private store. `ac246_run_counts_each_typed_integration_return_of_its_episode` judges a run wrong on its episode's typed red, conflict or out exit, written by the queue's own writer, and ignore landed exits, earlier attempts and later ones.
 - [x] AC-247 — `ac247_two_unchanged_owner_releases_divert_only_that_rules_hold` checks hold isolation. `supervisor::outcomes::tests` checks distinct decisions, grouped alerts and replay. `scripts/e2e_supervisor_outcomes.py` checks the signed-in owner key and socket refusal. `webSupervisor` exercises the incident and replay controls in Chromium and WebKit. `liveSupervisor` repeats the owner workflow against a private terminumd.
 - [x] AC-248 — `supervisor::reflection_tests` checks trigger identity, lease generations and the decision band. `scripts/e2e_supervisor_reflection.py` runs each retained trigger through Dispatcher, private tmux and the proposal-only MCP role. `webSupervisor` shows the retained proposal.
 - [x] AC-249 — `ac249_agent_rates_and_sample_floor` checks measured run, task and price samples. `scripts/e2e_supervisor_reflection.py` checks the owner routing card with missing return data. `webSupervisor` displays a small sample and its interval.
