@@ -75,8 +75,6 @@ struct PreparedFinding<'a> {
     evidence: String,
     measure: String,
     scores: String,
-    /// A counted reading's evidence rows, each as `fresh_rows` reads a stored one.
-    rows: Option<Vec<String>>,
 }
 
 const ACTIVE: &str = "state IN ('new', 'shadow', 'raised', 'recurred')";
@@ -88,21 +86,17 @@ fn repeated_count(fresh: &str) -> String {
     format!("count + (state = 'resolved' OR {fresh})")
 }
 
-fn evidence_rows(evidence: &[Evidence]) -> Result<Vec<String>, String> {
-    evidence.iter().map(|row| serde_json::to_value(row).map(|v| v.to_string())
-        .map_err(|e| format!("Could not encode Supervisor signal: {e}"))).collect()
-}
-
-/// Whether `rows` hold one the stored signal `key` does not. AC-217: one lookup and one pass over each side, so a
-/// counted signal with thousands of rows costs the write turn a parse, never a scan of its rows per row.
-fn fresh_rows(tx: &Transaction, key: &str, encoded: &str, rows: &[String]) -> Result<bool, String> {
-    let held: Option<String> = tx.prepare_cached("SELECT evidence FROM supervisor_signals WHERE fingerprint = ?1")
-        .and_then(|mut q| q.query_row([key], |r| r.get(0)).optional()).map_err(sql)?;
-    let Some(held) = held.filter(|held| held != encoded) else { return Ok(false) };
-    let held: Vec<serde_json::Value> = serde_json::from_str(&held)
-        .map_err(|e| format!("Could not read Supervisor signal {key}: {e}"))?;
-    let held: std::collections::HashSet<String> = held.iter().map(serde_json::Value::to_string).collect();
-    Ok(rows.iter().any(|row| !held.contains(row)))
+/// Whether `evidence` (`encoded`) holds a row the stored signal `key` does not. AC-217: one lookup that returns the
+/// stored rows only when they differ, and one pass over each side, so a counted signal with thousands of rows costs
+/// the write turn at most a parse, never a scan of its rows per row.
+fn fresh_rows(tx: &Transaction, key: &str, encoded: &str, evidence: &[Evidence]) -> Result<bool, String> {
+    let held: Option<Vec<Evidence>> = tx.prepare_cached("SELECT CASE WHEN evidence = ?2 THEN NULL ELSE evidence END
+        FROM supervisor_signals WHERE fingerprint = ?1").and_then(|mut q| q.query_row((key, encoded), |r|
+            r.get_ref(0)?.as_str_or_null()?.map(|_| decode(r, 0)).transpose()).optional())
+        .map_err(sql)?.flatten();
+    let Some(held) = held else { return Ok(false) };
+    let held: std::collections::BTreeSet<_> = held.iter().collect();
+    Ok(evidence.iter().any(|row| !held.contains(row)))
 }
 
 struct PreparedRule<'a> {
@@ -139,7 +133,6 @@ pub(super) fn prepare(evaluation: &Evaluation) -> Result<Prepared<'_>, String> {
                 key: fingerprint(&evaluation.project, rule, found.key()), found,
                 evidence: encode(&found.evidence)?, measure: encode(&found.measure)?,
                 scores: encode(&RecordedScores { scores: found.scores, impact_basis: found.assessment.clone(), charter_breach: found.charter_breach })?,
-                rows: matches!(found.source, Source::Count(_)).then(|| evidence_rows(&found.evidence)).transpose()?,
             })
         }).collect::<Result<_, _>>()?;
         let keys = encode(&findings.iter().map(|f| &f.key).collect::<Vec<_>>())?;
@@ -200,7 +193,7 @@ impl Prepared<'_> {
             for row in findings {
                 let ruled: bool = ruling.query_row((&row.key, &row.evidence), |r| r.get(0)).map_err(sql)?;
                 if ruled { continue; }
-                let fresh = match &row.rows { Some(rows) => fresh_rows(tx, &row.key, &row.evidence, rows)?, None => false };
+                let fresh = matches!(row.found.source, Source::Count(_)) && fresh_rows(tx, &row.key, &row.evidence, &row.found.evidence)?;
                 let accepted: bool = upsert.query_row(params![row.key, evaluation.project, rule, row.found.subject_kind,
                     row.found.subject_id, row.found.metric, row.evidence, row.measure, row.scores, evaluation.at,
                     if checked.mode == Mode::Shadow { "shadow" } else { "new" }, fresh],
@@ -303,9 +296,9 @@ pub(super) fn diagnostic(tx: &Transaction, project: &str, detector: &str, subjec
     evidence: &[Evidence], (value, threshold): (f64, f64), at: i64) -> Result<(), String> {
     let (kind, id, metric) = subject;
     let key = fingerprint(project, detector, subject);
-    let rows = evidence_rows(evidence)?;
-    let evidence = encode(&evidence)?;
-    let fresh = fresh_rows(tx, &key, &evidence, &rows)?;
+    let rows = evidence;
+    let evidence = encode(&rows)?;
+    let fresh = fresh_rows(tx, &key, &evidence, rows)?;
     let measure = encode(&Measure { value, baseline: 0., threshold, window_start: at, window_end: at })?;
     let scores = encode(&RecordedScores { scores: Scores { impact: 1, ..Scores::default() }, impact_basis: Default::default(), charter_breach: false })?;
     tx.execute(&format!("INSERT INTO supervisor_signals (fingerprint, project, detector, subject_kind, subject_id,

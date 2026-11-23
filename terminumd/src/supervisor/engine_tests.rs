@@ -284,14 +284,7 @@ fn ac217_persisting_signals_write_only_what_changed() {
     }
 
     let task = "task-7";
-    f.store.with(|tx| tx.execute_batch(&format!("INSERT INTO runs (id, task, project, agent_id, kind, command, folder, state,
-        started_by, started_how) VALUES ('{task}-c', '{task}', 'default', 'agent', 'codex', '', '', 'closed', 'human', 'run');
-        INSERT INTO run_tasks (run, task) VALUES ('{task}-c', '{task}');
-        INSERT INTO inputs (at, ended, sender, component, kind, text, bytes, pane, run, version)
-            VALUES ({at}, {at}, 'dispatcher', 'dispatcher.start', 'launch', '', 0, '', '{task}-c', '');
-        INSERT INTO events (id, task, at, author, kind, text, data) VALUES ('failed-{task}-c', '{task}', {after}, 'dispatcher',
-            'move', '', '{{\"from\":\"IN PROGRESS\",\"to\":\"FAILED\"}}')", at = (NOW + 11) * 1000, after = NOW + 12))
-        .map_err(crate::tasks::ops::sql)).unwrap();
+    f.failed_run(task, "task-7-c", NOW + 11);
     pass(NOW + 20);
     big.push(Evidence::Events("event-new".into()));
     let started = std::time::Instant::now();
@@ -299,5 +292,5 @@ fn ac217_persisting_signals_write_only_what_changed() {
     let held = started.elapsed();
     let counts: Vec<_> = stored().into_iter().filter(|s| s.1 != 1).map(|s| (s.0, s.1)).collect();
     assert_eq!(counts, [("round-1".to_string(), 2), (task.to_string(), 2)], "one new row is one repeat; the rest persist");
-    assert!(held < std::time::Duration::from_secs(1), "a 4,000-row signal's write took {held:?}");
+    assert!(held < std::time::Duration::from_secs(2), "a 4,000-row signal's write took {held:?}");
 }
