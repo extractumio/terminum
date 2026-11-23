@@ -386,6 +386,7 @@ async fn change(State(app): State<Shared>, Path(id): Path<String>, Json(body): J
         }
         if reorder {
             ops::reorder(tx, &id, before.as_deref(), at)?;
+            ops::log(tx, &was.key, HUMAN, "reorder", "The human reordered it.", None, at)?;
         }
         Ok(Ok((ops::get(tx, &id)?, follow)))
     }).await;

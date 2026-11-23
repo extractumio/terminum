@@ -76,6 +76,11 @@ pub fn questions(tx: &Transaction, author: &str, id: &str, text: &str, at: i64) 
     record_question(tx, author, id, text, None, at)
 }
 
+pub(crate) fn structured_questions(tx: &Transaction, author: &str, id: &str, text: &str, args: &Value, at: i64) -> Result<String, String> {
+    let question = super::choices::question(args)?;
+    record_question(tx, author, id, text, question.as_ref(), at)
+}
+
 pub(super) fn record_question(tx: &Transaction, author: &str, id: &str, text: &str, recorded: Option<&super::choices::Question>, at: i64) -> Result<String, String> {
     let mut data = json!({"questions": true});
     if let Some(question) = recorded {

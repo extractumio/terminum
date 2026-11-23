@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 //! AC-223: signed-in reads of one project's scoreboard and retained signal evidence.
 
-use axum::{Router, extract::{Path, Query, State}, response::Response, routing::get};
+use axum::{Router, extract::{Path, Query, State}, response::Response, routing::{get, post}, Json};
 use rusqlite::Transaction;
 use serde::{Deserialize, Serialize};
 
 use crate::app::Shared;
 use crate::http::off;
-use crate::tasks::{api::answer, ops::{check_project, now, project_place}};
+use crate::tasks::{api::{answer, store}, ops::{check_project, now, project_place}};
 
-use super::{SCHEMA, Signal, flow, scoreboard, rounds, settings, signals};
+use super::{SCHEMA, Signal, flow, governor, register, scoreboard, rounds, settings, signals};
 
 const PAGE: usize = 50;
 
@@ -17,6 +17,7 @@ pub(super) fn routes() -> Router<Shared> {
     Router::new()
         .route("/api/task-projects/{id}/supervisor/screen", get(screen))
         .route("/api/task-projects/{id}/supervisor/signals", get(more))
+        .route("/api/task-projects/{id}/supervisor/problems/{problem}/ruling", post(ruling))
 }
 
 #[derive(Serialize)]
@@ -55,6 +56,9 @@ struct SignalPage {
 struct Screen {
     project_name: String,
     indicators: Vec<Indicator>,
+    problems: Vec<register::Problem>,
+    spending: governor::Spending,
+    marked_tasks_eligible: bool,
     #[serde(flatten)]
     signals: SignalPage,
 }
@@ -95,7 +99,11 @@ async fn screen(State(app): State<Shared>, Path(id): Path<String>) -> Response {
     answer(off(move || app.tasks.snapshot(SCHEMA, |tx| {
         check_project(tx, &id)?;
         let (project_name, _, _) = project_place(tx, &id)?;
-        Ok(Screen { project_name, indicators: indicators(tx, &id)?, signals: signal_page(tx, &id, None)? })
+        let at = now();
+        Ok(Screen { project_name, indicators: indicators(tx, &id)?, signals: signal_page(tx, &id, None)?,
+            problems: register::ranked(tx, &id, at, true)?, spending: governor::spending(tx, &id, at)?,
+            marked_tasks_eligible: crate::tasks::auto::setting(tx, &id)?.supervisor_tasks })
+
     })).await)
 }
 
@@ -109,4 +117,17 @@ async fn more(State(app): State<Shared>, Path(id): Path<String>, Query(cursor): 
         check_project(tx, &id)?;
         signal_page(tx, &id, Some(&cursor.after))
     })).await)
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Ruling { reason: String }
+
+async fn ruling(State(app): State<Shared>, Path((project, problem)): Path<(String, i64)>, Json(input): Json<Ruling>) -> Response {
+    let result = store(&app, move |tx| {
+        register::rule(tx, &project, problem, &input.reason, now())?;
+        Ok(serde_json::json!({"ok": true}))
+    }).await;
+    if result.is_ok() { app.supervisor.wake(); }
+    answer(result)
 }

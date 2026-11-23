@@ -1304,19 +1304,18 @@ The existing mechanisms in §3 provide inputs or precedents for these open gaps.
 | AC-215 | Probe and judgment quality replay require retained inputs from their owning stages. |
 | AC-216 | The project tab switch gates collection and sensors. Stopping rounds and listing remaining holds belong to AC-234 and AC-245. |
 | AC-219 | The watchdog records a signal and exposes its last heartbeat through the project settings endpoint. Line delivery health belongs to AC-229. |
-| AC-221 | Bootstrap keeps high-impact register seeds and exposes hold eligibility. Consuming seeds, recording proposed holds and checking their verdicts belong to AC-236, AC-245 and AC-246. Charter breach inputs belong to AC-213. |
+| AC-221 | Bootstrap keeps high-impact register seeds and exposes hold eligibility. Recording proposed holds and checking their verdicts belong to AC-245 and AC-246. Charter breach inputs belong to AC-213. |
 | AC-222 | The project tab edits the project pack, runs the switch and manages import, export and probe approval. The critical line and the historical surface preview depend on AC-227–229, AC-250 and AC-263. |
-| AC-223 | The project screen shows its scoreboard, missing inputs and paged signals with evidence. Investigate, the register, holds, spends and Supervisor scorecard depend on their owning cases. |
+| AC-223 | The project screen shows its scoreboard, missing inputs and paged signals with evidence. Holds and the Supervisor scorecard depend on their owning cases. |
 | AC-224 | The line-failure producer depends on AC-229. Incident updates from rounds and holds depend on AC-234 and AC-245. |
 | AC-225 | The template reports an active hold and its deadline when the hold ledger is available (AC-245). |
 | AC-227 | The incident thread produces answer notices under AC-244. |
-| AC-231 | The store-backed pane role checks the existing catalog at discovery and execution. Round and Talk registration, case-file access and finding tools belong to AC-234, AC-235 and AC-244. Rule and spend checks belong to AC-237–239. |
-| AC-233 | Known causes from the problem register depend on AC-236. Interim holds depend on AC-245 and spend governance on AC-237. |
-| AC-234 | Register and owner-ruling context depend on AC-236 and AC-244. Investigation launches require local pane ancestry. |
-| AC-236 | Ranked register and protected yardstick. |
-| AC-237 | Judgment governor and deterministic fallback. |
-| AC-238 | Fix spend attribution and ceiling. |
-| AC-239 | Marks, rank proposals and override window. |
+| AC-231 | The store-backed pane role checks the existing catalog at discovery and execution. Round and Talk registration, case-file access and finding tools belong to AC-234, AC-235 and AC-244. Future hold and decision tools carry their own rule checks. |
+| AC-233 | Interim holds depend on AC-245. |
+| AC-234 | Talk context depends on AC-244. Investigation launches require local pane ancestry. |
+| AC-237 | Weekly review admission and its decision card depend on AC-242. Token caps are enforced when a usage report reaches the daemon. |
+| AC-238 | Weekly reporting depends on AC-242. Verifying a charter breach depends on the inputs in AC-213. |
+| AC-239 | The outside-text eligibility gate also depends on AC-262. |
 | AC-240 | Immediate and deferred decision cards. |
 | AC-241 | Deduplicated nudge through the comment path. |
 | AC-242 | Scheduled review and optional verdicts. |
@@ -1450,7 +1449,7 @@ A signed-in switch starts a scan within seconds: read available integrations, co
 | Authority | Allowed |
 |---|---|
 | Observer | Read its project signals, metrics and tasks, and record scoped findings and reports. Record a proposal concerning project rules or settings for review. Code delivers incidents. |
-| Advisor | Observer plus `open_problem`, `update_problem`, `propose_decision`, `propose_rank`, `request_review` and `propose_config_change`. Create authorized high-impact tasks and comment; mark design first under AC-251. |
+| Advisor | Observer plus `open_problem`, `update_problem`, `propose_decision`, `propose_rank`, `request_review` and `propose_config_change`. The governor creates authorized high-impact tasks from the ranked register after a checked finding or deterministic seed. Advisors can comment; mark design first under AC-251. |
 | Operator | Advisor plus `hold`, `release_hold`, `run_task`, `promote_queued_task`, `stop_task`, `list_runs` and `get_dashboard`, under their scope, rule, signal and budget checks. Its `run_task` takes the task ID and agent alone and starts the task as Auto-Dispatcher's started task, told only its ID in fixed words (terminum-dispatcher.md AC-170); its `stop_task` is a Give up (terminum-dispatcher.md AC-138). No word of the caller reaches a pane. |
 
 `list_signals`, `get_signal`, `get_metric` and `record_finding` use the project's data and checked IDs. A live round can fetch its case file by ID. Tool discovery and each execution use the server's current role, project, level and round authority. The launcher's store mark binds the pane to its project and enabled generation before the agent starts. A surviving pane with a stale mark has no tools. Local process ancestry must match the mark. A round's session and a Talk press's session are the project's Supervisor caller, neither worker nor manager (terminum-agents.md AC-174), though a human starts Talk's. There is no Supervisor token: a token caller is a manager and is offered no Supervisor tool. The Supervisor cannot impersonate a manager. A session the owner opens with the Supervisor's skill is the owner's own, a manager under AC-174, which may also call the Supervisor's read tools for its project. Comments and case-file text confer no additional authority. Its tools cannot type, close sessions, change pool agents, schedules, commands or other protected settings, delete tasks, data or trees, read secrets or transcripts, publish, tag or release, or send a page directly. When session counters point at drift worth mining, it opens a decision card proposing that the owner run `/retro` on the named sessions (AC-240).
@@ -1469,7 +1468,7 @@ A bootstrap prompt can read `Supervisor case case_0042. Read the case file and r
 
 ### Budgets, register and holds
 
-The governor charges estimated room before admitting work and tracks actual use. Judgment spends on rounds, keeps 30% for level 2 and 3 investigations, enforces round and daily ceilings and ends overrunning rounds. Fixes attribute spend for work made or started by the Supervisor, including Auto-Dispatcher starts. A task the Supervisor both makes and starts counts each run's spend once. Use high-impact priority, never a task quota. When a budget is spent, judgment rounds and new Supervisor tasks wait; code keeps measuring, paging, reporting and applying eligible holds. The next owner message leads with the limit reached. At the fixes ceiling, the high-impact problems left are listed on one decision card with their impact: raise the ceiling for them, or let them wait a week. A breach of a charter "never" gets its fix task at once, even at the fixes ceiling, and the exception is visible.
+The governor reserves estimated room in the admission transaction and tracks actual use from the retained usage reports. Judgment spends on rounds, keeps 30% for level 2 and 3 investigations, enforces round and daily ceilings and ends overrunning rounds. Fixes attribute spend for work made or started by the Supervisor, including Auto-Dispatcher starts. A task the Supervisor both makes and starts counts each run's spend once. Use high-impact priority, never a task quota. When a budget is spent, judgment rounds and new Supervisor tasks wait; code keeps measuring, paging, reporting and applying eligible holds. The next owner message leads with the limit reached. At the fixes ceiling, the high-impact problems left are listed on one decision card with their impact: raise the ceiling for them, or let them wait a week. A breach of a charter "never" gets its fix task at once, even at the fixes ceiling, and the exception is visible.
 
 Rank problems by impact level and, within it, `share × weeks standing × confidence ÷ effort class`. A fix uses the cheapest effective layer: script or check, test, hook or permission, setting, scoped doc rule, then memory note. Link tasks as Follow-ups. The firing detector specifies the threshold and the observation window of K weeks, a detector parameter, 4 by default. Round proposals may add a stricter check, never a weaker one. A rule that restates an existing rule is no fix; the round says why the existing rule failed. Resolution needs the yardstick or an owner ruling. Reopen on recurrence or new evidence and retain the ledger. Fix links and rank are inputs to Auto-Dispatcher under terminum-dispatcher.md AC-170; the Supervisor has no second queue. An owner or project manager action overrides it on that task for 24 hours.
 
@@ -1594,10 +1593,10 @@ Enable none of the runtime cases by default. Land the specification after indepe
 - [ ] AC-233 — `e2e_supervisor_rounds.py` covers automatic admission, the confidence gate, budget denial, deduplication and the owner's press. `ac233_waiters_use_distinct_weeks_and_impact` covers recurring signals and wait order. The dependent actions are listed in §7.
 - [ ] AC-234 — `e2e_supervisor_rounds.py` checks exact case access, bounded data, the fixed prompt, a scoped mark before the first tool call, deadlines and cleanup in private tmux. The dependent case inputs are listed in §7.
 - [x] AC-235 — `e2e_supervisor_rounds.py` refuses a wrong number and an unresolved row, records the refusal signal and keeps the finding after the named query and evidence pass.
-- [ ] AC-236 — Planned test: `ac236_register_rank_ruling_and_recurrence` covers ranked register and protected yardstick.
-- [ ] AC-237 — Planned test: `ac237_judgment_reserve_and_caps` covers judgment governor and deterministic fallback.
-- [ ] AC-238 — Planned test: `ac238_fix_budget_and_critical_exception` covers fix spend attribution and ceiling.
-- [ ] AC-239 — Planned test: `ac239_marked_task_policy_and_override` covers marks, rank proposals and override window.
+- [x] AC-236 — `ac236_register_rank_ruling_and_recurrence` covers measured ranking, owner rulings, scoped evidence and protected yardsticks. The Supervisor browser check exercises the register and ruling form.
+- [ ] AC-237 — `ac237_judgment_reserve_and_caps` covers the investigation reserve, shared day and round caps, and overrun signals.
+- [ ] AC-238 — `ac238_fix_budget_and_critical_exception` covers admission order, the single decision card, charter exceptions and attribution by run. Weekly reporting depends on AC-242.
+- [x] AC-239 — `ac239_marked_task_policy_and_override` covers marked eligibility, advisory ranks and the timed override. The role end-to-end check exercises the Supervisor tools on a private board.
 - [ ] AC-240 — Planned test: `ac240_decision_card_routing` covers immediate and deferred decision cards.
 - [ ] AC-241 — Planned test: `ac241_nudge_updates_one_comment` covers deduplicated nudge through the comment path.
 - [ ] AC-242 — Planned test: `ac242_weekly_review_and_verdict_batch` covers scheduled review and optional verdicts.

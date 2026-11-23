@@ -15,8 +15,8 @@ const BUDGETS = [
   ["fixes_percent", "Fixes, % of weekly spend", { max: 100 }],
   ["judgment_floor_tokens", "Judgment floor, tokens", { step: 1 }],
   ["investigation_reserve_percent", "Investigation reserve, %", { max: 100 }],
-  ["judgment_ceiling", "Judgment ceiling", {}, true],
-  ["fixes_ceiling", "Fixes ceiling", {}, true],
+  ["judgment_ceiling", "Judgment ceiling, tokens per week", { step: 1 }, true],
+  ["fixes_ceiling", "Fixes ceiling, USD per week", {}, true],
   ["daily_token_ceiling", "Daily ceiling, tokens", { step: 1 }, true],
   ["round_token_ceiling", "Round ceiling, tokens", { step: 1 }, true],
 ];

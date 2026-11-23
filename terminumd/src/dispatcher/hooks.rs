@@ -155,7 +155,9 @@ async fn one_event(app: Shared, key: String, ev: Value) {
             let Some(r) = runs::in_pane(tx, &key)? else { return Ok(()) };
             let counted = a.dispatcher.counted_in.lock().get(&r.id).cloned();
             let same = session.as_ref().zip(counted).map(|(s, c)| *s == c);
-            super::usage::heard(tx, &r.id, &r.agent_id, &models, ops::now(), same)?;
+            let at = ops::now();
+            super::usage::heard(tx, &r.id, &r.agent_id, &models, at, same)?;
+            crate::supervisor::governor::judge_usage(tx, &r.id, at)?;
             if let Some(s) = session {
                 a.dispatcher.counted_in.lock().insert(r.id, s);
             }

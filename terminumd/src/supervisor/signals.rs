@@ -10,6 +10,19 @@ use crate::tasks::{ops::{rows, sql}, store::Store};
 use super::impact::Assessment;
 use super::{Evaluation, Evidence, Finding, Measure, Mode, Scores, incidents};
 
+pub(super) type Observations = std::collections::BTreeMap<(String, String, String), Option<(f64, super::Comparison)>>;
+
+impl super::Comparison {
+    pub(super) fn fires(self, value: f64, limit: f64) -> bool {
+        match self {
+            Self::Above => value > limit,
+            Self::AtLeast => value >= limit,
+            Self::Below => value < limit,
+            Self::Deviation(target) => (value - target).abs() > limit,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum State { New, Shadow, Raised, Held, Resolved, Recurred, Muted, Rejected }
@@ -27,6 +40,7 @@ pub(crate) struct Signal {
     pub measure: Measure,
     pub scores: Scores,
     pub(super) impact_basis: Assessment,
+    pub(super) charter_breach: bool,
     pub level: u8,
     pub response: &'static str,
     pub first_seen: i64,
@@ -45,11 +59,13 @@ fn fingerprint(project: &str, detector: &str, (kind, id, metric): (&str, &str, &
 }
 
 #[derive(Serialize, Deserialize)]
-struct RecordedScores {
+pub(super) struct RecordedScores {
     #[serde(flatten)]
-    scores: Scores,
+    pub scores: Scores,
     #[serde(default)]
-    impact_basis: Assessment,
+    pub impact_basis: Assessment,
+    #[serde(default)]
+    pub charter_breach: bool,
 }
 
 struct PreparedFinding<'a> {
@@ -95,7 +111,7 @@ pub(super) fn prepare(evaluation: &Evaluation) -> Result<Prepared<'_>, String> {
             Ok::<_, String>(PreparedFinding {
                 key: fingerprint(&evaluation.project, rule, found.key()), found,
                 evidence: encode(&found.evidence)?, measure: encode(&found.measure)?,
-                scores: encode(&RecordedScores { scores: found.scores, impact_basis: found.assessment.clone() })?,
+                scores: encode(&RecordedScores { scores: found.scores, impact_basis: found.assessment.clone(), charter_breach: found.charter_breach })?,
             })
         }).collect::<Result<_, _>>()?;
         let keys = encode(&findings.iter().map(|f| &f.key).collect::<Vec<_>>())?;
@@ -128,6 +144,25 @@ impl Prepared<'_> {
                 WHERE excluded.evaluated_at > supervisor_evaluations.evaluated_at", (&evaluation.project, rule, evaluation.at)).map_err(sql)?;
             if advanced == 0 {
                 continue;
+            }
+            let complete = checked.unavailable.is_empty() && checked.measured.is_none();
+            let fired: std::collections::HashSet<_> = findings.iter().map(|f| f.key.as_str()).collect();
+            let known = rows(tx, "SELECT y.fingerprint, y.threshold, s.subject_kind, s.subject_id, s.metric, y.clear_at, y.clear_seen
+                FROM supervisor_problem_signals y JOIN supervisor_signals s USING (fingerprint)
+                WHERE s.project = ?1 AND s.detector = ?2", (&evaluation.project, rule),
+                |r| Ok((r.get::<_, String>(0)?, r.get::<_, f64>(1)?, (r.get::<_, String>(2)?, r.get::<_, String>(3)?,
+                    r.get::<_, String>(4)?), r.get::<_, Option<i64>>(5)?, r.get::<_, Option<i64>>(6)?)))?;
+            for (key, threshold, subject, previous, sampled) in known {
+                let clear = checked.mode == Mode::Live && !fired.contains(key.as_str()) &&
+                    match checked.observations.get(&subject) {
+                        Some(reading) => reading.is_some_and(|(value, compare)| !compare.fires(value, threshold)),
+                        None => complete || checked.complete_metrics.iter().any(|m| *m == subject.2),
+                    };
+                let since = clear.then(|| previous.filter(|_| sampled.is_some_and(|t| evaluation.at - t <= 30 * 60))
+                    .unwrap_or(evaluation.at));
+                tx.execute("UPDATE supervisor_problem_signals SET clear_at = ?2, clear_seen = ?3
+                    WHERE fingerprint = ?1 AND (clear_at, clear_seen) IS NOT (?2, ?3)",
+                    (&key, since, clear.then_some(evaluation.at))).map_err(sql)?;
             }
             for row in findings {
                 let accepted: bool = upsert.query_row(params![row.key, evaluation.project, rule, row.found.subject_kind,
@@ -178,7 +213,7 @@ fn encode(value: &impl Serialize) -> Result<String, String> {
     serde_json::to_string(value).map_err(|e| format!("Could not encode Supervisor signal: {e}"))
 }
 
-fn decode<T: serde::de::DeserializeOwned>(row: &rusqlite::Row<'_>, col: usize) -> rusqlite::Result<T> {
+pub(super) fn decode<T: serde::de::DeserializeOwned>(row: &rusqlite::Row<'_>, col: usize) -> rusqlite::Result<T> {
     serde_json::from_str(&row.get::<_, String>(col)?)
         .map_err(|e| rusqlite::Error::FromSqlConversionFailure(col, rusqlite::types::Type::Text, Box::new(e)))
 }
@@ -187,13 +222,13 @@ const COLUMNS: &str = "fingerprint, detector, subject_kind, subject_id, metric, 
     first_seen, last_seen, count, json_quote(state)";
 
 fn read(project: &str, r: &rusqlite::Row<'_>) -> rusqlite::Result<Signal> {
-    let RecordedScores { scores, impact_basis } = decode(r, 7)?;
+    let RecordedScores { scores, impact_basis, charter_breach } = decode(r, 7)?;
     let level = scores.level();
     let count = r.get(10)?;
     Ok(Signal {
         fingerprint: r.get(0)?, project: project.into(), detector: r.get(1)?, subject_kind: r.get(2)?,
         subject_id: r.get(3)?, metric: r.get(4)?, evidence: decode(r, 5)?, measure: decode(r, 6)?,
-        scores, impact_basis, level, response: scores.response(count > 1),
+        scores, impact_basis, charter_breach, level, response: scores.response(count > 1),
         first_seen: r.get(8)?, last_seen: r.get(9)?, count, state: decode(r, 11)?,
     })
 }
@@ -220,15 +255,25 @@ pub(super) fn get(tx: &Transaction, project: &str, key: &str) -> Result<Signal, 
 
 /// A point event is retained by case and never resolves unrelated failures.
 pub(super) fn round_failed(tx: &Transaction, project: &str, id: &str, metric: &str, value: f64, at: i64) -> Result<(), String> {
-    let detector = "self.round_failed";
-    let key = fingerprint(project, detector, ("round", id, metric));
-    let evidence = encode(&[Evidence::SupervisorRounds(id.into())])?;
-    let measure = encode(&Measure { value, baseline: 0., threshold: 0., window_start: at, window_end: at })?;
-    let scores = encode(&RecordedScores { scores: Scores { impact: 1, ..Scores::default() }, impact_basis: Default::default() })?;
+    diagnostic(tx, project, "self.round_failed", ("round", id, metric),
+        &[Evidence::SupervisorRounds(id.into())], (value, 0.), at)
+}
+
+/// A code-owned diagnostic carries typed evidence and a fixed metric.
+pub(super) fn diagnostic(tx: &Transaction, project: &str, detector: &str, subject: (&str, &str, &str),
+    evidence: &[Evidence], (value, threshold): (f64, f64), at: i64) -> Result<(), String> {
+    let (kind, id, metric) = subject;
+    let key = fingerprint(project, detector, subject);
+    let evidence = encode(&evidence)?;
+    let measure = encode(&Measure { value, baseline: 0., threshold, window_start: at, window_end: at })?;
+    let scores = encode(&RecordedScores { scores: Scores { impact: 1, ..Scores::default() }, impact_basis: Default::default(), charter_breach: false })?;
     tx.execute("INSERT INTO supervisor_signals (fingerprint, project, detector, subject_kind, subject_id,
         metric, evidence, measure, scores, first_seen, last_seen, count, state)
-        VALUES (?1, ?2, ?3, 'round', ?4, ?5, ?6, ?7, ?8, ?9, ?9, 1, 'raised')
-        ON CONFLICT (fingerprint) DO UPDATE SET measure = excluded.measure, last_seen = excluded.last_seen, count = count + 1",
-        params![key, project, detector, id, metric, evidence, measure, scores, at]).map_err(sql)?;
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?10, 1, 'raised')
+        ON CONFLICT (fingerprint) DO UPDATE SET measure = excluded.measure, evidence = excluded.evidence,
+            last_seen = excluded.last_seen, count = count + 1, state = 'raised'
+        WHERE (state, evidence, json_extract(measure, '$.value'), json_extract(measure, '$.threshold'))
+            IS NOT (excluded.state, excluded.evidence, ?11, ?12)",
+        params![key, project, detector, kind, id, metric, evidence, measure, scores, at, value, threshold]).map_err(sql)?;
     Ok(())
 }

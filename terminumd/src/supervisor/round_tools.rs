@@ -7,11 +7,55 @@ use serde_json::{Value, json};
 
 use crate::app::Shared;
 use crate::roles::supervisor;
-use crate::tasks::{api::store, ops::{now, sql}};
+use crate::tasks::{api::store, ops::{self, now, sql}};
 
-use super::{Evidence, Measure, Rule, Window, round_evidence, rounds, settings, signals};
+use super::{Evidence, Measure, Rule, Window, register, round_evidence, rounds, settings, signals, task_policy};
 
 pub(crate) const NAMES: &[&str] = &["get_case_file", "list_signals", "get_signal", "get_metric", "record_finding"];
+pub(crate) const ADVISOR: &[&str] = &["open_problem", "update_problem", "propose_rank"];
+
+pub(crate) fn known(tool: &str) -> bool {
+    NAMES.contains(&tool) || ADVISOR.contains(&tool)
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RankArgs { problem: i64, task: String }
+
+async fn register_tool(app: &Shared, key: String, project: String, tool: String, value: Value) -> Result<String, String> {
+    let done = store(app, move |tx| {
+        supervisor::require(tx, &key, &project, &tool)?;
+        let at = now();
+        let marked = supervisor::marked(tx, &key)?.ok_or("There is no Supervisor role in this pane.")?;
+        let reply = match tool.as_str() {
+            "open_problem" => {
+                let id = register::open(tx, &project, args(value)?, at)?;
+                register::require_finding(tx, id, marked.run.as_deref())?;
+                json!({"problem": id})
+            }
+            "update_problem" => {
+                let change: register::Update = args(value)?;
+                let id = change.id;
+                register::update(tx, &project, change, at)?;
+                register::require_finding(tx, id, marked.run.as_deref())?;
+                json!({"problem": id})
+            }
+            "propose_rank" => {
+                let input: RankArgs = args(value)?;
+                let task = ops::get(tx, &input.task)?;
+                if task.project != project { return Err("The task is outside this project.".into()); }
+                if let Some(why) = task_policy::record_override(tx, &task, at)? { return Ok(Err(why)); }
+                task_policy::propose(tx, &project, input.problem, &task, marked.run.as_deref(), at)?;
+                json!({"task": task.id, "problem": input.problem, "proposed": true})
+            }
+            _ => return Err("Unknown Supervisor register tool.".into()),
+        };
+        Ok(Ok(reply.to_string()))
+    }).await?;
+    if done.is_ok() { app.supervisor.wake(); }
+    done
+}
+
 
 const MOST_EVIDENCE: usize = 128;
 const MOST_CLAIMS: usize = 16;
@@ -71,8 +115,11 @@ fn args<T: DeserializeOwned>(value: Value) -> Result<T, String> {
 }
 
 pub(crate) async fn run(app: &Shared, key: String, project: String, tool: String, value: Value) -> Result<String, String> {
+    if ADVISOR.contains(&tool.as_str()) {
+        return register_tool(app, key, project, tool, value).await;
+    }
     if tool == "record_finding" {
-        return store(app, move |tx| {
+        let done = store(app, move |tx| {
             let run = run_of(tx, &key, &project, &tool)?;
             let case = case_file(tx, &run)?;
             let why = match accept(tx, &project, &case, value) {
@@ -87,6 +134,8 @@ pub(crate) async fn run(app: &Shared, key: String, project: String, tool: String
             rounds::failure(tx, &run, &why, true)?;
             Ok(Err(why))
         }).await?;
+        if done.is_ok() { app.supervisor.wake(); }
+        return done;
     }
     let app = app.clone();
     crate::http::off(move || app.tasks.snapshot(super::SCHEMA, |tx| {

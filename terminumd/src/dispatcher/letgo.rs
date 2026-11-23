@@ -36,7 +36,13 @@ pub(super) async fn give_up(State(app): State<Shared>, Path(id): Path<String>) -
 /// `who` gives up on task `id`: a wait is called off, the task where it stood (AC-158); else its run is given up.
 /// The tasks it concerned.
 pub(crate) async fn gave_up(app: &Shared, id: &str, who: &'static str) -> Result<Vec<String>, String> {
-    gave_up_checked(app, id, who, |_, _| Ok(()), |_, _| Ok(())).await
+    gave_up_checked(app, id, who, |_, _| Ok(()), |tx, ids| {
+        for id in ids {
+            let key = ops::key_of(tx, id)?;
+            ops::log(tx, &key, crate::tasks::store::HUMAN, "why", "The human gave up on its run.", None, ops::now())?;
+        }
+        Ok(())
+    }).await
 }
 
 pub(crate) async fn gave_up_checked(

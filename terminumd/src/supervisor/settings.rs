@@ -65,15 +65,15 @@ impl Tiers {
 
 #[derive(Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
-struct Budgets {
-    judgment_percent: f64,
-    fixes_percent: f64,
-    judgment_floor_tokens: u64,
-    investigation_reserve_percent: f64,
-    judgment_ceiling: Option<f64>,
-    fixes_ceiling: Option<f64>,
-    daily_token_ceiling: Option<u64>,
-    round_token_ceiling: Option<u64>,
+pub(super) struct Budgets {
+    pub judgment_percent: f64,
+    pub fixes_percent: f64,
+    pub judgment_floor_tokens: u64,
+    pub investigation_reserve_percent: f64,
+    pub judgment_ceiling: Option<f64>,
+    pub fixes_ceiling: Option<f64>,
+    pub daily_token_ceiling: Option<u64>,
+    pub round_token_ceiling: Option<u64>,
 }
 
 impl Default for Budgets {
@@ -189,7 +189,7 @@ struct Mute {
 pub(super) struct Settings {
     level: Level,
     pub tiers: Tiers,
-    budgets: Budgets,
+    pub budgets: Budgets,
     pub charter: Charter,
     pub detectors: BTreeMap<String, RuleSettings>,
     probes: Probes,

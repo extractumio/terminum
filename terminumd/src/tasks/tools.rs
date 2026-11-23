@@ -243,6 +243,7 @@ fn run_in(store: &Store, state_dir: &Path, who: &Who, tool: &str, args: &Value, 
     let at = ops::now();
     store.with(|tx| {
         check_supervisor(tx, who, tool)?;
+        let manager = crate::roles::task_write_start(tx, &who.key)?;
         // A task tool can overtake its queued first-prompt hook: its status must follow taking the run (AC-157).
         let started = if matches!(tool, "move_task" | "ask_human" | "wait_for_task" | "finish_task") { crate::dispatcher::taking(tx, &who.key)? } else { Vec::new() };
         // only what writes makes the agent's user: reading leaves no row; a run's is its agent of the pool
@@ -331,6 +332,7 @@ fn run_in(store: &Store, state_dir: &Path, who: &Who, tool: &str, args: &Value, 
             "ask_human" => {
                 let id = arg(args, "id")?;
                 let t = own(tx, who, id)?;
+                if who.supervisor { crate::supervisor::task_policy::check(tx, &t, at)?; }
                 not_queued(tx, &t)?;
                 super::integration_queue::stays_queued(tx, &t)?;
                 let questions = rules::clean(arg(args, "questions")?);
@@ -354,10 +356,11 @@ fn run_in(store: &Store, state_dir: &Path, who: &Who, tool: &str, args: &Value, 
             "wait_for_task" => super::waitfor::wait(tx, who, args, at),
             "add_comment" => {
                 let id = arg(args, "id")?;
-                visible(tx, who, id)?;
+                let task = visible(tx, who, id)?;
+                if who.supervisor { crate::supervisor::task_policy::check(tx, &task, at)?; }
                 // a project's manager's comment is marked so: a fresh start says whose it is (terminum-dispatcher.md AC-209)
                 let text = rules::clean(arg(args, "text")?);
-                let event = ops::comment_as(tx, &me()?, crate::roles::manages(tx, &who.key)?.is_some(), id, &text, at)?;
+                let event = ops::comment_as(tx, &me()?, manager.is_some(), id, &text, at)?;
                 *noted = Some((id.to_string(), event));
                 Ok((format!("Comment kept on {id}."), vec![id.to_string()]))
             }
@@ -370,6 +373,7 @@ fn run_in(store: &Store, state_dir: &Path, who: &Who, tool: &str, args: &Value, 
             }
             other => Err(format!("unknown tool {other}")),
         }?;
+        crate::roles::task_write_end(tx, manager)?;
         for id in started {
             if !changed.contains(&id) {
                 changed.push(id);

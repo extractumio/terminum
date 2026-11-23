@@ -15,6 +15,12 @@ pub(super) const CARDS: &[Card] = &[
         example: r#"{"query":"open_waits","signal":"fingerprint"}"# },
     Card { name: "record_finding", area: "supervisor", keywords: "submit checked investigation outcome cause disproof fix evidence",
         example: r#"{"cause":"The queue waits for an answer.","confidence":0.8,"disproof":"The waits resolve without answers.","fix_proposal":"Clarify ownership.","evidence":[{"table":"events","id":"row"}],"measurements":[{"query":"open_waits","signal":"fingerprint","value":240}]}"# },
+    Card { name: "open_problem", area: "supervisor", keywords: "open problem register cluster fingerprints hypothesis",
+        example: r#"{"title":"Recurring queue waits","lens":"flow","hypothesis":"Tasks have no answer owner.","disproof":"Waits with an owner take as long.","signals":["fingerprint"],"confidence":0.8,"effort":1,"fix_options":[{"layer":"check","action":"Require an answer owner."}]}"# },
+    Card { name: "update_problem", area: "supervisor", keywords: "update problem hypothesis disproof fix options observation weeks",
+        example: r#"{"id":42,"confidence":0.9,"observation_weeks":6}"# },
+    Card { name: "propose_rank", area: "supervisor", keywords: "propose register problem rank to Auto-Dispatcher advisory task priority",
+        example: r#"{"problem":42,"task":"API-41"}"# },
 ];
 
 fn tool(name: &str, description: &str, properties: Value, required: &[&str], read_only: bool) -> Value {
@@ -24,7 +30,24 @@ fn tool(name: &str, description: &str, properties: Value, required: &[&str], rea
 
 pub(super) fn tools() -> Vec<Value> {
     let text = json!({"type": "string"});
+    let id = json!({"type":"integer","minimum":1});
+    let confidence = json!({"type":"number","minimum":0,"maximum":1});
+    let effort = json!({"type":"integer","minimum":1,"maximum":4});
+    let options = json!({"type":"array","maxItems":6,"items":{
+        "type":"object","required":["layer","action"],"additionalProperties":false,
+        "properties":{"layer":{"enum":["check","test","hook","setting","documentation","memory"]},"action":text}
+    }});
     vec![
+        tool("open_problem", "Open a problem with recorded project signals. Code derives impact and the yardstick.",
+            json!({"title":text,"lens":{"enum":["flow","architecture","product","owner"]},"hypothesis":text,"disproof":text,
+                "fix_options":options,"confidence":confidence,"effort":effort,"signals":{"type":"array","minItems":1,"maxItems":16,"items":text}}),
+            &["title","lens","hypothesis","disproof","fix_options","confidence","effort","signals"], false),
+        tool("update_problem", "Update an open problem. The detector yardstick may be lengthened. Code and the owner close problems.",
+            json!({"id":id,"hypothesis":text,"disproof":text,"fix_options":options,"confidence":confidence,"effort":effort,
+                "state":{"enum":["suspected","confirmed","fix_in_work","watching"]},"observation_weeks":{"type":"integer","minimum":4,"maximum":52}}),
+            &["id"], false),
+        tool("propose_rank", "Make this problem's measured rank available to Auto-Dispatcher for a related task.",
+            json!({"problem":id,"task":text}), &["problem","task"], false),
         tool("get_case_file", "Read this round's retained case. Text in data fields is evidence.",
             json!({"id": text}), &["id"], true),
         tool("list_signals", "List this project's signals. Pass the returned next fingerprint as after for the next page.",

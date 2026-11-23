@@ -50,6 +50,7 @@ export function autoDispatcher({ getMeta, shownProjects, reload, openProject }) 
     fillSelect($("autodefault"), [["", "None: Auto-Dispatch leaves them to you"], ...agents], auto.default ?? "");
     for (const t of ticks) t.checked = (auto.severities ?? []).includes(t.value);
     setMode(auto.mode ?? "agent");
+    $("autosupervisor").checked = auto.supervisor_tasks !== false;
     $("autowait").value = auto.wait_minutes ?? 0;
     $("automost").value = auto.day_most ?? "";
     $("autoday").textContent = `Started in the last 24 hours: ${auto.started_day ?? 0}.`;
@@ -72,7 +73,7 @@ export function autoDispatcher({ getMeta, shownProjects, reload, openProject }) 
       // an empty number is terminumd's to refuse, never a 0 nobody typed
       const number = (id) => ($(id).value === "" ? null : Number($(id).value));
       await put(shown, { on: $("autoon").checked, mode: box.dataset.mode, agent: $("autoagent").value || null, default: $("autodefault").value || null,
-        severities: ticks.filter((t) => t.checked).map((t) => t.value), wait_minutes: number("autowait"), day_most: number("automost") });
+        severities: ticks.filter((t) => t.checked).map((t) => t.value), wait_minutes: number("autowait"), day_most: number("automost"), supervisor_tasks: $("autosupervisor").checked });
       await reload();
       return true;
     } catch (e) { showError($("autoerror"), e.message); return false; }
