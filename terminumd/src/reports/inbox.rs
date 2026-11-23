@@ -24,7 +24,7 @@ pub struct Filter {
 const ROW: &str = "SELECT r.slug, r.project, r.title, r.summary, r.critical, r.read_at IS NOT NULL, (SELECT t.slug FROM tasks t WHERE t.id = r.task),
     (SELECT 'SCH-' || s.number FROM schedules s WHERE s.id = r.schedule), (SELECT s.title FROM schedules s WHERE s.id = r.schedule),
     (SELECT u.name FROM users u WHERE u.id = r.author), r.role, r.session_key, r.created_at, r.updated_at, r.deleted_at, r.incident, r.number,
-    p.name, p.color
+    p.name, p.color, r.id, r.replied_at IS NOT NULL
     FROM reports r JOIN projects p ON p.id = r.project";
 
 fn row_of(r: &Row) -> rusqlite::Result<Value> {
@@ -39,6 +39,7 @@ fn row_of(r: &Row) -> rusqlite::Result<Value> {
         "author_name": author, "role": r.get::<_, String>(10)?, "session": r.get::<_, Option<String>>(11)?,
         "created_at": r.get::<_, i64>(12)?, "updated_at": r.get::<_, i64>(13)?, "deleted_at": r.get::<_, Option<i64>>(14)?,
         "number": r.get::<_, i64>(16)?, "project_name": r.get::<_, String>(17)?, "project_color": r.get::<_, i64>(18)?,
+        "key": r.get::<_, String>(19)?, "replied": r.get::<_, bool>(20)?,
     }))
 }
 
@@ -55,6 +56,13 @@ pub fn list(tx: &Transaction, f: &Filter) -> Result<Value, String> {
     let mut reports = rows(tx, &query, (f.project.as_deref(), f.unread_only, limit + 1, offset), row_of)?;
     let more = reports.len() as i64 > limit;
     reports.truncate(limit as usize);
+    // a row whose reply waits for its agent says so (AC-270): only replied rows are read again
+    for v in reports.iter_mut() {
+        let key = v.as_object_mut().and_then(|o| o.remove("key")).and_then(|k| k.as_str().map(str::to_string)).unwrap_or_default();
+        if v.as_object_mut().and_then(|o| o.remove("replied")) == Some(json!(true)) {
+            v["answering"] = json!(super::reply::answer_state(tx, &key)?.0);   // the agent's name, or null
+        }
+    }
     Ok(json!({"reports": reports, "more": more, "next": offset + limit}))
 }
 
@@ -72,12 +80,21 @@ pub fn marks(tx: &Transaction) -> Result<Value, String> {
     if rev.is_empty() {
         return Ok(Value::Null);
     }
-    Ok(json!({"rev": rev, "unread": unread(tx)?}))
+    // each session's unread reports, newest first: its row shows them (AC-273)
+    let mut sessions = serde_json::Map::new();
+    for (key, id) in rows(tx, "SELECT session_key, slug FROM reports WHERE deleted_at IS NULL AND read_at IS NULL AND session_key IS NOT NULL
+            ORDER BY created_at DESC, rowid DESC", [], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))? {
+        sessions.entry(key).or_insert_with(|| json!([])).as_array_mut().map(|a| a.push(json!(id)));
+    }
+    Ok(json!({"rev": rev, "unread": unread(tx)?, "sessions": sessions}))
 }
 
 /// One report whole (AC-268): its row, its body, comments oldest first, files and links.
 pub fn detail(tx: &Transaction, key: &str) -> Result<Value, String> {
     let mut v = tx.query_row(&format!("{ROW} WHERE r.id = ?1"), [key], row_of).map_err(sql)?;
+    for k in ["key", "replied"] {
+        v.as_object_mut().map(|o| o.remove(k));
+    }
     let (body, follows): (String, Option<String>) = tx.query_row("SELECT r.body, (SELECT f.slug FROM reports f WHERE f.id = r.follows) FROM reports r WHERE r.id = ?1",
         [key], |r| Ok((r.get(0)?, r.get(1)?))).map_err(sql)?;
     v["body"] = json!(body);
@@ -87,6 +104,14 @@ pub fn detail(tx: &Transaction, key: &str) -> Result<Value, String> {
         [key], |r| Ok(json!({"id": r.get::<_, String>(0)?, "at": r.get::<_, i64>(1)?, "author_name": r.get::<_, String>(2)?, "author_kind": r.get::<_, String>(3)?,
                               "kind": r.get::<_, String>(4)?, "text": r.get::<_, String>(5)?})))?);
     v["files"] = json!(crate::tasks::files::of_report(tx, key)?);
+    // whether a reply can go on in its task's conversation, else where to answer; whether its agent answers now (AC-270)
+    match super::reply::target(tx, key)? {
+        Ok(_) => v["replyable"] = json!(true),
+        Err(why) => { v["replyable"] = json!(false); v["why_not"] = json!(why); }
+    }
+    let (answering, no_answer) = super::reply::answer_state(tx, key)?;
+    v["answering"] = json!(answering);
+    v["no_answer"] = json!(no_answer);
     Ok(v)
 }
 

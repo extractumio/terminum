@@ -407,6 +407,19 @@ export async function liveSchedules(page, live) {
   check("AC-164 the head has its key pressed", await page.getAttribute('.mpages a[href="/scheduled/"]', "aria-current") === "page");
   await shot("scheduled-page");
 
+  // AC-270: a reply to the firing's report goes on in its task's conversation, as a human's RUN does, through the gate
+  const replied = await reportOf(task);
+  const sentReply = await j(`/api/reports/${replied.id}/reply`, "POST", { text: "Which of them break the build?" });
+  check("AC-270 a reply to a routine's report goes on in its task's conversation", sentReply.code === 200 && sentReply.task === task, JSON.stringify(sentReply));
+  check("AC-270 the reply stands below the report, and its task got the fixed words with it", await until(async () => {
+    const [r, t] = [await j(`/api/reports/${replied.id}`), await j(`/api/tasks/${task}`)];
+    return r.notes?.some((n) => n.kind === "reply" && n.text === "Which of them break the build?")
+      && t.history.some((e) => e.kind === "comment" && e.text?.startsWith(`${task}: the human replied to your report ${replied.id}. Answer below it`) && e.text.endsWith("Which of them break the build?"));
+  }, 20000), JSON.stringify((await j(`/api/tasks/${task}`)).history?.slice(-4).map((e) => e.text)));
+  // …and its session closes after it as any finished run's, so what follows finds the routine as before (AC-125)
+  check("AC-270 the reply's run ends with no second report of its result", await until(async () => { const t = await j(`/api/tasks/${task}`); return t.status === "DONE" && t.session?.closed
+    && (await j("/api/reports")).reports.filter((r) => r.source.task === task).length === 1; }, 45000), (await j(`/api/tasks/${task}`)).status);
+
   // AC-161: an agent running schedules is not deleted; a schedule deleted leaves its tasks
   const kept = await j(`/api/task-agents/${agent}`, "DELETE");
   check("AC-161 an agent with schedules is not deleted", kept.code === 400 && /runs schedules SCH-\d+: give them another agent first\./.test(kept.error ?? ""), JSON.stringify(kept));

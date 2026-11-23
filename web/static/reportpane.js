@@ -5,7 +5,8 @@
 // through the Panel's Markdown rules (renderInto), its files download, nothing of it runs.
 import { icon } from "./icons.js";
 import { el, iconButton } from "./listparts.js";
-import { api, button, download, renderInto, stamp } from "./kanbanutil.js";
+import { api, button, download, onSend, renderInto, stamp } from "./kanbanutil.js";
+import { sessionUrl } from "./tasklink.js";
 import { CHANGED_EVENT, REPORT_EVENT, act as inboxAct, age, copyLink, openReport, remove as inboxRemove } from "./inbox.js";
 
 const READ_AFTER = 2000;
@@ -168,11 +169,43 @@ async function draw(r) {
     notes.append(li);
   }
   if (r.notes.length) body.append(el("h3", null, `Below it · ${r.notes.length}`), notes);
-  // stage 1: going on with its task is RUN with a comment in the task's window (terminum-dispatcher.md AC-122)
-  const foot = el("footer", "rpfoot");
-  if (r.source.task && !r.deleted_at) foot.append(Object.assign(el("button", "textkey", `Continue in ${r.source.task}`), { type: "button", title: "Its task's window: write there and press RUN", onclick: () => openTask(r.source.task) }));
-  pane.replaceChildren(head(r), body, foot);
+  pane.replaceChildren(head(r), body, foot(r));
   await renderInto(md, r.body);
+}
+
+/** The reply (AC-270): a field and Send when its task's conversation can go on, its agent's answer awaited said; else
+ *  where to answer. A draft outlives the pane's redraws and a refusal, said under it. */
+const drafts = new Map();
+function foot(r) {
+  const f = el("footer", "rpfoot");
+  if (r.answering) f.append(el("p", "rpanswering", `${r.answering} is answering`));
+  else if (r.no_answer) f.append(el("p", "rpnoanswer", r.no_answer));
+  if (!r.replyable) {
+    const why = el("p", "rpwhy", r.why_not ?? "");
+    if (r.source.incident) why.append(" ", link("Open the incident", () => { location.href = `/supervisor/?incident=${r.source.incident}`; }));
+    else if (r.session) why.append(" ", link("Open its session", () => { location.href = sessionUrl(r.session); }));
+    f.append(why);
+    return f;
+  }
+  const area = el("textarea", "field rpreply");
+  area.placeholder = `Reply to ${r.author_name}: it goes on in ${r.source.task}'s conversation. Markdown.`;
+  area.value = drafts.get(r.id) ?? "";
+  area.addEventListener("input", () => drafts.set(r.id, area.value));
+  const said = el("p", "rpsaid");
+  const send = button("primary", "Send", async () => {
+    send.disabled = true;
+    try {
+      await api(`/api/reports/${encodeURIComponent(r.id)}/reply`, { method: "POST", body: { text: area.value } });
+      drafts.delete(r.id);
+      area.value = "";
+      open(r.id, true);
+    } catch (e) { said.textContent = e.message; }      // the reply stays in its field
+    finally { send.disabled = false; }
+  });
+  send.title = "Send (⌘Enter)";
+  onSend(area, () => send.click());
+  f.append(area, said, send);
+  return f;
 }
 
 /** The Inbox's own acts, their refusals said in the pane; the pane reads its report again after. */

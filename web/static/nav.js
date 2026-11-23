@@ -5,7 +5,7 @@
 // strip when it has bookmarks (AC-57), the window
 // number and title, then host · program · folder · titles, and a coding agent's state in a
 // column of its own.
-import { inboxMarks } from "./inbox.js";
+import { inboxMarks, openReport, unreadOfSession } from "./inbox.js";
 import { folderHues, folderKey } from "./dircolors.js";
 import { subOf } from "./follow.js";
 import { icon } from "./icons.js";
@@ -160,6 +160,14 @@ export function row(item, current, onPick, movable, child = false, marked = new 
   const idx = el("span", "idx", child ? "" : item.index || "");
   if (item.index && !child) idx.title = item.host ?? "This machine";     // where the window runs
   head.append(idx, agentMark(item), el("span", "t", item.title));
+  const reports = unreadOfSession(item.id);          // the unread reports it made (terminum-reports.md AC-273)
+  if (reports.length) {
+    const m = el("span", "taskmark reportmark");
+    m.append(icon("mail", 12), String(reports.length));
+    m.title = `${reports.length === 1 ? "An unread report" : `${reports.length} unread reports`}: open ${reports[0]}`;
+    m.addEventListener("click", (e) => { e.stopPropagation(); openReport(reports[0]); });
+    head.append(m);
+  }
   for (const task of taskMarksOf(item.id)) {
     const t = el("span", "taskmark", task);
     t.title = `Open ${task} on the board`;

@@ -14,7 +14,7 @@ const meta = () => ({ projects: [{ id: "api", name: "API", color: 0 }], users: [
 
 /** The fake's reports and what the page asked of them. */
 function reports(page) {
-  const st = { rows: [report("R_API-7"), report("R_API-6", { read: true }), report("R_API-8", { critical: true, title: "Build broken", created_at: NOW - 7200 })], asked: [], rev: 1 };
+  const st = { replied: [], rows: [report("R_API-7"), report("R_API-6", { read: true }), report("R_API-8", { critical: true, title: "Build broken", created_at: NOW - 7200 })], asked: [], rev: 1 };
   const unread = () => ({ projects: { api: st.rows.filter((r) => !r.read && !r.deleted_at).length }, schedules: {}, sessions: {} });
   const json = (r, data, status = 200) => r.fulfill({ status, contentType: "application/json", body: JSON.stringify(data) });
   page.route("**/api/reports**", (r) => {
@@ -27,7 +27,14 @@ function reports(page) {
     }
     const row = st.rows.find((x) => x.id === decodeURIComponent(parts[0]));
     if (!row) return json(r, { error: `No report ${parts[0]}.` }, 400);
-    if (req.method() === "GET") return json(r, { ...row, body: "## Findings\n\n- **serde** 1.0.200", notes: [{ id: "n1", at: NOW - 60, author_name: "Opus", author_kind: "agent", kind: "comment", text: "One more thing" }], files: [], follows: null, follow_ups: [] });
+    if (req.method() === "GET") return json(r, { ...row, body: "## Findings\n\n- **serde** 1.0.200", notes: [{ id: "n1", at: NOW - 60, author_name: "Opus", author_kind: "agent", kind: "comment", text: "One more thing, as R_API-6 said" }], files: [], follows: null, follow_ups: [],
+      replyable: !row.critical, why_not: row.critical ? `${row.id} was made in a session terminum did not start: answer in that session.` : undefined, answering: st.replied.includes(row.id) ? "Opus" : null });
+    if (parts[1] === "reply") {
+      const text = JSON.parse(req.postData() ?? "{}").text;
+      if (text.includes("busy")) return json(r, { error: "API-41 runs in session %8 at a human's RUN." }, 400);   // RUN's own refusal (AC-122)
+      st.replied.push(row.id); st.rev++;
+      return json(r, { task: "API-41" });
+    }
     if (req.method() === "DELETE") row.deleted_at = NOW;
     else if (parts[1] === "read") row.read = true;
     else if (parts[1] === "unread") row.read = false;
@@ -35,7 +42,8 @@ function reports(page) {
     st.rev++;
     return json(r, { ok: true, changed: true });
   });
-  st.marks = (say, extra = {}) => say({ t: "taskmarks", marks: {}, counts: {}, waiting: 0, failed: 0, lines: [], reports: { rev: String(st.rev), unread: unread() }, ...extra });
+  st.marks = (say, extra = {}) => say({ t: "taskmarks", marks: {}, counts: {}, waiting: 0, failed: 0, lines: [],
+    reports: { rev: String(st.rev), unread: unread(), sessions: { "tmux:local:terminum:%1": st.rows.filter((r) => !r.read && !r.deleted_at).map((r) => r.id) } }, ...extra });
   return st;
 }
 
@@ -76,11 +84,22 @@ async function onBoard(browser, device, w) {
   const sheetOpen = () => page.evaluate(() => document.getElementById("app").classList.contains("nav-open"));
   if (narrow) check(`AC-268 ${w}: the list's sheet closes when a report opens`, !await sheetOpen());
   check(`AC-268 ${w}: its body by the Markdown rules, its comments below`, g.body === "serde" && await page.isVisible(".rpnotes li"), JSON.stringify(g));
+  // a report's ID in a comment opens it (AC-273)
+  await page.click('.rpnotes .linklike:has-text("R_API-6")');
+  check(`AC-273 ${w}: a report's ID in a comment is a link that opens it`, await until(async () => (await look(page)).paneTitle === "Report R_API-6", 3000), (await look(page)).paneTitle);
+  if (narrow) await page.click("#navbtn");          // the list's sheet over the pane, as a phone shows it
+  await page.click('.inboxrow[data-id="R_API-7"] .report');
+  await page.waitForFunction(() => document.querySelector(".rptitle")?.textContent === "Report R_API-7");
   check(`AC-269 ${w}: not read before 2 seconds`, !st.asked.includes("POST /api/reports/R_API-7/read"), st.asked.join());
   await shot(page, `inbox-pane-${w}`);
   check(`AC-269 ${w}: read once open 2 seconds`, await until(() => st.asked.includes("POST /api/reports/R_API-7/read"), 4000), st.asked.join());
-  // AC-270, as built so far (its §7 gap): no reply field, the report's task's window to go on in, by RUN with a comment
-  check(`AC-270 ${w}: the pane's foot offers to continue in the report's task`, (await page.textContent(".rpfoot").catch(() => "")) === "Continue in API-41");
+  // AC-270: the reply, refused with RUN's words and kept in its field, then sent; its agent answering
+  await page.fill(".rpreply", "Which break the build? busy");
+  await page.click('.rpfoot button:has-text("Send")');
+  check(`AC-270 ${w}: a refused reply says RUN's words and stays in its field`, await until(async () => (await page.textContent(".rpsaid")) === "API-41 runs in session %8 at a human's RUN." && (await page.inputValue(".rpreply")).endsWith("busy"), 3000));
+  await page.fill(".rpreply", "Which break the build?");
+  await page.keyboard.press(process.platform === "darwin" ? "Meta+Enter" : "Control+Enter");
+  check(`AC-270 ${w}: ⌘Enter sends it; the pane says its agent is answering`, await until(async () => st.replied.includes("R_API-7") && (await page.textContent(".rpanswering").catch(() => "")) === "Opus is answering", 4000));
   await page.keyboard.press("Escape");
   check(`AC-268 ${w}: Esc gives the columns back and the address loses the report`, await until(async () => !await page.isVisible("#reportpane") && !page.url().includes("report="), 2000), page.url());
   // keys on a row: U, Backspace, Undo
@@ -115,6 +134,8 @@ async function onBoard(browser, device, w) {
     await page.waitForSelector('.taskline[data-task="R_API-8"]');
     await page.click('.taskline[data-task="R_API-8"] .go');
     check(`AC-271 ${w}: a critical report's line opens its pane`, await until(async () => (await look(page)).paneTitle?.includes("Build broken"), 3000));
+    check(`AC-270 ${w}: a report of no task Dispatcher ran has no reply field: where to answer instead`, !await page.isVisible(".rpreply")
+      && (await page.textContent(".rpwhy")).startsWith("R_API-8 was made in a session terminum did not start: answer in that session."));
     await page.click('.taskline[data-task="R_API-8"] .x');
     check(`AC-271 ${w}: its × closes the line by the report's route`, await until(() => st.asked.includes("POST /api/reports/R_API-8/seen"), 2000), st.asked.join());
   }
@@ -134,6 +155,9 @@ async function fromSessions(browser, w, device) {
   st.marks(f.say);
   if (w === "390×844") await page.click("#navbtn");
   await page.waitForSelector(".inboxrow");
+  // the session that made unread reports wears an envelope with their count (AC-273)
+  const envelope = await page.textContent('#sessions .item[data-id="tmux:local:terminum:%1"] .reportmark').catch(() => null);
+  check(`AC-273 ${w}: a session row shows its unread reports' count`, envelope === "2", String(envelope));
   await Promise.all([page.waitForURL(/\/kanban\/\?report=R_API-8/, { timeout: 5000 }).catch(() => {}), page.click('.inboxrow[data-id="R_API-8"] .report')]);
   check(`AC-268 ${w}: on the session page a report opens the board with its pane`, page.url().endsWith("/kanban/?report=R_API-8"), page.url());
   await f.close();

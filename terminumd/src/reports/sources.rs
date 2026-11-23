@@ -20,10 +20,12 @@ pub fn titled(title: &str) -> String {
     title.chars().take(record::TITLE_MOST).collect()
 }
 
-/// Whether task `t`'s current run `run` made a report for it: by its run, else since its last move.
+/// Whether task `t`'s current run `run` made a report for it (by its run, else since its last move), or was started
+/// by a human's reply to one, whose answer goes below it or into its follow-up (AC-270).
 fn run_reported(tx: &Transaction, t: &Task, run: Option<&str>) -> Result<bool, String> {
-    tx.query_row("SELECT EXISTS (SELECT 1 FROM reports r WHERE r.task = ?1 AND (r.run = ?2 OR (?2 IS NULL AND r.created_at >=
-            coalesce((SELECT max(e.at) FROM events e WHERE e.task = ?1 AND e.kind = 'move'), 0))))", (&t.key, run), |r| r.get(0)).map_err(sql)
+    tx.query_row("WITH moved AS (SELECT coalesce(max(e.at), 0) AS at FROM events e WHERE e.task = ?1 AND e.kind = 'move' AND json_extract(e.data, '$.to') = 'IN PROGRESS')
+        SELECT EXISTS (SELECT 1 FROM reports r, moved WHERE r.task = ?1 AND (r.run = ?2 OR (?2 IS NULL AND r.created_at >= moved.at) OR r.replied_at >= moved.at))",
+        (&t.key, run), |r| r.get(0)).map_err(sql)
 }
 
 /// A routine's task finished with `result` by `author`: its report, made from the result, unless its run made one

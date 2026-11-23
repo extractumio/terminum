@@ -265,3 +265,70 @@ fn ac265_a_deleted_project_s_reports_move_to_default_keeping_their_ids() {
     s.with(|tx| crate::tasks::projects::move_tasks_to_default(tx, "api", "API", 9).map(drop)).unwrap();
     assert_eq!(one(&s, &id)["project"], json!(crate::tasks::store::DEFAULT_PROJECT), "{id} keeps its ID in Default");
 }
+
+/// terminum-reports.md AC-270: where a reply can go, its fixed words, and how its answer stands.
+#[test]
+fn ac270_a_reply_goes_to_its_task_s_run_else_says_where_to_answer() {
+    let (s, dir) = fresh("reports-reply");
+    let task = running(&s, "Audit", KEY);
+    let id = call(&s, &dir, KEY, "create_report", report("Deps")).unwrap().split_whitespace().next().unwrap().to_string();
+    let lone = call(&s, &dir, OTHER, "create_report", report("No task")).unwrap().split_whitespace().next().unwrap().to_string();
+    s.with(|tx| {
+        let key = record::key_of(tx, &id)?;
+        assert_eq!(super::reply::target(tx, &key)?, Ok(task.clone()), "a task Dispatcher ran");
+        assert_eq!(super::reply::target(tx, &record::key_of(tx, &lone)?)?, Err(format!("{lone} was made in a session terminum did not start: answer in that session.")));
+        let digest = super::sources::digest(tx, "api", &["a line".into()], 30)?;
+        assert_eq!(super::reply::target(tx, &record::key_of(tx, &digest)?)?, Err(format!("{digest} has no agent to answer: a digest, or a report moved from the board.")));
+        let incident = super::sources::incident(tx, "api", 12, "task API-1", "cost", 31)?;
+        assert_eq!(super::reply::target(tx, &record::key_of(tx, &incident)?)?, Err("Answer through Talk on incident 12.".into()), "Talk wins for an incident");
+        ops::archive(tx, HUMAN, &task, true, 32)?;
+        assert_eq!(super::reply::target(tx, &key)?, Err(format!("{task} is archived: bring it back to reply.")));
+        ops::archive(tx, HUMAN, &task, false, 33)?;
+        Ok(())
+    }).unwrap();
+    // the words name the report by its ID only, the human's text last
+    let w = super::reply::words(&task, &id, "Which break the build?");
+    assert!(w.starts_with(&format!("{task}: the human replied to your report {id}. Answer below it by execute_tool(\"append_to_report\"")) && w.ends_with("\n\nWhich break the build?") && !w.contains("## Findings"), "{w}");
+    // replied: answering while its task is in progress; an agent's answer makes it unread again and ends that
+    s.with(|tx| {
+        let key = record::key_of(tx, &id)?;
+        record::stamp(tx, &key, Stamp::Read, Some(40))?;
+        tx.execute("UPDATE reports SET replied_at = 41 WHERE id = ?1", [&key]).map_err(sql)?;
+        assert_eq!(super::reply::answer_state(tx, &key)?, (Some("Opus".into()), None));
+        Ok(())
+    }).unwrap();
+    call(&s, &dir, KEY, "append_to_report", json!({"id": id, "text": "Both do."})).unwrap();
+    let r = one(&s, &id);
+    assert_eq!((r["answering"].is_null(), r["read"].as_bool(), r["replyable"].as_bool()), (true, Some(false), Some(true)), "{r}");
+    // no answer, its task DONE: said so
+    s.with(|tx| {
+        let key = record::key_of(tx, &id)?;
+        tx.execute("UPDATE reports SET replied_at = ?1 WHERE id = ?2", (ops::now() + 100, &key)).map_err(sql)?;
+        ops::move_to(tx, DISPATCHER, &task, "DONE", 50)?;
+        assert_eq!(super::reply::answer_state(tx, &key)?, (None, Some(format!("No answer from Opus: {task} is DONE."))));
+        Ok(())
+    }).unwrap();
+}
+
+/// terminum-reports.md AC-270, AC-272: a routine's run a reply started makes no second report of its result.
+#[test]
+fn ac270_a_reply_s_run_makes_no_report_of_its_result() {
+    let (s, dir) = fresh("reports-reply-routine");
+    let task = running(&s, "Nightly", KEY);
+    s.with(|tx| {
+        tx.execute("INSERT INTO agents (id, project, name, kind, command, color, at_once) VALUES ('a', 'api', 'Opus', 'claude', 'claude', 0, 2)", []).map_err(sql)?;
+        let given = crate::tasks::schedules::Given::of(tx, &json!({"title": "Nightly", "body": "b", "agent": "a", "cron": "0 3 * * *", "budget_minutes": 30, "severity": "P2", "project": "api"}), 1)?;
+        let (sched, _) = crate::tasks::schedules::add(tx, HUMAN, &given, 1)?;
+        tx.execute("INSERT INTO schedule_fires (schedule, due_at, at, task, state) VALUES (?1, 1, 1, ?2, 'started')", (&sched, ops::key_of(tx, &task)?)).map_err(sql)?;
+        Ok(())
+    }).unwrap();
+    let said = call(&s, &dir, KEY, "finish_task", json!({"id": task, "result": ROUTINE})).unwrap();
+    let id = said.split("Inbox as ").nth(1).unwrap().trim_end_matches('.').to_string();
+    // the human replies: its task goes on (as RUN moves it), the report marked replied
+    s.with(|tx| {
+        ops::move_to(tx, DISPATCHER, &task, "IN PROGRESS", ops::now())?;
+        tx.execute("UPDATE reports SET replied_at = ?1 WHERE slug = ?2", (ops::now(), &id)).map_err(sql).map(drop)
+    }).unwrap();
+    assert!(call(&s, &dir, KEY, "finish_task", json!({"id": task, "result": ROUTINE})).unwrap().starts_with(&format!("{task} is DONE, with your result.")), "no second report");
+    assert_eq!(s.with(|tx| inbox::list(tx, &Filter::default())).unwrap()["reports"].as_array().unwrap().len(), 1);
+}

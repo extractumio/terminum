@@ -404,8 +404,12 @@ red and first, the count of unread in its head. WAIT FOR HUMAN keeps only what n
   ones, restorable for 30 days, then they go with their files.
 - **Alerts**: none, but for a critical report: a red line as a waiting task's, until you read it
   or close the line. A Supervisor incident's report alerts through the incident alone.
-- **Going on**: a report made in a task's run has "Continue in TERM-41": its window, where a
-  comment and Run go on in the same conversation.
+- **Reply** under a report made in a task's run: Send (⌘Enter) goes on in that task's
+  conversation as Run with your words does; "Opus is answering" until its agent answers below the
+  report (it is unread again) or in a new report that follows it. A report of a session terminum
+  did not start, a digest or an incident's says where to answer instead (an incident: its Talk).
+- **Links**: a session's row wears an envelope with its unread reports; a report's ID in a comment
+  opens it.
 - **Find** on the board finds reports too; the Inbox follows the board's project.
 - Agents report by `create_report` (title, summary, Markdown body, files by `attach_report_file`,
   comments by `append_to_report`); a worker only on its own task, at most 10 an hour; a manager or

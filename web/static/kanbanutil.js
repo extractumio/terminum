@@ -341,10 +341,23 @@ export async function renderInto(box, text, { comment = false } = {}) {
       img.src = got.url;
     });
   }
+  linkReports(box);
   for (const a of box.querySelectorAll("a")) {
     const id = /^\/api\/task-files\/([0-9a-f]{32})$/.exec(a.getAttribute("href") ?? "")?.[1];
     if (id) a.addEventListener("click", (e) => { e.preventDefault(); download(id, a.textContent).catch((err) => say(err.message)); });
     else { a.target = "_blank"; a.rel = "noopener noreferrer"; }
+  }
+}
+
+/** A report's ID in rendered words, outside code and links, a key that opens it (terminum-reports.md AC-273). */
+const REPORT_ID = /\bR_[A-Z][A-Z0-9]{0,7}-\d+\b/;
+function linkReports(box) {
+  const walk = document.createTreeWalker(box, NodeFilter.SHOW_TEXT, { acceptNode: (n) => (n.parentElement?.closest("a, code, pre, button") ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT) });
+  const found = [];
+  for (let n = walk.nextNode(); n; n = walk.nextNode()) if (REPORT_ID.test(n.data)) found.push(n);
+  for (const n of found) {
+    const parts = n.data.split(/(R_[A-Z][A-Z0-9]{0,7}-\d+)/);
+    n.replaceWith(...parts.map((p, i) => (i % 2 ? button("linklike", p, () => import("./inbox.js").then((m) => m.openReport(p))) : p)));
   }
 }
 

@@ -99,6 +99,8 @@ pub fn run(store: &Store, dir: &Path, who: &Who, tool: &str, args: &Value) -> Re
                 }
                 let text = record::check_note(&crate::plans::rules::clean(arg(args, "text")?))?;
                 record::note(tx, &h.key, &author(tx, who)?, "comment", &text, at)?;
+                // an answer to the human's reply is news for them: unread again (AC-270)
+                tx.execute("UPDATE reports SET read_at = NULL WHERE id = ?1 AND replied_at IS NOT NULL", [&h.key]).map_err(sql)?;
                 Ok((format!("Your comment stands below {}.", h.id), Vec::new()))
             }
             "get_report" => {

@@ -230,6 +230,12 @@ async fn press(State(app): State<Shared>, Path(id): Path<String>, Json(mut body)
     answer(pressed(&app, &id, body).await)
 }
 
+/// A human's reply to a report, by its route (terminum-reports.md AC-270): as a human's RUN of the report's task with
+/// the reply's fixed words as its message, every check of RUN and its gate holding; with no room it waits for one.
+pub(crate) async fn press_reply(app: &Shared, id: &str, words: String) -> Result<Value, String> {
+    pressed(app, id, Press { comment: Some(words), queue: true, ..Default::default() }).await
+}
+
 /// The manager's press, by its run_task (terminum-agents.md AC-179): as a human's, its words said to be the manager's.
 pub(crate) async fn press_by_manager(app: &Shared, id: &str, user: &str, agent: Option<String>, comment: Option<String>, (fresh, queue, reopen): (bool, bool, bool)) -> Result<Value, String> {
     pressed(app, id, Press { agent, comment, fresh, queue, manager: Some(user.to_string()), manager_reopen: reopen, ..Default::default() }).await

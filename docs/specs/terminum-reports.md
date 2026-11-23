@@ -269,8 +269,8 @@ Scenario: AC-270 happy path — a reply goes on in the conversation
   Given R_TERM-7, made in the run of S_TERM-41, now DONE, its session closed
   When the user writes "Which of them break the build?" under R_TERM-7 and presses Send
   Then S_TERM-41 goes on as a human's RUN of it does (terminum-dispatcher.md AC-122): in its live session, else from its pane's shell, else its conversation resumed in a new window, on its agent's slot or waiting for one (AC-158)
-  And the words it gets are fixed but for the reply: "S_TERM-41: the human replied to your report R_TERM-7. Answer below it by execute_tool(\"append_to_report\", {id: \"R_TERM-7\", text}), or, when they ask for a new report, by execute_tool(\"create_report\", {task: \"S_TERM-41\", follows: \"R_TERM-7\", title, summary, body}); then call finish_task on S_TERM-41 as before.\n\n<reply>"
-  And only once the press is accepted is the reply a comment by the user on R_TERM-7, in the transaction that keeps the press, and S_TERM-41's history says "<the user> replied to R_TERM-7"
+  And RUN's message (AC-122), kept as the user's comment on S_TERM-41, is fixed but for the reply: "S_TERM-41: the human replied to your report R_TERM-7. Answer below it by execute_tool(\"append_to_report\", {\"id\": \"R_TERM-7\", \"text\": ...}), or, when they ask for a new report, by execute_tool(\"create_report\", {\"task\": \"S_TERM-41\", \"follows\": \"R_TERM-7\", \"title\": ..., \"summary\": ..., \"body\": ...}); then call finish_task on S_TERM-41 as before.\n\n<reply>"
+  And only once the press is accepted is the reply kept below R_TERM-7 as the user's
 
 Scenario: AC-270 failure — refused, nothing kept
   When Send is refused (the agent works, a draft stands in its box, a RUN of it waits, the gate refuses: terminum-dispatcher.md AC-122)
@@ -285,6 +285,7 @@ Scenario: AC-270 happy path — answering
   Then the answer stands below the reply, or R_TERM-9 stands unread in the Inbox and R_TERM-7 says "Follow-up: R_TERM-9"; an appended answer makes R_TERM-7 unread again
   When the task ends with no answer
   Then "is answering" goes, and R_TERM-7 says "No answer from Opus: S_TERM-41 is <status>."
+  And Send is the pane's key, ⌘Enter in the field too; the draft outlives the pane's redraws
 
 Scenario: AC-270 edge — a reply's run makes no second report
   Given a run a reply started
@@ -365,7 +366,7 @@ Scenario: AC-273 happy path — from a task
 
 Scenario: AC-273 happy path — from a session
   Given session %8 made R_TERM-7, unread
-  Then its row in the session list shows an envelope with 1; a press on it opens R_TERM-7, several open the Inbox filtered to them
+  Then its row in the session list shows an envelope with 1; a press on it opens R_TERM-7, with several the newest of them
 
 Scenario: AC-273 happy path — Find
   When the user types "R_TERM-7" or a word of a report's title or summary in the board's Find
@@ -405,10 +406,7 @@ sequenceDiagram
 
 ## 7. Current behavior and gaps
 
-| Case | Gap |
-|---|---|
-| AC-270 | Replying is not built: a report's pane offers "Continue in <task>", its task's window, where a comment and RUN go on in the same conversation (`terminum-dispatcher.md` AC-122). |
-| AC-273 | A session row shows no envelope of its unread reports, and a report's ID in a comment or result is not a link; a task's window lists its reports and Find finds them. |
+None open.
 
 ## 8. Recommendation and ownership
 
@@ -456,7 +454,6 @@ The list's answer carries the unread counts by project, by schedule and by sessi
 
 | Stage | Cases | Exit |
 |---|---|---|
-| 2 | AC-270 (with `CLAUDE.md` §2 and `SECURITY.md`, independently reviewed), the rest of AC-273 | landed green |
 | 3 | The Supervisor's use of reports, the maintainer's addition (TERM-822): a critical report as a signal and incident, reports as detector evidence, the weekly review and the quarterly audit as reports, reading in the owner's burden, the report tools by the Supervisor's level; its cases written here first, agreed with `terminum-supervisor.md`'s open work | landed green |
 
 ## 11. Checklist with Definition of Done
@@ -466,8 +463,8 @@ The list's answer carries the unread counts by project, by schedule and by sessi
 - [x] AC-267 — `web/test/e2e_all.mjs` (`webInbox`), Chromium and WebKit, wide and phone
 - [x] AC-268 — `web/test/e2e_all.mjs` (`webInbox`: the pane over the board, its address, Esc, from the session page, a phone's sheet)
 - [x] AC-269 — `cargo test reports` (`ac269_…`: read, unread, deleted, restored, purged at 30 days with its files), `web/test/e2e_all.mjs` (`webInbox`: read after 2 s, U, Backspace, Undo)
-- [ ] AC-270 — `cargo test reports::reply`, `web/test/e2e_live.mjs` (`reports`); `CLAUDE.md` §2 and `SECURITY.md` name the reply, reviewed by the `pragmatic` agent
+- [x] AC-270 — `cargo test reports` (`ac270_…`: where a reply goes or why not, Talk for an incident, its fixed words, answering, unread again on an answer, no answer, no second report from its run), `web/test/e2e_all.mjs` (`webInbox`: Send, ⌘Enter, a refusal kept in its field, where to answer instead), `web/test/e2e_liveschedules.mjs` (a real reply through RUN and its gate, its words on the task, no second report); `CLAUDE.md` §2, `SECURITY.md` and the dispatcher's gate list name the reply, reviewed by the `pragmatic` agent
 - [x] AC-271 — `cargo test reports` (`ac271_…`: only critical, one an hour per worker's session, read takes it, an incident's none), `web/test/e2e_all.mjs` (`webInbox`: a line opens the report, its × the report's route)
 - [x] AC-272 — `cargo test reports` (`ac272_…`), `cargo test dispatcher::fire` (`ac272_…`: none superseded), `web/test/e2e_liveschedules.mjs`, `scripts/e2e_roles.py`
-- [ ] AC-273 — `web/test/e2e_all.mjs` (`webTaskWin`: a task's window lists its reports; `webInbox`: Find); the session row's envelope and ID links not built (§7)
+- [x] AC-273 — `web/test/e2e_all.mjs` (`webTaskWin`: a task's window lists its reports; `webInbox`: Find, a report's ID in a comment opens it, a session row's envelope)
 - [x] AC-274 — `cargo test reports` (`ac274_…`: moved once, its task DONE and linked, a question's task stays)

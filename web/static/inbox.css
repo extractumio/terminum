@@ -36,7 +36,7 @@
 
 /* the reading pane: over the board's agents, routines and columns, the board's head and the list staying */
 #main:has(> .reportpane) { position: relative; }
-.reportpane { position: absolute; left: 0; right: 0; bottom: 0; z-index: 20; display: flex; flex-direction: column; background: var(--t-bg); outline: none; }
+.reportpane { position: absolute; left: 0; right: 0; bottom: 0; z-index: 8; display: flex; flex-direction: column; background: var(--t-bg); outline: none; }
 .reportpane[hidden] { display: none; }
 .rphead { padding: var(--sp-3) var(--sp-4) var(--sp-2); background: var(--chrome); }
 .rphead > :first-child { display: flex; align-items: flex-start; gap: var(--sp-2); }
@@ -56,8 +56,13 @@
 .rpdeleted { color: var(--danger-text); }
 .rplinks { color: var(--muted-text); font-size: 12.5px; }
 .rpnone { padding: var(--sp-4); color: var(--muted-text); }
-.rpfoot { display: flex; justify-content: flex-end; gap: var(--sp-2); padding: var(--sp-2) var(--sp-4) calc(var(--sp-2) + env(safe-area-inset-bottom)); background: var(--chrome); }
+.rpfoot { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: flex-end; gap: var(--sp-2); padding: var(--sp-2) var(--sp-4) calc(var(--sp-2) + env(safe-area-inset-bottom)); background: var(--chrome); }
 .rpfoot:empty { display: none; }
+.rpreply { flex: 1 1 100%; min-height: 64px; max-height: 30vh; resize: vertical; }
+.rpanswering, .rpnoanswer, .rpwhy { flex: 1 1 100%; margin: 0; color: var(--muted-text); font-size: 12.5px; }
+.rpanswering { color: var(--t-fg); }
+.rpsaid { flex: 1; margin: 0; color: var(--danger-text); font-size: 12.5px; }
+.rpsaid:empty { visibility: hidden; }
 @media (max-width: 860px) { .rphead, .rpbody, .rpfoot { padding-left: var(--sp-3); padding-right: var(--sp-3); } }
 /* a finger's size where the list's group heads have it (controls.css) */
 @media (max-width: 860px), (pointer: coarse) { .inboxfold { height: 40px; } .inboxhead { height: auto; min-height: calc(var(--icon-key-list) + 2 * var(--row-inset)); } }

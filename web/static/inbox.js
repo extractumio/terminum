@@ -45,10 +45,15 @@ const findWords = () => (new URLSearchParams(location.search).get("q") ?? "").tr
 
 const st = { rows: [], more: false, next: 0, failed: "", unread: {}, rev: null, deleted: false, all: false, folded: !!read(FOLDED), key: "", undo: null, focus: null };
 let box = null;
+let bySession = {};
+
+/** Session `key`'s unread reports, newest first: its row's envelope (AC-273). */
+export const unreadOfSession = (key) => bySession[key] ?? [];
 
 /** terminumd's `taskmarks`: the Inbox's revision and unread counts; a moved revision reads the list again. */
 export function inboxMarks(m) {
   const r = m.reports ?? { rev: "", unread: {} };   // none while no report was ever written
+  bySession = r.sessions ?? {};
   if (!box) return;
   st.unread = r.unread ?? {};
   if (r.rev === st.rev) { drawHead(); return; }
@@ -118,7 +123,7 @@ function rowOf(r) {
   const head = el("span", "rhead");
   if (r.critical) head.append(icon("triangle-alert", 13));
   head.append(el("span", "rtitle", r.title), el("span", "rage", st.deleted ? `deleted ${age(r.deleted_at)}` : age(r.created_at)));
-  b.append(head, el("span", "rsum", r.summary || r.id), el("span", "rsource", `${r.id} · ${r.source.name}`));
+  b.append(head, el("span", "rsum", r.summary || r.id), el("span", "rsource", `${r.id} · ${r.source.name}${r.answering ? ` · ${r.answering} is answering` : ""}`));
   b.addEventListener("click", () => { st.focus = r.id; if (!st.deleted) openReport(r.id); });
   b.addEventListener("focus", () => { st.focus = r.id; });
   const acts = el("span", "racts");

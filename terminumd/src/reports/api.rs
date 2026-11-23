@@ -21,6 +21,7 @@ pub fn routes() -> Router<Shared> {
         .route("/api/reports", get(list))
         .route("/api/reports/{id}", get(one).delete(remove))
         .route("/api/reports/{id}/{act}", post(act))
+        .merge(super::reply::routes())
 }
 
 async fn list(State(app): State<Shared>, Query(q): Query<HashMap<String, String>>) -> Response {

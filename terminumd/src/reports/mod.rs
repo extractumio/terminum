@@ -6,6 +6,7 @@ pub mod api;
 pub mod inbox;
 pub mod migrate;
 pub mod record;
+pub mod reply;
 pub mod sources;
 pub mod tools;
 
