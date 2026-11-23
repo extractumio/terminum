@@ -128,16 +128,17 @@ fn run(tx: &Transaction, project: &str, a: &Action) -> Result<Judgment, String> 
         (project, &a.target, a.at, &a.baseline, crate::dispatcher::runs::GAVE_UP), |r|
         Ok((r.get::<_, Option<String>>(0)?, r.get::<_, bool>(1)?, r.get::<_, bool>(2)?, r.get::<_, bool>(3)?))).optional().map_err(sql)?;
     let Some((returned, failed, stopped, done)) = row else { return Ok(MISSING) };
-    // the run's first typed integration exit (`terminum-integration.md` AC-187) outweighs any later completion
-    Ok(if let Some(how) = returned { (Wrong, match how.as_str() {
-            "conflict" => "Integration returned the task for a conflict.",
-            "out" => "Integration gave the task back without landing it.",
-            _ => "Integration returned the task for a red check.",
-        }) }
-        else if stopped { (Wrong, "The owner stopped the run.") }
-        else if failed { (Wrong, "The task failed.") }
-        else if done { (Right, "The task ran and finished without return.") }
-        else { MISSING })
+    // the episode's first typed integration exit (`terminum-integration.md` AC-187) outweighs a later completion
+    Ok(match (returned.as_deref(), stopped, failed, done) {
+        (Some("red"), ..) => (Wrong, "Integration returned the task for a red check."),
+        (Some("conflict"), ..) => (Wrong, "Integration returned the task for a conflict."),
+        (Some("out"), ..) => (Wrong, "Integration gave the task back without landing it."),
+        (Some(_), ..) => (Wrong, "Integration returned the task."),
+        (None, true, ..) => (Wrong, "The owner stopped the run."),
+        (None, false, true, _) => (Wrong, "The task failed."),
+        (None, false, false, true) => (Right, "The task ran and finished without return."),
+        (None, false, false, false) => MISSING,
+    })
 }
 
 fn alert(tx: &Transaction, project: &str, a: &Action) -> Result<Judgment, String> {
