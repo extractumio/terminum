@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
+//! AC-211, AC-236 and AC-255: retained signals and code-owned yardstick observations.
 
 use rusqlite::{OptionalExtension, Transaction, params};
 use serde::{Deserialize, Serialize};

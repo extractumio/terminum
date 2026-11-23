@@ -8,12 +8,12 @@ export const MISSING_RATE = { sample: 0, value: null, interval_95: null, can_gat
 export function scorecardFixture(DATE, LITERAL) {
   return {
     scorecard: {
-      resolved: { count: 1, watching: 1, recurred: 0, rate: SMALL_RATE },
-      decisions: { right: 1, pending: 1, rate: SMALL_RATE }, by_rule: [], delays: [], calibration: [],
+      resolved: { count: 3, watching: 1, recurred: 0, rate: SMALL_RATE },
+      decisions: { right: 3, pending: 1, rate: SMALL_RATE }, by_rule: [], delays: [], calibration: [],
       misses: { count: 1, sample: 2, recent: [{ source: "owner_bug", subject: "API-12",
         first_evidence_at: DATE, signal_state: "shadow" }] },
       overrides: { count: 0, rate: MISSING_RATE }, refusals: { count: 1, sample: 2 },
-      usefulness: { count: 1, rate: SMALL_RATE }, judgment: { tokens: 600, sample: 3, per_resolution: 600 },
+      usefulness: { count: 3, rate: SMALL_RATE }, judgment: { tokens: 600, sample: 3, per_resolution: 600 },
       fixes: { dollars: 2, sample: 1, unpriced: 1, per_resolution: null }, weekly_resolved: 1,
       owner_load: { cards: 2, pages: 1, presses: 1, timed: 1, verdict_minutes: 2.5 },
     },
@@ -31,6 +31,7 @@ export async function checkScorecard(page, reports, suffix, LITERAL) {
     && await reports.getByText("No eligible slot", { exact: false }).isVisible()
     && await reports.locator("img").count() === 0
     && await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+  await shot(page, `supervisor-audit-${suffix}`);
   const scorecard = page.locator("#sv-scorecard");
   await scorecard.getByText("Latest misses").click();
   check("AC-255 AC-256 the scorecard shows sample sizes, uncertainty, missing samples and earlier suppressed evidence",

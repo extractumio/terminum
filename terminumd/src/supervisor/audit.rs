@@ -186,21 +186,23 @@ pub(super) fn shown(tx: &Transaction, project: &str) -> Result<Value, String> {
         FROM supervisor_audit_reports r JOIN tasks t ON t.id = r.task AND t.project = r.project
         WHERE r.project = ?1 ORDER BY r.at DESC, r.task LIMIT 1",
         [project], |r| signals::decode(r, 0)).optional().map_err(sql)?;
-    let status: Option<(Option<String>, Option<String>, Option<String>, Option<String>, Option<i64>)> = tx.query_row(
-        "SELECT a.unavailable, CASE WHEN s.paused THEN coalesce(s.paused_why, 'The quarterly audit is paused.') END,
-            f.state, coalesce(f.why, CASE WHEN t.status = 'FAILED' THEN
+    let status: Option<(Option<String>, Option<String>, Option<i64>)> = tx.query_row(
+        "SELECT coalesce(a.unavailable,
+            CASE WHEN s.paused THEN coalesce(s.paused_why, 'The quarterly audit is paused.') END, f.why,
+            CASE WHEN t.status = 'FAILED' THEN
             CASE WHEN EXISTS (SELECT 1 FROM run_tasks rt JOIN supervisor_review_runs v ON v.run = rt.run
                 WHERE rt.task = t.id AND v.audit AND v.overrun)
             THEN 'The audit exceeded its judgment token limit.'
             ELSE (SELECT e.text FROM events e WHERE e.task = t.id AND e.author = 'dispatcher' AND e.kind = 'why'
-                ORDER BY e.at DESC, e.rowid DESC LIMIT 1) END END), f.due_at
+                ORDER BY e.at DESC, e.rowid DESC LIMIT 1) END
+            WHEN t.status = 'IN PROGRESS' THEN 'The quarterly audit is running.' END), f.state, f.due_at
         FROM supervisor_audits a LEFT JOIN schedules s ON s.id = a.schedule
         LEFT JOIN schedule_fires f ON f.id = (SELECT id FROM schedule_fires WHERE schedule = s.id ORDER BY id DESC LIMIT 1)
         LEFT JOIN tasks t ON t.id = f.task AND t.project = a.project
-        WHERE a.project = ?1", [project], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)))
+        WHERE a.project = ?1", [project], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
         .optional().map_err(sql)?;
-    let (unavailable, paused, state, why, due) = status.unwrap_or_default();
-    Ok(json!({"latest":latest,"status":unavailable.or(paused).or(why).or_else(|| latest.is_none().then_some(AWAITING.into())),
+    let (why, state, due) = status.unwrap_or_default();
+    Ok(json!({"latest":latest,"status":why.or_else(|| latest.is_none().then_some(AWAITING.into())),
         "last_due":due,"last_state":state}))
 }
 
