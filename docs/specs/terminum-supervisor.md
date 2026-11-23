@@ -265,8 +265,8 @@ Scenario: AC-217 happy path — run outside Dispatcher's walk
 Scenario: AC-217 edge — persisting signals
   Given API has a few hundred signals that persist from pass to pass, and a counted one with thousands of evidence rows
   When a pass finds them again, one of them with one new row
-  Then the write changes only the last seen times and that signal's evidence and count, and reads each evidence row once
-  And what the write does not need, such as encoding evidence rows, is prepared before it, and its queries start from the project's own rows
+  Then the write rewrites no persisting signal's evidence, count or revision, and only that signal gains its new row and one repeat
+  And the write reads a stored signal's evidence only when it differs, and compares each of its rows once
 
 Scenario: AC-217 edge — same-time events and restart
   Given three events share a timestamp and have nonmonotonic IDs
