@@ -3,7 +3,7 @@
 
 use rusqlite::{OptionalExtension, Transaction};
 use crate::tasks::ops::sql;
-use super::flow::LAUNCH;
+use super::flow::{LAUNCH, RETURNED};
 use super::outcomes::{Action, Judgment, Kind, Verdict::{Right, Undecided, Wrong}};
 
 const MISSING: Judgment = (Undecided, "The store has no conclusive evidence yet.");
@@ -115,7 +115,8 @@ fn run(tx: &Transaction, project: &str, a: &Action) -> Result<Judgment, String> 
         episode AS (SELECT coalesce((SELECT at FROM start), ?3) AS began,
             coalesce((SELECT min(at) FROM launches WHERE at > (SELECT at FROM start)
               OR ((SELECT at FROM start) IS NULL AND run <> ?4)), 9223372036854775807) AS ended)
-        SELECT EXISTS (SELECT 1 FROM integration_returns i WHERE i.task = t.id AND i.at >= began AND i.at < ended),
+        SELECT (SELECT json_extract(e.data, '$.left') FROM events e WHERE e.task = t.id AND e.at >= began AND e.at < ended
+              AND {RETURNED} ORDER BY e.at, e.rowid LIMIT 1),
             EXISTS (SELECT 1 FROM events e WHERE e.task = t.id AND e.at >= began AND e.at < ended
               AND e.kind = 'move' AND json_extract(e.data, '$.to') = 'FAILED'),
             EXISTS (SELECT 1 FROM events e WHERE e.task = t.id AND e.at >= began AND e.at < ended
@@ -125,9 +126,14 @@ fn run(tx: &Transaction, project: &str, a: &Action) -> Result<Judgment, String> 
               OR (t.status = 'DONE' AND t.updated_at >= began AND t.updated_at < ended))
         FROM tasks t, episode WHERE t.project = ?1 AND t.id = ?2"),
         (project, &a.target, a.at, &a.baseline, crate::dispatcher::runs::GAVE_UP), |r|
-        Ok((r.get::<_, bool>(0)?, r.get::<_, bool>(1)?, r.get::<_, bool>(2)?, r.get::<_, bool>(3)?))).optional().map_err(sql)?;
+        Ok((r.get::<_, Option<String>>(0)?, r.get::<_, bool>(1)?, r.get::<_, bool>(2)?, r.get::<_, bool>(3)?))).optional().map_err(sql)?;
     let Some((returned, failed, stopped, done)) = row else { return Ok(MISSING) };
-    Ok(if returned { (Wrong, "Integration returned the task.") }
+    // the run's first typed integration exit (`terminum-integration.md` AC-187) outweighs any later completion
+    Ok(if let Some(how) = returned { (Wrong, match how.as_str() {
+            "conflict" => "Integration returned the task for a conflict.",
+            "out" => "Integration gave the task back without landing it.",
+            _ => "Integration returned the task for a red check.",
+        }) }
         else if stopped { (Wrong, "The owner stopped the run.") }
         else if failed { (Wrong, "The task failed.") }
         else if done { (Right, "The task ran and finished without return.") }

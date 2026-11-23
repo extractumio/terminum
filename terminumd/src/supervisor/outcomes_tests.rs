@@ -2,7 +2,7 @@
 //! AC-246–247 and AC-263 exercise retained outcomes and their effect on the shared line.
 
 use serde_json::json;
-use crate::tasks::{ops::sql, store::HUMAN};
+use crate::tasks::{ops::sql, store::{DISPATCHER, HUMAN}};
 use super::{Kind, Verdict, check, find, record};
 use crate::supervisor::{DAY, WEEK, Rule, breakers, engine_tests::{Fixture, NOW, OTHER, PROJECT},
     incidents, line, line_queue, outcome_evidence, settings, signals};
@@ -25,6 +25,12 @@ fn problem(f: &Fixture, key: &str, state: &str, run: Option<&str>) -> i64 {
             (id, key)).map_err(sql)?;
         Ok(id)
     }).unwrap()
+}
+
+/// A typed exit from integration of the fixture's task `run`, as the queue writes it (`terminum-integration.md` AC-187).
+fn leave(tx: &rusqlite::Transaction, words: &str, how: &str, at: i64) -> Result<String, String> {
+    tx.execute("UPDATE tasks SET slug = 'RUN-1' WHERE id = 'run'", []).map_err(sql)?;
+    crate::tasks::ops::left_queue(tx, DISPATCHER, "RUN-1", words, how, at)
 }
 
 #[test]
@@ -128,8 +134,8 @@ fn ac246_each_decision_kind_uses_its_own_evidence() {
     f.write("UPDATE supervisor_problems SET state = 'recurred' WHERE id = ?1", [p]);
     inspect([Right, Undecided, Right, Right, Undecided, Undecided, Right]);
     f.write("UPDATE supervisor_signals SET state = 'recurred',last_seen = ?1 WHERE fingerprint = 'source'", [NOW + 60]);
-    f.write("INSERT INTO integration_returns VALUES ('run','fixture-commit','red',?1)", [NOW + 50]);
     f.store.with(|tx| {
+        leave(tx, "run returned: red check.", "red", NOW + 50)?;
         let hold = find(tx, PROJECT, Kind::Hold, &action)?.unwrap();
         super::judge(tx, PROJECT, &hold, 0, NOW + 70, (Wrong, "The owner released the unchanged subject."))?;
         let alert = find(tx, PROJECT, Kind::Alert, "alert")?.unwrap();
@@ -137,6 +143,68 @@ fn ac246_each_decision_kind_uses_its_own_evidence() {
         Ok(())
     }).unwrap();
     inspect([Wrong; 7]);
+}
+
+#[test]
+fn ac246_run_counts_each_typed_integration_return_of_its_episode() {
+    use Verdict::{Right, Wrong};
+    // (assessed episode's exit, the later attempt's exit, expected verdict, its reason)
+    let cases = [
+        (Some("conflict"), None, Wrong, "Integration returned the task for a conflict."),
+        (Some("out"), None, Wrong, "Integration gave the task back without landing it."),
+        (Some("red"), None, Wrong, "Integration returned the task for a red check."),
+        (Some("landed"), None, Right, "The task ran and finished without return."),
+        (None, Some("conflict"), Right, "The task ran and finished without return."),
+    ];
+    for (n, (exit, later, verdict, why)) in cases.into_iter().enumerate() {
+        let f = Fixture::new(&format!("outcomes-returns-{n}"));
+        signal(&f, "source", Rule::FailedRepeat, 2);
+        f.task("run", Some("Bug"), "P1", "IN PROGRESS", NOW - DAY);
+        f.agent("agent");
+        // an exit before the action belongs to an earlier attempt
+        f.store.with(|tx| leave(tx, "Earlier.", "conflict", NOW - 10).map(drop)).unwrap();
+        f.run("run", "assessed", "agent", NOW + 1);
+        f.store.with(|tx| record(tx, &signals::get(tx, PROJECT, "source")?, Kind::Run, "run", "run", "assessed", NOW)).unwrap();
+        f.store.with(|tx| {
+            if let Some(how) = exit {
+                leave(tx, "Back from integration.", how, NOW + 10)?;
+            }
+            Ok(())
+        }).unwrap();
+        f.transition("run", NOW + 30, "IN PROGRESS", "DONE");
+        f.run("run", "later", "agent", NOW + 40);
+        f.store.with(|tx| {
+            if let Some(how) = later {
+                leave(tx, "Back again.", how, NOW + 50)?;
+            }
+            let a = find(tx, PROJECT, Kind::Run, "run")?.unwrap();
+            assert_eq!(outcome_evidence::check(tx, PROJECT, &a, NOW + DAY)?, (verdict, why), "{exit:?} {later:?}");
+            Ok(())
+        }).unwrap();
+    }
+}
+
+#[test]
+fn ac246_run_judges_a_batch_given_up_and_a_withdrawn_task_wrong() {
+    // the integration engine's own writer of a typed exit, as a given-up batch and a human's return use it
+    for (n, how) in [crate::integrate::store::Left::Out, crate::integrate::store::Left::Conflict].into_iter().enumerate() {
+        let f = Fixture::new(&format!("outcomes-give-back-{n}"));
+        signal(&f, "source", Rule::FailedRepeat, 2);
+        f.task("run", Some("Bug"), "P1", "INTEGRATION", NOW - DAY);
+        f.agent("agent");
+        f.run("run", "assessed", "agent", NOW + 1);
+        f.write("UPDATE tasks SET slug = 'RUN-1' WHERE id = 'run'", []);
+        f.store.with(|tx| {
+            record(tx, &signals::get(tx, PROJECT, "source")?, Kind::Run, "run", "run", "assessed", NOW)?;
+            crate::integrate::store::give_back(tx, "run", "RUN-1 returned.", how, NOW + 10)
+        }).unwrap();
+        f.transition("run", NOW + 30, "IN PROGRESS", "DONE");
+        f.store.with(|tx| {
+            let a = find(tx, PROJECT, Kind::Run, "run")?.unwrap();
+            assert_eq!(outcome_evidence::check(tx, PROJECT, &a, NOW + DAY)?.0, Verdict::Wrong, "{how:?}");
+            Ok(())
+        }).unwrap();
+    }
 }
 
 #[test]
