@@ -62,6 +62,16 @@ export async function askChecks({ page, sent, say, at, layout, selectRow }) {
   check(`${at} Ask: the quote is kept with its number and line, and keeps a light blue wavy line down its left where it was selected`,
     keep?.n === 7 && Number.isInteger(keep.line) && keep.text.includes("out 2500 lorem ipsum") && marked?.shown === 1 && marked.covers && marked.gutter && marked.color && marked.wavy && !marked.under,
     JSON.stringify({ keep, marked }));
+  // the page's numbering moved (a new width re-wrapped tmux's history, a reload, tmux's dropped
+  // tenth): the line kept is far from the text, which still has its line; a short quote that far has none
+  const far = async (text, by = 500) => {
+    say({ t: "askedmarks", sid: "S1", items: [{ n: 7, text, line: keep?.line + by }] });
+    await page.waitForTimeout(300);
+    return page.evaluate(() => [...document.querySelectorAll("#term .askline")].filter((l) => !l.hidden).length);
+  };
+  const moved = { long: await far(keep?.text), short: await far("out 2500"), farther: await far(keep?.text, 5000) };
+  check(`${at} Ask: a quote whose line kept is far from its text (the history numbered anew) keeps its wavy line; a short one, or one over 3000 lines away, gets none`,
+    keep?.text.length >= 16 && moved.long === 1 && moved.short === 0 && moved.farther === 0, JSON.stringify(moved));
   // the quote as sent (Claude Code shows the message after it) is never marked, even where it stands
   // nearest the line kept: the agent reprinted its answer and the original moved away
   const row = (text) => ({ r: [[text, null, null, 0]], e: true });
