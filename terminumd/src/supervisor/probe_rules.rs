@@ -4,13 +4,16 @@
 use std::collections::BTreeMap;
 
 use super::{Comparison, DAY, Evidence, Measurements, Query, Reading, Threshold, catalog, percentile,
-    probe_arch::Architecture, probe_gate::Gate, probe_git::Releases, probes};
+    impact::Source, probe_arch::Architecture, probe_gate::Gate, probe_git::Releases, probes};
 
 pub(super) const GIT_MISSING: &str = "Git release tags are unavailable.";
 pub(super) const ARCH_MISSING: &str = "Git architecture observations are unavailable.";
 pub(super) const GATE_MISSING: &str = "Gate record history is unavailable for this window.";
 pub(super) const INTEGRATION_OFF: &str = "Project integration is off.";
 pub(super) const MONTH: f64 = 365.2425 / 12.0;
+const CODE: &str = "A code-structure risk is in no weekly project total; the failures and returns it later causes are sized by flow.failed_repeat and flow.returned.";
+const GATE: &str = "The gate's retries and nightly results are not task, owner or spend quantities.";
+const RELEASES: &str = "Release timing and cadence measure the whole project, so its share of itself would always be all of it; delay to DONE is sized by flow.lead_time_shift.";
 
 pub(super) fn release_counts(releases: &Releases, start: i64, end: i64) -> (f64, f64) {
     let releases_in_period = releases.tags.iter().filter(|tag| (start..=end).contains(&tag.at)).count();
@@ -36,7 +39,7 @@ pub(super) fn nightly_reds(gate: &Gate, start: i64, end: i64) -> Option<f64> {
 fn evidence(id: i64) -> Vec<Evidence> { vec![Evidence::SupervisorProbes(id)] }
 
 fn comparison(q: &Query<'_, '_>, id: i64, metric: &'static str, value: f64, old: f64, direction: Comparison) -> Reading {
-    Reading::new("project", q.project, metric, value, evidence(id)).history(vec![old]).comparison(direction)
+    Reading::new("project", q.project, metric, value, evidence(id), Source::Unsized(RELEASES)).history(vec![old]).comparison(direction)
 }
 
 pub(super) fn release_time(q: &Query<'_, '_>) -> Result<Measurements, String> {
@@ -71,13 +74,13 @@ pub(super) fn flaky(q: &Query<'_, '_>) -> Result<Measurements, String> {
     let mut out = Measurements::default();
     let retries: usize = gate.events.iter().filter(|e| (q.window.start..=q.window.end).contains(&e.at)).map(|e| e.retried).sum();
     if gate.since <= q.window.start || retries > 0 {
-        out.readings.push(Reading::new("project", q.project, "gate_retries", retries as f64, evidence(id)));
+        out.readings.push(Reading::new("project", q.project, "gate_retries", retries as f64, evidence(id), Source::Unsized(GATE)));
     } else {
         out.unavailable.push(GATE_MISSING);
     }
     let reds = gate.events.iter().filter(|e| e.nightly_red && q.window.current(e.at)).count();
     if reds > 0 || gate.nightly_since.is_some_and(|since| since <= q.window.start) {
-        out.readings.push(Reading::new("project", q.project, "nightly_reds", reds as f64, evidence(id)));
+        out.readings.push(Reading::new("project", q.project, "nightly_reds", reds as f64, evidence(id), Source::Unsized(GATE)));
     } else {
         out.unavailable.push("Nightly rehearsal history is unavailable for this window.");
     }
@@ -95,7 +98,7 @@ pub(super) fn migrations(q: &Query<'_, '_>) -> Result<Measurements, String> {
         if q.window.current(at) { *paths.entry(path).or_default() += 1.0; }
     }
     Ok(Measurements {
-        readings: paths.into_iter().map(|(path, count)| Reading::new("file", path, "existing_migration_edits", count, evidence(id))).collect(),
+        readings: paths.into_iter().map(|(path, count)| Reading::new("file", path, "existing_migration_edits", count, evidence(id), Source::Unsized(CODE))).collect(),
         complete_metrics: (arch.since <= q.window.start).then_some("existing_migration_edits").into_iter().collect(),
         ..Measurements::default()
     })
@@ -106,7 +109,7 @@ pub(super) fn dependencies(q: &Query<'_, '_>) -> Result<Measurements, String> {
     let Some(changes) = arch.dependencies else { return Ok(Measurements::missing("No supported lockfile is available.")); };
     let added: u64 = changes.iter().filter(|(at, _)| q.window.current(*at)).map(|(_, count)| count).sum();
     if arch.since > q.window.start && added == 0 { return Ok(Measurements::missing("Git dependency history is incomplete.")); }
-    Ok(super::flow::one(Reading::new("project", q.project, "lockfile_dependencies_added", added as f64, evidence(id))))
+    Ok(super::flow::one(Reading::new("project", q.project, "lockfile_dependencies_added", added as f64, evidence(id), Source::Unsized(CODE))))
 }
 
 pub(super) fn hotspots(q: &Query<'_, '_>) -> Result<Measurements, String> {
@@ -130,12 +133,12 @@ pub(super) fn hotspots(q: &Query<'_, '_>) -> Result<Measurements, String> {
     };
     let mut readings = recent.into_iter().filter_map(|(path, stats)| score(path, stats).map(|value| (path, value)))
         .filter(|(_, value)| *value > 0.0)
-        .map(|(path, value)| Reading::new("file", path, "churn_size_fix_count", value, evidence(id)).history(history.clone()))
+        .map(|(path, value)| Reading::new("file", path, "churn_size_fix_count", value, evidence(id), Source::Unsized(CODE)).history(history.clone()))
         .collect::<Vec<_>>();
     let mut out = Measurements { complete_metrics: (arch.since <= q.window.start).then_some("churn_size_fix_count")
         .into_iter().collect(), ..Measurements::default() };
     if let Some(files) = arch.near_cap {
-        readings.extend(files.into_iter().map(|(path, share)| Reading::new("file", path, "file_line_limit_share", share, evidence(id))
+        readings.extend(files.into_iter().map(|(path, share)| Reading::new("file", path, "file_line_limit_share", share, evidence(id), Source::Unsized(CODE))
             .comparison(Comparison::AtLeast).fixed(Threshold::Absolute(0.9))));
         out.complete_metrics.push("file_line_limit_share");
     } else {
@@ -151,7 +154,7 @@ pub(super) fn failures(q: &Query<'_, '_>) -> Result<Measurements, String> {
         let Some(id) = status.id else { continue; };
         if status.state == super::probe_command::Failure::Unavailable.code() || status.state == probes::OVERDUE { continue; }
         let failed = status.state != probes::MEASURED;
-        out.readings.push(Reading::new("probe", status.source, "probe_failed", f64::from(failed), evidence(id))
+        out.readings.push(Reading::new("probe", status.source, "probe_failed", f64::from(failed), evidence(id), super::impact::OWN_HEALTH)
             .fixed(Threshold::Absolute(0.0)));
     }
     Ok(out)

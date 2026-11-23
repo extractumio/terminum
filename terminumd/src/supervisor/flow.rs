@@ -109,9 +109,9 @@ pub(super) fn wait_human(q: &Query<'_, '_>) -> Result<Measurements, String> {
             let mut evidence = evidence.clone();
             evidence.extend(blocked.iter().map(|b| Evidence::TaskLinks { task: b.clone(), other: id.clone() }));
             let count = blocked.len();
-            out.readings.push(Reading::new("task", &id, "blocked_tasks", count as f64, evidence).source(Source::BlockingLinks).fixed(Threshold::Absolute(0.0)));
+            out.readings.push(Reading::new("task", &id, "blocked_tasks", count as f64, evidence, Source::BlockingLinks).fixed(Threshold::Absolute(0.0)));
         }
-        let mut age = Reading::new("task", &id, "wait_minutes", (q.window.end - at) as f64 / 60.0, evidence).source(Source::WaitDays).history(vec![baseline]);
+        let mut age = Reading::new("task", &id, "wait_minutes", (q.window.end - at) as f64 / 60.0, evidence, Source::WaitDays).history(vec![baseline]);
         if age.exceeds(q.detector.threshold).is_some() {
             age.evidence.extend(history_evidence.iter().cloned());
             out.readings.push(age);
@@ -144,7 +144,7 @@ pub(super) fn reasonless(q: &Query<'_, '_>) -> Result<Measurements, String> {
         }
         evidence.push(events(id));
     }
-    Ok(one(Reading::new("project", q.project, "reasonless_failures", value, evidence).source(Source::Count(Unit::FailureEvents)).history(history)))
+    Ok(one(Reading::new("project", q.project, "reasonless_failures", value, evidence, Source::Count(Unit::FailureEvents)).history(history)))
 }
 
 // The run lifecycle state describes the pane, not its task's disposition. Link a FAILED transition
@@ -189,7 +189,7 @@ pub(super) fn failed_repeat(q: &Query<'_, '_>) -> Result<Measurements, String> {
         let count = runs.len() as f64;
         let attributed = runs.iter().filter(|(_, (_, sole_task))| *sole_task).map(|(run, _)| run.clone()).collect();
         let evidence = runs.into_iter().flat_map(|(run, (event, _))| [Evidence::Runs(run), events(event)]).collect();
-        out.readings.push(Reading::new("task", task, "failed_runs", count, evidence).source(Source::Count(Unit::FailureEvents))
+        out.readings.push(Reading::new("task", task, "failed_runs", count, evidence, Source::Count(Unit::FailureEvents))
             .attributed_runs(attributed).comparison(Comparison::AtLeast));
     }
     Ok(out)
@@ -218,8 +218,8 @@ pub(super) fn rerun(q: &Query<'_, '_>) -> Result<Measurements, String> {
         }
     }
     Ok(Measurements { readings: groups.into_iter().map(|(task, (runs, attributed, evidence))|
-        Reading::new("task", task, "runs_after_done", runs.len() as f64, evidence)
-            .source(Source::Count(Unit::RunEvents)).attributed_runs(attributed)).collect(), ..Measurements::default() })
+        Reading::new("task", task, "runs_after_done", runs.len() as f64, evidence, Source::Count(Unit::RunEvents))
+            .attributed_runs(attributed)).collect(), ..Measurements::default() })
 }
 
 pub(super) fn starved(q: &Query<'_, '_>) -> Result<Measurements, String> {
@@ -252,7 +252,7 @@ pub(super) fn starved(q: &Query<'_, '_>) -> Result<Measurements, String> {
         }
         if free {
             let evidence = std::iter::once(task(&id)).chain(event.map(events)).collect();
-            out.readings.push(Reading::new("task", id, "todo_minutes", (q.window.end - entered) as f64 / 60.0, evidence));
+            out.readings.push(Reading::new("task", id, "todo_minutes", (q.window.end - entered) as f64 / 60.0, evidence, Source::AgeSince(entered)));
         }
     }
     Ok(out)
@@ -268,7 +268,7 @@ pub(super) fn bugs(q: &Query<'_, '_>) -> Result<Measurements, String> {
         AND type = 'Bug' AND severity IN ('P0','P1') AND status NOT IN ('DONE','FAILED') AND created_at BETWEEN 1 AND ?2",
         (q.project, q.window.end), |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))?;
     Ok(Measurements { readings: bugs.into_iter().map(|(id, at)| Reading::new(
-        "task", &id, "open_bug_minutes", (q.window.end - at) as f64 / 60.0, vec![task(&id)])).collect(), ..Measurements::default() })
+        "task", &id, "open_bug_minutes", (q.window.end - at) as f64 / 60.0, vec![task(&id)], Source::AgeSince(at))).collect(), ..Measurements::default() })
 }
 
 pub(super) fn lead_time(q: &Query<'_, '_>) -> Result<Measurements, String> {
@@ -290,7 +290,7 @@ pub(super) fn lead_time(q: &Query<'_, '_>) -> Result<Measurements, String> {
     for (name, p) in [("median_lead_minutes", 50), ("p90_lead_minutes", 90)] {
         let value = percentile(&mut recent, p).unwrap();
         let baseline = percentile(&mut earlier, p).unwrap();
-        readings.push(Reading::new("project", q.project, name, value, evidence.clone()).source(Source::LeadDays).history(vec![baseline]));
+        readings.push(Reading::new("project", q.project, name, value, evidence.clone(), Source::LeadDays).history(vec![baseline]));
     }
     Ok(Measurements { readings, ..Measurements::default() })
 }
@@ -315,7 +315,7 @@ pub(super) fn backlog(q: &Query<'_, '_>) -> Result<Measurements, String> {
         count += 1;
         evidence.extend(rows);
     }
-    Ok(one(Reading::new("project", q.project, "growing_weeks", f64::from(count), evidence).source(Source::BacklogGrowth).comparison(Comparison::AtLeast)))
+    Ok(one(Reading::new("project", q.project, "growing_weeks", f64::from(count), evidence, Source::BacklogGrowth).comparison(Comparison::AtLeast)))
 }
 
 pub(super) fn schedule(q: &Query<'_, '_>) -> Result<Measurements, String> {
@@ -345,10 +345,10 @@ pub(super) fn schedule(q: &Query<'_, '_>) -> Result<Measurements, String> {
         }
     }
     let mut readings: Vec<_> = trouble.into_iter().map(|(id, (count, evidence))|
-        Reading::new("schedule", id, "skipped_or_failed_fires", count as f64, evidence).source(Source::Count(Unit::ScheduleEvents))).collect();
+        Reading::new("schedule", id, "skipped_or_failed_fires", count as f64, evidence, Source::Count(Unit::ScheduleEvents))).collect();
     readings.extend(failures.into_iter().map(|(id, evidence)| {
         let value = (evidence.len() / 2) as f64;
-        Reading::new("schedule", id, "failed_routine_tasks", value, evidence).source(Source::Count(Unit::FailureEvents)).fixed(Threshold::Absolute(1.0))
+        Reading::new("schedule", id, "failed_routine_tasks", value, evidence, Source::Count(Unit::FailureEvents)).fixed(Threshold::Absolute(1.0))
     }));
     Ok(Measurements { readings, ..Measurements::default() })
 }

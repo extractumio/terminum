@@ -7,8 +7,10 @@ use crate::dispatcher::runs::GAVE_UP;
 use crate::tasks::{ops::{rows, sql}, store::DEFAULT_PROJECT};
 
 use super::flow::{FIRST_DONE, LAUNCH, events, one, project_events};
-use super::impact::Source;
+use super::impact::{Source, Unit};
 use super::{Comparison, Evidence, Measurements, Query, Reading, Threshold, percentile};
+
+const GUARD: &str = "A guard compares two indicators; the quantities behind each are sized by their own detectors (improve.involvement, improve.operations, owner.load, flow.failed_no_reason).";
 
 fn local_time(tx: &rusqlite::Transaction, unix_ms: i64) -> Result<i64, String> {
     tx.query_row(&format!("SELECT {}", dashboard::local("?1")), [unix_ms], |r| r.get(0)).map_err(sql)
@@ -94,7 +96,7 @@ pub(super) fn involvement(q: &Query<'_, '_>) -> Result<Measurements, String> {
     };
     let mut evidence = owner_evidence(q)?;
     evidence.extend(done.into_iter().filter(|row| row.feature).flat_map(|r| [events(r.event), Evidence::Tasks(r.task)]));
-    Ok(one(Reading::new("project", q.project, "features_per_owner_hour", now, evidence).source(Source::ExcessOwnerHours)
+    Ok(one(Reading::new("project", q.project, "features_per_owner_hour", now, evidence, Source::ExcessOwnerHours)
         .history(vec![old]).comparison(Comparison::Below)))
 }
 
@@ -105,9 +107,10 @@ pub(super) fn load(q: &Query<'_, '_>) -> Result<Measurements, String> {
     }
     let evidence = owner_evidence(q)?;
     let readings = [("switches_per_hour", before.switches, now.switches, Source::ExcessSwitches),
-        ("concurrent_sessions", before.peak, now.peak, Source::Unattributed),
+        ("concurrent_sessions", before.peak, now.peak,
+            Source::Unsized("A peak of concurrent sessions is not additive; its cost shows as switches and owner hours, which owner.load sizes.")),
         ("off_hours_share", before.off, now.off, Source::ExcessOffHours)].into_iter().map(|(metric, old, new, source)|
-        Reading::new("project", q.project, metric, new, evidence.clone()).source(source).history(vec![old])).collect();
+        Reading::new("project", q.project, metric, new, evidence.clone(), source).history(vec![old])).collect();
     Ok(Measurements { readings, ..Measurements::default() })
 }
 
@@ -148,10 +151,11 @@ pub(super) fn answer_latency(q: &Query<'_, '_>) -> Result<Measurements, String> 
             pending.extend([events(question), Evidence::Tasks(task)]);
         }
     }
-    out.readings.push(Reading::new("project", q.project, "pending_answers", (pending.len() / 2) as f64, pending).source(Source::Present)
+    out.readings.push(Reading::new("project", q.project, "pending_answers", (pending.len() / 2) as f64, pending, Source::Present)
         .fixed(Threshold::Absolute(2.0)));
     if let [Some(old), Some(now)] = minutes.each_mut().map(|samples| percentile(samples, 50)) {
-        out.readings.push(Reading::new("project", q.project, "median_answer_minutes", now, answered).history(vec![old]));
+        out.readings.push(Reading::new("project", q.project, "median_answer_minutes", now, answered,
+            Source::Unsized("A median has no additive count, and a question's wait is not WAIT FOR HUMAN task-days; pending answers rank as a present state.")).history(vec![old]));
     } else {
         out.complete_metrics.push("pending_answers");
         out.unavailable.push("Answer latency needs recorded answers in both windows.");
@@ -188,10 +192,10 @@ pub(super) fn operations(q: &Query<'_, '_>) -> Result<Measurements, String> {
         }
     }
     let [old, now] = std::array::from_fn(|i| f64::from(counts[i]) / f64::from(completed[i]));
-    let mut out = one(Reading::new("project", q.project, "operations_per_done", now, evidence).source(Source::ExcessOperations).history(vec![old]));
+    let mut out = one(Reading::new("project", q.project, "operations_per_done", now, evidence, Source::ExcessOperations).history(vec![old]));
     let [earlier, recent] = strategic;
     out.readings.push(Reading::new("project", q.project, "recorded_strategic_acts", f64::from(recent),
-        strategic_evidence).history(vec![f64::from(earlier)]).comparison(Comparison::Below));
+        strategic_evidence, Source::Unsized(GUARD)).history(vec![f64::from(earlier)]).comparison(Comparison::Below));
     out.complete_metrics.extend(["operations_per_done", "recorded_strategic_acts"]);
     Ok(out)
 }
@@ -276,16 +280,18 @@ pub(super) fn churn(q: &Query<'_, '_>) -> Result<Measurements, String> {
     let [old, recent] = changes;
     let value = (recent.len() / 2) as f64;
     let baseline = (old.len() / 2) as f64;
-    let mut out = one(Reading::new("project", q.project, "priority_reversals", value, recent.into_iter().chain(old).collect())
+    let mut out = one(Reading::new("project", q.project, "priority_reversals", value, recent.into_iter().chain(old).collect(),
+        Source::Count(Unit::StrategicActs))
         .history(vec![baseline]));
     let starts = owner_starts(q.tx, q.project, q.window.before, q.window.end)?;
     let stops = rows(q.tx, &format!("{events_sql} SELECT id, at FROM project_events
         WHERE kind = 'why' AND author = 'dispatcher' AND text = ?4 AND at >= ?3"),
         (q.project, q.window.end, q.window.before, GAVE_UP), |r| Ok((events(r.get(0)?), r.get::<_, i64>(1)?)))?;
-    for (metric, rows) in [("owner_starts", starts), ("owner_stops", stops)] {
+    // An owner's start is one of the owner's Run operations; a stop ends one Dispatcher launch.
+    for (metric, rows, unit) in [("owner_starts", starts, Unit::Operations), ("owner_stops", stops, Unit::RunEvents)] {
         let prior = rows.iter().filter(|(_, at)| !q.window.current(*at)).count();
         let value = (rows.len() - prior) as f64;
-        out.readings.push(Reading::new("project", q.project, metric, value, rows.into_iter().map(|(id, _)| id).collect()).history(vec![prior as f64]));
+        out.readings.push(Reading::new("project", q.project, metric, value, rows.into_iter().map(|(id, _)| id).collect(), Source::Count(unit)).history(vec![prior as f64]));
     }
     Ok(out)
 }
@@ -310,7 +316,7 @@ pub(super) fn guard_broken(q: &Query<'_, '_>) -> Result<Measurements, String> {
         for (metric, before, after) in [("lower_load_with_fewer_features", loads[0].switches, loads[1].switches),
             ("lower_concurrency_with_fewer_features", loads[0].peak, loads[1].peak),
             ("less_off_hours_with_fewer_features", loads[0].off, loads[1].off)] {
-            out.readings.push(Reading::new("project", q.project, metric, after, evidence.clone()).history(vec![before]).comparison(Comparison::Below));
+            out.readings.push(Reading::new("project", q.project, metric, after, evidence.clone(), Source::Unsized(GUARD)).history(vec![before]).comparison(Comparison::Below));
         }
     }
     if now > old + by {
@@ -329,7 +335,7 @@ pub(super) fn guard_broken(q: &Query<'_, '_>) -> Result<Measurements, String> {
         if totals.iter().all(|n| *n > 0.0) {
             out.complete_metrics.push("more_features_with_more_failures");
             out.readings.push(Reading::new("project", q.project, "more_features_with_more_failures",
-                failures[1] / totals[1], evidence).history(vec![failures[0] / totals[0]]));
+                failures[1] / totals[1], evidence, Source::Unsized(GUARD)).history(vec![failures[0] / totals[0]]));
         }
     }
     Ok(out)

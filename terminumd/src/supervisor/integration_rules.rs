@@ -6,7 +6,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::tasks::ops::rows;
 
 use super::{Comparison, Evidence, Measurements, Query, Reading, Threshold, catalog, percentile,
-    flow::{RETURNED, events, project_events}, impact::Source, probe_rules::{self, ARCH_MISSING, INTEGRATION_OFF}};
+    flow::{RETURNED, events, project_events}, impact::{Source, Unit}, probe_rules::{self, ARCH_MISSING, INTEGRATION_OFF}};
+
+const VERIFY: &str = "A Verify verdict is one check's result, in no weekly project total; the rework it causes is sized by flow.returned and flow.rerun_after_done.";
 
 pub(super) fn returned(q: &Query<'_, '_>) -> Result<Measurements, String> {
     if !catalog::integration_on(q.tx, q.project)? { return Ok(Measurements::missing(INTEGRATION_OFF)); }
@@ -17,17 +19,18 @@ pub(super) fn returned(q: &Query<'_, '_>) -> Result<Measurements, String> {
     let [old, current] = subjects.map(|tasks| tasks.len() as f64);
     let mut out = Measurements::default();
     out.readings.push(Reading::new("project", q.project, "tasks_returned", current,
-        returns.into_iter().map(|(id, _, _)| events(id)).collect()).history(vec![old]));
+        returns.into_iter().map(|(id, _, _)| events(id)).collect(), Source::Count(Unit::RunEvents)).history(vec![old]));
     let reds = rows(q.tx, "SELECT r.batch, r.round FROM integration_rounds r JOIN integration_batches b ON b.id = r.batch
         WHERE b.project = ?1 AND r.ended BETWEEN ?2 AND ?3 AND r.result = 'red'",
         (q.project, q.window.start, q.window.end), |r| Ok(Evidence::IntegrationRound { batch: r.get(0)?, round: r.get(1)? }))?;
-    out.readings.push(Reading::new("project", q.project, "red_integration_rounds", reds.len() as f64, reds)
+    out.readings.push(Reading::new("project", q.project, "red_integration_rounds", reds.len() as f64, reds,
+        Source::Unsized("Red rounds are integration batches, in no weekly project total; the tasks they return are sized by tasks_returned."))
         .fixed(Threshold::Absolute(0.0)));
     if !q.historical {
         let bug = crate::integrate::red_target::open_bug(q.tx, q.project)?
             .map(|slug| crate::tasks::ops::key_of(q.tx, &slug).map(Evidence::Tasks)).transpose()?;
         out.readings.push(Reading::new("project", q.project, "red_target", f64::from(bug.is_some()),
-            bug.into_iter().collect()).source(Source::Present).fixed(Threshold::Absolute(0.0)));
+            bug.into_iter().collect(), Source::Present).fixed(Threshold::Absolute(0.0)));
     }
     Ok(out)
 }
@@ -61,7 +64,7 @@ pub(super) fn verify(q: &Query<'_, '_>) -> Result<Measurements, String> {
     }
     let mut out = Measurements {
         readings: tasks.into_iter().map(|(task, row)| Reading::new("task", task, "own_verify_failed",
-            f64::from(!row.passed), vec![row.evidence.clone()])).collect(),
+            f64::from(!row.passed), vec![row.evidence.clone()], Source::Unsized(VERIFY))).collect(),
         complete_metrics: vec!["own_verify_failed"],
         ..Measurements::default()
     };
@@ -69,7 +72,7 @@ pub(super) fn verify(q: &Query<'_, '_>) -> Result<Measurements, String> {
         if [old.len(), now.len()].into_iter().any(|n| n < super::spend::MIN_RATE_SAMPLE) { continue; }
         let rate = |rows: &[&Verify]| rows.iter().filter(|r| !r.passed).count() as f64 / rows.len() as f64;
         out.readings.push(Reading::new("agent", agent, "own_verify_failure_share", rate(&now),
-            now.iter().chain(&old).map(|r| r.evidence.clone()).collect()).history(vec![rate(&old)])
+            now.iter().chain(&old).map(|r| r.evidence.clone()).collect(), Source::Unsized(VERIFY)).history(vec![rate(&old)])
             .comparison(Comparison::Above).fixed(Threshold::Change { by: 0.1 }));
     }
     Ok(out)
@@ -102,7 +105,8 @@ pub(super) fn diffs(q: &Query<'_, '_>) -> Result<Measurements, String> {
         if !q.window.current(diff.at) { continue; }
         if let Some(&limit) = kinds.get(&diff.task).and_then(|kind| limits.get(kind.as_str())) {
             out.readings.push(Reading::new("task", &diff.task, "changed_lines", diff.lines as f64,
-                vec![Evidence::Tasks(diff.task.clone()), Evidence::SupervisorProbes(id)]).history(vec![limit]));
+                vec![Evidence::Tasks(diff.task.clone()), Evidence::SupervisorProbes(id)],
+                Source::Unsized("A diff's size is in no weekly project total; the rework a large diff causes is sized by flow.returned.")).history(vec![limit]));
         }
     }
     if out.readings.is_empty() { out.unavailable.push("Diff comparison needs landed tasks of the same type in both windows."); }

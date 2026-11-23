@@ -87,6 +87,8 @@ mod catalog_tests;
 #[cfg(test)]
 mod replay_tests;
 #[cfg(test)]
+mod impact_tests;
+#[cfg(test)]
 mod incidents_tests;
 
 use rusqlite::Transaction;
@@ -317,13 +319,8 @@ struct Reading {
 enum Comparison { Above, AtLeast, Below, Deviation(f64) }
 
 impl Reading {
-    fn new(kind: &'static str, subject: impl Into<String>, metric: &'static str, value: f64, evidence: Vec<Evidence>) -> Self {
-        Self { subject_kind: kind, subject_id: subject.into(), metric, value, history: vec![], evidence, comparison: Comparison::Above, fixed: None, attributed_runs: BTreeSet::new(), source: Default::default() }
-    }
-
-    fn source(mut self, source: impact::Source) -> Self {
-        self.source = source;
-        self
+    fn new(kind: &'static str, subject: impl Into<String>, metric: &'static str, value: f64, evidence: Vec<Evidence>, source: impact::Source) -> Self {
+        Self { subject_kind: kind, subject_id: subject.into(), metric, value, history: vec![], evidence, comparison: Comparison::Above, fixed: None, attributed_runs: BTreeSet::new(), source }
     }
 
     fn attributed_runs(mut self, runs: BTreeSet<String>) -> Self {
