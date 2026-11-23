@@ -96,7 +96,7 @@ fn due(p: &Pane, now: u64, days: u32) -> Due {
 }
 
 /// tmux's answer to `line`, within WAIT.
-async fn ask(server: &Server, line: String) -> Result<Vec<String>, String> {
+pub(crate) async fn ask(server: &Server, line: String) -> Result<Vec<String>, String> {
     tokio::time::timeout(WAIT, server.run(line)).await.unwrap_or_else(|_| Err("tmux does not answer".into()))
 }
 

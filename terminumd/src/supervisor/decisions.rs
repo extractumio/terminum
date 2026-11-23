@@ -4,7 +4,6 @@
 use rusqlite::{OptionalExtension, Transaction};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
 
 use crate::roles::supervisor::author;
 use crate::tasks::{comments, ops::{self, NewTask, rows, sql}};
@@ -91,7 +90,7 @@ pub(super) fn propose(tx: &Transaction, project: &str, run: Option<&str>, draft:
     }
     evidence.sort_by(|a, b| a.0.cmp(&b.0));
     let encoded = serde_json::to_vec(&evidence).map_err(|e| e.to_string())?;
-    let hash = crate::auth::crypto::hex(&Sha256::digest(encoded));
+    let hash = crate::auth::crypto::sha256_hex(&encoded);
     let previous: Option<(i64, Option<String>)> = tx.query_row("SELECT id,
         (SELECT slug FROM tasks WHERE id = d.task AND project = d.project)
         FROM supervisor_decisions d WHERE problem = ?1 AND kind = ?2 AND evidence = ?3

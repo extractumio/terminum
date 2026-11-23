@@ -2,7 +2,6 @@
 //! AC-244: a retained board task is the incident's conversation.
 
 use rusqlite::{OptionalExtension, Transaction};
-use sha2::{Digest, Sha256};
 
 use crate::tasks::{comments, ops::{self, NewTask, rows, sql}};
 use super::line_queue::{self, Kind};
@@ -65,7 +64,7 @@ pub(super) fn answer(tx: &Transaction, project: &str, run: &str, text: &str, at:
     let task = ensure(tx, project, incident, at)?;
     let by = crate::roles::supervisor::author(tx, project)?;
     let key = ops::key_of(tx, &task)?;
-    let identity = crate::auth::crypto::hex(&Sha256::digest(format!("{run}\n{text}")));
+    let identity = crate::auth::crypto::sha256_hex(format!("{run}\n{text}").as_bytes());
     if !comments::noticed(tx, &by, &key, "incident_answer", &identity)? {
         let event = comments::notice(tx, &by, &task, &text, serde_json::json!({"incident_answer":identity}), at)?;
         if let Some(s) = super::action_tasks::run_signal(tx, project, run)? {
