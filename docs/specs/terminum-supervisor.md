@@ -1262,6 +1262,12 @@ Scenario: AC-263 happy path — template and shared line
   When both raise incidents of different levels
   Then their settings and baselines stay separate, both tabs show the same owner-wide line and quiet hours, and that one line delivers the higher level first
 
+Scenario: AC-263 edge — review a template
+  Given the owner opens a project with the Supervisor off
+  When the owner fills the draft with a prototype template
+  Then the project tab shows the editable charter, indicator targets, surface paths and standard probes
+  And saving those preferences leaves the switch off and gives no command authority
+
 Scenario: AC-263 edge — general lesson
   Given a round proposes a new reusable named query
   When the owner or authorized workflow files the general definition on the engine's board
@@ -1312,44 +1318,25 @@ The yardstick belongs to the detector and the outcome belongs to the store check
 
 ## 7. Current behavior and gaps
 
-The existing mechanisms in §3 provide inputs or precedents for these open gaps.
+These cases have remaining behavior or verification gaps. Section 11 names the checks for their implemented paths.
 
 | AC | Open gap |
 |---|---|
-| AC-212 | Store, snapshot, counter, integration and probe rules use retained inputs, typed thresholds and shadow enablement. The detector catalog lists their source requirements. |
-| AC-213 | Charter breach inputs and round execution belong to their owning stages. |
-| AC-214 | Release tags, task commits, nightly history, question kinds and design sign-offs need their owning inputs. |
-| AC-215 | Probe and judgment quality replay require retained inputs from their owning stages. |
-| AC-216 | The project tab switch gates collection and sensors. Stopping rounds belongs to AC-234. The switch lists active holds after switch-off (AC-245). |
-| AC-219 | The watchdog records a signal and exposes its last heartbeat through the project settings endpoint. Line delivery health belongs to AC-229. |
-| AC-221 | Bootstrap keeps high-impact register seeds and exposes hold eligibility. Shadow hold proposals are recorded under AC-245 and checked under AC-246. Charter breach inputs belong to AC-213. |
-| AC-222 | The project tab edits the project pack, runs the switch and manages import, export and probe approval. The critical line depends on AC-227–229 and AC-263. |
-| AC-223 | The project screen shows its scoreboard, missing inputs and paged signals with evidence. Holds and the Supervisor scorecard depend on their owning cases. |
-| AC-224 | The line-failure producer depends on AC-229. Round updates belong to AC-234. A project-wide hold opens an incident even at level 2 (AC-245). |
-| AC-225 | The template shows active holds and the signed-in keys. A deadline from an interim verification hold depends on AC-233. |
-| AC-227 | The incident thread produces answer notices under AC-244. |
-| AC-231 | The store-backed pane role checks the existing catalog at discovery and execution. Round and Talk registration, case-file access and finding tools belong to AC-234, AC-235 and AC-244. Hold tools carry their own scope, signal and rule checks (AC-245). |
-| AC-233 | Interim holds below confidence 0.7 still need an explicit comparison of the cost of holding and waiting. |
-| AC-234 | Talk context depends on AC-244. Investigation launches require local pane ancestry. |
-| AC-237 | Weekly review admission and its decision card depend on AC-242. Token caps are enforced when a usage report reaches the daemon. |
-| AC-238 | Weekly reporting depends on AC-242. Verifying a charter breach depends on the inputs in AC-213. |
-| AC-239 | Auto-Dispatcher checks the task's outside mark and human move under AC-262. |
-| AC-240 | Decision proposals wait for a checked finding, then qualifying cards open and the remaining decisions go to the weekly list. |
-| AC-241 | The collector retains a single ordinary comment per signal and task and uses the existing hook notice. |
-| AC-242 | A strong-tier selection creates a Routines schedule. The review's stored batch supplies the verdict keys. |
-| AC-243 | The collector publishes up to five new findings in the Supervisor report destination. The watchdog can publish with the actual stale heartbeat. |
-| AC-244 | A retained task carries each incident's comments. The signed-in Talk press uses the first-prompt gate and a separate marked conversation. |
-| AC-245 | Code can hold the current marked run on a qualifying critical task cost signal. The cost detector needs an authorized level 3 escalation before it can produce that signal itself. |
-| AC-246 | The collector checks retained decisions at three horizons and reports mostly undecided rules. |
-| AC-247 | A breaker diverts holds, task runs and alerts. Restoring autonomy requires a changed live detector and measurable retained replay. Fixed or present-only detectors without historical replay stay paused. |
-| AC-249 | Seven-day agent scorecards with per-metric denominators, intervals and a 30-observation floor. Routing proposals open owner cards. |
-| AC-250 | The preview covers the previous 30 days and shows missing per-task diffs. |
-| AC-251 | Task creation and assigned local worktree diffs can flag T3. The opt-in Verify command checks the pinned submission. |
-| AC-252 | One bounded review workflow per task design, with distinct T3 critics and an authenticated owner choice. |
-| AC-260 | Independent daily Git, gate and owner-approved command probes, bounded output and failure signals. |
-| AC-261 | Containing-release lead time, cadence, quick patches, recorded owner-act kinds and priced allocation. |
-| AC-262 | Guarded outside indicators, a local tool-free reader and human task eligibility. |
-| AC-263 | Project templates, shared line and data isolation. |
+| AC-212 | Named queries and firing and non-firing tests are missing for catalog entries including target red, scope and rule drift, several architecture and process checks, and outside metric drift and feedback age. Misrouting still reports unavailable. |
+| AC-213 | Live inputs need to establish charter breaches and let a checked round justify a critical escalation from evidence. |
+| AC-215 | The replay command needs to report judgment quality for weeks with retained outcome or miss labels. It currently reports historical firings and indicators. |
+| AC-221 | Attach-time holds cannot use the charter exception until live readings can prove a charter breach (AC-213). |
+| AC-224 | A red target needs a named critical detector to open its incident (AC-212). |
+| AC-225 | A deadline for an interim verification hold depends on AC-233. |
+| AC-228 | Pending notices can arrive stale after quiet hours or after re-enabling a project. Quiet eligibility can also use a newer urgent firing for an older queued notice. |
+| AC-233 | Verification below confidence 0.7 needs a measured comparison of holding and waiting, and a bounded hold when holding costs less. |
+| AC-234 | Investigation cases need the bounded, project-scoped excerpt from indexed project memory. |
+| AC-237 | A private run still needs to prove that exhaustion stops judgment, leaves detectors and paging active, and publishes the budget decision in a due weekly review. |
+| AC-238 | Live charter breach evidence is needed to exercise the critical exception at the fixes ceiling (AC-213). |
+| AC-240 | Two drifting sessions can still go to the weekly list instead of opening the specified decision card. Standing-rule reports need to attribute changes in recurring questions to the accepted rule. |
+| AC-241 | A hold needs to trigger the fixed task comment and undo notice when its signal has no other nudge trigger. |
+| AC-244 | The owner's manager session started with the Supervisor skill needs the project-scoped signal reader. Talk already has its own scoped path. |
+| AC-246 | Run outcomes need to recognize typed conflicts and withdrawals from integration as well as red target returns. |
 
 ## 8. Recommendation and ownership
 
@@ -1443,7 +1430,7 @@ Compare the latest four weeks to the preceding four and show changes against the
 | Supervisor switch and level | Off; Operator when enabled. |
 | Tier agents | None selected, so code only; choose the project's pool agents for the small, medium, strong and independent roles. |
 | Judgment and fixes | 3% and 10% of trailing weekly project spend respectively. Judgment has a floor of one million tokens and an investigation reserve (Budgets below). Configure ceilings in project settings. |
-| Charter | Never list, priorities, allocation target by type and review dates empty; project-type template may suggest values. Seven indicators enabled, with no outside indicators required. |
+| Charter | Never list, priorities, indicator targets, allocation target by type and review dates empty. Seven indicators enabled, with no outside indicators required. |
 | Surface map | Empty, so no gate. Preview prior-month task count; size the T3 map toward three to four owner sign-offs per month. |
 | Critical line | The owner's, one set for all their projects: every project's tab shows and edits it and says so, and per-project export and import leave it out. No command or link base. Local bar and card work without them. Default repeats after 10 minutes, 30 minutes, then hourly, and from the 30-minute repeat on also the next channel; a 15-minute grouping window; quiet hours 23:00–08:00 once a channel is configured. |
 | Detectors | Enable applicable library detectors; calculate thresholds from history, with per-project overrides and off, shadow or live settings. |
@@ -1451,6 +1438,12 @@ Compare the latest four weeks to the preceding four and show changes against the
 | Marked tasks | Eligibility is Auto-Dispatcher's setting (AC-239), shown here: deterministic Supervisor tasks eligible by default, subject to Auto-Dispatcher's gates. Outside-marked tasks need a human move. |
 | Weekly review | A project schedule made once a strong-tier agent is chosen, weekly, visible and editable in Routines. |
 | Guardrail bands | Each detector's threshold may be tuned within ±50% of its calibrated value; the decisions-right band is a rule's trailing rate ±2 standard errors, judged only from 30 decisions. Only the owner changes them. |
+
+The project tab offers open-source tool, commercial app, prototype and internal tool templates.
+Each fills the draft's never list, ordered priorities, seven indicator targets, candidate T2 and T3
+paths, and standard Git and gate-record choices. The owner edits those fields and saves through the
+revisioned settings API, then enables the project separately. Targets appear beside the scoreboard
+readings as charter goals. The comparison and guard determine each measured verdict.
 
 A signed-in switch starts a scan within seconds: read available integrations, code host, pool and schedules, list unmet needs, calibrate and replay. With fewer than three weeks of data report limited history. On attach, a live detector raises findings immediately, but holds shadow until replay shows at least two-thirds right over at least three prior firings, or seven days elapse. A breach of a charter "never" bypasses shadow. A detector enabled later shadows all actions. Export writes a text file without commands and redacts recognized secret formats unless the owner selects them. Import keeps the destination switch, level, pool choices and confirmed commands. It stages proposed probe commands unset. The signed-in page shows the full command and requires a separate confirmation tied to that preview. The collector commits the attachment report and high-impact register seeds with the settings revision and generation it read. Replay qualification uses distinct firings matched to retained verdicts for the same project and detector. Unjudged firings grant no credit. Turning a rule off retires its live-at-attach state.
 
@@ -1618,40 +1611,40 @@ Enable none of the runtime cases by default. The stages below list the cases in 
 
 - [x] AC-211 — `supervisor::engine_tests` checks named queries, read-only snapshots, fingerprint repeats, resolution and recurrence, and atomic retry.
 - [ ] AC-212 — `supervisor::catalog_tests` and `ac212_off_missing_and_shadow` cover the store rules, typed thresholds, unavailable inputs and shadow enablement. Remaining catalog and guard inputs are listed in §7.
-- [x] AC-213 — `ac213_impact_floors_and_ladder` and `ac213_records_per_finding_impact_and_reads_legacy_scores` cover thresholds, floors, level, response and recording.
-- [x] AC-214 — `ac214_scoreboard_guard_verdicts` covers four-week comparisons, separate indicators, guards and missing inputs.
-- [x] AC-215 — `ac215_replay_rank_and_schema` covers the CLI ranking, repeatable output, unavailable detectors, project isolation, read-only bytes and schema refusal.
-- [ ] AC-216 — `e2e_supervisor.py` and `ac216_project_off_is_inert_and_a_new_generation_rejects_old_work` cover the signed-in switch, its project scope and disabling during collection. The attach and round cases remain open in §7.
+- [ ] AC-213 — `ac213_impact_floors_and_ladder` and `ac213_records_per_finding_impact_and_reads_legacy_scores` cover thresholds, floors, level, response and recording. Live charter and escalation inputs remain open.
+- [x] AC-214 — `ac214_scoreboard_guard_verdicts` covers four-week comparisons, separate indicators, guards and missing inputs. `ac261_git_release_metrics_and_owner_split` and `e2e_supervisor_probes.py` check retained release, gate and owner inputs.
+- [ ] AC-215 — `ac215_replay_rank_and_schema` covers the CLI ranking, repeatable output, unavailable detectors, project isolation, read-only bytes and schema refusal. Replay of labeled judgment quality remains open.
+- [x] AC-216 — `e2e_supervisor.py` and `ac216_project_off_is_inert_and_a_new_generation_rejects_old_work` cover the signed-in switch, its project scope and disabling during collection. `e2e_supervisor_rounds.py` checks that switch-off ends the active round and frees its slot. `ac245_hold_undo_and_switch_off` covers retained holds.
 - [x] AC-217 — `e2e_supervisor.py` checks live detection within a minute. `ac217_cursor_restart_and_rollback_with_same_time_nonmonotonic_ids` and `ac217_open_detector_snapshot_does_not_take_the_store_write_turn` cover durable order, retry and concurrent writes. `scripts/bench_busy.py --supervisor` measures the active collector under load.
 - [x] AC-218 — `e2e_supervisor.py`, `ac218_points_and_hook_counter_retention` and `ac218_queue_growth_uses_only_the_first_available_samples` cover the sample and baseline cadence, numerical hook counts, retention and unavailable history.
-- [ ] AC-219 — `e2e_supervisor.py` and `ac219_independent_watchdog_reports_two_misses_once_and_honors_recovery` cover the independent failure signal, the two-beat threshold and recovery. The incident presentation remains open in §7.
+- [x] AC-219 — `e2e_supervisor.py` and `ac219_independent_watchdog_reports_two_misses_once_and_honors_recovery` cover the independent failure signal, the two-beat threshold and recovery. `liveIncidents` checks the signed-in incident and recovery.
 - [x] AC-220 — `ac220_export_redaction_and_import_confirmation` in `scripts/e2e_supervisor_settings.py` covers per-project defaults and export, unset imports and preview-bound command confirmation on private terminumd. The project tab is AC-222.
 - [ ] AC-221 — `ac221_switch_attaches_two_projects` in `scripts/e2e_supervisor_settings.py` covers switch-only attachment, project-specific calibration and unavailable inputs. `ac221_attach_short_history_and_hold_shadow` covers the seven-day boundary and charter exception. `ac221_attach_replays_distinct_verdicts_seeds_problems_and_retires_disabled_rule` covers the collector's replay qualification, register seeds and fast off/on edits. See §7 for the remaining consumers.
-- [ ] AC-222 — `webSupervisor` in `web/test/e2e_supervisor.mjs` and `liveSupervisor` in `web/test/e2e_livesupervisor.mjs` cover the settings tab, switch, project pool, draft after refusal, and portable settings. Critical-line actions and surface preview follow their owning cases.
-- [ ] AC-223 — `webSupervisor` covers the scoreboard and paged literal evidence at desktop and phone widths in Chromium and WebKit. `liveSupervisor` verifies the two-project collector and screen. The other sections and investigation action follow their owning cases.
-- [ ] AC-224 — `ac224_incident_grouping_and_clear` and `ac224_distinct_fingerprints_share_subject_and_clear_independently` cover grouping, level changes, missing input and recovery. `liveIncidents` covers an actual collector outage and recovery. The line's producer follows AC-229.
+- [x] AC-222 — `webSupervisor` in `web/test/e2e_supervisor.mjs` and `liveSupervisor` in `web/test/e2e_livesupervisor.mjs` cover the settings tab, switch, project pool, draft after refusal, portable settings, line test and surface preview.
+- [x] AC-223 — `webSupervisor` covers the scoreboard, holds, scorecard, investigation and paged literal evidence at desktop and phone widths in Chromium and WebKit. `liveSupervisor` verifies the two-project collector and screen.
+- [ ] AC-224 — `ac224_incident_grouping_and_clear` and `ac224_distinct_fingerprints_share_subject_and_clear_independently` cover grouping, level changes, missing input and recovery. `liveIncidents` covers an actual collector outage and recovery. `e2e_supervisor.py` checks delivery failure. The red-target detector remains open.
 - [ ] AC-225 — `liveIncidents` in `web/test/e2e_liveincidents.mjs` drills a level 3 signal with two signed-in browsers and standalone Files, the pinned card and its timeline. Hold labels and action keys are exercised under AC-245.
 - [x] AC-226 — `ac226_owner_keys_are_audited_once_and_do_not_clear_the_cause` and `liveIncidents` cover snooze, acknowledgment, the recorded actor and time, and refusal without sign-in.
-- [ ] AC-227 — `ac227_bounded_channel_stdin_and_exit` and `ac227_templates_exclude_case_prose_and_use_only_a_validated_origin` cover execution and the four templates. `scripts/e2e_supervisor.py` exercises signed-in configuration, the watchdog's notice and its all-clear. The answer producer follows AC-244.
-- [x] AC-228 — `ac228_repeat_escalation_snooze_and_acknowledgment`, `ac228_acknowledged_incident_updates_keep_the_cool_down` and `ac228_quiet_hours_defer_ordinary_notices_and_keep_all_incidents` exercise the ladder, the updates' cool-down after acknowledgment and quiet hours on a short clock.
+- [x] AC-227 — `ac227_bounded_channel_stdin_and_exit` and `ac227_templates_exclude_case_prose_and_use_only_a_validated_origin` cover execution and the four templates. `scripts/e2e_supervisor.py` exercises signed-in configuration, the watchdog's notice and its all-clear. `e2e_supervisor_comms.py` covers the thread that queues the answer notice.
+- [ ] AC-228 — `ac228_repeat_escalation_snooze_and_acknowledgment`, `ac228_acknowledged_incident_updates_keep_the_cool_down` and `ac228_quiet_hours_defer_ordinary_notices_and_keep_all_incidents` exercise the ladder, update cool-down and quiet hours. Stale backlogs remain open.
 - [x] AC-229 — `ac229_next_channel_weekly_test_and_local_recovery` covers the weekly check, fallback and local recovery. `scripts/e2e_supervisor.py` exercises the signed-in test and the live failure path. `webSupervisor` checks the tab's test status.
 - [x] AC-230 — `cargo test ac230` covers the old store, validation and answer records. `node web/test/e2e_all.mjs webQuestionChoices` checks wide and touch windows in Chromium and WebKit. `web/test/e2e_livedispatcher.mjs` checks the live answer and continuation.
-- [ ] AC-231 — `ac231_supervisor_tools_pane_and_token` in `scripts/e2e_roles.py` checks every existing catalog tool at all three levels, pane identity, project scope and the fixed Dispatcher prompt. `ac231_supervisor_marks_follow_only_restored_panes` covers restored pane identity, `ac231_ac232_each_level_allows_exactly_its_list_of_the_catalog` the levels' lists and a worker's and a manager's reach, `ac231_an_unknown_local_peer_is_refused_while_a_supervisor_pane_is_marked` a caller whose process the system does not name. The checks seed the pane mark in the store; AC-234 and AC-244 prove the launchers' own marks. Live registration and the case-file tools have separate acceptance cases.
+- [x] AC-231 — `ac231_supervisor_tools_pane_and_token` in `scripts/e2e_roles.py` checks every existing catalog tool at all three levels, pane identity, project scope and the fixed Dispatcher prompt. `ac231_supervisor_marks_follow_only_restored_panes`, `ac231_ac232_each_level_allows_exactly_its_list_of_the_catalog` and `ac231_an_unknown_local_peer_is_refused_while_a_supervisor_pane_is_marked` cover restored identity, the precise allowlists and an unknown caller. `e2e_supervisor_rounds.py` and `e2e_supervisor_comms.py` exercise the launchers' real pane marks.
 - [x] AC-232 — `scripts/e2e_roles.py` checks the owner changing a live pane's level, and `scripts/e2e_supervisor_settings.py` checks that importing preferences preserves it. `ac232_owner_sets_level_and_all_levels_page` delivers charter-breach notices to a private command at every level.
 - [ ] AC-233 — `e2e_supervisor_rounds.py` covers automatic admission, the confidence gate, budget denial, deduplication and the owner's press. `ac233_waiters_use_distinct_weeks_and_impact` covers recurring signals and wait order. The dependent actions are listed in §7.
-- [ ] AC-234 — `e2e_supervisor_rounds.py` checks exact case access, bounded data, the fixed prompt, a scoped mark before the first tool call, deadlines and cleanup in private tmux. The dependent case inputs are listed in §7.
+- [ ] AC-234 — `e2e_supervisor_rounds.py` checks exact case access, bounded data, the fixed prompt, a scoped mark before the first tool call, typed results, deadlines and cleanup in private tmux. Indexed memory remains open.
 - [x] AC-235 — `e2e_supervisor_rounds.py` refuses a wrong number and an unresolved row, records the refusal signal and keeps the finding after the named query and evidence pass.
 - [x] AC-236 — `ac236_register_rank_ruling_and_recurrence` covers measured ranking, owner rulings, scoped evidence and protected yardsticks. The Supervisor browser check exercises the register and ruling form.
-- [ ] AC-237 — `ac237_judgment_reserve_and_caps` covers the investigation reserve, shared day and round caps, and overrun signals.
-- [ ] AC-238 — `ac238_fix_budget_and_critical_exception` covers admission order, the single decision card, charter exceptions and attribution by run. Weekly reporting depends on AC-242.
+- [ ] AC-237 — `ac237_judgment_reserve_and_caps` covers the investigation reserve, shared day and round caps, and overrun signals. The due-review exhaustion drill remains open.
+- [ ] AC-238 — `ac238_fix_budget_and_critical_exception` covers admission order, the single decision card, a seeded charter exception and attribution by run. The live charter exception depends on AC-213.
 - [x] AC-239 — `ac239_marked_task_policy_and_override` covers marked eligibility, advisory ranks and the timed override. The role end-to-end check exercises the Supervisor tools on a private board.
-- [ ] AC-240 — `ac240_decision_card_routing` verifies the finding and impact gates, a deferred routine choice and deduplication. `ac242_review_schedule_and_charter_due_once` covers the charter review date.
-- [ ] AC-241 — `ac241_nudge_updates_one_comment` checks a level 0 refusal, a visible comment without a linked agent, and an in-place update. AC-209 covers the ordinary hook delivery.
-- [ ] AC-242 — `scripts/e2e_supervisor_comms.py` runs a Routines task on a fake agent and checks the nine sections, project scope, ten-item cap and three recorded verdicts.
-- [ ] AC-243 — `ac243_digest_only_when_new` checks the daily cap, quiet day, five-item bound and retained stale heartbeat. `scripts/e2e_supervisor_comms.py` checks the quiet and live APIs.
-- [ ] AC-244 — `scripts/e2e_supervisor_comms.py` checks the signed-in Talk press, the retained case prompt in private tmux, the hook notice and answer on the incident task.
+- [ ] AC-240 — `ac240_decision_card_routing` verifies the finding and impact gates, a deferred routine choice and deduplication. `ac242_review_schedule_and_charter_due_once` covers the charter review date. See §7 for drift and standing rules.
+- [ ] AC-241 — `ac241_nudge_updates_one_comment` checks a level 0 refusal, a visible comment without a linked agent, and an in-place update. AC-209 covers ordinary hook delivery. The hold-only trigger remains open.
+- [x] AC-242 — `scripts/e2e_supervisor_comms.py` runs a Routines task on a fake agent and checks the nine sections, project scope, ten-item cap and three recorded verdicts. `webSupervisor` exercises the review keys and `ac256_supervisor_scorecard_denominators` checks usefulness and owner load.
+- [x] AC-243 — `ac243_digest_only_when_new` checks the daily cap, quiet day, five-item bound and retained stale heartbeat. `scripts/e2e_supervisor_comms.py` checks the quiet and live APIs.
+- [ ] AC-244 — `scripts/e2e_supervisor_comms.py` checks the signed-in Talk press, the retained case prompt in private tmux, the hook notice and answer on the incident task. The manager skill path remains open.
 - [x] AC-245 — `ac245_hold_undo_and_switch_off` in `scripts/e2e_roles.py` covers the four holds and their undo, audit, project incidents, shadow and switch-off. The same drill checks role refusals. `supervisor::holds_tests` covers grouped runs, retry after a failed launch, incident closure and a seeded level 3 signal without a round. `webSupervisor` exercises the hold and incident controls in Chromium and WebKit.
-- [x] AC-246 — `supervisor::outcomes::tests` checks each decision type, three scheduled horizons and `self.unjudged`. `scripts/e2e_supervisor_outcomes.py` exercises the real collector with due decisions in a private store.
+- [ ] AC-246 — `supervisor::outcomes::tests` checks each decision type, three scheduled horizons and `self.unjudged`. `scripts/e2e_supervisor_outcomes.py` exercises the real collector with due decisions in a private store. Conflict and withdrawal outcomes remain open.
 - [x] AC-247 — `ac247_two_unchanged_owner_releases_divert_only_that_rules_hold` checks hold isolation. `supervisor::outcomes::tests` checks distinct decisions, grouped alerts and replay. `scripts/e2e_supervisor_outcomes.py` checks the signed-in owner key and socket refusal. `webSupervisor` exercises the incident and replay controls in Chromium and WebKit. `liveSupervisor` repeats the owner workflow against a private terminumd.
 - [x] AC-248 — `supervisor::reflection_tests` checks trigger identity, lease generations and the decision band. `scripts/e2e_supervisor_reflection.py` runs each retained trigger through Dispatcher, private tmux and the proposal-only MCP role. `webSupervisor` shows the retained proposal.
 - [x] AC-249 — `ac249_agent_rates_and_sample_floor` checks measured run, task and price samples. `scripts/e2e_supervisor_reflection.py` checks the owner routing card with missing return data. `webSupervisor` displays a small sample and its interval.
@@ -1668,4 +1661,4 @@ Enable none of the runtime cases by default. The stages below list the cases in 
 - [x] AC-260 — `ac260_probe_valid_invalid_timeout` checks approval, bounds, failures and discarded stale results. `ac260_standard_architecture_and_gate_detectors` checks real Git and gate inputs. `e2e_supervisor_probes.py` exercises the signed-in routes and independent collector.
 - [x] AC-261 — `ac261_git_release_metrics_and_owner_split` checks commit ancestry, tags, the owner split and allocation. `ac261_only_an_own_verify_records_its_outcome` distinguishes Verify from Prepare. `e2e_supervisor_probes.py` checks the live scoreboard with integration on and off.
 - [x] AC-262 — `ac262_outside_fields_and_deduplication` checks the closed reader projection, reference validation and duplicate suppression. `ac262_outside_indicator_uses_its_probe_and_guard` checks guard verdicts and probe replacement. `ac262_outside_task_needs_a_human_move_before_a_round` checks Auto-Dispatcher's round. `e2e_supervisor_probes.py` checks live collection and `webSupervisor` checks the settings and scoreboard in the browser.
-- [ ] AC-263 — Planned test: `ac263_two_project_attachment_and_line` covers project templates, shared line and data isolation.
+- [x] AC-263 — `e2e_supervisor_projects.py` checks all templates, two private attachments, different baselines, owner edits, shared quiet hours and notices ordered by level. `webSupervisor` and `liveSupervisor` cover the editable draft and saved targets. `ac247_ac263_alert_verdict_scopes_a_grouped_notice_and_orders_the_shared_line` covers a downgraded notice. `ac253_ac263_enable_runs_in_shadow_and_engine_requests_keep_their_class` checks the exact engine task and refuses project samples. `e2e_supervisor_rounds.py` and `e2e_supervisor_projects.py` refuse a cross-project case read and a state import.

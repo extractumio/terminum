@@ -462,10 +462,15 @@ reading for every agent of its kind. Its window says when each resets.
 
 ### Project Supervisor
 
-On Kanban, select a project, open its settings and choose **Supervisor**. The switch takes
-effect when you press it. **Save** keeps the level, tier agents, budgets, charter, indicators,
-surface map, probes and detector overrides. The Supervisor starts off for each project.
-Turn it on to scan the project's retained history and use **Refresh scan** to see which
+On Kanban, select a project, open its settings and choose **Supervisor**. Each project starts
+with the Supervisor off. To use a starter, open **Project template**, choose **Open-source tool**,
+**Commercial app**, **Prototype** or **Internal tool**, and press **Fill settings draft**.
+Review the never list, priorities, indicator targets, T2 and T3 paths, and standard probes before
+you press **Save**. The template fills those fields and grants no command authority.
+Use **Preview last month** in **Surface map** to see where the draft would have called for review.
+You can also start with the default settings and leave the template unused.
+
+Turn on the switch to scan the project's retained history. Use **Refresh scan** to see which
 detectors can run and their calibrated thresholds. With fewer than
 three weeks of history, ordinary findings have impact at most 1. The default Operator level
 uses code alone until you choose tier agents from the project's pool. Live-at-attach rules
@@ -553,7 +558,8 @@ review and queue the same commit again. The check is opt-in, uses the task's sub
 diff, and works when the project runs at Advisor or Operator.
 
 **Open Supervisor screen** shows the project's incidents, scoreboard and signals. Open an indicator
-for its guard and missing inputs, or open a signal for the measurement, threshold and
+for its guard, any target you saved and missing inputs. The measured verdict uses the comparison and
+guard. Open a signal for the measurement, threshold and
 evidence. Use **More signals** to see older results and **Refresh** to see the
 latest investigation status. Press **Investigate now** on a signal or incident to
 request a round. Its configured tier agent needs a kept slot and room in the judgment budget.
@@ -637,7 +643,8 @@ stay out of project imports and exports. Leave the channel list empty for local 
 only. The optional HTTPS origin adds a link to the signed-in timeline. Messages carry
 incident IDs, levels and counts. Task and comment text stay in Terminum.
 
-The first channel sends new incidents and updates. The default ladder repeats after 10
+The first channel sends new incidents and updates. When several notices are ready across projects,
+the line sends the highest level first. The default ladder repeats after 10
 and 30 minutes, then hourly. The second channel joins at the second repeat. A failed
 command falls through to the next one. Quiet hours use the server’s clock and default
 to 23:00–08:00. A charter-never breach or reversibility 3 bypasses quiet hours. An
@@ -777,7 +784,7 @@ JSON object and use the versioned change shown on the Supervisor screen.
 | POST `/signals/<fingerprint>/investigate` | Request an investigation of the signal. |
 | GET `/rounds/<case>` | Read the retained case, result or failure, refusal count and end time. |
 | GET `/incidents?before=<cursor>` | The project's newest incidents, or the next page with a cursor. |
-| GET `/settings` | Pack, revision, detector defaults and confirmed and unset probe IDs. |
+| GET `/settings` | Pack, revision, project templates, detector defaults and confirmed and unset probe IDs. |
 | PUT `/settings` with `revision` and `settings` | Replace the project's preferences. Use the latest revision. |
 | POST `/export` with `{}` | Download a versioned JSON text file. Select `include_commands` and `include_secrets` independently. |
 | POST `/import` with `revision` and the text `file` | Copy preferences and stage proposed probe commands as unset. Keep the destination switch, level, tier agents and approved commands. The owner-wide critical line stays outside the file. |
