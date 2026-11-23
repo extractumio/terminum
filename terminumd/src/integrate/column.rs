@@ -140,11 +140,14 @@ pub fn marks(tx: &Transaction, tasks: &[Task], now: i64) -> Result<HashMap<Strin
 
 /// Each project with integration on, its queue's word for its column's head: paused (by whom), or waiting (why).
 pub fn notes(tx: &Transaction) -> Result<HashMap<String, Value>, String> {
-    let rows = ops::rows(tx, "SELECT project, paused, waits_why FROM project_integration WHERE is_on = 1", [],
-        |r| Ok((r.get::<_, String>(0)?, r.get::<_, bool>(1)?, r.get::<_, Option<String>>(2)?)))?;
+    let rows = ops::rows(tx, "SELECT project, paused, waits_why, EXISTS (SELECT 1 FROM supervisor_holds h
+        WHERE h.project = p.project AND h.kind = 'pause_integration' AND h.target = '' AND h.shadow = 0 AND h.released_at IS NULL)
+        FROM project_integration p WHERE is_on = 1", [],
+        |r| Ok((r.get::<_, String>(0)?, r.get::<_, bool>(1)?, r.get::<_, Option<String>>(2)?, r.get::<_, bool>(3)?)))?;
     let human = ops::user_name(tx, HUMAN)?;
-    rows.into_iter().map(|(p, paused, waits)| {
-        let note = if paused { Some(format!("Paused by {human}")) } else if waits.is_some() { waits } else { after_note(tx, &p)? };
+    rows.into_iter().map(|(p, paused, waits, held)| {
+        let note = if paused { Some(format!("Paused by {}", if held { "the Supervisor" } else { &human })) }
+            else if waits.is_some() { waits } else { after_note(tx, &p)? };
         Ok((p, json!({"paused": paused, "note": note})))
     }).collect()
 }
@@ -164,13 +167,25 @@ fn minutes_since(since: i64, now: i64) -> i64 {
 async fn pause(State(app): State<Shared>, Path(project): Path<String>, Json(body): Json<Value>) -> Response {
     let paused = body["paused"].as_bool().unwrap_or(true);
     let done = store(&app, move |tx| {
-        ops::check_project(tx, &project)?;
-        if tx.execute("UPDATE project_integration SET paused = ?2 WHERE project = ?1 AND is_on = 1", (&project, paused)).map_err(sql)? == 0 {
-            return Err("Integration is off for this project.".into());
+        set_paused(tx, &project, paused)?;
+        if !paused {
+            use crate::supervisor::holds::{Kind, board_release};
+            board_release(tx, &project, Kind::PauseIntegration, "", HUMAN, ops::now())?;
         }
         Ok(json!({"ok": true, "paused": paused}))
     }).await;
+    if done.is_ok() { app.supervisor.incident_changed(); }
     told(&app, None, done)
+}
+
+pub(crate) fn set_paused(tx: &Transaction, project: &str, paused: bool) -> Result<(), String> {
+    ops::check_project(tx, project)?;
+    if tx.execute("UPDATE project_integration SET paused = ?2 WHERE project = ?1 AND is_on = 1",
+        (project, paused)).map_err(sql)? == 0
+    {
+        return Err("Integration is off for this project.".into());
+    }
+    Ok(())
 }
 
 /// The pages hear what a key changed; its answer.
@@ -240,12 +255,17 @@ async fn queue_task(State(app): State<Shared>, Path(id): Path<String>) -> Respon
     let (task, tasks) = (id.clone(), app.tasks.clone());
     let done = tokio::task::spawn_blocking(move || crate::tasks::integration_queue::integrate_by_human(&tasks, &task, folder.as_deref()))
         .await.map_err(|e| e.to_string()).and_then(|r| r);
+    if done.is_ok() { app.supervisor.incident_changed(); }
     told(&app, Some(&id), done.map(|said| json!({"ok": true, "said": said})))
 }
 
 /// A human's Take out (AC-187, AC-193): the task IN PROGRESS again, out of the queue and any batch, which goes on
 /// without it.
 pub(crate) fn out(tx: &Transaction, id: &str, at: i64) -> Result<(), String> {
+    out_as(tx, id, HUMAN, at).map(drop)
+}
+
+pub(crate) fn out_as(tx: &Transaction, id: &str, author: &str, at: i64) -> Result<String, String> {
     let t = ops::get(tx, id)?;
     if t.status != INTEGRATION {
         return Err(format!("{id} is not queued."));
@@ -253,8 +273,8 @@ pub(crate) fn out(tx: &Transaction, id: &str, at: i64) -> Result<(), String> {
     if bs::by_task(tx, &t.key)?.is_some() {
         return Err(format!("{id} is a batch's integration task: it ends with its batch."));
     }
-    ops::place(tx, HUMAN, &t, "IN PROGRESS", at)?;
-    ops::log(tx, &t.key, HUMAN, "queue", &format!("{} took it out of the integration queue.", ops::user_name(tx, HUMAN)?), None, at).map(drop)
+    ops::place(tx, author, &t, "IN PROGRESS", at)?;
+    ops::log(tx, &t.key, author, "queue", &format!("{} took it out of the integration queue.", ops::user_name(tx, author)?), None, at)
 }
 
 async fn take_out(State(app): State<Shared>, Path(id): Path<String>) -> Response {

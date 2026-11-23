@@ -51,7 +51,7 @@ function withTimeline(initial, selected) {
       const page = await api(`${INCIDENTS}/${initial.id}${before ? `?before=${before}` : ""}`);
       const events = page.rows.map((event) => {
         const item = el("li");
-        item.append(timeOf(event.at, stamp(event.at)), ` · ${event.actor === "human" ? "Owner" : "Terminum"} · ${event.words}`);
+        item.append(timeOf(event.at, stamp(event.at)), ` · ${event.actor === "human" ? "Owner" : event.actor.startsWith("supervisor:") ? "Supervisor" : "Terminum"} · ${event.words}`);
         return item;
       });
       if (before) list.append(...events);

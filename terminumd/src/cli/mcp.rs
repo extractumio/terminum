@@ -304,7 +304,8 @@ pub fn call(tool: &str, args: &Value, session: Option<&str>, env: &Env, forward:
     {
         return refusal(tool, &why, env);
     }
-    let mut passed = match checked(tool, args) {
+    let scoped_stop = tool == "stop_task" && (matches!(role, Role::Supervisor(_)) || args.get("signal").is_some());
+    let mut passed = match if scoped_stop { Ok(args.clone()) } else { checked(tool, args) } {
         Ok(a) => a,
         Err(why) => return refusal(tool, &why, env),
     };
@@ -394,7 +395,9 @@ pub fn checked(tool: &str, args: &Value) -> Result<Value, String> {
     if !args.is_object() {
         return Err("arguments must be an object".into());
     }
-    if crate::supervisor::round_tools::known(tool) || tool == crate::supervisor::review::TOOL {
+    if crate::supervisor::round_tools::known(tool) || tool == crate::supervisor::review::TOOL
+        || crate::supervisor::holds::TOOLS.contains(&tool)
+    {
         return Ok(args.clone());
     }
     if crate::tasks::tools::NAMES.contains(&tool) {

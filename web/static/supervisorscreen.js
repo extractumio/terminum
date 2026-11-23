@@ -8,6 +8,7 @@ import { el } from "./listparts.js";
 import { boardUrl, taskUrl } from "./tasklink.js";
 import { reportCards } from "./supervisorreports.js";
 import { incidentHistory } from "./supervisorincidents.js";
+import { onIncidents } from "./incidents.js";
 import { actions, part, stack, text } from "./supervisorfields.js";
 
 const project = new URLSearchParams(location.search).get("project");
@@ -166,6 +167,46 @@ function problem(p) {
   return panel;
 }
 
+function heldAction(hold) {
+  const error = el("p", "merr");
+  error.setAttribute("role", "alert");
+  error.hidden = true;
+  const keys = actions();
+  const release = button("textkey", hold.undo, oneAtATime(keys, async () => {
+    showError(error, "");
+    try {
+      await api(`${path}/holds/${hold.id}/release`, { method: "POST" });
+      await readHolds();
+      $("sv-holds-title").focus();
+    } catch (e) { showError(error, e.message); }
+  }));
+  const signal = el("a", "textkey", `Signal · ${hold.detector}`);
+  signal.href = `?project=${encodeURIComponent(project)}&signal=${encodeURIComponent(hold.signal)}#signal-${hold.signal}`;
+  keys.append(signal, release);
+  return part("article", "incident-card",
+    el("h3", "incident-title", hold.task ? `${hold.label} · ${hold.task}` : hold.label),
+    note(hold.reason), keys, error);
+}
+
+function drawHolds(holds) {
+  $("sv-holds").replaceChildren(...(holds.length ? holds.map(heldAction) : [note("No holds in effect.")]));
+}
+
+let holdsRead, holdsAgain = false;
+function readHolds() {
+  if (holdsRead) { holdsAgain = true; return holdsRead; }
+  const error = $("sv-holds-error");
+  holdsRead = (async () => {
+    do {
+      holdsAgain = false;
+      showError(error, "");
+      try { drawHolds(await api(`${path}/holds`)); }
+      catch (e) { showError(error, e.message); }
+    } while (holdsAgain);
+  })().finally(() => { holdsRead = null; });
+  return holdsRead;
+}
+
 function addSignals(data) {
   $("sv-signals").append(...data.signals.map((record) => signal(record, data.investigations_enabled)));
   next = data.next;
@@ -180,6 +221,7 @@ async function readScreen() {
     const target = new URLSearchParams(location.search).get("signal");
     const data = await api(`${path}/screen${target ? `?${new URLSearchParams({ signal: target })}` : ""}`);
     $("sv-title").textContent = `${data.project_name} · Supervisor`;
+    drawHolds(data.holds ?? []);
     $("sv-reports").replaceChildren(...reportCards(data, path));
     if (data.spending) $("sv-spending").replaceChildren(...spending(data.spending, data.marked_tasks_eligible));
     const problems = data.problems ?? [];
@@ -209,6 +251,12 @@ refresh.addEventListener("click", readScreen);
 loadMeta().catch((e) => showError($("sv-theme-error"), e.message));
 if (project) {
   incidentHistory(project, new URLSearchParams(location.search).get("incident"), refresh);
+  let incidentHolds = "";
+  onIncidents((incidents) => {
+    const signature = incidents.filter((i) => i.project === project).flatMap((i) => (i.holds ?? []).map((h) => h.id)).join(",");
+    if (signature !== incidentHolds) { incidentHolds = signature; readHolds(); }
+  });
+  document.addEventListener("supervisorholdchange", (event) => { if (event.detail === project) readHolds(); });
   boardFor(project);
   $("sv-board").href = boardUrl(project);
   refresh.hidden = false;

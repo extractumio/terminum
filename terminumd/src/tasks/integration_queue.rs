@@ -98,6 +98,9 @@ fn commit_to_queue(repo: &Path, s: &Settings, given: Option<&str>, folder: Optio
 /// What the caller may queue: the task, its project's settings and folder, refused before git runs.
 fn ready(tx: &Transaction, who: &Who, id: &str, result: &str) -> Result<(Task, Settings, String), String> {
     let t = movable(tx, who, id)?;
+    if crate::supervisor::holds::integration_held(tx, &t)? {
+        return Err(format!("{id} has a Supervisor hold. Release the hold to queue it again."));
+    }
     let s = integration::read(tx, &t.project)?;
     let (name, host, dir) = ops::project_place(tx, &t.project)?;
     if !s.on || host.is_some() {
@@ -136,6 +139,31 @@ fn enter(tx: &Transaction, t: &Task, s: &Settings, commit: &str, result: &str, m
     }
 }
 
+#[derive(serde::Serialize, serde::Deserialize)]
+pub(crate) struct HeldEntry {
+    commit: String,
+    result: String,
+    author: String,
+    target: String,
+}
+
+pub(crate) fn held_entry(tx: &Transaction, key: &str) -> Result<HeldEntry, String> {
+    tx.query_row("SELECT e.commit_sha, e.result, e.author, s.target FROM integration_entries e
+        JOIN project_integration s USING (project) WHERE e.task = ?1 AND e.batch IS NULL AND s.is_on", [key],
+        |r| Ok(HeldEntry { commit: r.get(0)?, result: r.get(1)?, author: r.get(2)?, target: r.get(3)? }))
+        .optional().map_err(sql)?.ok_or_else(|| "Only a task waiting outside an active integration batch can be held.".into())
+}
+
+pub(crate) fn restore_entry(tx: &Transaction, t: &Task, event: String, entry: HeldEntry, at: i64) -> Result<(), String> {
+    let s = integration::read(tx, &t.project)?;
+    let latest: Option<String> = tx.query_row("SELECT id FROM events WHERE task = ?1 AND kind IN ('move', 'queue')
+        ORDER BY rowid DESC LIMIT 1", [&t.key], |r| r.get(0)).optional().map_err(sql)?;
+    if !s.on || s.target != entry.target || t.status != "IN PROGRESS" || latest.as_deref() != Some(&event) {
+        return Err("The task or integration target changed. Use the board to queue its current commit.".into());
+    }
+    enter(tx, t, &s, &entry.commit, &entry.result, &entry.author, at)
+}
+
 /// A human's Integrate on a card (AC-193): its session's folder's HEAD queued as integrate would, with no result
 /// of its agent's; refused in integrate's words. `folder`: where its session works, on this Mac.
 pub fn integrate_by_human(store: &Store, id: &str, folder: Option<&str>) -> Result<String, String> {
@@ -154,9 +182,20 @@ pub fn integrate_by_human(store: &Store, id: &str, folder: Option<&str>) -> Resu
     let commit = commit_to_queue(&integration::local_dir(&dir), &s, None, folder)?;
     let at = ops::now();
     store.with(|tx| {
+        let current = ops::get(tx, id)?;
+        let settings = integration::read(tx, &current.project)?;
+        let (_, host, place) = ops::project_place(tx, &current.project)?;
+        if current.key != t.key || current.project != t.project || current.archived_at.is_some()
+            || current.status != t.status || current.session != t.session || host.is_some() || place != dir
+            || !settings.on || settings.target != s.target
+        {
+            return Err("The task or integration target changed while checking its commit. Try Integrate again.".into());
+        }
         let human = ops::user_name(tx, super::store::HUMAN)?;
         let result = format!("Queued by {human}: no result from its agent.");
-        enter(tx, &t, &s, &commit, &result, super::store::HUMAN, at)?;
+        enter(tx, &current, &settings, &commit, &result, super::store::HUMAN, at)?;
+        use crate::supervisor::holds::{Kind, board_release};
+        board_release(tx, &t.project, Kind::TakeOut, &t.key, super::store::HUMAN, at)?;
         queued_words(tx, &ops::get(tx, id)?, &s)
     })
 }

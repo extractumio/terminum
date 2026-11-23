@@ -63,11 +63,14 @@ export function incidentCard(initial, surface) {
   error.hidden = true;
   const card = part("article", "incident-card", brief, state, error);
   card.dataset.incident = i.id;
-  const write = oneAtATime(card, async (action) => {
+  const write = oneAtATime(card, async (action, hold) => {
     showError(error, "");
     try {
-      const saved = await api(`${INCIDENTS}/${i.id}`, { method: "POST", body: { action } });
+      const saved = await api(`${INCIDENTS}/${i.id}`, { method: "POST", body: { action, hold } });
       update(saved);
+      if (action === "release_hold" && !rows.some((row) => row.id === saved.id)) {
+        document.dispatchEvent(new CustomEvent("supervisorholdchange", { detail: saved.project }));
+      }
       writes++;
       publish(rows.map((row) => row.id === saved.id ? saved : row).filter((row) => !row.closed_at || !row.acknowledged_at));
       readIncidents();
@@ -75,7 +78,10 @@ export function incidentCard(initial, surface) {
   });
   const ack = button(KEY, "Acknowledge", () => write("acknowledge"));
   const snooze = button(KEY, "Snooze 1 hour", () => write("snooze"));
+  const holdKeys = part("div", "incident-actions");
+  holdKeys.hidden = true;
   const keys = part("div", "incident-actions", ack, snooze);
+  card.append(holdKeys);
   card.append(keys);
   const thread = el("a", KEY, "Thread");
   textKey(thread);
@@ -115,12 +121,28 @@ export function incidentCard(initial, surface) {
     keys.append(link);
   }
   const put = (node, words) => { if (node.textContent !== words) node.textContent = words; };
+  let shownHolds = "";
   function update(next) {
     i = next;
     const snoozed = i.snoozed_until > Date.now() / 1000;
     put(title, `${i.project_name} · Incident ${i.id} · Level ${i.level}`);
     put(happened, i.happened);
     put(state, [i.held, i.needed, snoozed && `Repeats snoozed until ${stamp(i.snoozed_until)}.`, i.no_answer].filter(Boolean).join(" "));
+    const holds = i.holds ?? [];
+    const signature = holds.map((h) => h.id).join(",");
+    if (signature !== shownHolds) {
+      const hadFocus = holdKeys.contains(document.activeElement);
+      holdKeys.replaceChildren(...holds.flatMap((hold) => [
+        ["Keep the hold", "keep_hold"], ["Release the hold", "release_hold"],
+      ].map(([label, action]) => {
+        const key = button(KEY, label, () => write(action, hold.id));
+        if (holds.length > 1) key.setAttribute("aria-label", `${label} · ${hold.label}`);
+        return key;
+      })));
+      holdKeys.hidden = !holds.length;
+      shownHolds = signature;
+      if (hadFocus) (holdKeys.querySelector("button") ?? keys.querySelector("button:not([hidden]),a"))?.focus();
+    }
     thread.hidden = !i.task;
     if (i.task) thread.href = taskUrl(i.task);
     ack.hidden = Boolean(i.acknowledged_at);

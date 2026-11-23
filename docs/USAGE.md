@@ -582,17 +582,35 @@ wrapper should check its route silently and exit nonzero on failure. Line failur
 appear on the incident bar and Supervisor screen while working channels and local
 incident actions remain available.
 
+#### Holds
+
+An Operator can stop a marked run, pause Auto-Dispatcher, pause integration, or take
+a waiting task out of integration. Each hold needs current evidence at level 2 or
+3. A detector in shadow records its proposal without changing the board.
+
+The Supervisor screen shows each active hold, its signal, its reason and its undo.
+Use **RUN** for a stopped run and the corresponding switch or queue key for the
+other holds. Requeuing from the Supervisor screen restores the commit and result
+the task originally queued. Use the board's **Integrate** key when you intend to
+queue the task's current work.
+
+Pausing Auto-Dispatcher or integration opens an incident with **Keep the hold**
+and **Release the hold**. Turning Supervisor off leaves work held and lists the
+remaining holds in its project tab. The owner can release them while it is off.
+
 #### Signed-in Supervisor API
 
 All routes below are relative to `/api/task-projects/<ID>/supervisor`.
 
 | Request | Result |
 |---|---|
-| GET the base route | Switch, last successful beat in Unix seconds, collector health and the attachment report when ready. |
-| PUT the base route with `{"enabled": true}` or `{"enabled": false}` | Change the switch for this project. |
+| GET the base route | Switch, last successful beat in Unix seconds, collector health, the attachment report when ready and active holds. |
+| PUT the base route with `{"enabled": true}` or `{"enabled": false}` | Change the switch for this project and return its active holds. |
 | GET or PUT `/line` | Read or save the owner-wide channel paths, HTTPS origin, quiet hours and ladder. PUT requires the current revision. |
 | POST `/line/test` | Run the saved channel at the zero-based `channel` index with the current `revision`. |
-| GET `/screen` | Decisions, review, digest, enabled scoreboard indicators and the newest page of signals. |
+| GET `/screen` | Active holds, decisions, review, digest, scoreboard indicators and the newest page of signals. |
+| GET `/holds` | This project's active holds and their undo keys. |
+| POST `/holds/<id>/release` | Use the held action's undo as the owner. |
 | POST `/verdicts` | Record `verdict` on the `fingerprint` in the weekly review `task`. Values are `useful`, `not_useful` and `wrong`. |
 | GET `/signals?after=<cursor>` | The next page of signals for the same project. |
 | POST `/signals/<fingerprint>/investigate` | Request an investigation of the signal. |
@@ -611,6 +629,8 @@ Use `POST /api/supervisor/incidents/<id>/investigate` to request an
 investigation of the incident's highest-level retained signal.
 `POST /api/supervisor/incidents/<id>/talk` opens its conversation.
 `POST /api/supervisor/incidents/<id>/ruling` records the owner's `reason`.
+To act on a hold on that incident, send `action` as `keep_hold` or `release_hold`
+and its numeric `hold` ID to `POST /api/supervisor/incidents/<id>`.
 
 The export selection for secrets controls redaction of recognized secret formats in free text.
 When commands are selected without secrets, a command that would need redaction is omitted.

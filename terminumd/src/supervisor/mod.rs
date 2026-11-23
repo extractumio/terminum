@@ -10,6 +10,10 @@ mod digest;
 pub(crate) mod review;
 mod review_data;
 mod impact;
+pub(crate) mod holds;
+pub(crate) mod holds_api;
+#[cfg(test)]
+mod holds_tests;
 mod incidents;
 pub(crate) mod thread;
 pub(crate) mod talk;

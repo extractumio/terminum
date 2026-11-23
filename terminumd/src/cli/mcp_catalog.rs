@@ -141,14 +141,18 @@ pub fn definition_for(role: Role, name: &str) -> Option<&'static Value> {
             start
         }));
     }
+    if role == Role::Supervisor(Some(Level::Operator)) && name == "stop_task" {
+        static STOP: OnceLock<Value> = OnceLock::new();
+        return Some(STOP.get_or_init(super::mcp_supervisor::stop_tool));
+    }
     Some(d)
 }
 
 pub fn example(role: Role, c: &Card) -> &'static str {
-    if matches!(role, Role::Supervisor(_)) && c.name == "run_task" {
-        r#"{"id": "TERM-12", "agent": "Reviewer"}"#
-    } else {
-        c.example
+    match (role, c.name) {
+        (Role::Supervisor(_), "run_task") => r#"{"id": "TERM-12", "agent": "Reviewer"}"#,
+        (Role::Supervisor(_), "stop_task") => r#"{"id":"API-12","signal":"fingerprint","reason":"Cost exceeded the bound."}"#,
+        _ => c.example,
     }
 }
 

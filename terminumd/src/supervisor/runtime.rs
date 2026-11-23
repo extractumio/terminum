@@ -66,6 +66,7 @@ struct Status {
     last_ok: Option<i64>,
     collector_dead: bool,
     attachment: Option<serde_json::Value>,
+    holds: Vec<super::holds::Hold>,
 }
 
 pub(crate) fn routes() -> Router<Shared> {
@@ -74,6 +75,7 @@ pub(crate) fn routes() -> Router<Shared> {
         .route("/api/task-projects/{id}/supervisor", get(shown).put(set))
         .merge(settings_api::routes())
         .merge(super::screen::routes())
+        .merge(super::holds_api::routes())
         .merge(super::incidents_api::routes())
         .merge(super::rounds::routes())
         .merge(super::line_api::routes())
@@ -86,10 +88,11 @@ async fn shown(State(app): State<Shared>, Path(id): Path<String>) -> Response {
         let (mut status, current) = tx.query_row("SELECT enabled, last_ok, reported_dead,
                 settings_revision IS coalesce((SELECT revision FROM supervisor_settings WHERE project = ?1), 0)
             FROM project_supervisor WHERE project = ?1", [&id],
-            |r| Ok((Status { enabled: r.get(0)?, last_ok: r.get(1)?, collector_dead: r.get(2)?, attachment: None }, r.get::<_, bool>(3)?)))
+            |r| Ok((Status { enabled: r.get(0)?, last_ok: r.get(1)?, collector_dead: r.get(2)?, ..Status::default() }, r.get::<_, bool>(3)?)))
             .optional().map_err(sql)?.unwrap_or_default();
-        let active = status.enabled && current;
+        let active = status.enabled && current && status.last_ok.is_some();
         status.attachment = attach::read(tx, &id)?.map(|report| report.status(now(), active)).transpose()?;
+        status.holds = super::holds::list(tx, &id)?;
         Ok(status)
     })).await)
 }
@@ -103,8 +106,9 @@ async fn set(State(app): State<Shared>, Path(id): Path<String>, Json(switch): Js
             crate::tasks::schedulesapi::heard(&app);
             runtime.wake();
         }
-        Ok(switch.enabled)
-    }).await.map(|enabled| serde_json::json!({ "enabled": enabled })))
+        let holds = app.tasks.snapshot(SCHEMA, |tx| super::holds::list(tx, &id))?;
+        Ok(serde_json::json!({ "enabled": switch.enabled, "holds": holds }))
+    }).await)
 }
 
 fn set_enabled(store: &Store, project: &str, on: bool, at: i64) -> Result<Option<i64>, String> {
@@ -144,7 +148,7 @@ pub(crate) fn hook(app: &Shared, key: &str, event: &serde_json::Value) {
 }
 
 impl Runtime {
-    pub(super) fn incident_changed(&self) {
+    pub(crate) fn incident_changed(&self) {
         self.incident_updates.send_modify(|revision| *revision = revision.wrapping_add(1));
     }
 
@@ -283,7 +287,10 @@ fn collect_project(app: &Shared, project: &Project, clock: impl Fn() -> i64) -> 
     let Some(batch) = batch else { return Ok(()) };
     let evaluated = batch.evaluation.is_some().then_some(batch.at);
     let pending = app.supervisor.sensors.take(&project.id, project.generation);
-    let (committed, incidents_changed) = commit(&app.tasks, project, batch, &pending, &clock)?;
+    let (committed, incidents_changed, holds) = commit(&app.tasks, project, batch, &pending, &clock)?;
+    for hold in holds {
+        if let Some(run) = hold.run { crate::dispatcher::letgo::let_go_of(app, run); }
+    }
     if incidents_changed {
         app.supervisor.incident_changed();
     }
@@ -309,7 +316,7 @@ fn collect_project(app: &Shared, project: &Project, clock: impl Fn() -> i64) -> 
     Ok(())
 }
 
-fn commit(store: &Store, project: &Project, batch: Batch, pending: &Pending<'_>, clock: impl FnOnce() -> i64) -> Result<(bool, bool), String> {
+fn commit(store: &Store, project: &Project, batch: Batch, pending: &Pending<'_>, clock: impl FnOnce() -> i64) -> Result<(bool, bool, Vec<super::holds::Applied>), String> {
     let signals = batch.evaluation.as_ref().map(signals::prepare).transpose()?;
     let counts = pending.encode()?;
     store.with(|tx| {
@@ -325,11 +332,19 @@ fn commit(store: &Store, project: &Project, batch: Batch, pending: &Pending<'_>,
                 batch.sampled.then_some(at), batch.baseline.then_some(at), project.cursor, project.last_ok,
                 batch.attachment, batch.settings_revision)).map_err(sql)?;
         if enabled == 0 {
-            return Ok((false, false));
+            return Ok((false, false, Vec::new()));
         }
         let before = incidents::revision(tx)?;
+        let mut holds = Vec::new();
         if let Some(signals) = signals {
             signals.write(tx, batch.first_attachment)?;
+            let candidates = crate::tasks::ops::rows(tx, "SELECT fingerprint FROM supervisor_signals
+                WHERE project = ?1 AND detector = ?2 AND last_seen = ?3 AND metric = 'task_dollars'
+                    AND subject_kind = 'task'",
+                (&project.id, Rule::CostOutlier.id(), at), |r| r.get::<_, String>(0))?;
+            for fingerprint in candidates {
+                holds.extend(super::holds::automatic(tx, &project.id, &fingerprint, at)?);
+            }
         }
         samples::write(tx, &project.id, at, &batch.points)?;
         Pending::write(tx, &project.id, at, counts)?;
@@ -337,7 +352,7 @@ fn commit(store: &Store, project: &Project, batch: Batch, pending: &Pending<'_>,
             SELECT seq FROM supervisor_changes WHERE project = ?1 AND seq <= ?2 ORDER BY seq LIMIT 256)",
             (&project.id, batch.cursor)).map_err(sql)?;
         signals::resolve_rule(tx, &project.id, Rule::CollectorDead, heartbeat)?;
-        Ok((true, before != incidents::revision(tx)?))
+        Ok((true, before != incidents::revision(tx)?, holds))
     })
 }
 

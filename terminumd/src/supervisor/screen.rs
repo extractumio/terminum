@@ -55,6 +55,7 @@ struct SignalPage {
 #[derive(Serialize)]
 struct Screen {
     project_name: String,
+    holds: Vec<super::holds::Hold>,
     indicators: Vec<Indicator>,
     problems: Vec<register::Problem>,
     spending: governor::Spending,
@@ -114,7 +115,7 @@ async fn screen(State(app): State<Shared>, Path(id): Path<String>, Query(query):
         }
         let review_setup_error = tx.query_row("SELECT (SELECT review_setup_error FROM project_supervisor WHERE project = ?1)",
             [&id], |r| r.get(0)).map_err(crate::tasks::ops::sql)?;
-        Ok(Screen { project_name, indicators: indicators(tx, &id)?, signals: page,
+        Ok(Screen { project_name, holds: super::holds::list(tx, &id)?, indicators: indicators(tx, &id)?, signals: page,
             problems: register::ranked(tx, &id, at, true)?, spending: governor::spending(tx, &id, at)?,
             marked_tasks_eligible: crate::tasks::auto::setting(tx, &id)?.supervisor_tasks,
             decisions: super::decisions::cards(tx, &id)?, digest: super::digest::latest(tx, &id)?,

@@ -9,6 +9,7 @@ import shlex
 import sqlite3
 
 from e2e_ws import BIN, check, wait_for
+from role_hold_checks import ac245_hold_undo_and_switch_off
 
 
 def ac231_supervisor_tools_pane_and_token(t, call, typed, tool, tmux, page, project, folder, boss, plain, cli, waiting, manager_token):
@@ -104,7 +105,8 @@ def ac231_supervisor_tools_pane_and_token(t, call, typed, tool, tmux, page, proj
 
     observer = {"list_tasks", "get_task", "get_case_file", "list_signals", "get_signal", "get_metric", "record_finding"}
     advisor = observer | {"add_comment", "ask_human", "open_problem", "update_problem", "propose_rank", "propose_decision", "post_incident_answer"}
-    operator = advisor | {"run_task", "promote_queued_task", "stop_task", "list_runs", "get_dashboard"}
+    hold_tools = {"hold", "release_hold"}
+    operator = advisor | {"run_task", "promote_queued_task", "stop_task", "list_runs", "get_dashboard"} | hold_tools
     view = call(settings)[1]
 
     for level, allowed in [("Observer", observer), ("Advisor", advisor), ("Operator", operator)]:
@@ -135,14 +137,16 @@ def ac231_supervisor_tools_pane_and_token(t, call, typed, tool, tmux, page, proj
                   and set(card["inputSchema"]["required"]) == {"id", "agent"}
                   and set(card["example"]["arguments"]["arguments"]) == {"id", "agent"})
 
-        requests = sorted(catalog)
+        requests = sorted(catalog | hold_tools)
         answers = raw(pane, [(name, {}, {}) for name in requests])
         assert len(answers) == len(requests)
         for name, answer in zip(requests, answers):
             refused = f'The {level} Supervisor cannot call "{name}".'
+            validated = answer["text"] in {"id is required", "title is required"} or (
+                name in hold_tools | {"stop_task"} and "missing field" in answer["text"])
             check(f"AC-231 {level} reaches {name}'s own validation" if name in allowed else f"AC-231 {level} is refused {name}",
                   answer.get("role") == "supervisor" and
-                  ((not answer["error"] or answer["text"] in {"id is required", "title is required"}) if name in allowed
+                  ((not answer["error"] or validated) if name in allowed
                    else answer["error"] and answer["text"] == refused), answer["text"] if answer["error"] else "")
 
         if level == "Observer":
@@ -208,11 +212,17 @@ def ac231_supervisor_tools_pane_and_token(t, call, typed, tool, tmux, page, proj
     check("AC-231 Dispatcher types fixed words with the task ID and no stored task text",
           prompt and "Supervisor dispatch fixture" not in prompt and "Fixture task body" not in prompt, prompt)
     run_pane = wait_for(lambda: call(f"/api/tasks/{task}")[1].get("session"), bool, 10)["key"].rsplit(":", 1)[1]
-    stopped = wire("stop_task", {"id": task})
-    panes = tmux("list-panes", "-a", "-F", "#{pane_id}").split()
-    check("AC-231 Operator's Give up frees the run and leaves its window",
-          not stopped["error"] and run_pane in panes and call(f"/api/tasks/{task}")[1]["status"] == "FAILED", stopped)
+    status, view = call(settings, "PUT", {"revision": view["revision"], "settings": {**view["settings"], "level": "observer"}})
+    assert status == 200, view
+    cached = wire("run_task", {"id": local, "agent": "Fake"})
+    check("AC-231 AC-232 the next call from a cached Operator observes the owner's downgrade",
+          cached["error"] and cached["text"] == 'The Observer Supervisor cannot call "run_task".', cached)
 
+    status, view = call(settings, "PUT", {"revision": view["revision"], "settings": {**view["settings"], "level": "operator"}})
+    assert status == 200, view
+    ac245_hold_undo_and_switch_off(call, db, wire, tmux, project, task, run_pane)
+    db("UPDATE supervisor_panes SET generation = (SELECT generation FROM project_supervisor WHERE project = ?) WHERE pane_key = ?",
+       (project, key))
     status, _ = call(f"/api/tasks/{task}", "PATCH", {"status": "TODO"})
     assert status == 200
     overridden = wire("propose_rank", {"problem": p, "task": task})
@@ -220,12 +230,6 @@ def ac231_supervisor_tools_pane_and_token(t, call, typed, tool, tmux, page, proj
           overridden["error"] and "24 hours" in overridden["text"]
           and db("SELECT count FROM supervisor_signals WHERE project = ? AND detector = 'self.fights' AND subject_id = ?",
                  [project, task]) == [(1,)], overridden)
-
-    status, view = call(settings, "PUT", {"revision": view["revision"], "settings": {**view["settings"], "level": "observer"}})
-    assert status == 200, view
-    cached = wire("run_task", {"id": local, "agent": "Fake"})
-    check("AC-231 AC-232 the next call from a cached Operator observes the owner's downgrade",
-          cached["error"] and cached["text"] == 'The Observer Supervisor cannot call "run_task".', cached)
 
     assert call(switch, "PUT", {"enabled": False})[0] == 200
     assert call(switch, "PUT", {"enabled": True})[0] == 200

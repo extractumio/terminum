@@ -187,7 +187,7 @@ struct Mute {
 #[derive(Default, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub(super) struct Settings {
-    level: Level,
+    pub(super) level: Level,
     pub tiers: Tiers,
     pub budgets: Budgets,
     pub charter: Charter,
