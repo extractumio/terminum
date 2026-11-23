@@ -56,7 +56,8 @@ fn comment(tx: &Transaction, s: &Signal, at: i64) -> Result<Vec<(String, Option<
         } else {
             let author = crate::roles::supervisor::author(tx, &s.project)?;
             let event = comments::comment(tx, &author, &task, &words, at)?;
-            tx.execute("INSERT INTO supervisor_nudges VALUES (?1, ?2, ?3)", (&s.fingerprint, key, &event)).map_err(sql)?;
+            tx.execute("INSERT INTO supervisor_nudges VALUES (?1, ?2, ?3)", (&s.fingerprint, &key, &event)).map_err(sql)?;
+            super::outcomes::record(tx, s, super::outcomes::Kind::Nudge, &event, &key, "", at)?;
             added.push((task, Some(event)));
         }
     }

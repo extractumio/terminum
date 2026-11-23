@@ -1,7 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 //! Deterministic Supervisor queries (AC-211, AC-212). Evaluation is read-only; recording is explicit.
 
+pub(crate) mod action_tasks;
 mod attach;
+pub(crate) mod breakers;
+mod outcomes;
+mod outcome_evidence;
 mod attribution;
 mod catalog;
 mod decisions;
@@ -43,7 +47,6 @@ pub(crate) mod governor;
 pub(crate) mod register;
 pub(crate) mod fix_tasks;
 pub(crate) mod task_policy;
-
 #[cfg(test)]
 mod engine_tests;
 #[cfg(test)]
@@ -58,7 +61,6 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::tasks::{ops::check_project, store::Store};
-
 #[cfg(test)]
 mod register_tests;
 
@@ -176,6 +178,7 @@ pub(crate) enum Evidence {
     SupervisorHookCounts(i64),
     SupervisorHeartbeat { project: String, last_ok: Option<i64> },
     SupervisorRounds(String),
+    SupervisorActions(i64),
     SupervisorLine { channel: i64, failure: String },
 }
 

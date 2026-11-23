@@ -188,6 +188,10 @@ async fn start(app: &Shared, actor: super::Boss, args: &Value) -> Result<String,
     let named = actor.clone();
     let agent = store(app, move |tx| super::tasks::agent_named(tx, &named.project, &name)).await?;
     let done = crate::dispatcher::api::press_by_supervisor(app, &id, &agent.id, actor).await?;
+    if let Some(cards) = done["decision_cards"].as_array() {
+        let ids = cards.iter().filter_map(Value::as_str).collect::<Vec<_>>().join(", ");
+        return Ok(format!("Owner decision cards: {ids}."));
+    }
     if let Some(words) = done["full"]["words"].as_str() {
         return Err(format!("Not started: {words} Nothing waits."));
     }

@@ -4,23 +4,26 @@
 use rusqlite::Transaction;
 use serde_json::Value;
 
-use super::{How, Press, Shared, Task, pressed};
+use super::{How, Kept, Press, Shared, Task, pressed};
 use crate::roles::{Boss, supervisor};
 use crate::tasks::{agents, api::store, ops};
 
 pub(crate) async fn press_by_supervisor(app: &Shared, id: &str, agent: &str, caller: Boss) -> Result<Value, String> {
     let (wanted, scope) = (id.to_owned(), caller.clone());
-    let refusal = store(app, move |tx| {
+    let (refusal, cards) = store(app, move |tx| {
         supervisor::require(tx, &scope.key, &scope.project, "run_task")?;
-        for task in super::super::press::members(tx, &wanted, &[])? {
+        let tasks = super::super::press::members(tx, &wanted, &[])?;
+        for task in &tasks {
             if task.project != scope.project { return Err("The task is outside this project.".into()); }
-            if let Some(why) = crate::supervisor::task_policy::record_override(tx, &task, ops::now())? {
-                return Ok(Some(why));
+            if let Some(why) = crate::supervisor::task_policy::record_override(tx, task, ops::now())? {
+                return Ok((Some(why), Vec::new()));
             }
         }
-        Ok(None)
+        let cards = crate::supervisor::action_tasks::divert_group(tx, &tasks, Some(&scope.key), ops::now())?;
+        Ok((None, cards))
     }).await?;
     if let Some(why) = refusal { return Err(why); }
+    if !cards.is_empty() { return Ok(card_answer(app, cards)); }
     pressed(app, id, Press { agent: Some(agent.into()), auto: true, fresh: true, how: How::Auto,
         supervisor: Some(caller), ..Default::default() }).await
 }
@@ -66,9 +69,33 @@ pub(super) fn record(tx: &Transaction, press: &Press, tasks: &[Task], run: &str,
     if let Some(estimate) = estimate {
         tx.execute("INSERT INTO supervisor_fix_runs VALUES (?1, ?2)", (run, estimate)).map_err(ops::sql)?;
     }
+    if press.auto && press.how == How::Auto {
+        let pane = press.supervisor.as_ref().map(|caller| caller.key.as_str());
+        for task in tasks {
+            crate::supervisor::action_tasks::record_run(tx, task, pane, &format!("{run}/{}", task.key), run, ops::now())?;
+        }
+    }
     if let Some(caller) = &press.supervisor {
         let task = &tasks[0];
         ops::log(tx, &task.key, &caller.user, "why", "The project's Supervisor started it.", None, ops::now())?;
     }
     Ok(())
+}
+
+pub(super) fn divert(tx: &Transaction, press: &Press, tasks: &[Task]) -> Result<Option<Kept>, String> {
+    if let Some(release) = &press.hold_release {
+        return release.divert(tx);
+    }
+    if !press.auto || press.how != How::Auto { return Ok(None); }
+    if let Some(caller) = &press.supervisor {
+        supervisor::require(tx, &caller.key, &caller.project, "run_task")?;
+    }
+    let cards = crate::supervisor::action_tasks::divert_group(tx, tasks,
+        press.supervisor.as_ref().map(|caller| caller.key.as_str()), ops::now())?;
+    Ok((!cards.is_empty()).then_some(Kept::DecisionCards(cards)))
+}
+
+pub(super) fn card_answer(app: &Shared, cards: Vec<String>) -> Value {
+    for id in &cards { super::told(app, id); }
+    serde_json::json!({"decision_cards": cards})
 }

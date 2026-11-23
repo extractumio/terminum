@@ -118,6 +118,17 @@ fn room_for(tx: &rusqlite::Transaction, project: &str, s: &Setting, now: i64) ->
     let (slots, spent) = (pool::Slots::read(tx)?, super::usage::of_agents(tx, now)?);
     let mut room: BTreeMap<String, i64> = BTreeMap::new();
     let mut free = Vec::new();
+    let left = (s.day_most - auto::started_in_day(tx, project, now)?).max(0);
+    let project_room = slots.free_in(tx, project)?.unwrap_or(i64::MAX);
+    if left > 0 && project_room > 0 && crate::supervisor::action_tasks::has_breaker(tx, project)? {
+        for c in auto::breaker_candidates(tx, project, s, now)? {
+            let a = agents::in_project(tx, &c.agent, project)?.ok_or("its agent is gone")?;
+            if slots.free_of(&a) > 0 && over_limit(&spent, &a).is_none() {
+                let tasks = super::press::members(tx, &c.id, &[])?;
+                crate::supervisor::action_tasks::divert_group(tx, &tasks, None, now)?;
+            }
+        }
+    }
     for c in auto::candidates(tx, project, s, now, None)? {
         if !room.contains_key(&c.agent) {
             let a = agents::in_project(tx, &c.agent, project)?.ok_or("its agent is gone")?;
@@ -127,8 +138,7 @@ fn room_for(tx: &rusqlite::Transaction, project: &str, s: &Setting, now: i64) ->
             free.push(c);
         }
     }
-    let left = (s.day_most - auto::started_in_day(tx, project, now)?).max(0);
-    let n = room.values().sum::<i64>().min(slots.free_in(tx, project)?.unwrap_or(i64::MAX)).min(SLOTS_MOST).min(left).min(free.len() as i64);
+    let n = room.values().sum::<i64>().min(project_room).min(SLOTS_MOST).min(left).min(free.len() as i64);
     Ok((free, n, room))
 }
 
@@ -228,7 +238,10 @@ pub async fn due(app: &Shared) {
     let Ok(all) = store(app, auto::due_for).await else { return };
     for project in all {
         let p = project.clone();
-        match store(app, move |tx| Ok((decide(tx, &p, ops::now())?, ops::project_place(tx, &p)?.0))).await {
+        let decided = store(app, move |tx| crate::supervisor::breakers::with_new_cards(tx,
+            || Ok((decide(tx, &p, ops::now())?, ops::project_place(tx, &p)?.0)))).await;
+        let decided = decided.map(|(result, cards)| { crate::supervisor::breakers::notify(app, cards); result });
+        match decided {
             Ok((Due::Nothing, _)) => {}
             Ok((Due::Off(why), name)) => {
                 super::acts::note(app, format!("Auto-Dispatcher turned itself off for {name}: {why}"));
@@ -348,6 +361,10 @@ pub async fn dispatch(app: &Shared, pane: &str, args: &Value) -> Result<String, 
         if why.is_empty() { Ok(()) } else { ops::log(tx, &task, &by, "why", &format!("Why the round chose it: {why}"), None, ops::now()).map(drop) }
     }).await?;
     let started = pressed?;
+    if let Some(cards) = started["decision_cards"].as_array() {
+        let ids = cards.iter().filter_map(Value::as_str).collect::<Vec<_>>().join(", ");
+        return Ok(format!("Owner decision cards: {ids}."));
+    }
     if !ran {
         return Err(format!("{} has no room now: {} Nothing was queued; start no more on that agent.", c.agent.name, started["full"]["words"].as_str().unwrap_or_default()));
     }

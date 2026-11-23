@@ -127,7 +127,7 @@ fn hold(tx: &Transaction, run: &Run, name: &str, target: &str, failed: &str, log
     tx.execute("UPDATE integration_entries SET stage = ?2 WHERE task = ?1", (&run.task, HELD)).map_err(sql)?;
     ops::notice(tx, DISPATCHER, id, &format!("{id} stays queued: the steps its Verify failed ({failed}) fail on {name} at {short} too, so the target is red, not {id}. \
         It waits until {bug} (the red target) is DONE or FAILED, then its Verify runs again; its wait for integration goes on while it stays in INTEGRATION. {logs}"),
-        serde_json::json!({"held": HELD, "bug": bug}), now).map(drop)
+        serde_json::json!({"held": HELD, "bug": bug, "target_red": true}), now).map(drop)
 }
 
 /// The project's Bug task for its red target, (key, ID, open), while it is a task.

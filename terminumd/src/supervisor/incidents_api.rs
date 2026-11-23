@@ -40,9 +40,13 @@ pub(super) struct Incident {
     task: Option<String>,
     held: String,
     holds: Vec<IncidentHold>,
+    alerts: Vec<IncidentAlert>,
     needed: &'static str,
     no_answer: &'static str,
 }
+
+#[derive(Debug, Serialize)]
+struct IncidentAlert { id: i64, detector: String, metric: String, response: String, wrong: bool }
 
 #[derive(Debug, Serialize)]
 struct IncidentHold { id: i64, label: &'static str }
@@ -57,7 +61,15 @@ const SUMMARY: &str = "SELECT i.id, i.project, p.name, m.level,
         FROM supervisor_line_failures WHERE i.subject_kind = 'critical_line' AND i.closed_at IS NULL),
       (SELECT t.slug FROM tasks t WHERE t.id = i.task AND t.project = i.project),
       (SELECT json_group_array(json_array(h.id, h.kind) ORDER BY h.id)
-        FROM supervisor_holds h WHERE h.incident = i.id AND h.shadow = 0 AND h.released_at IS NULL)
+        FROM supervisor_holds h WHERE h.incident = i.id AND h.shadow = 0 AND h.released_at IS NULL),
+      (SELECT json_group_array(json_array(id, detector, metric, response, wrong)) FROM (
+        SELECT a.id, a.detector, e.metric, a.response,
+            EXISTS (SELECT 1 FROM supervisor_outcomes o WHERE o.action = a.id AND o.days = 0) AS wrong
+        FROM supervisor_actions a JOIN supervisor_incident_events e ON e.id = a.source
+        WHERE a.project = i.project AND a.kind = 'alert' AND a.target = CAST(i.id AS TEXT)
+          AND a.id = (SELECT max(other.id) FROM supervisor_actions other WHERE other.project = a.project
+            AND other.kind = a.kind AND other.target = a.target AND other.fingerprint = a.fingerprint)
+        ORDER BY a.id DESC LIMIT 50))
     FROM supervisor_incidents i JOIN projects p ON p.id = i.project
     JOIN supervisor_incident_events m ON m.id = coalesce(
       (SELECT event FROM supervisor_incident_signals WHERE incident = i.id ORDER BY level DESC, event DESC LIMIT 1),
@@ -88,6 +100,9 @@ fn incident(row: &Row<'_>) -> rusqlite::Result<Incident> {
     let holds: Vec<_> = raw.into_iter().map(|(id, kind)| IncidentHold {
         id, label: super::holds::Kind::read(&kind).label(),
     }).collect();
+    let raw: Vec<(i64, String, String, String, u8)> = super::signals::decode(row, 17)?;
+    let alerts = raw.into_iter().map(|(id, detector, metric, response, wrong)|
+        IncidentAlert { id, detector, metric, response, wrong: wrong != 0 }).collect();
     let held = if holds.is_empty() { "No hold in effect.".into() }
         else { format!("{}.", holds.iter().map(|h| h.label).collect::<Vec<_>>().join(". ")) };
     Ok(Incident {
@@ -97,7 +112,7 @@ fn incident(row: &Row<'_>) -> rusqlite::Result<Incident> {
         task: row.get(15)?,
         held, needed: if !holds.is_empty() { "Keep or release the hold." } else if acknowledged_at.is_some() { "Acknowledged." } else { "Acknowledge when seen." },
         no_answer: if holds.is_empty() { "No automatic action without an answer." } else { "Without an answer the hold stays." },
-        holds,
+        holds, alerts,
     })
 }
 
@@ -210,6 +225,7 @@ pub(super) fn events(tx: &Transaction, id: i64, before: Option<i64>) -> Result<V
                 "hold_applied" => format!("Hold {} applied.", r.get::<_, i64>(8)?),
                 "hold_kept" => format!("Hold {} kept.", r.get::<_, i64>(8)?),
                 "hold_released" => format!("Hold {} released.", r.get::<_, i64>(8)?),
+                "alert_wrong" => "Owner marked the alert wrong.".into(),
                 _ => unreachable!("incident event kind checked by the store"),
             };
             Ok(Event { id: r.get(0)?, at: r.get(1)?, kind, actor: r.get(3)?, level, words })
@@ -224,15 +240,17 @@ async fn timeline(State(app): State<Shared>, Path(id): Path<i64>, Query(cursor):
 
 #[derive(Deserialize)]
 #[serde(rename_all = "snake_case")]
-enum Key { Acknowledge, Snooze, KeepHold, ReleaseHold }
+enum Key { Acknowledge, Snooze, KeepHold, ReleaseHold, ThisIsWrong }
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct Press { action: Key, hold: Option<i64> }
+struct Press { action: Key, hold: Option<i64>, alert: Option<i64> }
 
 async fn owner_press(app: &Shared, id: i64, press: Press) -> Result<Incident, String> {
     let with_hold = matches!(press.action, Key::KeepHold | Key::ReleaseHold);
-    if with_hold != press.hold.is_some() { return Err("Choose the key and its hold.".into()); }
+    if with_hold != press.hold.is_some() || matches!(press.action, Key::ThisIsWrong) != press.alert.is_some() {
+        return Err("Choose the key and its hold or alert.".into());
+    }
     if matches!(press.action, Key::ReleaseHold) {
         let project = store(app, move |tx| {
             tx.query_row("SELECT project FROM supervisor_incidents WHERE id = ?1", [id], |r| r.get::<_, String>(0))
@@ -254,13 +272,14 @@ async fn owner_press(app: &Shared, id: i64, press: Press) -> Result<Incident, St
                 incidents::hold_event(tx, id, hold, "hold_kept", crate::tasks::store::HUMAN, at)?;
                 true
             }
+            Key::ThisIsWrong => incidents::wrong_alert(tx, id, press.alert.unwrap(), at)?,
             Key::ReleaseHold => false, // its transaction already sent the update
         };
         let summary = tx.query_row(&format!("{SUMMARY} WHERE i.id = ?1"), [id], incident)
             .optional().map_err(sql)?.ok_or("Incident not found.")?;
         Ok((summary, changed))
     }).await?;
-    if changed { app.supervisor.incident_changed(); }
+    if changed { app.supervisor.incident_changed(); app.supervisor.wake(); }
     Ok(summary)
 }
 

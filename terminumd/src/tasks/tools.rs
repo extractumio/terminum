@@ -337,7 +337,8 @@ fn run_in(store: &Store, state_dir: &Path, who: &Who, tool: &str, args: &Value, 
                 }
                 let me = me()?;
                 let recorded = super::choices::question(args)?;
-                super::comments::record_question(tx, &me, id, &questions, recorded.as_ref(), at)?;
+                let event = super::comments::record_question(tx, &me, id, &questions, recorded.as_ref(), at)?;
+                if who.supervisor { crate::supervisor::action_tasks::comment(tx, &t, &who.key, &event, true, at)?; }
                 ops::move_to(tx, &me, id, "WAIT FOR HUMAN", at)?;
                 let then = asked(tx, who, true)?;
                 // in a run of several its other tasks in progress wait with it: one question closes the session (AC-185)
@@ -356,6 +357,7 @@ fn run_in(store: &Store, state_dir: &Path, who: &Who, tool: &str, args: &Value, 
                 // a project's manager's comment is marked so: a fresh start says whose it is (terminum-dispatcher.md AC-209)
                 let text = rules::clean(arg(args, "text")?);
                 let event = ops::comment_as(tx, &me()?, manager.is_some(), id, &text, at)?;
+                if who.supervisor { crate::supervisor::action_tasks::comment(tx, &task, &who.key, &event, false, at)?; }
                 *noted = Some((id.to_string(), event));
                 Ok((format!("Comment kept on {id}."), vec![id.to_string()]))
             }

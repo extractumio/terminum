@@ -244,10 +244,12 @@ async fn configured(app: &Shared) -> Result<bool, String> {
 
 async fn send_next(app: &Shared) -> Result<bool, String> {
     let _serial = app.supervisor.line_serial.lock().await;
-    let Some((settings, job)) = store(app, move |tx| {
+    let (job, cards) = store(app, |tx| super::breakers::with_new_cards(tx, || {
         let at = now();
         claim(tx, at, crate::tasks::cron::minute_of_day(at))
-    }).await? else { return Ok(false) };
+    })).await?;
+    super::breakers::notify(app, cards);
+    let Some((settings, job)) = job else { return Ok(false) };
     let (project, text, scheduled, check) = match job {
         Job::Notice(notice) => {
             let text = notice.render(settings.link_base.as_deref());

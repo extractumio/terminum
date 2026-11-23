@@ -153,7 +153,10 @@ fn open(tx: &Transaction, project: &str, problem: i64, kind: &str, words: &str, 
             text: words.into(), project: Some(project.into()), severity: Some("P1".into()), ..NewTask::default() }, at)?
     };
     super::task_policy::mark_card(tx, &task)?;
-    comments::wait_for_owner(tx, &by, &task, words, choices, at)?;
+    let question = comments::wait_for_owner(tx, &by, &task, words, choices, at)?;
+    if let Some(s) = super::action_tasks::problem_signal(tx, project, problem)? {
+        super::outcomes::record(tx, &s, super::outcomes::Kind::Card, &question, &task.key, "problem", at)?;
+    }
     Ok(task)
 }
 
@@ -169,7 +172,8 @@ pub(super) fn charter_due(tx: &Transaction, project: &str, at: i64) -> Result<()
         let task = ops::create(tx, &by, NewTask { title: format!("Review the charter's {field}"), text: words.clone(),
             project: Some(project.into()), severity: Some("P1".into()), ..NewTask::default() }, at)?;
         super::task_policy::mark_card(tx, &task)?;
-        comments::wait_for_owner(tx, &by, &task, &words, &Value::Null, at)?;
+        let question = comments::wait_for_owner(tx, &by, &task, &words, &Value::Null, at)?;
+        super::outcomes::unattributed(tx, project, super::outcomes::Kind::Card, &question, &task.key, at)?;
         tx.execute("INSERT INTO supervisor_charter_questions VALUES (?1, ?2, ?3, ?4)",
             (project, field, due, task.key)).map_err(sql)?;
     }
@@ -199,7 +203,8 @@ pub(super) fn retro(tx: &Transaction, project: &str, at: i64) -> Result<Option<S
         let task = ops::create(tx, &by, NewTask { title: "Review repeated session drift".into(),
             text: words.clone(), project: Some(project.into()), severity: Some("P1".into()), ..NewTask::default() }, at)?;
         super::task_policy::mark_card(tx, &task)?;
-        comments::wait_for_owner(tx, &by, &task, &words, &Value::Null, at)?;
+        let question = comments::wait_for_owner(tx, &by, &task, &words, &Value::Null, at)?;
+        super::outcomes::unattributed(tx, project, super::outcomes::Kind::Card, &question, &task.key, at)?;
         Some(task)
     } else { None };
     tx.execute("INSERT INTO supervisor_drift_questions VALUES (?1, ?2, ?3, ?4, ?5)",

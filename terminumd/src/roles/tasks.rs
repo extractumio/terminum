@@ -58,7 +58,7 @@ pub async fn promote_queued_task(app: &Shared, boss: &Boss, args: &Value) -> Res
 
 pub(super) async fn promote_queued(app: &Shared, boss: &Boss, args: &Value, supervised: bool) -> Result<String, String> {
     let (b, id) = (boss.clone(), arg(args, "id")?.to_string());
-    let (id, name, moved, behind) = store(app, move |tx| {
+    let result = store(app, move |tx| {
         let t = in_project(tx, &b, &id)?;
         let gone = || format!("{} waits no more: it started, or its wait was called off.", t.id);
         let w = waits::of_task(tx, &t.key)?.ok_or_else(|| format!("{} has no waiting run of its own: use a queued primary task from list_runs.", t.id))?;
@@ -80,14 +80,25 @@ pub(super) async fn promote_queued(app: &Shared, boss: &Boss, args: &Value, supe
         let front = if w.scheduled { 0 } else { line.iter().filter(|x| x.scheduled).count() };
         let mut order: Vec<String> = line.into_iter().map(|x| x.task).collect();
         let moved = order.get(front) != Some(&t.key);
+        if moved && supervised
+            && let Some(card) = crate::supervisor::action_tasks::divert(tx, &t.project, &t.key, &t.id, Some(&b.key), "promote", ops::now())?
+        {
+            return Ok(Err(card.task));
+        }
         if moved {
             order.retain(|key| key != &t.key);
             order.insert(front, t.key.clone());
             waits::reorder(tx, &w.agent, &order)?;
-            ops::log(tx, &t.key, &b.user, "why", &format!("{} moved it to the front of {}'s queue.", b.name, a.name), None, ops::now())?;
+            let at = ops::now();
+            let event = ops::log(tx, &t.key, &b.user, "why", &format!("{} moved it to the front of {}'s queue.", b.name, a.name), None, at)?;
+            if supervised { crate::supervisor::action_tasks::record_promotion(tx, &t, &b.key, &event, at)?; }
         }
-        Ok((t.id, a.name, moved, front > 0))
+        Ok(Ok((t.id, a.name, moved, front > 0)))
     }).await?;
+    let (id, name, moved, behind) = match result {
+        Ok(moved) => moved,
+        Err(card) => { crate::tasks::api::told(app, &card); return Ok(format!("Owner decision card: {card}.")); }
+    };
     if moved { crate::tasks::api::told(app, &id); }
     Ok(format!("{id} {} at the front of {name}'s queue{}. It starts when there is room.", if moved { "is now" } else { "is already" }, if behind { ", behind its schedules' tasks" } else { "" }))
 }

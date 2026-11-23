@@ -9,7 +9,7 @@ use crate::app::Shared;
 use crate::dispatcher::{api::resume_hold, letgo};
 use crate::roles::supervisor as authority;
 use crate::tasks::{api::{answer, store, told}, ops::now, store::HUMAN};
-use super::holds::{self, Applied, Hold, Kind, Request};
+use super::holds::{self, Applied, Disposition, Hold, Kind, Request};
 
 pub(super) fn routes() -> Router<Shared> {
     Router::new()
@@ -26,7 +26,7 @@ async fn list(State(app): State<Shared>, Path(project): Path<String>) -> Respons
 
 pub(super) fn heard(app: &Shared, applied: Applied) {
     if let Some(run) = applied.run {
-        letgo::let_go_of(app, run);
+        letgo::let_go_of(app, *run);
     } else if let Some(task) = applied.task {
         told(app, &task);
     }
@@ -52,27 +52,39 @@ pub(super) async fn release(app: &Shared, project: String, id: i64, pane: Option
         if incident.is_some() && hold.incident != incident {
             return Err("That hold is not on this incident.".into());
         }
+        if key.is_some() && hold.kind == Kind::StopRun
+            && let Some(card) = super::action_tasks::diverted_hold_run(tx, &scope, id, now())?
+        {
+            return Ok(Err(card.task));
+        }
         if hold.kind != Kind::StopRun {
             let actor = key.as_ref().map_or_else(|| Ok(HUMAN.into()), |_| authority::author(tx, &scope))?;
             holds::release(tx, &scope, &hold, &actor, now())?;
         }
-        Ok(hold)
+        Ok(Ok(hold))
     }).await?;
-    if held.kind == Kind::StopRun {
-        resume(app, project, pane, &held).await?;
+    let held = match held {
+        Ok(hold) => hold,
+        Err(card) => { told(app, &card); return Ok(json!({"decision_cards": [card]})); }
+    };
+    if held.kind == Kind::StopRun
+        && let Some(cards) = resume(app, project, pane, &held).await?
+    {
+        return Ok(cards);
     }
     if let Some(task) = &held.task { told(app, task); }
     changed(app);
     Ok(json!({"id": id, "released": true}))
 }
 
-async fn resume(app: &Shared, project: String, pane: Option<String>, hold: &Hold) -> Result<(), String> {
+async fn resume(app: &Shared, project: String, pane: Option<String>, hold: &Hold) -> Result<Option<Value>, String> {
     let task = hold.task.clone().ok_or("The held task is gone.")?;
     let answer = resume_hold(app, project, hold.id, pane, task).await?;
+    if answer.get("decision_cards").is_some() { return Ok(Some(answer)); }
     if answer.get("run").is_none() {
         return Err(answer["full"]["words"].as_str().unwrap_or("The run could not be resumed.").into());
     }
-    Ok(())
+    Ok(None)
 }
 
 #[derive(Deserialize)]
@@ -99,7 +111,15 @@ pub(crate) async fn tool(app: &Shared, key: String, project: String, tool: Strin
         let actor = authority::author(tx, &project)?;
         holds::apply(tx, &project, request, &actor, now())
     }).await?;
-    let result = json!({"id": done.id, "shadow": done.shadow});
-    if !done.shadow { heard(app, done); }
-    Ok(result.to_string())
+    match done {
+        Disposition::Applied(done) => {
+            let result = json!({"id": done.id, "shadow": done.shadow});
+            if !done.shadow { heard(app, done); }
+            Ok(result.to_string())
+        }
+        Disposition::Card(card) => {
+            told(app, &card.task);
+            Ok(json!({"decision_card": card.task}).to_string())
+        }
+    }
 }

@@ -67,7 +67,12 @@ pub(super) fn answer(tx: &Transaction, project: &str, run: &str, text: &str, at:
     let key = ops::key_of(tx, &task)?;
     let identity = crate::auth::crypto::hex(&Sha256::digest(format!("{run}\n{text}")));
     if !comments::noticed(tx, &by, &key, "incident_answer", &identity)? {
-        comments::notice(tx, &by, &task, &text, serde_json::json!({"incident_answer":identity}), at)?;
+        let event = comments::notice(tx, &by, &task, &text, serde_json::json!({"incident_answer":identity}), at)?;
+        if let Some(s) = super::action_tasks::run_signal(tx, project, run)? {
+            super::outcomes::record(tx, &s, super::outcomes::Kind::Nudge, &event, &key, "", at)?;
+        } else {
+            super::outcomes::unattributed(tx, project, super::outcomes::Kind::Nudge, &event, &key, at)?;
+        }
         line_queue::enqueue(tx, incident, Kind::Answer, false)?;
     }
     Ok(task)

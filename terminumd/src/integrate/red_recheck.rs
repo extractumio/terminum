@@ -110,7 +110,10 @@ pub(super) fn judge(tx: &Transaction, home: &Path, run: &Run, target: &str, code
     if code != 0 {
         tx.execute("UPDATE integration_red SET ran_sha = ?2, next_at = ?3 WHERE project = ?1", rusqlite::params![run.project, target, now + AFTER]).map_err(sql)?;
         let how = if code == 1 { "fail there too" } else { "could not be told apart there" };
-        return ops::comment(tx, DISPATCHER, id, &format!("{failed} {how} on {at}: {id} stays open; terminumd runs them again when the target moves. Its log: {}", log.display()), now).map(drop);
+        let words = format!("{failed} {how} on {at}: {id} stays open; terminumd runs them again when the target moves. Its log: {}", log.display());
+        return if code == 1 {
+            ops::notice(tx, DISPATCHER, id, &words, serde_json::json!({"target_red": true, "target_recheck": true}), now).map(drop)
+        } else { ops::comment(tx, DISPATCHER, id, &words, now).map(drop) };
     }
     let green: Option<(String, i64)> = tx.query_row("SELECT green_steps, green_at FROM integration_red WHERE project = ?1 AND green_at IS NOT NULL", [&run.project],
                                                     |r| Ok((r.get(0)?, r.get(1)?))).optional().map_err(sql)?;

@@ -47,6 +47,8 @@ pub(super) fn resolve(tx: &Transaction, project: &str, id: &Evidence) -> Result<
                 WHERE s.project = ?1 AND s.detector = 'self.line_dead'
                 AND json_extract(e.value, '$.id.channel') = ?2 AND json_extract(e.value, '$.id.failure') = ?3)",
             (project, channel, failure)),
+        Evidence::SupervisorActions(id) => select(tx, "SELECT json_object('kind', kind, 'detector', detector, 'response', response, 'at', at)
+            FROM supervisor_actions WHERE project = ?1 AND id = ?2", (project, id)),
         Evidence::SupervisorRounds(id) => select(tx, "SELECT json_object('refused', refused, 'ended_at', ended_at)
             FROM supervisor_rounds WHERE project = ?1 AND id = ?2", (project, id)),
     }
