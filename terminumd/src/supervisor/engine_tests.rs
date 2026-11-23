@@ -105,6 +105,9 @@ fn ac211_signal_fingerprint_and_named_query() {
     let initial = sweep(NOW);
     assert!(signals(&f.store, PROJECT).unwrap().is_empty());
     initial.record(&f.store).unwrap();
+    sweep(NOW + 2).record(&f.store).unwrap();
+    sweep(NOW + 4).record(&f.store).unwrap();
+    assert_eq!(signals(&f.store, PROJECT).unwrap()[0].count, 1, "sweeps of a persisting condition are not repeats");
     let original = &signals(&f.store, PROJECT).unwrap()[0];
     assert_eq!(original.state, State::New);
     assert_eq!(original.level, 1);
@@ -127,6 +130,8 @@ fn ac211_signal_fingerprint_and_named_query() {
     assert_eq!((changed.first_seen, changed.last_seen, changed.count), (NOW, NOW + 10, 2));
     assert_eq!(changed.measure.value, 3.0);
     assert!(changed.evidence.contains(&Evidence::Events(third)));
+    sweep(NOW + 20).record(&f.store).unwrap();
+    assert_eq!(signals(&f.store, PROJECT).unwrap()[0].count, 2, "one new failed run is one repeat, however often swept");
 
     f.write("UPDATE supervisor_signals SET state = 'raised'", []);
     let later = NOW + 5 * WEEK;
@@ -138,6 +143,39 @@ fn ac211_signal_fingerprint_and_named_query() {
     let recurred = &signals(&f.store, PROJECT).unwrap()[0];
     assert_eq!(recurred.fingerprint, original.fingerprint);
     assert_eq!((recurred.state, recurred.count), (State::Recurred, 3));
+    sweep(later + 20).record(&f.store).unwrap();
+    assert_eq!(signals(&f.store, PROJECT).unwrap()[0].count, 3, "the return is one repeat");
+}
+
+// AC-211: a spend reading's new usage rows and a diagnostic's new measure are no repeat; a new event is.
+#[test]
+fn ac211_window_inputs_are_not_repeats() {
+    let f = Fixture::new("signal-inputs");
+    let old = NOW - 5 * WEEK;
+    f.task("cheap", Some("Feature"), "P2", "IN PROGRESS", old - 1);
+    f.run("cheap", "cheap-run", "agent", old);
+    f.cost("cheap-run", old + 1, 10_000);
+    f.task("expensive", Some("Feature"), "P2", "IN PROGRESS", NOW - 110);
+    f.failed_run("expensive", "expensive-run", NOW - 90);
+    f.cost("expensive-run", NOW - 89, 3_000_000);
+    let d = Fixture::detector("flow.cost_outlier");
+    let sweep = |at| evaluate(&f.store, PROJECT, at, std::slice::from_ref(&d)).unwrap().record(&f.store).unwrap();
+    let counts = |metric: &str| signals(&f.store, PROJECT).unwrap().into_iter()
+        .filter(|s| s.metric == metric).map(|s| (s.last_seen, s.count)).collect::<Vec<_>>();
+    sweep(NOW);
+    f.cost("expensive-run", NOW + 5, 3_000_000);
+    sweep(NOW + 10);
+    let spend = signals(&f.store, PROJECT).unwrap().into_iter().find(|s| s.metric == "task_dollars").unwrap();
+    assert!(spend.evidence.len() >= 2, "the later usage row joined the evidence");
+    assert_eq!(counts("task_dollars"), [(NOW + 10, 1)], "a growing spend total is one occurrence");
+
+    let diagnose = |evidence: &[Evidence], used, at| f.store.with(|tx| signals::diagnostic(tx, PROJECT, "self.budget",
+        ("round", "round-1", "judgment_round_tokens"), evidence, (used, 100.), at)).unwrap();
+    diagnose(&[], 120., NOW);
+    diagnose(&[], 150., NOW + 15);
+    assert_eq!(counts("judgment_round_tokens"), [(NOW + 15, 1)], "rising use of one budget is one occurrence");
+    diagnose(&[Evidence::Events("event-a".into())], 150., NOW + 30);
+    assert_eq!(counts("judgment_round_tokens"), [(NOW + 30, 2)]);
 }
 
 // AC-211: validate the catalog before opening SQLite, reject mismatches, and refuse detector writes.

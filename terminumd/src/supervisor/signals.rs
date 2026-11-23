@@ -8,7 +8,7 @@ use sha2::{Digest, Sha256};
 
 use crate::tasks::{ops::{rows, sql}, store::Store};
 
-use super::impact::Assessment;
+use super::impact::{Assessment, Source};
 use super::{Evaluation, Evidence, Finding, Measure, Mode, Scores, incidents};
 
 pub(super) type Observations = std::collections::BTreeMap<(String, String, String), Option<(f64, super::Comparison)>>;
@@ -79,6 +79,14 @@ struct PreparedFinding<'a> {
 
 const ACTIVE: &str = "state IN ('new', 'shadow', 'raised', 'recurred')";
 
+/// AC-211: a repeat is the condition back after it resolved, or, where `counted` holds, an evidence row the signal
+/// did not hold. A counted reading's rows are its events; other readings' rows are inputs to a level or a window
+/// total, so a persisting condition only moves last seen.
+fn repeated_count(counted: &str) -> String {
+    format!("count + (state = 'resolved' OR ({counted} AND EXISTS (SELECT 1 FROM json_each(excluded.evidence) n
+        WHERE n.value NOT IN (SELECT o.value FROM json_each(supervisor_signals.evidence) o))))")
+}
+
 struct PreparedRule<'a> {
     checked: &'a super::Checked,
     findings: Vec<PreparedFinding<'a>>,
@@ -127,11 +135,11 @@ pub(super) fn prepare(evaluation: &Evaluation) -> Result<Prepared<'_>, String> {
 impl Prepared<'_> {
     pub(super) fn write(self, tx: &Transaction, seed_attachment: bool) -> Result<(), String> {
         let Self { evaluation, batches } = self;
-        let mut upsert = tx.prepare_cached("INSERT INTO supervisor_signals
+        let mut upsert = tx.prepare_cached(&format!("INSERT INTO supervisor_signals
             (fingerprint, project, detector, subject_kind, subject_id, metric, evidence, measure, scores, first_seen, last_seen, count, state)
             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?10, 1, ?11)
             ON CONFLICT (fingerprint) DO UPDATE SET evidence = excluded.evidence, measure = excluded.measure,
-            scores = excluded.scores, last_seen = excluded.last_seen, count = count + 1,
+            scores = excluded.scores, last_seen = excluded.last_seen, count = {},
             state = CASE
                 WHEN state = 'muted' AND EXISTS (SELECT 1 FROM supervisor_incident_rulings r
                     WHERE r.fingerprint = supervisor_signals.fingerprint AND r.evidence = supervisor_signals.evidence
@@ -140,7 +148,7 @@ impl Prepared<'_> {
                 WHEN excluded.state = 'shadow' THEN 'shadow'
                 WHEN state = 'shadow' THEN 'new'
                 WHEN state = 'resolved' THEN 'recurred'
-                ELSE state END RETURNING state NOT IN ('muted', 'rejected')").map_err(sql)?;
+                ELSE state END RETURNING state NOT IN ('muted', 'rejected')", repeated_count("?12"))).map_err(sql)?;
         for PreparedRule { checked, findings, keys, complete_metrics, measured } in batches {
             let rule = checked.rule.id();
             let advanced = tx.execute("INSERT INTO supervisor_evaluations VALUES (?1, ?2, ?3)
@@ -175,7 +183,8 @@ impl Prepared<'_> {
                 if ruled { continue; }
                 let accepted: bool = upsert.query_row(params![row.key, evaluation.project, rule, row.found.subject_kind,
                     row.found.subject_id, row.found.metric, row.evidence, row.measure, row.scores, evaluation.at,
-                    if checked.mode == Mode::Shadow { "shadow" } else { "new" }], |r| r.get(0)).map_err(sql)?;
+                    if checked.mode == Mode::Shadow { "shadow" } else { "new" }, matches!(row.found.source, Source::Count(_))],
+                    |r| r.get(0)).map_err(sql)?;
                 if checked.mode == Mode::Live && accepted {
                     let week = evaluation.at.div_euclid(super::WEEK);
                     if tx.execute("INSERT OR IGNORE INTO supervisor_signal_weeks VALUES (?1, ?2)",
@@ -277,13 +286,13 @@ pub(super) fn diagnostic(tx: &Transaction, project: &str, detector: &str, subjec
     let evidence = encode(&evidence)?;
     let measure = encode(&Measure { value, baseline: 0., threshold, window_start: at, window_end: at })?;
     let scores = encode(&RecordedScores { scores: Scores { impact: 1, ..Scores::default() }, impact_basis: Default::default(), charter_breach: false })?;
-    tx.execute("INSERT INTO supervisor_signals (fingerprint, project, detector, subject_kind, subject_id,
+    tx.execute(&format!("INSERT INTO supervisor_signals (fingerprint, project, detector, subject_kind, subject_id,
         metric, evidence, measure, scores, first_seen, last_seen, count, state)
         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?10, 1, 'raised')
         ON CONFLICT (fingerprint) DO UPDATE SET measure = excluded.measure, evidence = excluded.evidence,
-            last_seen = excluded.last_seen, count = count + 1, state = 'raised'
+            last_seen = excluded.last_seen, count = {}, state = 'raised'
         WHERE (state, evidence, json_extract(measure, '$.value'), json_extract(measure, '$.threshold'))
-            IS NOT (excluded.state, excluded.evidence, ?11, ?12)",
+            IS NOT (excluded.state, excluded.evidence, ?11, ?12)", repeated_count("1")),
         params![key, project, detector, kind, id, metric, evidence, measure, scores, at, value, threshold]).map_err(sql)?;
     if detector == "self.miss" {
         super::reflection::enqueue(tx, project, ("miss", &key, Some(&key)), "miss",
