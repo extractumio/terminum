@@ -43,6 +43,20 @@ pub(crate) fn record_recent(tx: &Transaction, project: &str, at: i64) -> Result<
             OR EXISTS (SELECT 1 FROM events e WHERE e.task = t.id AND e.author = 'supervisor:' || ?1))",
         (project, at - DAY), |r| r.get::<_, String>(0))?;
     for id in touched { record_override(tx, &ops::get(tx, &id)?, at)?; }
+    for (id, fingerprint, event, at) in ops::rows(tx, "SELECT a.id, a.fingerprint, e.id, e.at
+        FROM events e JOIN tasks t ON t.id = e.task JOIN supervisor_actions a ON a.id = (
+            SELECT id FROM supervisor_actions WHERE project = ?1 AND target = t.id AND at <= e.at
+              AND kind IN ('fix','run','nudge') ORDER BY at DESC, id DESC LIMIT 1)
+        WHERE t.project = ?1 AND e.at > ?2 AND e.at <= ?3 AND e.author = 'human'
+          AND ((e.kind = 'archive' AND e.text LIKE 'Archived by %' AND a.kind = 'fix')
+            OR (e.kind = 'move' AND json_extract(e.data,'$.from') IN ('IN PROGRESS','INTEGRATION')
+                AND json_extract(e.data,'$.to') IN ('TODO','FAILED'))
+            OR (e.kind = 'why' AND e.text = 'The human gave up on its run.' AND a.kind = 'run'))",
+        (project, at - DAY, at), |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?, r.get::<_, i64>(3)?)))?
+    {
+        super::reflection::enqueue(tx, project, ("action", &id.to_string(), Some(&fingerprint)),
+            "human_override", &serde_json::json!({"event":event,"actor":"human"}), at)?;
+    }
     tx.execute("UPDATE supervisor_signals SET state = 'resolved' WHERE project = ?1
         AND detector = 'self.fights' AND state = 'raised' AND last_seen <= ?2", (project, at - DAY)).map_err(sql)?;
     Ok(())

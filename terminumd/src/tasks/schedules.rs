@@ -250,7 +250,7 @@ pub fn kept_by_agent(tx: &Transaction) -> Result<std::collections::BTreeMap<Stri
         JOIN projects j ON j.id = p.project AND j.host IS NULL
         JOIN supervisor_settings s USING (project) JOIN agents a ON a.project = p.project
         WHERE p.enabled = 1 AND a.id IN (json_extract(s.pack, '$.tiers.small'),
-            json_extract(s.pack, '$.tiers.medium'), json_extract(s.pack, '$.tiers.strong'))
+            json_extract(s.pack, '$.tiers.medium'), json_extract(s.pack, '$.tiers.strong'), json_extract(s.pack, '$.tiers.independent'))
         UNION SELECT r.agent_id, NULL FROM supervisor_rounds q JOIN runs r ON r.id = q.run WHERE q.ended_at IS NULL
         UNION SELECT s.agent_id, NULL FROM schedules s JOIN supervisor_reviews v ON v.schedule = s.id
             WHERE s.deleted_at IS NULL AND s.paused = 0",

@@ -49,7 +49,8 @@ pub(super) fn wrong(tx: &Transaction, project: &str, action: &outcomes::Action, 
     }).transpose()?;
     tx.execute("INSERT INTO supervisor_breakers (project, detector, response, opened_at, opened_by, config)
         VALUES (?1,?2,?3,?4,?5,?6)", (project, &action.detector, &action.response, at, action.id, signals::encode(&config)?))
-        .map(drop).map_err(sql)
+        .map_err(sql)?;
+    super::reflection::action(tx, project, action, "breaker_opened", at)
 }
 
 #[derive(Debug, Serialize)]

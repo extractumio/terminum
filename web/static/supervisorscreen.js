@@ -7,6 +7,7 @@ import { $, button, showError, stamp } from "./kanbanutil.js";
 import { el } from "./listparts.js";
 import { boardUrl, taskUrl } from "./tasklink.js";
 import { drawRuleOutcomes } from "./supervisoroutcomes.js";
+import { drawAgentRates, drawReflections } from "./supervisorreflection.js";
 import { reportCards } from "./supervisorreports.js";
 import { incidentHistory } from "./supervisorincidents.js";
 import { onIncidents } from "./incidents.js";
@@ -224,6 +225,8 @@ async function readScreen() {
     $("sv-title").textContent = `${data.project_name} · Supervisor`;
     drawHolds(data.holds ?? []);
     drawRuleOutcomes(data, path, readScreen);
+    drawReflections(data.reflections ?? [], path);
+    drawAgentRates(data.agent_rates ?? []);
     $("sv-reports").replaceChildren(...reportCards(data, path));
     if (data.spending) $("sv-spending").replaceChildren(...spending(data.spending, data.marked_tasks_eligible));
     const problems = data.problems ?? [];

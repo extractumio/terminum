@@ -39,6 +39,8 @@ const SPENDING = {
     day_limit_tokens: 20000, round_limit_tokens: 4000, investigation_left: 14000, routine_left: 0 },
   fixes: { dollars: 10.25, held_dollars: 8, limit_dollars: 20, estimated_dollars_per_run: 8, unpriced_runs: 1 },
 };
+const SMALL_RATE = { sample: 12, value: .25, interval_95: [.09, .53], can_gate: false, missing: null };
+const MISSING_RATE = { sample: 0, value: null, interval_95: null, can_gate: false, missing: "Project integration is off." };
 const json = (route, obj, status = 200) => route.fulfill({ status, json: obj });
 
 async function fixture(page, theme) {
@@ -105,7 +107,15 @@ async function fixture(page, theme) {
       breaker = false;
       return json(route, { ok: true });
     }
+    if (suffix === "/rounds/case_fixture") return json(route, { case: {
+      timeline: [{ number: 1, at: DATE, kind: "breaker", ref: "42", data: { detector: RULE } }],
+    } });
     if (suffix === "/screen") return json(route, { project_name: "API service",
+      agent_rates: [{ task_type: "Debt", agent: "mine", agent_name: "API agent",
+        failure: SMALL_RATE, return: MISSING_RATE, questions: SMALL_RATE, cost: SMALL_RATE }],
+      reflections: [{ at: DATE, case: "case_fixture", routing_card: "API-41", triggers: ["breaker_opened", "alert_wrong"],
+        result: { missed: "One missed event.", noise: "One repeated alert.", wrong: "One judged action.",
+          settings_revision: 4, proposals: [{ change: LITERAL, replay: "Compare the fixture timeline.", evidence: [1] }] } }],
       outcomes: [{ detector: RULE, response: "R5", right: 0, wrong: Number(wrong), undecided: 2, pending: 0 }],
       breakers: breaker ? [{ id: 5, detector: RULE, response: "R5", opened_at: DATE, cards: ["API-41"] }] : [], indicators: [SCORE], holds: activeHolds(),
       investigations_enabled: true, spending: SPENDING, marked_tasks_eligible: false,
@@ -352,6 +362,23 @@ async function screen(page, suffix, phone) {
     await until(() => page.getByText("No open breakers.").isVisible())
     && await page.locator("#sv-outcomes").getByText(/1 wrong/).isVisible());
   await shot(page, `supervisor-screen-${suffix}`);
+  const reflection = page.locator("#sv-reflections > details > summary");
+  await reflection.focus();
+  await reflection.press("Enter");
+  await page.getByText("Case timeline", { exact: true }).click();
+  await page.locator("#sv-reflections ol li").getByText(/"detector":/).waitFor();
+  await page.locator("#sv-agent-rates summary").click();
+  check("AC-248 proposals are shown as text with a link to the routing decision",
+    await page.locator("#sv-reflections").getByText(LITERAL, { exact: true }).isVisible()
+    && await page.getByRole("link", { name: "Routing decision API-41" }).isVisible()
+    && !await page.evaluate(() => window.fixtureRan));
+  check("AC-249 a small sample displays its interval, denominator and advisory status",
+    (await page.locator("#sv-agent-rates").textContent()).includes("25% · n = 12 · 95% interval 9%–53% · Advisory only")
+    && await page.locator("#sv-agent-rates").getByText("Project integration is off. · n = 0").isVisible());
+  check("AC-248 AC-249 the expanded panels fit the viewport and remain reachable",
+    await reflection.evaluate((node) => document.documentElement.scrollWidth <= innerWidth && node.matches(":focus-visible, :not(:focus)"))
+    && (!phone || await reflection.evaluate((node) => node.getBoundingClientRect().height >= 44)));
+  await shot(page, `supervisor-reflection-${suffix}`);
   const reports = page.locator("#sv-reports");
   await reports.getByText("Decisions waiting (1)", { exact: true }).click();
   await reports.getByText("Weekly review ·", { exact: false }).click();

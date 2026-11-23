@@ -49,7 +49,7 @@ pub(super) fn decisions(tx: &Transaction, project: &str, at: i64) -> Result<Stri
     Ok(lines.join("\n"))
 }
 
-fn window(at: i64) -> Window { Window { before: at - 2 * WEEK + 1, start: at - WEEK + 1, end: at } }
+pub(super) fn window(at: i64) -> Window { Window { before: at - 2 * WEEK + 1, start: at - WEEK + 1, end: at } }
 
 pub(super) fn bottlenecks(tx: &Transaction, project: &str, at: i64) -> Result<String, String> {
     let saved = settings::read(tx, project)?.settings;

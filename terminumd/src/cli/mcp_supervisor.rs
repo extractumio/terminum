@@ -18,6 +18,8 @@ pub(super) const CARDS: &[Card] = &[
         example: r#"{"id":"fingerprint"}"# },
     Card { name: "get_metric", area: "supervisor", keywords: "recompute named query measurement value baseline window",
         example: r#"{"query":"open_waits","signal":"fingerprint"}"# },
+    Card { name: crate::supervisor::reflection::TOOL, area: "supervisor", keywords: "record independent reflection timeline proposals",
+        example: r#"{"missed":"Earlier evidence was absent.","noise":"The repeat alert added no evidence.","wrong":"The rule counted pending decisions.","proposals":[{"change":"Exclude pending decisions.","replay":"Recount judged decisions.","evidence":[1]}]}"# },
     Card { name: "record_finding", area: "supervisor", keywords: "submit checked investigation outcome cause disproof fix evidence",
         example: r#"{"cause":"The queue waits for an answer.","confidence":0.8,"disproof":"The waits resolve without answers.","fix_proposal":"Clarify ownership.","evidence":[{"table":"events","id":"row"}],"measurements":[{"query":"open_waits","signal":"fingerprint","value":240}]}"# },
     Card { name: "open_problem", area: "supervisor", keywords: "open problem register cluster fingerprints hypothesis",
@@ -85,6 +87,14 @@ pub(super) fn tools() -> Vec<Value> {
             json!({"id": text}), &["id"], true),
         tool("get_metric", "Recompute a signal's measure through the named query over the signal's recorded window.",
             json!({"query": text, "signal": text}), &["query", "signal"], true),
+        tool(crate::supervisor::reflection::TOOL, "Record the independent review. Cite numbered timeline events. Routing proposals become owner decision cards.",
+            json!({"missed":text,"noise":text,"wrong":text,
+                "proposals":{"type":"array","maxItems":8,"items":{"type":"object","additionalProperties":false,
+                    "required":["change","replay","evidence"],"properties":{"change":text,"replay":text,
+                        "evidence":{"type":"array","minItems":1,"items":id}}}},
+                "routing":{"type":"object","additionalProperties":false,"required":["agent","task_type","change","why"],
+                    "properties":{"agent":text,"task_type":text,"change":text,"why":text}}
+            }), &["missed","noise","wrong","proposals"], false),
         tool("record_finding", "Submit this investigation's cause, confidence, disproof and fix proposal. Copy typed evidence references and put numeric claims in measurements. Code resolves each row and reruns each named query.",
             json!({
                 "cause": text, "disproof": text, "fix_proposal": text, "confidence": {"type":"number", "minimum":0, "maximum":1},

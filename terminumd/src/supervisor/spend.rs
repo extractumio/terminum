@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::dispatcher::usage;
 use crate::tasks::ops::rows;
 
-use super::flow::{LAUNCH, events, failed_runs, project_events};
+use super::flow::{LAUNCH, events, failed_runs, project_events, returned_runs};
 use super::impact::Source;
 use super::{Comparison, Evidence, Measurements, Query, Reading};
 
@@ -77,16 +77,8 @@ fn runs(q: &Query<'_, '_>) -> Result<Vec<Run>, String> {
 }
 
 fn failures(q: &Query<'_, '_>) -> Result<BTreeMap<String, Vec<Evidence>>, String> {
-    let events_sql = project_events();
-    let failed_sql = failed_runs();
-    let failed = rows(q.tx, &format!("{events_sql}, {failed_sql}
-        SELECT run, id FROM failed_runs WHERE at >= ?3 AND run IS NOT NULL ORDER BY run, at, id"),
-        (q.project, q.window.end, q.window.before), |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?;
-    let mut out = BTreeMap::<String, Vec<Evidence>>::new();
-    for (run, event) in failed {
-        out.entry(run).or_default().push(events(event));
-    }
-    Ok(out)
+    Ok(dispositions_since(q, false, q.window.before)?.into_iter().map(|(run, tasks)|
+        (run, tasks.into_values().flatten().map(events).collect())).collect())
 }
 
 #[derive(Default)]
@@ -203,9 +195,10 @@ pub(super) fn allocation(q: &Query<'_, '_>) -> Result<Measurements, String> {
 struct AgentSample {
     tasks: BTreeSet<String>,
     failed: BTreeSet<String>,
+    returned: BTreeSet<String>,
     questions: BTreeSet<String>,
     spend: Sample,
-    costs: usize,
+    costs: Vec<f64>,
     runs: usize,
     evidence: Vec<Evidence>,
 }
@@ -224,12 +217,28 @@ fn questions(q: &Query<'_, '_>) -> Result<BTreeMap<(String, String), Vec<String>
     Ok(out)
 }
 
-const MIN_RATE_SAMPLE: usize = 30;
+pub(super) const MIN_RATE_SAMPLE: usize = 30;
 
-fn samples(q: &Query<'_, '_>, typed: bool) -> Result<BTreeMap<(String, String), AgentSample>, String> {
+type Dispositions = BTreeMap<String, BTreeMap<String, Vec<String>>>;
+
+fn dispositions_since(q: &Query<'_, '_>, returned: bool, since: i64) -> Result<Dispositions, String> {
+    let (clause, name) = if returned { (returned_runs(), "returned_runs") } else { (failed_runs(), "failed_runs") };
+    let events = rows(q.tx, &format!("{}, {clause}
+        SELECT run, task, id FROM {name} WHERE at >= ?3 AND run IS NOT NULL", project_events()),
+        (q.project, q.window.end, since),
+        |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?)))?;
+    let mut out = Dispositions::new();
+    for (run, task, event) in events {
+        out.entry(run).or_default().entry(task).or_default().push(event);
+    }
+    Ok(out)
+}
+
+fn samples(q: &Query<'_, '_>, typed: bool, integration: bool) -> Result<BTreeMap<(String, String), AgentSample>, String> {
     let questions = questions(q)?;
     let usage = if typed { usage_rows(q)? } else { BTreeMap::new() };
-    let failures = if typed { failures(q)? } else { BTreeMap::new() };
+    let failures = if typed { dispositions_since(q, false, q.window.start)? } else { BTreeMap::new() };
+    let returned = if typed && integration { dispositions_since(q, true, q.window.start)? } else { BTreeMap::new() };
     let mut out = BTreeMap::<_, AgentSample>::new();
     for run in runs(q)?.into_iter().filter(|run| q.window.current(run.at)) {
         let mut categories = BTreeSet::new();
@@ -248,9 +257,11 @@ fn samples(q: &Query<'_, '_>, typed: bool) -> Result<BTreeMap<(String, String), 
                     sample.questions.extend(found.iter().cloned());
                 }
             }
-            if let Some(failure) = failures.get(&run.id) {
-                sample.failed.insert(run.id.clone());
-                sample.evidence.extend(failure.iter().cloned());
+            for (data, found) in [(&failures, &mut sample.failed), (&returned, &mut sample.returned)] {
+                if let Some(ids) = data.get(&run.id).and_then(|tasks| tasks.get(task)) {
+                    found.insert(run.id.clone());
+                    sample.evidence.extend(ids.iter().cloned().map(events));
+                }
             }
         }
         for kind in &categories {
@@ -260,7 +271,7 @@ fn samples(q: &Query<'_, '_>, typed: bool) -> Result<BTreeMap<(String, String), 
             if categories.len() == 1 && run.total_tasks == run.tasks.len() as i64 && run.tasks.iter().all(|(_, kind)| kind.is_some())
                 && let Some(spend) = usage.get(&run.id).filter(|s| s.complete) {
                 sample.spend.add(&run, spend);
-                sample.costs += 1;
+                sample.costs.push(spend.dollars);
             }
         }
     }
@@ -275,12 +286,15 @@ fn question_rate(s: &AgentSample) -> Option<f64> {
 fn fail_rate(s: &AgentSample) -> Option<f64> {
     (s.runs >= MIN_RATE_SAMPLE).then(|| s.failed.len() as f64 / s.runs as f64)
 }
+fn return_rate(s: &AgentSample) -> Option<f64> {
+    (s.runs >= MIN_RATE_SAMPLE).then(|| s.returned.len() as f64 / s.runs as f64)
+}
 fn cost_rate(s: &AgentSample) -> Option<f64> {
-    (s.costs >= MIN_RATE_SAMPLE && s.costs == s.runs).then(|| s.spend.value / s.costs as f64)
+    (s.costs.len() >= MIN_RATE_SAMPLE && s.costs.len() == s.runs).then(|| s.spend.value / s.costs.len() as f64)
 }
 
-fn bands(q: &Query<'_, '_>, typed: bool, metrics: &[(&'static str, Rate)]) -> Result<Measurements, String> {
-    let samples = samples(q, typed)?;
+fn bands(q: &Query<'_, '_>, typed: bool, integration: bool, metrics: &[(&'static str, Rate)]) -> Result<Measurements, String> {
+    let samples = samples(q, typed, integration)?;
     let mut out = Measurements::default();
     let mut missing = samples.is_empty();
     for ((kind, agent), sample) in &samples {
@@ -310,30 +324,34 @@ fn bands(q: &Query<'_, '_>, typed: bool, metrics: &[(&'static str, Rate)]) -> Re
 }
 
 pub(super) fn ask_rate(q: &Query<'_, '_>) -> Result<Measurements, String> {
-    bands(q, false, &[("questions_per_task", question_rate)])
+    bands(q, false, false, &[("questions_per_task", question_rate)])
 }
 
 pub(super) fn scorecard(q: &Query<'_, '_>) -> Result<Measurements, String> {
-    bands(q, true, &[("failed_run_share", fail_rate), ("questions_per_task", question_rate), ("dollars_per_run", cost_rate)])
+    let mut metrics: Vec<(&'static str, Rate)> = vec![("failed_run_share", fail_rate),
+        ("questions_per_task", question_rate), ("dollars_per_run", cost_rate)];
+    let integration = super::catalog::integration_on(q.tx, q.project)?;
+    if integration { metrics.push(("returned_run_share", return_rate)); }
+    bands(q, true, integration, &metrics)
 }
 
 pub(super) fn review_rates(tx: &rusqlite::Transaction, project: &str, window: super::Window) -> Result<Vec<serde_json::Value>, String> {
     use serde_json::json;
-    let detector = super::settings::read(tx, project)?.settings.detector(super::Rule::AgentScorecard);
+    use super::rate_intervals as rate;
+    let detector = super::Detector::for_rule(super::Rule::AgentScorecard);
     let q = Query { tx, project, detector: &detector, window, historical: false };
-    Ok(samples(&q, true)?.into_iter().map(|((kind, agent), s)| {
-        let tasks = s.tasks.len();
-        let n = s.runs as f64;
-        let failed = s.failed.len();
-        let failure_rate = failed as f64 / n;
-        // Wilson interval, including small and zero-event samples.
-        let z = 1.96_f64;
-        let center = (failure_rate + z * z / (2. * n)) / (1. + z * z / n);
-        let half = z * (failure_rate * (1. - failure_rate) / n + z * z / (4. * n * n)).sqrt() / (1. + z * z / n);
-        json!({"task_type":kind,"agent":agent,"run_sample":s.runs,"task_sample":tasks,
-            "failure_rate":failure_rate,"failure_95_interval":[(center - half).max(0.), (center + half).min(1.)],
-            "questions_per_task":s.questions.len() as f64 / tasks as f64,"priced_sample":s.costs,
-            "dollars_per_run":(s.costs == s.runs).then_some(s.spend.value / n),
-            "rates_can_gate":s.runs >= MIN_RATE_SAMPLE && tasks >= MIN_RATE_SAMPLE})
-    }).collect())
+    let integration = super::catalog::integration_on(tx, project)?;
+    let mut observed = samples(&q, true, integration)?;
+    let mut rates = Vec::new();
+    for agent in crate::tasks::agents::of_project(tx, project)? {
+        for (kind, _) in crate::tasks::attrs::TYPES {
+            let s = observed.remove(&(kind.to_string(), agent.id.clone())).unwrap_or_default();
+            rates.push(json!({"task_type":kind,"agent":agent.id,"agent_name":agent.name,
+                "failure":rate::share(s.failed.len(), s.runs, None),
+                "return":rate::share(s.returned.len(), s.runs, (!integration).then_some("Project integration is off.")),
+                "questions":rate::questions(s.questions.len(), s.tasks.len()),
+                "cost":rate::cost(&s.costs, s.runs)}));
+        }
+    }
+    Ok(rates)
 }

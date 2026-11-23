@@ -125,13 +125,15 @@ fn ac161_a_schedule_is_refused_when_its_agent_cannot_keep_the_slots() {
 fn ac233_remote_projects_keep_their_ordinary_slots() {
     open("sched-slot-supervisor").with(|tx| {
         agent(tx, "a", 1);
+        agent(tx, "independent", 1);
         tx.execute("INSERT INTO project_supervisor (project, enabled, generation, enabled_at)
             VALUES ('default', 1, 1, ?1)", [NOW]).map_err(sql)?;
         tx.execute("INSERT INTO supervisor_settings (project, revision, pack) VALUES
-            ('default', 1, '{\"tiers\":{\"small\":\"a\",\"medium\":\"a\"}}')", []).map_err(sql)?;
+            ('default', 1, '{\"tiers\":{\"small\":\"a\",\"medium\":\"a\",\"independent\":\"independent\"}}')", []).map_err(sql)?;
         assert!(kept_by_agent(tx)?["a"].supervisor, "the local tiers share one kept slot");
+        assert!(kept_by_agent(tx)?["independent"].supervisor, "AC-248 uses a kept slot for its independent agent");
         tx.execute("UPDATE projects SET host = 'devbox.example' WHERE id = 'default'", []).map_err(sql)?;
-        assert!(!kept_by_agent(tx)?.contains_key("a"), "a round cannot use this project’s remote pane");
+        assert!(kept_by_agent(tx)?.is_empty(), "a round cannot use this project’s remote pane");
         Ok(())
     }).unwrap();
 }

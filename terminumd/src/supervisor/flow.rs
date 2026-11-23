@@ -146,12 +146,20 @@ pub(super) fn reasonless(q: &Query<'_, '_>) -> Result<Measurements, String> {
 // The run lifecycle state describes the pane, not its task's disposition. Link a FAILED transition
 // to the latest launch of a run carrying that task, with its retained run row as evidence.
 pub(super) fn failed_runs() -> String {
-    format!("failed_runs AS (
+    run_events("failed_runs", "e.kind = 'move' AND json_extract(e.data, '$.to') = 'FAILED'")
+}
+
+pub(super) fn returned_runs() -> String {
+    run_events("returned_runs", "e.kind = 'comment' AND e.author = 'dispatcher' AND json_extract(e.data, '$.left') IN ('red', 'conflict', 'out')")
+}
+
+fn run_events(name: &str, condition: &str) -> String {
+    format!("{name} AS (
     SELECT e.id, e.task, e.at, (SELECT r.id FROM run_tasks m JOIN runs r ON r.id = m.run
         JOIN inputs i ON i.run = r.id AND {LAUNCH}
         WHERE m.task = e.task AND r.project = ?1 AND i.at <= e.at * 1000 + 999
         ORDER BY i.at DESC, i.id DESC LIMIT 1) AS run
-    FROM project_events e WHERE e.kind = 'move' AND json_extract(e.data, '$.to') = 'FAILED'
+    FROM project_events e WHERE {condition}
 )")
 }
 

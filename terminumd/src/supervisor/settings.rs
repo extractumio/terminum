@@ -36,6 +36,22 @@ impl Tiers {
         }
     }
 
+    pub(super) fn reflection_agent(&self, tx: &Transaction, project: &str) -> Result<String, String> {
+        let pool = crate::tasks::agents::of_project(tx, project)?;
+        let own = [self.small.as_deref(), self.medium.as_deref(), self.strong.as_deref()];
+        let independent = |id: &str| !own.contains(&Some(id));
+        let agent = pool.iter().find(|a| Some(a.id.as_str()) == self.independent.as_deref() && independent(&a.id))
+            .ok_or("Choose an independent pool agent that does not run the Supervisor's other tiers.")?;
+        let supervisor = own.into_iter().rev().flatten().find_map(|id| pool.iter().find(|a| a.id == id));
+        if let Some(supervisor) = supervisor
+            && agent.kind == supervisor.kind
+            && pool.iter().any(|a| independent(&a.id) && a.kind != supervisor.kind)
+        {
+            return Err("Choose an independent pool agent from a different model family.".into());
+        }
+        Ok(agent.id.clone())
+    }
+
     fn choices(&self) -> [Option<&str>; 4] {
         [self.small.as_deref(), self.medium.as_deref(), self.strong.as_deref(), self.independent.as_deref()]
     }
@@ -198,6 +214,10 @@ pub(super) struct Settings {
 }
 
 impl Settings {
+    pub(super) fn decision_band(&self) -> (u32, f64) {
+        (self.guardrails.decisions_minimum, self.guardrails.decisions_standard_errors)
+    }
+
     pub(super) fn investigation_room(&self) -> bool {
         self.budgets.investigation_room()
     }

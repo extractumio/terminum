@@ -84,7 +84,7 @@ pub fn cards(role: Role) -> impl Iterator<Item = &'static Card> {
 
 /// The areas a role is told of.
 pub fn areas(role: Role) -> impl Iterator<Item = (&'static str, &'static str)> {
-    let supervisor = matches!(role, Role::Supervisor(_));
+    let supervisor = role.is_supervisor();
     AREAS.iter().chain(&super::mcp_manager::AREAS).filter_map(move |&(area, what)| {
         cards(role).any(|c| c.area == area).then_some((area, if supervisor {
             match area {
@@ -158,14 +158,15 @@ pub fn example(role: Role, c: &Card) -> &'static str {
 
 /// A role's search index: a tool's name, its keywords, its area and text, its arguments' names.
 pub fn index(role: Role) -> &'static Index {
-    static INDEXES: [OnceLock<Index>; 8] = [const { OnceLock::new() }; 8];
+    static INDEXES: [OnceLock<Index>; 9] = [const { OnceLock::new() }; 9];
     let slot = match role {
         Role::Worker => 0,
         Role::Manager => 1,
         Role::Supervisor(Some(Level::Observer)) => 2,
         Role::Supervisor(Some(Level::Advisor)) => 3,
         Role::Supervisor(Some(Level::Operator)) => 4,
-        Role::Supervisor(None) => 5,
+        Role::Supervisor(None) | Role::Reflection(false) => 5,
+        Role::Reflection(true) => 8,
         Role::Token { manager: false } => 6,
         Role::Token { manager: true } => 7,
     };

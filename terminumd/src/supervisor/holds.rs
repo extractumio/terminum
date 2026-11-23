@@ -314,12 +314,15 @@ fn record_release(tx: &Transaction, id: i64, actor: &str, at: i64) -> Result<(),
     if let Some((project, kind, target)) = before
         && actor == HUMAN
         && let Some(action) = super::outcomes::find(tx, &project, super::outcomes::Kind::Hold, &id.to_string())?
-        && !action.baseline.is_empty()
-        && super::outcome_evidence::hold_target(tx, &project, &kind, &target)?.as_deref() == Some(&action.baseline)
-        && !super::outcome_evidence::changed_approach(tx, id)?
     {
-        super::outcomes::judge(tx, &project, &action, 0, at,
-            (super::outcomes::Verdict::Wrong, "The owner released the unchanged subject."))?;
+        if !action.baseline.is_empty()
+            && super::outcome_evidence::hold_target(tx, &project, &kind, &target)?.as_deref() == Some(&action.baseline)
+            && !super::outcome_evidence::changed_approach(tx, id)?
+        {
+            super::outcomes::judge(tx, &project, &action, 0, at,
+                (super::outcomes::Verdict::Wrong, "The owner released the unchanged subject."))?;
+        }
+        super::reflection::action(tx, &project, &action, "human_override", at)?;
     }
     let released = tx.query_row("UPDATE supervisor_holds SET released_by = ?2, released_at = ?3, replacement_run = pending_run,
         pending_run = NULL, pending_by = NULL WHERE id = ?1 AND released_at IS NULL RETURNING incident, target",

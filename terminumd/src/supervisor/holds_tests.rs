@@ -110,6 +110,7 @@ fn ac245_grouped_run_retains_its_open_members_and_failed_release_stays_held() {
 
 #[test]
 fn ac245_cleared_signal_leaves_the_project_incident_open_until_release() {
+    // AC-248: a level 2 hold is an override, not a level 3 post-mortem.
     let f = Fixture::new("holds-incident");
     let at = ops::now();
     arm(&f, Rule::FailedRepeat, at);
@@ -124,6 +125,9 @@ fn ac245_cleared_signal_leaves_the_project_incident_open_until_release() {
         assert_eq!(incidents_api::pending(tx)?[0].closed_at, None);
         holds::board_release(tx, PROJECT, Kind::PauseDispatch, "", HUMAN, at + 2)?;
         assert_eq!(incidents_api::pending(tx)?[0].closed_at, Some(at + 2));
+        let requests = super::reflection::shown(tx, PROJECT)?;
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0]["triggers"], serde_json::json!(["human_override"]));
         Ok(incident)
     }).unwrap();
     f.store.snapshot(SCHEMA, |tx| {
@@ -174,6 +178,9 @@ fn ac247_two_unchanged_owner_releases_divert_only_that_rules_hold() {
         assert!(!tx.query_row("SELECT EXISTS (SELECT 1 FROM supervisor_outcomes WHERE action = ?1 AND days = 0)",
             [action.id], |r| r.get::<_, bool>(0)).map_err(sql)?, "changed work is not an immediate wrong");
         assert_eq!(super::settings::level(tx, PROJECT)?, super::Level::Operator);
+        let requests = super::reflection::shown(tx, PROJECT)?;
+        assert_eq!(requests.len(), 3);
+        assert!(requests.iter().any(|r| r["triggers"] == serde_json::json!(["breaker_opened", "human_override"])));
         Ok(())
     }).unwrap();
 }

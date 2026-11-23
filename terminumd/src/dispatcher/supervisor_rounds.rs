@@ -88,12 +88,12 @@ async fn admit(app: &Shared, project: &str, key: &str) -> Result<(), String> {
     let (agent, host, folder, server) = places::place(app, project, Some(desired)).await?;
     let like = Run::of(&agent, host, folder.clone(), project.to_owned(), None);
     let key = key.to_owned();
-    let (run, case) = store(app, move |tx| {
+    let (run, case, reflection) = store(app, move |tx| {
         let at = now();
         let candidate = rounds::candidate(tx, &like.project, &key)?;
         let (_, current_host, current_folder) = ops::project_place(tx, &like.project)?;
         if candidate.agent != agent.id || current_host.is_some() || current_folder != like.folder
-            || crate::tasks::agents::in_project(tx, &agent.id, &like.project)?.is_none_or(|current| current.line != agent.line || current.at_once != agent.at_once)
+            || crate::tasks::agents::in_project(tx, &agent.id, &like.project)?.is_none_or(|current| current.line != agent.line || current.at_once != agent.at_once || current.kind != agent.kind)
             || rounds::waiting(tx, at, Some(&key))?.is_empty()
         {
             return Err("The investigation changed during admission.".into());
@@ -102,13 +102,14 @@ async fn admit(app: &Shared, project: &str, key: &str) -> Result<(), String> {
             return Err(full.words);
         }
         let id = runs::add(tx, &like, &[], runs::Started::of(runs::How::Supervisor), at)?;
+        let reflection = candidate.reflection();
         let case = rounds::save(tx, &id, candidate, at, scale())?;
-        Ok((id, case))
+        Ok((id, case, reflection))
     }).await?;
     let hold = Held::take(app, |d| &d.starting, &run).ok_or("Its start is already watched.")?;
     let (a, project) = (app.clone(), project.to_owned());
     tokio::spawn(async move {
-        let result = launch(&a, &server, &project, &folder, &run, &case).await;
+        let result = launch(&a, &server, &project, &folder, &run, round_prompt(&case, reflection)).await;
         if let Err(why) = result
             && let Err(error) = store(&a, move |tx| rounds::failure(tx, &run, &why, false)).await
         {
@@ -119,14 +120,21 @@ async fn admit(app: &Shared, project: &str, key: &str) -> Result<(), String> {
     Ok(())
 }
 
-async fn launch(app: &Shared, server: &std::sync::Arc<Server>, project: &str, folder: &str, run: &str, case: &str) -> Result<(), String> {
+fn round_prompt(case: &str, reflection: bool) -> String {
+    if reflection {
+        format!("Supervisor reflection case {case}. Call get_case_file with its ID. Review the code-built timeline independently. Explain misses, noise and wrong decisions, and submit proposals with record_reflection.")
+    } else {
+        format!("Supervisor case {case}. Call get_case_file with its ID and report through the Supervisor tools.")
+    }
+}
+
+async fn launch(app: &Shared, server: &std::sync::Arc<Server>, project: &str, folder: &str, run: &str, text: String) -> Result<(), String> {
     let name = places::project_named(app, project);
     let id = run.to_owned();
     let r = store(app, move |tx| runs::by_id(tx, &id)).await?;
     let opening = start::Opening { server, project: name.as_ref().map(|(id, name)| (id.as_str(), name.as_str())),
         folder, run, tasks: &[], command: &r.command, program: &r.kind, agent: &r.agent_id };
     start::open_supervisor(app, opening).await?;
-    let text = format!("Supervisor case {case}. Call get_case_file with its ID and report through the Supervisor tools.");
     firstprompt::type_once(app, run, &text, firstprompt::Scope::Supervisor).await
 }
 

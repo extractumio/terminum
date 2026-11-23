@@ -91,7 +91,9 @@ fn make(tx: &Transaction, project: &str, p: &Problem, estimate: f64, at: i64) ->
 pub(super) fn advance(tx: &Transaction, project: &str, at: i64) -> Result<Vec<String>, String> {
     register::advance(tx, project, at)?;
     task_policy::record_recent(tx, project, at)?;
-    let Spending { judgment, mut fixes } = governor::spending(tx, project, at)?;
+    let spending = governor::spending(tx, project, at)?;
+    super::reflection::budget(tx, project, &spending, at)?;
+    let Spending { judgment, mut fixes } = spending;
     let subject = ("project", project, "judgment_tokens");
     if judgment.stopped() || judgment.routine_left == 0 {
         signals::diagnostic(tx, project, "self.budget", subject, &[],

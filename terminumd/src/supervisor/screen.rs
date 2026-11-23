@@ -60,6 +60,8 @@ struct Screen {
     holds: Vec<super::holds::Hold>,
     breakers: Vec<super::breakers::Open>,
     outcomes: Vec<super::outcomes::Score>,
+    agent_rates: Vec<serde_json::Value>,
+    reflections: Vec<serde_json::Value>,
     indicators: Vec<Indicator>,
     problems: Vec<register::Problem>,
     spending: governor::Spending,
@@ -121,6 +123,8 @@ async fn screen(State(app): State<Shared>, Path(id): Path<String>, Query(query):
             [&id], |r| r.get(0)).map_err(crate::tasks::ops::sql)?;
         Ok(Screen { project_name, holds: super::holds::list(tx, &id)?, indicators: indicators(tx, &id)?, signals: page,
             breakers: super::breakers::list(tx, &id)?, outcomes: super::outcomes::scores(tx, &id)?,
+            agent_rates: super::spend::review_rates(tx, &id, super::review_data::window(at))?,
+            reflections: super::reflection::shown(tx, &id)?,
             problems: register::ranked(tx, &id, at, true)?, spending: governor::spending(tx, &id, at)?,
             marked_tasks_eligible: crate::tasks::auto::setting(tx, &id)?.supervisor_tasks,
             decisions: super::decisions::cards(tx, &id)?, digest: super::digest::latest(tx, &id)?,
