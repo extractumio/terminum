@@ -165,6 +165,14 @@ pub(crate) async fn pane_caller(
     Ok((role, mark))
 }
 
+pub(crate) async fn check_token_peer(app: &Shared, peer: peer::Peer) -> Result<(), String> {
+    if peer.0.is_none() {
+        let marked = crate::tasks::api::store(app, |tx| Ok(!supervisor::marked_panes(tx)?.is_empty())).await?;
+        if marked { return Err(supervisor::PEER_UNKNOWN.into()); }
+    }
+    Ok(())
+}
+
 /// A manager's tool called from pane `key` (AC-174, AC-178): run only when the pane's session is its project's
 /// manager, the call came from under that pane (`from_pane`), and what writes comes from its main agent
 /// (`other`: another session's, a subagent's).

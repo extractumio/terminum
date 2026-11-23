@@ -64,7 +64,8 @@ pub(super) fn sync_on_enable(tx: &Transaction, project: &str, at: i64) -> Result
     tx.execute_batch("RELEASE supervisor_review_setup").map_err(sql)?;
     tx.execute("UPDATE project_supervisor SET review_setup_error = ?2 WHERE project = ?1",
         (project, synced.as_ref().err())).map_err(sql)?;
-    Ok(synced.unwrap_or_default())
+    let audit_changed = super::audit::sync_optional(tx, project, at)?;
+    Ok(synced.unwrap_or_default() || audit_changed)
 }
 
 pub(crate) fn budget_card(tx: &Transaction, project: &str, at: i64) -> Result<(), String> {
@@ -90,10 +91,14 @@ pub(crate) fn budget_card(tx: &Transaction, project: &str, at: i64) -> Result<()
     Ok(())
 }
 
-pub(crate) fn of_task(tx: &Transaction, task: &str) -> Result<Option<String>, String> {
-    tx.query_row("SELECT v.project FROM supervisor_reviews v JOIN schedule_fires f ON f.schedule = v.schedule
-        JOIN tasks t ON t.id = f.task AND t.project = v.project WHERE f.task = ?1", [task],
-        |r| r.get(0)).optional().map_err(sql)
+pub(crate) fn of_task(tx: &Transaction, task: &str) -> Result<Option<(String, bool)>, String> {
+    tx.query_row("SELECT v.project, v.audit, t.project = v.project
+        FROM supervisor_scheduled_reviews v JOIN schedule_fires f ON f.schedule = v.schedule
+        JOIN tasks t ON t.id = f.task WHERE f.task = ?1", [task],
+        |r| Ok((r.get::<_, String>(0)?, r.get::<_, bool>(1)?, r.get::<_, bool>(2)?)))
+        .optional().map_err(sql)?.map(|(project, audit, in_project)| {
+            if in_project { Ok((project, audit)) } else { Err("The Supervisor report belongs to its original project.".into()) }
+        }).transpose()
 }
 
 pub(crate) fn can_run(tx: &Transaction, project: &str, at: i64) -> Result<u64, String> {
@@ -102,12 +107,20 @@ pub(crate) fn can_run(tx: &Transaction, project: &str, at: i64) -> Result<u64, S
     governor::admit_round(tx, project, at, false)
 }
 
+pub(crate) fn can_run_schedule(tx: &Transaction, schedule: &schedules::Schedule, at: i64) -> Result<u64, String> {
+    if schedule.supervisor_audit { super::audit::can_run(tx, &schedule.project, &schedule.agent, at) }
+    else { can_run(tx, &schedule.project, at) }
+}
+
 pub(crate) fn bind_run(tx: &Transaction, task: &str, run: &str, at: i64) -> Result<(), String> {
-    if let Some(project) = of_task(tx, task)? {
-        let cap = can_run(tx, &project, at)? as i64;
-        tx.execute("INSERT INTO supervisor_review_runs (run, project, cap, generation)
-            SELECT ?1, project, ?3, generation FROM project_supervisor WHERE project = ?2",
-            (run, project, cap)).map_err(sql)?;
+    if let Some((project, audit)) = of_task(tx, task)? {
+        let cap = if audit {
+            let agent: String = tx.query_row("SELECT agent_id FROM runs WHERE id = ?1", [run], |r| r.get(0)).map_err(sql)?;
+            super::audit::can_run(tx, &project, &agent, at)?
+        } else { can_run(tx, &project, at)? } as i64;
+        tx.execute("INSERT INTO supervisor_review_runs (run, project, cap, generation, audit)
+            SELECT ?1, project, ?3, generation, ?4 FROM project_supervisor WHERE project = ?2",
+            (run, project, cap, audit)).map_err(sql)?;
     }
     Ok(())
 }
@@ -130,7 +143,7 @@ pub(crate) fn caller(tx: &Transaction, pane: &str) -> Result<Option<(String, Str
 pub(crate) fn check_group(tx: &Transaction, tasks: &[ops::Task]) -> Result<(), String> {
     if tasks.len() > 1 {
         for task in tasks {
-            if of_task(tx, &task.key)?.is_some() { return Err("Run the Supervisor weekly review on its own.".into()); }
+            if of_task(tx, &task.key)?.is_some() { return Err("Run the Supervisor review or audit on its own.".into()); }
         }
     }
     Ok(())
@@ -262,7 +275,7 @@ pub(super) fn latest(tx: &Transaction, project: &str) -> Result<Option<Published
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct Press { task: String, fingerprint: String, verdict: Verdict }
+struct Press { task: String, fingerprint: String, verdict: Verdict, active_seconds: Option<i64> }
 
 #[derive(Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -271,11 +284,14 @@ enum Verdict { Useful, NotUseful, Wrong }
 fn decide(tx: &Transaction, project: &str, press: Press, at: i64) -> Result<Value, String> {
     let verdict = match press.verdict { Verdict::Useful => "useful", Verdict::NotUseful => "not_useful", Verdict::Wrong => "wrong" };
     let task = ops::get(tx, &press.task)?;
-    let recorded = tx.execute("INSERT INTO supervisor_verdicts (task, fingerprint, at, verdict)
-        SELECT i.task, i.fingerprint, ?4, ?5 FROM supervisor_review_items i JOIN supervisor_review_reports p USING(task)
+    if press.active_seconds.is_some_and(|seconds| !(0..=1800).contains(&seconds)) {
+        return Err("Verdict reading time must be between 0 and 1800 seconds.".into());
+    }
+    let recorded = tx.execute("INSERT INTO supervisor_verdicts (task, fingerprint, at, verdict, active_seconds)
+        SELECT i.task, i.fingerprint, ?4, ?5, ?6 FROM supervisor_review_items i JOIN supervisor_review_reports p USING(task)
         JOIN tasks t ON t.id = i.task AND t.project = p.project
         WHERE i.task = ?1 AND i.fingerprint = ?2 AND p.project = ?3",
-        (&task.key, &press.fingerprint, project, at, verdict)).map_err(sql)?;
+        (&task.key, &press.fingerprint, project, at, verdict, press.active_seconds)).map_err(sql)?;
     if recorded == 0 { return Err("That signal is not in this project's verdict batch.".into()); }
     ops::log(tx, &task.key, HUMAN, "verdict", "Rated a Supervisor review item.",
         Some(&json!({"fingerprint":press.fingerprint,"verdict":verdict})), at)?;

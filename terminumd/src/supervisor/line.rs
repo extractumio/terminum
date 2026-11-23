@@ -166,7 +166,7 @@ pub(super) async fn test(app: &Shared, project: String, channel: usize, revision
         Ok((project, path.clone()))
     }).await?;
     let result = line_command::send(&path, false, TEST, line_command::DEADLINE).await;
-    record(app, project, vec![(channel, result.clone())]).await?;
+    record(app, project, vec![(channel, result.clone())], false).await?;
     result
 }
 
@@ -258,12 +258,18 @@ async fn send_next(app: &Shared) -> Result<bool, String> {
         Job::Weekly(project) => (project, CHECK.into(), settings.channels.len(), true),
     };
     let attempts = deliver(&settings, &text, scheduled, check, line_command::DEADLINE).await;
-    record(app, project, attempts).await?;
+    record(app, project, attempts, !check).await?;
     Ok(true)
 }
 
-async fn record(app: &Shared, project: String, attempts: Attempts) -> Result<(), String> {
-    let changed = store(app, move |tx| record_attempts(tx, &project, attempts, now())).await?;
+async fn record(app: &Shared, project: String, attempts: Attempts, notice: bool) -> Result<(), String> {
+    let changed = store(app, move |tx| {
+        let at = now();
+        if notice && attempts.iter().any(|(_, result)| result.is_ok()) {
+            super::measures::page_dispatched(tx, &project, at)?;
+        }
+        record_attempts(tx, &project, attempts, at)
+    }).await?;
     if changed {
         app.supervisor.incident_changed();
     }

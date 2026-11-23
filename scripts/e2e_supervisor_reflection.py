@@ -140,6 +140,25 @@ def main():
         call(path + f"/config/{change}/revert", "POST", {})
         check("AC-253 one signed-in revert restores the default and retains the ledger entry",
               entry()["reverted"] and "flow.failed_repeat" not in detectors())
+        schedule = next(s for s in call("/api/schedules")["schedules"] if s["title"] == "Supervisor quarterly audit")
+        check("AC-259 the project schedules its independent agent quarterly",
+              schedule["cron"] == "0 9 1 1,4,7,10 *" and schedule["agent"] == independent, schedule)
+        configure(independent, 0)
+        denied, _ = api(t, secret, f"/api/schedules/{schedule['id']}/run", method="POST",
+                        headers=headers, body=b"{}")
+        check("AC-259 budget denies admission and publishes no audit",
+              denied == 400 and call(path + "/screen")["audit"]["latest"] is None)
+        configure(independent, None)
+        task = call(f"/api/schedules/{schedule['id']}/run", "POST", {})["task"]
+        audit_rows = lambda: [json.loads(row) for row in lines(log) if '"audit":' in row]
+        [audit] = wait_for(audit_rows, bool, 35)
+        check("AC-259 the audit reads only its own independent case and reaches the owner unedited",
+              all(not reply.get("isError") for reply in audit["audit"].values())
+              and audit["denied"]["isError"] and not audit["finished"].get("isError")
+              and "settings_revision" not in json.dumps(audit["audit"])
+              and call(path + "/screen")["audit"]["latest"]["report"] == audit["report"]
+              and call(f"/api/tasks/{task}")["status"] == "WAIT FOR HUMAN", audit)
+
     except Exception:
         if db_path.exists():
             print("Private reflection state:", db("SELECT triggers,reason,round FROM supervisor_reflections"))

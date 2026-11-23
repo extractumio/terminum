@@ -3,6 +3,7 @@ import { check, runningIn, until } from "./check.mjs";
 import { drawn, fakeBoard, openPage, ORIGIN, SIZES, serveRenderers, shot, THEME } from "./fake.mjs";
 
 import { surfacePreview } from "./e2e_surface_preview.mjs";
+import { scorecardFixture, checkScorecard, SMALL_RATE, MISSING_RATE } from "./e2e_supervisor_scorecard.mjs";
 import { configFixture, checkConfiguration } from "./e2e_supervisor_config.mjs";
 const ROOT = "/api/task-projects/api/supervisor";
 const RULE = "flow.failed_no_reason";
@@ -41,8 +42,6 @@ const SPENDING = {
     day_limit_tokens: 20000, round_limit_tokens: 4000, investigation_left: 14000, routine_left: 0 },
   fixes: { dollars: 10.25, held_dollars: 8, limit_dollars: 20, estimated_dollars_per_run: 8, unpriced_runs: 1 },
 };
-const SMALL_RATE = { sample: 12, value: .25, interval_95: [.09, .53], can_gate: false, missing: null };
-const MISSING_RATE = { sample: 0, value: null, interval_95: null, can_gate: false, missing: "Project integration is off." };
 const json = (route, obj, status = 200) => route.fulfill({ status, json: obj });
 async function fixture(page, theme) {
   const configuration = configFixture(RULE, DATE);
@@ -121,6 +120,7 @@ async function fixture(page, theme) {
     } });
     if (configuration.reverts(suffix, method)) return json(route, { change: 7 });
     if (suffix === "/screen") return json(route, { project_name: "API service",
+      ...scorecardFixture(DATE, LITERAL),
       agent_rates: [{ task_type: "Debt", agent: "mine", agent_name: "API agent",
         failure: SMALL_RATE, return: MISSING_RATE, questions: SMALL_RATE, cost: SMALL_RATE }],
       reflections: [{ at: DATE, case: "case_fixture", routing_card: "API-41", triggers: ["breaker_opened", "alert_wrong"],
@@ -405,7 +405,7 @@ async function screen(page, suffix, phone) {
     && await reports.getByRole("button", { name: "Not useful" }).isEnabled()
     && await reports.getByRole("button", { name: "Wrong" }).isEnabled());
   if (phone) check("AC-242 verdict keys fit a finger on a phone", await useful.evaluate((key) => key.getBoundingClientRect().height >= 40));
-  await shot(page, `supervisor-reports-${suffix}`);
+  await checkScorecard(page, reports, suffix, LITERAL);
   await page.locator("#sv-score summary").click();
   await page.locator("#sv-signals summary").first().click();
   const opened = page.locator("#sv-signals details[open]").first();

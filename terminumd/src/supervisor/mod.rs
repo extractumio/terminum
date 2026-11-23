@@ -5,6 +5,11 @@ pub(crate) mod action_tasks;
 mod attach;
 pub(crate) mod breakers;
 mod outcomes;
+pub(crate) mod misses;
+mod measures;
+#[cfg(test)]
+mod measures_tests;
+pub(crate) mod audit;
 pub(crate) mod reflection;
 mod reflection_timeline;
 #[cfg(test)]
@@ -88,6 +93,13 @@ pub(crate) use replay::replay;
 #[cfg(test)]
 pub(crate) use evaluation::evaluate;
 use evaluation::{evaluate_snapshot, measure_detector, collect_findings};
+
+pub(crate) fn task_created(tx: &rusqlite::Transaction, author: &str, task: &crate::tasks::ops::Task,
+    words: &str, at: i64) -> Result<(), String>
+{
+    misses::owner_bug(tx, author, task, at)?;
+    design_gates::created(tx, author, task, words, at)
+}
 
 const SCHEMA: usize = crate::tasks::store::SCHEMA_VERSION;
 const DAY: i64 = 86_400;

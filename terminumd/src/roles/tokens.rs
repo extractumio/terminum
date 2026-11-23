@@ -96,6 +96,9 @@ pub fn of(tx: &Transaction, token: &str, now: i64) -> Result<Token, String> {
 pub async fn route(State(app): State<Shared>, seen: axum::http::Extensions, Json(body): Json<Value>) -> Response {
     let peer = seen.get::<ConnectInfo<Peer>>().map_or(Peer(None), |c| c.0);
     let action = body["action"].as_str().unwrap_or("").to_string();
+    if action != "list" && let Err(why) = super::check_token_peer(&app, peer).await {
+        return crate::http::err(StatusCode::FORBIDDEN, "unknown_peer", &why);
+    }
     if action != "list" && peer::in_any_pane(&app, peer).await {
         tracing::warn!(event = "tokens.from_pane", action);
         return crate::http::err(StatusCode::FORBIDDEN, "in_pane", "Tokens are made and removed in a terminal outside terminum: a session in terminum cannot.");

@@ -111,15 +111,23 @@ pub struct Opening<'a> {
 
 /// Opens the window, links it and says so: its key.
 pub async fn open(app: &Shared, o: Opening<'_>) -> Result<String, String> {
-    open_pane(app, o, false).await
+    let id = o.run.to_owned();
+    let launch = if !o.tasks.is_empty() && store(app, move |tx| crate::supervisor::audit::is_run(tx, &id)).await? {
+        Launch::Audit
+    } else { Launch::Immediate };
+    open_pane(app, o, launch).await
 }
 
 /// AC-234: no unmarked program runs while the store and tmux are recording the pane.
 pub(super) async fn open_supervisor(app: &Shared, o: Opening<'_>) -> Result<String, String> {
-    open_pane(app, o, true).await
+    open_pane(app, o, Launch::Round).await
 }
 
-async fn open_pane(app: &Shared, o: Opening<'_>, staged: bool) -> Result<String, String> {
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Launch { Immediate, Round, Audit }
+
+async fn open_pane(app: &Shared, o: Opening<'_>, launch: Launch) -> Result<String, String> {
+    let staged = launch != Launch::Immediate;
     let (pane, place) = open_window(app, o.server, o.project, o.folder, o.command, staged).await?;
     if !staged {
         crate::inputs::wrote(app, crate::inputs::Who::dispatcher("dispatcher.start", o.run, o.tasks, o.agent), "launch", o.server, &pane, o.command, None, o.project);
@@ -137,7 +145,7 @@ async fn open_pane(app: &Shared, o: Opening<'_>, staged: bool) -> Result<String,
         for task in &tasks {
             ops::link(tx, DISPATCHER, task, Some(&k), ops::now())?;
         }
-        if staged {
+        if launch == Launch::Round {
             crate::supervisor::rounds::mark(tx, &run, &k)?;
             runs::change(tx, &run, |r| r.pane_key = Some(k.clone()))?;
             return Ok(false);
@@ -162,9 +170,19 @@ async fn open_pane(app: &Shared, o: Opening<'_>, staged: bool) -> Result<String,
     }
     if staged {
         let run = o.run.to_owned();
-        store(app, move |tx| crate::supervisor::rounds::check_first_prompt(tx, &run)).await?;
+        let allowed = store(app, move |tx| match launch {
+            Launch::Audit => crate::supervisor::audit::check_start(tx, &run),
+            _ => crate::supervisor::rounds::check_first_prompt(tx, &run),
+        }).await;
         let line = format!("respawn-pane -k -t {pane} {}", window_command(o.folder, o.command, &tmux_of(o.server), true));
-        marked_command(o.server, &pane, o.run, &line).await?;
+        let started = match allowed {
+            Ok(()) => marked_command(o.server, &pane, o.run, &line).await,
+            Err(why) => Err(why),
+        };
+        if let Err(why) = started {
+            let _ = marked_command(o.server, &pane, o.run, &format!("kill-pane -t {pane}")).await;
+            return Err(why);
+        }
         crate::inputs::wrote(app, crate::inputs::Who::dispatcher("dispatcher.start", o.run, o.tasks, o.agent),
             "launch", o.server, &pane, o.command, None, o.project);
     }
@@ -296,14 +314,17 @@ async fn type_prompt(app: &Shared, r: &Run, server: &Server, pane: &str, prompt:
     let session = if r.kind == "codex" { None } else {
         app.hooks.session(&server.key(pane)).map(|(_, s)| s).filter(|s| hooks::good_id(s))
     };
-    let wrote = store(app, move |tx| runs::change(tx, &id, |now| {
-        if now.is_starting() {
-            now.state = Phase::Typed;
-        }
-        if let Some(s) = session {
-            now.agent_session.get_or_insert(s);
-        }
-    })).await;
+    let wrote = store(app, move |tx| {
+        if crate::supervisor::audit::is_run(tx, &id)? { crate::supervisor::audit::check_start(tx, &id)?; }
+        runs::change(tx, &id, |now| {
+            if now.is_starting() {
+                now.state = Phase::Typed;
+            }
+            if let Some(s) = session {
+                now.agent_session.get_or_insert(s);
+            }
+        })
+    }).await;
     if let Err(e) = wrote {
         return Err(gate::Miss::Other(e));                  // what it could not write it does not do (AC-131)
     }

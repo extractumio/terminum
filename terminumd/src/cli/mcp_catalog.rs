@@ -162,16 +162,17 @@ pub fn example(role: Role, c: &Card) -> &'static str {
 
 /// A role's search index: a tool's name, its keywords, its area and text, its arguments' names.
 pub fn index(role: Role) -> &'static Index {
-    static INDEXES: [OnceLock<Index>; 10] = [const { OnceLock::new() }; 10];
+    static INDEXES: [OnceLock<Index>; 11] = [const { OnceLock::new() }; 11];
     let slot = match role {
         Role::Worker => 0,
         Role::Manager => 1,
         Role::Supervisor(Some(Level::Observer)) => 2,
         Role::Supervisor(Some(Level::Advisor)) => 3,
         Role::Supervisor(Some(Level::Operator)) => 4,
-        Role::Supervisor(None) | Role::Reflection(false) | Role::DesignReview(false) => 5,
+        Role::Supervisor(None) | Role::Reflection(false) | Role::Audit(false) | Role::DesignReview(false) => 5,
         Role::DesignReview(true) => 9,
         Role::Reflection(true) => 8,
+        Role::Audit(true) => 10,
         Role::Token { manager: false } => 6,
         Role::Token { manager: true } => 7,
     };
