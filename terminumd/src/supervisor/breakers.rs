@@ -86,7 +86,7 @@ pub(super) fn divert_rule(tx: &Transaction, s: &Signal, response: &str, kind: &s
     }), at)?;
     let id = tx.query_row("INSERT INTO supervisor_breaker_cards (breaker, kind, fingerprint, target, task)
         VALUES (?1,?2,?3,?4,?5) RETURNING id", (breaker, kind, &s.fingerprint, target, &task.key), |r| r.get(0)).map_err(sql)?;
-    outcomes::record_rule(tx, s, response, outcomes::Kind::Card, &question, &task.key, "", at)?;
+    outcomes::record_rule(tx, (s, response), outcomes::Kind::Card, &question, &task.key, "", at)?;
     Ok(Some(Card { id, task: task.id }))
 }
 

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-//! Keep the originating rule through task creation, queue promotion and Dispatcher admission.
+//! AC-246–247: keep the originating rule through task creation, queue promotion and Dispatcher admission.
 
 use rusqlite::{OptionalExtension, Transaction};
 use crate::tasks::ops::{Task, sql};
@@ -56,7 +56,7 @@ pub(crate) fn record_run(tx: &Transaction, task: &Task, pane: Option<&str>, sour
 {
     if pane.is_none() && super::rounds::enabled(tx, &task.project)?.is_none() { return Ok(()); }
     if let Some((s, response)) = origin(tx, &task.project, &task.key, pane)? {
-        outcomes::record_rule(tx, &s, &response, Kind::Run, source, &task.key, run, at)?;
+        outcomes::record_rule(tx, (&s, &response), Kind::Run, source, &task.key, run, at)?;
     }
     Ok(())
 }
@@ -64,7 +64,7 @@ pub(crate) fn record_run(tx: &Transaction, task: &Task, pane: Option<&str>, sour
 pub(crate) fn comment(tx: &Transaction, task: &Task, pane: &str, event: &str, question: bool, at: i64) -> Result<(), String> {
     let kind = if question { Kind::Card } else { Kind::Nudge };
     if let Some((s, response)) = origin(tx, &task.project, &task.key, Some(pane))? {
-        return outcomes::record_rule(tx, &s, &response, kind, event, &task.key, "", at);
+        return outcomes::record_rule(tx, (&s, &response), kind, event, &task.key, "", at);
     }
     // Comments without an attributable detector still have a retained decision.
     outcomes::unattributed(tx, &task.project, kind, event, &task.key, at)

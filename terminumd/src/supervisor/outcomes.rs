@@ -51,10 +51,10 @@ fn read(row: &rusqlite::Row<'_>) -> rusqlite::Result<Action> {
 pub(super) fn record(tx: &Transaction, signal: &Signal, kind: Kind, source: &str, target: &str,
     baseline: &str, at: i64) -> Result<(), String>
 {
-    record_rule(tx, signal, signal.response, kind, source, target, baseline, at)
+    record_rule(tx, (signal, signal.response), kind, source, target, baseline, at)
 }
 
-pub(super) fn record_rule(tx: &Transaction, signal: &Signal, response: &str, kind: Kind, source: &str, target: &str,
+pub(super) fn record_rule(tx: &Transaction, (signal, response): (&Signal, &str), kind: Kind, source: &str, target: &str,
     baseline: &str, at: i64) -> Result<(), String>
 {
     tx.execute("INSERT INTO supervisor_actions (project, detector, response, kind, source, fingerprint, target, at, baseline)

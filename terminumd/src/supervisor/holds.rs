@@ -149,7 +149,7 @@ pub(super) enum Disposition {
 pub(super) struct Applied {
     pub id: i64,
     pub shadow: bool,
-    pub run: Option<Run>,
+    pub run: Option<Box<Run>>,
     pub task: Option<String>,
 }
 
@@ -225,7 +225,7 @@ pub(super) fn apply(tx: &Transaction, project: &str, request: Request, actor: &s
                 ops::log(tx, &ops::key_of(tx, id)?, &author, "why", reason, None, at)?;
             }
             let saved = RunUndo { run: stopped.id.clone(), tasks: current.open };
-            run = Some(stopped);
+            run = Some(Box::new(stopped));
             Some(serde_json::to_string(&saved).map_err(|e| e.to_string())?)
         }
         _ => unreachable!("task requirement checked before mutation"),
@@ -399,7 +399,7 @@ pub(crate) fn reserve_run_release(tx: &Transaction, id: i64, actor: &str, run: &
             FROM supervisor_holds WHERE id = ?1 AND released_at IS NULL", [id],
             |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?, r.get::<_, String>(3)?))).map_err(sql)?;
         let signal = signals::get(tx, &project, &fingerprint)?;
-        super::outcomes::record_rule(tx, &signal, &response, super::outcomes::Kind::Run,
+        super::outcomes::record_rule(tx, (&signal, &response), super::outcomes::Kind::Run,
             &format!("{run}/{target}"), &target, run, ops::now())?;
     }
     tx.execute("UPDATE supervisor_holds SET pending_run = ?2, pending_by = ?3 WHERE id = ?1 AND released_at IS NULL",

@@ -26,7 +26,7 @@ async fn list(State(app): State<Shared>, Path(project): Path<String>) -> Respons
 
 pub(super) fn heard(app: &Shared, applied: Applied) {
     if let Some(run) = applied.run {
-        letgo::let_go_of(app, run);
+        letgo::let_go_of(app, *run);
     } else if let Some(task) = applied.task {
         told(app, &task);
     }
