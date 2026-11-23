@@ -916,7 +916,7 @@ Scenario: AC-130 failure — hooks missing there
 Scenario: AC-138 happy path — over the board
   Given a pool of Opus reviewer (Claude Code, high), Fast fixer (Claude Code) and Codex (Codex, low)
   Then three rectangles stand over the columns, each in its color, with its name, kind, effort, its subscription's two stripes (AC-168) and one dot per live session
-  And each is a track wide, on the board's six tracks (terminum-kanban.md AC-105): four to a row, the fifth track holding + Agent; a fifth agent starts the next row; a board under 1500 px keeps one row that scrolls, each 240 px wide; on a phone (600 px or narrower) they stand one a row in the sheet its line opens (terminum-kanban.md AC-105)
+  And each is a track wide, using all six tracks across the board (terminum-kanban.md AC-105); the add tile follows the last card (terminum-kanban.md AC-203); a board under 1500 px keeps one row that scrolls, each 240 px wide; on a phone (600 px or narrower) they stand one a row in the sheet its line opens (terminum-kanban.md AC-105)
 
 Scenario: AC-138 happy path — its dots
   Given Opus reviewer with API-12's session working and API-14's waiting at its input box

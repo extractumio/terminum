@@ -1309,7 +1309,8 @@ Scenario: AC-203 happy path — a rail folds its section
   And a folded pool takes no dropped task: the user folded it
 
 Scenario: AC-203 happy path — add tiles
-  Then each block's last item is a 44 px [+] tile as tall as its cards, right after the last one ("Add agent", "Add routine"); a full row of four puts it on the next row; no add key stands elsewhere
+  Then each block's last item is a 44 px [+] tile as tall as its cards, right after the last one ("Add agent", "Add routine"); a full row of six puts it on the next row; no add key stands elsewhere
+  And the cards use every track across their section; a task selection's hint stands on its own full-width row under the pool, taking no room when no tasks are chosen
 
 Scenario: AC-203 edge — a phone
   Given a phone (AC-105: the pool and the routines in the sheet behind one line)

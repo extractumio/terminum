@@ -19,6 +19,9 @@ install commands: [README](../README.md). Exact behavior and limits: the specs
   decoded where it cannot play them).
 - MIDI plays with the bundled General MIDI SoundFont, or yours: `~/.terminum/soundfont.sf2` or
   `midi.soundfont` in settings.json.
+- Open folder (the header's folder-and-magnifier button): type a full path, `~/…` or a path
+  relative to the shown folder, Return: the tree shows it instead of the session's folder, also
+  after a `cd`, until Back (the arrow beside it).
 - Esc in View returns to the terminal; Esc in the tree hides it and keeps the keys there (Enter,
   Esc, ↓, Enter… walks the files).
 - Wide window: docked beside the terminal, open or closed per session, width by dragging its

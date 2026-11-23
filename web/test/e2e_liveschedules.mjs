@@ -12,7 +12,7 @@ export async function liveFolded(page, live) {
   const shot = (name) => live.shots && page.screenshot({ path: `${live.shots}${live.shots.endsWith("-") ? "" : "/"}${name}.png` });
   const made = async (title, severity = "P2") => (await j("/api/tasks", "POST", { title, severity, body: "**text** of it" })).id;
   const a = await made("Folded first task with a title long enough to be cut at the line's end", "P1"), b = await made("Folded second");
-  // three agents and one more: a row of four on the columns' tracks, the fifth starts the next
+  // five agents use the columns' tracks across the first row, followed by their add tile
   const ids = [];
   for (const n of ["Grid one", "Grid two", "Grid three", "Grid four", "Grid five"]) ids.push((await j("/api/task-agents", "POST", { project: "default", name: n, kind: "claude", command: "claude" })).id);
   await open("?project=default");                  // its tasks' project: one an earlier suite chose is remembered
@@ -50,7 +50,7 @@ export async function liveFolded(page, live) {
   await j(`/api/tasks/${a}`, "PATCH", { title: "Folded first, renamed again" });
   check("AC-159 shown whole stays so as the columns are read again", await until(async () => (await page.textContent(`${card(a)} .ctitle`)) === "Folded first, renamed again") && await shown(`${card(a)} .cfoot`));
 
-  // AC-138: from 1500 px of board an agent a track wide (six tracks), four a row, the add tile after the last; under it
+  // AC-138: from 1500 px of board an agent a track wide (six tracks), six a row, the add tile after the last; under it
   // one row that scrolls, an agent 240 px wide (terminum-kanban.md AC-105's tracks); on a phone one a row in the
   // sheet #poolline opens (terminum-kanban.md AC-105)
   // the tracks start after Task Management's rail and its gap (terminum-kanban.md AC-203)
@@ -62,8 +62,8 @@ export async function liveFolded(page, live) {
   const agents = await page.evaluate(() => [...document.querySelectorAll(".agents .agentcard")].map((c) => { const r = c.getBoundingClientRect(); return [Math.round(r.x), Math.round(r.width), Math.round(r.y)]; }));
   const add = await box("#addagent");
   if (tracks) {
-    const aligned = agents.slice(0, 4).every(([x, w], i) => Math.abs(x - (left + i * (tracks + 8))) <= 1 && Math.abs(w - tracks) <= 1);
-    check("AC-138 agents stand a track wide, four a row", aligned && agents[4][2] > agents[0][2] && Math.abs(agents[4][0] - left) <= 1, JSON.stringify({ tracks, left, agents }));
+    const aligned = agents.slice(0, 5).every(([x, w, y], i) => Math.abs(x - (left + i * (tracks + 8))) <= 1 && Math.abs(w - tracks) <= 1 && y === agents[0][2]);
+    check("AC-138 five agents stand a track wide on the first row", aligned, JSON.stringify({ tracks, left, agents }));
     check("AC-138 AC-203 the add tile stands right after the last agent", add.y === agents[4][2] && Math.abs(add.x - (agents[4][0] + agents[4][1] + 8)) <= 1, JSON.stringify({ add, agents }));
   } else if (phone) {
     const sheet = await box("#pool");

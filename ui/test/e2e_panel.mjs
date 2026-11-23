@@ -23,6 +23,7 @@ import { panelMedia } from "./e2e_panel_media.mjs";
 import { panelDrop } from "./e2e_panel_drop.mjs";
 import { panelDocs } from "./e2e_panel_docs.mjs";
 import { panelSaves } from "./e2e_panel_saves.mjs";
+import { panelBrowse } from "./e2e_panel_browse.mjs";
 import { panelForeign } from "./e2e_panel_foreign.mjs";
 import { NO_SIGNALS } from "./process-stop.mjs";
 import { watchDiagnostics } from "./e2e_watch.mjs";
@@ -442,6 +443,11 @@ try {
   const n = calls; await op.waitForTimeout(2500);
   check("AC 09 … no retry loop", calls - n <= 1, `${calls - n} requests in 2.5 s`);
   await ctx2.close();
+
+  const bp = await context.newPage();                                 // AC-275 any folder, Back: a tab of its own
+  bp.on("pageerror", (e) => errors.push(`browse: ${thrown(e)}`));
+  await panelBrowse(bp);
+  await bp.close();
 
   // AC-71, AC-52 the Panel's own writes refused or their answer lost: last, as it leaves the tree changed
   const sp = await context.newPage();                  // its own tab: the sign-in kept, the tree as the sandbox has it

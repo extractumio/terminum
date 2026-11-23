@@ -234,6 +234,7 @@ export class Views {
     if (!m.error && this.filesShown) {         // the Files frame loads only while it is shown
       const q = new URLSearchParams({ key: m.key, cwd: cwd ?? "" });
       if (m.host) q.set("host", m.host);
+      if (m.home) q.set("home", m.home);   // a typed "~" in Files' Open folder (AC-275)
       const src = `/fb/?${q}`;
       if (src !== this.filesSrc) frameTo($("files"), this.filesSrc = src);   // reloaded only when it moved
     } else $("files").classList.remove("moving");

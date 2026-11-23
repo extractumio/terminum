@@ -5,7 +5,7 @@
 // remembered on a reload; each block's add tile right after its last card; Task Management's rail a plain head; a
 // phone's sheet names the two flat. terminum-schedules.md AC-163: "Routines" in the board's words.
 import { check, runningIn, until } from "./check.mjs";
-import { fakeBoard, ORIGIN, openPage, PHONE } from "./fake.mjs";
+import { fakeBoard, ORIGIN, openPage, PHONE, shot, THEME } from "./fake.mjs";
 
 const META = { projects: [{ id: "pa", name: "API", color: 0, dir: "/w/api" }], users: [], sessions: [], hosts: [], last_agents: {},
   agents: [{ id: "a1", project: "pa", name: "Opus reviewer", kind: "claude", color: 0, line: "claude", at_once: 3 },
@@ -14,9 +14,9 @@ const SCHED = [1, 2, 3].map((n) => ({ id: `s${n}`, key: `SCH-${n}`, project: "pa
   words: "every day", next: [2000000000 - n], next_words: [`today 0${n}:00`], paused: false }));
 const BIG = { viewport: { width: 1900, height: 1000 } };
 
-async function board(browser, device, schedules = SCHED) {
+async function board(browser, device, schedules = SCHED, meta = META, tasks = []) {
   const f = await openPage(browser, { device, url: "/kanban/?project=pa" });
-  await fakeBoard(f.page, { meta: () => META, tasks: () => [], counts: {}, schedules });
+  await fakeBoard(f.page, { meta: () => meta, tasks: (status) => status === "TODO" ? tasks : [], counts: { TODO: tasks.length }, schedules });
   await f.page.goto(`${ORIGIN}/kanban/?project=pa`);
   await f.page.waitForSelector("#agentbar .agentcard", { state: "attached" });
   return f;
@@ -104,6 +104,55 @@ export async function webBoardRail(browser, name) {
     phone[0].h === 44 && phone[0].flat && phone[1].h === 44 && phone[1].flat && phone[2].w <= 1 && phone[2].text === "Task Management", JSON.stringify(phone));
   await page.click("#railsched");
   check(`AC-203 ${at} its fold works in the sheet`, await until(() => page.evaluate(() => document.getElementById("railsched").getAttribute("aria-expanded") === "true")), "");
+  await shot(page, `boardrail-${name}-phone`);
   check(`no page error ${at}`, f.errors.length === 0, f.errors.join("; "));
   await f.close();
+  await fullWidth(browser, name);
+}
+
+/** AC-138, AC-163, AC-203: both sections use all six tracks, including overflow to a new row. */
+async function fullWidth(browser, name) {
+  for (const n of [5, 6, 7]) {
+    runningIn(`${name} 1900×1000 ${n} cards`);
+    const meta = { ...META, agents: Array.from({ length: n }, (_, i) => ({ ...META.agents[0], id: `a${i + 1}`, name: `Agent ${i + 1}` })) };
+    const schedules = Array.from({ length: n }, (_, i) => ({ ...SCHED[0], id: `s${i + 1}`, key: `SCH-${i + 1}` }));
+    const tasks = [{ id: "API-1", title: "Task to select", project: "pa", status: "TODO", severity: "P2", updated_at: 1, parent: null }];
+    const f = await board(browser, BIG, schedules, meta, tasks), { page } = f;
+    try {
+      await page.click("#railsched");
+      for (const section of ["#agentbar", "#schedbar"]) {
+        const g = await page.$eval(`${section} .tracks`, (tracks) => {
+          const box = (e) => { const r = e.getBoundingClientRect(); return { l: r.left, r: r.right, t: r.top, b: r.bottom, w: r.width }; };
+          const list = tracks.querySelector(".trackitems"), cards = [...list.querySelectorAll(".item")].map(box);
+          return { tracks: box(tracks), list: box(list), cards, add: box(list.querySelector(".addtile")), side: tracks.querySelector(".trackside")?.getBoundingClientRect().height ?? 0 };
+        });
+        check(`AC-138 AC-163 AC-203 ${section}: ${n} cards fill six tracks before wrapping`,
+          Math.abs(g.list.w - g.tracks.w) <= 1 && g.cards.length === n && g.cards.slice(0, 6).every((c, i) =>
+            Math.abs(c.l - (g.tracks.l + i * (g.cards[0].w + 8))) <= 1 && Math.abs(c.t - g.cards[0].t) <= 1)
+          && (n !== 7 || g.cards[6].t > g.cards[0].t && Math.abs(g.cards[6].l - g.tracks.l) <= 1)
+          && g.side === 0, JSON.stringify(g));
+        const last = g.cards.at(-1);
+        check(`AC-203 ${section}: add tile follows ${n} cards`, g.add.w === 44 && (n === 6
+          ? g.add.t > last.t && Math.abs(g.add.l - g.tracks.l) <= 1
+          : Math.abs(g.add.t - last.t) <= 1 && Math.abs(g.add.l - last.r - 8) <= 1), JSON.stringify(g));
+      }
+      if (n === 5) {
+        await shot(page, `boardrail-${name}-wide-dark`);
+        await page.click('.card[data-id="API-1"] .ctitle', { modifiers: ["Meta"] });
+        check("AC-203 selection hint occupies its own full-width row under the pool", await until(() => page.$eval(".trackside", (e) => {
+          const r = e.getBoundingClientRect(), list = e.previousElementSibling.getBoundingClientRect();
+          return r.height > 0 && r.top >= list.bottom && Math.abs(r.width - list.width) <= 1 && /1 chosen/.test(e.textContent);
+        })));
+        await page.keyboard.press("Escape");
+        check("AC-203 clearing selection removes the hint's row", await until(() => page.$eval(".trackside", (e) => !e.getBoundingClientRect().height)));
+        meta.theme = { ...THEME, bg: "#ffffff", fg: "#1f2328", dark: false };
+        await page.reload();
+        await page.waitForSelector("#agentbar .agentcard");
+        await shot(page, `boardrail-${name}-wide-light`);
+        await page.setViewportSize({ width: 1400, height: 900 });
+        await shot(page, `boardrail-${name}-tablet-light`);
+      }
+      check("full-width cards: no page error", f.errors.length === 0, f.errors.join("; "));
+    } finally { await f.close(); }
+  }
 }

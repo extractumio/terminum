@@ -1,6 +1,6 @@
 # terminum — Specification (Files panel)
 
-Sibling of `terminum.md` (the core). This spec holds the Files panel: the tree, viewer and editor against terminumd, following the pane the page shows. Cases are AC-51…AC-73, AC-94 and AC-95. A case of another spec names its spec beside it.
+Sibling of `terminum.md` (the core). This spec holds the Files panel: the tree, viewer and editor against terminumd, following the pane the page shows. Cases are AC-51…AC-73, AC-94, AC-95 and AC-275. A case of another spec names its spec beside it.
 
 ## 0. Metadata
 
@@ -16,7 +16,7 @@ A snapshot of what terminum must do, not a record of how it came to be: git hold
 
 **Who it affects.** Developers working in terminum's terminals, locally and on remote hosts, from a Mac, a tablet or a phone.
 
-**Expected outcome.** A Files panel beside (or in place of) the terminal always shows the folder of the pane the page shows. It works like an IDE tree: browse, open, read with highlighting, render Markdown and HTML, edit and save, create, rename, Trash; it stays responsive in a huge folder; it remembers per pane which folders were open, what was selected and which files were open; it wears the pane's theme.
+**Expected outcome.** A Files panel beside (or in place of) the terminal shows the folder of the pane the page shows, or a folder the user opened in its place until they go back (AC-275). It works like an IDE tree: browse, open, read with highlighting, render Markdown and HTML, edit and save, create, rename, Trash; it stays responsive in a huge folder; it remembers per pane which folders were open, what was selected and which files were open; it wears the pane's theme.
 
 **Scenario, before and after.**
 - Before: Alex runs `cd ~/work/api/docs`, `ls`, `less ci-design.md`, reads raw Markdown, `cd ../src`, opens vim to fix a typo, and forgets which files they looked at.
@@ -25,7 +25,7 @@ A snapshot of what terminum must do, not a record of how it came to be: git hold
 ## 2. Scope and non-goals
 
 In scope:
-- The tree, viewer, editor, workspaces, watcher, file operations, utility actions, theme, keyboard, filter, media players, data views, hidden files, multi-select, links between documents, expand all, icons, upload by drop, the View window and docked layout, state persistence and cleanup; git colors and moving files by drag as later items.
+- The tree, viewer, editor, workspaces, watcher, file operations, utility actions, theme, keyboard, filter, media players, data views, hidden files, multi-select, links between documents, expand all, icons, upload by drop, the View window and docked layout, state persistence and cleanup, any folder opened in the pane's place; git colors and moving files by drag as later items.
 
 Out of scope (explicit):
 - Files of a remote host without the files helper (the tree says so; enabling it is `terminum-remote.md` AC-83).
@@ -37,7 +37,7 @@ Assumptions:
 
 | ID | Assumption | Owner | Status |
 |---|---|---|---|
-| AS-51 | The panel (`ui/`) runs in the page's iframe in its proxied mode (`PROXIED`, `ui/src/api.ts`) under `/fb/` against terminumd's Files API at `/fb/api/*`, pinned to the pane the page names in the frame's URL (`key`, `cwd`, `host`) and themed by the page's message, with its own workspace key `web:[host, key]` (`ui/src/embed.ts:17`). | Claude | verified: `ui/test/e2e_panel.mjs`, `web/test/e2e_live.mjs` |
+| AS-51 | The panel (`ui/`) runs in the page's iframe in its proxied mode (`PROXIED`, `ui/src/api.ts`) under `/fb/` against terminumd's Files API at `/fb/api/*`, pinned to the pane the page names in the frame's URL (`key`, `cwd`, `host`, and `home` for a typed `~`, AC-275) and themed by the page's message, with its own workspace key `web:[host, key]` (`ui/src/embed.ts:17`). | Claude | verified: `ui/test/e2e_panel.mjs`, `web/test/e2e_live.mjs` |
 | AS-52 | Reading a 500K-entry folder takes about 1 s with the OS's disk cache warm. | Claude | verified: `scripts/bench_ls.sh` |
 | AS-53 | `#{pane_current_path}` is the pane's shell cwd (the foreground job's for a program that changed it, as tmux reports the active process's cwd on macOS through libproc), within 0.5 s of a `cd` at the prompt. | Claude | verified for shells; vim `:cd` unverified |
 
@@ -85,6 +85,7 @@ Open questions:
 | AC-73 | [NICE TO HAVE / later] | Files move between folders by drag and drop. |
 | AC-94 | [SHOULD / P1] | JSON, YAML, CSV and TSV open rendered (a tree that folds, a table), with a Source toggle. |
 | AC-95 | [SHOULD / P1] | Files dragged from Finder onto the tree upload into the folder under the pointer, on this Mac or the pane's host, never over an existing file. |
+| AC-275 | [SHOULD / P1] | The user opens any folder by its typed path and the tree shows it in the pane's folder's place, through a cd, a pane switch and a reload, until Back shows the pane's folder again. |
 
 ## 5. BDD scenarios
 
@@ -517,6 +518,44 @@ Scenario: AC-95 failure — too large, refused, gone
   And a third upload while two run is refused with a 429 (`terminum-terminal.md` AC-36)
 ```
 
+### AC-275 — Open any folder, Back to the session's [SHOULD / P1]
+
+```gherkin
+Scenario: AC-275 happy path — a typed folder replaces the pane's
+  Given the page shows pane %3 in "/Users/alex/work/api" and Files is open
+  When the user presses the header's Open folder button
+  Then a path field opens under the header holding "/Users/alex/work/api/"
+  When the user types "../web/src" and presses Return
+  Then the tree shows "/Users/alex/work/web/src" with its subfolders from the start (nothing expanded or selected), the header names it, and the dot's title says it is a chosen folder, not the pane's
+  And a Back button shows beside it, its title "Back to the session's folder: /Users/alex/work/api"
+  And the pane's workspace keeps it as `browse` beside `root` at once, and its expanded folders are watched (AC-61)
+  When the user presses Back
+  Then the tree shows the pane's folder now, from the start, and Back hides
+
+Scenario: AC-275 edge — what a path can be
+  Then a full path, "~" or "~/…" (the pane's home on its host, as the page names it), and a path relative to the shown folder are taken, "." and ".." resolved
+  And "~bob/…" and a "~" whose home the page did not name say "type a full path" under the field
+
+Scenario: AC-275 edge — the chosen folder outlasts a cd
+  Given the tree shows the chosen folder "/var/log"
+  When the pane (or its coding agent, AC-51) moves to "/Users/alex/work/web"
+  Then the tree stays on "/var/log" with its expanded folders and selection, and Back's title names "/Users/alex/work/web"
+  And switching panes and back, or reloading, shows "/var/log" again (AC-55)
+  And Back leaves the chosen tree's expanded folders behind: the pane's folder starts from nothing expanded
+
+Scenario: AC-275 failure — a path that cannot be shown
+  When the user types a missing folder, a file, or a folder they may not read, and presses Return
+  Then terminumd's reason shows in red under the field ("/Users/alex/nope: No such file or directory (os error 2)"), the field stays with the text, and the tree is unchanged
+  When the user presses Esc
+  Then the field and its reason close and the tree has the keys
+  When a chosen folder is deleted later
+  Then its row says why (AC-51's failure) and Back still shows
+
+Scenario: AC-275 failure — a workspace with a bad chosen folder
+  When a panel PUTs a `browse` that is not a full path or holds ".."
+  Then terminumd answers 400 "The chosen folder is not a full path without '..'" and keeps the state it had
+```
+
 ### AC-68 — Expand and collapse all [SHOULD / P1]
 
 ```gherkin
@@ -705,6 +744,7 @@ A crash never leaves a half-written file.
 | AC-72 | Not built: a listing row has no git field and nothing runs git. | `terminumd/src/listing.rs:86` |
 | AC-73 | Not built: a row dragged inside the tree is not taken as a move. | `ui/src/tree-drop.ts:7` |
 | AC-95 | A hidden part file stays in the folder if terminumd dies during an upload's write. | `terminumd/src/ops.rs:224` |
+| AC-275 | A cd that reaches terminumd while the write of a just-chosen folder is in flight wins the race (`stale_rev`): the tree goes back to the pane's folder. View's Reveal in tree is offered by the pane's folder, not the chosen one (the page does not hear of it): a file outside the chosen folder says "Not in this tree". | `ui/src/main.ts:saveOnce`, `web/static/views.js:tellRoot` |
 
 ## 8. Recommendation and ownership
 
@@ -731,7 +771,7 @@ All `/fb/api/*` need the sign-in header (`terminum.md` AC-09), a remote host's i
 | `POST /api/midi` | a MIDI file's bytes in, its WAV out, the bank's name in `x-tm-soundfont` | AC-64 |
 | `POST /api/os/{reveal,open}` | Finder, default app | AC-60 |
 | `POST /api/terminal/{insert,cd}` | `{key, paths}` / `{key, path}` | AC-60 |
-| `GET/PUT /api/workspace?key&cwd` | per-pane state with `rev`, `X-TM-Client`; a GET's `cwd` re-roots it when the folder moved | AC-55, AC-71 |
+| `GET/PUT /api/workspace?key&cwd` | per-pane state with `rev`, `X-TM-Client`; a GET's `cwd` re-roots it when the folder moved (the tree state kept while `browse` is set) | AC-55, AC-71, AC-275 |
 | `PUT /api/watch` | `{root, expanded, files}`: the folders and open files the Mac asks its host's Agent to watch | AC-61 |
 | `GET/PUT /api/prefs` | `{hidden, split, sort}` | AC-52, AC-65, AC-70 |
 | `GET /api/state?host` | the build, `unsaved` (the last failed write of workspaces.json, or null) and a host's files offer | AC-71, `terminum-remote.md` AC-83 |
@@ -751,12 +791,12 @@ curl -s -H "X-TM-Session: …" "http://127.0.0.1:48080/fb/api/ls?path=/tmp/fb-bi
 
 ```json
 {"version": 1, "prefs": {"hidden": true, "split": 0.5, "sort": "name"},
- "panes": {"web:[\"\",\"tmux:local:default:%3\"]": {"rev": 17, "root": "/Users/alex/work/api",
+ "panes": {"web:[\"\",\"tmux:local:default:%3\"]": {"rev": 17, "root": "/Users/alex/work/api", "browse": "",
    "expanded": ["/Users/alex/work/api/src"], "selected": ["/Users/alex/work/api/src/db/pool.rs"], "scroll": 412,
    "tabs": [{"path": "/Users/alex/work/api/README.md", "view": "rendered"}], "active_tab": 0, "updated": 1792000000}}}
 ```
 
-A tab's `view` is `auto`, `rendered` or `source`. `prefs.hidden` true shows dot files. The etag is `<mtime ns>-<inode>-<size>`. Unsaved edits live in the panel's memory per key, never in the file.
+`root` is the pane's folder, set by terminumd; `browse` the folder the user opened in its place (AC-275; empty: the tree shows `root`); `expanded`, `selected` and `scroll` belong to the folder shown. A tab's `view` is `auto`, `rendered` or `source`. `prefs.hidden` true shows dot files. The etag is `<mtime ns>-<inode>-<size>`. Unsaved edits live in the panel's memory per key, never in the file.
 
 ### Configuration
 
@@ -841,3 +881,4 @@ Logs as `terminum.md` §9 Logging and observability; no metrics are exported. Ev
 - [ ] AC-73 — no automated check: not built; a test that drags a row onto a folder and finds the file moved
 - [x] AC-94 — `ui/test/dataparse.test.mjs`, `ui/test/e2e_panel_media.mjs`, `ui/test/e2e_panel.mjs`
 - [x] AC-95 — `ui/test/e2e_panel_drop.mjs`, `cargo test ops`, `scripts/e2e_remote.py`
+- [x] AC-275 — `ui/test/e2e_panel_browse.mjs`, `ui/test/paths.test.mjs`, `cargo test ac275`
