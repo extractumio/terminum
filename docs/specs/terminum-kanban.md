@@ -299,7 +299,7 @@ Scenario: AC-107 failure — refused
 Scenario: AC-108 happy path — a human's comment
   Given API-12 with the window open
   When the user writes Markdown under Comment, drops log.txt and presses SAVE
-  Then the comment and file are kept and the status does not change; a working agent of its linked open session hears of it at its next tool call, never its words (terminum-dispatcher.md AC-209)
+  Then the comment and file are kept and the status does not change; a working agent of its linked open session is told of it as terminum-dispatcher.md AC-209 says, never its words
   And the window stays open, its field empty, the comment in its conversation
   When the user writes "Use the v2 API" and presses RUN
   Then the comment is kept and terminum-dispatcher.md AC-122 goes on with it

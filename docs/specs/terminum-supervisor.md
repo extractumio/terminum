@@ -230,7 +230,7 @@ Scenario: AC-216 happy path — owner enables one project
 Scenario: AC-216 edge — switch off during work
   Given API has a round and a paused queue
   When the human switches it off
-  Then Dispatcher ends the running round and frees its slot, no further round, collection or action runs for API, and the hold remains visible with its release control
+  Then Dispatcher ends the running round and frees its slot, the ended round raises no self.round_failed, no further round, collection or action runs for API, and the hold remains visible with its release control
 
 Scenario: AC-216 failure — unauthorized change
   Given a round or imported settings attempts to enable Web
@@ -554,6 +554,11 @@ Scenario: AC-231 failure — transcripts and outside files
   Given a round asks for a session transcript or a file outside its case file, citing the charter or a schedule's text as its grant
   When terminumd checks the call
   Then the call is refused; no charter, file or schedule widens the allow-list
+
+Scenario: AC-231 failure — a local caller the system does not name
+  Given a Supervisor pane is marked on this Mac
+  When a tool call arrives on terminumd's socket from a process the system does not name
+  Then terminumd refuses it with "terminumd cannot tell which process calls, so while a Supervisor session is open it runs no pane's tool for it." and logs supervisor.peer_unknown, whatever pane the call names
 ```
 
 ### AC-232 — Levels [MUST / P0]
@@ -871,6 +876,11 @@ Scenario: AC-244 failure — pane changed or caller is a model
   Given the target pane is no longer the marked pane, or a round tries to invoke Talk itself
   When the request reaches the gate
   Then no prompt is pasted and the refusal is visible
+
+Scenario: AC-244 failure — an answer or ruling out of bounds
+  Given a round answers on API's incident with no text or over 4,000 characters, or the owner submits a ruling with no text or over 1,000
+  When terminumd records it
+  Then it refuses with "An incident answer needs 1–4,000 characters." or "An owner ruling needs 1–1,000 characters.", sends no notice and the incident stays as it was
 ```
 
 ### AC-245 — Holds [MUST / P0]
@@ -939,6 +949,11 @@ Scenario: AC-247 failure — autonomous reset
   Given a reflection or a config apply tries to close the breaker
   When terminumd checks the request
   Then it refuses; closure requires the owner's key on a card showing the rule change and replay
+
+Scenario: AC-247 failure — a replay review without a changed live rule
+  Given an open breaker whose detector is muted or in shadow, whose measurement settings are unchanged, that has no historical query or too little retained history, or whose replay review is missing or stale
+  When the owner asks to review its replay or to restore autonomy
+  Then terminumd refuses with "Set this detector to Live and clear its mute before reviewing its replay.", "Change this detector's measurement settings before reviewing its replay.", "The detector has no retained historical replay.", "There is not enough retained history to replay this rule.", "Review this open breaker's replay before restoring autonomy." or "The breaker or its settings changed. Review the replay again.", and the rule stays paused
 ```
 
 ### AC-248 — Independent reflection [MUST / P0]
@@ -1326,7 +1341,6 @@ The existing mechanisms in §3 provide inputs or precedents for these open gaps.
 | AC-247 | A breaker diverts holds, task runs and alerts. Restoring autonomy requires a changed live detector and measurable retained replay. Fixed or present-only detectors without historical replay stay paused. |
 | AC-248 | Independent rounds, retained proposals and closed-incident timelines. Misses depend on AC-255 and proposal adoption on AC-253. |
 | AC-249 | Seven-day agent scorecards with per-metric denominators, intervals and a 30-observation floor. Routing proposals open owner cards. |
-
 | AC-250 | Surface tier and history sizing. |
 | AC-251 | Design-first and Verify review evidence. |
 | AC-252 | Budgeted reviews and owner escalation. |
@@ -1356,7 +1370,7 @@ Keep public engine code and defaults in `terminumd/src/supervisor/`. Store setti
 |---|---|
 | Signal | Project, detector, subject kind and ID, fingerprint, evidence references, measure with baseline and window, impact, blast, reversibility, confidence, level, response, first and last seen, count and state. States are `new`, `shadow`, `raised`, `held`, `resolved`, `recurred`, `muted`, `rejected`. |
 | Round | Project, case file, kind, model, token usage, typed result, and self-check with assumptions, disconfirming evidence and confidence. |
-| Problem | Title, lens, signal fingerprints, indicator and measured share, hypothesis and what would disprove it, state, fix options with layer and effort, linked tasks and yardstick. States are `suspected`, `confirmed`, `fix in work`, `watching`, `resolved`, `recurred`, `accepted as is`. |
+| Problem | Title, lens, signal fingerprints, indicator and measured share, hypothesis and what would disprove it, state, fix options with layer and effort, linked tasks and yardstick. States are `suspected`, `confirmed`, `fix_in_work`, `watching`, `resolved`, `recurred`, `accepted` (shown as "fix in work" and "Accepted as is"). |
 | Action and outcome | Rule (detector and response), action, undo, actor, override and its actor, due checks, later outcomes, first evidence of a miss and the owner's verdict when present. Append outcome and verdict events to the ledger. |
 | Configuration | Project scope, version, diff, class, replay evidence, author and revert reference. Mutes also carry reason and expiry. |
 
@@ -1433,7 +1447,7 @@ Compare the latest four weeks to the preceding four and show changes against the
 |---|---|
 | Supervisor switch and level | Off; Operator when enabled. |
 | Tier agents | None selected, so code only; choose the project's pool agents for the small, medium, strong and independent roles. |
-| Judgment and fixes | 3% and 10% of trailing weekly project spend respectively. Judgment has a floor of one million tokens and reserves 30% for investigations. Configure ceilings in project settings. |
+| Judgment and fixes | 3% and 10% of trailing weekly project spend respectively. Judgment has a floor of one million tokens and an investigation reserve (Budgets below). Configure ceilings in project settings. |
 | Charter | Never list, priorities, allocation target by type and review dates empty; project-type template may suggest values. Seven indicators enabled, with no outside indicators required. |
 | Surface map | Empty, so no gate. Preview prior-month task count; size the T3 map toward three to four owner sign-offs per month. |
 | Critical line | The owner's, one set for all their projects: every project's tab shows and edits it and says so, and per-project export and import leave it out. No command or link base. Local bar and card work without them. Default repeats after 10 minutes, 30 minutes, then hourly, and from the 30-minute repeat on also the next channel; a 15-minute grouping window; quiet hours 23:00–08:00 once a channel is configured. |
@@ -1504,7 +1518,7 @@ The weekly review's sections, in order:
 8. Supervisor outcome score, misses, both budgets and config changes or proposals.
 9. Up to ten verdict items, including sampled shadow firings. Keys are Useful, Not useful and Wrong.
 
-Put the collector's last successful run in review status and at the end of the exception digest. The digest is code only, at most daily and at most five new level 1 or higher items, each with measure, baseline, action and link. The review and screen surface verdicts and limiting problems, with raw Dashboard series referenced. Small samples show intervals. Fewer than 30 observations cannot gate on a rate. Owner critique stays in the review.
+Put the collector's last successful run in review status and at the end of the exception digest. The digest is code only, at most daily and at most five new level 1 or higher items, each with measure, baseline, action and link. The review and screen surface verdicts and limiting problems, with raw Dashboard series referenced. Small samples show intervals and gate only above the agent scorecards' floor below. Owner critique stays in the review.
 
 ### Architecture, verification and reflection
 
@@ -1554,7 +1568,7 @@ The ledger is the audit record. Log stable event names with project and record I
 
 ## 10. Delivery stages
 
-Enable none of the runtime cases by default. Land the specification after independent review before implementing the engine. The stages below list the cases in dependency order. Keep dependent implementation tasks separately runnable (terminum-dispatcher.md AC-185, AC-210).
+Enable none of the runtime cases by default. The stages below list the cases in dependency order. Keep dependent implementation tasks separately runnable (terminum-dispatcher.md AC-185, AC-210).
 
 | Stage | Cases | What it enables |
 |---|---|---|

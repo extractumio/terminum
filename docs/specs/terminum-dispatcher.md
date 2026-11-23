@@ -449,7 +449,7 @@ Scenario: AC-122 edge — a turn the agent scheduled itself
 
 Scenario: AC-122 edge — SAVE
   When the user presses SAVE instead
-  Then the comment is kept and nothing moves; a working agent of its linked open session hears of it at its next tool call, by the notice of AC-209, and nothing is typed
+  Then the comment is kept and nothing moves; a working agent of its linked open session is told of it by AC-209's notice, and nothing is typed
 
 Scenario: AC-122 edge — archived
   Given an archived task whose live session Dispatcher started, DONE or already IN PROGRESS
@@ -2321,7 +2321,7 @@ Exit -1 is the folder's: no process exits with it. The target names the pane: `t
 
 Codex's main UserPromptSubmit confirms its conversation ID. A SessionStart or an exit before the prompt keeps the ID a resume started with.
 
-**Run's saved comments (AC-122).** A human's continuation takes the human comments on its tasks in event order since the previous fresh start or human Run, with the field last. A queued human Run reads the saved comments when it starts. The cutoff stays at the words prepared for the paste, so a later Save waits for the next Run. A refused paste keeps the previous cutoff. For runs made before the cutoff is recorded, use the last Dispatcher start or Run marker in the task's history when one exists.
+**Run's saved comments (AC-122).** A human's continuation takes the human comments on its tasks in event order since the previous fresh start or human Run, with the field last. A queued human Run reads the saved comments when it starts. The cutoff stays at the words prepared for the paste, so a later Save waits for the next Run. A refused paste keeps the previous cutoff. A store without the cutoff takes, for each task with a run, its last Dispatcher start or Run marker in its history.
 
 **The typing gate.** All in order, on the pane's typing queue so a human's keys cannot interleave; any miss types nothing, or no Enter, and the task says "Not delivered: <which>", but a miss of the request for a result says nothing: a later walk asks again (AC-123):
 
