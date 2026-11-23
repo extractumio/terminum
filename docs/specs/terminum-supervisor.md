@@ -677,6 +677,7 @@ Scenario: AC-235 failure — number differs
   Given the finding claims 9 from a query that returns 4
   When code recalculates the measure
   Then the tool reports the mismatch, records a refusal signal and creates no problem or fix from the finding
+  And each later refusal in the round adds one to that signal's count, since each refused finding is a counted event (AC-211)
 ```
 
 ### AC-236 — Problem register [MUST / P0]
@@ -1677,7 +1678,7 @@ Enable none of the runtime cases by default. The stages below list the cases in 
 - [x] AC-232 — `scripts/e2e_roles.py` checks the owner changing a live pane's level, and `scripts/e2e_supervisor_settings.py` checks that importing preferences preserves it. `ac232_owner_sets_level_and_all_levels_page` delivers charter-breach notices to a private command at every level.
 - [ ] AC-233 — `e2e_supervisor_rounds.py` covers automatic admission, the confidence gate, budget denial, deduplication and the owner's press. `ac233_waiters_use_distinct_weeks_and_impact` covers recurring signals and wait order. The dependent actions are listed in §7.
 - [ ] AC-234 — `e2e_supervisor_rounds.py` checks exact case access, bounded data, the fixed prompt, a scoped mark before the first tool call, typed results, deadlines and cleanup in private tmux. Indexed memory remains open.
-- [x] AC-235 — `e2e_supervisor_rounds.py` refuses a wrong number and an unresolved row, records the refusal signal and keeps the finding after the named query and evidence pass.
+- [x] AC-235 — `e2e_supervisor_rounds.py` refuses a wrong number and an unresolved row, records the refusal signal, counting each refusal, and keeps the finding after the named query and evidence pass.
 - [x] AC-236 — `ac236_register_rank_ruling_and_recurrence` covers measured ranking, owner rulings, scoped evidence and protected yardsticks. The Supervisor browser check exercises the register and ruling form.
 - [ ] AC-237 — `ac237_judgment_reserve_and_caps` covers the investigation reserve, shared day and round caps, and overrun signals. The due-review exhaustion drill remains open.
 - [ ] AC-238 — `ac238_fix_budget_and_critical_exception` covers admission order, the single decision card, a seeded charter exception and attribution by run. `ac236_ac238_an_automatic_fix_task_names_its_measure_weeks_share_and_evidence` covers the title, measures, weeks, share, evidence links and hypothesis of a task made from a measure alone. The live charter exception depends on AC-213.

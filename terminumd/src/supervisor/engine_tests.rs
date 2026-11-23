@@ -176,6 +176,12 @@ fn ac211_window_inputs_are_not_repeats() {
     assert_eq!(counts("judgment_round_tokens"), [(NOW + 15, 1)], "rising use of one budget is one occurrence");
     diagnose(&[Evidence::Events("event-a".into())], 150., NOW + 30);
     assert_eq!(counts("judgment_round_tokens"), [(NOW + 30, 2)]);
+
+    // AC-235: a refused finding is an event, though each cites the same round row.
+    for (n, at) in [(1., NOW), (2., NOW + 5), (3., NOW + 9)] {
+        f.store.with(|tx| signals::round_failed(tx, PROJECT, "round-1", "refused_findings", n, at)).unwrap();
+    }
+    assert_eq!(counts("refused_findings"), [(NOW + 9, 3)], "each refused finding is a repeat");
 }
 
 // AC-211: validate the catalog before opening SQLite, reject mismatches, and refuse detector writes.

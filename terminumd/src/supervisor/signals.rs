@@ -272,15 +272,22 @@ pub(super) fn get(tx: &Transaction, project: &str, key: &str) -> Result<Signal, 
 }
 
 
-/// A point event is retained by case and never resolves unrelated failures.
+/// A point event is retained by case and never resolves unrelated failures. Each call is an event of its own
+/// (a refused finding, or a round's one failure) citing the same round row, so every call is a repeat (AC-235).
 pub(super) fn round_failed(tx: &Transaction, project: &str, id: &str, metric: &str, value: f64, at: i64) -> Result<(), String> {
-    diagnostic(tx, project, "self.round_failed", ("round", id, metric),
-        &[Evidence::SupervisorRounds(id.into())], (value, 0.), at)
+    record_diagnostic(tx, project, "self.round_failed", ("round", id, metric),
+        &[Evidence::SupervisorRounds(id.into())], (value, 0.), at, "count + 1")
 }
 
 /// A code-owned diagnostic carries typed evidence and a fixed metric.
 pub(super) fn diagnostic(tx: &Transaction, project: &str, detector: &str, subject: (&str, &str, &str),
-    evidence: &[Evidence], (value, threshold): (f64, f64), at: i64) -> Result<(), String> {
+    evidence: &[Evidence], measured: (f64, f64), at: i64) -> Result<(), String> {
+    record_diagnostic(tx, project, detector, subject, evidence, measured, at, &repeated_count("1"))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn record_diagnostic(tx: &Transaction, project: &str, detector: &str, subject: (&str, &str, &str),
+    evidence: &[Evidence], (value, threshold): (f64, f64), at: i64, repeat: &str) -> Result<(), String> {
     let (kind, id, metric) = subject;
     let key = fingerprint(project, detector, subject);
     let evidence = encode(&evidence)?;
@@ -292,7 +299,7 @@ pub(super) fn diagnostic(tx: &Transaction, project: &str, detector: &str, subjec
         ON CONFLICT (fingerprint) DO UPDATE SET measure = excluded.measure, evidence = excluded.evidence,
             last_seen = excluded.last_seen, count = {}, state = 'raised'
         WHERE (state, evidence, json_extract(measure, '$.value'), json_extract(measure, '$.threshold'))
-            IS NOT (excluded.state, excluded.evidence, ?11, ?12)", repeated_count("1")),
+            IS NOT (excluded.state, excluded.evidence, ?11, ?12)", repeat),
         params![key, project, detector, kind, id, metric, evidence, measure, scores, at, value, threshold]).map_err(sql)?;
     if detector == "self.miss" {
         super::reflection::enqueue(tx, project, ("miss", &key, Some(&key)), "miss",
