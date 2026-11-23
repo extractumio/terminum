@@ -140,6 +140,53 @@ fn ac211_signal_fingerprint_and_named_query() {
     assert_eq!((recurred.state, recurred.count), (State::Recurred, 3));
 }
 
+// AC-211: a persisting condition only moves last seen; a new occurrence row and a return after resolving are repeats.
+#[test]
+fn ac211_count_is_repeats_not_sweeps() {
+    let f = Fixture::new("signal-count");
+    f.task("stuck", Some("Bug"), "P2", "IN PROGRESS", NOW - 200);
+    f.failed_run("stuck", "run-a", NOW - 50);
+    f.failed_run("stuck", "run-b", NOW - 20);
+    let d = Fixture::detector("repeated_failures");
+    let sweep = |at| evaluate(&f.store, PROJECT, at, std::slice::from_ref(&d)).unwrap().record(&f.store).unwrap();
+    let seen = || signals(&f.store, PROJECT).unwrap().into_iter().map(|s| (s.state, s.last_seen, s.count)).collect::<Vec<_>>();
+    for at in [NOW, NOW + 60, NOW + 120] { sweep(at); }
+    assert_eq!(seen(), [(State::New, NOW + 120, 1)], "three sweeps of one condition are one occurrence");
+
+    f.failed_run("stuck", "run-c", NOW + 130);
+    sweep(NOW + 180);
+    sweep(NOW + 240);
+    assert_eq!(seen(), [(State::New, NOW + 240, 2)], "a new failed run is one repeat, however often it is swept");
+
+    let later = NOW + 5 * WEEK;
+    sweep(later);
+    sweep(later + 60);
+    assert_eq!(seen(), [(State::Resolved, NOW + 240, 2)]);
+    f.failed_run("stuck", "run-d", later + 70);
+    f.failed_run("stuck", "run-e", later + 80);
+    sweep(later + 120);
+    sweep(later + 180);
+    assert_eq!(seen(), [(State::Recurred, later + 180, 3)], "the return is one repeat");
+}
+
+// AC-211: a retaken probe sample or snapshot point measures the same occurrence; an occurrence row joining is a repeat.
+#[test]
+fn ac211_retaken_samples_are_not_repeats() {
+    let f = Fixture::new("signal-samples");
+    let diagnose = |evidence: &[Evidence], at| f.store.with(|tx| signals::diagnostic(tx, PROJECT, "self.round_failed",
+        ("round", "round-1", "failed_rounds"), evidence, (1., 0.), at)).unwrap();
+    let seen = || signals(&f.store, PROJECT).unwrap().into_iter().map(|s| (s.last_seen, s.count)).collect::<Vec<_>>();
+    diagnose(&[Evidence::SupervisorProbes(1)], NOW);
+    diagnose(&[Evidence::SupervisorProbes(2)], NOW + 15);
+    diagnose(&[Evidence::SupervisorPoints(3)], NOW + 30);
+    assert_eq!(seen(), [(NOW + 30, 1)]);
+    diagnose(&[Evidence::SupervisorProbes(4), Evidence::Events("event-a".into())], NOW + 45);
+    diagnose(&[Evidence::SupervisorProbes(5), Evidence::Events("event-a".into())], NOW + 60);
+    assert_eq!(seen(), [(NOW + 60, 2)]);
+    diagnose(&[Evidence::Events("event-a".into()), Evidence::Events("event-b".into())], NOW + 75);
+    assert_eq!(seen(), [(NOW + 75, 3)]);
+}
+
 // AC-211: validate the catalog before opening SQLite, reject mismatches, and refuse detector writes.
 #[test]
 fn ac211_validation_and_readonly_snapshot() {
