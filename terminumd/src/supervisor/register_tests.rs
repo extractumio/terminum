@@ -214,6 +214,7 @@ fn ac236_ac238_an_automatic_fix_task_names_its_measure_weeks_share_and_evidence(
     f.run("baseline", "baseline-run", "agent", NOW - DAY);
     f.cost("baseline-run", NOW - DAY, 100_000);
     f.task("made-1", None, "P2", "TODO", NOW - DAY);
+    f.write("UPDATE tasks SET slug = 'TERM-1' WHERE id = 'made-1'", []);
     let made = f.event("made-1", NOW - DAY, "human", "made", "", None);
     seeded(&f, "backlog", ("flow.backlog_growth", "project", PROJECT, "growing_weeks"),
         json!({"value":4,"threshold":3,"baseline":3,"window_start":NOW-4*WEEK,"window_end":NOW}),
@@ -227,7 +228,7 @@ fn ac236_ac238_an_automatic_fix_task_names_its_measure_weeks_share_and_evidence(
         let tasks = changed.iter().map(|id| ops::get(tx, id)).collect::<Result<Vec<_>, _>>()?;
         let titles = tasks.iter().map(|t| t.title.as_str()).collect::<std::collections::BTreeSet<_>>();
         assert_eq!(titles, ["Bug: Backlog growth: 4 growing weeks, threshold 3",
-            "Bug: Wait human age: 300.5 wait minutes on made-1, threshold 240"].into());
+            "Bug: Wait human age: 300.5 wait minutes on TERM-1, threshold 240"].into());
         let backlog = tasks.iter().find(|t| t.name.starts_with("Backlog")).unwrap();
         let text = ops::text_of(tx, &backlog.id)?;
         crate::tasks::template::check(&text, crate::tasks::template::DEFAULT_TEMPLATE)?;
@@ -235,8 +236,8 @@ fn ac236_ac238_an_automatic_fix_task_names_its_measure_weeks_share_and_evidence(
             "Backlog growth: 4 growing weeks in the weeks from 2026-12-18 to 2027-01-15, against its limit of 3.",
             "[signal](/supervisor/?project=default&signal=backlog#signal-backlog)",
             "At its peak it was 30% of the project's tasks in a week.",
-            &format!("- [made-1](/kanban/made-1): made on 2027-01-14 (event {made})"),
-            "- [made-1](/kanban/made-1)\n",
+            &format!("- [TERM-1](/kanban/TERM-1): events row {made}, kind made, on 2027-01-14\n"),
+            "- [TERM-1](/kanban/TERM-1), severity P2, status TODO\n",
             "> No investigation has run yet: code opened this problem from the flow.backlog_growth measure alone",
             "> Growing weeks stays within the threshold of 3 for 4 weeks with no change made.",
             "- growing weeks within 3 for 4 weeks",
@@ -247,7 +248,8 @@ fn ac236_ac238_an_automatic_fix_task_names_its_measure_weeks_share_and_evidence(
         let waits = tasks.iter().find(|t| t.name.starts_with("Wait")).unwrap();
         let text = ops::text_of(tx, &waits.id)?;
         assert!(text.contains("against a baseline of 200 and a threshold of 240."), "{text}");
-        assert!(text.contains("Evidence rows (25):\n- run run-0\n") && text.contains("- run run-19\n- 5 more on the [signal]("), "{text}");
+        assert!(text.contains("Evidence rows (25):\n- runs row run-0, not found in this project\n")
+            && text.contains("- runs row run-19, not found in this project\n- 5 more on the [signal]("), "{text}");
         assert!(!text.contains("run-20"), "only the first rows are written: {text}");
         let register = register::ranked(tx, PROJECT, NOW, false)?;
         assert!(register.iter().all(|p| p.hypothesis.starts_with("No investigation has run yet")));
