@@ -598,6 +598,24 @@ Pausing Auto-Dispatcher or integration opens an incident with **Keep the hold**
 and **Release the hold**. Turning Supervisor off leaves work held and lists the
 remaining holds in its project tab. The owner can release them while it is off.
 
+#### Rule outcomes and breakers
+
+**Rule outcomes** shows one count per decision for each detector and response.
+Terminum checks the store after a day, a week and four weeks. Pending decisions
+are waiting for their first check. Undecided means the store lacks conclusive
+evidence. A rule with mostly undecided outcomes raises `self.unjudged`.
+
+Use **This is wrong** beside the relevant alert on the incident's Supervisor
+screen. That verdict opens the alert's rule breaker immediately. Two distinct
+wrong decisions also open a breaker. One example is releasing two holds whose
+targets have stayed the same. The rule's later holds, task runs and alerts
+become decisions for you. Other rules keep acting at the project's selected level.
+
+To restore a rule, change its measurement settings while it is Live and unmuted.
+Open the breaker in **Rule outcomes**, choose **Review rule change** and compare
+the replay before and after. **Restore autonomy** applies to that review and
+settings revision. Rules without measurable retained replay stay paused.
+
 #### Signed-in Supervisor API
 
 All routes below are relative to `/api/task-projects/<ID>/supervisor`.

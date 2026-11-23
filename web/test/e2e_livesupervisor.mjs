@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // AC-222 and AC-223 through the signed-in page, the private store and its real collector.
-import { boardKit } from "./boardkit.mjs";
+import { boardKit, intoStore } from "./boardkit.mjs";
 import { check, until } from "./check.mjs";
 
 const RULE = "flow.failed_no_reason";
@@ -80,4 +80,41 @@ export async function liveSupervisor(page, opts) {
     await until(() => page.getByText("Not measured yet (release tags are unavailable)", { exact: true }).isVisible()));
   await j(api.path, "PUT", { enabled: false });
   await j(web.path, "PUT", { enabled: false });
+  await liveBreaker(page, opts, j, web);
+}
+
+async function liveBreaker(page, opts, j, { id, path }) {
+  const detector = "flow.failed_repeat", at = Math.floor(Date.now() / 1000);
+  const task = await j("/api/tasks", "POST", { title: "Retained replay fixture", project: id });
+  if (!/^[a-f0-9]{12}$/.test(id) || !/^[A-Z0-9-]+$/.test(task.id)) throw new Error("Unexpected fixture ID.");
+  intoStore(opts.app, `
+    BEGIN;
+    UPDATE tasks SET created_at = ${at - 56 * 86400} WHERE slug = '${task.id}';
+    UPDATE events SET at = ${at - 56 * 86400} WHERE task = (SELECT id FROM tasks WHERE slug = '${task.id}');
+    INSERT INTO supervisor_incidents (project,subject_kind,subject_id,opened_at,last_firing_at)
+      VALUES ('${id}','project','breaker-browser-fixture',${at},${at});
+    INSERT INTO supervisor_incident_events (incident,at,kind,actor,fingerprint,detector,metric,level,value,threshold)
+      VALUES (last_insert_rowid(),${at},'signal','system','breaker-browser-fixture','${detector}','failed_runs',3,4,2);
+    INSERT INTO supervisor_actions (project,detector,response,kind,source,fingerprint,target,at)
+      SELECT '${id}',detector,'R5','alert',id,fingerprint,incident,at FROM supervisor_incident_events WHERE id = last_insert_rowid();
+    COMMIT;`);
+  await page.goto(`${opts.base}/supervisor/?project=${id}`);
+  const wrong = page.getByRole("button", { name: /^This is wrong/ });
+  await wrong.click();
+  const breaker = page.locator("#sv-breakers details");
+  await breaker.getByText(/Breaker open/).click();
+  check("AC-247 the signed-in page marks an alert and shows the open rule breaker",
+    await page.locator("#sv-incidents").getByText(/^Marked wrong/).isVisible()
+    && await page.locator("#sv-outcomes").getByText(/1 wrong/).isVisible());
+  const saved = await j(path + "/settings");
+  await j(path + "/settings", "PUT", { revision: saved.revision, settings: { ...saved.settings,
+    detectors: { ...saved.settings.detectors, [detector]: { threshold: { absolute: 3 } } } } });
+  await breaker.getByRole("button", { name: "Review rule change" }).click();
+  const restore = breaker.getByRole("button", { name: "Restore autonomy" });
+  await restore.waitFor();
+  const measured = await breaker.getByText(/0 before · 0 after/).isVisible();
+  await restore.click();
+  check("AC-247 the live owner key restores the reviewed detector and retains its verdict",
+    measured && await until(() => page.getByText("No open breakers.").isVisible())
+    && await page.locator("#sv-outcomes").getByText(/1 wrong/).isVisible());
 }

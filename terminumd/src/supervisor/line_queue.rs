@@ -64,6 +64,13 @@ impl Notice {
     }
 }
 
+const ALERTS: &str = "(SELECT json_group_array(a.id) FROM supervisor_incident_signals m
+    JOIN supervisor_actions a ON a.kind = 'alert' AND a.project = i.project
+      AND a.target = CAST(i.id AS TEXT) AND a.fingerprint = m.fingerprint
+      AND a.id = (SELECT max(v.id) FROM supervisor_actions v WHERE v.project = a.project
+        AND v.kind = a.kind AND v.target = a.target AND v.fingerprint = a.fingerprint)
+    WHERE m.incident = i.id)";
+
 /// Snapshots numeric notice fields in the same transaction as the timeline change.
 /// The incident thread (AC-244) can enqueue an answer using only the incident ID.
 pub(super) fn enqueue(tx: &Transaction, incident: i64, kind: Kind, ended_urgent: bool) -> Result<(), String> {
@@ -72,25 +79,25 @@ pub(super) fn enqueue(tx: &Transaction, incident: i64, kind: Kind, ended_urgent:
         tx.execute("DELETE FROM supervisor_line_pending WHERE kind = 'updated' AND id = (
             SELECT max(id) FROM supervisor_line_pending WHERE incident = ?1)", [incident]).map_err(sql)?;
     }
-    tx.execute("INSERT INTO supervisor_line_pending (incident, kind, level, signals, urgent)
+    tx.execute(&format!("INSERT INTO supervisor_line_pending (incident, kind, level, signals, urgent, alerts)
         SELECT i.id, ?2, coalesce(max(m.level), (
             SELECT max(level) FROM supervisor_holds WHERE incident = i.id AND shadow = 0 AND released_at IS NULL), 0),
-            count(m.fingerprint), (?3 OR coalesce(max(m.urgent), 0))
+            count(m.fingerprint), (?3 OR coalesce(max(m.urgent), 0)), {ALERTS}
         FROM supervisor_incidents i LEFT JOIN supervisor_incident_signals m ON m.incident = i.id
         WHERE i.id = ?1 AND i.subject_kind <> 'critical_line'
           AND EXISTS (SELECT 1 FROM supervisor_line WHERE json_array_length(settings, '$.channels') > 0)
-        GROUP BY i.id", (incident, kind.name(), ended_urgent)).map(drop).map_err(sql)
+        GROUP BY i.id"), (incident, kind.name(), ended_urgent)).map(drop).map_err(sql)
 }
 
 /// When the first channel is saved, start with current unacknowledged incidents.
 pub(super) fn seed(tx: &Transaction) -> Result<(), String> {
-    tx.execute("INSERT INTO supervisor_line_pending (incident, kind, level, signals, urgent)
+    tx.execute(&format!("INSERT INTO supervisor_line_pending (incident, kind, level, signals, urgent, alerts)
         SELECT i.id, 'opened', coalesce(max(m.level), (
             SELECT max(level) FROM supervisor_holds WHERE incident = i.id AND shadow = 0 AND released_at IS NULL), 0),
-            count(m.fingerprint), coalesce(max(m.urgent), 0)
+            count(m.fingerprint), coalesce(max(m.urgent), 0), {ALERTS}
         FROM supervisor_incidents i LEFT JOIN supervisor_incident_signals m ON m.incident = i.id
         WHERE i.closed_at IS NULL AND i.acknowledged_at IS NULL AND i.subject_kind <> 'critical_line'
-        GROUP BY i.id", []).map(drop).map_err(sql)
+        GROUP BY i.id"), []).map(drop).map_err(sql)
 }
 
 pub(super) fn stop_repeats(tx: &Transaction, id: i64) -> Result<(), String> {
@@ -101,49 +108,62 @@ pub(super) fn stop_repeats(tx: &Transaction, id: i64) -> Result<(), String> {
 /// one-shot notification or send several missed repeat steps at once.
 pub(super) fn claim(tx: &Transaction, settings: &Settings, at: i64, quiet: bool) -> Result<Option<Notice>, String> {
     let first = settings.delay(0);
-    let selected = tx.query_row("WITH ready AS (
+    let selected = tx.query_row(&format!("WITH ready AS (
         SELECT q.id AS pending, i.id AS incident, i.project, q.kind, CASE WHEN q.kind IN ('all_clear', 'answer') THEN 0 ELSE q.level END AS level, q.signals,
-               0 AS escalated
+               0 AS escalated, q.alerts AS alerts
         FROM supervisor_line_pending q JOIN supervisor_incidents i ON i.id = q.incident
         JOIN project_supervisor s ON s.project = i.project AND s.enabled
         LEFT JOIN supervisor_line_repeats r ON r.incident = i.id
-        WHERE (NOT ?2 OR q.urgent OR EXISTS (
-            SELECT 1 FROM supervisor_incident_signals WHERE incident = i.id AND urgent))
+        WHERE (NOT ?2 OR (q.kind IN ('all_clear','answer') AND q.urgent) OR EXISTS (
+            SELECT 1 FROM supervisor_incident_signals m JOIN supervisor_signals s USING (fingerprint)
+            WHERE m.incident = i.id AND m.urgent AND NOT EXISTS (SELECT 1 FROM supervisor_breakers b
+              WHERE b.project = i.project AND b.detector = s.detector AND b.response = CASE m.level WHEN 3 THEN 'R5' ELSE 'R4' END
+                AND b.closed_at IS NULL)))
           AND q.id = (SELECT min(id) FROM supervisor_line_pending WHERE incident = i.id)
           AND (q.kind <> 'updated' OR r.last_at IS NULL OR r.last_at + ?3 <= ?1 OR i.closed_at IS NOT NULL)
         UNION ALL
         SELECT NULL, i.id, i.project, 'repeat', coalesce(max(m.level), (
             SELECT max(level) FROM supervisor_holds WHERE incident = i.id AND shadow = 0 AND released_at IS NULL), 0),
-            count(m.fingerprint), r.escalated
+            count(m.fingerprint), r.escalated, {ALERTS}
         FROM supervisor_line_repeats r JOIN supervisor_incidents i ON i.id = r.incident
         JOIN project_supervisor s ON s.project = i.project AND s.enabled
         LEFT JOIN supervisor_incident_signals m ON m.incident = i.id
         WHERE r.due_at <= ?1 AND i.closed_at IS NULL AND i.acknowledged_at IS NULL
           AND coalesce(i.snoozed_until, 0) <= ?1 AND r.last_at + ?3 <= ?1
-        GROUP BY i.id HAVING NOT ?2 OR max(m.urgent)
-    ) SELECT pending, incident, project, kind, level, signals, escalated
+        GROUP BY i.id HAVING NOT ?2 OR max(m.urgent AND NOT EXISTS (
+            SELECT 1 FROM supervisor_signals s JOIN supervisor_breakers b ON b.project = s.project AND b.detector = s.detector
+            WHERE s.fingerprint = m.fingerprint AND b.response = CASE m.level WHEN 3 THEN 'R5' ELSE 'R4' END AND b.closed_at IS NULL))
+    ) SELECT pending, incident, project, kind, level, signals, escalated, alerts
       , (SELECT s.metric FROM supervisor_signals s WHERE s.project = ready.project AND s.detector = 'self.budget'
             AND s.state = 'raised' AND s.metric IN ('judgment_tokens','fix_dollars')
           ORDER BY s.metric = 'judgment_tokens' DESC LIMIT 1)
-      FROM ready ORDER BY level DESC, incident, pending LIMIT 1", (at, quiet, first), |r| {
+      FROM ready ORDER BY level DESC, incident, pending LIMIT 1"), (at, quiet, first), |r| {
         let kind = Kind::read(&r.get::<_, String>(3)?);
         let escalated: bool = r.get(6)?;
         let notice = Notice { incident: r.get(1)?, project: r.get(2)?, kind,
             level: r.get(4)?, signals: r.get(5)?, channels: if kind == Kind::Repeat && escalated { 2 } else { 1 },
-            budget: match r.get::<_, Option<String>>(7)?.as_deref() {
+            budget: match r.get::<_, Option<String>>(8)?.as_deref() {
                 Some("judgment_tokens") => Some(super::governor::JUDGMENT_NOTICE),
                 Some("fix_dollars") => Some(super::governor::FIX_NOTICE),
                 _ => None,
             }, holds: Vec::new() };
-        Ok((r.get::<_, Option<i64>>(0)?, notice, escalated))
+        Ok((r.get::<_, Option<i64>>(0)?, notice, escalated, r.get::<_, Option<String>>(7)?))
     }).optional().map_err(sql)?;
-    let Some((pending, mut notice, escalated)) = selected else { return Ok(None) };
+    let Some((pending, mut notice, escalated, alerts)) = selected else { return Ok(None) };
     let id = notice.incident;
-    notice.holds = crate::tasks::ops::rows(tx, "SELECT kind FROM supervisor_holds
-        WHERE incident = ?1 AND shadow = 0 AND released_at IS NULL ORDER BY id", [id],
+    notice.holds = crate::tasks::ops::rows(tx, "SELECT h.kind FROM supervisor_holds h
+        WHERE h.incident = ?1 AND h.shadow = 0 AND h.released_at IS NULL
+          AND NOT EXISTS (SELECT 1 FROM supervisor_breakers b WHERE b.project = h.project
+            AND b.detector = h.detector AND b.response = h.response AND b.closed_at IS NULL) ORDER BY h.id", [id],
         |r| Ok(super::holds::Kind::read(&r.get::<_, String>(0)?)))?;
     if let Some(row) = pending {
         tx.execute("DELETE FROM supervisor_line_pending WHERE id = ?1", [row]).map_err(sql)?;
+    }
+    if matches!(notice.kind, Kind::Opened | Kind::Updated | Kind::Repeat)
+        && !alert_allowed(tx, &mut notice, alerts.as_deref(), at)?
+    {
+        stop_repeats(tx, id)?;
+        return Ok(None);
     }
     match notice.kind {
         // The row's last_at is every open incident's update cool-down, acknowledged or not;
@@ -161,4 +181,30 @@ pub(super) fn claim(tx: &Transaction, settings: &Settings, at: i64, quiet: bool)
         Kind::AllClear | Kind::Answer => {}
     }
     Ok(Some(notice))
+}
+
+// A grouped notice can still go out for its healthy rules. Check at claim so
+// already queued alerts, seeded alerts and the repeat ladder use the same gate.
+fn alert_allowed(tx: &Transaction, notice: &mut Notice, alerts: Option<&str>, at: i64) -> Result<bool, String> {
+    let Some(alerts) = alerts else { return Ok(true) };
+    let members = crate::tasks::ops::rows(tx, "SELECT a.fingerprint, a.response, b.id IS NOT NULL, m.level
+        FROM json_each(?3) list JOIN supervisor_actions a ON a.id = list.value
+        LEFT JOIN supervisor_incident_signals m ON m.fingerprint = a.fingerprint AND m.incident = ?2
+        LEFT JOIN supervisor_breakers b ON b.project = a.project AND b.detector = a.detector
+          AND b.response = a.response AND b.closed_at IS NULL
+        WHERE a.project = ?1 AND a.kind = 'alert' ORDER BY a.id", (&notice.project, notice.incident, alerts),
+        |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, bool>(2)?, r.get::<_, Option<u8>>(3)?)))?;
+    if members.is_empty() { return Ok(true); }
+    notice.signals = 0;
+    notice.level = 0;
+    for (key, response, blocked, level) in members {
+        if blocked {
+            let signal = super::signals::get(tx, &notice.project, &key)?;
+            super::breakers::divert_rule(tx, &signal, &response, "alert", "", "The incident would send another alert.", at)?;
+        } else if let Some(level) = level {
+            notice.signals += 1;
+            notice.level = notice.level.max(level);
+        }
+    }
+    Ok(notice.signals > 0)
 }

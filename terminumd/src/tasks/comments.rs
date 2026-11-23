@@ -81,10 +81,10 @@ pub(crate) fn normalized_question(args: &Value) -> Result<Value, String> {
 }
 
 /// Store an owner question and put its card in the ordinary waiting column.
-pub(crate) fn wait_for_owner(tx: &Transaction, by: &str, task: &super::ops::Task, text: &str, args: &Value, at: i64) -> Result<(), String> {
-    structured_questions(tx, by, &task.id, text, args, at)?;
+pub(crate) fn wait_for_owner(tx: &Transaction, by: &str, task: &super::ops::Task, text: &str, args: &Value, at: i64) -> Result<String, String> {
+    let event = structured_questions(tx, by, &task.id, text, args, at)?;
     if task.status != "WAIT FOR HUMAN" { super::ops::move_to(tx, by, &task.id, "WAIT FOR HUMAN", at)?; }
-    Ok(())
+    Ok(event)
 }
 
 pub(crate) fn structured_questions(tx: &Transaction, author: &str, id: &str, text: &str, args: &Value, at: i64) -> Result<String, String> {

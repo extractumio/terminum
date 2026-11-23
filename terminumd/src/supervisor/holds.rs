@@ -20,7 +20,7 @@ const PAUSED_DISPATCH: &str = "Paused by the Supervisor.";
 pub(crate) enum Kind { StopRun, PauseDispatch, PauseIntegration, TakeOut }
 
 impl Kind {
-    fn name(self) -> &'static str {
+    pub(super) fn name(self) -> &'static str {
         match self {
             Self::StopRun => "stop_run", Self::PauseDispatch => "pause_dispatch",
             Self::PauseIntegration => "pause_integration", Self::TakeOut => "take_out",
@@ -141,6 +141,11 @@ fn state(tx: &Transaction, signal: &Signal, at: i64) -> Result<HoldState, String
     Ok(state)
 }
 
+pub(super) enum Disposition {
+    Applied(Applied),
+    Card(super::breakers::Card),
+}
+
 pub(super) struct Applied {
     pub id: i64,
     pub shadow: bool,
@@ -148,7 +153,7 @@ pub(super) struct Applied {
     pub task: Option<String>,
 }
 
-pub(super) fn apply(tx: &Transaction, project: &str, request: Request, actor: &str, at: i64) -> Result<Applied, String> {
+pub(super) fn apply(tx: &Transaction, project: &str, request: Request, actor: &str, at: i64) -> Result<Disposition, String> {
     let signal = signals::get(tx, project, &request.signal)?;
     let shadow = state(tx, &signal, at)? == HoldState::Shadow;
     let reason = request.reason.trim();
@@ -181,12 +186,17 @@ pub(super) fn apply(tx: &Transaction, project: &str, request: Request, actor: &s
     }
     if shadow {
         let id = insert(tx, &signal, kind, target, (reason, actor, at), true, None)?;
-        return Ok(Applied { id, shadow, run: None, task: None });
+        super::outcomes::record(tx, &signal, super::outcomes::Kind::Hold, &id.to_string(), target, "", at)?;
+        return Ok(Disposition::Applied(Applied { id, shadow, run: None, task: None }));
     }
     let blocked: bool = tx.query_row("SELECT EXISTS (SELECT 1 FROM supervisor_holds
         WHERE fingerprint = ?1 AND kind = ?2 AND target = ?3 AND released_by = ?4 AND released_at > ?5)",
         (&signal.fingerprint, kind.name(), target, HUMAN, at - super::DAY), |r| r.get(0)).map_err(sql)?;
     if blocked { return Err("The owner released this hold. The Supervisor waits 24 hours.".into()); }
+    if let Some(card) = super::breakers::divert(tx, &signal, kind.name(), target, reason, at)? {
+        return Ok(Disposition::Card(card));
+    }
+    let baseline = super::outcome_evidence::hold_target(tx, project, kind.name(), target)?;
     let mut run = None;
     let undo = match (kind, task.as_ref()) {
         (Kind::PauseDispatch, None) => {
@@ -221,10 +231,11 @@ pub(super) fn apply(tx: &Transaction, project: &str, request: Request, actor: &s
         _ => unreachable!("task requirement checked before mutation"),
     };
     let id = insert(tx, &signal, kind, target, (reason, actor, at), false, undo.as_deref())?;
+    super::outcomes::record(tx, &signal, super::outcomes::Kind::Hold, &id.to_string(), target, baseline.as_deref().unwrap_or(""), at)?;
     if kind.project_wide() || signal.level == 3 {
         incidents::attach_hold(tx, &signal, id, kind.project_wide(), actor, at)?;
     }
-    Ok(Applied { id, shadow, run, task: task.map(|t| t.id) })
+    Ok(Disposition::Applied(Applied { id, shadow, run, task: task.map(|t| t.id) }))
 }
 
 fn stoppable(tx: &Transaction, task: &Task, at: i64) -> Result<Run, String> {
@@ -251,7 +262,7 @@ fn insert(tx: &Transaction, s: &Signal, kind: Kind, target: &str, audit: (&str, 
 }
 
 /// Cost outliers can stop only the marked task run named in the actual retained usage evidence.
-pub(super) fn automatic(tx: &Transaction, project: &str, fingerprint: &str, at: i64) -> Result<Option<Applied>, String> {
+pub(super) fn automatic(tx: &Transaction, project: &str, fingerprint: &str, at: i64) -> Result<Option<Disposition>, String> {
     let signal = signals::get(tx, project, fingerprint)?;
     if signal.detector != Rule::CostOutlier.id() || signal.level != 3 || signal.scores.confidence < 0.7
         || signal.subject_kind != "task" || signal.metric != "task_dollars"
@@ -298,7 +309,19 @@ pub(super) fn release(tx: &Transaction, project: &str, hold: &Hold, actor: &str,
 }
 
 fn record_release(tx: &Transaction, id: i64, actor: &str, at: i64) -> Result<(), String> {
-    let released = tx.query_row("UPDATE supervisor_holds SET released_by = ?2, released_at = ?3,
+    let before = tx.query_row("SELECT project, kind, target FROM supervisor_holds WHERE id = ?1 AND released_at IS NULL",
+        [id], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?))).optional().map_err(sql)?;
+    if let Some((project, kind, target)) = before
+        && actor == HUMAN
+        && let Some(action) = super::outcomes::find(tx, &project, super::outcomes::Kind::Hold, &id.to_string())?
+        && !action.baseline.is_empty()
+        && super::outcome_evidence::hold_target(tx, &project, &kind, &target)?.as_deref() == Some(&action.baseline)
+        && !super::outcome_evidence::changed_approach(tx, id)?
+    {
+        super::outcomes::judge(tx, &project, &action, 0, at,
+            (super::outcomes::Verdict::Wrong, "The owner released the unchanged subject."))?;
+    }
+    let released = tx.query_row("UPDATE supervisor_holds SET released_by = ?2, released_at = ?3, replacement_run = pending_run,
         pending_run = NULL, pending_by = NULL WHERE id = ?1 AND released_at IS NULL RETURNING incident, target",
         (id, actor, at), |r| Ok((r.get::<_, Option<i64>>(0)?, r.get::<_, String>(1)?))).optional().map_err(sql)?;
     let Some((incident, target)) = released else { return Ok(()) };
@@ -371,6 +394,14 @@ pub(crate) fn check_run_release(tx: &Transaction, project: &str, id: i64, run: &
 
 /// Reserve the undo on the exact replacement run. A launch failure leaves the hold active.
 pub(crate) fn reserve_run_release(tx: &Transaction, id: i64, actor: &str, run: &str) -> Result<(), String> {
+    if actor != HUMAN {
+        let (project, fingerprint, response, target) = tx.query_row("SELECT project, fingerprint, response, target
+            FROM supervisor_holds WHERE id = ?1 AND released_at IS NULL", [id],
+            |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?, r.get::<_, String>(3)?))).map_err(sql)?;
+        let signal = signals::get(tx, &project, &fingerprint)?;
+        super::outcomes::record_rule(tx, &signal, &response, super::outcomes::Kind::Run,
+            &format!("{run}/{target}"), &target, run, ops::now())?;
+    }
     tx.execute("UPDATE supervisor_holds SET pending_run = ?2, pending_by = ?3 WHERE id = ?1 AND released_at IS NULL",
         (id, run, actor)).map(drop).map_err(sql)
 }

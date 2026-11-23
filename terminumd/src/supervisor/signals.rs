@@ -218,7 +218,7 @@ pub(super) fn resolve_rule(tx: &Transaction, project: &str, rule: super::Rule, a
     Ok(())
 }
 
-fn encode(value: &impl Serialize) -> Result<String, String> {
+pub(super) fn encode(value: &impl Serialize) -> Result<String, String> {
     serde_json::to_string(value).map_err(|e| format!("Could not encode Supervisor signal: {e}"))
 }
 

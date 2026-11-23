@@ -4,7 +4,7 @@
 use rusqlite::Transaction;
 use serde_json::Value;
 
-use super::{How, Press, Shared, Task, pressed};
+use super::{How, Kept, Press, Shared, Task, pressed};
 use crate::dispatcher::{goes_on, runs::{self, Started}};
 use crate::roles::supervisor as authority;
 use crate::supervisor::holds;
@@ -25,6 +25,13 @@ pub(in crate::dispatcher) struct Release {
 }
 
 impl Release {
+    pub(in crate::dispatcher) fn divert(&self, tx: &Transaction) -> Result<Option<Kept>, String> {
+        let Some(pane) = &self.pane else { return Ok(None) };
+        authority::require(tx, pane, &self.project, "release_hold")?;
+        Ok(crate::supervisor::action_tasks::diverted_hold_run(tx, &self.project, self.hold, ops::now())?
+            .map(|card| Kept::DecisionCards(vec![card.task])))
+    }
+
     pub(in crate::dispatcher) fn check(&self, tx: &Transaction, tasks: &[Task]) -> Result<String, String> {
         if let Some(pane) = &self.pane {
             authority::require(tx, pane, &self.project, "release_hold")?;

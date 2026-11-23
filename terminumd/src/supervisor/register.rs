@@ -366,3 +366,13 @@ pub(super) fn case_context(tx: &Transaction, project: &str, fingerprint: &str, a
     tx.query_row("SELECT problem FROM supervisor_problem_signals WHERE fingerprint = ?1", [fingerprint], |r| r.get(0))
         .optional().map_err(sql)?.map(|id| get(tx, project, id, at)).transpose()
 }
+
+/// Live problems already linked to a task, with an explicit rank proposal first.
+pub(super) fn active_for_task(tx: &Transaction, project: &str, task: &str) -> Result<Vec<i64>, String> {
+    rows(tx, "SELECT p.id FROM (
+        SELECT problem, 0 AS place FROM supervisor_rank_proposals WHERE task = ?2
+        UNION ALL SELECT problem, 1 FROM supervisor_problem_tasks WHERE task = ?2
+        ) l JOIN supervisor_problems p ON p.id = l.problem
+        WHERE p.project = ?1 AND p.state NOT IN ('resolved','accepted') GROUP BY p.id ORDER BY min(l.place), p.id",
+        (project, task), |r| r.get(0))
+}

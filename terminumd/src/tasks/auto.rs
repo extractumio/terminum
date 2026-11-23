@@ -331,11 +331,22 @@ pub struct Candidate {
 ///
 /// In priority and saved order; CANDIDATES_MOST at most are looked at for an agent with room. `only`: that task alone, by its ID.
 pub fn candidates(tx: &Transaction, project: &str, s: &Setting, now: i64, only: Option<&str>) -> Result<Vec<Candidate>, String> {
+    candidates_with_breaker(tx, project, s, now, only, false)
+}
+
+pub(crate) fn breaker_candidates(tx: &Transaction, project: &str, s: &Setting, now: i64) -> Result<Vec<Candidate>, String> {
+    candidates_with_breaker(tx, project, s, now, None, true)
+}
+
+fn candidates_with_breaker(tx: &Transaction, project: &str, s: &Setting, now: i64, only: Option<&str>,
+    broken: bool) -> Result<Vec<Candidate>, String>
+{
     let scale = crate::dispatcher::scale();
     let found: Vec<Candidate> = rows(tx, "WITH passed AS MATERIALIZED (SELECT g.value AS slug, max(r.at) AS at FROM auto_rounds r JOIN tasks rt ON rt.id = r.task, json_each(r.candidates) g
                    WHERE r.project = ?1 AND r.at >= ?7 AND rt.status = 'DONE' AND (SELECT count(*) FROM auto_starts f WHERE f.round = r.task) < r.slots GROUP BY g.value),
                  blocked_marks AS MATERIALIZED (SELECT m.task FROM supervisor_auto_marks m JOIN tasks t ON t.id = m.task
                    WHERE t.project = ?1 AND NOT (?8 AND m.eligible)),
+                 broken_fixes AS MATERIALIZED (SELECT task FROM supervisor_blocked_fixes WHERE project = ?1),
                  to_do AS (SELECT id, parent, status, severity, session_key FROM tasks WHERE parent IS NOT NULL AND archived_at IS NULL AND status <> 'DONE'),
                  c AS (SELECT t.slug, t.id, t.severity, t.rank, a.id AS agent,
                    COALESCE((SELECT max(e.at) FROM events e WHERE e.task IN (SELECT t.id UNION ALL SELECT k.id FROM to_do k WHERE k.parent = t.id)
@@ -347,6 +358,8 @@ pub fn candidates(tx: &Transaction, project: &str, s: &Setting, now: i64, only: 
                    AND (t.severity IN (SELECT value FROM json_each(?5))
                      OR EXISTS (SELECT 1 FROM to_do k WHERE k.parent = t.id AND k.severity IN (SELECT value FROM json_each(?5))))
                    AND t.id NOT IN (SELECT task FROM blocked_marks)
+                   AND (t.id IN (SELECT task FROM broken_fixes) OR EXISTS (
+                     SELECT 1 FROM to_do k JOIN broken_fixes f ON f.task = k.id WHERE k.parent = t.id)) = ?9
                    AND NOT EXISTS (SELECT 1 FROM run_waits w WHERE w.task = t.id) AND NOT EXISTS (SELECT 1 FROM auto_rounds r WHERE r.task = t.id)
                    AND NOT EXISTS (SELECT 1 FROM schedule_fires f WHERE f.task = t.id)
                    AND NOT EXISTS (SELECT 1 FROM supervisor_incidents i WHERE i.task = t.id)
@@ -357,7 +370,7 @@ pub fn candidates(tx: &Transaction, project: &str, s: &Setting, now: i64, only: 
                    AND NOT EXISTS (SELECT 1 FROM auto_starts s WHERE s.task = c.id AND s.at > c.by_human)
                    AND NOT EXISTS (SELECT 1 FROM passed p WHERE p.slug = c.slug AND p.at >= c.by_human)
                  ORDER BY c.severity, c.rank LIMIT ?4",
-        (project, &s.default, only, (CANDIDATES_MOST * 2) as i64, json!(s.severities).to_string(), now - s.wait * 60 / scale, if s.by_order() { i64::MAX } else { (now - PASSED / scale + 1).max(s.on_at) }, s.supervisor_tasks),
+        (project, &s.default, only, (CANDIDATES_MOST * 2) as i64, json!(s.severities).to_string(), now - s.wait * 60 / scale, if s.by_order() { i64::MAX } else { (now - PASSED / scale + 1).max(s.on_at) }, s.supervisor_tasks, broken),
         |r| Ok(Candidate { id: r.get(0)?, key: r.get(1)?, agent: r.get(2)?, changed: r.get(3)? }))?;
     let mut out = Vec::new();
     for c in found {

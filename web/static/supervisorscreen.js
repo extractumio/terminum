@@ -6,6 +6,7 @@ import { api, loadMeta } from "./msgpage.js";
 import { $, button, showError, stamp } from "./kanbanutil.js";
 import { el } from "./listparts.js";
 import { boardUrl, taskUrl } from "./tasklink.js";
+import { drawRuleOutcomes } from "./supervisoroutcomes.js";
 import { reportCards } from "./supervisorreports.js";
 import { incidentHistory } from "./supervisorincidents.js";
 import { onIncidents } from "./incidents.js";
@@ -222,6 +223,7 @@ async function readScreen() {
     const data = await api(`${path}/screen${target ? `?${new URLSearchParams({ signal: target })}` : ""}`);
     $("sv-title").textContent = `${data.project_name} · Supervisor`;
     drawHolds(data.holds ?? []);
+    drawRuleOutcomes(data, path, readScreen);
     $("sv-reports").replaceChildren(...reportCards(data, path));
     if (data.spending) $("sv-spending").replaceChildren(...spending(data.spending, data.marked_tasks_eligible));
     const problems = data.problems ?? [];
@@ -256,6 +258,7 @@ if (project) {
     const signature = incidents.filter((i) => i.project === project).flatMap((i) => (i.holds ?? []).map((h) => h.id)).join(",");
     if (signature !== incidentHolds) { incidentHolds = signature; readHolds(); }
   });
+  document.addEventListener("supervisorverdict", (event) => { if (event.detail === project) readScreen(); });
   document.addEventListener("supervisorholdchange", (event) => { if (event.detail === project) readHolds(); });
   boardFor(project);
   $("sv-board").href = boardUrl(project);

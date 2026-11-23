@@ -128,6 +128,9 @@ pub(super) async fn went_on(app: &Shared, r: &Run, tasks: &[Task], manager: bool
 async fn next_run(app: &Shared, r: &Run, tasks: &[Task], again: Again, kept: Press) -> Result<Next, String> {
     let (old, all) = (r.clone(), tasks.to_vec());
     store(app, move |tx| {
+        if let Some(release) = &kept.hold_release && let Some(card) = release.divert(tx)? {
+            return Ok(Next::Kept(card));
+        }
         let release_actor = kept.hold_release.as_ref().map(|r| r.check(tx, &all)).transpose()?;
         kept.still_waits(tx, &all[0].key)?;
         for t in &all {

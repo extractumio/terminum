@@ -2,11 +2,11 @@
 //! AC-121: the available pool, queue and prompt preview for the signed-in Run dialog.
 
 use axum::{extract::{Path, Query, State}, response::Response};
-use serde_json::json;
+use serde_json::{Value, json};
 
-use super::{answer, facts, linked_panes, no_room, pool, queue_offer, runs, store, ways, Agent, Shared, Way};
-use super::super::{places::no_folder, press::{also_of, Asked}};
-use crate::tasks::{agents, ops};
+use super::{Kept, Press, Shared, Task, Way, answer, facts, linked_panes, pool, runs, store, told, ways};
+use super::super::{places::no_folder, press::{also_of, Asked}, waits};
+use crate::tasks::{agents::{self, Agent}, ops};
 
 /// What RUN's dialog shows (AC-121, AC-138): the tasks' project's pool, each saying what keeps it busy; an agent named that cannot
 /// take them is refused here, so the window never offers another under its name. `no_folder`: nothing can start (AC-140).
@@ -40,4 +40,54 @@ pub(super) async fn offer(State(app): State<Shared>, Path(id): Path<String>, axu
         Ok(json!({"first": w.first_words(), "agents": offered, "last": last, "dir": dir, "host": host, "project": t.project, "no_folder": lacks,
                   "prompt_rev": shown.rev(), "prompt": shown.shown(), "moved": moved, "by_agent": tasks.iter().any(|t| t.by_agent), "ids": tasks.iter().map(|t| &t.id).collect::<Vec<_>>()}))
     }).await)
+}
+
+/// What RUN's window shows of an agent with no room: what holds it, the idle holder a press could close, and the
+/// queue's offer (AC-169); the same from its first read and from a press that found no room.
+fn queue_offer(full: &pool::Full) -> Value {
+    json!({"words": full.words, "close": full.close, "queue": waits::offer(&full.words)})
+}
+
+/// What stands in the way of a press for `task` on `agent`: a slot's limit, or a wait before it that has room and
+/// goes first (AC-158). `alone`: the press runs `task` alone: one of a schedule's may take its kept slot
+/// (terminum-schedules.md AC-161).
+fn no_room(tx: &rusqlite::Transaction, slots: &pool::Slots, agent: &Agent, project: &str, (task, alone): (&Task, bool), but: Option<&str>) -> Result<Option<pool::Full>, String> {
+    // Auto-Dispatcher's round takes no slot and waits behind none (AC-170)
+    if alone && crate::tasks::auto::round_of(tx, &task.key)?.is_some() {
+        return Ok(None);
+    }
+    if let Some(full) = slots.check_for(tx, agent, project, alone.then_some(task.key.as_str()), but)? {
+        return Ok(Some(full));
+    }
+    Ok(waits::ahead(tx, &agent.id, project, &task.key)?.map(|first| pool::Full { words: format!("{first} waits for it first."), close: None }))
+}
+
+impl Kept {
+    /// What it answers; a wait is told to every page.
+    pub(in crate::dispatcher) fn answer(self, app: &Shared, t: &Task) -> Value {
+        match self {
+            Kept::Waits(words) => {
+                told(app, &t.id);
+                json!({"waits": words})
+            }
+            Kept::Offered(full) => json!({"full": queue_offer(&full)}),
+            Kept::DecisionCards(cards) => super::supervisor::card_answer(app, cards),
+        }
+    }
+}
+
+/// A press with no room waits (AC-158): its words, after the human's comment is kept, so it shows while it waits.
+/// One that did not agree to the queue is offered it, nothing kept (AC-169).
+pub(in crate::dispatcher) fn wait_if_full(tx: &rusqlite::Transaction, agent: &Agent, project: &str, (task, alone): (&Task, bool), but: Option<&str>, (body, comment, files): (&Press, Option<&str>, &[String])) -> Result<Option<Kept>, String> {
+    let Some(full) = no_room(tx, &pool::Slots::read(tx)?, agent, project, (task, alone), but)? else { return Ok(None) };
+    if !body.queue {
+        return Ok(Some(Kept::Offered(full)));
+    }
+    let why = full.words;
+    let mut body = body.clone();
+    if let Some(c) = comment && !body.waited {
+        body.kept_comments.push(body.keep(tx, &task.id, c, files)?.0);
+    }
+    waits::add(tx, task, &agent.id, project, &serde_json::to_value(body).map_err(|e| e.to_string())?, ops::now())?;
+    Ok(Some(Kept::Waits(waits::words(&agent.name, &why))))
 }

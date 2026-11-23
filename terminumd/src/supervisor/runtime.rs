@@ -287,9 +287,15 @@ fn collect_project(app: &Shared, project: &Project, clock: impl Fn() -> i64) -> 
     let Some(batch) = batch else { return Ok(()) };
     let evaluated = batch.evaluation.is_some().then_some(batch.at);
     let pending = app.supervisor.sensors.take(&project.id, project.generation);
-    let (committed, incidents_changed, holds) = commit(&app.tasks, project, batch, &pending, &clock)?;
+    let ((committed, incidents_changed, holds), cards) = commit(&app.tasks, project, batch, &pending, &clock)?;
+    super::breakers::notify(app, cards);
     for hold in holds {
-        if let Some(run) = hold.run { crate::dispatcher::letgo::let_go_of(app, run); }
+        match hold {
+            super::holds::Disposition::Applied(hold) => {
+                if let Some(run) = hold.run { crate::dispatcher::letgo::let_go_of(app, run); }
+            }
+            super::holds::Disposition::Card(_) => (),
+        }
     }
     if incidents_changed {
         app.supervisor.incident_changed();
@@ -316,10 +322,12 @@ fn collect_project(app: &Shared, project: &Project, clock: impl Fn() -> i64) -> 
     Ok(())
 }
 
-fn commit(store: &Store, project: &Project, batch: Batch, pending: &Pending<'_>, clock: impl FnOnce() -> i64) -> Result<(bool, bool, Vec<super::holds::Applied>), String> {
+type CommitResult = (bool, bool, Vec<super::holds::Disposition>);
+
+fn commit(store: &Store, project: &Project, batch: Batch, pending: &Pending<'_>, clock: impl FnOnce() -> i64) -> Result<(CommitResult, Vec<String>), String> {
     let signals = batch.evaluation.as_ref().map(signals::prepare).transpose()?;
     let counts = pending.encode()?;
-    store.with(|tx| {
+    store.with(|tx| super::breakers::with_new_cards(tx, || {
         let at = batch.at;
         let heartbeat = clock().max(at);
         let enabled = tx.execute("UPDATE project_supervisor SET cursor = ?3, last_ok = ?4, reported_dead = 0,
@@ -334,6 +342,7 @@ fn commit(store: &Store, project: &Project, batch: Batch, pending: &Pending<'_>,
         if enabled == 0 {
             return Ok((false, false, Vec::new()));
         }
+        super::outcomes::check(tx, &project.id, at)?;
         let before = incidents::revision(tx)?;
         let mut holds = Vec::new();
         if let Some(signals) = signals {
@@ -353,7 +362,7 @@ fn commit(store: &Store, project: &Project, batch: Batch, pending: &Pending<'_>,
             (&project.id, batch.cursor)).map_err(sql)?;
         signals::resolve_rule(tx, &project.id, Rule::CollectorDead, heartbeat)?;
         Ok((true, before != incidents::revision(tx)?, holds))
-    })
+    }))
 }
 
 pub(crate) async fn watch(app: Shared) {

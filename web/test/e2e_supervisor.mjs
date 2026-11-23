@@ -51,12 +51,18 @@ async function fixture(page, theme) {
   await page.route("**/api/supervisor/incidents/42/investigate", (route) => json(route, { message: "Incident investigation requested." }));
   await page.route("**/api/supervisor/incidents/42/talk", (route) => json(route, { error: "The marked pane changed." }, 400));
   await page.route("**/api/supervisor/incidents/42/ruling", (route) => json(route, { task: INCIDENT.task }));
-  let ruling = null, held = true, stopped = true;
-  const incident = () => held ? { ...INCIDENT, held: "Integration queue paused.", holds: [{ id: HOLD.id, label: HOLD.label }],
+  let ruling = null, held = true, stopped = true, wrong = false, breaker = false;
+  const alerted = () => ({ ...INCIDENT, revision: 2 + Number(wrong),
+    alerts: [{ id: 11, detector: RULE, metric: "reasonless_failures", response: "R5", wrong }] });
+  const incident = () => held ? { ...alerted(), held: "Integration queue paused.", holds: [{ id: HOLD.id, label: HOLD.label }],
     needed: "Keep or release the hold.", no_answer: "Without an answer the hold stays." }
-    : { ...INCIDENT, revision: 2 };
+    : alerted();
   await page.route("**/api/supervisor/incidents/42", (route) => {
     const body = route.request().postDataJSON();
+    if (body?.action === "this_is_wrong" && body.alert === 11) {
+      wrong = breaker = true;
+      return json(route, incident());
+    }
     if (body?.hold === HOLD.id) {
       if (body.action === "release_hold") held = false;
       if (body.action === "keep_hold" || body.action === "release_hold") return json(route, incident());
@@ -90,7 +96,18 @@ async function fixture(page, theme) {
       stopped = false;
       return json(route, { id: 8, released: true });
     }
-    if (suffix === "/screen") return json(route, { project_name: "API service", indicators: [SCORE], holds: activeHolds(),
+    if (suffix === "/breakers/5/review" && method === "POST") return json(route, {
+      proof: "fixture-replay", review: { before: { ...DEFAULTS[RULE], allocation: {} },
+        after: { ...DEFAULTS[RULE], threshold: { absolute: 4 }, allocation: {} },
+        before_firings: 6, after_firings: 2, first: DATE - 86400, as_of: DATE },
+    });
+    if (suffix === "/breakers/5/restore" && method === "POST" && body.proof === "fixture-replay") {
+      breaker = false;
+      return json(route, { ok: true });
+    }
+    if (suffix === "/screen") return json(route, { project_name: "API service",
+      outcomes: [{ detector: RULE, response: "R5", right: 0, wrong: Number(wrong), undecided: 2, pending: 0 }],
+      breakers: breaker ? [{ id: 5, detector: RULE, response: "R5", opened_at: DATE, cards: ["API-41"] }] : [], indicators: [SCORE], holds: activeHolds(),
       investigations_enabled: true, spending: SPENDING, marked_tasks_eligible: false,
       decisions: [{ id: 1, task: "API-41", problem: 42, question: "Choose a fix based on the recorded evidence." }],
       review: { task: "API-42", at: DATE, result: "## Decisions waiting for you\n\nRead the pending card.",
@@ -309,6 +326,31 @@ async function screen(page, suffix, phone) {
   await page.getByText("No holds in effect.", { exact: true }).waitFor();
   check("AC-245 a successful release updates the list and focuses its heading",
     await until(() => page.locator("#sv-holds-title").evaluate((el) => el === document.activeElement)));
+  const wrong = incidentHold.getByRole("button", { name: /^This is wrong/ });
+  await wrong.waitFor();
+  if (phone) check("AC-247 the incident verdict key fits a finger",
+    await wrong.evaluate((el) => el.getBoundingClientRect().height >= 44));
+  await wrong.focus();
+  await wrong.press("Enter");
+  await incidentHold.getByText(/^Marked wrong/).waitFor();
+  const openedBreaker = page.locator("#sv-breakers details");
+  await openedBreaker.getByText(/Breaker open/).click();
+  check("AC-247 the screen shows open breakers and distinct outcomes by rule",
+    await openedBreaker.getByRole("link", { name: "API-41" }).isVisible()
+    && await page.locator("#sv-outcomes").getByText(/1 wrong · 2 undecided/).isVisible());
+  await openedBreaker.getByRole("button", { name: "Review rule change" }).click();
+  const restore = openedBreaker.getByRole("button", { name: "Restore autonomy" });
+  await restore.waitFor();
+  check("AC-247 the owner key is on the reviewed settings and replay",
+    await openedBreaker.getByText("6 before · 2 after", { exact: true }).isVisible()
+    && await restore.evaluate((el) => el === document.activeElement
+      && (!("ontouchstart" in window) || el.getBoundingClientRect().height >= 44)
+      && document.documentElement.scrollWidth <= innerWidth));
+  await shot(page, `supervisor-breaker-${suffix}`);
+  await restore.press("Enter");
+  check("AC-247 restoring autonomy removes the breaker and preserves the recorded verdict",
+    await until(() => page.getByText("No open breakers.").isVisible())
+    && await page.locator("#sv-outcomes").getByText(/1 wrong/).isVisible());
   await shot(page, `supervisor-screen-${suffix}`);
   const reports = page.locator("#sv-reports");
   await reports.getByText("Decisions waiting (1)", { exact: true }).click();

@@ -137,11 +137,18 @@ pub(crate) async fn run(app: &Shared, key: String, project: String, tool: String
             let case = case_file(tx, &run)?;
             let why = match accept(tx, &project, &case, value) {
                 Ok(finding) => {
+                    let at = now();
                     let changed = tx.execute("UPDATE supervisor_rounds SET finding = ?2, found_at = ?3
-                        WHERE run = ?1 AND deadline > ?3", (&run, finding, now())).map_err(sql)?;
+                        WHERE run = ?1 AND deadline > ?3 AND finding IS NULL", (&run, finding, at)).map_err(sql)?;
                     if changed == 1 {
+                        if let Some(s) = super::action_tasks::run_signal(tx, &project, &run)? {
+                            super::outcomes::record(tx, &s, super::outcomes::Kind::Cause, &run, &s.fingerprint, "", at)?;
+                        }
                         return Ok(Ok("Finding checked and recorded.".into()));
                     }
+                    let recorded: bool = tx.query_row("SELECT EXISTS (SELECT 1 FROM supervisor_rounds WHERE run = ?1 AND finding IS NOT NULL)",
+                        [&run], |r| r.get(0)).map_err(sql)?;
+                    if recorded { return Ok(Ok("A finding is already recorded.".into())); }
                     "Finding arrived after the deadline.".into()
                 }
                 Err(why) => why,

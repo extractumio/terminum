@@ -63,14 +63,15 @@ export function incidentCard(initial, surface) {
   error.hidden = true;
   const card = part("article", "incident-card", brief, state, error);
   card.dataset.incident = i.id;
-  const write = oneAtATime(card, async (action, hold) => {
+  const write = oneAtATime(card, async (action, detail = {}) => {
     showError(error, "");
     try {
-      const saved = await api(`${INCIDENTS}/${i.id}`, { method: "POST", body: { action, hold } });
+      const saved = await api(`${INCIDENTS}/${i.id}`, { method: "POST", body: { action, ...detail } });
       update(saved);
       if (action === "release_hold" && !rows.some((row) => row.id === saved.id)) {
         document.dispatchEvent(new CustomEvent("supervisorholdchange", { detail: saved.project }));
       }
+      if (action === "this_is_wrong") document.dispatchEvent(new CustomEvent("supervisorverdict", { detail: saved.project }));
       writes++;
       publish(rows.map((row) => row.id === saved.id ? saved : row).filter((row) => !row.closed_at || !row.acknowledged_at));
       readIncidents();
@@ -80,8 +81,10 @@ export function incidentCard(initial, surface) {
   const snooze = button(KEY, "Snooze 1 hour", () => write("snooze"));
   const holdKeys = part("div", "incident-actions");
   holdKeys.hidden = true;
+  const alertKeys = part("div", "incident-actions");
+  alertKeys.hidden = true;
   const keys = part("div", "incident-actions", ack, snooze);
-  card.append(holdKeys);
+  card.append(holdKeys, alertKeys);
   card.append(keys);
   const thread = el("a", KEY, "Thread");
   textKey(thread);
@@ -121,7 +124,7 @@ export function incidentCard(initial, surface) {
     keys.append(link);
   }
   const put = (node, words) => { if (node.textContent !== words) node.textContent = words; };
-  let shownHolds = "";
+  let shownHolds = "", shownAlerts = "";
   function update(next) {
     i = next;
     const snoozed = i.snoozed_until > Date.now() / 1000;
@@ -135,13 +138,28 @@ export function incidentCard(initial, surface) {
       holdKeys.replaceChildren(...holds.flatMap((hold) => [
         ["Keep the hold", "keep_hold"], ["Release the hold", "release_hold"],
       ].map(([label, action]) => {
-        const key = button(KEY, label, () => write(action, hold.id));
+        const key = button(KEY, label, () => write(action, { hold: hold.id }));
         if (holds.length > 1) key.setAttribute("aria-label", `${label} · ${hold.label}`);
         return key;
       })));
       holdKeys.hidden = !holds.length;
       shownHolds = signature;
       if (hadFocus) (holdKeys.querySelector("button") ?? keys.querySelector("button:not([hidden]),a"))?.focus();
+    }
+    const alerts = surface === "screen" ? i.alerts ?? [] : [];
+    const alertSignature = alerts.map((a) => `${a.id}/${a.wrong}`).join(",");
+    if (alertSignature !== shownAlerts) {
+      const focused = alertKeys.contains(document.activeElement);
+      alertKeys.replaceChildren(...alerts.map((a) => {
+        const label = `${a.metric.replaceAll("_", " ")} · ${a.detector} / ${a.response}`;
+        if (a.wrong) return el("span", "incident-state", `Marked wrong · ${label}`);
+        const key = button(KEY, "This is wrong", () => write("this_is_wrong", { alert: a.id }));
+        key.setAttribute("aria-label", `This is wrong · ${label}`);
+        return part("div", "sv-actions", el("span", "incident-state", label), key);
+      }));
+      alertKeys.hidden = !alerts.length;
+      shownAlerts = alertSignature;
+      if (focused) (alertKeys.querySelector("button") ?? keys.querySelector("button:not([hidden]),a"))?.focus();
     }
     thread.hidden = !i.task;
     if (i.task) thread.href = taskUrl(i.task);

@@ -18,13 +18,13 @@ use super::goes_on::{from_shell, resume, went_on};
 use super::places::{ad_hoc, launch, linked_panes, pane_of, place};
 use super::{acts, start, store};
 use crate::app::Shared;
-use crate::tasks::agents::Agent;
 use crate::tasks::api::{answer, told};
 use crate::tasks::ops::{self, Task};
 use crate::tasks::store::HUMAN;
 
 #[path = "api_offer.rs"]
 mod offer;
+pub(super) use offer::wait_if_full;
 #[path = "api_supervisor.rs"]
 mod supervisor;
 #[path = "api_hold.rs"]
@@ -186,55 +186,7 @@ pub(super) enum Next {
 pub(super) enum Kept {
     Waits(String),
     Offered(pool::Full),
-}
-
-/// What RUN's window shows of an agent with no room: what holds it, the idle holder a press could close, and the
-/// queue's offer (AC-169); the same from its first read and from a press that found no room.
-fn queue_offer(full: &pool::Full) -> Value {
-    json!({"words": full.words, "close": full.close, "queue": super::waits::offer(&full.words)})
-}
-
-/// What stands in the way of a press for `task` on `agent`: a slot's limit, or a wait before it that has room and
-/// goes first (AC-158). `alone`: the press runs `task` alone: one of a schedule's may take its kept slot
-/// (terminum-schedules.md AC-161).
-fn no_room(tx: &rusqlite::Transaction, slots: &pool::Slots, agent: &Agent, project: &str, (task, alone): (&Task, bool), but: Option<&str>) -> Result<Option<pool::Full>, String> {
-    // Auto-Dispatcher's round takes no slot and waits behind none (AC-170)
-    if alone && crate::tasks::auto::round_of(tx, &task.key)?.is_some() {
-        return Ok(None);
-    }
-    if let Some(full) = slots.check_for(tx, agent, project, alone.then_some(task.key.as_str()), but)? {
-        return Ok(Some(full));
-    }
-    Ok(super::waits::ahead(tx, &agent.id, project, &task.key)?.map(|first| pool::Full { words: format!("{first} waits for it first."), close: None }))
-}
-
-impl Kept {
-    /// What it answers; a wait is told to every page.
-    pub(super) fn answer(self, app: &Shared, t: &Task) -> Value {
-        match self {
-            Kept::Waits(words) => {
-                told(app, &t.id);
-                json!({"waits": words})
-            }
-            Kept::Offered(full) => json!({"full": queue_offer(&full)}),
-        }
-    }
-}
-
-/// A press with no room waits (AC-158): its words, after the human's comment is kept, so it shows while it waits.
-/// One that did not agree to the queue is offered it, nothing kept (AC-169).
-pub(super) fn wait_if_full(tx: &rusqlite::Transaction, agent: &Agent, project: &str, (task, alone): (&Task, bool), but: Option<&str>, (body, comment, files): (&Press, Option<&str>, &[String])) -> Result<Option<Kept>, String> {
-    let Some(full) = no_room(tx, &pool::Slots::read(tx)?, agent, project, (task, alone), but)? else { return Ok(None) };
-    if !body.queue {
-        return Ok(Some(Kept::Offered(full)));
-    }
-    let why = full.words;
-    let mut body = body.clone();
-    if let Some(c) = comment && !body.waited {
-        body.kept_comments.push(body.keep(tx, &task.id, c, files)?.0);
-    }
-    super::waits::add(tx, task, &agent.id, project, &serde_json::to_value(body).map_err(|e| e.to_string())?, ops::now())?;
-    Ok(Some(Kept::Waits(super::waits::words(&agent.name, &why))))
+    DecisionCards(Vec<String>),
 }
 
 /// What a press from a wait is refused with when its wait went meanwhile.
@@ -422,9 +374,10 @@ async fn first_run(app: &Shared, tasks: &[Task], kept: Press, comment: Option<St
     let (ag, f, project, at) = (a.clone(), dir.clone(), t.project.clone(), app.clone());
     let next = store(app, move |tx| {
         let now: Vec<Task> = all.iter().map(|t| ops::get(tx, &t.id)).collect::<Result<_, _>>()?;
+        supervisor::check_family(tx, &kept, &now)?;
+        if let Some(card) = supervisor::divert(tx, &kept, &now)? { return Ok(Some(Next::Kept(card))); }
         let release_actor = kept.hold_release.as_ref().map(|r| r.check(tx, &now)).transpose()?;
         let mut estimate = supervisor::check(tx, &kept, &now)?;
-        supervisor::check_family(tx, &kept, &now)?;
         if !kept.order_allows(tx, &now[0].project)? {
             return Ok(None);
         }

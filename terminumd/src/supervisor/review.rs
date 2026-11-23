@@ -79,11 +79,12 @@ pub(crate) fn budget_card(tx: &Transaction, project: &str, at: i64) -> Result<()
     let task = ops::create(tx, &by, ops::NewTask { title: "Supervisor review needs a budget decision".into(),
         text: words.into(), project: Some(project.into()), severity: Some("P1".into()), ..Default::default() }, at)?;
     super::task_policy::mark_card(tx, &task)?;
-    crate::tasks::comments::wait_for_owner(tx, &by, &task, words, &json!({
+    let question = crate::tasks::comments::wait_for_owner(tx, &by, &task, words, &json!({
         "kind":"strategic","recommended":"wait","options":[
             {"id":"wait","label":"Keep the budget and wait"},
             {"id":"raise","label":"Raise the judgment ceiling in Supervisor settings"}]
     }), at)?;
+    super::outcomes::unattributed(tx, project, super::outcomes::Kind::Card, &question, &task.key, at)?;
     tx.execute("INSERT INTO supervisor_budget_cards VALUES (?1, 'judgment', ?2)
         ON CONFLICT (project, kind) DO UPDATE SET task = excluded.task", (project, &task.key)).map_err(sql)?;
     Ok(())

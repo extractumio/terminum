@@ -43,11 +43,11 @@ async fn ac216_project_off_is_inert_and_a_new_generation_rejects_old_work() {
         VALUES (?1, 'tasks', 'pending-incident-card')", [PROJECT]);
     set_enabled(store, PROJECT, false, NOW).unwrap();
     assert_eq!(value(store, "SELECT count(*) FROM supervisor_changes"), 0);
-    assert!(!commit(store, &project, batch, &pending, || NOW).unwrap().0);
+    assert!(!commit(store, &project, batch, &pending, || NOW).unwrap().0.0);
     set_enabled(store, PROJECT, true, NOW).unwrap();
     let stale = Batch { at: NOW, cursor: 100, evaluation: None, points: vec![], sampled: false, baseline: false,
         settings_revision: 0, attachment: None, first_attachment: false };
-    assert!(!commit(store, &project, stale, &pending, || NOW).unwrap().0);
+    assert!(!commit(store, &project, stale, &pending, || NOW).unwrap().0.0);
     assert_eq!(value(store, "SELECT cursor FROM project_supervisor"), 0);
     assert_eq!(value(store, "SELECT count(*) FROM supervisor_points"), 0);
     assert_eq!(value(store, "SELECT count(*) FROM supervisor_evaluations"), 0);

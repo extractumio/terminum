@@ -18,6 +18,8 @@ pub(super) fn routes() -> Router<Shared> {
         .route("/api/task-projects/{id}/supervisor/screen", get(screen))
         .route("/api/task-projects/{id}/supervisor/signals", get(more))
         .route("/api/task-projects/{id}/supervisor/problems/{problem}/ruling", post(ruling))
+        .route("/api/task-projects/{id}/supervisor/breakers/{breaker}/review", post(review_breaker))
+        .route("/api/task-projects/{id}/supervisor/breakers/{breaker}/restore", post(restore_breaker))
 }
 
 #[derive(Serialize)]
@@ -56,6 +58,8 @@ struct SignalPage {
 struct Screen {
     project_name: String,
     holds: Vec<super::holds::Hold>,
+    breakers: Vec<super::breakers::Open>,
+    outcomes: Vec<super::outcomes::Score>,
     indicators: Vec<Indicator>,
     problems: Vec<register::Problem>,
     spending: governor::Spending,
@@ -116,6 +120,7 @@ async fn screen(State(app): State<Shared>, Path(id): Path<String>, Query(query):
         let review_setup_error = tx.query_row("SELECT (SELECT review_setup_error FROM project_supervisor WHERE project = ?1)",
             [&id], |r| r.get(0)).map_err(crate::tasks::ops::sql)?;
         Ok(Screen { project_name, holds: super::holds::list(tx, &id)?, indicators: indicators(tx, &id)?, signals: page,
+            breakers: super::breakers::list(tx, &id)?, outcomes: super::outcomes::scores(tx, &id)?,
             problems: register::ranked(tx, &id, at, true)?, spending: governor::spending(tx, &id, at)?,
             marked_tasks_eligible: crate::tasks::auto::setting(tx, &id)?.supervisor_tasks,
             decisions: super::decisions::cards(tx, &id)?, digest: super::digest::latest(tx, &id)?,
@@ -143,6 +148,34 @@ struct Ruling { reason: String }
 async fn ruling(State(app): State<Shared>, Path((project, problem)): Path<(String, i64)>, Json(input): Json<Ruling>) -> Response {
     let result = store(&app, move |tx| {
         register::rule(tx, &project, problem, &input.reason, now())?;
+        Ok(serde_json::json!({"ok": true}))
+    }).await;
+    if result.is_ok() { app.supervisor.wake(); }
+    answer(result)
+}
+
+async fn review_breaker(State(app): State<Shared>, Path((project, id)): Path<(String, i64)>) -> Response {
+    let (reader, scope) = (app.clone(), project.clone());
+    let review = off(move || reader.tasks.snapshot(SCHEMA,
+        |tx| super::breakers::review(tx, &scope, id, now()))).await;
+    answer(match review {
+        Ok(review) => store(&app, move |tx| {
+            let proof = super::breakers::save_review(tx, &project, id, &review)?;
+            Ok(serde_json::json!({"review": review, "proof": proof}))
+        }).await,
+        Err(why) => Err(why),
+    })
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Restore { proof: String }
+
+async fn restore_breaker(State(app): State<Shared>, Path((project, id)): Path<(String, i64)>,
+    Json(input): Json<Restore>) -> Response
+{
+    let result = store(&app, move |tx| {
+        super::breakers::restore(tx, &project, id, &input.proof, now())?;
         Ok(serde_json::json!({"ok": true}))
     }).await;
     if result.is_ok() { app.supervisor.wake(); }

@@ -228,7 +228,10 @@ def ac231_supervisor_tools_pane_and_token(t, call, typed, tool, tmux, page, proj
     overridden = wire("propose_rank", {"problem": p, "task": task})
     check("AC-239 the owner's move immediately blocks a fresh rank and records self.fights",
           overridden["error"] and "24 hours" in overridden["text"]
-          and db("SELECT count FROM supervisor_signals WHERE project = ? AND detector = 'self.fights' AND subject_id = ?",
+          and db("SELECT EXISTS (SELECT 1 FROM supervisor_signals s, json_each(s.evidence) item "
+                 "WHERE s.project = ? AND s.detector = 'self.fights' AND s.subject_id = ? AND s.state = 'raised' "
+                 "AND json_extract(item.value, '$.id') = (SELECT e.id FROM events e JOIN tasks t ON t.id = e.task "
+                 "WHERE t.slug = s.subject_id AND e.author = 'human' AND e.kind = 'move' ORDER BY e.rowid DESC LIMIT 1))",
                  [project, task]) == [(1,)], overridden)
 
     assert call(switch, "PUT", {"enabled": False})[0] == 200

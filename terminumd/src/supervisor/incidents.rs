@@ -43,6 +43,12 @@ pub(super) fn observe(tx: &Transaction, seen: Observation<'_>) -> Result<(), Str
     if level < 3 && prior.is_none() {
         return Ok(());
     }
+    if level >= 3 && super::breakers::open_id(tx, project, rule.id(), finding.scores.response(false))?.is_some() {
+        let signal = super::signals::get(tx, project, fingerprint)?;
+        if super::breakers::divert(tx, &signal, "alert", "", "The detector would raise a critical alert.", at)?.is_some() {
+            return Ok(());
+        }
+    }
     let (value, threshold) = (finding.measure.value, finding.measure.threshold);
     let evidence_hash = Sha256::digest(evidence);
     let same_evidence = prior.as_ref().is_some_and(|m| m.evidence_hash.as_slice() == &evidence_hash[..]);
@@ -83,6 +89,8 @@ fn record_signal(tx: &Transaction, project: &str, fingerprint: &str, words: (&st
         VALUES (?1, ?2, ?3, 'system', ?4, ?5, ?6, ?7, ?8, ?9) RETURNING id",
         params![member.incident, at, words.2, fingerprint, words.0, words.1, member.level, member.value, member.threshold],
         |r| r.get(0)).map_err(sql)?;
+    let signal = super::signals::get(tx, project, fingerprint)?;
+    super::outcomes::record(tx, &signal, super::outcomes::Kind::Alert, &event.to_string(), &member.incident.to_string(), "", at)?;
     tx.execute("INSERT INTO supervisor_incident_signals VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
         ON CONFLICT (fingerprint) DO UPDATE SET incident = excluded.incident, level = excluded.level,
           evidence_hash = excluded.evidence_hash, value = excluded.value, threshold = excluded.threshold,
@@ -204,4 +212,21 @@ pub(super) fn act(tx: &Transaction, id: i64, action: Action, at: i64) -> Result<
             VALUES (?1, ?2, ?3, ?4)", (id, at, kind, HUMAN)).map_err(sql)?;
     }
     Ok(changed)
+}
+
+/// A grouped incident may belong to several rules. The owner identifies one retained alert.
+pub(super) fn wrong_alert(tx: &Transaction, incident: i64, id: i64, at: i64) -> Result<bool, String> {
+    let row = tx.query_row("SELECT i.project, a.source FROM supervisor_incidents i
+        JOIN supervisor_actions a ON a.project = i.project AND a.target = CAST(i.id AS TEXT)
+        WHERE i.id = ?1 AND a.id = ?2 AND a.kind = 'alert'", (incident, id),
+        |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))).optional().map_err(sql)?;
+    let (project, source) = row.ok_or("Choose a recorded alert on this incident.")?;
+    let a = super::outcomes::find(tx, &project, super::outcomes::Kind::Alert, &source)?
+        .ok_or("Choose a recorded alert on this incident.")?;
+    if !super::outcomes::judge(tx, &project, &a, 0, at, (super::outcomes::Verdict::Wrong, "The owner marked the alert wrong."))? {
+        return Ok(false);
+    }
+    tx.execute("INSERT INTO supervisor_incident_events (incident, at, kind, actor, fingerprint, detector, related_id)
+        VALUES (?1, ?2, 'alert_wrong', ?3, ?4, ?5, ?6)", (incident, at, HUMAN, &a.fingerprint, &a.detector, a.id)).map_err(sql)?;
+    Ok(true)
 }

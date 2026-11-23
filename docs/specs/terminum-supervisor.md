@@ -1304,7 +1304,7 @@ The existing mechanisms in §3 provide inputs or precedents for these open gaps.
 | AC-215 | Probe and judgment quality replay require retained inputs from their owning stages. |
 | AC-216 | The project tab switch gates collection and sensors. Stopping rounds belongs to AC-234. The switch lists active holds after switch-off (AC-245). |
 | AC-219 | The watchdog records a signal and exposes its last heartbeat through the project settings endpoint. Line delivery health belongs to AC-229. |
-| AC-221 | Bootstrap keeps high-impact register seeds and exposes hold eligibility. Shadow hold proposals are recorded under AC-245. Judging their outcomes belongs to AC-246. Charter breach inputs belong to AC-213. |
+| AC-221 | Bootstrap keeps high-impact register seeds and exposes hold eligibility. Shadow hold proposals are recorded under AC-245 and checked under AC-246. Charter breach inputs belong to AC-213. |
 | AC-222 | The project tab edits the project pack, runs the switch and manages import, export and probe approval. The critical line and the historical surface preview depend on AC-227–229, AC-250 and AC-263. |
 | AC-223 | The project screen shows its scoreboard, missing inputs and paged signals with evidence. Holds and the Supervisor scorecard depend on their owning cases. |
 | AC-224 | The line-failure producer depends on AC-229. Round updates belong to AC-234. A project-wide hold opens an incident even at level 2 (AC-245). |
@@ -1322,8 +1322,8 @@ The existing mechanisms in §3 provide inputs or precedents for these open gaps.
 | AC-243 | The collector publishes up to five new findings in the Supervisor report destination. The watchdog can publish with the actual stale heartbeat. |
 | AC-244 | A retained task carries each incident's comments. The signed-in Talk press uses the first-prompt gate and a separate marked conversation. |
 | AC-245 | Code can hold the current marked run on a qualifying critical task cost signal. The cost detector needs an authorized level 3 escalation before it can produce that signal itself. |
-| AC-246 | Later decision judging and undecided signal. |
-| AC-247 | Per-rule breaker and owner-only reset. |
+| AC-246 | The collector checks retained decisions at three horizons and reports mostly undecided rules. |
+| AC-247 | A breaker diverts holds, task runs and alerts. Restoring autonomy requires a changed live detector and measurable retained replay. Fixed or present-only detectors without historical replay stay paused. |
 | AC-248 | Independent reflection. |
 | AC-249 | Agent scorecard and minimum samples. |
 | AC-250 | Surface tier and history sizing. |
@@ -1526,9 +1526,9 @@ Map T2 and T3 to globs and incompatible diff shapes, plus calibrated T3 terms fo
 | Decision card | Answered and chosen yardstick held. | Closed unanswered, or recommended answer's yardstick failed. |
 | Nudge | Signal resolved. | Signal persisted. |
 
-Outcome checks run after a day, a week and four weeks. Count distinct decisions, not rechecks of the same decision. A human releasing an unchanged hold is counted wrong immediately. The main score is fixes whose signals stayed under threshold for K weeks divided by fixes landed. Independently check owner-created P0 and P1 Bugs, the red target and level 3 watchdog pages for earlier unraised evidence. Record first evidence time, signal state and time to detect. The scorecard also tracks judged outcomes by rule, overrides, refusals, cost per resolution, cards, pages, verdict minutes, usefulness with its interval and confidence calibration once sample size allows.
+Outcome checks run after a day, a week and four weeks. Each check appends a verdict and its store evidence. The rule's counts use the latest check for each decision and give an immediate owner override precedence. Pending decisions are shown separately. A majority of undecided decisions emits `self.unjudged`. A human releasing an unchanged hold is counted wrong immediately. The main score is fixes whose signals stayed under threshold for K weeks divided by fixes landed. Independently check owner-created P0 and P1 Bugs, the red target and level 3 watchdog pages for earlier unraised evidence. Record first evidence time, signal state and time to detect. The scorecard also tracks judged outcomes by rule, overrides, refusals, cost per resolution, cards, pages, verdict minutes, usefulness with its interval and confidence calibration once sample size allows.
 
-A breaker belongs to a detector and response pair. It opens on two wrong decisions or an alert the owner marks Wrong and makes that rule's future holds, runs and pages owner cards. Closing takes the owner's key with the rule change and replay. Independent reflection reads the timeline and identifies missed evidence, noise, wrong decisions and changes that would address them. Budget excess, a miss, a recurrence, a human override, a wrong alert, an opened breaker and an out-of-band judged rate with enough observations trigger it. Code builds a level 3 post-mortem. A quarterly independent audit reads the ledger and register without earlier reflections, and returns directly to the owner unedited.
+A breaker belongs to a detector and response pair. It opens on two distinct wrong decisions or an alert the owner marks **This is wrong**. Later holds, task starts and promotions, and pages for that rule become owner cards. The other rules of a grouped incident can still page. The Supervisor screen shows open breakers and outcomes by rule. After the owner changes the live detector's measurement settings, its review card compares firings before and after on the same retained history. The card's **Restore autonomy** key is bound to that breaker and the reviewed settings revision. Restoration starts a fresh count of wrong decisions and retains every judgment. Independent reflection reads the timeline and identifies missed evidence, noise, wrong decisions and changes that would address them. Budget excess, a miss, a recurrence, a human override, a wrong alert, an opened breaker and an out-of-band judged rate with enough observations trigger it. Code builds a level 3 post-mortem. A quarterly independent audit reads the ledger and register without earlier reflections, and returns directly to the owner unedited.
 
 | Config class | Path |
 |---|---|
@@ -1603,8 +1603,8 @@ Enable none of the runtime cases by default. Land the specification after indepe
 - [ ] AC-243 — `ac243_digest_only_when_new` checks the daily cap, quiet day, five-item bound and retained stale heartbeat. `scripts/e2e_supervisor_comms.py` checks the quiet and live APIs.
 - [ ] AC-244 — `scripts/e2e_supervisor_comms.py` checks the signed-in Talk press, the retained case prompt in private tmux, the hook notice and answer on the incident task.
 - [x] AC-245 — `ac245_hold_undo_and_switch_off` in `scripts/e2e_roles.py` covers the four holds and their undo, audit, project incidents, shadow and switch-off. The same drill checks role refusals. `supervisor::holds_tests` covers grouped runs, retry after a failed launch, incident closure and a seeded level 3 signal without a round. `webSupervisor` exercises the hold and incident controls in Chromium and WebKit.
-- [ ] AC-246 — Planned test: `ac246_later_outcome_and_immediate_override` covers later decision judging and undecided signal.
-- [ ] AC-247 — Planned test: `ac247_rule_breaker_and_reopen_key` covers per-rule breaker and owner-only reset.
+- [x] AC-246 — `supervisor::outcomes::tests` checks each decision type, three scheduled horizons and `self.unjudged`. `scripts/e2e_supervisor_outcomes.py` exercises the real collector with due decisions in a private store.
+- [x] AC-247 — `ac247_two_unchanged_owner_releases_divert_only_that_rules_hold` checks hold isolation. `supervisor::outcomes::tests` checks distinct decisions, grouped alerts and replay. `scripts/e2e_supervisor_outcomes.py` checks the signed-in owner key and socket refusal. `webSupervisor` exercises the incident and replay controls in Chromium and WebKit. `liveSupervisor` repeats the owner workflow against a private terminumd.
 - [ ] AC-248 — Planned test: `ac248_reflection_trigger_and_family` covers independent reflection.
 - [ ] AC-249 — Planned test: `ac249_agent_rates_and_sample_floor` covers agent scorecard and minimum samples.
 - [ ] AC-250 — Planned test: `ac250_surface_map_preview_and_diff` covers surface tier and history sizing.

@@ -16,14 +16,15 @@ fn question(problems: &[Problem]) -> String {
     format!("Why you are needed:\n{FIX_NOTICE}\n\nRecommended:\n1. Raise the fixes ceiling to fund the ranked problems, or leave it unchanged and let them wait a week.\n\nDetails:\n{details}")
 }
 
-fn ask(tx: &Transaction, by: &str, id: &str, words: &str, at: i64) -> Result<(), String> {
-    comments::structured_questions(tx, by, id, words, &serde_json::json!({
+fn ask(tx: &Transaction, by: &str, task: &Task, words: &str, at: i64) -> Result<(), String> {
+    let question = comments::wait_for_owner(tx, by, task, words, &serde_json::json!({
         "kind": "strategic", "recommended": "wait-a-week",
         "options": [
             {"id":"raise-ceiling", "label":"Raise the fixes ceiling in Supervisor settings"},
             {"id":"wait-a-week", "label":"Let the remaining fixes wait a week"}
         ],
-    }), at).map(drop)
+    }), at)?;
+    super::outcomes::unattributed(tx, &task.project, super::outcomes::Kind::Card, &question, &task.key, at)
 }
 
 fn deferred(tx: &Transaction, project: &str, at: i64) -> Result<bool, String> {
@@ -45,7 +46,7 @@ fn card(tx: &Transaction, project: &str, blocked: &[Problem], at: i64) -> Result
         if task.status == "WAIT FOR HUMAN" && task.archived_at.is_none() {
             if ops::text_of(tx, &id)? != words {
                 ops::edit(tx, &by, &id, Edit { text: Some(words.clone()), ..Edit::default() }, at)?;
-                ask(tx, &by, &id, &words, at)?;
+                ask(tx, &by, &task, &words, at)?;
                 return Ok(Some(id));
             }
             return Ok(None);
@@ -55,8 +56,7 @@ fn card(tx: &Transaction, project: &str, blocked: &[Problem], at: i64) -> Result
     }
     let task = ops::create(tx, &by, NewTask { title: "Supervisor fixes need a budget decision".into(),
         text: words.clone(), project: Some(project.into()), severity: Some("P1".into()), ..NewTask::default() }, at)?;
-    ask(tx, &by, &task.id, &words, at)?;
-    ops::move_to(tx, &by, &task.id, "WAIT FOR HUMAN", at)?;
+    ask(tx, &by, &task, &words, at)?;
     tx.execute("INSERT INTO supervisor_budget_cards (project, kind, task) VALUES (?1, ?2, ?3)
         ON CONFLICT (project, kind) DO UPDATE SET task = excluded.task", (project, FIX, &task.key)).map_err(sql)?;
     tx.execute("INSERT INTO supervisor_task_marks (task, project, estimate) VALUES (?1, ?2, 0)", (&task.key, project)).map_err(sql)?;
@@ -79,6 +79,11 @@ fn make(tx: &Transaction, project: &str, p: &Problem, estimate: f64, at: i64) ->
     tx.execute("INSERT INTO supervisor_task_marks (task, project, estimate, exception) VALUES (?1, ?2, ?3, ?4)",
         (&task.key, project, estimate, exception)).map_err(sql)?;
     register::follow_up(tx, p, &task, &by, at)?;
+    if let Some(s) = super::action_tasks::problem_signal(tx, project, p.id)? {
+        let cause: Option<String> = tx.query_row("SELECT source_round FROM supervisor_problems WHERE id = ?1",
+            [p.id], |r| r.get(0)).map_err(sql)?;
+        super::outcomes::record(tx, &s, super::outcomes::Kind::Fix, &task.key, &task.key, cause.as_deref().unwrap_or(""), at)?;
+    }
     task_policy::propose(tx, project, p.id, &task, None, at)?;
     Ok(task.id)
 }
@@ -152,9 +157,7 @@ pub(crate) fn check_start(tx: &Transaction, tasks: &[Task], at: i64) -> Result<f
     let mut exception = true;
     for task in tasks {
         task_policy::check(tx, task, at)?;
-        let linked = ops::rows(tx, "SELECT p.id FROM supervisor_problem_tasks l JOIN supervisor_problems p ON p.id = l.problem
-            WHERE l.task = ?1 AND p.project = ?2 AND p.state NOT IN ('resolved','accepted')
-            UNION SELECT problem FROM supervisor_rank_proposals WHERE task = ?1", (&task.key, &first.project), |r| r.get::<_, i64>(0))?;
+        let linked = register::active_for_task(tx, &first.project, &task.key)?;
         let mut impact = 0;
         let mut charter = false;
         for id in linked {
