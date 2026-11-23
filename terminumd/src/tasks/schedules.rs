@@ -425,6 +425,9 @@ pub fn listed(tx: &Transaction, now: i64) -> Result<Vec<Value>, String> {
         v["next"] = json!(next);
         v["last"] = json!(last.map(|t| json!({"task": t.id, "status": t.status})));
         v["skipped"] = json!(skipped);
+        // its last report and how many of its reports are unread, in place of a waiting report (terminum-reports.md AC-272)
+        v["report"] = json!(crate::reports::inbox::last_of_schedule(tx, &s.id)?.map(|(id, at)| json!({"id": id, "at": at})));
+        v["unread"] = json!(tx.query_row("SELECT count(*) FROM reports WHERE schedule = ?1 AND read_at IS NULL AND deleted_at IS NULL", [&s.id], |r| r.get::<_, i64>(0)).map_err(sql)?);
         v["failed_why"] = json!(never_started(tx, &s)?.map(|(_, why)| why));
         out.push(v);
     }

@@ -54,6 +54,10 @@ pub(super) fn publish(tx: &Transaction, project: &str, at: i64) -> Result<bool, 
             Ok(Entry { fingerprint: r.get(0)?, detector: r.get(1)?, metric: r.get(2)?, measure: signals::decode(r, 3)?, action })
         })?;
     if entries.is_empty() { return Ok(false); }
+    // the digest is also a report in the owner's Inbox (terminum-reports.md AC-272)
+    let mut lines: Vec<String> = entries.iter().map(|e| format!("{} · {}: {} against a baseline of {} — {}", e.detector, e.metric, e.measure.value, e.measure.baseline, e.action)).collect();
+    lines.push(format!("The collector's last run: {}", last_ok.map_or_else(|| "none yet".to_string(), crate::tasks::cron::stamp)));
+    crate::reports::sources::digest(tx, project, &lines, at)?;
     let document = serde_json::to_string(&entries).map_err(|e| e.to_string())?;
     tx.execute("INSERT INTO supervisor_digests (project, at, document, last_ok) VALUES (?1, ?2, ?3, ?4)
         ON CONFLICT (project) DO UPDATE SET at = excluded.at, document = excluded.document, last_ok = excluded.last_ok",

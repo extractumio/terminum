@@ -13,9 +13,10 @@ use crate::supervisor::Level;
 use super::mcp_search::{Doc, Index};
 
 /// The areas, in the order search_tools lists them, each with what it holds.
-pub const AREAS: [(&str, &str); 5] = [
+pub const AREAS: [(&str, &str); 6] = [
     ("plan", "this session's steps, current step, ETA"),
     ("tasks", "list, read, create, change priority, parent or text, archive, take, move, ask the human, finish"),
+    ("reports", "for the human's Inbox: create, append, attach, read, list"),
     ("comments", "on a task"),
     ("files", "on a task: attach, get"),
     ("supervisor", "this project’s case, signals, metrics and finding"),
@@ -61,6 +62,20 @@ pub const CARDS: &[Card] = &[
         example: r#"{"task": "TERM-12", "name": "report.md"}"# },
     Card { name: "finish_task", area: "tasks", keywords: "finish my task, mark it done, complete, close, resolve, report the result, wrap up",
         example: r#"{"id": "TERM-12", "result": "Fixed in tasks/ops.rs; cargo test tasks passes; nothing left."}"# },
+    Card { name: "create_report", area: "reports", keywords: "report to the human, write a report, a review, an audit, an answer to read, deliverable, summary, findings, results, inbox, notify, critical failure",
+        example: r###"{"task": "TERM-12", "title": "Dependency audit", "summary": "2 outdated packages, none vulnerable", "body": "## Findings\n..."}"### },
+    Card { name: "append_to_report", area: "reports", keywords: "add to a report, answer a reply below a report, comment on a report, follow up in the same report",
+        example: r#"{"id": "R_TERM-7", "text": "Both break the build: ..."}"# },
+    Card { name: "attach_report_file", area: "reports", keywords: "attach a file to a report, a chart, a log, a table, an artifact for the human to read",
+        example: r#"{"id": "R_TERM-7", "path": "/Users/alex/project/audit.csv"}"# },
+    Card { name: "get_report", area: "reports", keywords: "read a report, the human's reply, its comments, follow-ups",
+        example: r#"{"id": "R_TERM-7"}"# },
+    Card { name: "list_reports", area: "reports", keywords: "list reports, the inbox, unread reports, what the human has not read",
+        example: r#"{"unread": "yes", "limit": "10"}"# },
+    Card { name: "update_report", area: "reports", keywords: "edit a report, correct a report, change its title or body, mark critical or not",
+        example: r#"{"id": "R_TERM-7", "critical": "no"}"# },
+    Card { name: "delete_report", area: "reports", keywords: "delete a report, remove from the inbox, withdraw a report",
+        example: r#"{"id": "R_TERM-7"}"# },
     Card { name: "integrate", area: "tasks", keywords: "land, merge my work, integrate, ship, publish to main, push, queue for integration, make land, deliver the commit",
         example: r#"{"id": "TERM-12", "result": "Outcome: Done ..."}"# },
     Card { name: "withdraw_integration", area: "tasks", keywords: "take out of the integration queue, cancel the landing, withdraw, unqueue, stop integrating",

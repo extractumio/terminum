@@ -1,0 +1,75 @@
+// SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
+//! Reports terminumd makes itself (terminum-reports.md AC-272): a routine's result when its run made none, the
+//! Supervisor's daily digest, and a critical report for each incident it opens.
+
+use rusqlite::Transaction;
+
+use super::record::{self, role, New};
+use crate::tasks::ops::{self, sql, Task};
+
+/// The words a summary takes from a result: its Outcome's first words (terminum-dispatcher.md AC-166), cut to fit.
+pub fn summary_of(result: &str) -> String {
+    let mut lines = result.lines().map(str::trim);
+    let mut found = String::new();
+    while let Some(l) = lines.next() {
+        let bare = l.trim_start_matches('#').trim().trim_start_matches("**").trim();
+        if let Some(rest) = bare.strip_prefix("Outcome").map(|r| r.trim_start_matches([':', '*']).trim()) {
+            found = if rest.is_empty() { lines.find(|l| !l.is_empty()).unwrap_or("").to_string() } else { rest.to_string() };
+            break;
+        }
+    }
+    if found.is_empty() {
+        found = result.lines().map(str::trim).find(|l| !l.is_empty()).unwrap_or("").to_string();
+    }
+    let one: String = found.split_whitespace().collect::<Vec<_>>().join(" ");
+    if one.chars().count() <= record::SUMMARY_MOST { one } else { format!("{}…", one.chars().take(record::SUMMARY_MOST - 1).collect::<String>()) }
+}
+
+/// A title within its limit.
+fn titled(title: &str) -> String {
+    title.chars().take(record::TITLE_MOST).collect()
+}
+
+/// Whether task `t`'s current run made a report for it: by its run, else since its last move.
+fn run_reported(tx: &Transaction, t: &Task) -> Result<bool, String> {
+    let run = crate::dispatcher::runs::last_of(tx, &t.key)?.map(|r| r.id);
+    tx.query_row("SELECT EXISTS (SELECT 1 FROM reports r WHERE r.task = ?1 AND (r.run = ?2 OR (?2 IS NULL AND r.created_at >=
+            coalesce((SELECT max(e.at) FROM events e WHERE e.task = ?1 AND e.kind = 'move'), 0))))", (&t.key, run), |r| r.get(0)).map_err(sql)
+}
+
+/// A routine's task finished with `result` by `author`: its report, made from the result, unless its run made one
+/// itself (AC-272). The report's ID.
+pub fn routine_result(tx: &Transaction, t: &Task, result: &str, author: &str, at: i64) -> Result<Option<String>, String> {
+    let Some(s) = crate::tasks::schedules::of_task(tx, &t.key)? else { return Ok(None) };
+    if run_reported(tx, t)? {
+        return Ok(None);
+    }
+    let run = crate::dispatcher::runs::last_of(tx, &t.key)?;
+    let new = New { project: t.project.clone(), title: titled(&t.title), summary: summary_of(result), body: result.to_string(), author: author.to_string(),
+        role: role::TERMINUM, session: t.session.clone(), task: Some(t.key.clone()), schedule: Some(s.id), run: run.map(|r| r.id), ..New::default() };
+    let (_, id) = record::create(tx, new, at)?;
+    Ok(Some(id))
+}
+
+/// The Supervisor's daily digest of `project`, its lines as Markdown (terminum-supervisor.md AC-243).
+pub fn digest(tx: &Transaction, project: &str, lines: &[String], at: i64) -> Result<String, String> {
+    let date = crate::tasks::cron::stamp(at).chars().take(10).collect::<String>();
+    let author = crate::roles::supervisor::author(tx, project)?;
+    let new = New { project: project.to_string(), title: format!("Supervisor digest, {date}"), summary: format!("{} new signal{}", lines.len(), if lines.len() == 1 { "" } else { "s" }),
+        body: lines.iter().map(|l| format!("- {l}")).collect::<Vec<_>>().join("\n"), author, role: role::TERMINUM, ..New::default() };
+    record::create(tx, new, at).map(|(_, id)| id)
+}
+
+/// The Supervisor opened incident `incident` of `project`: its critical report, which alerts through the incident
+/// alone (AC-271). `subject`: what it is about; `why`: its first evidence.
+pub fn incident(tx: &Transaction, project: &str, incident: i64, subject: &str, why: &str, at: i64) -> Result<String, String> {
+    let author = crate::roles::supervisor::author(tx, project)?;
+    let new = New { project: project.to_string(), title: titled(&format!("Incident: {subject}")), summary: summary_of(why),
+        body: format!("{why}\n\nIts card: /supervisor/?incident={incident}"), critical: true, author, role: role::TERMINUM, incident: Some(incident), ..New::default() };
+    record::create(tx, new, at).map(|(_, id)| id)
+}
+
+/// The report's ID kept in the history of task `t` that made it, as a comment by `author` (AC-266).
+pub fn tell_task(tx: &Transaction, t: &Task, author: &str, id: &str, title: &str, at: i64) -> Result<(), String> {
+    ops::comment(tx, author, &t.id, &format!("Report {id}: {title}"), at).map(drop)
+}

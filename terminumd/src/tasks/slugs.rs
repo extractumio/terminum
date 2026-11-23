@@ -16,6 +16,8 @@ pub const UID_LEN: usize = 8;
 pub(super) const SCHEDULED: &str = "S_";
 /// A batch's integration task (terminum-integration.md AC-194).
 pub(super) const INTEGRATING: &str = "I_";
+/// A report (terminum-reports.md AC-265): in the same count, never a task.
+pub const REPORT: &str = "R_";
 
 /// A batch's integration task, by its ID's mark (`terminum-integration.md` AC-194).
 pub fn is_integration(id: &str) -> bool {
@@ -59,14 +61,33 @@ fn free_prefix(tx: &Transaction, base: &str, project: &str) -> Result<String, St
 fn bump_above_found(tx: &Transaction, project: &str, prefix: &str) -> Result<(), String> {
     // "TERM-" up to "TERM." ('.' follows '-'): a range the key's index walks, where a LIKE would scan; a schedule's
     // tasks count with the others
-    for mark in ["", SCHEDULED, INTEGRATING] {
-        let top: Option<i64> = tx.query_row("SELECT max(CAST(substr(slug, ?3) AS INTEGER)) FROM task_slugs WHERE slug >= ?1 AND slug < ?2",
+    for mark in ["", SCHEDULED, INTEGRATING, REPORT] {
+        // a report's ID is in the same count (terminum-reports.md AC-265), kept in its own table
+        let table = if mark == REPORT { "reports" } else { "task_slugs" };
+        let top: Option<i64> = tx.query_row(&format!("SELECT max(CAST(substr(slug, ?3) AS INTEGER)) FROM {table} WHERE slug >= ?1 AND slug < ?2"),
                                             (format!("{mark}{prefix}-"), format!("{mark}{prefix}."), (mark.len() + prefix.len()) as i64 + 2), |r| r.get(0)).map_err(sql)?;
         if let Some(top) = top {
             tx.execute("UPDATE projects SET next_seq = max(next_seq, ?1) WHERE id = ?2", (top + 1, project)).map_err(sql)?;
         }
     }
     Ok(())
+}
+
+/// The next ID of `project`'s count for a report: R_TERM-7, a number no task's ID holds (terminum-reports.md AC-265).
+pub fn take_report(tx: &Transaction, project: &str) -> Result<(String, i64), String> {
+    let (prefix, seq, dir, name): (Option<String>, i64, String, String) = tx.query_row("SELECT prefix, next_seq, dir, name FROM projects WHERE id = ?1", [project],
+        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))).map_err(sql)?;
+    let Some(prefix) = prefix else {
+        fill_project(tx, project, &dir, &name)?;
+        return take_report(tx, project);
+    };
+    tx.execute("UPDATE projects SET next_seq = ?1 WHERE id = ?2", (seq + 1, project)).map_err(sql)?;
+    Ok((format!("{REPORT}{prefix}-{seq}"), seq))
+}
+
+/// Whether `id` names a report, not a task: its mark (terminum-reports.md AC-265).
+pub fn is_report(id: &str) -> bool {
+    id.trim().to_ascii_uppercase().starts_with(REPORT)
 }
 
 /// Every project gets a prefix and every task an ID, once: after a migration and when projects are written.
@@ -149,6 +170,9 @@ pub fn set_prefix(tx: &Transaction, project: &str, prefix: &str) -> Result<(), S
 /// A task's number (the store's order) from what a person or an agent calls it: its ID now, one it had,
 /// or its key's first 8 hex characters or the whole key. None when nothing, or more than one, answers.
 pub fn resolve(tx: &Transaction, id: &str) -> Result<Option<i64>, String> {
+    if is_report(id) {
+        return Err(format!("{} is a report: use get_report.", id.trim()));     // terminum-reports.md AC-265
+    }
     let query = format!("SELECT number FROM tasks WHERE id = {}", key_named("?1"));
     tx.prepare_cached(&query).map_err(sql)?.query_row([id], |r| r.get(0)).optional().map_err(sql)
 }

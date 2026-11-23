@@ -82,8 +82,8 @@ pub(super) fn question(args: &Value) -> Result<Option<Question>, String> {
 }
 
 /// The current structured question, if the task is still waiting for that question.
-pub(super) fn current(tx: &Transaction, t: &Task, report: bool) -> Result<Option<String>, String> {
-    if t.status != "WAIT FOR HUMAN" || t.archived_at.is_some() || report {
+pub(super) fn current(tx: &Transaction, t: &Task) -> Result<Option<String>, String> {
+    if t.status != "WAIT FOR HUMAN" || t.archived_at.is_some() {
         return Ok(None);
     }
     let Some(row) = comments::last_question(tx, &t.key)? else { return Ok(None) };
@@ -96,8 +96,7 @@ pub(super) fn current(tx: &Transaction, t: &Task, report: bool) -> Result<Option
 
 fn answer(tx: &Transaction, task: &str, question: &str, option: &str, at: i64) -> Result<(String, bool), String> {
     let t = ops::get(tx, task)?;
-    let report = super::report::waits_on(tx, &t)?;
-    if current(tx, &t, report)?.as_deref() != Some(question) {
+    if current(tx, &t)?.as_deref() != Some(question) {
         return Err(STALE.into());
     }
     let listed: bool = tx.query_row("SELECT EXISTS (SELECT 1 FROM events,
