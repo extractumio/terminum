@@ -27,6 +27,8 @@ mod offer;
 pub(super) use offer::wait_if_full;
 #[path = "api_supervisor.rs"]
 mod supervisor;
+#[path = "api_manager.rs"]
+mod manager;
 #[path = "api_hold.rs"]
 pub(super) mod hold;
 pub(crate) use hold::resume as resume_hold;
@@ -72,6 +74,9 @@ pub(super) struct Press {
     /// wait so its start says the same; never taken from a page's request
     #[serde(default)]
     manager: Option<String>,
+    /// A manager deliberately reopens DONE (AC-179), kept with a queued press.
+    #[serde(default)]
+    manager_reopen: bool,
     /// how it was pressed, kept with its run and with a wait (AC-183); a page's request says only a human's way
     #[serde(default)]
     how: How,
@@ -226,8 +231,8 @@ async fn press(State(app): State<Shared>, Path(id): Path<String>, Json(mut body)
 }
 
 /// The manager's press, by its run_task (terminum-agents.md AC-179): as a human's, its words said to be the manager's.
-pub(crate) async fn press_by_manager(app: &Shared, id: &str, user: &str, agent: Option<String>, comment: Option<String>, (fresh, queue): (bool, bool)) -> Result<Value, String> {
-    pressed(app, id, Press { agent, comment, fresh, queue, manager: Some(user.to_string()), ..Default::default() }).await
+pub(crate) async fn press_by_manager(app: &Shared, id: &str, user: &str, agent: Option<String>, comment: Option<String>, (fresh, queue, reopen): (bool, bool, bool)) -> Result<Value, String> {
+    pressed(app, id, Press { agent, comment, fresh, queue, manager: Some(user.to_string()), manager_reopen: reopen, ..Default::default() }).await
 }
 
 async fn pressed(app: &Shared, id: &str, body: Press) -> Result<Value, String> {
@@ -239,6 +244,7 @@ async fn pressed(app: &Shared, id: &str, body: Press) -> Result<Value, String> {
     let pane = linked_panes(app, &wanted, &also).await;
     let (a, mut kept) = (app.clone(), body);
     let (tasks, prepared, kept, show_comment) = store(app, move |tx| {
+        kept.manager_allows(tx, &wanted)?;
         let (tasks, w, _) = ways(tx, &wanted, &also, agent.as_deref(), fresh, &pane)?;
         supervisor::check(tx, &kept, &tasks)?;
         // A start from scratch keeps its draft where it starts. A continuation or a refusal keeps it here.
@@ -279,13 +285,16 @@ async fn pressed(app: &Shared, id: &str, body: Press) -> Result<Value, String> {
             // its turn is taken for the words about to be typed, so nothing reads it idle meanwhile; no limit stops it:
             // it starts no process (AC-141)
             let (id, asked, phase) = (r.id.clone(), std::time::Instant::now(), r.state);
-            store(app, move |tx| {
+            let task = tasks[0].id.clone();
+            let kept = store(app, move |tx| {
+                kept.manager_allows(tx, &task)?;
                 let mut now = runs::by_id(tx, &id)?;
                 if now.state != phase || !now.turn_ended {
                     return Err("The session is working or changed while Run was being prepared.".to_string());
                 }
                 now.turn_ended = false;
-                runs::save(tx, &now)
+                runs::save(tx, &now)?;
+                Ok(kept)
             }).await?;
             let r = Run { turn_ended: true, ..r };
             if let Err(miss) = gate::deliver(app, &r, &server, &pane, &again.words, false).await {
@@ -374,6 +383,7 @@ async fn first_run(app: &Shared, tasks: &[Task], kept: Press, comment: Option<St
     let (ag, f, project, at) = (a.clone(), dir.clone(), t.project.clone(), app.clone());
     let next = store(app, move |tx| {
         let now: Vec<Task> = all.iter().map(|t| ops::get(tx, &t.id)).collect::<Result<_, _>>()?;
+        kept.manager_allows(tx, &now[0].id)?;
         supervisor::check_family(tx, &kept, &now)?;
         if let Some(card) = supervisor::divert(tx, &kept, &now)? { return Ok(Some(Next::Kept(card))); }
         let release_actor = kept.hold_release.as_ref().map(|r| r.check(tx, &now)).transpose()?;
@@ -447,3 +457,7 @@ async fn first_run(app: &Shared, tasks: &[Task], kept: Press, comment: Option<St
 #[cfg(test)]
 #[path = "api_wait_tests.rs"]
 mod wait_tests;
+
+#[cfg(test)]
+#[path = "api_manager_tests.rs"]
+mod manager_tests;
