@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-// AC-222 and AC-223 through the signed-in page, the private store and its real collector.
+// AC-222, AC-223 and AC-263 through the signed-in page and a private terminumd.
 import { boardKit, intoStore } from "./boardkit.mjs";
 import { check, until } from "./check.mjs";
 
@@ -28,12 +28,20 @@ export async function liveSupervisor(page, opts) {
   await page.click("#projectsupervisor");
   const panel = page.locator("#supervisorpanel");
   await panel.getByLabel("Level", { exact: true }).selectOption("observer");
-  await panel.getByText("Charter and allocation", { exact: true }).click();
+  await panel.getByText("Project template", { exact: true }).click();
+  await panel.getByLabel("Project type").selectOption("commercial_app");
+  await panel.getByRole("button", { name: "Fill settings draft" }).click();
+  const goal = panel.getByLabel("Release cadence target", { exact: true });
+  await goal.fill("Publish a safe update each week.");
   await panel.getByLabel("Never list, one rule per line").fill("Never ship without review");
+  check("AC-263 filling the real settings form leaves the saved pack and switch alone",
+    (await j(`${api.path}/settings`)).revision === 0 && !(await j(api.path)).enabled);
   await page.click("#supervisorok");
   check("AC-222 the live tab keeps settings in the correct project", await until(async () => {
     const a = await j(`${api.path}/settings`), b = await j(`${web.path}/settings`);
     return a.settings.level === "observer" && a.settings.charter.never[0] === "Never ship without review"
+      && a.settings.charter.indicator_targets.releases === "Publish a safe update each week."
+      && a.settings.charter.surfaces.t3.includes("billing/**") && !a.confirmed_probes.length
       && b.settings.level === "operator" && !b.settings.charter.never.length;
   }));
 
@@ -76,6 +84,8 @@ export async function liveSupervisor(page, opts) {
     && await page.getByText(ours.evidence[0].id, { exact: false }).isVisible()
     && !await page.getByText(theirs.evidence[0].id, { exact: false }).count());
   await page.locator("#sv-score summary").filter({ hasText: "Release cadence" }).click();
+  check("AC-263 the real scoreboard shows the goal saved from the template",
+    await until(() => page.getByText("Target · Publish a safe update each week.", { exact: true }).isVisible()));
   check("AC-223 the live scoreboard says which data is missing",
     await until(() => page.getByText("Not measured yet (Git release tags are unavailable.)", { exact: true }).isVisible()));
   await j(api.path, "PUT", { enabled: false });

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-//! AC-253, AC-254 and AC-257: proposals, mutes and detector retirement.
+//! AC-253, AC-254, AC-257 and AC-263: proposals, mutes and detector retirement.
 
 use rusqlite::Transaction;
 use serde_json::{Value, json};
@@ -111,7 +111,7 @@ fn ac253_coverage_reduction_and_open_breaker_require_owner() {
 }
 
 #[test]
-fn ac253_enable_runs_in_shadow_and_engine_requests_keep_their_class() {
+fn ac253_ac263_enable_runs_in_shadow_and_engine_requests_keep_their_class() {
     let f = fixture("config-shadow");
     f.store.with(|tx| {
         let mut saved = settings::read(tx, PROJECT)?;
@@ -158,8 +158,10 @@ fn ac253_enable_runs_in_shadow_and_engine_requests_keep_their_class() {
         let task = ops::get(tx, &queued.task.unwrap())?;
         assert_eq!(task.project, OTHER);
         let body: String = tx.query_row("SELECT body FROM tasks WHERE id = ?1", [&task.key], |r| r.get(0)).map_err(sql)?;
-        assert!(body.contains("named query"));
-        assert!(!body.contains(ROUND));
+        assert_eq!(body, format!("Review whether detector {NAME} needs a new named query. Specify its contract and add tests before enabling it."));
+        assert!(serde_json::from_value::<config::Proposal>(json!({
+            "detector": NAME, "action": {"operation": "engine", "requirement": "query", "samples": [ROUND]},
+        })).is_err());
         assert!(!super::task_policy::check_marked(tx, &task, true)?);
         Ok(())
     }).unwrap();

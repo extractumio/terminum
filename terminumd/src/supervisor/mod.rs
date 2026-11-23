@@ -68,6 +68,7 @@ mod communications_tests;
 mod evaluation;
 mod settings;
 mod settings_api;
+mod templates;
 pub(crate) mod surfaces;
 pub(crate) mod design_gates;
 pub(crate) mod design_reviews;

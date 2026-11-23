@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-//! AC-246–247 exercise the production checker and retained evidence with an advanced clock.
+//! AC-246–247 and AC-263 exercise retained outcomes and their effect on the shared line.
 
 use serde_json::json;
 use crate::tasks::{ops::sql, store::HUMAN};
@@ -140,21 +140,22 @@ fn ac246_each_decision_kind_uses_its_own_evidence() {
 }
 
 #[test]
-fn ac247_alert_verdict_scopes_a_grouped_notice_and_stops_repeats() {
+fn ac247_ac263_alert_verdict_scopes_a_grouped_notice_and_orders_the_shared_line() {
     let f = Fixture::new("breaker-mixed-notice");
     signal(&f, "bad", Rule::FailedRepeat, 3);
-    signal(&f, "good", Rule::CostOutlier, 3);
-    f.write("INSERT INTO project_supervisor (project,enabled,generation,enabled_at) VALUES (?1,1,1,?2)", (PROJECT, NOW));
+    signal(&f, "good", Rule::CostOutlier, 2);
+    f.write("INSERT INTO project_supervisor (project,enabled,generation,enabled_at) VALUES (?1,1,1,?3), (?2,1,1,?3)", (PROJECT, OTHER, NOW));
     f.store.with(|tx| {
         tx.execute("INSERT INTO supervisor_incidents (id,project,subject_kind,subject_id,opened_at,last_firing_at)
-            VALUES (11,?1,'project','target',?2,?2), (12,?1,'project','other',?2,?2)", (PROJECT, NOW)).map_err(sql)?;
-        for fingerprint in ["bad", "good"] {
+            VALUES (11,?1,'project','target',?3,?3), (12,?2,'project','elsewhere',?3,?3)", (PROJECT, OTHER, NOW)).map_err(sql)?;
+        for (fingerprint, level) in [("bad", 3), ("good", 2)] {
             let s = signals::get(tx, PROJECT, fingerprint)?;
             let event: i64 = tx.query_row("INSERT INTO supervisor_incident_events
                 (incident,at,kind,actor,fingerprint,detector,metric,level,value,threshold)
-                VALUES (11,?1,'signal','system',?2,?3,'fixture',3,5,4) RETURNING id",
-                (NOW, fingerprint, &s.detector), |r| r.get(0)).map_err(sql)?;
-            tx.execute("INSERT INTO supervisor_incident_signals VALUES (?1,11,3,x'01',5,4,?2,0)", (fingerprint, event)).map_err(sql)?;
+                VALUES (11,?1,'signal','system',?2,?3,'fixture',?4,5,4) RETURNING id",
+                (NOW, fingerprint, &s.detector, level), |r| r.get(0)).map_err(sql)?;
+            tx.execute("INSERT INTO supervisor_incident_signals VALUES (?1,11,?3,x'01',5,4,?2,0)",
+                (fingerprint, event, level)).map_err(sql)?;
             record(tx, &s, Kind::Alert, &event.to_string(), "11", "", NOW)?;
         }
         let id: i64 = tx.query_row("SELECT id FROM supervisor_actions WHERE fingerprint = 'bad'", [], |r| r.get(0)).map_err(sql)?;
@@ -165,15 +166,24 @@ fn ac247_alert_verdict_scopes_a_grouped_notice_and_stops_repeats() {
         assert!(breakers::open_id(tx, PROJECT, Rule::CostOutlier.id(), "R5")?.is_none());
         assert!(breakers::open_id(tx, OTHER, Rule::FailedRepeat.id(), "R5")?.is_none());
         tx.execute("INSERT INTO supervisor_line_repeats VALUES (11,0,?1,?2)", (NOW, NOW+60)).map_err(sql)?;
+        tx.execute("INSERT INTO supervisor_line_pending (incident,kind,level,signals,urgent)
+            VALUES (12,'opened',3,1,0)", []).map_err(sql)?;
         let policy = line::Settings::default();
-        let healthy = line_queue::claim(tx, &policy, NOW + 601, false)?.unwrap();
-        assert_eq!(healthy.signals, 1);
+        let line_queue::Claim::Notice(critical) = line_queue::claim(tx, &policy, NOW + 601, false)?
+            else { panic!("the other project's critical notice is due") };
+        assert_eq!((critical.project.as_str(), critical.level), (OTHER, 3));
+        let line_queue::Claim::Notice(healthy) = line_queue::claim(tx, &policy, NOW + 601, false)?
+            else { panic!("the level-2 member of the first project's notice is due") };
+        assert_eq!((healthy.project.as_str(), healthy.level, healthy.signals), (PROJECT, 2, 1));
         tx.execute("INSERT INTO supervisor_line_pending (incident,kind,level,signals,urgent,alerts)
             SELECT 11,'opened',3,2,0,json_group_array(id) FROM supervisor_actions WHERE kind = 'alert'", []).map_err(sql)?;
         tx.execute("DELETE FROM supervisor_incident_signals WHERE fingerprint = 'good'", []).map_err(sql)?;
-        assert!(line_queue::claim(tx, &policy, NOW + 2000, false)?.is_none(), "a stale healthy member cannot keep a queued page alive");
+        tx.execute("DELETE FROM supervisor_line_repeats WHERE incident = 12", []).map_err(sql)?;
+        assert!(matches!(line_queue::claim(tx, &policy, NOW + 2000, false)?, line_queue::Claim::Discarded),
+            "a stale healthy member cannot keep a queued page alive");
         tx.execute("INSERT INTO supervisor_line_repeats VALUES (11,0,?1,?2)", (NOW, NOW+60)).map_err(sql)?;
-        assert!(line_queue::claim(tx, &policy, NOW + 2000, false)?.is_none(), "a broken member cannot send a repeat");
+        assert!(matches!(line_queue::claim(tx, &policy, NOW + 2000, false)?, line_queue::Claim::Discarded),
+            "a broken member cannot send a repeat");
         assert_eq!(tx.query_row("SELECT count(*) FROM supervisor_breaker_cards", [], |r| r.get::<_, i64>(0)).map_err(sql)?, 1);
         assert_eq!(tx.query_row("SELECT count(*) FROM supervisor_line_repeats", [], |r| r.get::<_, i64>(0)).map_err(sql)?, 0);
         Ok(())

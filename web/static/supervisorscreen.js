@@ -32,7 +32,7 @@ function folding(title, contents) {
   return panel;
 }
 
-function indicator({ name, verdict, guard, metrics, probe }) {
+function indicator({ name, verdict, guard, metrics, probe, target }) {
   const source = probe == null ? "" : ` · ${probe}`;
   return folding(`${name}${source} — ${verdict}`, () => {
     const entries = metrics.map((m) => {
@@ -46,7 +46,7 @@ function indicator({ name, verdict, guard, metrics, probe }) {
       if (values.length) result.append(note(values.join(" · ")));
       return part("div", "sv-reading", el("dt", null, m.unit ? `${m.name} (${m.unit})` : m.name), result);
     });
-    return stack(note(guard), part("dl", "sv-readings", ...entries));
+    return stack(note(guard), ...(target ? [note(`Target · ${target}`)] : []), part("dl", "sv-readings", ...entries));
   });
 }
 
