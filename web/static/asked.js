@@ -5,18 +5,16 @@
 // pane (`asked`, `askedmarks`), so every page of the pane shows them. Each is found by its text,
 // spaces counted as one, at the occurrence nearest the line its selection began on (never its copy
 // in the message sent: Ask's own quote), among the rows within a screen of the visible ones
-// (linkmarks.js). That line is the page's numbering, which a new width (tmux re-wraps the history),
-// a reload or a pane switch moves: with none within NEAR_LINE of it, a quote of FAR_MIN characters
-// or more takes the nearest within FAR_LINE (Claude Code reprints its answer on a resize), a shorter
-// one none, rather than text that only looks like it. Its line stands in the terminal's
+// (linkmarks.js); that line is the page's numbering, which a new width, a reload or a pane switch
+// moves, hence FAR_LINE. Its line stands in the terminal's
 // left gutter (as a bookmark brought into view: markjump.js), the rows' DOM left as it is.
 import { sentCopy } from "./ask.js";
 import { nearRows } from "./linkmarks.js";
 import { continues, joinedText } from "./rowtext.js";
 
 const NEAR_LINE = 30;               // lines from where it was selected an occurrence may stand
-const FAR_MIN = 16;                 // characters (spaces as one) a quote needs to be found farther
-const FAR_LINE = 3000;              // lines a renumbered history moves it at most (a re-wrap, tmux's dropped tenths)
+const FAR_LINE = 3000;              // ...or, a quote of FAR_MIN characters or more: its history was numbered anew
+const FAR_MIN = 16;                 // a shorter one that far is too likely another text
 const MARKS = /[︎️]/;               // the text-style marks render.js adds: not the program's text
 
 /** `text` with every run of white space as one space and the marks left out, and where each of
@@ -70,15 +68,15 @@ export function askedMarks({ term, boxes, view, send, sid }) {
     for (const item of items) {
       const want = squeeze(String(item.text ?? "")).out;
       if (!want) continue;
+      const reach = want.length >= FAR_MIN ? FAR_LINE : NEAR_LINE;
       let best = null;
       for (let i = out.indexOf(want); i >= 0; i = out.indexOf(want, i + 1)) {
         if (sentCopy(out.slice(Math.max(0, i - 40), i))) continue;   // the quote as sent, in the user's message
-        const a = point(at[i], false), line = a && view.lineOf(a.node.parentElement?.closest(".ln"));
-        if (!a || line == null) continue;
+        const a = point(at[i], false), line = a ? view.lineOf(a.node.parentElement?.closest(".ln")) : null;
+        if (line == null) continue;
         const far = Math.abs(line - item.line);
-        if (far <= FAR_LINE && (!best || far < best.far)) best = { i, a, far };
+        if (far <= reach && (!best || far < best.far)) best = { i, a, far };
       }
-      if (best && best.far > NEAR_LINE && want.length < FAR_MIN) best = null;   // short: too likely another text
       const b = best && point(at[best.i + want.length - 1] + 1, true);
       if (!b) continue;
       const r = document.createRange();
