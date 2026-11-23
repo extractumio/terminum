@@ -40,12 +40,22 @@ pub fn target(tx: &Transaction, key: &str) -> Result<Result<String, String>, Str
             None => format!("{id} has no agent to answer: a digest, or a report moved from the board."),
         }));
     };
-    let (slug, archived, ran): (String, bool, bool) = tx.query_row("SELECT t.slug, t.archived_at IS NOT NULL, EXISTS (SELECT 1 FROM run_tasks m WHERE m.task = t.id)
-        FROM tasks t WHERE t.id = ?1", [&task], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).map_err(sql)?;
+    // only the conversation the report was made in: its task's newest run is the run that made it, so a report a
+    // manager, the Supervisor or another agent wrote on a task never sends the human's words into that task's pane
+    // (or a later run of the same conversation, a reply's resume among them)
+    let made_in: Option<String> = tx.query_row("SELECT run FROM reports WHERE id = ?1", [key], |r| r.get(0)).map_err(sql)?;
+    let made_in = made_in.map(|id| crate::dispatcher::runs::by_id(tx, &id)).transpose().ok().flatten();
+    let last = crate::dispatcher::runs::last_of(tx, &task)?;
+    let same = match (&made_in, &last) {
+        (Some(m), Some(l)) => m.id == l.id || (m.agent_session.is_some() && m.agent_session == l.agent_session),
+        _ => false,
+    };
+    let (slug, archived): (String, bool) = tx.query_row("SELECT slug, archived_at IS NOT NULL FROM tasks WHERE id = ?1", [&task],
+        |r| Ok((r.get(0)?, r.get(1)?))).map_err(sql)?;
     Ok(if archived {
         Err(format!("{slug} is archived: bring it back to reply."))
-    } else if !ran {
-        Err(format!("{id} was not made in a task's run: answer in its session."))
+    } else if !same {
+        Err(format!("{id} was not made in {slug}'s last run: answer in its window, with RUN."))
     } else {
         Ok(slug)
     })

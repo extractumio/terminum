@@ -83,6 +83,9 @@ pub(super) struct Press {
     /// pressed again from its wait (AC-158): it goes only while that wait stands; never read from a request or a kept wait
     #[serde(skip)]
     waited: bool,
+    /// a human's reply to a report (terminum-reports.md AC-270): never read from a request
+    #[serde(skip)]
+    reply: bool,
     /// The draft events the queue already kept. A page cannot supply them.
     #[serde(default)]
     kept_comments: Vec<String>,
@@ -233,8 +236,11 @@ async fn press(State(app): State<Shared>, Path(id): Path<String>, Json(mut body)
 /// A human's reply to a report, by its route (terminum-reports.md AC-270): as a human's RUN of the report's task with
 /// the reply's fixed words as its message, every check of RUN and its gate holding; with no room it waits for one.
 pub(crate) async fn press_reply(app: &Shared, id: &str, words: String) -> Result<Value, String> {
-    pressed(app, id, Press { comment: Some(words), queue: true, ..Default::default() }).await
+    pressed(app, id, Press { comment: Some(words), queue: true, reply: true, ..Default::default() }).await
 }
+
+/// Why a reply does not go on: its conversation is gone, or its task would take others with it.
+const REPLY_ALONE: &str = "This reply would start a new session or take other tasks with it: answer in the task's window, with RUN.";
 
 /// The manager's press, by its run_task (terminum-agents.md AC-179): as a human's, its words said to be the manager's.
 pub(crate) async fn press_by_manager(app: &Shared, id: &str, user: &str, agent: Option<String>, comment: Option<String>, (fresh, queue, reopen): (bool, bool, bool)) -> Result<Value, String> {
@@ -253,8 +259,11 @@ async fn pressed(app: &Shared, id: &str, body: Press) -> Result<Value, String> {
         kept.manager_allows(tx, &wanted)?;
         let (tasks, w, _) = ways(tx, &wanted, &also, agent.as_deref(), fresh, &pane)?;
         supervisor::check(tx, &kept, &tasks)?;
+        // a reply goes on in its report's conversation alone, never a fresh or grouped start, and a refused one keeps
+        // nothing (terminum-reports.md AC-270)
+        let w = if kept.reply && (tasks.len() > 1 || matches!(w, Ok(Way::First | Way::Anew(_)))) { Err(REPLY_ALONE.to_string()) } else { w };
         // A start from scratch keeps its draft where it starts. A continuation or a refusal keeps it here.
-        if !matches!(w, Ok(Way::First)) && let Some(c) = &said && kept.kept_comments.is_empty() {
+        if !matches!(w, Ok(Way::First)) && !(kept.reply && w.is_err()) && let Some(c) = &said && kept.kept_comments.is_empty() {
             kept.kept_comments = if kept.waited {
                 let wait = super::waits::of_task(tx, &tasks[0].key)?.ok_or(WAIT_GONE)?;
                 if kept.manager.is_none() { recent::legacy_drafts(tx, &tasks, c, wait.at)? } else { Vec::new() }

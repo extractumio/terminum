@@ -344,7 +344,7 @@ pub fn others_open(tx: &Transaction, key: &str, lead: &str) -> Result<bool, Stri
 }
 
 
-pub(super) fn by_id(tx: &Transaction, id: &str) -> Result<Run, String> {
+pub(crate) fn by_id(tx: &Transaction, id: &str) -> Result<Run, String> {
     one(tx, "r.id = ?1", id).map_err(sql)
 }
 

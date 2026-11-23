@@ -273,9 +273,12 @@ fn ac270_a_reply_goes_to_its_task_s_run_else_says_where_to_answer() {
     let task = running(&s, "Audit", KEY);
     let id = call(&s, &dir, KEY, "create_report", report("Deps")).unwrap().split_whitespace().next().unwrap().to_string();
     let lone = call(&s, &dir, OTHER, "create_report", report("No task")).unwrap().split_whitespace().next().unwrap().to_string();
+    // a manager's report on a task Dispatcher ran was not made in its run: no reply into that task's pane
+    let bosses = call(&s, &dir, MANAGER, "create_report", json!({"task": task, "title": "On their task", "summary": "s", "body": "b"})).unwrap().split_whitespace().next().unwrap().to_string();
     s.with(|tx| {
         let key = record::key_of(tx, &id)?;
-        assert_eq!(super::reply::target(tx, &key)?, Ok(task.clone()), "a task Dispatcher ran");
+        assert_eq!(super::reply::target(tx, &key)?, Ok(task.clone()), "made in its task's run");
+        assert_eq!(super::reply::target(tx, &record::key_of(tx, &bosses)?)?, Err(format!("{bosses} was not made in {task}'s last run: answer in its window, with RUN.")));
         assert_eq!(super::reply::target(tx, &record::key_of(tx, &lone)?)?, Err(format!("{lone} was made in a session terminum did not start: answer in that session.")));
         let digest = super::sources::digest(tx, "api", &["a line".into()], 30)?;
         assert_eq!(super::reply::target(tx, &record::key_of(tx, &digest)?)?, Err(format!("{digest} has no agent to answer: a digest, or a report moved from the board.")));

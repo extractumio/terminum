@@ -418,7 +418,7 @@ export async function liveSchedules(page, live) {
   }, 20000), JSON.stringify((await j(`/api/tasks/${task}`)).history?.slice(-4).map((e) => e.text)));
   // …and its session closes after it as any finished run's, so what follows finds the routine as before (AC-125)
   check("AC-270 the reply's run ends with no second report of its result", await until(async () => { const t = await j(`/api/tasks/${task}`); return t.status === "DONE" && t.session?.closed
-    && (await j("/api/reports")).reports.filter((r) => r.source.task === task).length === 1; }, 45000), (await j(`/api/tasks/${task}`)).status);
+    && (await j("/api/reports")).reports.filter((r) => r.source.task === task).length === 1; }, 45000), JSON.stringify((await j(`/api/tasks/${task}`)).history.slice(-6).map((e) => e.text)));
 
   // AC-161: an agent running schedules is not deleted; a schedule deleted leaves its tasks
   const kept = await j(`/api/task-agents/${agent}`, "DELETE");
@@ -436,7 +436,8 @@ export async function liveSchedules(page, live) {
   await deleteProject();
   check("AC-160 deleting a project names its schedule and keeps it", await until(async () => await page.textContent("#toast") === `Nightly has schedules ${s.key}: move or delete them first.`)
     && (await j("/api/tasks/meta")).projects.some((p) => p.id === project), await page.textContent("#toast"));
-  check("AC-160 deleted, its tasks stay", (await j(`/api/schedules/${s.id}`, "DELETE")).code === 200 && (await j(`/api/tasks/${task}`)).status === "DONE");
+  const gone = await j(`/api/schedules/${s.id}`, "DELETE"), stays = await j(`/api/tasks/${task}`);
+  check("AC-160 deleted, its tasks stay", gone.code === 200 && stays.status === "DONE", JSON.stringify({ gone, status: stays.status }));
   await deleteProject();
   check("AC-160 a deleted schedule no longer blocks deleting its project", await until(async () => !(await j("/api/tasks/meta")).projects.some((p) => p.id === project))
     && (await j(`/api/tasks/${task}`)).project === "default" && (await j("/api/tasks/meta")).agents.find((a) => a.id === agent)?.project === "default");
