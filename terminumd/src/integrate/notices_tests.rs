@@ -19,7 +19,7 @@ fn working(w: &World, n: u32, file: &str, text: &str) -> Tree {
     let dir = w.root.join(format!("tree-{n}"));
     loose(w, &dir, None, file, text);
     let task = w.s.with(|tx| ops::key_of(tx, &id)).unwrap();
-    Tree { task, id, project: "api".into(), dir, working: true }
+    Tree { task, id, project: "api".into(), dir, session: String::new(), working: true }
 }
 
 fn said(w: &World, id: &str) -> Vec<String> {

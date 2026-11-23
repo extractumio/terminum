@@ -127,14 +127,7 @@ pub(super) struct Charter {
     pub(super) allocation_review_at: Option<i64>,
     indicators: Indicators,
     outside_indicators: BTreeMap<String, String>,
-    surfaces: Surfaces,
-}
-
-#[derive(Default, Serialize, Deserialize)]
-#[serde(default, deny_unknown_fields)]
-struct Surfaces {
-    t2: Vec<String>,
-    t3: Vec<String>,
+    pub(super) surfaces: super::surfaces::Surfaces,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -256,6 +249,7 @@ impl Settings {
     }
 
     fn validate(&self) -> Result<(), String> {
+        self.charter.surfaces.validate()?;
         if !self.budgets.valid() {
             return Err("Invalid Supervisor budget.".into());
         }

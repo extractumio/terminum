@@ -46,7 +46,7 @@ pub fn pane_of(handle: &str) -> &str {
 }
 
 /// A handle's pane and the mark its line started with, none in a handle kept before marks were in it.
-fn parts(handle: &str) -> (&str, Option<&str>) {
+pub(crate) fn parts(handle: &str) -> (&str, Option<&str>) {
     handle.split_once(' ').map_or((handle, None), |(pane, label)| (pane, Some(label)))
 }
 

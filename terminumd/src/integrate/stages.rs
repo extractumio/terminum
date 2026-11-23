@@ -16,6 +16,7 @@ use super::{red_recheck, red_target};
 use super::retry_notes;
 use super::runner::Runner;
 use super::store::{self as bs, Left};
+use crate::supervisor::verify_review;
 use crate::tasks::integration;
 use crate::tasks::ops::{self, sql};
 use crate::tasks::store::{Store, DISPATCHER};
@@ -26,15 +27,16 @@ use crate::tasks::store::{Store, DISPATCHER};
 pub const VERIFY_MOST: usize = 3;
 
 /// Prepare and Verify as one window that says which failed: Prepare's 2 stays 2 (a conflict), any other failure of
-/// either is 1 (a red check), whatever the line's own tool makes of its status (make turns each into 2). Each line
-/// stands on lines of its own, so nothing it holds (a `#`, a quote) reaches the frame; lines hold no line ends.
+/// either is 1 (a red check). Verify preserves the design-review status for a matching typed failure.
+/// Each line stands on lines of its own, so nothing it holds (a `#`, a quote) reaches the frame; lines hold no line ends.
 pub(crate) fn line_of(prepare: &str, verify: &str) -> String {
     let mut parts = Vec::new();
     if !prepare.is_empty() {
         parts.push(format!("(\n{prepare}\n) || {{ s=$?; [ \"$s\" -eq 2 ] && exit 2; exit 1; }}"));
     }
     if !verify.is_empty() {
-        parts.push(format!("(\n{verify}\n) || exit 1"));
+        let code = verify_review::MISSING_EXIT;
+        parts.push(format!("(\n{verify}\n) || {{ s=$?; [ \"$s\" -eq {code} ] && exit {code}; exit 1; }}"));
     }
     parts.join("\n")
 }
@@ -152,7 +154,8 @@ fn follow(store: &Store, runner: &dyn Runner, home: &Path, run: &Run, now: i64) 
             // Prepare's 2 is a conflict with the target; any other failure a red check (§9)
             2 => bs::give_back(tx, &run.task, &format!("{id} returned: conflict: its Prepare or Verify ended with status 2. Its log: {log}"), Left::Conflict, now),
             code => {
-                bs::not_again(tx, &run.task, &run.commit, now)?;
+                let missing = verify_review::missed(tx, &run.task, &run.attempt)? && code == verify_review::MISSING_EXIT;
+                if !missing { bs::not_again(tx, &run.task, &run.commit, now)?; }
                 bs::give_back(tx, &run.task, &format!("{id} returned: red check: its Prepare or Verify {}. Its log: {log}", how_ended(code, run.minutes)), Left::Red, now)
             }
         }
@@ -218,7 +221,10 @@ fn finish(store: &Store, home: &Path, run: &Run) -> Result<(), String> {
     if tree.exists() {
         return store.with(|tx| tx.execute("UPDATE integration_verifies SET pane = NULL WHERE task = ?1", [&run.task]).map(drop).map_err(sql));
     }
-    store.with(|tx| tx.execute("DELETE FROM integration_verifies WHERE task = ?1", [&run.task]).map(drop).map_err(sql))
+    store.with(|tx| {
+        verify_review::missed(tx, &run.task, &run.attempt)?;
+        tx.execute("DELETE FROM integration_verifies WHERE task = ?1", [&run.task]).map(drop).map_err(sql)
+    })
 }
 
 #[cfg(test)]

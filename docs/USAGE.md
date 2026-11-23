@@ -484,6 +484,31 @@ replaces the project preferences and keeps the switch, tier agents and approved 
 commands. In **Probe commands**, use **View command** to read the full text and then
 **Approve command** to set it. Commands from an import start unset.
 
+In **Surface map**, enter repository-relative patterns, one per line. Use `*` and `?`
+within a path segment and `**` as a whole segment for any depth. T1 identifies internal
+boundaries. T2 contracts require an architecture review. A change or deletion on a T3 path
+requires the T3 review. A new file on the same path requires a T2 review. Add a small set
+of T3 phrases to flag likely designs when their tasks are created. **Preview last month**
+counts the tasks the draft map would have gated by tier. It shows coverage for completed
+tasks and identifies how many lack a recorded diff. The map starts empty.
+
+For a design-first task, use `request_design_review` with the task ID, design note,
+migration, rollback plan and affected paths, one exact path per line for T3. Put those path patterns in **Paths with an existing review process**
+so the Supervisor can use the existing reviewers. Each reviewer uses `record_design_review`
+from their own session to leave their verdict, compatibility statement and rejected advice
+with reasons. T3 uses separate architecture and independent reviewers and an owner sign-off
+on its decision card. The review record follows the task's commits within the reviewed paths. Open a new task
+if the design expands to other gated paths.
+The strong and independent tier agents share the judgment budget for this work.
+If the round cannot start within the budget or finish within 20 minutes, its linked
+blocker is released and a decision card asks the owner to arrange the review.
+
+To enforce the saved map during integration, put `terminum integration verify-review`
+in the project's **Verify** command. Put it first and join further commands with `&&`.
+A missing record returns the task with the evidence and the review it needs. Record the
+review and queue the same commit again. The check is opt-in, uses the task's submitted
+diff, and works when the project runs at Advisor or Operator.
+
 **Open Supervisor screen** shows the project's incidents, scoreboard and signals. Open an indicator
 for its guard and missing inputs, or open a signal for the measurement, threshold and
 evidence. Use **More signals** to see older results and **Refresh** to see the

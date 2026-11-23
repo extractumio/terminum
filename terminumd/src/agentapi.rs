@@ -94,6 +94,11 @@ pub async fn agent_on(app: Shared, server: Option<std::sync::Arc<crate::tmux::se
         };
         return said(roles::in_pane(&app, &caller.key, from_pane, caller.other, &tool, &args).await);
     }
+    if matches!(tool.as_str(), crate::supervisor::design_gates::BRIEF | crate::supervisor::design_gates::RECORD)
+        && (caller.other || local.is_none_or(|peer| peer.0.is_none()) || !roles::peer::in_pane(local.unwrap(), &server, pane).await)
+    {
+        return answer("Design evidence must come from this local session's main agent.", true);
+    }
     if crate::tasks::tools::NAMES.contains(&tool.as_str()) {
         return task_tool(&app, &caller, tool, args).await;
     }

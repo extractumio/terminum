@@ -100,13 +100,15 @@ async fn deliver(app: &Shared, last: &mut Option<i64>) {
 /// the async workers.
 async fn walk(app: &Shared) {
     let Ok(tasks) = crate::tasks::api::store(app, |tx| crate::tasks::ops::rows(tx, "SELECT t.id, t.slug, t.project, t.session_key, t.status = 'IN PROGRESS' FROM tasks t
-        JOIN project_integration i ON i.project = t.project WHERE i.is_on = 1 AND t.status != 'DONE' AND t.session_key IS NOT NULL AND t.archived_at IS NULL
+        WHERE (EXISTS (SELECT 1 FROM project_integration i WHERE i.project = t.project AND i.is_on)
+          OR EXISTS (SELECT 1 FROM project_supervisor p WHERE p.project = t.project AND p.enabled))
+          AND t.status != 'DONE' AND t.session_key IS NOT NULL AND t.archived_at IS NULL
         ORDER BY t.updated_at DESC", [], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?, r.get::<_, String>(3)?, r.get::<_, bool>(4)?)))).await else { return };
     let (trees, sessions): (Vec<notices::Tree>, Vec<_>) = {
         let layout = app.layout.read();
         let trees = tasks.into_iter().filter_map(|(task, id, project, key, working)| {
             let dir = notices::tree_dir(crate::page::marks::find_item(&layout, &key)?)?;
-            Some(notices::Tree { task, id, project, dir, working })
+            Some(notices::Tree { task, id, project, dir, session: key, working })
         }).collect();
         // every session's folders on this Mac, to name a tree with no task by the session in it
         let groups = layout.as_array().map_or(&[][..], |a| a.as_slice());
@@ -117,7 +119,13 @@ async fn walk(app: &Shared) {
         (trees, sessions)
     };
     let store = app.tasks.clone();
-    match tokio::task::spawn_blocking(move || notices::walk(&store, &crate::config::tm_home(), &trees, &sessions, crate::tasks::ops::now())).await {
+    match tokio::task::spawn_blocking(move || {
+        let at = crate::tasks::ops::now();
+        if let Err(error) = crate::supervisor::surfaces::observe_trees(&store, &trees, at) {
+            tracing::warn!(event = "supervisor.design_walk", %error);
+        }
+        notices::walk(&store, &crate::config::tm_home(), &trees, &sessions, at)
+    }).await {
         Ok(Err(e)) => tracing::warn!(event = "integration.walk", error = %e),
         Err(e) => tracing::error!(event = "integration.panic", error = %e),
         Ok(Ok(())) => {}
