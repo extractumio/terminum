@@ -73,10 +73,14 @@ pub(super) fn collected(tx: &Transaction, project: &str, evaluation: i64, at: i6
         (project, evaluation), |r| r.get::<_, String>(0))?;
     let mut added = Vec::new();
     if ids.is_empty() { return Ok(added); }
-    let settings = super::settings::read(tx, project)?.settings;
+    let saved = super::settings::read(tx, project)?.settings;
+    let attach = super::attach::read(tx, project)?;
+    let weekly = super::config_lifecycle::on_weekly(tx, project)?;
     for id in ids {
         let signal = signals::get(tx, project, &id)?;
-        if super::Rule::named(&signal.detector).is_ok_and(|rule| settings.detector(rule).mode == super::Mode::Digest) {
+        if let Ok(rule) = super::Rule::named(&signal.detector)
+            && super::config_lifecycle::mode(&saved, attach.as_ref(), &saved.detector(rule), &weekly, at) != super::Mode::Live
+        {
             continue;
         }
         added.extend(comment(tx, &signal, at)?);

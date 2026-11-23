@@ -119,7 +119,11 @@ pub(crate) fn waiting(tx: &Transaction, at: i64, key: Option<&str>) -> Result<Ve
         WHERE p.enabled = 1 AND (?2 IS NULL OR s.fingerprint = ?2) AND NOT EXISTS (
             SELECT 1 FROM supervisor_rounds r WHERE r.fingerprint = s.fingerprint AND r.ended_at IS NULL)
         AND (q.owner_requested = 1 OR (
-            s.state IN ('new', 'raised', 'recurred', 'held') AND s.detector NOT IN ('self.round_failed','self.budget','self.fights')
+            NOT EXISTS (SELECT 1 FROM supervisor_detector_lifecycle l
+                WHERE l.project = s.project AND l.detector = s.detector AND l.weekly_at IS NOT NULL)
+            AND coalesce((SELECT json_extract(w.pack, '$.detectors.\"' || s.detector || '\".mute.until')
+                FROM supervisor_settings w WHERE w.project = s.project), 0) <= ?3
+            AND s.state IN ('new', 'raised', 'recurred', 'held') AND s.detector NOT IN ('self.round_failed','self.budget','self.fights')
             AND NOT EXISTS (SELECT 1 FROM supervisor_rounds r WHERE r.fingerprint = s.fingerprint
                 AND (r.signal_revision = s.revision OR (level = 1 AND r.finding IS NOT NULL)))
             AND (level >= 2 OR (level = 1 AND NOT EXISTS (
@@ -130,7 +134,7 @@ pub(crate) fn waiting(tx: &Transaction, at: i64, key: Option<&str>) -> Result<Ve
                 WHERE w.fingerprint = s.fingerprint AND w.week BETWEEN ?1 - 7 AND ?1)))))
         )
         SELECT project, fingerprint FROM eligible ORDER BY impact DESC, level DESC, first_seen, fingerprint",
-        (week, key), |r| Ok((r.get(0)?, r.get(1)?)))?;
+        (week, key, at), |r| Ok((r.get(0)?, r.get(1)?)))?;
     eligible.extend(super::reflection::waiting(tx, at, key)?);
     if key.is_some_and(|key| !key.starts_with(design_reviews::PREFIX)) { return Ok(eligible); }
     let mut designs = design_reviews::waiting(tx, at, key)?;
@@ -230,7 +234,7 @@ pub(crate) fn save(tx: &Transaction, run: &str, candidate: Candidate, at: i64, c
                 format!("Supervisor design review case {id}. Call get_case_file with its ID. Review the design as the assigned critic and submit an attributed verdict with record_design_review."))
         }
         Purpose::Reflection => (super::reflection::case(tx, &project, &key, at)?, None, super::reflection::TIME_LIMIT, None,
-            format!("Supervisor reflection case {id}. Call get_case_file with its ID. Review the code-built timeline independently. Explain misses, noise and wrong decisions, and submit proposals with record_reflection.")),
+            format!("Supervisor reflection case {id}. Call get_case_file with its ID. Review the code-built timeline independently. Explain misses, noise and wrong decisions, and submit configuration changes with replay_config_change and propose_config_change. Cite their change IDs with record_reflection.")),
         Purpose::Investigation(signal) => {
             let (case, incident) = investigation_case(tx, signal, at)?;
             (case, incident, TIME_LIMIT, None,

@@ -90,6 +90,8 @@ export function preferences(view, agents, { request, run }) {
   const saved = view.settings, edit = editor();
   const level = edit.field("Level", select(LEVELS, saved.level), (v, out) => { out.level = v; });
   const choices = [["", "None"], ...agents.map((a) => [a.id, a.name])];
+  const boards = [["", "Ask me"], ...(view.engine_boards ?? []).map((project) => [project.id, project.name])];
+  const engine = edit.field("Engine project", select(boards, saved.engine_board ?? ""), (v, out) => { out.engine_board = v || null; });
   const tiers = TIERS.map(([key, title]) => edit.field(`${title} tier`, select(choices, saved.tiers[key] ?? ""),
     (v, out) => { out.tiers[key] = v || null; }));
   const budgets = BUDGETS.map(([key, label, bounds, optional]) => {
@@ -131,7 +133,7 @@ export function preferences(view, agents, { request, run }) {
     }
     return preview;
   }));
-  const node = stack(level, section("Tier agents and budgets", hint("With no tier agents selected, the Supervisor runs on code alone."),
+  const node = stack(grid(level, engine), section("Tier agents and budgets", hint("With no tier agents selected, the Supervisor runs on code alone."),
     grid(...tiers), el("h3", null, "Budgets"), hint("Budgets set the limits for judgment rounds and fixes when the Supervisor admits work."), grid(...budgets)),
   charter(edit, saved), section("Indicators", part("div", "sv-checks", ...indicators),
     hint("Outside indicators will use an approved probe to supply their measurements."), outsideIndicators(edit, saved.charter.outside_indicators)),

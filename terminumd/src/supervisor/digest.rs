@@ -39,7 +39,11 @@ pub(super) fn publish(tx: &Transaction, project: &str, at: i64) -> Result<bool, 
     let entries = rows(tx, "SELECT fingerprint, detector, metric, measure, state FROM (
         SELECT *, max(json_extract(scores, '$.impact'), json_extract(scores, '$.blast'),
           json_extract(scores, '$.reversibility')) AS level FROM supervisor_signals WHERE project = ?1 AND first_seen >= ?2 AND first_seen < ?3
-        ) WHERE level >= 1 AND state NOT IN ('shadow', 'muted', 'rejected')
+        ) s WHERE level >= 1 AND state NOT IN ('shadow', 'muted', 'rejected')
+        AND NOT EXISTS (SELECT 1 FROM supervisor_detector_lifecycle l
+            WHERE l.project = s.project AND l.detector = s.detector AND l.weekly_at IS NOT NULL)
+        AND coalesce((SELECT json_extract(w.pack, '$.detectors.\"' || s.detector || '\".mute.until')
+            FROM supervisor_settings w WHERE w.project = s.project), 0) <= ?3
         ORDER BY level DESC, first_seen DESC, fingerprint LIMIT 5", (project, after, at), |r| {
             let action = match r.get::<_, String>(4)?.as_str() {
                 "held" => "Held",

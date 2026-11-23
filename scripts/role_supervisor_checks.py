@@ -104,7 +104,8 @@ def ac231_supervisor_tools_pane_and_token(t, call, typed, tool, tmux, page, proj
     check("AC-244 the project's own manager can read its Supervisor context", rc == "0" and project in out, out[:240])
 
     observer = {"list_tasks", "get_task", "get_case_file", "list_signals", "get_signal", "get_metric", "record_finding"}
-    advisor = observer | {"add_comment", "ask_human", "open_problem", "update_problem", "propose_rank", "propose_decision", "post_incident_answer"}
+    advisor = observer | {"add_comment", "ask_human", "open_problem", "update_problem", "propose_rank", "propose_decision",
+                          "post_incident_answer", "replay_config_change", "propose_config_change"}
     hold_tools = {"hold", "release_hold"}
     operator = advisor | {"run_task", "promote_queued_task", "stop_task", "list_runs", "get_dashboard"} | hold_tools
     view = call(settings)[1]

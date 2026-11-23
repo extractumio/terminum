@@ -13,6 +13,13 @@ mod outcome_evidence;
 mod attribution;
 mod catalog;
 mod decisions;
+pub(crate) mod config_changes;
+mod config_replay;
+mod config_lifecycle;
+mod config_engine;
+mod config_api;
+#[cfg(test)]
+mod config_tests;
 mod nudges;
 mod digest;
 pub(crate) mod review;

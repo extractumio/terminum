@@ -61,7 +61,7 @@ impl Role {
             return active && matches!(tool, "get_case_file" | supervisor::design_gates::RECORD);
         }
         if let Self::Reflection(active) = self {
-            return active && matches!(tool, "get_case_file" | supervisor::reflection::TOOL);
+            return active && supervisor::reflection::TOOLS.contains(&tool);
         }
         if tool == supervisor::reflection::TOOL { return false; }
         if supervisor::holds::TOOLS.contains(&tool) {

@@ -76,8 +76,45 @@ function exceptionDigest(digest) {
       el("p", "msay", digest.last_ok == null ? "Collector has no successful run recorded." : `Collector last ran ${stamp(digest.last_ok)}.`)));
 }
 
-export function reportCards(data, path) {
+function configDiff(change) {
+  const fields = new Set([...Object.keys(change.previous ?? {}), ...Object.keys(change.next ?? {})]);
+  const display = (value) => value == null ? "Default" : typeof value === "object" ? JSON.stringify(value) : String(value);
+  return [...fields].filter((key) => JSON.stringify(change.previous?.[key]) !== JSON.stringify(change.next?.[key]))
+    .map((key) => `${key.replaceAll("_", " ")} · ${display(change.previous?.[key])} → ${display(change.next?.[key])}`);
+}
+
+function configuration(data, path, refresh) {
+  const changes = data.config_changes ?? [], sunset = data.sunset ?? [];
+  if (!changes.length && !sunset.length) return null;
+  const items = changes.map((change) => {
+    const status = change.reverted ? "Reverted" : change.applied ? "Applied" : change.decision ?? "Awaiting a decision";
+    const error = alertLine(), keys = actions();
+    const press = oneAtATime(keys, async (operation) => {
+      showError(error, "");
+      try {
+        await api(`${path}/config/${change.id}/${operation}`, { method: "POST", body: {} });
+        await refresh();
+      } catch (e) { showError(error, e.message); }
+    });
+    if (change.task) keys.append(taskLink(change.task, `Open ${change.task}`));
+    if (change.applied && !change.reverted) keys.append(button("textkey", "Revert change", () => press("revert")));
+    if (change.promote) keys.append(button("textkey", "Promote to Live", () => press("promote")));
+    return part("li", "sv-stack", el("h3", null, `Change ${change.id} · ${change.detector}`),
+      el("p", "msay", `${status} · ${change.class} · ${stamp(change.at)}`),
+      ...configDiff(change).map((line) => el("p", "wrap", line)), el("p", "wrap", change.replay), keys, error);
+  });
+  for (const { detector, removal } of sunset) {
+    items.push(el("li", null, `${detector} · ${removal ? "Proposed for removal" : "Weekly review only"}`));
+  }
+  const panel = part("details", "sv-panel", el("summary", "sv-touch", "Configuration changes"),
+    part("ul", "sv-stack sv-evidence", ...items));
+  panel.id = "sv-config-changes";
+  panel.open = document.getElementById(panel.id)?.open ?? false;
+  return panel;
+}
+
+export function reportCards(data, path, refresh) {
   const setup = data.review_setup_error && el("p", "merr", data.review_setup_error);
   if (setup) setup.setAttribute("role", "alert");
-  return [decisionList(data.decisions ?? []), setup, weekly(data.review, path), exceptionDigest(data.digest)].filter(Boolean);
+  return [decisionList(data.decisions ?? []), setup, weekly(data.review, path), configuration(data, path, refresh), exceptionDigest(data.digest)].filter(Boolean);
 }

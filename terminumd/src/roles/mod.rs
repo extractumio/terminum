@@ -126,7 +126,7 @@ pub fn mark(app: &Shared, groups: &mut [Value]) {
 
 /// Whether a tool only reads.
 pub(super) fn reads(tool: &str) -> bool {
-    tool.starts_with("list_") || tool.starts_with("get_")
+    tool.starts_with("list_") || tool.starts_with("get_") || tool == crate::supervisor::config_changes::PREVIEW
 }
 
 /// Resolve the recorded role for this pane. Peer ancestry binds local Supervisor calls in both directions.

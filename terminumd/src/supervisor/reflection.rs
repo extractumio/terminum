@@ -9,6 +9,7 @@ use crate::tasks::{comments, ops::{self, NewTask, rows, sql}};
 use super::{governor, outcomes, reflection_timeline, rounds, settings, signals};
 
 pub(crate) const TOOL: &str = "record_reflection";
+pub(crate) const TOOLS: &[&str] = &["get_case_file", TOOL, super::config_changes::PREVIEW, super::config_changes::PROPOSE];
 pub(crate) const TIME_LIMIT: i64 = 30 * 60;
 
 pub(super) fn action(tx: &Transaction, project: &str, action: &outcomes::Action, trigger: &str, at: i64) -> Result<(), String> {
@@ -91,7 +92,7 @@ pub(super) fn case(tx: &Transaction, project: &str, key: &str, at: i64) -> Resul
     Ok(json!({
         "kind": "reflection", "subject_kind": kind, "subject_id": subject, "triggers": triggers,
         "timeline": timeline, "agent_rates": rates, "settings_revision": settings::revision(tx, project)?,
-        "tools": ["get_case_file", TOOL],
+        "tools": TOOLS,
         "question": "What evidence was missed, what was noise, what was wrong, and what should change?",
     }))
 }
@@ -99,8 +100,7 @@ pub(super) fn case(tx: &Transaction, project: &str, key: &str, at: i64) -> Resul
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Proposal {
-    change: String,
-    replay: String,
+    change_id: i64,
     evidence: Vec<usize>,
 }
 
@@ -167,7 +167,8 @@ pub(super) fn complete(tx: &Transaction, project: &str, run: &str, case: &Value,
         if p.evidence.is_empty() || p.evidence.len() > len || p.evidence.iter().any(|&i| i == 0 || i > len) {
             return Err("Cite the numbered timeline events from this case.".to_string());
         }
-        Ok(json!({"change":prose(&p.change)?,"replay":prose(&p.replay)?,"evidence":p.evidence}))
+        let (change, replay) = super::config_changes::for_reflection(tx, project, run, p.change_id)?;
+        Ok(json!({"change_id":p.change_id,"change":change,"replay":replay,"evidence":p.evidence}))
     }).collect::<Result<Vec<_>, _>>()?;
     let result = json!({"missed":prose(&draft.missed)?,"noise":prose(&draft.noise)?,"wrong":prose(&draft.wrong)?,
         "settings_revision":case["settings_revision"],"proposals":proposals});

@@ -126,7 +126,9 @@ fn state(tx: &Transaction, signal: &Signal, at: i64) -> Result<HoldState, String
     }
     let rule = Rule::named(&signal.detector)?;
     let mode = pack.mode(rule);
-    if pack.muted(rule, at) || matches!(mode, Mode::Off | Mode::Digest) {
+    if pack.muted(rule, at) || matches!(mode, Mode::Off | Mode::Digest)
+        || super::config_lifecycle::quieted(tx, project, rule)?
+    {
         return Err("This detector does not allow holds.".into());
     }
     if mode == Mode::Shadow || signal.state == State::Shadow {

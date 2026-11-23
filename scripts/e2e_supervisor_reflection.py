@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-"""AC-248 and AC-249: the private Dispatcher admits retained triggers through tmux and MCP."""
+"""AC-248, AC-249 and AC-253: the private Dispatcher admits retained triggers through tmux and MCP."""
 from contextlib import closing
 import json
 from pathlib import Path
@@ -97,7 +97,7 @@ def main():
               len(cases) == 8 and all(row[3] == independent and row[4] > 0 and row[5] is None for row in cases)
               and not lines(main_prompts), f"{len(cases)} ended rounds")
         expected = [f"Supervisor reflection case {case}. Call get_case_file with its ID. Review the code-built timeline independently. "
-                    "Explain misses, noise and wrong decisions, and submit proposals with record_reflection."
+                    "Explain misses, noise and wrong decisions, and submit configuration changes with replay_config_change and propose_config_change. Cite their change IDs with record_reflection."
                     for case, *_ in cases]
         check("AC-248 the marked pane takes only fixed words and the case ID once", lines(prompts) == expected, lines(prompts))
         tools = [json.loads(line) for line in lines(log) if '"tool":' in line]
@@ -108,6 +108,12 @@ def main():
               sum(row.get("isError", False) for row in tools if row["tool"] == "record_reflection") == 8
               and all(json.loads(row[2])["proposals"][0]["evidence"] == [1] for row in cases))
         screen = call(path + "/screen")
+        proposals = {entry["id"]: entry for entry in screen["config_changes"]}
+        check("AC-253 each reflection cites a replayed proposal from its own marked session",
+              len(proposals) == len(cases) and all(
+                  proposals[json.loads(case[2])["proposals"][0]["change_id"]]["class"] == "owner" for case in cases)
+              and sum(row.get("isError", False) for row in tools if row["tool"] == "propose_config_change") == 0)
+
         alert = next(r for r in screen["reflections"] if "alert_wrong" in r["triggers"])
         card = call(f"/api/tasks/{alert['routing_card']}")
         check("AC-249 a routing proposal with missing data goes to a decision card",
@@ -116,6 +122,24 @@ def main():
         seed("breaker", ["breaker_opened"])
         time.sleep(3)
         check("AC-248 a completed request cannot start again", len(lines(prompts)) == count, lines(prompts))
+
+        seed("config-tune", ["human_override"])
+        tuned = wait_for(ended, lambda rows: len(rows) == count + 1, 30, every=.25)
+        change = json.loads(tuned[-1][2])["proposals"][0]["change_id"]
+
+        def entry():
+            return next(item for item in call(path + "/screen")["config_changes"] if item["id"] == change)
+
+        def detectors():
+            return call(path + "/settings")["settings"]["detectors"]
+
+        applied = entry()
+        check("AC-253 a marked reflection applies its reproduced threshold tune",
+              applied["class"] == "tune" and applied["applied"]
+              and detectors()["flow.failed_repeat"]["threshold"] == {"absolute": 2.5})
+        call(path + f"/config/{change}/revert", "POST", {})
+        check("AC-253 one signed-in revert restores the default and retains the ledger entry",
+              entry()["reverted"] and "flow.failed_repeat" not in detectors())
     except Exception:
         if db_path.exists():
             print("Private reflection state:", db("SELECT triggers,reason,round FROM supervisor_reflections"))

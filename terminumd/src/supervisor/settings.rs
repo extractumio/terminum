@@ -177,20 +177,26 @@ impl Default for Guardrails {
     }
 }
 
-#[derive(Clone, Default, Serialize, Deserialize)]
+#[derive(Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub(super) struct RuleSettings {
-    mode: Option<Mode>,
-    window_days: Option<u16>,
-    threshold: Option<Threshold>,
-    mute: Option<Mute>,
+    pub(super) mode: Option<Mode>,
+    pub(super) window_days: Option<u16>,
+    pub(super) threshold: Option<Threshold>,
+    pub(super) mute: Option<Mute>,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub(super) owner_live: bool,
 }
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct Mute {
-    reason: String,
-    until: i64,
+pub(super) struct Mute {
+    pub(super) reason: String,
+    pub(super) until: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(super) owner: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(super) mode: Option<Mode>,
 }
 
 #[derive(Default, Serialize, Deserialize)]
@@ -204,9 +210,29 @@ pub(super) struct Settings {
     probes: Probes,
     guardrails: Guardrails,
     language: Option<String>,
+    pub(super) engine_board: Option<String>,
 }
 
 impl Settings {
+    pub(super) fn threshold_band(&self) -> f64 {
+        self.guardrails.threshold_percent / 100.0
+    }
+
+    pub(super) fn owner_live(&self, rule: Rule) -> bool {
+        self.detectors.get(rule.id()).is_some_and(|config| config.owner_live)
+    }
+
+    pub(super) fn delivery(&self, rule: Rule, at: i64) -> Option<Mode> {
+        self.detectors.get(rule.id()).and_then(|change| change.mute.as_ref())
+            .filter(|mute| at < mute.until).map(|mute| mute.mode.unwrap_or(Mode::Off))
+    }
+
+    #[cfg(test)]
+    pub(super) fn expired_since(&self, rule: Rule, previous: i64, at: i64) -> bool {
+        self.detectors.get(rule.id()).and_then(|change| change.mute.as_ref())
+            .is_some_and(|mute| previous < mute.until && mute.until <= at)
+    }
+
     pub(super) fn decision_band(&self) -> (u32, f64) {
         (self.guardrails.decisions_minimum, self.guardrails.decisions_standard_errors)
     }
@@ -245,7 +271,7 @@ impl Settings {
     }
 
     pub fn muted(&self, rule: Rule, at: i64) -> bool {
-        self.detectors.get(rule.id()).and_then(|change| change.mute.as_ref()).is_some_and(|mute| at < mute.until)
+        self.delivery(rule, at).is_some()
     }
 
     fn validate(&self) -> Result<(), String> {
@@ -271,7 +297,7 @@ impl Settings {
             if rule.id() != name || !self.detector(rule).valid() {
                 return Err(format!("{name}: invalid Supervisor detector settings."));
             }
-            if change.mute.as_ref().is_some_and(|m| m.reason.trim().is_empty() || m.until <= 0) {
+            if change.mute.as_ref().is_some_and(|m| m.reason.trim().is_empty() || m.until <= 0 || m.mode == Some(Mode::Live)) {
                 return Err(format!("{name}: a detector mute needs a reason and an end time."));
             }
         }
@@ -298,6 +324,13 @@ pub(super) fn revision(tx: &Transaction, project: &str) -> Result<i64, String> {
         .optional().map(|revision| revision.unwrap_or_default()).map_err(sql)
 }
 
+pub(super) fn recall_due(tx: &Transaction, project: &str, previous: i64, at: i64) -> Result<(i64, bool), String> {
+    tx.query_row("SELECT revision, EXISTS (SELECT 1 FROM json_each(pack, '$.detectors') AS detector
+        WHERE json_extract(detector.value, '$.mute.until') > ?2 AND json_extract(detector.value, '$.mute.until') <= ?3)
+        FROM supervisor_settings WHERE project = ?1", (project, previous, at),
+        |r| Ok((r.get(0)?, r.get(1)?))).optional().map(|row| row.unwrap_or_default()).map_err(sql)
+}
+
 pub(super) fn read(tx: &Transaction, project: &str) -> Result<Saved, String> {
     let saved: Option<(i64, String)> = tx.query_row(
         "SELECT revision, pack FROM supervisor_settings WHERE project = ?1",
@@ -308,40 +341,86 @@ pub(super) fn read(tx: &Transaction, project: &str) -> Result<Saved, String> {
     };
     let mut settings: Settings = serde_json::from_str(&json).map_err(|_| "Invalid saved Supervisor settings.")?;
     settings.tiers.retain_project(tx, project, false)?;
+    if settings.engine_board.as_deref().is_some_and(|id| crate::tasks::ops::check_project(tx, id).is_err()) {
+        settings.engine_board = None;
+    }
     Ok(Saved { revision, settings })
 }
 
 /// Imports preserve the destination's agent choices and its switch. A copied pack can't select a pool.
 pub(super) fn write(
-    tx: &Transaction, project: &str, revision: i64, mut settings: Settings, imported: bool,
+    tx: &Transaction, project: &str, revision: i64, settings: Settings, imported: bool,
+) -> Result<Saved, String> {
+    let source = if imported { SaveSource::Import } else { SaveSource::Owner };
+    save(tx, project, revision, settings, source, crate::tasks::ops::now())
+}
+
+pub(super) fn write_at(
+    tx: &Transaction, project: &str, revision: i64, settings: Settings, at: i64,
+) -> Result<Saved, String> {
+    save(tx, project, revision, settings, SaveSource::ConfigChange, at)
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum SaveSource { Owner, Import, ConfigChange }
+
+fn save(
+    tx: &Transaction, project: &str, revision: i64, mut settings: Settings, source: SaveSource, at: i64,
 ) -> Result<Saved, String> {
     let previous = read(tx, project)?;
     if revision != previous.revision {
         return Err("Supervisor settings changed. Reload them and try again.".into());
     }
+    let imported = source == SaveSource::Import;
     if imported {
         settings.tiers = previous.settings.tiers.clone();
         settings.level = previous.settings.level;
+        settings.engine_board = previous.settings.engine_board.clone();
     } else {
         settings.tiers.retain_project(tx, project, true)?;
     }
-    settings.validate()?;
     let attached = tx.query_row("SELECT EXISTS(SELECT 1 FROM project_supervisor
         WHERE project = ?1 AND (attachment IS NOT NULL OR enabled = 1))", [project], |r| r.get::<_, bool>(0)).map_err(sql)?;
-    if attached {
-        let mut suspended = Vec::new();
-        for &rule in Rule::ALL {
-            let old = previous.settings.mode(rule);
-            let new = settings.mode(rule);
-            if old != Mode::Off && new == Mode::Off {
-                suspended.push(rule);
-            }
-            if new != Mode::Off && (old == Mode::Off || (imported && old == Mode::Shadow)) {
-                settings.detectors.entry(rule.id().into()).or_default().mode = Some(Mode::Shadow);
+    if source != SaveSource::ConfigChange {
+        for (name, rule) in &mut settings.detectors {
+            let prior = previous.settings.detectors.get(name);
+            rule.owner_live = !imported && prior.is_some_and(|prior| prior.owner_live);
+            if let Some(mute) = &mut rule.mute {
+                let former = prior.and_then(|p| p.mute.as_ref());
+                if imported || former != Some(mute) {
+                    mute.owner = Some(crate::tasks::store::HUMAN.into());
+                }
             }
         }
-        super::attach::retire_live(tx, project, &suspended)?;
     }
+    if let Some(engine) = &settings.engine_board {
+        crate::tasks::ops::check_project(tx, engine)?;
+    }
+    settings.validate()?;
+    let mut suspended = Vec::new();
+    for &rule in Rule::ALL {
+        let old = previous.settings.mode(rule);
+        let mut new = settings.mode(rule);
+        if attached && source != SaveSource::ConfigChange && new != Mode::Off
+            && (old == Mode::Off || (imported && old == Mode::Shadow))
+        {
+            new = Mode::Shadow;
+            let config = settings.detectors.entry(rule.id().into()).or_default();
+            config.mode = Some(new);
+            config.owner_live = false;
+        }
+        if old != new {
+            if attached && source != SaveSource::ConfigChange && matches!((old, new), (Mode::Off, _) | (_, Mode::Off)) {
+                suspended.push(rule);
+            }
+            if source == SaveSource::ConfigChange && matches!((old, new), (Mode::Off, _) | (_, Mode::Off)) {
+                if new != Mode::Live { super::config_lifecycle::quiet_signals(tx, project, rule)?; }
+            } else {
+                super::config_lifecycle::mode_changed(tx, project, rule, new, at)?;
+            }
+        }
+    }
+    super::attach::retire_live(tx, project, &suspended)?;
     let revision = revision + 1;
     let pack = serde_json::to_string(&settings).map_err(|_| "Could not encode Supervisor settings.")?;
     if pack.len() > 64 * 1024 {

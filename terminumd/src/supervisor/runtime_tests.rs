@@ -310,3 +310,36 @@ async fn ac221_attach_replays_distinct_verdicts_seeds_problems_and_retires_disab
     assert_eq!(value(store, "SELECT count(*) FROM supervisor_attach_seeds
         JOIN supervisor_signals USING (fingerprint) WHERE detector = 'flow.failed_no_reason'"), 1);
 }
+
+#[tokio::test]
+async fn ac254_collector_resumes_at_mute_expiry_without_new_events() {
+    let (root, app) = crate::testutil::app_with_tasks("supervisor-mute-clock");
+    let f = Fixture::in_path(root.join("state/kanban.sqlite"));
+    f.task("repeat", Some("Bug"), "P2", "IN PROGRESS", NOW - 2 * WEEK);
+    for i in 0..3 {
+        f.failed_run("repeat", &format!("failed-{i}"), NOW - 60 + i);
+    }
+    let store = &app.tasks;
+    set_enabled(store, PROJECT, true, NOW).unwrap();
+    collect_project(&app, &ready(store), || NOW).unwrap();
+    let rule = Rule::FailedRepeat;
+    let until = NOW + 40;
+    let change = json!({"detector":rule.id(),"action":{
+        "operation":"mute","mode":"shadow","reason":"Review repeated failures","until":until}});
+    store.with(|tx| {
+        use supervisor::config_changes as config;
+        let replay = config::preview(tx, PROJECT, "test-round", serde_json::from_value(change.clone()).unwrap(), NOW + 1)?;
+        let proposal = serde_json::from_value(json!({"change":change,"replay":replay["replay"]})).unwrap();
+        let verified = config::verify(tx, PROJECT, "test-round", proposal, NOW + 1)?;
+        config::submit(tx, PROJECT, "test-round", verified, NOW + 1)?;
+        Ok(())
+    }).unwrap();
+    let state = || supervisor::signals(store, PROJECT).unwrap().into_iter()
+        .find(|s| s.detector == rule.id()).unwrap().state;
+    collect_project(&app, &ready(store), || until - 1).unwrap();
+    assert_eq!(state(), State::Shadow);
+    let before = ready(store);
+    collect_project(&app, &before, || until).unwrap();
+    assert_eq!(ready(store).cursor, before.cursor);
+    assert_eq!(state(), State::New);
+}
