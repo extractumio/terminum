@@ -292,3 +292,20 @@ fn ac187_dispatcher_fails_a_session_s_work_but_never_a_queued_commit() {
         Ok(())
     }).unwrap();
 }
+
+// terminum-supervisor.md AC-212: a FAILED move names the run that held its task, so a launch later in
+// its second is never taken for that run; a task no run holds names none.
+#[test]
+fn ac212_a_failed_move_names_the_run_that_held_its_task() {
+    store("runs-failed-names-run").with(|tx| {
+        let (r, t) = working(tx, "a", &["held"]);
+        let alone = task(tx, "alone");
+        ops::move_to(tx, HUMAN, &t[0].id, "FAILED", 3)?;
+        ops::move_to(tx, HUMAN, &alone.id, "FAILED", 3)?;
+        let named = |key: &str| tx.query_row("SELECT json_extract(data, '$.run') FROM events WHERE task = ?1 AND kind = 'move'
+            AND json_extract(data, '$.to') = 'FAILED'", [key], |x| x.get::<_, Option<String>>(0)).map_err(ops::sql);
+        assert_eq!(named(&t[0].key)?, Some(r.id.clone()));
+        assert_eq!(named(&alone.key)?, None);
+        Ok(())
+    }).unwrap();
+}
