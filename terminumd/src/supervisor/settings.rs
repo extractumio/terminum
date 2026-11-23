@@ -7,7 +7,7 @@ use rusqlite::{OptionalExtension, Transaction};
 use serde::{Deserialize, Serialize};
 
 use crate::tasks::ops::sql;
-use super::{Detector, Mode, Rule, Threshold};
+use super::{Detector, Mode, Rule, Threshold, outside_feedback::ReferenceBase, outside_indicators, probes};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -126,7 +126,7 @@ pub(super) struct Charter {
     pub allocation: BTreeMap<String, f64>,
     pub(super) allocation_review_at: Option<i64>,
     indicators: Indicators,
-    outside_indicators: BTreeMap<String, String>,
+    pub(super) outside_indicators: BTreeMap<String, outside_indicators::Setting>,
     pub(super) surfaces: super::surfaces::Surfaces,
 }
 
@@ -156,11 +156,12 @@ struct Probes {
     git_file_line_cap: Option<u32>,
     gate_record: bool,
     code_host: bool,
+    feedback: BTreeMap<String, ReferenceBase>,
 }
 
 impl Default for Probes {
     fn default() -> Self {
-        Self { git: true, git_file_line_cap: None, gate_record: true, code_host: true }
+        Self { git: true, git_file_line_cap: None, gate_record: true, code_host: true, feedback: BTreeMap::new() }
     }
 }
 
@@ -277,6 +278,12 @@ impl Settings {
 
     fn validate(&self) -> Result<(), String> {
         if self.probes.git_file_line_cap == Some(0) { return Err("The Git source file line limit must be positive.".into()); }
+        outside_indicators::validate(&self.charter.outside_indicators)?;
+        if self.probes.feedback.len() > 32 || self.probes.feedback.iter().any(|(probe, base)| {
+            !probes::probe_id(probe) || !base.valid()
+        }) {
+            return Err("Use up to 32 feedback probes, each with a probe ID and an HTTPS reference base ending in a slash.".into());
+        }
         self.charter.surfaces.validate()?;
         if !self.budgets.valid() {
             return Err("Invalid Supervisor budget.".into());

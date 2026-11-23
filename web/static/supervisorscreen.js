@@ -32,8 +32,9 @@ function folding(title, contents) {
   return panel;
 }
 
-function indicator({ name, verdict, guard, metrics }) {
-  return folding(`${name} — ${verdict}`, () => {
+function indicator({ name, verdict, guard, metrics, probe }) {
+  const source = probe == null ? "" : ` · ${probe}`;
+  return folding(`${name}${source} — ${verdict}`, () => {
     const entries = metrics.map((m) => {
       const state = m.missing ? `Not measured yet (${m.missing})` : m.verdict ?? "Context";
       const result = el("dd", null, state);
@@ -43,7 +44,7 @@ function indicator({ name, verdict, guard, metrics }) {
         !m.missing && `Weekly noise ${numbers.format(m.noise)}`,
       ].filter(Boolean);
       if (values.length) result.append(note(values.join(" · ")));
-      return part("div", "sv-reading", el("dt", null, m.name), result);
+      return part("div", "sv-reading", el("dt", null, m.unit ? `${m.name} (${m.unit})` : m.name), result);
     });
     return stack(note(guard), part("dl", "sv-readings", ...entries));
   });
@@ -229,7 +230,8 @@ async function readScreen() {
     if (data.spending) $("sv-spending").replaceChildren(...spending(data.spending, data.marked_tasks_eligible));
     const problems = data.problems ?? [];
     $("sv-problems").replaceChildren(...(problems.length ? problems.map(problem) : [note("No problems in the register.")]));
-    $("sv-score").replaceChildren(...(data.indicators.length ? data.indicators.map(indicator) : [note("All scoreboard indicators are off.")]));
+    const indicators = [...data.indicators, ...(data.outside_indicators ?? [])];
+    $("sv-score").replaceChildren(...(indicators.length ? indicators.map(indicator) : [note("All scoreboard indicators are off.")]));
     const probes = data.probes ?? [];
     const labels = { git: "Git releases", git_architecture: "Git architecture", gate_record: "Gate record" };
     $("sv-probes").hidden = !probes.length;

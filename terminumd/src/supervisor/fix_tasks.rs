@@ -159,6 +159,9 @@ pub(crate) fn check_start(tx: &Transaction, tasks: &[Task], at: i64) -> Result<f
     let mut exception = true;
     for task in tasks {
         task_policy::check(tx, task, at)?;
+        if !task_policy::check_marked(tx, task, true)? {
+            return Err(format!("A human must move {} before the Supervisor can start it.", task.id));
+        }
         let linked = register::active_for_task(tx, &first.project, &task.key)?;
         let mut impact = 0;
         let mut charter = false;

@@ -195,6 +195,13 @@ AC-244, AC-245, AC-258).
   bounded and checked. Import leaves command candidates inactive until confirmation.
   Export includes commands and secrets only when the owner selects them. The export
   holds those values in plain text (`terminum-supervisor.md` AC-220, AC-260).
+- **Outside feedback** uses a separately configured, approved probe. Its bounded
+  output reaches a local reader with no tools, model endpoint, or session. The reader
+  returns fixed categories and a count. The reference combines an owner-saved HTTPS
+  base with a positive integer. Terminum does not fetch it. Raw prose stays out of
+  retained probe data, tasks, comments, case files, and signals. The task's outside mark
+  blocks automated starts by Auto-Dispatcher or the Supervisor until a human moves it
+  (`terminum-supervisor.md` AC-262).
 - **Left**: a round's agent keeps its pool command's permissions, with AC-156's risk of a
   bypassing command (`terminum-dispatcher.md` §9), so choose agents without bypass for the
   Supervisor's tiers. An Operator can start a task whose text or comments it wrote, so the
