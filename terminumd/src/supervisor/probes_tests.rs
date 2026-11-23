@@ -300,3 +300,36 @@ async fn ac260_standard_architecture_and_gate_detectors() {
     let flaky = findings("flow.flaky");
     assert_eq!(flaky.detectors[0].findings.iter().map(|r| r.metric).collect::<Vec<_>>(), ["gate_retries", "nightly_reds"]);
 }
+
+// AC-212, AC-221: fixes known only inside the current window still give a rare baseline: the top few
+// percent of the files a fix touched fire, files changed without a fix do not lower it, and the floor holds.
+#[test]
+fn ac212_ac221_hotspot_baseline_ranks_the_projects_fixed_files() {
+    use super::probe_arch::{Architecture, Changed};
+    let f = Fixture::new("hotspot-baseline");
+    enabled(&f, f.path.parent().unwrap());
+    let job = job(&f, ARCH, NOW - 10);
+    let mut at = NOW - 10;
+    let mut seed = |name: &str, files: &[(String, u64, u64, u64)]| {
+        let mut arch = Architecture { since: NOW - 90 * DAY, ..Architecture::default() };
+        for (path, size, churn, fixes) in files.iter().cloned() {
+            arch.sizes.insert(path.clone(), size);
+            arch.changes.push(Changed { at: NOW - 40 * DAY, path: path.clone(), churn, fix: false });
+            arch.changes.push(Changed { at: NOW - DAY, path: path.clone(), churn, fix: false });
+            arch.changes.extend((0..fixes).map(|_| Changed { at: NOW - DAY, path: path.clone(), churn: 0, fix: true }));
+        }
+        at += 1;
+        let observation = Observation { data: serde_json::to_string(&arch).unwrap(), reports: Vec::new() };
+        assert!(f.store.with(|tx| publish(tx, &job, at, Ok(observation))).unwrap().is_some(), "{name}");
+        let found = evaluate(&f.store, PROJECT, NOW, &[Fixture::detector("arch.hotspot")]).unwrap();
+        found.detectors[0].findings.iter().filter(|s| s.metric == "churn_size_fix_count").map(|s| s.subject_id.clone()).collect::<Vec<_>>()
+    };
+    let files = |prefix: &str, n: usize, size, churn, fixes| (0..n).map(|i| (format!("src/{prefix}{i}.rs"), size, churn, fixes)).collect::<Vec<_>>();
+    let mut ranked = [files("plain", 1000, 10_000, 100, 0), files("fixed", 38, 10_000, 200, 1)].concat();
+    ranked.extend([("src/hot.rs".into(), 50_000, 2_000, 5), ("src/hotter.rs".into(), 80_000, 3_000, 9)]);
+    let mut hot = seed("ranked", &ranked);
+    hot.sort();
+    assert_eq!(hot, ["src/hot.rs", "src/hotter.rs"], "the floor alone would flag all 40 fixed files");
+    let small = [files("small", 39, 100, 100, 1), files("top", 1, 1_000, 100, 5)].concat();
+    assert!(seed("under floor", &small).is_empty(), "a top score under the floor never fires");
+}

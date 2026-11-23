@@ -181,10 +181,12 @@ pub(super) fn counters(q: &Query<'_, '_>) -> Result<Measurements, String> {
         FROM supervisor_hook_counts WHERE project = ?1 AND at BETWEEN ?2 AND ?3
             AND event IN {filters} GROUP BY agent, session, event"), (q.project, start, q.window.end),
         |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?, r.get::<_, f64>(3)?, r.get::<_, i64>(4)?)))?;
+    // AC-212, AC-221: the baseline ranks every session-day of the window, today's included, so a
+    // project attached today compares its sessions with each other instead of with the floor alone.
     let mut histories = BTreeMap::<String, Vec<f64>>::new();
     for (event, count) in rows(q.tx, &format!("SELECT event, sum(count) FROM supervisor_hook_counts
-        WHERE project = ?1 AND at >= ?2 AND at < ?3 AND event IN {filters}
-        GROUP BY agent, session, event, at / {DAY}"), (q.project, q.window.start, start),
+        WHERE project = ?1 AND at BETWEEN ?2 AND ?3 AND event IN {filters}
+        GROUP BY agent, session, event, CASE WHEN at < ?4 THEN at / {DAY} END"), (q.project, q.window.start, q.window.end, start),
         |r| Ok((r.get::<_, String>(0)?, r.get::<_, f64>(1)?)))? {
         histories.entry(event).or_default().push(count);
     }
