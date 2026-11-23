@@ -11,9 +11,9 @@ pub mod tools;
 
 use crate::app::Shared;
 
-/// A report changed: every page reads its Inbox again, and the lines of critical reports are read again (AC-271).
+/// A report changed: the tasks' marks are read again, whose Inbox revision and critical lines every page hears
+/// (AC-267, AC-271).
 pub fn changed(app: &Shared) {
-    app.pages.tell(r#"{"t":"reports"}"#);
     crate::tasks::marks::read_later(app);
 }
 

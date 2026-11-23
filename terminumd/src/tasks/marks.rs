@@ -23,6 +23,8 @@ struct Held {
     attention: Vec<Asks>,
     /// the Kanban key's counts, as the board's cards: (waiting for a human, failed) (AC-117)
     cards: (i64, i64),
+    /// the Inbox's unread counts and its revision: a page reads its list again when it moves (terminum-reports.md AC-267)
+    reports: serde_json::Value,
 }
 
 /// A task that stands on its session's row: not archived, not done (AC-113).
@@ -164,7 +166,7 @@ impl Marks {
                         AND (p.status = 'FAILED' OR NOT {parent_queued}))"), [], |r| Ok((r.get(0)?, r.get(1)?))).map_err(ops::sql)?;
             let mut attention = critical_reports(tx)?;
             attention.extend(asks(tx, None)?);
-            Ok(Held { counts, sessions, attention, cards })
+            Ok(Held { counts, sessions, attention, cards, reports: crate::reports::inbox::marks(tx)? })
         });
         // a passing failure says nothing about the tasks: the last numbers stand
         let read = read?;
@@ -183,7 +185,7 @@ impl Marks {
         let held = self.held.lock();
         let lines: Vec<_> = held.attention.iter().filter(|a| a.due).map(|a| json!({"id": a.id, "project": a.project, "failed": a.failed, "words": a.words, "key": a.key, "report": a.report})).collect();
         let (waiting, failed) = held.cards;
-        json!({"t": "taskmarks", "marks": held.sessions, "counts": held.counts, "waiting": waiting, "failed": failed, "lines": lines}).to_string()
+        json!({"t": "taskmarks", "marks": held.sessions, "counts": held.counts, "waiting": waiting, "failed": failed, "lines": lines, "reports": held.reports}).to_string()
     }
 }
 

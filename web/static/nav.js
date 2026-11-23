@@ -5,6 +5,7 @@
 // strip when it has bookmarks (AC-57), the window
 // number and title, then host · program · folder · titles, and a coding agent's state in a
 // column of its own.
+import { inboxMarks } from "./inbox.js";
 import { folderHues, folderKey } from "./dircolors.js";
 import { subOf } from "./follow.js";
 import { icon } from "./icons.js";
@@ -142,7 +143,7 @@ const sessionCount = (n) => el("span", "count", n ? plural(n, "session") : ""); 
 /** Open tasks by session (terminumd's): a row shows them, each opening its window on the board (AC-113). */
 let taskMarks = {}, projectTasks = {};
 /** terminumd's `taskmarks`: open tasks by session, tasks by project. */
-export function setTaskMarks(m) { taskMarks = m.marks ?? {}; projectTasks = m.counts ?? {}; }
+export function setTaskMarks(m) { taskMarks = m.marks ?? {}; projectTasks = m.counts ?? {}; inboxMarks(m); }
 export const taskMarksOf = (id) => taskMarks[id] ?? [];
 export const tasksOfProject = (id) => projectTasks[id] ?? 0;
 

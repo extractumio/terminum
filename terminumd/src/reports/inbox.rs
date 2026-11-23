@@ -25,8 +25,8 @@ pub struct Filter {
 const ROW: &str = "SELECT r.slug, r.project, r.title, r.summary, r.critical, r.read_at IS NOT NULL, (SELECT t.slug FROM tasks t WHERE t.id = r.task),
     (SELECT 'SCH-' || s.number FROM schedules s WHERE s.id = r.schedule), (SELECT s.title FROM schedules s WHERE s.id = r.schedule),
     (SELECT u.name FROM users u WHERE u.id = r.author), r.role, r.session_key, r.created_at, r.updated_at, r.deleted_at, r.incident, r.number,
-    (SELECT t.status FROM tasks t WHERE t.id = r.task), r.replied_at, r.rowid
-    FROM reports r";
+    p.name, p.color
+    FROM reports r JOIN projects p ON p.id = r.project";
 
 fn row_of(r: &Row) -> rusqlite::Result<Value> {
     let (task, schedule, routine, author): (Option<String>, Option<String>, Option<String>, String) = (r.get(6)?, r.get(7)?, r.get(8)?, r.get(9)?);
@@ -39,7 +39,7 @@ fn row_of(r: &Row) -> rusqlite::Result<Value> {
         "source": {"task": task, "schedule": schedule, "incident": incident, "name": name},
         "author_name": author, "role": r.get::<_, String>(10)?, "session": r.get::<_, Option<String>>(11)?,
         "created_at": r.get::<_, i64>(12)?, "updated_at": r.get::<_, i64>(13)?, "deleted_at": r.get::<_, Option<i64>>(14)?,
-        "number": r.get::<_, i64>(16)?,
+        "number": r.get::<_, i64>(16)?, "project_name": r.get::<_, String>(17)?, "project_color": r.get::<_, i64>(18)?,
     }))
 }
 
@@ -71,6 +71,14 @@ pub fn unread(tx: &Transaction) -> Result<Value, String> {
         "schedules": count(&format!("SELECT 'SCH-' || s.number, count(*) FROM reports r JOIN schedules s ON s.id = r.schedule WHERE {UNREAD} GROUP BY s.number"))?,
         "sessions": count(&format!("SELECT r.session_key, count(*) FROM reports r WHERE {UNREAD} AND r.session_key IS NOT NULL GROUP BY r.session_key"))?,
     }))
+}
+
+/// What every page hears with the tasks' marks: the unread counts, and a revision that moves with any change of a
+/// report (made, changed, read, deleted, a line closed), so an open Inbox reads its list again.
+pub fn marks(tx: &Transaction) -> Result<Value, String> {
+    let rev: String = tx.query_row("SELECT count(*) || ':' || coalesce(max(updated_at), 0) || ':' || total(coalesce(read_at, 0)) || ':' || total(coalesce(deleted_at, 0))
+        || ':' || total(coalesce(line_seen, 0)) FROM reports", [], |r| r.get(0)).map_err(sql)?;
+    Ok(json!({"rev": rev, "unread": unread(tx)?}))
 }
 
 /// One report whole (AC-268): its row, its body, comments oldest first, files and links.

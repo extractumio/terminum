@@ -6,6 +6,7 @@ import { icon } from "./icons.js";
 import { el, iconButton, plural, tagProject } from "./listparts.js";
 import { kanbanLinks } from "./sections.js";
 import { api } from "./kanbanutil.js";
+import { openReport } from "./inbox.js";
 
 /** Lines in `box`; `open(id)` shows a task (its window then says it was seen); `say(text)` tells a refused close;
  *  `project(id)`: the project of that id the page knows, which names a line (terminumd says a task's: AC-117). */
@@ -20,7 +21,8 @@ export function taskLines(box, open, say, project = () => null) {
     go.type = "button";
     mark.append(icon(l.failed ? "triangle-alert" : "circle-help", 14));
     go.append(mark, el("span", "what", l.words));
-    go.addEventListener("click", () => open(l.id));
+    // a critical report's line opens the report (terminum-reports.md AC-271)
+    go.addEventListener("click", () => (l.report ? openReport(l.id) : open(l.id)));
     c.append(go, iconButton("x", "x", "Close this line", "Close this line", () => shut(l.id, l.key)));
     const full = tagProject(c, l.project ? project(l.project) : null);   // Default is no project the page knows
     go.title = full ? `Open ${l.id} (${full})` : `Open ${l.id}`;
@@ -34,7 +36,8 @@ export function taskLines(box, open, say, project = () => null) {
     if (key && !hid.length) return;
     for (const k of hid) closing.add(k);
     draw();
-    api(`/api/tasks/${encodeURIComponent(id)}/seen`, { method: "POST", body: key ? { key } : {} }).catch((e) => {
+    const report = last.some((l) => l.id === id && l.report);
+    api(report ? `/api/reports/${encodeURIComponent(id)}/seen` : `/api/tasks/${encodeURIComponent(id)}/seen`, { method: "POST", body: key ? { key } : {} }).catch((e) => {
       if (!hid.length) return;                    // nothing shown went: the window says its own failures
       for (const k of hid) closing.delete(k);
       draw();
