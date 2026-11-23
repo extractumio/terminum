@@ -3,7 +3,7 @@
 use rusqlite::{OptionalExtension, Transaction};
 use serde_json::json;
 
-use super::{gate, runs::Run, say, store};
+use super::{gate, runs::Run, store};
 use crate::app::Shared;
 use crate::tasks::{ops, store::DISPATCHER};
 
@@ -37,9 +37,9 @@ pub(crate) fn check_tool(tx: &Transaction, pane: &str, id: Option<&str>) -> Resu
     if newer { Ok(()) } else { Err(words(&[task])) }
 }
 
-pub(super) async fn interrupt(app: &Shared, run: &Run) {
+pub(super) async fn interrupt(app: &Shared, run: &Run, decided: std::time::Instant) {
     let sent = match run.place(app) {
-        Some((server, pane)) => gate::interrupt_and_deliver(app, run, &server, &pane, &words(&run.ids)).await.map_err(|why| why.to_string()),
+        Some((server, pane)) => gate::interrupt_and_deliver(app, run, &server, &pane, &words(&run.ids), decided).await.map_err(|why| why.to_string()),
         None => Err("its pane or host is not reachable".into()),
     };
     let text = match sent {
@@ -47,7 +47,12 @@ pub(super) async fn interrupt(app: &Shared, run: &Run) {
         Err(why) => format!("Give up stop instruction not delivered: {why}."),
     };
     let run = run.clone();
-    if let Err(why) = store(app, move |tx| say(tx, &run, &text)).await {
+    if let Err(why) = store(app, move |tx| {
+        for id in &run.ids {
+            ops::log(tx, &ops::key_of(tx, id)?, DISPATCHER, "told", &text, None, ops::now())?;
+        }
+        Ok(())
+    }).await {
         tracing::warn!(event = "dispatcher.give_up", error = %why);
     }
 }
@@ -55,3 +60,7 @@ pub(super) async fn interrupt(app: &Shared, run: &Run) {
 #[cfg(test)]
 #[path = "giveup_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "giveup/order_tests.rs"]
+mod order_tests;

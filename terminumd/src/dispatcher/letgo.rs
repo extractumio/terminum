@@ -53,6 +53,23 @@ pub(crate) async fn gave_up_checked(
     check: impl FnOnce(&rusqlite::Transaction, &str) -> Result<(), String> + Send + 'static,
     record: impl FnOnce(&rusqlite::Transaction, &[String]) -> Result<(), String> + Send + 'static,
 ) -> Result<Vec<String>, String> {
+    let decided = std::time::Instant::now();
+    let (held, expected) = if giver == Giver::Human {
+        let wanted = id.to_string();
+        let run = store(app, move |tx| {
+            let key = ops::key_of(tx, &wanted)?;
+            if super::waits::of_task(tx, &key)?.is_some() { return Ok(None); }
+            runs::last_of(tx, &key)
+        }).await?;
+        let expected = run.as_ref().map(|run| (run.id.clone(), run.pane_key.clone()));
+        let held = match run.and_then(|run| run.place(app)) {
+            Some((server, pane)) => Some(tokio::time::timeout(std::time::Duration::from_secs(5), server.typing(&pane).lock_owned()).await
+                .map_err(|_| "A prompt is being delivered in this session. Give up again once it finishes.".to_string())?),
+            None => None,
+        };
+        (held, expected)
+    } else { (None, None) };
+    let (had_queue, guard_app) = (held.is_some(), app.clone());
     let who = match giver { Giver::Human => "The human", Giver::Manager => "The project's manager" };
     let wanted = id.to_string();
     let done = store(app, move |tx| {
@@ -64,6 +81,14 @@ pub(crate) async fn gave_up_checked(
             record(tx, std::slice::from_ref(&wanted))?;
             Ok(None)
         } else {
+            if giver == Giver::Human {
+                let current = runs::last_of(tx, &key)?;
+                if current.as_ref().map(|run| (run.id.clone(), run.pane_key.clone())) != expected
+                    || (!had_queue && current.as_ref().and_then(|run| run.place(&guard_app)).is_some())
+                {
+                    return Err("Its run changed while Give up waited. Read the task and try again.".into());
+                }
+            }
             let run = runs::give_up(tx, &key)?;
             if giver == Giver::Human {
                 super::giveup::record(tx, &run)?;
@@ -72,6 +97,7 @@ pub(crate) async fn gave_up_checked(
             Ok(Some(run))
         }
     }).await?;
+    drop(held);
     Ok(match done {
         None => {
             told(app, id);
@@ -80,7 +106,7 @@ pub(crate) async fn gave_up_checked(
         Some(r) => {
             let ids = let_go_of(app, r.clone());
             if giver == Giver::Human {
-                super::giveup::interrupt(app, &r).await;
+                super::giveup::interrupt(app, &r, decided).await;
             }
             ids
         }

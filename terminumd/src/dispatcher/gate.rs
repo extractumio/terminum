@@ -119,8 +119,7 @@ pub(super) async fn deliver_scoped(app: &Shared, run: &Run, server: &Server, pan
     deliver_locked(app, run, server, pane, text, Delivery::Normal { first, scope }).await
 }
 
-pub(super) async fn interrupt_and_deliver(app: &Shared, run: &Run, server: &Server, pane: &str, text: &str) -> Result<(), Miss> {
-    let at = std::time::Instant::now();
+pub(super) async fn interrupt_and_deliver(app: &Shared, run: &Run, server: &Server, pane: &str, text: &str, at: std::time::Instant) -> Result<(), Miss> {
     let _held = tokio::time::timeout(Duration::from_secs(5), app.inputs.act_queue(server, pane, &server.key(pane), at)).await
         .map_err(|_| other("its typing queue did not become available within 5 seconds"))?
         .ok_or_else(|| other("a human typed in its pane"))?;
@@ -135,6 +134,9 @@ pub(super) async fn interrupt_and_deliver(app: &Shared, run: &Run, server: &Serv
         Screen::Unknown => return Err(other(format!("screen not known ({})", run.kind))),
     }
     let client = server.client(pane).ok_or_else(|| other("tmux does not answer"))?;
+    if app.inputs.human_since(&server.key(pane), at) {
+        return Err(other("a human typed in its pane"));
+    }
     let sent = guarded_front(&client, &run.id, pane, &format!("send-keys -t {pane} Escape"), true, Some(command)).await;
     let who = crate::inputs::Who::dispatcher("dispatcher.give_up", &run.id, &run.ids, &run.agent_id);
     if let Some((server, _)) = app.tmux.resolve(&server.key(pane)) {
@@ -217,7 +219,9 @@ async fn deliver_locked(app: &Shared, run: &Run, server: &Server, pane: &str, te
     let _ = client.run(format!("delete-buffer -b {buffer}")).await;
     let entered = match shown {
         Ok(()) => async {
-            delivery.check(app, run, &key).await?;
+            if matches!(delivery, Delivery::Normal { .. }) {
+                delivery.check(app, run, &key).await?;
+            }
             app.dispatcher.remember_typed(&key, text);
             guarded_front(&client, &run.id, pane, &format!("send-keys -t {pane} Enter"), true, command).await.map_err(|e| other(format!("tmux did not take Enter: {e}")))
         }.await,

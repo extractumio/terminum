@@ -86,18 +86,18 @@ fn native_agent() -> &'static PathBuf {
     })
 }
 
-struct Stage {
-    tm: crate::testutil::Tmux,
-    app: Shared,
-    pane: String,
-    tasks: Vec<Task>,
-    run: Run,
+pub(super) struct Stage {
+    pub(super) tm: crate::testutil::Tmux,
+    pub(super) app: Shared,
+    pub(super) pane: String,
+    pub(super) tasks: Vec<Task>,
+    pub(super) run: Run,
     log: PathBuf,
     database: PathBuf,
 }
 
 impl Stage {
-    async fn new(name: &str, kind: &str, state: &str, draft: &str) -> Self {
+    pub(super) async fn new(name: &str, kind: &str, state: &str, draft: &str) -> Self {
         let tm = crate::testutil::Tmux::start(name, (120, 30), "/bin/sh").expect("private tmux");
         let binary = tm.dir.join(kind);
         std::fs::copy(native_agent(), &binary).unwrap();
@@ -164,7 +164,7 @@ impl Stage {
         assert!(self.tm.read(&["list-panes", "-a", "-F", "#{pane_id}"]).lines().any(|pane| pane == self.pane));
     }
 
-    fn events(&self) -> String {
+    pub(super) fn events(&self) -> String {
         std::fs::read_to_string(&self.log).unwrap_or_default()
     }
 }
@@ -218,40 +218,77 @@ async fn ac138_give_up_does_not_submit_while_the_turn_stays_working() {
 }
 
 #[tokio::test]
-async fn ac138_cancelled_or_human_input_during_buffer_load_leaves_no_paste() {
-    for stop in [false, true] {
-        let stage = Stage::new(if stop { "giveup-load-human" } else { "giveup-load-cancel" }, "claude", "idle", "").await;
-        let barrier = "giveup-buffer";
-        stage.tm.read(&["wait-for", "-L", barrier]);
-        stage.tm.read(&["set-hook", "-g", "after-load-buffer", &format!("wait-for -L {barrier}")]);
-        let (app, run, pane) = (stage.app.clone(), stage.run.clone(), stage.pane.clone());
-        let delivery = tokio::spawn(async move {
-            if stop { gate::interrupt_and_deliver(&app, &run, &app.tmux.local, &pane, &words(&run.ids)).await }
-            else { gate::deliver(&app, &run, &app.tmux.local, &pane, "stale assignment", true).await }
-        });
-        let loaded = tokio::time::timeout(Duration::from_secs(5), async {
-            loop {
-                if !stage.tm.read(&["list-buffers", "-F", "#{buffer_name}"]).trim().is_empty() { break; }
-                tokio::time::sleep(Duration::from_millis(20)).await;
-            }
-        }).await;
-        if loaded.is_ok() {
-            if stop { stage.app.inputs.human(&stage.app.tmux.local.key(&stage.pane)); }
-            else {
-                stage.app.tasks.with(|tx| {
-                    let cancelled = runs::give_up(tx, &stage.tasks[0].key)?;
-                    record(tx, &cancelled)
-                }).unwrap();
-            }
+async fn ac138_give_up_orders_cancellation_after_an_already_accepted_delivery() {
+    let stage = Stage::new("giveup-load-order", "claude", "idle", "").await;
+    let barrier = "giveup-buffer";
+    stage.tm.read(&["wait-for", "-L", barrier]);
+    stage.tm.read(&["set-hook", "-g", "after-load-buffer", &format!("wait-for -L {barrier}")]);
+    let (app, run, pane) = (stage.app.clone(), stage.run.clone(), stage.pane.clone());
+    let delivery = tokio::spawn(async move { gate::deliver(&app, &run, &app.tmux.local, &pane, "original assignment", true).await });
+    let loaded = tokio::time::timeout(Duration::from_secs(5), async {
+        while stage.tm.read(&["list-buffers", "-F", "#{buffer_name}"]).trim().is_empty() {
+            tokio::time::sleep(Duration::from_millis(20)).await;
         }
-        stage.tm.read(&["wait-for", "-U", barrier]);
-        let outcome = delivery.await.unwrap();
-        assert!(loaded.is_ok(), "buffer did not reach its barrier: {outcome:?}");
-        assert!(outcome.is_err(), "{outcome:?}");
-        assert_eq!(stage.events(), if stop { "ESC\n" } else { "" });
-        assert_eq!(gate::read(&stage.app.tmux.local, &stage.pane, "claude").await, Ok(Screen::Empty), "no stale text was pasted");
-        assert_eq!(stage.tm.read(&["list-buffers", "-F", "#{buffer_name}"]).trim(), "");
-    }
+    }).await;
+    let (app, id) = (stage.app.clone(), stage.tasks[0].id.clone());
+    let typing = stage.app.tmux.local.typing(&stage.pane);
+    let owners = Arc::strong_count(&typing);
+    let cancellation = tokio::spawn(async move { letgo::gave_up(&app, &id).await });
+    let waiting = tokio::time::timeout(Duration::from_secs(4), async {
+        while Arc::strong_count(&typing) <= owners {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    }).await;
+    let before = stage.app.tasks.with(|tx| ops::get(tx, &stage.tasks[0].id)).unwrap().status;
+    stage.tm.read(&["set-hook", "-ug", "after-load-buffer"]);
+    stage.tm.read(&["wait-for", "-U", barrier]);
+    let delivered = delivery.await.unwrap();
+    let cancelled = cancellation.await.unwrap();
+    assert!(loaded.is_ok(), "buffer did not reach its barrier");
+    assert!(waiting.is_ok(), "Give up did not reach the occupied typing queue");
+    assert_eq!(before, "IN PROGRESS", "cancellation waits for the accepted delivery");
+    assert_eq!(delivered, Ok(()));
+    assert!(cancelled.is_ok(), "{cancelled:?}");
+    stage.app.tasks.with(|tx| {
+        assert_eq!(runs::by_id(tx, &stage.run.id)?.state, Phase::Left);
+        assert_eq!(ops::get(tx, &stage.tasks[0].id)?.status, "FAILED");
+        assert!(runs::holding_agent(tx, "a")?.is_none());
+        assert!(was_given_up(tx, &stage.run.id)?);
+        Ok(())
+    }).unwrap();
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    assert_eq!(stage.events(), format!("PROMPT:original assignment\nESC\nPROMPT:{}\n", words(&stage.run.ids)));
+    assert_eq!(gate::read(&stage.app.tmux.local, &stage.pane, "claude").await, Ok(Screen::Empty));
+    assert_eq!(stage.tm.read(&["list-buffers", "-F", "#{buffer_name}"]).trim(), "");
+    assert!(gate::deliver(&stage.app, &stage.run, &stage.app.tmux.local, &stage.pane, "late assignment", true).await.is_err());
+    assert!(!stage.events().contains("late assignment"));
+}
+
+#[tokio::test]
+async fn ac138_busy_delivery_refuses_without_cancelling_and_human_input_before_typing_wins() {
+    let stage = Stage::new("giveup-typing-busy", "claude", "idle", "").await;
+    let held = stage.app.tmux.local.typing(&stage.pane).lock_owned().await;
+    let result = letgo::gave_up(&stage.app, &stage.tasks[0].id).await;
+    assert_eq!(result.unwrap_err(), "A prompt is being delivered in this session. Give up again once it finishes.");
+    assert_eq!(stage.app.tasks.with(|tx| ops::get(tx, &stage.tasks[0].id)).unwrap().status, "IN PROGRESS");
+    stage.app.tasks.with(|tx| {
+        assert_eq!(runs::by_id(tx, &stage.run.id)?.state, Phase::Working);
+        assert!(runs::holding_agent(tx, "a")?.is_some());
+        assert!(!was_given_up(tx, &stage.run.id)?);
+        Ok(())
+    }).unwrap();
+    let (app, run, pane) = (stage.app.clone(), stage.run.clone(), stage.pane.clone());
+    let (started, saw_start) = tokio::sync::oneshot::channel();
+    let delivery = tokio::spawn(async move {
+        let decided = std::time::Instant::now();
+        let _ = started.send(());
+        gate::interrupt_and_deliver(&app, &run, &app.tmux.local, &pane, &words(&run.ids), decided).await
+    });
+    saw_start.await.unwrap();
+    stage.app.inputs.human(&stage.app.tmux.local.key(&stage.pane));
+    drop(held);
+    assert!(delivery.await.unwrap().is_err());
+    assert_eq!(stage.events(), "");
 }
 
 #[tokio::test]
@@ -307,8 +344,14 @@ async fn ac138_real_agent_receives_give_up_and_keeps_its_window() {
         stage.tm.read(&["set-option", "-p", "-t", &stage.pane, "@terminum-run", &stage.run.id]);
         tokio::time::timeout(Duration::from_secs(40), async {
             let mut trusted = false;
+            let mut ready_since = None;
             loop {
-                if gate::read(&stage.app.tmux.local, &stage.pane, kind).await == Ok(Screen::Empty) { break; }
+                let command = stage.app.tmux.local.run(format!("display -p -t {} '#{{pane_current_command}}'", stage.pane)).await.unwrap();
+                let foreground = command.first().is_some_and(|command| crate::tmux::titles::agent_of(command) == Some(kind));
+                if foreground && gate::read(&stage.app.tmux.local, &stage.pane, kind).await == Ok(Screen::Empty) {
+                    let since = ready_since.get_or_insert_with(tokio::time::Instant::now);
+                    if since.elapsed() >= Duration::from_secs(2) { break; }
+                } else { ready_since = None; }
                 let shown = stage.tm.read(&["capture-pane", "-p", "-t", &stage.pane]);
                 if !trusted && (shown.contains("Yes, I trust") || shown.contains("Do you trust")) {
                     if shown.contains("❯ No, exit") {
