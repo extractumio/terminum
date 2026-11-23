@@ -238,3 +238,66 @@ fn ac212_off_missing_and_shadow() {
     shadow.record(&f.store).unwrap();
     assert_eq!(signals(&f.store, PROJECT).unwrap()[0].state, State::Shadow);
 }
+
+// AC-217: a persisting pass over a few hundred signals rewrites none of their content, and a counted signal with
+// thousands of evidence rows is compared once per write, so neither holds the store's write turn.
+#[test]
+fn ac217_persisting_signals_write_only_what_changed() {
+    let f = Fixture::new("persisting");
+    // Fixture's task and failed_run, in one transaction: separate writes would take most of the test.
+    f.store.with(|tx| {
+        let run = |sql: &str, args: &[&dyn rusqlite::ToSql]| tx.execute(sql, args).map(drop).map_err(crate::tasks::ops::sql);
+        for i in 0..300_i64 {
+            let task = format!("task-{i}");
+            run("INSERT INTO tasks (id, number, project, status, severity, rank, owner, created_at, updated_at, title, body, type)
+                VALUES (?1, ?2, 'default', 'FAILED', 'P2', 0, 'human', ?3, ?3, '', '', 'Bug')", &[&task, &(i + 1), &(NOW - 900)])?;
+            for (id, at) in [(format!("{task}-a"), NOW - 600), (format!("{task}-b"), NOW - 500)] {
+                run("INSERT INTO runs (id, task, project, agent_id, kind, command, folder, state, started_by, started_how)
+                    VALUES (?2, ?1, 'default', 'agent', 'codex', '', '', 'closed', 'human', 'run')", &[&task, &id])?;
+                run("INSERT INTO run_tasks (run, task) VALUES (?1, ?2)", &[&id, &task])?;
+                run("INSERT INTO inputs (at, ended, sender, component, kind, text, bytes, pane, run, version)
+                    VALUES (?1, ?1, 'dispatcher', 'dispatcher.start', 'launch', '', 0, '', ?2, '')", &[&(at * 1000), &id])?;
+                run("INSERT INTO events (id, task, at, author, kind, text, data) VALUES ('failed-' || ?2, ?1, ?3, 'dispatcher',
+                    'move', '', '{\"from\":\"IN PROGRESS\",\"to\":\"FAILED\"}')", &[&task, &id, &(at + 1)])?;
+            }
+        }
+        Ok(())
+    }).unwrap();
+    let d = Fixture::detector("repeated_failures");
+    let pass = |at| evaluate(&f.store, PROJECT, at, std::slice::from_ref(&d)).unwrap().record(&f.store).unwrap();
+    let mut big: Vec<_> = (0..4000).map(|i| Evidence::Events(format!("event-{i:032}"))).collect();
+    let diagnose = |evidence: &[Evidence], at| f.store.with(|tx| signals::diagnostic(tx, PROJECT, "self.budget",
+        ("round", "round-1", "judgment_round_tokens"), evidence, (150., 100.), at)).unwrap();
+    let stored = || f.store.snapshot(SCHEMA, |tx| crate::tasks::ops::rows(tx, "SELECT subject_id, count, revision, evidence,
+        last_seen FROM supervisor_signals ORDER BY subject_id", [], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?,
+        r.get::<_, i64>(2)?, r.get::<_, String>(3)?, r.get::<_, i64>(4)?)))).unwrap();
+    pass(NOW);
+    diagnose(&big, NOW);
+    let first = stored();
+    assert_eq!(first.len(), 301);
+
+    pass(NOW + 10);
+    diagnose(&big, NOW + 10);
+    for (before, after) in first.iter().zip(&stored()) {
+        assert_eq!((&before.0, before.1, before.2, &before.3), (&after.0, after.1, after.2, &after.3), "unchanged content");
+        assert_eq!(after.4, if after.0 == "round-1" { NOW } else { NOW + 10 }, "a persisting finding moves last seen alone");
+    }
+
+    let task = "task-7";
+    f.store.with(|tx| tx.execute_batch(&format!("INSERT INTO runs (id, task, project, agent_id, kind, command, folder, state,
+        started_by, started_how) VALUES ('{task}-c', '{task}', 'default', 'agent', 'codex', '', '', 'closed', 'human', 'run');
+        INSERT INTO run_tasks (run, task) VALUES ('{task}-c', '{task}');
+        INSERT INTO inputs (at, ended, sender, component, kind, text, bytes, pane, run, version)
+            VALUES ({at}, {at}, 'dispatcher', 'dispatcher.start', 'launch', '', 0, '', '{task}-c', '');
+        INSERT INTO events (id, task, at, author, kind, text, data) VALUES ('failed-{task}-c', '{task}', {after}, 'dispatcher',
+            'move', '', '{{\"from\":\"IN PROGRESS\",\"to\":\"FAILED\"}}')", at = (NOW + 11) * 1000, after = NOW + 12))
+        .map_err(crate::tasks::ops::sql)).unwrap();
+    pass(NOW + 20);
+    big.push(Evidence::Events("event-new".into()));
+    let started = std::time::Instant::now();
+    diagnose(&big, NOW + 20);
+    let held = started.elapsed();
+    let counts: Vec<_> = stored().into_iter().filter(|s| s.1 != 1).map(|s| (s.0, s.1)).collect();
+    assert_eq!(counts, [("round-1".to_string(), 2), (task.to_string(), 2)], "one new row is one repeat; the rest persist");
+    assert!(held < std::time::Duration::from_secs(1), "a 4,000-row signal's write took {held:?}");
+}

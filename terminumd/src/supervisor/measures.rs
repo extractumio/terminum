@@ -37,12 +37,15 @@ fn decisions(tx: &Transaction, project: &str) -> Result<(Value, Vec<Value>), Str
         "rate":share(total_right, total_judged)}), by_rule))
 }
 
+// AC-217: it runs each pass in the store's write turn, so CROSS JOIN keeps SQLite starting from the project's few
+// problems rather than from every task of the project.
 const LANDED: &str = "WITH landed AS (
-    SELECT l.problem, max(e.at) AS landed_at FROM supervisor_problem_tasks l
-    JOIN supervisor_problems p ON p.id = l.problem AND p.project = ?1
-    JOIN tasks t ON t.id = l.task AND t.project = p.project
-    JOIN events e ON e.task = t.id AND e.author = 'dispatcher'
+    SELECT l.problem, max(e.at) AS landed_at FROM supervisor_problems p
+    CROSS JOIN supervisor_problem_tasks l ON l.problem = p.id
+    CROSS JOIN tasks t ON t.id = l.task AND t.project = p.project
+    CROSS JOIN events e ON e.task = t.id AND e.author = 'dispatcher'
       AND e.kind = 'comment' AND json_extract(e.data,'$.left') = 'landed' AND e.at <= ?2
+    WHERE p.project = ?1
     GROUP BY l.problem
 )";
 
