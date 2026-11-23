@@ -9,7 +9,7 @@ use crate::app::Shared;
 use crate::dispatcher::{runs::STILL, waits};
 use crate::tasks::ops::{rows, sql};
 
-use super::{Comparison, DAY, Evidence, Measurements, Query, Reading, Rule, Threshold, impact::Source, percentile};
+use super::{Comparison, DAY, Evidence, Measurements, Query, Reading, Rule, Threshold, impact::Source, percentile, percentile_of_others};
 
 pub(super) const CADENCE: i64 = 15 * 60;
 const QUEUE: &str = "queue_waits";
@@ -177,8 +177,8 @@ pub(super) fn first_count(tx: &Transaction, project: &str, rule: Rule, at: i64) 
 pub(super) fn counters(q: &Query<'_, '_>) -> Result<Measurements, String> {
     let filters = counter_events(q.detector.rule);
     let start = q.window.end - DAY + 1;
-    // AC-212, AC-221: the baseline ranks every session-day of the window, the current day included,
-    // so a project attached today compares its sessions with each other instead of with the floor alone.
+    // AC-212, AC-221: each session is ranked against every other session-day of the window, the current
+    // day included, so a project attached today compares its sessions with each other, not with the floor alone.
     let days = rows(q.tx, &format!("SELECT agent, session, event, sum(count), max(id), at >= ?4
         FROM supervisor_hook_counts WHERE project = ?1 AND at BETWEEN ?2 AND ?3 AND event IN {filters}
         GROUP BY agent, session, event, CASE WHEN at < ?4 THEN at / {DAY} END"), (q.project, q.window.start, q.window.end, start),
@@ -187,10 +187,11 @@ pub(super) fn counters(q: &Query<'_, '_>) -> Result<Measurements, String> {
     for (_, _, event, count, _, _) in &days {
         histories.entry(event).or_default().push(*count);
     }
-    let baselines = histories.into_iter().map(|(event, mut counts)| (event, match q.detector.threshold {
-        Threshold::Baseline { percentile: p, .. } => percentile(&mut counts, p).into_iter().collect(),
+    histories.values_mut().for_each(|counts| counts.sort_unstable_by(f64::total_cmp));
+    let baseline = |event: &str, count| match (q.detector.threshold, histories.get(event)) {
+        (Threshold::Baseline { percentile: p, .. }, Some(counts)) => percentile_of_others(counts, count, p).into_iter().collect(),
         _ => Vec::new(),
-    })).collect::<BTreeMap<_, Vec<f64>>>();
+    };
     let mut out = Measurements::default();
     for (agent, session, event, count, id, _) in days.iter().filter(|day| day.5) {
         let metric = match event.as_str() {
@@ -201,7 +202,7 @@ pub(super) fn counters(q: &Query<'_, '_>) -> Result<Measurements, String> {
         };
         out.readings.push(Reading::new("session", format!("{agent}/{session}"), metric, *count,
             vec![Evidence::SupervisorHookCounts(*id)],
-            Source::Unsized("A session's tool failures, repeats, compactions and subagents are in no weekly total, and its whole spend would overstate their cost.")).history(baselines.get(event.as_str()).cloned().unwrap_or_default()));
+            Source::Unsized("A session's tool failures, repeats, compactions and subagents are in no weekly total, and its whole spend would overstate their cost.")).history(baseline(event, *count)));
     }
     let available = q.tx.query_row("SELECT EXISTS (SELECT 1 FROM supervisor_hook_counts
         WHERE project = ?1 AND at <= ?2)", (q.project, q.window.end), |r| r.get::<_, bool>(0)).map_err(sql)?;

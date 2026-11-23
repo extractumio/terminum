@@ -353,8 +353,8 @@ Scenario: AC-221 edge — young project and protected signal
 Scenario: AC-221 edge — a baseline without an earlier window
   Given API's fixing commits and hook counters start inside the current window
   When the scan derives the `arch.hotspot`, `drift.loop` and `drift.subagents` baselines
-  Then each baseline is the percentile over API's own subjects in both windows, the current day included: each window's files a fix touched, and the session-days
-  And only that top share fires; a file changed without a fix does not lower the baseline, and a score under the floor never fires
+  Then each subject's baseline is the percentile over API's other subjects in both windows, the current day included: each window's files a fix touched, and the session-days
+  And only that top share fires; a file changed without a fix does not lower the baseline, a lone subject meets the floor alone, and a score under the floor never fires
 
 Scenario: AC-221 failure — insufficient hold evidence
   Given a live-at-attach rule has only two past firings inside its first week
