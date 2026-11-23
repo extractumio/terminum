@@ -237,6 +237,14 @@ export const sessionOptions = (meta) => [["", "None"], ...meta.sessions.map((s) 
 /** A dialog's line of error: `text`, or hidden with none. */
 export const showError = (box, text) => { box.textContent = text ?? ""; box.hidden = !text; };
 
+/** An empty, hidden line of error that screen readers announce once showError fills it. */
+export const alertLine = () => {
+  const box = el("p", "merr");
+  box.setAttribute("role", "alert");
+  box.hidden = true;
+  return box;
+};
+
 /** Whether what is dragged is files. */
 export const hasFiles = (e) => e.dataTransfer?.types.includes("Files");
 

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 import { oneAtATime } from "./dialogs.js";
-import { $, api, button, showError, stamp } from "./kanbanutil.js";
+import { $, alertLine, api, button, showError, stamp } from "./kanbanutil.js";
 import { el, textKey } from "./listparts.js";
 import { taskUrl } from "./tasklink.js";
 import { actions, part, stack } from "./supervisorfields.js";
@@ -14,9 +14,7 @@ function config(c) {
 
 function breaker(b, path, refresh) {
   const panel = part("details", "sv-panel", el("summary", "sv-touch", `${b.detector} / ${b.response} · Breaker open`));
-  const error = el("p", "merr");
-  error.setAttribute("role", "alert");
-  error.hidden = true;
+  const error = alertLine();
   const card = stack(), keys = actions();
   const url = `${path}/breakers/${b.id}`;
   keys.append(button("textkey", "Review rule change", oneAtATime(panel, async () => {
