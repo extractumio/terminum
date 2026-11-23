@@ -108,8 +108,8 @@ Scenario: AC-211 edge — a repeat updates one record
 
 Scenario: AC-211 edge — a persisting condition is not a repeat
   Given API's signal for API-41 has count 2
-  When later sweeps find the same failed runs, and new probe samples or snapshot points of the same condition
-  Then the signal records the later last seen time and keeps count 2
+  When later sweeps find the same failed runs, or a measure over a window, such as a run's spend, grows with new input rows
+  Then the signal records the later last seen time and keeps count 2, since only a counted event or a return after it resolved is a repeat
 
 Scenario: AC-211 edge — a signal resolves and recurs
   Given API's raised signal for API-41 has count 2
@@ -1371,7 +1371,7 @@ Keep public engine code and defaults in `terminumd/src/supervisor/`. Store setti
 
 | Record | Fields |
 |---|---|
-| Signal | Project, detector, subject kind and ID, fingerprint, evidence references, measure with baseline and window, impact, blast, reversibility, confidence, level, response, first and last seen, count and state. The count is the number of occurrences: the first, one more for each sweep that adds an evidence row the signal did not hold (a probe sample or snapshot point retaken each beat adds none), and one more for each return after it resolved. States are `new`, `shadow`, `raised`, `held`, `resolved`, `recurred`, `muted`, `rejected`. |
+| Signal | Project, detector, subject kind and ID, fingerprint, evidence references, measure with baseline and window, impact, blast, reversibility, confidence, level, response, first and last seen, count and state. States are `new`, `shadow`, `raised`, `held`, `resolved`, `recurred`, `muted`, `rejected`. |
 | Round | Project, case file, kind, model, token usage, typed result, and self-check with assumptions, disconfirming evidence and confidence. |
 | Problem | Title, lens, signal fingerprints, indicator and measured share, hypothesis and what would disprove it, state, fix options with layer and effort, linked tasks and yardstick. States are `suspected`, `confirmed`, `fix_in_work`, `watching`, `resolved`, `recurred`, `accepted` (shown as "fix in work" and "Accepted as is"). |
 | Action and outcome | Rule (detector and response), action, undo, actor, override and its actor, due checks, later outcomes, first evidence of a miss and the owner's verdict when present. Append outcome and verdict events to the ledger. |
@@ -1647,7 +1647,7 @@ Enable none of the runtime cases by default. The stages below list the cases in 
 
 ## 11. Checklist with Definition of Done
 
-- [x] AC-211 — `supervisor::engine_tests` checks named queries, read-only snapshots, fingerprint repeats, a persisting condition and retaken samples keeping their count, resolution and recurrence, and atomic retry.
+- [x] AC-211 — `supervisor::engine_tests` checks named queries, read-only snapshots, fingerprint repeats, persisting conditions and growing window inputs keeping their count, resolution and recurrence, and atomic retry.
 - [ ] AC-212 — `supervisor::catalog_tests` and `ac212_off_missing_and_shadow` cover the store rules, typed thresholds, unavailable inputs and shadow enablement. Remaining catalog and guard inputs are listed in §7.
 - [ ] AC-213 — `ac213_impact_floors_and_ladder` and `ac213_records_per_finding_impact_and_reads_legacy_scores` cover thresholds, floors, level, response and recording; `supervisor::impact_tests` covers each detector's quantity and the stated reason of a signal without a share. Live charter and escalation inputs remain open.
 - [x] AC-214 — `ac214_scoreboard_guard_verdicts` covers four-week comparisons, separate indicators, guards and missing inputs. `ac261_git_release_metrics_and_owner_split` and `e2e_supervisor_probes.py` check retained release, gate and owner inputs.

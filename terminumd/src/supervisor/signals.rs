@@ -8,7 +8,7 @@ use sha2::{Digest, Sha256};
 
 use crate::tasks::{ops::{rows, sql}, store::Store};
 
-use super::impact::Assessment;
+use super::impact::{Assessment, Source};
 use super::{Evaluation, Evidence, Finding, Measure, Mode, Scores, incidents};
 
 pub(super) type Observations = std::collections::BTreeMap<(String, String, String), Option<(f64, super::Comparison)>>;
@@ -73,29 +73,18 @@ struct PreparedFinding<'a> {
     key: String,
     found: &'a Finding,
     evidence: String,
-    occurrences: String,
     measure: String,
     scores: String,
 }
 
 const ACTIVE: &str = "state IN ('new', 'shadow', 'raised', 'recurred')";
 
-impl Evidence {
-    /// A probe sample or snapshot point is retaken every beat: it measures a condition, not a new occurrence of it.
-    fn occurrence(&self) -> bool {
-        !matches!(self, Self::SupervisorProbes(_) | Self::SupervisorPoints(_))
-    }
-}
-
-fn occurrences(evidence: &[Evidence]) -> Result<String, String> {
-    encode(&evidence.iter().filter(|e| e.occurrence()).collect::<Vec<_>>())
-}
-
-/// AC-211: a repeat is the condition back after it resolved, or an occurrence row the signal did not hold;
-/// a persisting condition only moves last seen. `param` binds the new finding's occurrences.
-fn repeated_count(param: &str) -> String {
-    format!("count + (state = 'resolved' OR EXISTS (SELECT 1 FROM json_each({param}) n
-        WHERE n.value NOT IN (SELECT o.value FROM json_each(supervisor_signals.evidence) o)))")
+/// AC-211: a repeat is the condition back after it resolved, or, where `counted` holds, an evidence row the signal
+/// did not hold. A counted reading's rows are its events; other readings' rows are inputs to a level or a window
+/// total, so a persisting condition only moves last seen.
+fn repeated_count(counted: &str) -> String {
+    format!("count + (state = 'resolved' OR ({counted} AND EXISTS (SELECT 1 FROM json_each(excluded.evidence) n
+        WHERE n.value NOT IN (SELECT o.value FROM json_each(supervisor_signals.evidence) o))))")
 }
 
 struct PreparedRule<'a> {
@@ -130,7 +119,7 @@ pub(super) fn prepare(evaluation: &Evaluation) -> Result<Prepared<'_>, String> {
         let findings: Vec<_> = detector.findings.iter().map(|found| {
             Ok::<_, String>(PreparedFinding {
                 key: fingerprint(&evaluation.project, rule, found.key()), found,
-                evidence: encode(&found.evidence)?, occurrences: occurrences(&found.evidence)?, measure: encode(&found.measure)?,
+                evidence: encode(&found.evidence)?, measure: encode(&found.measure)?,
                 scores: encode(&RecordedScores { scores: found.scores, impact_basis: found.assessment.clone(), charter_breach: found.charter_breach })?,
             })
         }).collect::<Result<_, _>>()?;
@@ -194,7 +183,8 @@ impl Prepared<'_> {
                 if ruled { continue; }
                 let accepted: bool = upsert.query_row(params![row.key, evaluation.project, rule, row.found.subject_kind,
                     row.found.subject_id, row.found.metric, row.evidence, row.measure, row.scores, evaluation.at,
-                    if checked.mode == Mode::Shadow { "shadow" } else { "new" }, row.occurrences], |r| r.get(0)).map_err(sql)?;
+                    if checked.mode == Mode::Shadow { "shadow" } else { "new" }, matches!(row.found.source, Source::Count(_))],
+                    |r| r.get(0)).map_err(sql)?;
                 if checked.mode == Mode::Live && accepted {
                     let week = evaluation.at.div_euclid(super::WEEK);
                     if tx.execute("INSERT OR IGNORE INTO supervisor_signal_weeks VALUES (?1, ?2)",
@@ -293,7 +283,7 @@ pub(super) fn diagnostic(tx: &Transaction, project: &str, detector: &str, subjec
     evidence: &[Evidence], (value, threshold): (f64, f64), at: i64) -> Result<(), String> {
     let (kind, id, metric) = subject;
     let key = fingerprint(project, detector, subject);
-    let (occurrences, evidence) = (occurrences(evidence)?, encode(&evidence)?);
+    let evidence = encode(&evidence)?;
     let measure = encode(&Measure { value, baseline: 0., threshold, window_start: at, window_end: at })?;
     let scores = encode(&RecordedScores { scores: Scores { impact: 1, ..Scores::default() }, impact_basis: Default::default(), charter_breach: false })?;
     tx.execute(&format!("INSERT INTO supervisor_signals (fingerprint, project, detector, subject_kind, subject_id,
@@ -302,8 +292,8 @@ pub(super) fn diagnostic(tx: &Transaction, project: &str, detector: &str, subjec
         ON CONFLICT (fingerprint) DO UPDATE SET measure = excluded.measure, evidence = excluded.evidence,
             last_seen = excluded.last_seen, count = {}, state = 'raised'
         WHERE (state, evidence, json_extract(measure, '$.value'), json_extract(measure, '$.threshold'))
-            IS NOT (excluded.state, excluded.evidence, ?11, ?12)", repeated_count("?13")),
-        params![key, project, detector, kind, id, metric, evidence, measure, scores, at, value, threshold, occurrences]).map_err(sql)?;
+            IS NOT (excluded.state, excluded.evidence, ?11, ?12)", repeated_count("1")),
+        params![key, project, detector, kind, id, metric, evidence, measure, scores, at, value, threshold]).map_err(sql)?;
     if detector == "self.miss" {
         super::reflection::enqueue(tx, project, ("miss", &key, Some(&key)), "miss",
             &serde_json::json!({"first_evidence_at":value,"first_seen_at":threshold}), at)?;
