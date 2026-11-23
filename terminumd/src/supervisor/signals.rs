@@ -137,7 +137,7 @@ pub(super) fn prepare(evaluation: &Evaluation) -> Result<Prepared<'_>, String> {
                 key: fingerprint(&evaluation.project, rule, found.key()), found,
                 evidence: encode(&found.evidence)?, measure: encode(&found.measure)?,
                 scores: encode(&RecordedScores { scores: found.scores, impact_basis: found.assessment.clone(),
-                    charter_breach: found.charter_breach, charter_never: found.charter_never.clone() })?,
+                    charter_breach: found.charter_breach(), charter_never: found.charter_never.clone() })?,
             })
         }).collect::<Result<_, _>>()?;
         let keys = encode(&findings.iter().map(|f| &f.key).collect::<Vec<_>>())?;

@@ -177,7 +177,7 @@ fn render(tx: &Transaction, result: &Evaluation, weeks: &[scoreboard::Week], fir
 fn ranked_findings(evaluation: &super::Evaluation) -> (Vec<(&'static str, &super::Finding)>, usize) {
     let (mut ranked, inactive): (Vec<_>, Vec<_>) = evaluation.detectors.iter().flat_map(|d| {
         d.findings.iter().map(|f| (d.rule.id(), f))
-    }).partition(|(_, f)| f.assessment.ranked || f.charter_breach);
+    }).partition(|(_, f)| f.assessment.ranked || f.charter_breach());
     ranked.sort_by(|(a_rule, a), (b_rule, b)| {
         b.scores.impact.cmp(&a.scores.impact)
             .then_with(|| b.assessment.peak_share().total_cmp(&a.assessment.peak_share()))

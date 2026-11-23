@@ -82,7 +82,7 @@ pub(super) fn evaluate_snapshot(
             let readings = indexed.iter().map(|week| week.get(&found.key()).copied());
             found.assessment = calculator.assess(detector, found, readings);
             found.scores = Scores {
-                impact: found.assessment.score(at - first < 3 * WEEK, found.charter_breach),
+                impact: found.assessment.score(at - first < 3 * WEEK, found.charter_breach()),
                 ..detector.scores
             };
         }
@@ -108,8 +108,7 @@ pub(super) fn collect_findings(data: &mut Measurements, detector: &Detector, win
         .filter(|reading| current_state || !matches!(reading.source, impact::Source::Present))
         .filter_map(|reading| reading.finding(detector.threshold, window))
         .map(|mut found| {
-            found.charter_never = super::breach::line(detector, &found);
-            found.charter_breach = found.charter_never.is_some();
+            found.charter_never = detector.never.clone().filter(|_| detector.rule.checked_fact().is_some());
             found
         }).collect()
 }

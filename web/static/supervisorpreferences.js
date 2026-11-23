@@ -113,14 +113,14 @@ function feedbackProbes(edit, existing) {
 function neverChecks(edit, saved, checks, never) {
   const tied = saved.charter.never_checks ?? {};
   const choices = checks.map(({ detector, fact }) => {
-    const node = el("select", "field");
-    const fill = (value) => {
-      const options = [["", "Not tied to a never rule"], ...lines(never.value).map((line) => [line, line])];
-      if (value && !options.some(([line]) => line === value)) options.push([value, `${value} (not in the never list)`]);
-      fillSelect(node, options, value);
+    const options = (value) => {
+      const choices = [["", "Not tied to a never rule"], ...lines(never.value).map((line) => [line, line])];
+      if (value && !choices.some(([line]) => line === value)) choices.push([value, `${value} (not in the never list)`]);
+      return choices;
     };
-    fill(tied[detector] ?? "");
-    never.addEventListener("input", () => fill(node.value));
+    const saved = tied[detector] ?? "";
+    const node = select(options(saved), saved);
+    never.addEventListener("input", () => fillSelect(node, options(node.value), node.value));
     return { detector, node, field: row(fact, node) };
   });
   edit.raw((out) => {

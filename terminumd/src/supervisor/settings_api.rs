@@ -41,7 +41,7 @@ struct View {
     engine_boards: Vec<EngineBoard>,
     templates: [super::templates::Template; 4],
     /// Detectors whose firing can break a never line the owner ties to them (AC-213).
-    never_checks: &'static [super::breach::Check],
+    never_checks: Vec<super::breach::Check>,
 }
 
 #[derive(Serialize)]
@@ -68,7 +68,7 @@ fn view(tx: &Transaction, id: &str, saved: settings::Saved) -> Result<View, Stri
         |r| Ok(EngineBoard { id: r.get(0)?, name: r.get(1)? }))?;
     Ok(View {
         saved, detector_defaults, confirmed_probes, unset_probes, engine_boards,
-        templates: super::templates::choices(), never_checks: super::breach::CHECKS,
+        templates: super::templates::choices(), never_checks: super::breach::checks(),
     })
 }
 

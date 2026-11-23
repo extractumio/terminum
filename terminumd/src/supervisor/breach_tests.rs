@@ -4,6 +4,7 @@
 use serde_json::json;
 
 use crate::supervisor::engine_tests::{Fixture, NOW, PROJECT};
+use crate::supervisor::register_tests::{draft, signal};
 use crate::tasks::ops::{self, rows, sql};
 
 use super::super::{DAY, Mode, Rule, config_lifecycle, evaluate, fix_tasks, probe_arch::Architecture, probes, register, settings};
@@ -19,7 +20,7 @@ fn attached(f: &Fixture, checks: serde_json::Value) {
 
 fn edited_migration(f: &Fixture) {
     let arch = Architecture { since: NOW - 90 * DAY, migrations: vec![(NOW - DAY, "schema1.sql".into())], ..Architecture::default() };
-    f.store.with(|tx| probes::publish_sample(tx, probes::ARCH, NOW - 10, serde_json::to_string(&arch).unwrap())).unwrap();
+    probes::tests::publish_sample(f, probes::ARCH, NOW - 10, serde_json::to_string(&arch).unwrap());
 }
 
 fn live(f: &Fixture) -> super::super::Evaluation {
@@ -30,17 +31,9 @@ fn live(f: &Fixture) -> super::super::Evaluation {
 
 /// A level 3 signal from its reversibility alone, with a problem that needs a fix.
 fn reversible(f: &Fixture) {
-    let scores = json!({"impact":2,"blast":0,"reversibility":3,"confidence":1.0,"charter_breach":false,
-        "impact_basis":{"ranked":true,"shares":[{"week":1,"complete":true,"unit":"failure_events","amount":30.0,"total":100.0,"noise":0.0}]}});
-    let measure = json!({"value":4,"threshold":2,"baseline":2,"window_start":NOW-DAY,"window_end":NOW});
-    f.write("INSERT INTO supervisor_signals (fingerprint, project, detector, subject_kind, subject_id, metric,
-        evidence, measure, scores, first_seen, last_seen, count, state)
-        VALUES ('reversible', ?1, 'flow.failed_repeat', 'task', 'A', 'failed_runs', ?2, ?3, ?4, ?5, ?5, 1, 'new')",
-        (PROJECT, r#"[{"table":"events","id":"event-a"}]"#, measure.to_string(), scores.to_string(), NOW));
-    let draft = serde_json::from_value(json!({"title":"Irreversible repeat", "lens":"flow", "hypothesis":"A repeat loses work.",
-        "disproof":"One attempt also loses it.", "confidence":0.8, "effort":1, "signals":["reversible"],
-        "fix_options":[{"layer":"check", "action":"Stop the repeat."}]})).unwrap();
-    f.store.with(|tx| register::open(tx, PROJECT, draft, NOW).map(drop)).unwrap();
+    signal(f, "reversible", "A", 2, 0.3, false);
+    f.write("UPDATE supervisor_signals SET scores = json_set(scores, '$.reversibility', 3) WHERE fingerprint = 'reversible'", []);
+    f.store.with(|tx| register::open(tx, PROJECT, draft("Irreversible repeat", &["reversible"]), NOW).map(drop)).unwrap();
 }
 
 #[test]
@@ -49,7 +42,7 @@ fn ac213_an_edited_migration_breaks_a_never_only_when_the_owner_tied_it() {
     attached(&f, json!({}));
     edited_migration(&f);
     let found = &live(&f).detectors[0].findings[0];
-    assert_eq!((found.subject_id.as_str(), found.charter_breach, found.charter_never.as_deref()), ("schema1.sql", false, None));
+    assert_eq!((found.subject_id.as_str(), found.charter_breach(), found.charter_never.as_deref()), ("schema1.sql", false, None));
     assert!(found.scores.impact < 3, "an untied fact is an ordinary signal");
     f.store.with(|tx| {
         assert!(!config_lifecycle::protected(tx, PROJECT, Rule::MigrationEdited, &settings::read(tx, PROJECT)?.settings)?);
@@ -61,7 +54,7 @@ fn ac213_an_edited_migration_breaks_a_never_only_when_the_owner_tied_it() {
     edited_migration(&f);
     let evaluation = live(&f);
     let found = &evaluation.detectors[0].findings[0];
-    assert_eq!((found.charter_breach, found.charter_never.as_deref(), found.scores.impact), (true, Some(NEVER), 3));
+    assert_eq!((found.charter_breach(), found.charter_never.as_deref(), found.scores.impact), (true, Some(NEVER), 3));
     evaluation.record(&f.store).unwrap();
     let signal = super::super::signals(&f.store, PROJECT).unwrap().into_iter().find(|s| s.detector == "arch.migration_edited").unwrap();
     assert!(signal.charter_breach, "holds and quiet hours read this flag (AC-221, AC-228)");

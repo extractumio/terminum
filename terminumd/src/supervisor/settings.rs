@@ -252,6 +252,11 @@ impl Settings {
         [&self.charter.never, &self.charter.priorities]
     }
 
+    /// The never line the owner tied to `rule`'s checked fact (AC-213).
+    pub(super) fn never_tied(&self, rule: Rule) -> Option<&String> {
+        self.charter.never_checks.get(rule.id())
+    }
+
     pub(super) fn indicator_enabled(&self, key: Key) -> bool {
         let i = &self.charter.indicators;
         match key {
@@ -282,7 +287,7 @@ impl Settings {
         if rule == Rule::Allocation {
             detector.allocation = self.charter.allocation.clone();
         }
-        detector.never = self.charter.never_checks.get(rule.id()).cloned();
+        detector.never = self.never_tied(rule).cloned();
         detector
     }
 

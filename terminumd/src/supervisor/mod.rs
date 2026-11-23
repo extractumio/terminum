@@ -258,8 +258,7 @@ pub(crate) struct Finding {
     evidence: Vec<Evidence>,
     attributed_runs: BTreeSet<String>,
     source: impact::Source,
-    charter_breach: bool,
-    /// The owner's never line this finding's checked fact breaks.
+    /// The owner's never line this finding's checked fact breaks (AC-213).
     charter_never: Option<String>,
     assessment: impact::Assessment,
     scores: Scores,
@@ -268,6 +267,10 @@ pub(crate) struct Finding {
 impl Finding {
     fn key(&self) -> (&str, &str, &str) {
         (self.subject_kind, &self.subject_id, self.metric)
+    }
+
+    fn charter_breach(&self) -> bool {
+        self.charter_never.is_some()
     }
 }
 
@@ -384,7 +387,7 @@ impl Reading {
         self.evidence.dedup();
         Some(Finding {
             subject_kind: self.subject_kind, subject_id: self.subject_id, metric: self.metric,
-            evidence: self.evidence, attributed_runs: self.attributed_runs, source: self.source, charter_breach: false, charter_never: None,
+            evidence: self.evidence, attributed_runs: self.attributed_runs, source: self.source, charter_never: None,
             assessment: Default::default(), scores: Scores::default(), measure: Measure {
                 value: self.value, baseline, threshold: limit,
                 window_start: window.start, window_end: window.end,

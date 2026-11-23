@@ -91,6 +91,16 @@ impl Rule {
         !matches!(self, Self::CollectorDead | Self::LineDead | Self::ProbeFailed)
     }
 
+    /// A detector whose firing is a counted fact, in the owner's words: only such a detector can break
+    /// a charter never the owner ties to it (AC-213). A statistic, or a fact that fires most weeks in an
+    /// active project (a lockfile gaining a package), is not one.
+    pub(super) fn checked_fact(self) -> Option<&'static str> {
+        match self {
+            Self::MigrationEdited => Some("An existing migration file is edited"),
+            _ => None,
+        }
+    }
+
     pub(super) fn present_only(self) -> bool {
         matches!(self, Self::Starved | Self::UserBugAge)
     }
