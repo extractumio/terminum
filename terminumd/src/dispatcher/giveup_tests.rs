@@ -332,15 +332,15 @@ async fn ac138_real_agent_receives_give_up_and_keeps_its_window() {
         std::fs::create_dir(&config).unwrap();
         std::fs::create_dir(&work).unwrap();
         let config_path = quote(config.to_str().unwrap());
-        let work_path = quote(work.to_str().unwrap());
         let command = if kind == "claude" {
             std::fs::write(config.join(".claude.json"), json!({"hasCompletedOnboarding": true, "projects": {work.to_str().unwrap(): {"hasTrustDialogAccepted": true}}}).to_string()).unwrap();
-            format!("cd {work_path} && env -i HOME={config_path} PATH=\"$PATH\" TERM=xterm-256color LANG=en_US.UTF-8 SHELL=/bin/sh CLAUDE_CONFIG_DIR={config_path} ANTHROPIC_AUTH_TOKEN=no-model-call ANTHROPIC_BASE_URL=http://127.0.0.1:9 DISABLE_AUTOUPDATER=1 CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 claude --safe-mode --tools '' --settings '{{\"tui\":\"{tui}\"}}'")
+            format!("env -i HOME={config_path} PATH=\"$PATH\" TERM=xterm-256color LANG=en_US.UTF-8 SHELL=/bin/sh CLAUDE_CONFIG_DIR={config_path} ANTHROPIC_AUTH_TOKEN=no-model-call ANTHROPIC_BASE_URL=http://127.0.0.1:9 DISABLE_AUTOUPDATER=1 CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 claude --safe-mode --tools '' --settings '{{\"tui\":\"{tui}\"}}'")
         } else {
-            format!("cd {work_path} && env -i HOME={config_path} PATH=\"$PATH\" TERM=xterm-256color LANG=en_US.UTF-8 SHELL=/bin/sh CODEX_HOME={config_path} codex --no-daemon --no-alt-screen -c check_for_update_on_startup=false -c model_provider='\"fixture\"' -c model_providers.fixture.name='\"Fixture\"' -c model_providers.fixture.base_url='\"http://127.0.0.1:9/v1\"' -c model_providers.fixture.wire_api='\"responses\"' -c model_providers.fixture.requires_openai_auth=false")
+            format!("env -i HOME={config_path} PATH=\"$PATH\" TERM=xterm-256color LANG=en_US.UTF-8 SHELL=/bin/sh CODEX_HOME={config_path} codex --no-daemon --no-alt-screen -c check_for_update_on_startup=false -c model_provider='\"fixture\"' -c model_providers.fixture.name='\"Fixture\"' -c model_providers.fixture.base_url='\"http://127.0.0.1:9/v1\"' -c model_providers.fixture.wire_api='\"responses\"' -c model_providers.fixture.requires_openai_auth=false")
         };
-        let command = format!("/bin/sh -c {}", quote(&command));
-        stage.tm.read(&["respawn-pane", "-k", "-t", &stage.pane, &command]);
+        let tmux = crate::config::find_program("tmux", "TM_TMUX").unwrap();
+        let command = ["/bin/sh", "-c", crate::dispatcher::start::window_wrapper(), "sh", work.to_str().unwrap(), &command, tmux.to_str().unwrap(), ""].map(quote).join(" ");
+        stage.tm.read(&["respawn-pane", "-k", "-e", &format!("HOME={}", config.display()), "-e", "SHELL=/bin/sh", "-t", &stage.pane, &command]);
         stage.tm.read(&["set-option", "-p", "-t", &stage.pane, "@terminum-run", &stage.run.id]);
         tokio::time::timeout(Duration::from_secs(40), async {
             let mut trusted = false;
