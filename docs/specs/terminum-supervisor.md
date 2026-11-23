@@ -167,6 +167,17 @@ Scenario: AC-213 edge — a charter "never" is broken
   When code scores it
   Then it has impact 3
 
+Scenario: AC-213 edge — a checked fact breaks a never the owner tied it to
+  Given API's charter ties its never line "Lose user data." to the fact "An existing migration file is edited"
+  When a live reading of `arch.migration_edited` fires on an edited migration
+  Then its signal is a charter breach with impact 3, and the signal and its register problem name that never line, the detector and the evidence rows that established it
+  And without the tie the same reading is an ordinary signal, and a signal at level 3 from blast radius or reversibility alone is no charter breach
+
+Scenario: AC-213 failure — a tie code cannot check
+  Given the owner ties a never line to a detector outside the checkable list, or to a line not in the never list
+  When the owner saves
+  Then the save is refused with the reason and the saved settings stay as they were
+
 Scenario: AC-213 edge — a starved priority task
   Given 18 open P0 and P1 tasks all week, one of them a P1 in TODO five days past its age limit while slots are free
   When code scores its flow.starved signal
@@ -375,7 +386,7 @@ Scenario: AC-221 failure — insufficient hold evidence
 Scenario: AC-222 happy path — edit the project
   Given the owner opens project API on a Mac or phone
   When the Supervisor tab is displayed
-  Then it shows switch, level, tier agents, budgets, charter priorities, never list, allocation target and review dates, indicators, surface map and preview, detectors with their mutes, probes, channels, link base, quiet hours, repeat ladder, import, export and Send a test alert
+  Then it shows switch, level, tier agents, budgets, charter priorities, never list with the checked facts tied to its lines, allocation target and review dates, indicators, surface map and preview, detectors with their mutes, probes, channels, link base, quiet hours, repeat ladder, import, export and Send a test alert
 
 Scenario: AC-222 edge — unconfigured tiers and channels
   Given API is attached using defaults
@@ -1358,16 +1369,15 @@ These cases have remaining behavior or verification gaps. Section 11 names the c
 | AC | Open gap |
 |---|---|
 | AC-212 | Named queries and firing and non-firing tests are missing for catalog entries including target red, scope and rule drift, several architecture and process checks, and outside metric drift and feedback age. Misrouting still reports unavailable. |
-| AC-213 | Live inputs need to establish charter breaches and let a checked round justify a critical escalation from evidence. |
+| AC-213 | A checked round needs to justify a critical escalation from evidence. A red target cannot break a never until its detector exists (AC-212). |
 | AC-215 | The replay command needs to report judgment quality for weeks with retained outcome or miss labels. It currently reports historical firings and indicators. |
-| AC-221 | Attach-time holds cannot use the charter exception until live readings can prove a charter breach (AC-213). |
 | AC-224 | A red target needs a named critical detector to open its incident (AC-212). |
 | AC-225 | A deadline for an interim verification hold depends on AC-233. |
 | AC-228 | Pending notices can arrive stale after quiet hours or after re-enabling a project. Quiet eligibility can also use a newer urgent firing for an older queued notice. |
 | AC-233 | Verification below confidence 0.7 needs a measured comparison of holding and waiting, and a bounded hold when holding costs less. |
 | AC-234 | Investigation cases need the bounded, project-scoped excerpt from indexed project memory. |
 | AC-237 | A private run still needs to prove that exhaustion stops judgment, leaves detectors and paging active, and publishes the budget decision in a due weekly review. |
-| AC-238 | Live charter breach evidence is needed to exercise the critical exception at the fixes ceiling (AC-213). A fix task's text uses the default task sections even where the project keeps its own template (terminum-kanban.md AC-145). |
+| AC-238 | A fix task's text uses the default task sections even where the project keeps its own template (terminum-kanban.md AC-145). |
 | AC-240 | Two drifting sessions can still go to the weekly list instead of opening the specified decision card. Standing-rule reports need to attribute changes in recurring questions to the accepted rule. |
 | AC-241 | A hold needs to trigger the fixed task comment and undo notice when its signal has no other nudge trigger. |
 | AC-244 | The owner's manager session started with the Supervisor skill needs the project-scoped signal reader. Talk already has its own scoped path. |
@@ -1434,7 +1444,7 @@ The collector runs off the async workers through a read-only store connection. E
 
 ### Impact, response and the improvement scoreboard
 
-Impact scores use shares of additive quantities: owner hours, events, tokens, task-days of delay, tasks, switches, operations or weekly spend. A rate is sized through its counts or other additive inputs. Measure impact 2 for a share of at least 10% in three of the last eight weeks. When weekly noise exceeds 10%, the share must clear that noise, with 25% sufficient. A share of at least 5% of two quantities at once also qualifies. Breaking one of the charter's "never" rules is impact 3, whatever its measured share. Impact 1 covers 3% up to the high threshold or one high week. Impact 0 covers under 3%. Event shares need at least three events in their week and a problem must still fire in the last two weeks to rank. Short history caps ordinary impact at 1. Confidence landmarks are 1.0 for facts, 0.7 for strong heuristics and 0.5 for unchecked judgment.
+Impact scores use shares of additive quantities: owner hours, events, tokens, task-days of delay, tasks, switches, operations or weekly spend. A rate is sized through its counts or other additive inputs. Measure impact 2 for a share of at least 10% in three of the last eight weeks. When weekly noise exceeds 10%, the share must clear that noise, with 25% sufficient. A share of at least 5% of two quantities at once also qualifies. Breaking one of the charter's "never" rules is impact 3, whatever its measured share. Code establishes a break only from a checked fact the owner ties to a never line in the tab: a detector whose reading counts discrete facts, matched on its reading's metric, from a closed list in `Rule::checked_fact` (`arch.migration_edited`: an existing migration file edited). A statistic, a fact that fires most weeks in an active project such as `arch.dependency`, and a level 3 from blast radius or reversibility are never a break. The signal keeps the never line beside its evidence rows; the register problem, the screen and the fix task name the line, the detector and the signal. A tied detector is protected coverage: only the owner turns it off or raises its threshold (AC-253). A tie travels with the charter in export and import; it is a spend exception, never a command (AC-220). Impact 1 covers 3% up to the high threshold or one high week. Impact 0 covers under 3%. Event shares need at least three events in their week and a problem must still fire in the last two weeks to rank. Short history caps ordinary impact at 1. Confidence landmarks are 1.0 for facts, 0.7 for strong heuristics and 0.5 for unchecked judgment.
 
 Every reading names its quantity or the reason it has none; the reason sits in the signal's impact basis and the replay prints it. An amount larger than its week's total yields no share, and the basis says so. A rate judged against peers is sized by its excess over the band times its observations.
 
@@ -1481,7 +1491,7 @@ Compare the latest four weeks to the preceding four and show changes against the
 | Supervisor switch and level | Off; Operator when enabled. |
 | Tier agents | None selected, so code only; choose the project's pool agents for the small, medium, strong and independent roles. |
 | Judgment and fixes | 3% and 10% of trailing weekly project spend respectively. Judgment has a floor of one million tokens and an investigation reserve (Budgets below). Configure ceilings in project settings. |
-| Charter | Never list, priorities, indicator targets, allocation target by type and review dates empty. Seven indicators enabled, with no outside indicators required. |
+| Charter | Never list, its checked-fact ties, priorities, indicator targets, allocation target by type and review dates empty. Seven indicators enabled, with no outside indicators required. |
 | Surface map | Empty, so no gate. Preview prior-month task count; size the T3 map toward three to four owner sign-offs per month. |
 | Critical line | The owner's, one set for all their projects: every project's tab shows and edits it and says so, and per-project export and import leave it out. No command or link base. Local bar and card work without them. Default repeats after 10 minutes, 30 minutes, then hourly, and from the 30-minute repeat on also the next channel; a 15-minute grouping window; quiet hours 23:00–08:00 once a channel is configured. |
 | Detectors | Enable applicable library detectors; calculate thresholds from history, with per-project overrides and off, shadow or live settings. |
@@ -1662,7 +1672,7 @@ Enable none of the runtime cases by default. The stages below list the cases in 
 
 - [x] AC-211 — `supervisor::engine_tests` checks named queries, read-only snapshots, fingerprint repeats, persisting conditions and growing window inputs keeping their count, resolution and recurrence, and atomic retry.
 - [ ] AC-212 — `supervisor::catalog_tests` and `ac212_off_missing_and_shadow` cover the store rules, typed thresholds, unavailable inputs and shadow enablement; `ac212_a_failure_and_a_later_launch_in_one_second` and `ac212_a_failed_move_names_the_run_it_failed_in` cover a failure's run beside a launch in its second. Remaining catalog and guard inputs are listed in §7.
-- [ ] AC-213 — `ac213_impact_floors_and_ladder` and `ac213_records_per_finding_impact_and_reads_legacy_scores` cover thresholds, floors, level, response and recording; `supervisor::impact_tests` covers each detector's quantity and the stated reason of a signal without a share. Live charter and escalation inputs remain open.
+- [ ] AC-213 — `ac213_impact_floors_and_ladder` and `ac213_records_per_finding_impact_and_reads_legacy_scores` cover thresholds, floors, level, response and recording; `supervisor::impact_tests` covers each detector's quantity and the stated reason of a signal without a share. `supervisor::breach::tests` covers a live migration edit breaking the never line the owner tied to it, the same reading without a tie, the tied detector's protection and the refused ties; `webSupervisor` and `liveSupervisor` cover the tie in the tab and the breach on the screen. Round escalation remains open.
 - [x] AC-214 — `ac214_scoreboard_guard_verdicts` covers four-week comparisons, separate indicators, guards and missing inputs. `ac261_git_release_metrics_and_owner_split` and `e2e_supervisor_probes.py` check retained release, gate and owner inputs.
 - [ ] AC-215 — `ac215_replay_rank_and_schema` covers the CLI ranking, repeatable output, unavailable detectors, project isolation, read-only bytes and schema refusal. Replay of labeled judgment quality remains open.
 - [x] AC-216 — `e2e_supervisor.py` and `ac216_project_off_is_inert_and_a_new_generation_rejects_old_work` cover the signed-in switch, its project scope and disabling during collection. `e2e_supervisor_rounds.py` checks that switch-off ends the active round and frees its slot. `ac245_hold_undo_and_switch_off` covers retained holds.
@@ -1670,7 +1680,7 @@ Enable none of the runtime cases by default. The stages below list the cases in 
 - [x] AC-218 — `e2e_supervisor.py`, `ac218_points_and_hook_counter_retention` and `ac218_queue_growth_uses_only_the_first_available_samples` cover the sample and baseline cadence, numerical hook counts, retention and unavailable history.
 - [x] AC-219 — `e2e_supervisor.py` and `ac219_independent_watchdog_reports_two_misses_once_and_honors_recovery` cover the independent failure signal, the two-beat threshold and recovery. `liveIncidents` checks the signed-in incident and recovery.
 - [x] AC-220 — `ac220_export_redaction_and_import_confirmation` in `scripts/e2e_supervisor_settings.py` covers per-project defaults and export, unset imports and preview-bound command confirmation on private terminumd. The project tab is AC-222.
-- [ ] AC-221 — `ac221_switch_attaches_two_projects` in `scripts/e2e_supervisor_settings.py` covers switch-only attachment, project-specific calibration and unavailable inputs. `ac221_attach_short_history_and_hold_shadow` covers the seven-day boundary and charter exception. `ac221_attach_replays_distinct_verdicts_seeds_problems_and_retires_disabled_rule` covers the collector's replay qualification, register seeds and fast off/on edits. `ac212_ac221_hotspot_baseline_ranks_the_projects_fixed_files` and `ac212_ac221_loop_baseline_ranks_the_projects_session_days` cover a baseline without an earlier window. See §7 for the remaining consumers.
+- [x] AC-221 — `ac221_switch_attaches_two_projects` in `scripts/e2e_supervisor_settings.py` covers switch-only attachment, project-specific calibration and unavailable inputs. `ac221_attach_short_history_and_hold_shadow` covers the seven-day boundary and charter exception. `ac221_attach_replays_distinct_verdicts_seeds_problems_and_retires_disabled_rule` covers the collector's replay qualification, register seeds and fast off/on edits. `ac212_ac221_hotspot_baseline_ranks_the_projects_fixed_files` and `ac212_ac221_loop_baseline_ranks_the_projects_session_days` cover a baseline without an earlier window. `ac213_an_edited_migration_breaks_a_never_only_when_the_owner_tied_it` records a live breach on the signal that hold shadow reads.
 - [x] AC-222 — `webSupervisor` in `web/test/e2e_supervisor.mjs` and `liveSupervisor` in `web/test/e2e_livesupervisor.mjs` cover the settings tab, switch, project pool, draft after refusal, portable settings, line test and surface preview.
 - [x] AC-223 — `webSupervisor` covers the scoreboard, holds, scorecard, investigation and paged literal evidence at desktop and phone widths in Chromium and WebKit. `liveSupervisor` verifies the two-project collector and screen.
 - [ ] AC-224 — `ac224_incident_grouping_and_clear` and `ac224_distinct_fingerprints_share_subject_and_clear_independently` cover grouping, level changes, missing input and recovery. `liveIncidents` covers an actual collector outage and recovery. `e2e_supervisor.py` checks delivery failure. The red-target detector remains open.
@@ -1687,7 +1697,7 @@ Enable none of the runtime cases by default. The stages below list the cases in 
 - [x] AC-235 — `e2e_supervisor_rounds.py` refuses a wrong number and an unresolved row, records the refusal signal, counting each refusal, and keeps the finding after the named query and evidence pass; `ac235_each_refusal_counts` proves the count.
 - [x] AC-236 — `ac236_register_rank_ruling_and_recurrence` covers measured ranking, owner rulings, scoped evidence and protected yardsticks. The Supervisor browser check exercises the register and ruling form.
 - [ ] AC-237 — `ac237_judgment_reserve_and_caps` covers the investigation reserve, shared day and round caps, and overrun signals. The due-review exhaustion drill remains open.
-- [ ] AC-238 — `ac238_fix_budget_and_critical_exception` covers admission order, the single decision card, a seeded charter exception and attribution by run. `ac236_ac238_an_automatic_fix_task_names_its_measure_weeks_share_and_evidence` covers the title, measures, weeks, share, evidence links and hypothesis of a task made from a measure alone. The live charter exception depends on AC-213.
+- [ ] AC-238 — `ac238_fix_budget_and_critical_exception` covers admission order, the single decision card, a seeded charter exception and attribution by run; `ac238_at_the_fixes_ceiling_only_a_checked_breach_gets_its_fix` covers a live breach's P0 fix at the ceiling beside a level 3 by reversibility that waits on the card. `ac236_ac238_an_automatic_fix_task_names_its_measure_weeks_share_and_evidence` covers the title, measures, weeks, share, evidence links and hypothesis of a task made from a measure alone.
 - [x] AC-239 — `ac239_marked_task_policy_and_override` covers marked eligibility, advisory ranks and the timed override. The role end-to-end check exercises the Supervisor tools on a private board.
 - [ ] AC-240 — `ac240_decision_card_routing` verifies the finding and impact gates, a deferred routine choice and deduplication. `ac242_review_schedule_and_charter_due_once` covers the charter review date. See §7 for drift and standing rules.
 - [ ] AC-241 — `ac241_nudge_updates_one_comment` checks a level 0 refusal, a visible comment without a linked agent, and an in-place update. AC-209 covers ordinary hook delivery. The hold-only trigger remains open.

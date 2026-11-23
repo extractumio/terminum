@@ -373,4 +373,4 @@ pub(super) fn statuses(tx: &Transaction, project: &str, at: i64) -> Result<Vec<S
 
 #[cfg(test)]
 #[path = "probes_tests.rs"]
-mod tests;
+pub(super) mod tests;

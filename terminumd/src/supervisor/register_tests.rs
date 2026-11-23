@@ -15,7 +15,7 @@ fn enabled(f: &Fixture, budgets: serde_json::Value) {
     }).unwrap();
 }
 
-fn signal(f: &Fixture, key: &str, subject: &str, impact: u8, share: f64, charter: bool) {
+pub(super) fn signal(f: &Fixture, key: &str, subject: &str, impact: u8, share: f64, charter: bool) {
     let scores = json!({"impact":impact,"blast":0,"reversibility":0,"confidence":1.0,
         "charter_breach":charter,"impact_basis":{"ranked":true,"shares":[{"week":1,
         "complete":true,"unit":"failure_events","amount":share*100.0,"total":100.0,"noise":0.0}]}});
@@ -26,7 +26,7 @@ fn signal(f: &Fixture, key: &str, subject: &str, impact: u8, share: f64, charter
         (key, PROJECT, subject, r#"[{"table":"events","id":"event-a"}]"#, measure.to_string(), scores.to_string(), NOW));
 }
 
-fn draft(title: &str, keys: &[&str]) -> register::Draft {
+pub(super) fn draft(title: &str, keys: &[&str]) -> register::Draft {
     serde_json::from_value(json!({"title": title, "lens":"flow", "hypothesis":"A repeat causes discarded work.",
         "disproof":"The work still fails with one attempt.", "confidence":0.8, "effort":1, "signals":keys,
         "fix_options":[{"layer":"check", "action":"Add a check for the repeated failure."}]})).unwrap()

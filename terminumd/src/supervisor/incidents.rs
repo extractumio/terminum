@@ -33,7 +33,7 @@ struct Member {
 pub(super) fn observe(tx: &Transaction, seen: Observation<'_>) -> Result<(), String> {
     let Observation { project, rule, fingerprint, finding, evidence, at } = seen;
     let level = finding.scores.level();
-    let urgent = finding.charter_breach || finding.scores.reversibility == 3;
+    let urgent = finding.charter_breach() || finding.scores.reversibility == 3;
     let mut member = tx.prepare_cached("SELECT incident, level, evidence_hash, value, threshold, urgent
         FROM supervisor_incident_signals WHERE fingerprint = ?1").map_err(sql)?;
     let prior = member.query_row([fingerprint], |r| Ok(Member {
