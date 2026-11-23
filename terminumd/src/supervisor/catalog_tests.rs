@@ -257,3 +257,27 @@ fn ac212_shared_run_remains_shared_after_a_task_moves() {
     assert_eq!(found[0].measure.value, 1.0);
     assert!(found[0].evidence.iter().all(|r| !matches!(r, Evidence::Tasks(id) if id == "moves")));
 }
+
+// AC-212, AC-221: a project whose hook counters start today ranks each session against the others, so
+// ordinary same-tool runs stay quiet and only the outlier fires; a lone session meets the floor; earlier days join.
+#[test]
+fn ac212_ac221_loop_baseline_ranks_the_projects_session_days() {
+    let f = Fixture::new("loop-baseline");
+    f.write("INSERT INTO project_supervisor (project, enabled, generation, enabled_at) VALUES (?1, 1, 1, ?2)", (PROJECT, NOW - DAY));
+    let count = |session: &str, at: i64, event: &str, n: i64| f.write("INSERT INTO supervisor_hook_counts
+        (project, agent, session, at, event, count) VALUES (?1, 'claude', ?2, ?3, ?4, ?5)", (PROJECT, session, at, event, n));
+    let fired = || {
+        let found = evaluate(&f.store, PROJECT, NOW, &[Fixture::detector("drift.loop")]).unwrap();
+        found.detectors[0].findings.iter().map(|s| (s.subject_id.clone(), s.metric)).collect::<Vec<_>>()
+    };
+    count("looping", NOW - 600, "repeat", 300);
+    assert_eq!(fired(), [("claude/looping".to_owned(), "repeated_tools")], "a lone session meets only the floor");
+    // One failure per session stays under the floor of 2, so tool_failures never fires here.
+    for i in 0..19 {
+        count(&format!("ordinary{i}"), NOW - 600, "repeat", 60);
+        count(&format!("ordinary{i}"), NOW - 600, "failure", 1);
+    }
+    assert_eq!(fired(), [("claude/looping".to_owned(), "repeated_tools")], "the floor of 2 alone would flag all 20");
+    for i in 0..20 { count(&format!("busy{i}"), NOW - 3 * DAY, "repeat", 400); }
+    assert!(fired().is_empty(), "earlier busier days make today's 300 ordinary");
+}

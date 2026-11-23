@@ -350,6 +350,12 @@ Scenario: AC-221 edge — young project and protected signal
   When its first scan finds both routine drift and a charter breach
   Then the scan reports short history; ordinary impact is capped at 1 and the breach can score 3 and bypass hold shadow
 
+Scenario: AC-221 edge — a baseline without an earlier window
+  Given API's fixing commits and hook counters start inside the current window
+  When the scan derives the `arch.hotspot`, `drift.loop` and `drift.subagents` baselines
+  Then each subject's baseline is the percentile over API's other subjects in both windows, the current day included: each window's files a fix touched, and the session-days
+  And only that top share fires; a file changed without a fix does not lower the baseline, a lone subject meets the floor alone, and a score under the floor never fires
+
 Scenario: AC-221 failure — insufficient hold evidence
   Given a live-at-attach rule has only two past firings inside its first week
   When it proposes a hold
@@ -1657,7 +1663,7 @@ Enable none of the runtime cases by default. The stages below list the cases in 
 - [x] AC-218 — `e2e_supervisor.py`, `ac218_points_and_hook_counter_retention` and `ac218_queue_growth_uses_only_the_first_available_samples` cover the sample and baseline cadence, numerical hook counts, retention and unavailable history.
 - [x] AC-219 — `e2e_supervisor.py` and `ac219_independent_watchdog_reports_two_misses_once_and_honors_recovery` cover the independent failure signal, the two-beat threshold and recovery. `liveIncidents` checks the signed-in incident and recovery.
 - [x] AC-220 — `ac220_export_redaction_and_import_confirmation` in `scripts/e2e_supervisor_settings.py` covers per-project defaults and export, unset imports and preview-bound command confirmation on private terminumd. The project tab is AC-222.
-- [ ] AC-221 — `ac221_switch_attaches_two_projects` in `scripts/e2e_supervisor_settings.py` covers switch-only attachment, project-specific calibration and unavailable inputs. `ac221_attach_short_history_and_hold_shadow` covers the seven-day boundary and charter exception. `ac221_attach_replays_distinct_verdicts_seeds_problems_and_retires_disabled_rule` covers the collector's replay qualification, register seeds and fast off/on edits. See §7 for the remaining consumers.
+- [ ] AC-221 — `ac221_switch_attaches_two_projects` in `scripts/e2e_supervisor_settings.py` covers switch-only attachment, project-specific calibration and unavailable inputs. `ac221_attach_short_history_and_hold_shadow` covers the seven-day boundary and charter exception. `ac221_attach_replays_distinct_verdicts_seeds_problems_and_retires_disabled_rule` covers the collector's replay qualification, register seeds and fast off/on edits. `ac212_ac221_hotspot_baseline_ranks_the_projects_fixed_files` and `ac212_ac221_loop_baseline_ranks_the_projects_session_days` cover a baseline without an earlier window. See §7 for the remaining consumers.
 - [x] AC-222 — `webSupervisor` in `web/test/e2e_supervisor.mjs` and `liveSupervisor` in `web/test/e2e_livesupervisor.mjs` cover the settings tab, switch, project pool, draft after refusal, portable settings, line test and surface preview.
 - [x] AC-223 — `webSupervisor` covers the scoreboard, holds, scorecard, investigation and paged literal evidence at desktop and phone widths in Chromium and WebKit. `liveSupervisor` verifies the two-project collector and screen.
 - [ ] AC-224 — `ac224_incident_grouping_and_clear` and `ac224_distinct_fingerprints_share_subject_and_clear_independently` cover grouping, level changes, missing input and recovery. `liveIncidents` covers an actual collector outage and recovery. `e2e_supervisor.py` checks delivery failure. The red-target detector remains open.

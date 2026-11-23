@@ -393,6 +393,14 @@ fn percentile(values: &mut [f64], p: u8) -> Option<f64> {
     values.get((values.len() * usize::from(p)).div_ceil(100).saturating_sub(1)).copied()
 }
 
+/// AC-212: `percentile` of sorted `values` with one `own` value left out, so a subject is ranked
+/// against the project's other subjects; none left gives `None`, and the floor decides.
+fn percentile_of_others(values: &[f64], own: f64, p: u8) -> Option<f64> {
+    let own_at = values.partition_point(|v| v.total_cmp(&own).is_le()).checked_sub(1)?;
+    let at = ((values.len() - 1) * usize::from(p)).div_ceil(100).checked_sub(1)?;
+    values.get(if at < own_at { at } else { at + 1 }).copied()
+}
+
 #[derive(Clone, Copy)]
 struct Window { before: i64, start: i64, end: i64 }
 

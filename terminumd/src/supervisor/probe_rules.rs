@@ -3,7 +3,7 @@
 
 use std::collections::BTreeMap;
 
-use super::{Comparison, DAY, Evidence, Measurements, Query, Reading, Threshold, catalog, percentile,
+use super::{Comparison, DAY, Evidence, Measurements, Query, Reading, Threshold, catalog, percentile, percentile_of_others,
     impact::Source, probe_arch::Architecture, probe_gate::Gate, probe_git::Releases, probes};
 
 pub(super) const GIT_MISSING: &str = "Git release tags are unavailable.";
@@ -121,19 +121,19 @@ pub(super) fn hotspots(q: &Query<'_, '_>) -> Result<Measurements, String> {
         totals.1 += f64::from(row.fix);
     }
     let score = |path: &str, (churn, fixes): (f64, f64)| {
-        arch.sizes.get(path).map(|bytes| churn * *bytes as f64 * fixes)
+        arch.sizes.get(path).map(|bytes| churn * *bytes as f64 * fixes).filter(|value| *value > 0.0)
     };
-    let [old, recent] = periods;
-    let history = match q.detector.threshold {
-        Threshold::Baseline { percentile: p, .. } => {
-            let mut scores = old.into_iter().filter_map(|(path, stats)| score(path, stats)).collect::<Vec<_>>();
-            percentile(&mut scores, p).into_iter().collect::<Vec<_>>()
-        }
+    // AC-212, AC-221: each file is ranked against every other file a fix touched in either period,
+    // so a project whose fixes are known only inside the current window still fires on its top few percent.
+    let mut scores = periods.iter().flatten().filter_map(|(path, stats)| score(path, *stats)).collect::<Vec<_>>();
+    scores.sort_unstable_by(f64::total_cmp);
+    let baseline = |value| match q.detector.threshold {
+        Threshold::Baseline { percentile: p, .. } => percentile_of_others(&scores, value, p).into_iter().collect(),
         _ => Vec::new(),
     };
+    let [_, recent] = periods;
     let mut readings = recent.into_iter().filter_map(|(path, stats)| score(path, stats).map(|value| (path, value)))
-        .filter(|(_, value)| *value > 0.0)
-        .map(|(path, value)| Reading::new("file", path, "churn_size_fix_count", value, evidence(id), Source::Unsized(CODE)).history(history.clone()))
+        .map(|(path, value)| Reading::new("file", path, "churn_size_fix_count", value, evidence(id), Source::Unsized(CODE)).history(baseline(value)))
         .collect::<Vec<_>>();
     let mut out = Measurements { complete_metrics: (arch.since <= q.window.start).then_some("churn_size_fix_count")
         .into_iter().collect(), ..Measurements::default() };
