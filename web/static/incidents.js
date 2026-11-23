@@ -212,7 +212,7 @@ if (window.top === window) {
   const css = el("link");
   css.rel = "stylesheet";
   css.href = "/incidents.css";
-  document.head.append(css);
+  document.head.insertBefore(css, document.getElementById("customcss"));
 
   const list = el("div", "incident-list");
   const bar = part("aside", "incident-bar", feedError, list);
