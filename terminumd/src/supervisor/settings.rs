@@ -121,6 +121,9 @@ pub(super) struct Charter {
     users: Vec<String>,
     risk_appetite: String,
     never: Vec<String>,
+    /// A checkable detector's ID to the never line its firing breaks (AC-213).
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    never_checks: BTreeMap<String, String>,
     priorities: Vec<String>,
     pub(super) priority_review_at: Option<i64>,
     pub allocation: BTreeMap<String, f64>,
@@ -249,6 +252,11 @@ impl Settings {
         [&self.charter.never, &self.charter.priorities]
     }
 
+    /// The never line the owner tied to `rule`'s checked fact (AC-213).
+    pub(super) fn never_tied(&self, rule: Rule) -> Option<&String> {
+        self.charter.never_checks.get(rule.id())
+    }
+
     pub(super) fn indicator_enabled(&self, key: Key) -> bool {
         let i = &self.charter.indicators;
         match key {
@@ -279,6 +287,7 @@ impl Settings {
         if rule == Rule::Allocation {
             detector.allocation = self.charter.allocation.clone();
         }
+        detector.never = self.never_tied(rule).cloned();
         detector
     }
 
@@ -294,6 +303,7 @@ impl Settings {
         }
         if self.probes.git_file_line_cap == Some(0) { return Err("The Git source file line limit must be positive.".into()); }
         outside_indicators::validate(&self.charter.outside_indicators)?;
+        super::breach::validate(&self.charter.never, &self.charter.never_checks)?;
         if self.probes.feedback.len() > 32 || self.probes.feedback.iter().any(|(probe, base)| {
             !probes::probe_id(probe) || !base.valid()
         }) {

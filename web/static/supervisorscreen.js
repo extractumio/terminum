@@ -148,6 +148,15 @@ function rulingControls(p) {
   return form;
 }
 
+const signalHref = (fingerprint) => `?project=${encodeURIComponent(project)}&signal=${encodeURIComponent(fingerprint)}#signal-${fingerprint}`;
+
+// AC-213: the owner's never rule and the checked fact that broke it.
+function breachLine(b) {
+  const signal = el("a", "textkey", `Signal · ${b.detector}`);
+  signal.href = signalHref(b.fingerprint);
+  return part("li", null, `Never: ${b.never} · `, signal);
+}
+
 function problem(p) {
   const panel = folding(`Impact ${p.impact} · ${p.title} · ${problemState(p.state)}`, () => shown(
     note(p.indicator ? `${percent.format(p.share)} of ${p.indicator.replaceAll("_", " ")} · rank ${numbers.format(p.rank)} · ${p.lens}` : p.lens),
@@ -161,6 +170,7 @@ function problem(p) {
     p.tasks.length ? stack(el("h3", null, "Fix tasks"),
       part("ul", "sv-evidence", ...p.tasks.map(id => part("li", null, reference(id))))) : null,
     p.exception ? note("Verified charter breach. Its fix is exempt from the spending limit.") : null,
+    p.breaches?.length ? part("ul", "sv-evidence", ...p.breaches.map(breachLine)) : null,
     p.action_ready === false && p.state !== "resolved" && p.state !== "accepted" ? note("Proposed fixes need a checked finding.") : null,
     p.new_evidence ? note(p.new_evidence) : null,
     p.ruling ? note(`Owner ruling · ${p.ruling}`) : null,
@@ -181,7 +191,7 @@ function heldAction(hold) {
     } catch (e) { showError(error, e.message); }
   }));
   const signal = el("a", "textkey", `Signal · ${hold.detector}`);
-  signal.href = `?project=${encodeURIComponent(project)}&signal=${encodeURIComponent(hold.signal)}#signal-${hold.signal}`;
+  signal.href = signalHref(hold.signal);
   keys.append(signal, release);
   return part("article", "incident-card",
     el("h3", "incident-title", hold.task ? `${hold.label} · ${hold.task}` : hold.label),

@@ -20,7 +20,7 @@ fn observed(f: &Fixture, at: i64, subjects: &[(&str, bool, u8, i64)]) {
     let findings = subjects.iter().map(|&(subject, charter, reversibility, amount)| {
         let mut finding = Reading::new("fixture", subject, "failure_count", amount as f64, vec![Evidence::Inputs(amount)], super::super::impact::Source::Present)
             .finding(super::super::Threshold::Absolute(0.0), Window { before: at - 1, start: at - 1, end: at }).unwrap();
-        finding.charter_breach = charter;
+        finding.charter_never = charter.then(|| "Lose user data.".into());
         finding.scores = Scores { impact: 3, reversibility, ..Scores::default() };
         finding
     }).collect();

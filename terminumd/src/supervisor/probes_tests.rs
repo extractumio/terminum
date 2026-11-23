@@ -30,6 +30,12 @@ fn job(f: &Fixture, source: &str, at: i64) -> Job {
     f.store.snapshot(SCHEMA, |tx| Ok(due(tx, at)?.into_iter().find(|j| j.source.name() == source).unwrap())).unwrap()
 }
 
+/// One retained observation of a standard source, as a collected sample would publish it.
+pub(in crate::supervisor) fn publish_sample(f: &Fixture, source: &str, at: i64, data: String) {
+    let job = job(f, source, at);
+    assert!(f.store.with(|tx| publish(tx, &job, at, Ok(Observation { data, reports: Vec::new() }))).unwrap().is_some());
+}
+
 #[tokio::test]
 async fn ac260_probe_valid_invalid_timeout() {
     let f = Fixture::new("probe-command");

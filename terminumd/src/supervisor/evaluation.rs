@@ -82,7 +82,7 @@ pub(super) fn evaluate_snapshot(
             let readings = indexed.iter().map(|week| week.get(&found.key()).copied());
             found.assessment = calculator.assess(detector, found, readings);
             found.scores = Scores {
-                impact: found.assessment.score(at - first < 3 * WEEK, found.charter_breach),
+                impact: found.assessment.score(at - first < 3 * WEEK, found.charter_breach()),
                 ..detector.scores
             };
         }
@@ -106,6 +106,10 @@ pub(super) fn measure_detector(
 pub(super) fn collect_findings(data: &mut Measurements, detector: &Detector, window: Window, current_state: bool) -> Vec<Finding> {
     std::mem::take(&mut data.readings).into_iter()
         .filter(|reading| current_state || !matches!(reading.source, impact::Source::Present))
-        .filter_map(|reading| reading.finding(detector.threshold, window)).collect()
+        .filter_map(|reading| reading.finding(detector.threshold, window))
+        .map(|mut found| {
+            found.charter_never = detector.never.clone().filter(|_| detector.rule.checked_fact().is_some());
+            found
+        }).collect()
 }
 
