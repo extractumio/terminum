@@ -79,12 +79,24 @@ struct PreparedFinding<'a> {
 
 const ACTIVE: &str = "state IN ('new', 'shadow', 'raised', 'recurred')";
 
-/// AC-211: a repeat is the condition back after it resolved, or, where `counted` holds, an evidence row the signal
-/// did not hold. A counted reading's rows are its events; other readings' rows are inputs to a level or a window
-/// total, so a persisting condition only moves last seen. `self.round_failed` counts every call (`diagnostic`).
-fn repeated_count(counted: &str) -> String {
-    format!("count + (state = 'resolved' OR ({counted} AND EXISTS (SELECT 1 FROM json_each(excluded.evidence) n
-        WHERE n.value NOT IN (SELECT o.value FROM json_each(supervisor_signals.evidence) o))))")
+/// AC-211: a repeat is the condition back after it resolved, or, for a counted reading, an evidence row the signal
+/// did not hold (`fresh`). A counted reading's rows are its events; other readings' rows are inputs to a level or a
+/// window total, so a persisting condition only moves last seen. `self.round_failed` counts every call (`diagnostic`).
+fn repeated_count(fresh: &str) -> String {
+    format!("count + (state = 'resolved' OR {fresh})")
+}
+
+/// Whether `evidence` (`encoded`) holds a row the stored signal `key` does not. AC-217: one lookup that returns the
+/// stored rows only when they differ, and one pass over each side, so a counted signal with thousands of rows costs
+/// the write turn at most a parse, never a scan of its rows per row.
+fn fresh_rows(tx: &Transaction, key: &str, encoded: &str, evidence: &[Evidence]) -> Result<bool, String> {
+    let held: Option<Vec<Evidence>> = tx.prepare_cached("SELECT CASE WHEN evidence = ?2 THEN NULL ELSE evidence END
+        FROM supervisor_signals WHERE fingerprint = ?1").and_then(|mut q| q.query_row((key, encoded), |r|
+            r.get_ref(0)?.as_str_or_null()?.map(|_| decode(r, 0)).transpose()).optional())
+        .map_err(sql)?.flatten();
+    let Some(held) = held else { return Ok(false) };
+    let held: std::collections::BTreeSet<_> = held.iter().collect();
+    Ok(evidence.iter().any(|row| !held.contains(row)))
 }
 
 struct PreparedRule<'a> {
@@ -181,9 +193,10 @@ impl Prepared<'_> {
             for row in findings {
                 let ruled: bool = ruling.query_row((&row.key, &row.evidence), |r| r.get(0)).map_err(sql)?;
                 if ruled { continue; }
+                let fresh = matches!(row.found.source, Source::Count(_)) && fresh_rows(tx, &row.key, &row.evidence, &row.found.evidence)?;
                 let accepted: bool = upsert.query_row(params![row.key, evaluation.project, rule, row.found.subject_kind,
                     row.found.subject_id, row.found.metric, row.evidence, row.measure, row.scores, evaluation.at,
-                    if checked.mode == Mode::Shadow { "shadow" } else { "new" }, matches!(row.found.source, Source::Count(_))],
+                    if checked.mode == Mode::Shadow { "shadow" } else { "new" }, fresh],
                     |r| r.get(0)).map_err(sql)?;
                 if checked.mode == Mode::Live && accepted {
                     let week = evaluation.at.div_euclid(super::WEEK);
@@ -284,9 +297,10 @@ pub(super) fn round_failed(tx: &Transaction, project: &str, id: &str, metric: &s
 pub(super) fn diagnostic(tx: &Transaction, project: &str, detector: &str, subject: (&str, &str, &str),
     evidence: &[Evidence], (value, threshold): (f64, f64), at: i64) -> Result<(), String> {
     let (kind, id, metric) = subject;
-    let repeat = if detector == "self.round_failed" { "count + 1".into() } else { repeated_count("1") };
     let key = fingerprint(project, detector, subject);
-    let evidence = encode(&evidence)?;
+    let rows = evidence;
+    let evidence = encode(&rows)?;
+    let fresh = detector == "self.round_failed" || fresh_rows(tx, &key, &evidence, rows)?;
     let measure = encode(&Measure { value, baseline: 0., threshold, window_start: at, window_end: at })?;
     let scores = encode(&RecordedScores { scores: Scores { impact: 1, ..Scores::default() }, impact_basis: Default::default(), charter_breach: false })?;
     tx.execute(&format!("INSERT INTO supervisor_signals (fingerprint, project, detector, subject_kind, subject_id,
@@ -295,8 +309,8 @@ pub(super) fn diagnostic(tx: &Transaction, project: &str, detector: &str, subjec
         ON CONFLICT (fingerprint) DO UPDATE SET measure = excluded.measure, evidence = excluded.evidence,
             last_seen = excluded.last_seen, count = {}, state = 'raised'
         WHERE (state, evidence, json_extract(measure, '$.value'), json_extract(measure, '$.threshold'))
-            IS NOT (excluded.state, excluded.evidence, ?11, ?12)", repeat),
-        params![key, project, detector, kind, id, metric, evidence, measure, scores, at, value, threshold]).map_err(sql)?;
+            IS NOT (excluded.state, excluded.evidence, ?11, ?12)", repeated_count("?13")),
+        params![key, project, detector, kind, id, metric, evidence, measure, scores, at, value, threshold, fresh]).map_err(sql)?;
     if detector == "self.miss" {
         super::reflection::enqueue(tx, project, ("miss", &key, Some(&key)), "miss",
             &serde_json::json!({"first_evidence_at":value,"first_seen_at":threshold}), at)?;

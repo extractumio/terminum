@@ -262,6 +262,12 @@ Scenario: AC-217 happy path — run outside Dispatcher's walk
   Then the signal appears within one minute and its write is batched into one small transaction
   And while a detector read is held open, the read holds no store write turn and Dispatcher's walk keeps its beat
 
+Scenario: AC-217 edge — persisting signals
+  Given API has a few hundred signals that persist from pass to pass, and a counted one with thousands of evidence rows
+  When a pass finds them again, one of them with one new row
+  Then the write rewrites no persisting signal's evidence, count or revision, and only that signal gains its new row and one repeat
+  And the write reads a stored signal's evidence only when it differs, and compares each of its rows once
+
 Scenario: AC-217 edge — same-time events and restart
   Given three events share a timestamp and have nonmonotonic IDs
   When the collector restarts after committing the first batch
@@ -1660,7 +1666,7 @@ Enable none of the runtime cases by default. The stages below list the cases in 
 - [x] AC-214 — `ac214_scoreboard_guard_verdicts` covers four-week comparisons, separate indicators, guards and missing inputs. `ac261_git_release_metrics_and_owner_split` and `e2e_supervisor_probes.py` check retained release, gate and owner inputs.
 - [ ] AC-215 — `ac215_replay_rank_and_schema` covers the CLI ranking, repeatable output, unavailable detectors, project isolation, read-only bytes and schema refusal. Replay of labeled judgment quality remains open.
 - [x] AC-216 — `e2e_supervisor.py` and `ac216_project_off_is_inert_and_a_new_generation_rejects_old_work` cover the signed-in switch, its project scope and disabling during collection. `e2e_supervisor_rounds.py` checks that switch-off ends the active round and frees its slot. `ac245_hold_undo_and_switch_off` covers retained holds.
-- [x] AC-217 — `e2e_supervisor.py` checks live detection within a minute. `ac217_cursor_restart_and_rollback_with_same_time_nonmonotonic_ids` and `ac217_open_detector_snapshot_does_not_take_the_store_write_turn` cover durable order, retry and concurrent writes. `scripts/bench_busy.py --supervisor` measures the active collector under load.
+- [x] AC-217 — `e2e_supervisor.py` checks live detection within a minute. `ac217_cursor_restart_and_rollback_with_same_time_nonmonotonic_ids` and `ac217_open_detector_snapshot_does_not_take_the_store_write_turn` cover durable order, retry and concurrent writes. `ac217_persisting_signals_write_only_what_changed` covers persisting signals and a counted one with thousands of rows. `scripts/bench_busy.py --supervisor` measures the active collector under load.
 - [x] AC-218 — `e2e_supervisor.py`, `ac218_points_and_hook_counter_retention` and `ac218_queue_growth_uses_only_the_first_available_samples` cover the sample and baseline cadence, numerical hook counts, retention and unavailable history.
 - [x] AC-219 — `e2e_supervisor.py` and `ac219_independent_watchdog_reports_two_misses_once_and_honors_recovery` cover the independent failure signal, the two-beat threshold and recovery. `liveIncidents` checks the signed-in incident and recovery.
 - [x] AC-220 — `ac220_export_redaction_and_import_confirmation` in `scripts/e2e_supervisor_settings.py` covers per-project defaults and export, unset imports and preview-bound command confirmation on private terminumd. The project tab is AC-222.
