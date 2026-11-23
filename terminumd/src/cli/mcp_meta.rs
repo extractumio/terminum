@@ -168,7 +168,7 @@ pub fn target(args: &Value, role: Role) -> Result<(&'static str, Value), String>
     }
     let card = catalog::card(name).ok_or_else(|| unknown(name, role))?;
     if !role.allows(name) {
-        return Err(if matches!(role, Role::Supervisor(_)) { role.refusal(name) } else { unknown(name, role) });
+        return Err(if role.is_supervisor() { role.refusal(name) } else { unknown(name, role) });
     }
     let arguments = match args.get("arguments") {
         None | Some(Value::Null) => json!({}),

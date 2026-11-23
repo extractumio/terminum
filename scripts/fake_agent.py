@@ -87,6 +87,20 @@ def main():
 
         call("get_case_file", id="case_foreign")
         case = decoded(call("get_case_file", id=case_id))
+        if case["kind"] == "reflection":
+            call("hold", signal="fixture", kind="pause_dispatch", reason="Reflection fixture.")
+            call("run_task", id="TERM-1", agent="Fixture")
+            report = dict(missed="No earlier evidence was recorded.", noise="One repeated rule fired.",
+                          wrong="The timeline shows the recorded trigger.",
+                          proposals=[{"change": "Review the observed threshold.",
+                                      "replay": "Compare on the retained timeline.", "evidence": [1]}])
+            call("record_reflection", **{**report, "proposals": [{**report["proposals"][0], "evidence": [9999]}]})
+            if "alert_wrong" in case["triggers"]:
+                measured = next(row for row in case["agent_rates"] if row["task_type"] == "Bug")
+                report["routing"] = {"agent": measured["agent"], "task_type": "Bug",
+                                     "change": "Review the Bug default agent.", "why": "The sample is incomplete."}
+            call("record_reflection", **report)
+            return
         if opt("--round-mode", "") == "thread":
             barrier = opt("--thread-barrier", "")
             deadline = time.monotonic() + 12
@@ -220,7 +234,7 @@ def main():
                 if "QUESTIONS" in prompt or "DEPENDENCY" in prompt:
                     typed = "draft during wait"
                     box()
-            if opt("--round-log", "") and (case := re.fullmatch(r"Supervisor case (case_[a-f0-9]+)\..*", prompt)):
+            if opt("--round-log", "") and (case := re.fullmatch(r"Supervisor (?:reflection )?case (case_[a-f0-9]+)\..*", prompt)):
                 investigate(case[1])
             elif opt("--round-log", "") and (case := re.fullmatch(r"Supervisor incident case (case_[a-f0-9]+)\..*", prompt)):
                 talk(case[1])

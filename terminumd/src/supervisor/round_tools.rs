@@ -15,7 +15,7 @@ pub(crate) const NAMES: &[&str] = &["get_case_file", "list_signals", "get_signal
 pub(crate) const ADVISOR: &[&str] = &["open_problem", "update_problem", "propose_rank", "propose_decision", "post_incident_answer"];
 
 pub(crate) fn known(tool: &str) -> bool {
-    NAMES.contains(&tool) || ADVISOR.contains(&tool)
+    NAMES.contains(&tool) || ADVISOR.contains(&tool) || tool == super::reflection::TOOL
 }
 
 #[derive(Deserialize)]
@@ -116,6 +116,16 @@ fn args<T: DeserializeOwned>(value: Value) -> Result<T, String> {
 }
 
 pub(crate) async fn run(app: &Shared, key: String, project: String, tool: String, value: Value) -> Result<String, String> {
+    if tool == super::reflection::TOOL {
+        let card = store(app, move |tx| {
+            let run = run_of(tx, &key, &project, &tool)?;
+            let case = case_file(tx, &run)?;
+            super::reflection::complete(tx, &project, &run, &case, value, now())
+        }).await?;
+        if let Some(card) = card { crate::tasks::api::told(app, &card); }
+        app.supervisor.wake();
+        return Ok("Reflection proposals recorded for the owner.".into());
+    }
     if tool == "post_incident_answer" {
         #[derive(Deserialize)]
         #[serde(deny_unknown_fields)]

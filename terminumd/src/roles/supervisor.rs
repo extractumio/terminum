@@ -23,6 +23,7 @@ pub(crate) enum Role {
     Manager,
     Token { manager: bool },
     Supervisor(Option<Level>),
+    Reflection(bool),
 }
 
 impl From<bool> for Role {
@@ -37,17 +38,27 @@ impl Role {
             Self::Worker | Self::Token { manager: false } => "worker",
             Self::Manager | Self::Token { manager: true } => "manager",
             Self::Supervisor(_) => "supervisor",
+            Self::Reflection(_) => "reflection",
         }
     }
 
     pub fn level(self) -> Option<Level> {
         match self {
             Self::Supervisor(level) => level,
+            Self::Reflection(true) => Some(Level::Observer),
             _ => None,
         }
     }
 
+    pub fn is_supervisor(self) -> bool {
+        matches!(self, Self::Supervisor(_) | Self::Reflection(_))
+    }
+
     pub fn allows(self, tool: &str) -> bool {
+        if let Self::Reflection(active) = self {
+            return active && matches!(tool, "get_case_file" | supervisor::reflection::TOOL);
+        }
+        if tool == supervisor::reflection::TOOL { return false; }
         if supervisor::holds::TOOLS.contains(&tool) {
             return self == Self::Supervisor(Some(Level::Operator));
         }
@@ -61,7 +72,7 @@ impl Role {
             Self::Token { .. } if tool == supervisor::review::TOOL => false,
             Self::Manager | Self::Token { manager: true } => true,
             Self::Worker | Self::Token { manager: false } => !super::MANAGER_TOOLS.contains(&tool),
-            Self::Supervisor(None) => false,
+            Self::Supervisor(None) | Self::Reflection(_) => false,
             Self::Supervisor(Some(level)) => {
                 OBSERVER_TOOLS.contains(&tool)
                     || (level != Level::Observer && ADVISOR_TOOLS.contains(&tool))
@@ -73,7 +84,8 @@ impl Role {
     pub fn refusal(self, tool: &str) -> String {
         match self {
             Self::Supervisor(Some(level)) => format!("The {level:?} Supervisor cannot call {tool:?}."),
-            Self::Supervisor(None) => "This Supervisor session is inactive.".into(),
+            Self::Supervisor(None) | Self::Reflection(false) => "This Supervisor session is inactive.".into(),
+            Self::Reflection(true) => format!("A reflection cannot call {tool:?}."),
             _ => super::not_yours(tool),
         }
     }
@@ -98,8 +110,11 @@ pub(crate) fn marked(tx: &Transaction, key: &str) -> Result<Option<Mark>, String
         FROM supervisor_panes m WHERE m.pane_key = ?1", crate::supervisor::talk::LIVE)).map_err(ops::sql)?
         .query_row((key, ops::now()), |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).optional().map_err(ops::sql)?;
     row.map(|(project, active, run)| {
-        let level = active.then(|| supervisor::level(tx, &project)).transpose()?;
-        Ok(Mark { project, role: Role::Supervisor(level), run })
+        let role = match &run {
+            Some(run) if supervisor::rounds::is_reflection(tx, run)? => Role::Reflection(active),
+            _ => Role::Supervisor(active.then(|| supervisor::level(tx, &project)).transpose()?),
+        };
+        Ok(Mark { project, role, run })
     }).transpose()
 }
 

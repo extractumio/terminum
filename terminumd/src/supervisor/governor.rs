@@ -139,9 +139,10 @@ pub(crate) fn judge_usage(tx: &Transaction, run: &str, at: i64) -> Result<(), St
         let tokens: f64 = tx.query_row("SELECT coalesce(sum(0.0 + input + output + cache_write + cache_read), 0)
             FROM usage WHERE run = ?1", [run], |r| r.get(0)).map_err(sql)?;
         if tokens > cap as f64 {
-            super::rounds::failure(tx, run, "The investigation exceeded its token limit.", false)?;
+            super::rounds::failure(tx, run, "The Supervisor round exceeded its token limit.", false)?;
             signals::diagnostic(tx, &project, "self.budget", ("round", &id, "judgment_round_tokens"),
                 &[Evidence::SupervisorRounds(id.clone())], (tokens, cap as f64), at)?;
+            super::reflection::usage_overrun(tx, &project, run, cap, tokens, at)?;
         }
     }
     let changed = tx.execute("UPDATE supervisor_review_runs SET overrun = 1 WHERE run = ?1 AND NOT overrun
@@ -152,6 +153,7 @@ pub(crate) fn judge_usage(tx: &Transaction, run: &str, at: i64) -> Result<(), St
             (SELECT sum(0.0 + input + output + cache_write + cache_read) FROM usage WHERE run = ?1)
             FROM supervisor_review_runs WHERE run = ?1", [run], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).map_err(sql)?;
         signals::diagnostic(tx, &project, "self.budget", ("run", run, "weekly_review_tokens"), &[], (used, cap as f64), at)?;
+        super::reflection::usage_overrun(tx, &project, run, cap, used, at)?;
     }
     Ok(())
 }

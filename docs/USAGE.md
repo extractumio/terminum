@@ -616,6 +616,24 @@ Open the breaker in **Rule outcomes**, choose **Review rule change** and compare
 the replay before and after. **Restore autonomy** applies to that review and
 settings revision. Rules without measurable retained replay stay paused.
 
+#### Independent reflections and pool agent scorecards
+
+Choose an **Independent** agent in the project's Supervisor settings. It must
+differ from the other tier agents. Choose a different model family if the pool
+has one available. A breaker, owner override, recurrence after a fix, recorded
+miss, wrong alert, budget overrun, decision-rate excursion or closed level 3
+incident can request an independent round. A reflection waits for its slot and
+judgment budget. The case keeps the timeline built from the store. **Independent
+reflections** shows the latest requests, results and suggested changes. The
+proposals identify the settings revision they reviewed. Open **Case timeline** to
+read the numbered events cited by a proposal.
+
+**Pool agent scorecards** shows the last seven days for each agent by task
+type. Failed and returned runs use runs, questions use distinct tasks and
+cost uses priced runs. An interval and a sample size accompany each measured
+rate. Fewer than 30 observations are advisory only. Return data is unavailable
+when integration is off. A routing proposal opens a decision card for the owner.
+
 #### Signed-in Supervisor API
 
 All routes below are relative to `/api/task-projects/<ID>/supervisor`.
@@ -626,13 +644,13 @@ All routes below are relative to `/api/task-projects/<ID>/supervisor`.
 | PUT the base route with `{"enabled": true}` or `{"enabled": false}` | Change the switch for this project and return its active holds. |
 | GET or PUT `/line` | Read or save the owner-wide channel paths, HTTPS origin, quiet hours and ladder. PUT requires the current revision. |
 | POST `/line/test` | Run the saved channel at the zero-based `channel` index with the current `revision`. |
-| GET `/screen` | Active holds, decisions, review, digest, scoreboard indicators and the newest page of signals. |
+| GET `/screen` | Active holds, decisions, review, digest, scoreboard indicators, pool agent scorecards, the newest reflections and the newest page of signals. |
 | GET `/holds` | This project's active holds and their undo keys. |
 | POST `/holds/<id>/release` | Use the held action's undo as the owner. |
 | POST `/verdicts` | Record `verdict` on the `fingerprint` in the weekly review `task`. Values are `useful`, `not_useful` and `wrong`. |
 | GET `/signals?after=<cursor>` | The next page of signals for the same project. |
 | POST `/signals/<fingerprint>/investigate` | Request an investigation of the signal. |
-| GET `/rounds/<case>` | Read the retained case, checked finding or failure, refusal count and end time. |
+| GET `/rounds/<case>` | Read the retained case, result or failure, refusal count and end time. |
 | GET `/incidents?before=<cursor>` | The project's newest incidents, or the next page with a cursor. |
 | GET `/settings` | Pack, revision, detector defaults and confirmed and unset probe IDs. |
 | PUT `/settings` with `revision` and `settings` | Replace the project's preferences. Use the latest revision. |

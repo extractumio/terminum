@@ -109,7 +109,7 @@ fn check_room<'a>(settings: &'a settings::Settings, signal: &Signal) -> Result<&
 
 pub(crate) fn waiting(tx: &Transaction, at: i64, key: Option<&str>) -> Result<Vec<(String, String)>, String> {
     let week = at.div_euclid(super::WEEK);
-    rows(tx, "WITH eligible AS (
+    let mut eligible = rows(tx, "WITH eligible AS (
         SELECT s.project, s.fingerprint, s.first_seen,
             max(json_extract(s.scores, '$.impact'), json_extract(s.scores, '$.blast'),
                 json_extract(s.scores, '$.reversibility')) AS level,
@@ -130,28 +130,45 @@ pub(crate) fn waiting(tx: &Transaction, at: i64, key: Option<&str>) -> Result<Ve
                 WHERE w.fingerprint = s.fingerprint AND w.week BETWEEN ?1 - 7 AND ?1)))))
         )
         SELECT project, fingerprint FROM eligible ORDER BY impact DESC, level DESC, first_seen, fingerprint",
-        (week, key), |r| Ok((r.get(0)?, r.get(1)?)))
+        (week, key), |r| Ok((r.get(0)?, r.get(1)?)))?;
+    eligible.extend(super::reflection::waiting(tx, at, key)?);
+    Ok(eligible)
 }
 
 pub(crate) struct Candidate {
-    signal: Signal,
+    signal: Option<Signal>,
+    key: String,
+    project: String,
     generation: i64,
     revision: i64,
     pub agent: String,
 }
 
+impl Candidate {
+    pub(crate) fn reflection(&self) -> bool { self.signal.is_none() }
+}
+
 pub(crate) fn candidate(tx: &Transaction, project: &str, key: &str) -> Result<Candidate, String> {
     let generation = enabled(tx, project)?.ok_or("The Supervisor is off.")?;
     if let Some(id) = active_id(tx, key)? { return Err(format!("Investigation {id} is already open.")); }
-    let signal = signals::get(tx, project, key)?;
     let saved = settings::read(tx, project)?.settings;
+    if key.starts_with("reflection_") {
+        let agent = saved.tiers.reflection_agent(tx, project)?;
+        if super::reflection::source_agent(tx, project, key)?.as_deref() == Some(&agent) {
+            return Err("Choose a different agent from the one whose decision is being reviewed.".into());
+        }
+        if !saved.investigation_room() { return Err(governor::JUDGMENT_NOTICE.into()); }
+        return Ok(Candidate { signal: None, key: key.into(), project: project.into(), generation, revision: 0, agent });
+    }
+    let signal = signals::get(tx, project, key)?;
     let agent = check_room(&saved, &signal)?.to_owned();
     let revision = tx.query_row("SELECT revision FROM supervisor_signals WHERE fingerprint = ?1",
         [key], |r| r.get(0)).map_err(sql)?;
-    Ok(Candidate { signal, generation, revision, agent })
+    Ok(Candidate { signal: Some(signal), key: key.into(), project: project.into(), generation, revision, agent })
 }
 
 pub(crate) fn waiting_reason(tx: &Transaction, key: &str, reason: &str) -> Result<(), String> {
+    if key.starts_with("reflection_") { return super::reflection::reason(tx, key, reason); }
     tx.execute("INSERT INTO supervisor_round_requests (fingerprint, reason)
         SELECT fingerprint, ?2 FROM supervisor_signals WHERE fingerprint = ?1
         ON CONFLICT (fingerprint) DO UPDATE SET reason = excluded.reason WHERE reason IS NOT excluded.reason",
@@ -192,14 +209,38 @@ fn task_data(tx: &Transaction, signal: &Signal) -> Result<Vec<Value>, String> {
 }
 
 pub(crate) fn save(tx: &Transaction, run: &str, candidate: Candidate, at: i64, clock_scale: i64) -> Result<String, String> {
-    let Candidate { mut signal, generation, revision, .. } = candidate;
+    let Candidate { signal, key, generation, revision, project, .. } = candidate;
     let id = format!("case_{run}");
+    let important = signal.as_ref().is_some_and(|signal| signal.level >= 2);
+    let token_cap = governor::admit_round(tx, &project, at, important)?;
+    let reflection = signal.is_none();
+    let seconds = if reflection { super::reflection::TIME_LIMIT } else { TIME_LIMIT };
+    let deadline = at + (seconds / clock_scale).max(1);
+    let (mut case, incident) = if let Some(signal) = signal {
+        investigation_case(tx, signal, at)?
+    } else {
+        (super::reflection::case(tx, &project, &key, at)?, None)
+    };
+    for (field, value) in [("id", json!(id)), ("deadline", json!(deadline)),
+        ("budget_seconds", json!(seconds)), ("budget_tokens", json!(token_cap))]
+    {
+        case[field] = value;
+    }
+    tx.execute("INSERT INTO supervisor_rounds (id, run, project, generation, fingerprint, signal_revision, case_file, deadline, token_cap, reserved_class, incident)
+        VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)",
+        rusqlite::params![id, run, project, generation, key, revision, case.to_string(), deadline, token_cap as i64, important, incident]).map_err(sql)?;
+    if reflection {
+        tx.execute("UPDATE supervisor_reflections SET round = ?2, reason = NULL, retry_at = NULL WHERE fingerprint = ?1", (&key, &id)).map_err(sql)?;
+    } else {
+        tx.execute("DELETE FROM supervisor_round_requests WHERE fingerprint = ?1", [&key]).map_err(sql)?;
+    }
+    Ok(id)
+}
+
+fn investigation_case(tx: &Transaction, mut signal: Signal, at: i64) -> Result<(Value, Option<i64>), String> {
     let verify = signal.level >= 2 && signal.scores.confidence < 0.7;
     let saved = settings::read(tx, &signal.project)?.settings;
     let charter = saved.investigation_charter().map(|lines| excerpt(lines.join("\n")));
-    let deadline = at + (TIME_LIMIT / clock_scale).max(1);
-    let important = signal.level >= 2;
-    let token_cap = governor::admit_round(tx, &signal.project, at, important)?;
     let problem = register::case_context(tx, &signal.project, &signal.fingerprint, at)?;
     let role = crate::roles::Role::Supervisor(Some(settings::level(tx, &signal.project)?));
     let tools = super::round_tools::NAMES.iter().chain(super::round_tools::ADVISOR)
@@ -212,8 +253,7 @@ pub(crate) fn save(tx: &Transaction, run: &str, candidate: Candidate, at: i64, c
         evidence.push(json!({"reference": id, "row": super::round_evidence::resolve(tx, &signal.project, id)?}));
     }
     let case = json!({
-        "id": id, "kind": if verify { "verification" } else { "investigation" },
-        "signal": signal, "deadline": deadline, "budget_seconds": TIME_LIMIT, "budget_tokens": token_cap,
+        "kind": if verify { "verification" } else { "investigation" }, "signal": signal,
         "register_problem": problem,
         "register_note": "Use the register tools before submitting the final finding.",
         "charter_data": {"never": charter[0], "priorities": charter[1]},
@@ -226,11 +266,7 @@ pub(crate) fn save(tx: &Transaction, run: &str, candidate: Candidate, at: i64, c
     let requested: Option<i64> = tx.query_row("SELECT incident FROM supervisor_round_requests WHERE fingerprint = ?1",
         [&signal.fingerprint], |r| r.get::<_, Option<i64>>(0)).optional().map_err(sql)?.flatten();
     let incident = requested.or(super::thread::current(tx, &signal.project, &signal.fingerprint)?);
-    tx.execute("INSERT INTO supervisor_rounds (id, run, project, generation, fingerprint, signal_revision, case_file, deadline, token_cap, reserved_class, incident)
-        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)", rusqlite::params![id, run, signal.project, generation,
-            signal.fingerprint, revision, case.to_string(), deadline, token_cap as i64, important, incident]).map_err(sql)?;
-    tx.execute("DELETE FROM supervisor_round_requests WHERE fingerprint = ?1", [&signal.fingerprint]).map_err(sql)?;
-    Ok(id)
+    Ok((case, incident))
 }
 
 // Callers bind ?2 to the server clock. A lost mark never acquires another role.
@@ -251,6 +287,10 @@ pub(crate) fn mark(tx: &Transaction, run: &str, key: &str) -> Result<(), String>
     let changed = tx.execute("INSERT INTO supervisor_panes (pane_key, project, generation, round)
         SELECT ?1, project, generation, id FROM supervisor_rounds WHERE run = ?2", (key, run)).map_err(sql)?;
     if changed == 1 { Ok(()) } else { super::talk::mark(tx, run, key) }
+}
+
+pub(crate) fn is_reflection(tx: &Transaction, run: &str) -> Result<bool, String> {
+    super::reflection::is_round(tx, run)
 }
 
 pub(crate) fn failure(tx: &Transaction, run: &str, why: &str, refused: bool) -> Result<(), String> {

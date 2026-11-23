@@ -343,6 +343,9 @@ fn commit(store: &Store, project: &Project, batch: Batch, pending: &Pending<'_>,
             return Ok((false, false, Vec::new()));
         }
         super::outcomes::check(tx, &project.id, at)?;
+        if batch.sampled {
+            super::outcomes::check_bands(tx, &project.id, project.generation, at)?;
+        }
         let before = incidents::revision(tx)?;
         let mut holds = Vec::new();
         if let Some(signals) = signals {

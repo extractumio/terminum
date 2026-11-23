@@ -96,13 +96,16 @@ impl Rule {
     }
 }
 
-fn integration(q: &Query<'_, '_>) -> Result<Measurements, String> {
+pub(super) fn integration_on(tx: &rusqlite::Transaction, project: &str) -> Result<bool, String> {
     use rusqlite::OptionalExtension;
     use crate::tasks::ops::sql;
 
-    let on = q.tx.query_row("SELECT is_on FROM project_integration WHERE project = ?1", [q.project], |r| r.get::<_, bool>(0))
-        .optional().map_err(sql)?.unwrap_or(false);
-    Ok(Measurements::missing(if on { "Integration detector is unavailable in the store catalog." } else { "Project integration is off." }))
+    Ok(tx.query_row("SELECT is_on FROM project_integration WHERE project = ?1", [project], |r| r.get(0))
+        .optional().map_err(sql)?.unwrap_or(false))
+}
+
+fn integration(q: &Query<'_, '_>) -> Result<Measurements, String> {
+    Ok(Measurements::missing(if integration_on(q.tx, q.project)? { "Integration detector is unavailable in the store catalog." } else { "Project integration is off." }))
 }
 
 fn heartbeat(_: &Query<'_, '_>) -> Result<Measurements, String> {

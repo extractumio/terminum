@@ -3,6 +3,7 @@
 
 use rusqlite::{OptionalExtension, Transaction, params};
 use serde::Serialize;
+use serde_json::json;
 use std::collections::BTreeSet;
 
 use crate::tasks::ops::{rows, sql};
@@ -95,7 +96,11 @@ pub(super) fn judge(tx: &Transaction, project: &str, action: &Action, days: i64,
         ON CONFLICT (action, days) DO NOTHING", (action.id, days, at, verdict.name(), evidence)).map_err(sql)?;
     if changed == 0 { return Ok(false); }
     if verdict == Verdict::Wrong {
-        breakers::wrong(tx, project, action, matches!(action.kind, Kind::Alert) && days == 0, at)?;
+        let alert_wrong = matches!(action.kind, Kind::Alert) && days == 0;
+        breakers::wrong(tx, project, action, alert_wrong, at)?;
+        if alert_wrong {
+            super::reflection::action(tx, project, action, "alert_wrong", at)?;
+        }
     }
     if days == 0 {
         report_unjudged(tx, project, &action.detector, &action.response, at)?;
@@ -164,6 +169,46 @@ fn report_unjudged(tx: &Transaction, project: &str, detector: &str, response: &s
         tx.execute("UPDATE supervisor_signals SET state = 'resolved' WHERE project = ?1 AND detector = 'self.unjudged'
             AND subject_kind = 'rule' AND subject_id = ?2 AND metric = 'undecided_outcomes' AND state = 'raised'",
             (project, &rule)).map_err(sql)?;
+    }
+    Ok(())
+}
+
+// Compare non-overlapping four-week windows using the last verdict known at
+// each boundary. One action contributes once. Explicit owner judgments win.
+pub(super) fn check_bands(tx: &Transaction, project: &str, generation: i64, at: i64) -> Result<(), String> {
+    let width = 4 * super::WEEK;
+    let (minimum, errors) = super::settings::read(tx, project)?.settings.decision_band();
+    let measures = rows(tx, "WITH observed AS (
+        SELECT a.detector, a.response, a.at >= ?3 AS recent, o.verdict
+        FROM supervisor_actions a JOIN supervisor_outcomes o ON o.action = a.id AND o.days = (
+            SELECT j.days FROM supervisor_outcomes j WHERE j.action = a.id
+              AND j.at <= CASE WHEN a.at >= ?3 THEN ?2 ELSE ?3 - 1 END
+            ORDER BY (j.days = 0) DESC, j.days DESC LIMIT 1)
+        WHERE a.project = ?1 AND a.at BETWEEN ?4 AND ?2 AND a.response <> '' AND o.verdict <> 'undecided'
+    ) SELECT detector, response, count(*) FILTER (WHERE recent), count(*) FILTER (WHERE recent AND verdict = 'right'),
+        count(*) FILTER (WHERE NOT recent), count(*) FILTER (WHERE NOT recent AND verdict = 'right')
+        FROM observed GROUP BY detector, response", (project, at, at - width + 1, at - 2 * width + 1),
+        |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, u32>(2)?,
+            r.get::<_, u32>(3)?, r.get::<_, u32>(4)?, r.get::<_, u32>(5)?)))?;
+    for (detector, response, n, right, base_n, base_right) in measures {
+        if n < minimum || base_n < minimum { continue; }
+        let rate = f64::from(right) / f64::from(n);
+        let base = f64::from(base_right) / f64::from(base_n);
+        let margin = errors * (base * (1. - base) / f64::from(base_n)).sqrt();
+        let direction = if rate < base - margin { -1 } else { i64::from(rate > base + margin) };
+        let old = tx.query_row("SELECT direction FROM supervisor_decision_bands
+            WHERE project = ?1 AND detector = ?2 AND response = ?3 AND generation = ?4",
+            (project, &detector, &response, generation), |r| r.get::<_, i64>(0)).optional().map_err(sql)?.unwrap_or(0);
+        if direction == old { continue; }
+        tx.execute("INSERT INTO supervisor_decision_bands VALUES (?1,?2,?3,?4,?5)
+            ON CONFLICT (project, detector, response) DO UPDATE SET generation = excluded.generation, direction = excluded.direction",
+            (project, generation, &detector, &response, direction)).map_err(sql)?;
+        if direction != 0 {
+            let rule = format!("{detector}/{response}");
+            super::reflection::enqueue(tx, project, ("rule", &format!("{rule}@{at}"), None), "decision_rate",
+                &json!({"rule":rule,"rate":rate,"sample":n,"baseline":base,"baseline_sample":base_n,
+                    "band":[(base - margin).max(0.),(base + margin).min(1.)]}), at)?;
+        }
     }
     Ok(())
 }

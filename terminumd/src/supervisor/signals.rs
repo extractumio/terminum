@@ -284,5 +284,9 @@ pub(super) fn diagnostic(tx: &Transaction, project: &str, detector: &str, subjec
         WHERE (state, evidence, json_extract(measure, '$.value'), json_extract(measure, '$.threshold'))
             IS NOT (excluded.state, excluded.evidence, ?11, ?12)",
         params![key, project, detector, kind, id, metric, evidence, measure, scores, at, value, threshold]).map_err(sql)?;
+    if detector == "self.miss" {
+        super::reflection::enqueue(tx, project, ("miss", &key, Some(&key)), "miss",
+            &serde_json::json!({"first_evidence_at":value,"first_seen_at":threshold}), at)?;
+    }
     Ok(())
 }

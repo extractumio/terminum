@@ -43,6 +43,7 @@ fn ac236_register_rank_ruling_and_recurrence() {
     signal(&f, "high", "A", 2, 0.22, false);
     signal(&f, "another", "B", 1, 0.06, false);
     signal(&f, "lower", "C", 1, 0.08, false);
+    f.task("landed-fix", Some("Bug"), "P1", "DONE", NOW);
     f.store.with(|tx| {
         assert!(register::open(tx, PROJECT, draft("No signal", &[]), NOW).is_err());
         assert!(register::open(tx, OTHER, draft("Wrong project", &["high"]), NOW).is_err());
@@ -75,6 +76,14 @@ fn ac236_register_rank_ruling_and_recurrence() {
         set_clear(NOW + 5 * WEEK)?;
         register::advance(tx, PROJECT, NOW + 5 * WEEK)?;
         assert_eq!(register::get(tx, PROJECT, high, NOW + 5 * WEEK)?.state, "resolved");
+
+        // AC-248: a finished fix recurs once and carries the new signal.
+        tx.execute("INSERT INTO supervisor_problem_tasks VALUES (?1,'landed-fix')", [high]).map_err(sql)?;
+        register::advance(tx, PROJECT, NOW + 5 * WEEK + 1)?;
+        register::advance(tx, PROJECT, NOW + 5 * WEEK + 2)?;
+        let requests = super::reflection::shown(tx, PROJECT)?;
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0]["triggers"], json!(["fix_recurred"]));
         Ok(())
     }).unwrap();
 }

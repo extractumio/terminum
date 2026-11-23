@@ -183,6 +183,14 @@ fn close_if_clear(tx: &Transaction, id: i64, at: i64, continued: Option<i64>, ur
         tx.execute("INSERT INTO supervisor_incident_events (incident, at, kind, actor, related_id)
             VALUES (?1, ?2, ?3, 'system', ?4)", (id, at, event, continued)).map_err(sql)?;
         super::thread::clear(tx, id, at)?;
+        if continued.is_none()
+            && let Some(project) = tx.query_row("SELECT project FROM supervisor_incidents WHERE id = ?1 AND EXISTS (
+                SELECT 1 FROM supervisor_incident_events e WHERE e.incident = ?1 AND e.level = 3)",
+                [id], |r| r.get::<_, String>(0)).optional().map_err(sql)?
+        {
+            super::reflection::enqueue(tx, &project, ("incident", &id.to_string(), None),
+                "incident_postmortem", &serde_json::json!({"incident":id}), at)?;
+        }
         line_queue::stop_repeats(tx, id)?;
         line_queue::enqueue(tx, id, notice, urgent)?;
     }

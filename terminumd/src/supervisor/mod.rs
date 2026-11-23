@@ -5,6 +5,10 @@ pub(crate) mod action_tasks;
 mod attach;
 pub(crate) mod breakers;
 mod outcomes;
+pub(crate) mod reflection;
+mod reflection_timeline;
+#[cfg(test)]
+mod reflection_tests;
 mod outcome_evidence;
 mod attribution;
 mod catalog;
@@ -43,6 +47,7 @@ mod communications_tests;
 mod settings;
 mod settings_api;
 mod spend;
+mod rate_intervals;
 pub(crate) mod governor;
 pub(crate) mod register;
 pub(crate) mod fix_tasks;

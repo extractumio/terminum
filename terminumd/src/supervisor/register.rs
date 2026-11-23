@@ -353,6 +353,15 @@ pub(super) fn advance(tx: &Transaction, project: &str, at: i64) -> Result<(), St
             tx.execute("UPDATE supervisor_problems SET state = ?2, new_evidence = coalesce(?3, new_evidence) WHERE id = ?1",
                 (id, next, new.as_ref().map(|_| &detail))).map_err(sql)?;
             event(tx, id, at, next, &detail)?;
+            let fixed = next == "recurred" && tx.query_row("SELECT EXISTS (
+                SELECT 1 FROM supervisor_problem_tasks f JOIN tasks t ON t.id = f.task
+                WHERE f.problem = ?1 AND t.project = ?2 AND t.status = 'DONE')",
+                (id, project), |r| r.get::<_, bool>(0)).map_err(sql)?;
+            if fixed {
+                let event = tx.last_insert_rowid();
+                super::reflection::enqueue(tx, project, ("problem", &format!("{id}@{event}"), new.as_deref()),
+                    "fix_recurred", &serde_json::json!({"problem":id,"event":event}), at)?;
+            }
         }
     }
     Ok(())
