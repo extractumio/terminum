@@ -3,7 +3,8 @@
 """Runs one check with its own short TMPDIR and TMUX_TMPDIR and fails if it leaves anything there
 (spec AC-102): check_all.py's guard, so a test's leftover fails the run with no false alarm from
 another session's. A leftover is a file in the folder, or a process of the check's process group
-or working in that folder. Process environments are never queried.
+or working in that folder, or holding a socket bound in it (a tmux server's daemon has left both
+the group and the folder). Process environments are never queried.
 Whatever is left is named, and goes: by its pid, the folder on every exit.
 
   python3 scripts/check_step.py <command…>"""
@@ -17,7 +18,7 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from worktree import working_in  # noqa: E402
-from process_cwd import InspectionError  # noqa: E402
+from process_cwd import InspectionError, bound_in  # noqa: E402
 import owned_children  # noqa: E402
 from check_cancel import Cancellation, unreaped_status  # noqa: E402
 
@@ -61,9 +62,10 @@ class OwnershipError(InspectionError):
 
 
 def own_processes(folder, group):
-    """(pid, command) of each process of our private group or working in our private folder."""
+    """(pid, command) of each process of our private group, working in our private folder or holding a
+    socket bound in it: a tmux server outlives the folder it was found by only through that socket."""
     try:
-        inside = working_in(folder)
+        inside = {**working_in(folder), **bound_in(folder)}
     except InspectionError as error:
         raise OwnershipError(error, selected_processes(folder, group)) from error
     return selected_processes(folder, group, inside)

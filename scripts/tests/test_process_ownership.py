@@ -7,6 +7,7 @@ from pathlib import Path
 import signal
 import subprocess
 import sys
+import tempfile
 from types import SimpleNamespace
 import unittest
 from unittest import mock
@@ -82,6 +83,47 @@ class Ownership(unittest.TestCase):
                 with self.assertRaises(process_cwd.InspectionError):
                     process_cwd.mac_directories()
                 run.assert_called_once()
+
+    def test_a_socket_bound_in_the_folder_owns_its_process_not_a_peer_or_a_neighbour(self):  # AC-102, TERM-912
+        folder = str(Path("/tmp/private").resolve())
+        output = (f"p42\nctmux\nf6\nn{folder}/tmux-501/tm-test-live-7\np43\ncother\nf3\nn->0x1234\n"
+                  f"f4\nn{folder}-other/sock\n")
+        with mock.patch.object(process_cwd.Path, "exists", return_value=False), \
+                mock.patch.object(process_cwd.shutil, "which", return_value="lsof"), \
+                mock.patch.object(process_cwd.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, output)) as run:
+            self.assertEqual(process_cwd.bound_in("/tmp/private"), {42: "tmux"})
+            self.assertEqual(run.call_args.args[0], ["lsof", "-a", "-u", str(os.getuid()), "-U", "-F", "pcn"])
+
+    def test_linux_names_the_bound_path_of_each_socket_a_process_holds(self):  # AC-102, TERM-912
+        with tempfile.TemporaryDirectory(prefix="tm-proc-") as proc:
+            root = Path(proc)
+            (root / "net").mkdir()
+            (root / "net/unix").write_text(
+                "Num       RefCount Protocol Flags    Type St Inode Path\n"
+                "0000: 00000002 00000000 00010000 0001 01 23456 /tmp/tmc.x/tmux-1000/tm-test-live-7\n"
+                "0000: 00000002 00000000 00010000 0001 01 23457 @abstract\n"
+                "0000: 00000003 00000000 00000000 0001 03 23458\n")
+            for pid, links in (("42", ["socket:[23456]", "socket:[23458]", "/dev/null"]), ("43", ["socket:[23457]"])):
+                (root / pid / "fd").mkdir(parents=True)
+                (root / pid / "comm").write_text("tmux\n")
+                for fd, link in enumerate(links):
+                    os.symlink(link, root / pid / "fd" / str(fd))
+            (root / "self").mkdir()
+            self.assertEqual(process_cwd.linux_socket_paths(root), [(42, "tmux", "/tmp/tmc.x/tmux-1000/tm-test-live-7")])
+
+    def test_no_socket_at_all_is_an_empty_list_and_any_other_failure_is_unknown(self):
+        for error, expect in ((subprocess.CalledProcessError(1, "lsof", output=""), []),
+                              (subprocess.CalledProcessError(1, "lsof", output="p42\n"), None),
+                              (subprocess.CalledProcessError(2, "lsof", output=""), None)):
+            with self.subTest(status=error.returncode, output=error.output), \
+                    mock.patch.object(process_cwd.Path, "exists", return_value=False), \
+                    mock.patch.object(process_cwd.shutil, "which", return_value="lsof"), \
+                    mock.patch.object(process_cwd.subprocess, "run", side_effect=error):
+                if expect is None:
+                    with self.assertRaises(process_cwd.InspectionError):
+                        process_cwd.socket_paths()
+                else:
+                    self.assertEqual(process_cwd.socket_paths(), expect)
 
     def test_directory_failure_preserves_only_proven_group_and_registered_processes(self):
         with mock.patch.object(check_step, "listing", return_value=[

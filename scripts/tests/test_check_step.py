@@ -267,6 +267,50 @@ class Guard(unittest.TestCase):
                 self.assertFalse(os.path.exists(folder))
 
 
+
+class DaemonTmux(unittest.TestCase):
+    """AC-102: a tmux server a step starts daemonizes out of the step's process group, its working
+    directory elsewhere, its socket alone in the guard's TMUX_TMPDIR: it ends before that folder goes,
+    whether the step passes, fails or gets SIGINT, and no `tmux -L tm-test-live-…` process remains."""
+    def guard(self, then, interrupt=False):
+        name = f"tm-test-live-{os.getpid()}"
+        with tempfile.NamedTemporaryFile("r", suffix=".pid") as noted:
+            script = (f'cd /; tmux -f /dev/null -L {name} new-session -d -s main "sleep 300" && '
+                      f'tmux -L {name} display -p "#{{pid}} $TMPDIR" > {noted.name}; {then}')
+            with subprocess.Popen([*guard_command(), "sh", "-c", script], stderr=subprocess.PIPE, text=True) as run:
+                for _ in range(400):
+                    started = noted.read().split()
+                    noted.seek(0)
+                    if len(started) == 2 or run.poll() is not None:
+                        break
+                    time.sleep(0.05)
+                self.assertEqual(len(started), 2, "the step's tmux server never started")
+                pid, folder = int(started[0]), started[1]
+                self.addCleanup(lambda: ours(pid, name) and os.kill(pid, signal.SIGKILL))   # a failed check leaves nothing
+                if interrupt:
+                    run.send_signal(signal.SIGINT)
+                _, err = run.communicate(timeout=GUARD_WAIT_S)
+        self.assertIn(f"LEFT process {pid}: tmux", err)
+        self.assertTrue(gone(pid), f"tmux server {pid} outlived its guard")
+        self.assertFalse(os.path.exists(folder))
+        left = subprocess.run(["ps", "-axo", "command="], capture_output=True, text=True).stdout
+        self.assertNotIn(f"-L {name} ", left)
+        return run.returncode
+
+    def test_a_passing_step_fails_and_its_server_ends(self):
+        self.assertEqual(self.guard("exit 0"), 3)
+
+    def test_a_failing_step_keeps_its_status_and_its_server_ends(self):
+        self.assertEqual(self.guard("exit 1"), 1)
+
+    def test_an_interrupted_step_ends_its_server(self):
+        self.assertEqual(self.guard("exec sleep 30", interrupt=True), 128 + signal.SIGINT)
+
+
+def ours(pid, name):
+    """Whether `pid` still runs this test's tmux server (a reused pid is someone else's)."""
+    return f"-L {name} " in subprocess.run(["ps", "-o", "command=", "-p", str(pid)], capture_output=True, text=True).stdout
+
 def gone(pid, seconds=5):
     """Whether `pid` has ended within `seconds` (not this test's child: launchd reaps it)."""
     for _ in range(int(seconds * 10)):
