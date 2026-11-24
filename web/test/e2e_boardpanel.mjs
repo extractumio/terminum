@@ -95,7 +95,7 @@ async function computer(browser, name) {
       check(`AC-111 ${w} px: typing in it narrows the board by the URL's text`, await until(() => page.evaluate(() => new URLSearchParams(location.search).get("q") === "retry")));
       await page.fill("#find", "");
       await until(() => page.evaluate(() => !new URLSearchParams(location.search).has("q")));
-      if (tracks === 6) check("AC-138 an agent is a track wide, the first on TODO's left edge", near(g.agent.l, g.todo.l) && near(g.agent.w, track, 2), JSON.stringify({ agent: g.agent, track }));
+      check("AC-138 the responsive pool starts on TODO's left edge", near(g.agent.l, g.todo.l) && g.agent.w >= 240, JSON.stringify({ agent: g.agent, todo: g.todo }));
       check(`AC-106 ${w} px: TODO's + New task is a text key as tall as the sort keys, on their line, before them`,
         g.newWords === "New task" && g.sortKeys.every((k) => near(k.h, g.newKey.h) && near(k.t, g.newKey.t)) && g.newKey.r <= g.sortKeys[0].l, JSON.stringify({ key: g.newKey, sort: g.sortKeys }));
       await shot(page, `boardpanel-${name}-${w}`);

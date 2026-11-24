@@ -27,11 +27,11 @@
   /* Auto-Dispatch, the agents and the schedules: one line under the columns' switch, a sheet when pressed */
   #pool:not([data-sheet]) { display: none; }
   #pool[data-sheet] { display: flex; flex-direction: column; gap: var(--sp-3); padding: var(--sp-4); border-radius: var(--r-xl); background: var(--chrome); }
-  #pool :is(#agentbar, #schedbar) { padding: 0; overflow: visible; }
+  #pool :is(#agentbar, #schedbar) { flex-shrink: 0; min-height: auto; padding: 0; overflow: visible; }
   #pool #autokeys { display: flex; align-items: center; gap: var(--sp-2); }
   #pool #autoswitch .word { display: inline; }
   #pool .tracks, #pool .tracks > :is(.trackitems, .trackside) { flex-direction: column; align-items: stretch; max-height: none; overflow: visible; }
-  #pool .agentlist .item { width: auto; }
+  #pool .trackitems > .item { flex: none; width: auto; }
   #poolline { display: flex; flex: none; justify-content: flex-start; gap: var(--sp-3); margin: var(--sp-2) var(--gutter) 0; overflow: hidden;
     font-size: var(--fs-label); font-weight: var(--fw-body); color: var(--muted-text); white-space: nowrap; }
   #poolline::after { flex: none; margin-left: auto; }   /* the line's arrow (kanban.css), at its end */

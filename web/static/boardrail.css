@@ -34,7 +34,7 @@
 .addtile { display: grid; place-items: center; align-self: stretch; justify-self: start; flex: none; width: 44px; min-height: 44px; padding: 0;
   border: 0; border-radius: var(--r-sm); background: var(--surface-1); color: var(--icon-ink, var(--muted)); cursor: pointer; }
 @media (hover: hover) { .addtile:hover { background: var(--surface-2); color: var(--t-fg); } }
-.trackitems > .addtile ~ .colempty { grid-column: 2 / -1; align-self: center; }
+.trackitems > .addtile ~ .colempty { align-self: center; }
 /* folded: one strip across, the word flat, then what it holds, its add key at the end (a phone's sheet: below) */
 .railed.folded { grid-template-columns: minmax(0, 1fr); }
 .railed.folded .rail { height: 28px; }
