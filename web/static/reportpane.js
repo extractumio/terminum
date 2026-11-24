@@ -6,19 +6,19 @@
 // mode, an HTML document in a frame without scripts), its files download, nothing of it runs.
 import { icon } from "./icons.js";
 import { el, iconButton } from "./listparts.js";
-import { api, button, download, onSend, renderInto, stamp } from "./kanbanutil.js";
+import { api, button, download, onSend, renderInto, renderReportInto, stamp } from "./kanbanutil.js";
 import { sessionUrl } from "./tasklink.js";
 import { CHANGED_EVENT, act as inboxAct, copyLink, kindChip, remove as inboxRemove } from "./inbox.js";
-import { REPORT_EVENT, age, openReport, senderOf } from "./reportlink.js";
+import { REPORT_EVENT, age, openReport } from "./reportlink.js";
 
 const READ_AFTER = 2000;
 const $ = (id) => document.getElementById(id);
-const pane = el("section", "reportpane rpdoc");
+const pane = el("section", "reportpane");
 pane.id = "reportpane";
 pane.hidden = true;
 pane.tabIndex = -1;
 pane.setAttribute("aria-label", "Report");
-let shown = null, drawn = "", timer = 0, asked = 0;
+let shown = null, drawn = "", timer = 0, asked = 0, rendered = { id: "", text: "", node: null };
 
 const addressed = () => new URLSearchParams(location.search).get("report");
 
@@ -118,8 +118,8 @@ function head(r, id) {
   if (r) {
     const meta = el("p", "rpmeta");
     const src = r.source;
-    const role = r.role === "terminum" || r.source.sender === "supervisor" ? "" : ` (${r.role})`;   // the sender names its agent already
-    const bits = [`From ${senderOf(r)}${role}`, `${r.id}`, r.project_name, `made ${stamp(r.created_at)}`];
+    const role = r.role === "terminum" || src.sender === "supervisor" ? "" : ` (${r.role})`;   // the label names its agent already
+    const bits = [`From ${src.label}${role}`, `${r.id}`, r.project_name, `made ${stamp(r.created_at)}`];
     if (r.updated_at > r.created_at) bits.push(`changed ${stamp(r.updated_at)}`);
     meta.append(el("span", null, bits.join(" · ")));
     if (src.task) meta.append(" · ", link(`Open ${src.task}`, () => openTask(src.task)));
@@ -147,8 +147,11 @@ async function draw(r) {
     body.append(el("p", "rpdeleted", "Deleted: restore it to keep it."),
       Object.assign(el("button", "textkey", "Restore"), { type: "button", onclick: () => act(r, "restore") }));
   }
-  if (r.summary) body.append(el("p", "rpsummary", r.summary));
-  const md = el("div", "md-body rpmarkdown");
+  if (r.summary && r.summary.toLowerCase() !== r.kind) body.append(el("p", "rpsummary", r.summary));   // its type's word once
+  // the rendered body stands as it was while its words do: a read, a comment or a reply redraws the rest, never
+  // its highlighting, diagrams or frame
+  const same = rendered.id === r.id && rendered.text === r.body;
+  const md = same ? rendered.node : el("div", "md-body rpmarkdown rpdoc");
   body.append(md);
   if (r.files.length) {
     const files = el("ul", "rpfiles");
@@ -174,7 +177,9 @@ async function draw(r) {
   }
   if (r.notes.length) body.append(el("h3", null, `Below it · ${r.notes.length}`), notes);
   pane.replaceChildren(head(r), body, foot(r));
-  await renderInto(md, r.body, { report: true });
+  if (same) return;
+  rendered = { id: r.id, text: r.body, node: md };
+  await renderReportInto(md, r.body);
 }
 
 /** The reply (AC-270): a field and Send when its task's conversation can go on, its agent's answer awaited said; else

@@ -24,6 +24,11 @@ pub fn kind_of(result: &str) -> &'static str {
     [kind::OK, kind::ATTENTION, kind::FAILED].into_iter().find(|k| word.eq_ignore_ascii_case(k)).unwrap_or(kind::REPORT)
 }
 
+/// A report made of a result: its body, summary and type (AC-265, AC-272).
+pub fn of_result(result: &str) -> New {
+    New { summary: summary_of(result), kind: kind_of(result), body: result.to_string(), ..New::default() }
+}
+
 /// A title within its limit.
 pub fn titled(title: &str) -> String {
     title.chars().take(record::TITLE_MOST).collect()
@@ -45,8 +50,8 @@ pub fn routine_result(tx: &Transaction, t: &Task, result: &str, author: &str, at
     if run_reported(tx, t, run.as_deref())? {
         return Ok(None);
     }
-    let new = New { project: t.project.clone(), title: titled(&t.title), summary: summary_of(result), body: result.to_string(), author: author.to_string(),
-        kind: kind_of(result), role: role::TERMINUM, session: t.session.clone(), task: Some(t.key.clone()), schedule: Some(s.id), run, ..New::default() };
+    let new = New { project: t.project.clone(), title: titled(&t.title), author: author.to_string(), role: role::TERMINUM, session: t.session.clone(),
+        task: Some(t.key.clone()), schedule: Some(s.id), run, ..of_result(result) };
     Ok(Some(record::create(tx, new, at)?.1))
 }
 

@@ -68,7 +68,7 @@ export function renderDoc(box: HTMLElement, text: string, path: string, host: Li
   const frame = document.createElement("iframe");
   frame.className = "html-doc";
   frame.setAttribute("sandbox", "allow-same-origin");
-  frame.srcdoc = prepareHtml(text, path);
+  frame.srcdoc = safeHtml(text, (url) => resolvePath(dirname(path), decodePath(url.split(/[?#]/)[0])));   // its local resources from its own folder
   frame.addEventListener("load", () => {
     const doc = frame.contentDocument;
     if (!doc) return;
@@ -78,6 +78,3 @@ export function renderDoc(box: HTMLElement, text: string, path: string, host: Li
   });
   box.replaceChildren(frame);
 }
-
-/** An HTML file made safe (html-safe.ts), its local resources read from its own folder. */
-const prepareHtml = (text: string, path: string): string => safeHtml(text, (url) => resolvePath(dirname(path), decodePath(url.split(/[?#]/)[0])));

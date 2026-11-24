@@ -30,18 +30,24 @@ const ROW: &str = "SELECT r.slug, r.project, r.title, r.summary, r.critical, r.r
 fn row_of(r: &Row) -> rusqlite::Result<Value> {
     let (task, schedule, routine, author): (Option<String>, Option<String>, Option<String>, String) = (r.get(6)?, r.get(7)?, r.get(8)?, r.get(9)?);
     let (incident, kind, role): (Option<i64>, String, String) = (r.get(15)?, r.get(21)?, r.get(10)?);
-    // who sent it, as the row names it: a routine by its name, the Supervisor, a task, else its author (AC-267)
-    let supervisor = incident.is_some() || kind == super::record::kind::DIGEST || role == super::record::role::SUPERVISOR;
-    let (sender, name) = match (&routine, &task) {
-        (Some(routine), _) => ("routine", routine.clone()),
-        _ if supervisor => ("supervisor", "Supervisor".to_string()),
-        (None, Some(task)) => ("task", task.clone()),
-        (None, None) => ("agent", author.clone()),
+    // who sent it, as the row names it: a routine by its name, the Supervisor, a task, else its author; then the agent
+    // that wrote it when that is another name (AC-267)
+    use super::record::{kind as k, role as rank};
+    let (sender, name) = if let Some(routine) = &routine {
+        ("routine", routine.clone())
+    } else if kind == k::INCIDENT || kind == k::DIGEST || role == rank::SUPERVISOR {
+        ("supervisor", "Supervisor".to_string())
+    } else if let Some(task) = &task {
+        ("task", task.clone())
+    } else {
+        ("agent", author.clone())
     };
+    let from = if sender == "routine" { format!("Routine {name}") } else { name.clone() };
+    let label = if matches!(sender, "routine" | "task") && author != name { format!("{from} · {author}") } else { from };
     Ok(json!({
         "id": r.get::<_, String>(0)?, "project": r.get::<_, String>(1)?, "title": r.get::<_, String>(2)?, "summary": r.get::<_, String>(3)?,
         "critical": r.get::<_, bool>(4)?, "read": r.get::<_, bool>(5)?,
-        "source": {"task": task, "schedule": schedule, "incident": incident, "name": name, "sender": sender}, "kind": kind,
+        "source": {"task": task, "schedule": schedule, "incident": incident, "name": name, "sender": sender, "label": label}, "kind": kind,
         "author_name": author, "role": role, "session": r.get::<_, Option<String>>(11)?,
         "created_at": r.get::<_, i64>(12)?, "updated_at": r.get::<_, i64>(13)?, "deleted_at": r.get::<_, Option<i64>>(14)?,
         "number": r.get::<_, i64>(16)?, "project_name": r.get::<_, String>(17)?, "project_color": r.get::<_, i64>(18)?,

@@ -17,7 +17,7 @@
 .tok-link, .tok-url { color: var(--link); text-decoration: underline; }
 
 /* ── rendered Markdown: prose typography ──────────────────── */
-.md-body { font: var(--md-size, 15px)/1.65 var(--prose);   /* the page's Markdown size (prefs.js) */ color: var(--fg); max-width: 76ch; margin: 0 auto; padding: 18px 22px 60px;
+.md-body { font: var(--md-size, 15px)/1.65 var(--prose);   /* the page's Markdown size (prefs.js) */ color: var(--fg);
   font-feature-settings: "kern", "liga"; text-rendering: optimizeLegibility; hyphens: auto; overflow-wrap: break-word; }
 .md-body > :first-child { margin-top: 0; }
 .md-body h1, .md-body h2, .md-body h3, .md-body h4 { line-height: 1.25; margin: 1.6em 0 .55em; font-weight: 650; letter-spacing: -.01em; }
@@ -58,4 +58,4 @@
 .md-body img { max-width: 100%; border-radius: var(--r-md); }
 .md-body .footnotes { font-size: .88em; color: var(--fg-dim); }
 .md-body .remote-img { font-size: .9em; }
-.html-doc { display: block; width: 100%; height: 100%; border: 0; background: var(--bg); }
+.html-doc { display: block; width: 100%; border: 0; background: var(--bg); }

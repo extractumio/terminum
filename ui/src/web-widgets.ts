@@ -3,9 +3,8 @@
 // by the web page through its /fb proxy on first need: the panel's own Markdown rules (raw HTML
 // off, only safe link schemes) and highlighter, and Mermaid (mermaid.ts), loaded only for a diagram.
 
-import { renderMd } from "./markdown-core";
+import { ownFile, renderMd } from "./markdown-core";
 import { highlightInto } from "./highlight";
-import { ownFile } from "./report-doc";
 import "./doc.css";   // dist/renderers.css: a rendered document's look, which a report's pane loads
 
 /** Markdown → HTML, as the panel renders a document; images show as their alt text (the page

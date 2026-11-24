@@ -34,7 +34,7 @@ pub mod kind {
     pub const DIGEST: &str = "digest";
 }
 
-/// What a new report holds; `task`, `follows`: store keys; `kind`: empty for a report.
+/// What a new report holds; `task`, `follows`: store keys; `kind`: one of `kind`'s, empty for a report.
 #[derive(Default)]
 pub struct New {
     pub project: String,

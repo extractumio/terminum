@@ -170,10 +170,7 @@ mod page_tests {
             page[at..end].to_string()
         };
         let list = |page: &str| part(page, "<!-- the session list:", "<!-- /the session list -->");
-        // the Inbox above the Sessions is the board's alone (terminum-reports.md AC-267)
-        const INBOX: &str = "    <section id=\"inbox\"></section>\n";
-        assert!(list(BOARD).contains(INBOX) && !INDEX.contains("id=\"inbox\""), "the Inbox on the board, never on the session page");
-        assert_eq!(list(INDEX), list(BOARD).replace(INBOX, ""));
+        assert_eq!(list(INDEX), list(BOARD));
         assert!(list(INDEX).contains("<nav class=\"sections seg\""), "the sections' switcher stands in the list's head (terminum.md AC-167)");
         for dialog in ["rowmenu", "lastlines", "agentsbox"] {
             let from = format!("<dialog id=\"{dialog}\"");

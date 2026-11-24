@@ -10,7 +10,7 @@ import { drawn, fakeBoard, openPage, ORIGIN, PHONE, serveRenderers, shot, THEME,
 
 const NOW = Math.floor(Date.now() / 1000);
 const report = (id, extra = {}) => ({ id, project: "api", project_name: "API", project_color: 0, title: `Report ${id}`, summary: `What ${id} found`, critical: false, read: false,
-  source: { task: "API-41", schedule: null, incident: null, name: "API-41", sender: "task" }, kind: "report", author_name: "Opus", role: "worker", session: null, created_at: NOW - 3600,
+  source: { task: "API-41", schedule: null, incident: null, name: "API-41", sender: "task", label: "API-41 · Opus" }, kind: "report", author_name: "Opus", role: "worker", session: null, created_at: NOW - 3600,
   updated_at: NOW - 3600, deleted_at: null, number: Number(id.split("-")[1]), ...extra });
 /** Bodies an agent wrote: Markdown with code, a diagram and pictures it may not read; an HTML document with a script. */
 const BODIES = {
@@ -21,7 +21,7 @@ const meta = () => ({ projects: [{ id: "api", name: "API", color: 0 }], users: [
 
 /** The fake's reports and what the page asked of them. */
 function reports(page) {
-  const st = { replied: [], rows: [report("R_API-7", { kind: "attention", summary: "Two outdated", source: { task: "API-41", schedule: "SCH-1", incident: null, name: "Nightly deps", sender: "routine" } }),
+  const st = { replied: [], rows: [report("R_API-7", { kind: "attention", summary: "Two outdated", source: { task: "API-41", schedule: "SCH-1", incident: null, name: "Nightly deps", sender: "routine", label: "Routine Nightly deps · Opus" } }),
     report("R_API-6", { read: true }), report("R_API-8", { critical: true, title: "Build broken", created_at: NOW - 7200 })], asked: [], rev: 1, reads: [] };
   page.on("request", (q) => { if (/\/api\/raw|\.ssh|\/Users\/|\/x\.css/.test(q.url())) st.reads.push(q.url()); });
   const unread = () => ({ projects: { api: st.rows.filter((r) => !r.read && !r.deleted_at).length }, schedules: {}, sessions: {} });

@@ -4,14 +4,11 @@
 // (html-safe.ts). A report has no folder: its only pictures are its own files (/api/task-files/<id>), which the page
 // fetches with its sign-in (`data-raw`); any other local path is never read.
 
-import { renderMd } from "./markdown-core";
+import { ownFile, renderMd } from "./markdown-core";
 import { drawFences } from "./fences";
 import { safeHtml } from "./html-safe";
 
 export type DocFormat = "markdown" | "html";
-
-/** The path a report's or a task's local picture is read from: its own file's, else none. */
-export const ownFile = (path: string) => (path.startsWith("/api/task-files/") ? path : "");
 
 /** A body is an HTML document when it starts as one; else Markdown. */
 export const formatOf = (text: string): DocFormat => (/^\s*<(!doctype\s+html|html)[\s>]/i.test(text) ? "html" : "markdown");

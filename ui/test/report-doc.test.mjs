@@ -5,8 +5,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { load } from "./bundle.mjs";
 
-const { formatOf, ownFile } = await load("src/report-doc.ts");
-const { renderMd } = await load("src/markdown-core.ts");
+const { formatOf } = await load("src/report-doc.ts");
+const { ownFile, renderMd } = await load("src/markdown-core.ts");
 
 test("AC-268 a body that starts as an HTML document is HTML; anything else Markdown", () => {
   for (const html of ["<!doctype html><p>x", "  \n<!DOCTYPE HTML>\n<html>", "<html lang=en><body>x", "<html>"]) assert.equal(formatOf(html), "html", html);

@@ -327,20 +327,43 @@ export function downloadBlob(blob, name) {
 }
 
 /** Markdown by the Panel's rules (raw HTML off, javascript: links dropped, remote images not
- *  loaded); a task's own pictures are fetched with the sign-in, its files download. `report`: a
- *  report's body, as the Files viewer shows a document (terminum-reports.md AC-268): its code
- *  highlighted, its Mermaid fences drawn, an HTML document in a frame without scripts. */
-export async function renderInto(box, text, { comment = false, report = false } = {}) {
+ *  loaded); a task's own pictures are fetched with the sign-in, its files download. */
+export async function renderInto(box, text, { comment = false } = {}) {
+  box.textContent = text;
+  try { box.innerHTML = (await renderers()).taskMarkdownHtml(text, comment); } catch { return; }
+  wireRendered(box);
+}
+
+/** A report's body as the Files viewer shows a document (terminum-reports.md AC-268): its code highlighted, its
+ *  Mermaid fences drawn, an HTML document in a frame without scripts; in the viewer's look (/fb/renderers.css), loaded
+ *  with the first report shown. */
+export async function renderReportInto(box, text) {
   box.textContent = text;
   try {
-    const lib = await renderers();
-    if (report) {
-      if (lib.reportInto(box, text) === "html") { wireFrame(box.querySelector("iframe")); return; }
-    } else box.innerHTML = lib.taskMarkdownHtml(text, comment);
+    const [lib] = await Promise.all([renderers(), docLook()]);
+    if (lib.reportInto(box, text) === "html") { wireFrame(box.querySelector("iframe")); return; }
   } catch { box.textContent = text; return; }
+  wireRendered(box);
+}
+
+let looked = null;
+const docLook = () => (looked ??= new Promise((done) => {
+  const link = Object.assign(document.createElement("link"), { rel: "stylesheet", href: "/fb/renderers.css" });
+  link.onload = link.onerror = done;              // unstyled rather than never: the body shows either way
+  document.head.append(link);
+}));
+
+/** Rendered words wired: their own pictures fetched, report IDs and links made keys. */
+function wireRendered(box) {
   ownPictures(box);
   linkReports(box);
   for (const a of box.querySelectorAll("a")) wireLink(a, box);
+}
+
+/** `#anchor` scrolled to in `scope`, by its id or name, as the Files viewer does (ui/src/docview.ts scrollToAnchor). */
+function scrollToAnchor(scope, href) {
+  const id = CSS.escape(decodeURIComponent(href.slice(1)));
+  scope.querySelector(`[id="${id}"], [name="${id}"]`)?.scrollIntoView({ block: "start" });
 }
 
 /** The pictures of a task's or report's own files (data-raw), fetched with the sign-in. */
@@ -361,7 +384,7 @@ function wireLink(a, scope) {
   const href = a.getAttribute("href") ?? "";
   const id = /^\/api\/task-files\/([0-9a-f]{32})$/.exec(href)?.[1];
   if (id) a.addEventListener("click", (e) => { e.preventDefault(); download(id, a.textContent).catch((err) => say(err.message)); });
-  else if (href.startsWith("#")) a.addEventListener("click", (e) => { e.preventDefault(); scope.querySelector(`[id="${CSS.escape(decodeURIComponent(href.slice(1)))}"]`)?.scrollIntoView({ block: "start" }); });
+  else if (href.startsWith("#")) a.addEventListener("click", (e) => { e.preventDefault(); scrollToAnchor(scope, href); });
   else { a.target = "_blank"; a.rel = "noopener noreferrer"; }
 }
 
@@ -378,7 +401,7 @@ function wireFrame(frame) {
       if (!a) return;
       e.preventDefault();
       const href = a.getAttribute("href");
-      if (href.startsWith("#")) doc.querySelector(`[id="${CSS.escape(decodeURIComponent(href.slice(1)))}"]`)?.scrollIntoView({ block: "start" });
+      if (href.startsWith("#")) scrollToAnchor(doc, href);
       else if (/^(https?:|mailto:)/i.test(href)) window.open(href, "_blank", "noopener,noreferrer");
     });
     fit();

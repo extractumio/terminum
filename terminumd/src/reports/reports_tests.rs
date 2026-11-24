@@ -223,6 +223,7 @@ fn ac272_a_routine_s_result_becomes_a_report_unless_its_run_made_one() {
     // its type the Outcome's word, its summary the Summary's line, its sender the routine (AC-265, AC-267)
     assert_eq!((r["summary"].as_str(), r["kind"].as_str(), r["source"]["task"].as_str(), r["source"]["name"].as_str(), r["source"]["sender"].as_str()),
         (Some("s"), Some("ok"), Some(task.as_str()), Some("Nightly deps check"), Some("routine")));
+    assert_eq!(r["source"]["label"], format!("Routine Nightly deps check · {}", r["author_name"].as_str().unwrap()));
     assert_eq!(s.with(|tx| ops::get(tx, &task)).unwrap().status, "DONE");
     // its own report in the run: no second one
     let task = routine("Weekly audit", OTHER);
@@ -410,18 +411,21 @@ fn ac265_reports_kept_before_types_get_theirs_once() {
         let new = New { project: "api".into(), title: title.into(), summary: summary.into(), body: body.into(), author: HUMAN.into(), role: record::role::TERMINUM, incident, ..New::default() };
         record::create(tx, new, 1).map(|(_, id, _)| id)
     }).unwrap();
-    let routine = made("Nightly", "attention", "Outcome: attention\n**Summary:** Two errors a night\nDetails: d", None);
+    let routine = made("Nightly", "attention", "Outcome: attention\nSummary: Two errors a night", None);
     let digest = made("Supervisor digest, 2026-11-20", "3 new signals", "- a", None);
     let incident = made("Incident: main red", "red", "red", Some(4));
     let plain = made("Audit", "ok", "no form", None);
     // as kept before the column: every report a report
     s.with(|tx| tx.execute("UPDATE reports SET kind = 'report'", []).map(drop).map_err(sql)).unwrap();
-    let backfill: Vec<&str> = include_str!("../tasks/schema63.sql").split(";\n").filter(|q| q.contains("UPDATE")).collect();
-    s.with(|tx| { for q in &backfill { tx.execute(q.trim_start_matches(|c: char| c != 'U'), []).map_err(sql)?; } Ok(()) }).unwrap();
-    let got = |id: &str| { let r = one(&s, id); (r["kind"].as_str().unwrap().to_string(), r["summary"].as_str().unwrap().to_string(), r["source"]["sender"].as_str().unwrap().to_string()) };
-    assert_eq!(got(&routine), ("attention".into(), "Two errors a night".into(), "agent".into()));
-    assert_eq!(got(&digest), ("digest".into(), "3 new signals".into(), "supervisor".into()));
-    assert_eq!(got(&incident), ("incident".into(), "red".into(), "supervisor".into()));
-    assert_eq!(got(&plain), ("ok".into(), "ok".into(), "agent".into()), "a summary word with no Summary line keeps its words");
+    // the migration's own statements but its column's
+    let backfill: Vec<&str> = include_str!("../tasks/schema63.sql").lines().filter(|l| l.starts_with("UPDATE")).collect();
+    s.with(|tx| { for q in &backfill { tx.execute(q, []).map_err(sql)?; } Ok(()) }).unwrap();
+    // the label: its author's name when no routine, task or Supervisor sent it
+    let got = |id: &str| { let r = one(&s, id); let me = r["author_name"].as_str().unwrap().to_string();
+        (r["kind"].as_str().unwrap().to_string(), r["source"]["sender"].as_str().unwrap().to_string(), r["source"]["label"].as_str().unwrap().replace(&me, "<author>")) };
+    assert_eq!(got(&routine), ("attention".into(), "agent".into(), "<author>".into()));
+    assert_eq!(got(&digest), ("digest".into(), "supervisor".into(), "Supervisor".into()));
+    assert_eq!(got(&incident), ("incident".into(), "supervisor".into(), "Supervisor".into()));
+    assert_eq!(got(&plain), ("ok".into(), "agent".into(), "<author>".into()));
 }
 
