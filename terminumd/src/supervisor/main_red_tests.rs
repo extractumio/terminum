@@ -15,10 +15,17 @@ fn integrated(f: &Fixture, on: bool, ties: serde_json::Value) {
     f.store.with(|tx| settings::write(tx, PROJECT, 0, serde_json::from_value(pack).unwrap(), false).map(drop)).unwrap();
 }
 
-fn red(f: &Fixture, bug: &str) {
-    f.task(bug, Some("Bug"), "P1", "TODO", NOW - 100);
+/// The target red on a Verify's failed steps: Dispatcher's Bug task for it, and, `confirmed`, its re-run's red notice.
+fn red(f: &Fixture, bug: &str, confirmed: bool) -> Option<String> {
+    f.task(bug, Some("Bug"), "P1", "TODO", NOW - 2000);
     f.write("UPDATE tasks SET slug = 'API-' || number WHERE id = ?1", [bug]);
     f.write("UPDATE project_integration SET red_bug = ?2 WHERE project = ?1", (PROJECT, bug));
+    confirmed.then(|| confirm(f, bug))
+}
+
+fn confirm(f: &Fixture, bug: &str) -> String {
+    f.event(bug, NOW - 100, "dispatcher", "comment", "The steps fail there too.",
+        Some(json!({"notice": true, "target_red": true, "target_recheck": true})))
 }
 
 fn sweep(f: &Fixture, at: i64) -> Evaluation {
@@ -26,10 +33,10 @@ fn sweep(f: &Fixture, at: i64) -> Evaluation {
 }
 
 #[test]
-fn ac212_target_red_fires_only_while_its_bug_task_is_open() {
+fn ac212_target_red_fires_once_its_re_run_confirms_it_and_while_its_bug_task_is_open() {
     let f = Fixture::new("main-red-off");
     integrated(&f, false, json!({}));
-    red(&f, "red-bug");
+    red(&f, "red-bug", true);
     let off = sweep(&f, NOW);
     assert!(off.detectors[0].findings.is_empty());
     assert_eq!(off.detectors[0].unavailable, ["Project integration is off."]);
@@ -37,12 +44,14 @@ fn ac212_target_red_fires_only_while_its_bug_task_is_open() {
     let f = Fixture::new("main-red");
     integrated(&f, true, json!({}));
     assert!(sweep(&f, NOW).detectors[0].findings.is_empty(), "a green target stays quiet");
-    red(&f, "red-bug");
+    red(&f, "red-bug", false);
+    assert!(sweep(&f, NOW).detectors[0].findings.is_empty(), "a red not yet run again may be a busy moment's");
+    let notice = confirm(&f, "red-bug");
     let evaluation = sweep(&f, NOW);
     let found = &evaluation.detectors[0].findings[0];
     assert_eq!((found.subject_kind, found.subject_id.as_str(), found.metric), ("target", "main", "target_red"),
         "the subject is the target, as AC-255's miss check names it");
-    assert_eq!(found.evidence, [Evidence::Tasks("red-bug".into())]);
+    assert_eq!(found.evidence, [Evidence::Tasks("red-bug".into()), Evidence::Events(notice)]);
     assert!(!found.charter_breach() && found.scores.level() < 3, "an untied red target is an ordinary signal");
     f.transition("red-bug", NOW + 10, "TODO", "DONE");
     assert!(sweep(&f, NOW + 20).detectors[0].findings.is_empty(), "the Bug task's end clears it");
@@ -56,7 +65,7 @@ fn ac212_target_red_fires_only_while_its_bug_task_is_open() {
 fn ac224_a_red_target_tied_to_a_never_line_opens_one_incident_and_clears_it() {
     let f = Fixture::new("main-red-incident");
     integrated(&f, true, json!({"flow.main_red": NEVER}));
-    red(&f, "red-bug");
+    red(&f, "red-bug", true);
     let evaluation = sweep(&f, NOW);
     let found = &evaluation.detectors[0].findings[0];
     assert_eq!((found.charter_breach(), found.charter_never.as_deref(), found.scores.level()), (true, Some(NEVER), 3));

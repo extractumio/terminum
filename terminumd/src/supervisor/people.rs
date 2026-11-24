@@ -342,23 +342,34 @@ pub(super) fn guard_broken(q: &Query<'_, '_>) -> Result<Measurements, String> {
     Ok(out)
 }
 
+const STAMP_EVIDENCE: usize = 20;
 const STAMP: &str = "Choosing the recommended option is a habit of answering, in no weekly project total; a standing rule's effect is measured by AC-240.";
 
 /// `owner.rubber_stamp`: per question kind, how many of the owner's latest choices in a row took the recommended option.
 pub(super) fn rubber_stamp(q: &Query<'_, '_>) -> Result<Measurements, String> {
     // A reply in words to a question with options takes no option, so it ends the streak too.
-    let answers = rows(q.tx, &format!("{}, {QUESTIONS} SELECT kind, answer, coalesce(chosen = recommended, 0)
+    let answers = rows(q.tx, &format!("{}, {QUESTIONS} SELECT kind, answer, answered_at, coalesce(chosen = recommended, 0)
         FROM answers WHERE kind IS NOT NULL AND answer IS NOT NULL ORDER BY answer_seq", project_events()),
-        (q.project, q.window.end), |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, bool>(2)?)))?;
+        (q.project, q.window.end), |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, i64>(2)?, r.get::<_, bool>(3)?)))?;
     if answers.is_empty() { return Ok(Measurements::missing("No answered question with options is retained.")); }
-    let mut streaks = BTreeMap::<String, Vec<Evidence>>::new();
-    for (kind, event, recommended) in answers {
-        let streak = streaks.entry(kind).or_default();
-        if recommended { streak.push(events(event)); } else { streak.clear(); }
+    // Per kind: the streak's length, its latest answers as evidence, and when the kind was last answered.
+    let mut streaks = BTreeMap::<String, (usize, Vec<Evidence>, i64)>::new();
+    for (kind, event, at, recommended) in answers {
+        let (count, evidence, last) = streaks.entry(kind).or_default();
+        *last = at;
+        if recommended {
+            *count += 1;
+            evidence.push(events(event));
+            if evidence.len() > STAMP_EVIDENCE { evidence.remove(0); }
+        } else {
+            (*count, *evidence) = (0, Vec::new());
+        }
     }
+    // A kind not answered in the window has no current habit to report.
     Ok(Measurements {
-        readings: streaks.into_iter().map(|(kind, streak)| Reading::new("question_kind", kind, "recommended_streak",
-            streak.len() as f64, streak, Source::Unsized(STAMP)).comparison(Comparison::AtLeast)).collect(),
+        readings: streaks.into_iter().filter(|(_, (_, _, last))| q.window.current(*last)).map(|(kind, (count, evidence, _))|
+            Reading::new("question_kind", kind, "recommended_streak", count as f64, evidence, Source::Unsized(STAMP))
+                .comparison(Comparison::AtLeast)).collect(),
         complete_metrics: vec!["recommended_streak"],
         ..Measurements::default()
     })

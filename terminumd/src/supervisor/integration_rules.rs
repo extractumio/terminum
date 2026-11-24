@@ -3,6 +3,8 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use rusqlite::OptionalExtension;
+
 use crate::tasks::ops::rows;
 
 use super::{Comparison, Evidence, Measurements, Query, Reading, Threshold, catalog, percentile,
@@ -29,15 +31,22 @@ pub(super) fn returned(q: &Query<'_, '_>) -> Result<Measurements, String> {
     Ok(out)
 }
 
-/// AC-212, AC-224: the target is red while the project's Bug task for it is open (`terminum-integration.md` AC-198).
+/// AC-212, AC-224: the target is red while the project's Bug task for it is open and terminumd's own re-run of its
+/// steps, 30 minutes on, failed there too (`terminum-integration.md` AC-198): a red of a busy moment never pages.
 /// Its subject is the target, as AC-255's miss check names it; tied to a never line, it opens a critical incident.
 pub(super) fn target_red(q: &Query<'_, '_>) -> Result<Measurements, String> {
     let settings = crate::tasks::integration::read(q.tx, q.project)?;
     if !settings.on { return Ok(Measurements::missing(INTEGRATION_OFF)); }
-    let bug = crate::integrate::red_target::open_bug_key(q.tx, q.project)?.map(Evidence::Tasks);
+    let confirmed = match crate::integrate::red_target::open_bug_key(q.tx, q.project)? {
+        Some(bug) => q.tx.query_row("SELECT id FROM events WHERE task = ?1 AND kind = 'comment' AND author = ?2
+            AND json_extract(data, '$.target_recheck') = 1 ORDER BY rowid DESC LIMIT 1", (&bug, crate::tasks::store::DISPATCHER),
+            |r| r.get::<_, String>(0)).optional().map_err(crate::tasks::ops::sql)?
+            .map(|notice| vec![Evidence::Tasks(bug), Evidence::Events(notice)]),
+        None => None,
+    };
     Ok(Measurements {
-        readings: vec![Reading::new("target", settings.target, "target_red", f64::from(bug.is_some()), bug.into_iter().collect(),
-            Source::Present).fixed(Threshold::Absolute(0.0))],
+        readings: vec![Reading::new("target", settings.target, "target_red", f64::from(confirmed.is_some()),
+            confirmed.unwrap_or_default(), Source::Present).fixed(Threshold::Absolute(0.0))],
         complete_metrics: vec!["target_red"],
         ..Measurements::default()
     })

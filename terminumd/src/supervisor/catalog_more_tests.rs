@@ -83,6 +83,12 @@ fn ac212_rubber_stamp_counts_a_kind_s_latest_recommended_choices_in_a_row() {
     assert_eq!(run(&f, "owner.rubber_stamp").0, [("operational".into(), 5.0)], "the other kind keeps its own streak");
     ask(&f, "asking", NOW - 7 * DAY, "operational", "drop");
     assert!(run(&f, "owner.rubber_stamp").0.is_empty(), "choosing another option ends the streak");
+
+    let f = Fixture::new("rubber-stamp-old");
+    f.agent("agent");
+    f.task("asking", Some("Feature"), "P2", "WAIT FOR HUMAN", NOW - 90 * DAY);
+    for i in 0..5 { ask(&f, "asking", NOW - 60 * DAY + i * 10, "operational", "keep"); }
+    assert!(run(&f, "owner.rubber_stamp").0.is_empty(), "a streak whose kind was last answered before the window is no habit now");
 }
 
 #[test]

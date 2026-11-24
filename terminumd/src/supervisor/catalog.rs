@@ -68,7 +68,7 @@ catalog! {
     Hotspot, "arch.hotspot", "git_hotspots", baseline(95, 1000000.0), probe_rules::hotspots;
     Dependency, "arch.dependency", "git_dependencies", Absolute(0.0), probe_rules::dependencies;
     MigrationEdited, "arch.migration_edited", "git_migrations", Absolute(0.0), probe_rules::migrations;
-    BugCluster, "arch.bug_cluster", "git_bug_clusters", Absolute(3.0), probe_rules::bug_clusters;
+    BugCluster, "arch.bug_cluster", "git_bug_clusters", baseline(95, 3.0), probe_rules::bug_clusters;
     ReleaseTime, "improve.release_time", "task_release_lead_time", change(1.0), probe_rules::release_time;
     Releases, "improve.releases", "release_cadence", change(0.0), probe_rules::releases;
     ProbeFailed, "self.probe_failed", "probe_failures", Absolute(0.0), probe_rules::failures;

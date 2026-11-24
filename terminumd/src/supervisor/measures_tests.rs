@@ -24,6 +24,25 @@ fn owner_bug(tx: &Transaction, by: &str, priority: &str, parent: Option<String>)
         project: Some(PROJECT.into()), severity: Some(priority.into()), parent, ..Default::default() }, NOW)
 }
 
+// The red target's own detector echoes the red it reports; only a detector that warned before it is earlier evidence.
+#[test]
+fn ac255_the_red_target_s_own_signal_is_not_earlier_evidence_of_it() {
+    let f = Fixture::new("misses-own-red");
+    enabled(&f);
+    signal(&f, "own", ("target", "main"), "raised", "[]", NOW - 600);
+    f.write("UPDATE supervisor_signals SET detector = 'flow.main_red' WHERE fingerprint = 'own'", []);
+    signal(&f, "earlier", ("target", "next"), "raised", "[]", NOW - 600);
+    f.store.with(|tx| {
+        misses::target_red(tx, PROJECT, "main", "sha1", "task", NOW)?;
+        misses::target_red(tx, PROJECT, "next", "sha2", "task", NOW)?;
+        let signal_of = |subject: &str| tx.query_row("SELECT signal FROM supervisor_miss_checks WHERE subject_id = ?1",
+            [subject], |r| r.get::<_, Option<String>>(0)).map_err(crate::tasks::ops::sql);
+        assert_eq!(signal_of("main")?, None, "flow.main_red's own signal");
+        assert_eq!(signal_of("next")?.as_deref(), Some("earlier"));
+        Ok(())
+    }).unwrap();
+}
+
 #[test]
 fn ac255_miss_from_owner_and_target_events() {
     let f = Fixture::new("misses");

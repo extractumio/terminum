@@ -59,6 +59,13 @@ def main():
         # Dispatcher marks its red-target Bug task in the same write that makes it (terminum-integration.md AC-198).
         write("UPDATE project_integration SET red_bug = ? WHERE project = ?", (key, project))
         call(f"/api/tasks/{bug['id']}/comments", "POST", {"text": "The target's Verify steps fail."})
+        beat = call(path_of)["last_ok"]
+        wait_for(lambda: call(path_of), lambda st: st["last_ok"] > beat + 1, 30, every=0.25)
+        quiet = incidents()
+        check("AC-224 a red not yet run again opens no incident: it may be a busy moment's", not quiet, str(quiet))
+        # terminumd's re-run 30 minutes on fails there too: Dispatcher's notice on the Bug task (terminum-integration.md AC-198).
+        write("""INSERT INTO events (id, task, at, author, kind, text, data) VALUES ('recheck-red', ?, strftime('%s','now'),
+                 'dispatcher', 'comment', 'The steps fail there too.', '{"notice":true,"target_red":true,"target_recheck":true}')""", (key,))
         opened = wait_for(incidents, lambda rows: len(rows) == 1, 70, every=0.5)
         check("AC-212 AC-224 a red target tied to a never line opens one level 3 incident",
               opened[0][1] is None and opened[0][2] == 3, str(opened))
