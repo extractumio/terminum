@@ -193,6 +193,17 @@ Scenario: AC-213 edge — a round argues for a lower level
   When a round proposes level 1 for it
   Then code refuses the proposal and the signal stays at level 2
 
+Scenario: AC-213 happy path — a checked round escalates to critical
+  Given a level 2 signal whose round records a finding at confidence 0.8, citing the signal's recomputed measurement, with a request to raise its blast radius to 3 and a reason
+  When code checks the finding and the measurement still crosses its threshold
+  Then the signal is at level 3 with response R5 while its measured scores stay as measured, and its incident opens or rises with an "escalated" event naming the round's escalation
+  And once the signal's evidence changes, the escalation no longer stands and the new evidence is judged at its measured level
+
+Scenario: AC-213 failure — an escalation code cannot check
+  Given a round asks for level 2, or for level 3 on a finding below confidence 0.7, without its signal's recomputed measurement, or with a measurement that no longer crosses its threshold
+  When the round records the finding
+  Then code refuses the finding with the reason, counts the refusal, and the signal keeps its level
+
 Scenario Outline: AC-213 failure — floors and thresholds
   Given a single-indicator cause with a <share> share in <weeks> of the last eight weeks, <events> events in each such week, <noise> weekly noise, last firing <last>
   When code scores it
@@ -450,6 +461,11 @@ Scenario: AC-225 edge — status message order
   When the incident renders
   Then fixed words state what happened with counts, the hold, the requested action and by when, then that the hold stays without an answer
 
+Scenario: AC-225 edge — an interim hold's deadline
+  Given API's level 3 incident holds a task out of integration while its verification runs, until 14:35
+  When the incident renders on a page, the Supervisor screen and the line
+  Then the page and screen say the hold ends by 14:35 in the device's time, the line says it lasts up to 15 minutes, and both say that without an answer it ends with its verification unless verification confirms the signal
+
 Scenario: AC-225 failure — no agent and no channel
   Given API has neither a round agent nor a configured channel
   When its target signal opens an incident
@@ -635,6 +651,27 @@ Scenario: AC-233 edge — low-confidence high stakes
   Given a heuristic puts a signal at level 2 or 3 with confidence 0.5
   When code schedules verification
   Then verification has at most 15 minutes and an interim hold applies only if it costs less than waiting; a deterministic critical page never waits for a model
+
+Scenario Outline: AC-233 edge — holding against waiting
+  Given a level 2 signal at confidence 0.5 names API-7, which waits in the integration queue, and its latest week's share is <share>
+  And the queue integrated <tasks> tasks in the last seven days
+  When code admits its verification
+  Then the case file records waiting at <wait>, holding at <hold>, and <result>
+  Examples:
+    | share | tasks | wait | hold | result |
+    | 40%   | 20    | 20%  | 5%   | API-7 is taken out of integration until the round's deadline |
+    | 30%   | 5     | 15%  | 20%  | no hold, since waiting costs less |
+    | none  | 20    | none | none | no hold, with the reason the signal has no share |
+
+Scenario: AC-233 edge — the interim hold ends with its round
+  Given API-7 is out of integration on an interim hold, and a human commented on it after the hold began
+  When its verification round ends without a finding at confidence 0.7 or above whose signal is still current at level 2 or above and whose recomputed measurement still crosses its threshold
+  Then code queues API-7 again with its commit; with such a finding, the hold stays as an ordinary hold with its keys
+
+Scenario: AC-233 failure — the interim hold cannot end
+  Given a human moved API-7 while it was held
+  When its verification round ends unconfirmed
+  Then the hold stays as an ordinary hold that says why it could not end, with its keys, on the screen and in its incident's timeline
 
 Scenario Outline: AC-233 failure — no room
   Given <condition>
@@ -1369,12 +1406,10 @@ These cases have remaining behavior or verification gaps. Section 11 names the c
 | AC | Open gap |
 |---|---|
 | AC-212 | Named queries and firing and non-firing tests are missing for catalog entries including target red, scope and rule drift, several architecture and process checks, and outside metric drift and feedback age. Misrouting still reports unavailable. |
-| AC-213 | A checked round needs to justify a critical escalation from evidence. A red target cannot break a never until its detector exists (AC-212). |
+| AC-213 | A red target cannot break a never until its detector exists (AC-212). |
 | AC-215 | The replay command needs to report judgment quality for weeks with retained outcome or miss labels. It currently reports historical firings and indicators. |
 | AC-224 | A red target needs a named critical detector to open its incident (AC-212). |
-| AC-225 | A deadline for an interim verification hold depends on AC-233. |
 | AC-228 | Pending notices can arrive stale after quiet hours or after re-enabling a project. Quiet eligibility can also use a newer urgent firing for an older queued notice. |
-| AC-233 | Verification below confidence 0.7 needs a measured comparison of holding and waiting, and a bounded hold when holding costs less. |
 | AC-234 | Investigation cases need the bounded, project-scoped excerpt from indexed project memory. |
 | AC-237 | A private run still needs to prove that exhaustion stops judgment, leaves detectors and paging active, and publishes the budget decision in a due weekly review. |
 | AC-238 | A fix task's text uses the default task sections even where the project keeps its own template (terminum-kanban.md AC-145). |
@@ -1470,7 +1505,7 @@ The rest size no impact and state why: questions per task (`drift.ask_rate`, `dr
 | 2 | Target, store or all project agents | Days or a costly migration |
 | 3 | Users, public repository, other projects or credentials | Irreversible |
 
-A detector sets blast radius and reversibility; its measured `escalate` rules may raise any of the three scores, and the signal records which rule raised which score. A round can propose raising a level with evidence; a proposal to lower one is refused. The level is the maximum of the three scores. Level 0 records (R0), with repeated findings in the review (R1). Level 1 can propose a fix through the high-impact task gate (R2) or nudge (R3) and appears in the digest. Level 2 calls for a reversible hold, if authorized, a card and diagnosis (R4). Level 3 opens the incident, applies an eligible hold and then diagnoses (R5). Confidence below 0.7 at level 2 or 3 starts a verifying investigation capped at 15 minutes; a hold goes on meanwhile only when it costs less than the wait, and a deterministic critical page runs independently. Depth follows level: level 1 uses the small tier or no round, level 2 the medium tier, level 3 the strong tier and the independent critic before a recommendation reaches the owner.
+A detector sets blast radius and reversibility; its measured `escalate` rules may raise any of the three scores, and the signal records which rule raised which score. A round can propose raising a level with evidence; a proposal to lower one is refused. A round's escalation is typed in its finding as `escalate: {score, level, reason}`: it raises blast radius or reversibility, never the measured impact, to 3 alone. Code accepts it with a finding at confidence 0.7 or above that cites its signal's recomputed measurement, still crossing its threshold. It is kept in `supervisor_escalations` with the signal's evidence, and stands while the signal holds that evidence: the signal's level and response, and its incident's, read it; urgency for quiet hours stays the detector's own. The level is the maximum of the three scores. Level 0 records (R0), with repeated findings in the review (R1). Level 1 can propose a fix through the high-impact task gate (R2) or nudge (R3) and appears in the digest. Level 2 calls for a reversible hold, if authorized, a card and diagnosis (R4). Level 3 opens the incident, applies an eligible hold and then diagnoses (R5). Confidence below 0.7 at level 2 or 3 starts a verifying investigation capped at 15 minutes; a hold goes on meanwhile only when it costs less than the wait, and a deterministic critical page runs independently. The comparison is modeled in weekly shares, the common currency above, and the round's case file keeps it: waiting costs the signal's latest week's largest share times its confidence; the one interim hold code may apply, taking the signal's own task (or a task its evidence names) out of the integration queue, costs one of the tasks the queue integrated in the last seven days. No share, no queued task or no integrated task means no hold, with the reason. Code applies it at admission with every check of an Operator hold but confidence; an open breaker refuses it, and it never pauses a project or stops a run, whose undo starts an agent. It ends with its round: kept as an ordinary hold only when the round's finding has confidence 0.7 or above, the signal is still current at level 2 or above, and code's recomputation of its measurement still crosses its threshold; otherwise code releases it, though a human acted on the task since. A release that fails leaves an ordinary hold that names why. Depth follows level: level 1 uses the small tier or no round, level 2 the medium tier, level 3 the strong tier and the independent critic before a recommendation reaches the owner.
 
 | Indicator | Measure | Guard |
 |---|---|---|
@@ -1672,7 +1707,7 @@ Enable none of the runtime cases by default. The stages below list the cases in 
 
 - [x] AC-211 — `supervisor::engine_tests` checks named queries, read-only snapshots, fingerprint repeats, persisting conditions and growing window inputs keeping their count, resolution and recurrence, and atomic retry.
 - [ ] AC-212 — `supervisor::catalog_tests` and `ac212_off_missing_and_shadow` cover the store rules, typed thresholds, unavailable inputs and shadow enablement; `ac212_a_failure_and_a_later_launch_in_one_second` and `ac212_a_failed_move_names_the_run_it_failed_in` cover a failure's run beside a launch in its second. Remaining catalog and guard inputs are listed in §7.
-- [ ] AC-213 — `ac213_impact_floors_and_ladder` and `ac213_records_per_finding_impact_and_reads_legacy_scores` cover thresholds, floors, level, response and recording; `supervisor::impact_tests` covers each detector's quantity and the stated reason of a signal without a share. `supervisor::breach::tests` covers a live migration edit breaking the never line the owner tied to it, the same reading without a tie, the tied detector's protection and the refused ties; `webSupervisor` and `liveSupervisor` cover the tie in the tab and the breach on the screen. Round escalation remains open.
+- [ ] AC-213 — `ac213_impact_floors_and_ladder` and `ac213_records_per_finding_impact_and_reads_legacy_scores` cover thresholds, floors, level, response and recording; `supervisor::impact_tests` covers each detector's quantity and the stated reason of a signal without a share. `supervisor::breach::tests` covers a live migration edit breaking the never line the owner tied to it, the same reading without a tie, the tied detector's protection and the refused ties; `webSupervisor` and `liveSupervisor` cover the tie in the tab and the breach on the screen. `supervisor::escalations_tests` covers the typed escalation's refusals, the raised level and incident, and its lapse on new evidence.
 - [x] AC-214 — `ac214_scoreboard_guard_verdicts` covers four-week comparisons, separate indicators, guards and missing inputs. `ac261_git_release_metrics_and_owner_split` and `e2e_supervisor_probes.py` check retained release, gate and owner inputs.
 - [ ] AC-215 — `ac215_replay_rank_and_schema` covers the CLI ranking, repeatable output, unavailable detectors, project isolation, read-only bytes and schema refusal. Replay of labeled judgment quality remains open.
 - [x] AC-216 — `e2e_supervisor.py` and `ac216_project_off_is_inert_and_a_new_generation_rejects_old_work` cover the signed-in switch, its project scope and disabling during collection. `e2e_supervisor_rounds.py` checks that switch-off ends the active round and frees its slot. `ac245_hold_undo_and_switch_off` covers retained holds.
@@ -1684,7 +1719,7 @@ Enable none of the runtime cases by default. The stages below list the cases in 
 - [x] AC-222 — `webSupervisor` in `web/test/e2e_supervisor.mjs` and `liveSupervisor` in `web/test/e2e_livesupervisor.mjs` cover the settings tab, switch, project pool, draft after refusal, portable settings, line test and surface preview.
 - [x] AC-223 — `webSupervisor` covers the scoreboard, holds, scorecard, investigation and paged literal evidence at desktop and phone widths in Chromium and WebKit. `liveSupervisor` verifies the two-project collector and screen.
 - [ ] AC-224 — `ac224_incident_grouping_and_clear` and `ac224_distinct_fingerprints_share_subject_and_clear_independently` cover grouping, level changes, missing input and recovery. `liveIncidents` covers an actual collector outage and recovery. `e2e_supervisor.py` checks delivery failure. The red-target detector remains open.
-- [ ] AC-225 — `liveIncidents` in `web/test/e2e_liveincidents.mjs` drills a level 3 signal with two signed-in browsers and standalone Files, the pinned card and its timeline. Hold labels and action keys are exercised under AC-245.
+- [x] AC-225 — `liveIncidents` in `web/test/e2e_liveincidents.mjs` drills a level 3 signal with two signed-in browsers and standalone Files, the pinned card and its timeline. Hold labels and action keys are exercised under AC-245. `ac225_an_interim_hold_says_its_deadline_on_the_incident_and_the_line` and `webSupervisor` cover an interim hold's deadline in the feed, the line, the card and the screen.
 - [x] AC-226 — `ac226_owner_keys_are_audited_once_and_do_not_clear_the_cause` and `liveIncidents` cover snooze, acknowledgment, the recorded actor and time, and refusal without sign-in.
 - [x] AC-227 — `ac227_bounded_channel_stdin_and_exit` and `ac227_templates_exclude_case_prose_and_use_only_a_validated_origin` cover execution and the four templates. `scripts/e2e_supervisor.py` exercises signed-in configuration, the watchdog's notice and its all-clear. `e2e_supervisor_comms.py` covers the thread that queues the answer notice.
 - [ ] AC-228 — `ac228_repeat_escalation_snooze_and_acknowledgment`, `ac228_acknowledged_incident_updates_keep_the_cool_down` and `ac228_quiet_hours_defer_ordinary_notices_and_keep_all_incidents` exercise the ladder, update cool-down and quiet hours. Stale backlogs remain open.
@@ -1692,7 +1727,7 @@ Enable none of the runtime cases by default. The stages below list the cases in 
 - [x] AC-230 — `cargo test ac230` covers the old store, validation and answer records. `node web/test/e2e_all.mjs webQuestionChoices` checks wide and touch windows in Chromium and WebKit. `web/test/e2e_livedispatcher.mjs` checks the live answer and continuation.
 - [x] AC-231 — `ac231_supervisor_tools_pane_and_token` in `scripts/e2e_roles.py` checks every existing catalog tool at all three levels, pane identity, project scope and the fixed Dispatcher prompt. `ac231_supervisor_marks_follow_only_restored_panes`, `ac231_ac232_each_level_allows_exactly_its_list_of_the_catalog` and `ac231_an_unknown_local_peer_is_refused_while_a_supervisor_pane_is_marked` cover restored identity, the precise allowlists and an unknown caller. `e2e_supervisor_rounds.py` and `e2e_supervisor_comms.py` exercise the launchers' real pane marks.
 - [x] AC-232 — `scripts/e2e_roles.py` checks the owner changing a live pane's level, and `scripts/e2e_supervisor_settings.py` checks that importing preferences preserves it. `ac232_owner_sets_level_and_all_levels_page` delivers charter-breach notices to a private command at every level.
-- [ ] AC-233 — `e2e_supervisor_rounds.py` covers automatic admission, the confidence gate, budget denial, deduplication and the owner's press. `ac233_waiters_use_distinct_weeks_and_impact` covers recurring signals and wait order. The dependent actions are listed in §7.
+- [x] AC-233 — `e2e_supervisor_rounds.py` covers automatic admission, the confidence gate, budget denial, deduplication and the owner's press. `ac233_waiters_use_distinct_weeks_and_impact` covers recurring signals and wait order. `supervisor::interim_tests` covers the comparison's three outcomes, the interim hold's deadline, its end after a human's comment, a failed end, a strong finding that code's recomputation does not confirm, and one it confirms, which keeps the hold.
 - [ ] AC-234 — `e2e_supervisor_rounds.py` checks exact case access, bounded data, the fixed prompt, a scoped mark before the first tool call, typed results, deadlines and cleanup in private tmux. Indexed memory remains open.
 - [x] AC-235 — `e2e_supervisor_rounds.py` refuses a wrong number and an unresolved row, records the refusal signal, counting each refusal, and keeps the finding after the named query and evidence pass; `ac235_each_refusal_counts` proves the count.
 - [x] AC-236 — `ac236_register_rank_ruling_and_recurrence` covers measured ranking, owner rulings, scoped evidence and protected yardsticks. The Supervisor browser check exercises the register and ruling form.

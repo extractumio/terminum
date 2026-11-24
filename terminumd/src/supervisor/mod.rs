@@ -30,7 +30,13 @@ mod nudges;
 mod digest;
 pub(crate) mod review;
 mod review_data;
+pub(crate) mod interim;
+#[cfg(test)]
+mod interim_tests;
+#[cfg(test)]
+mod escalations_tests;
 mod impact;
+mod escalations;
 pub(crate) mod holds;
 pub(crate) mod holds_api;
 #[cfg(test)]
@@ -200,6 +206,9 @@ pub(crate) struct Scores {
     pub reversibility: u8,
     pub confidence: f64,
 }
+
+/// The confidence of a strong heuristic (AC-213): below it a level 2 or 3 signal is verified first (AC-233).
+pub(super) const STRONG: f64 = 0.7;
 
 impl Default for Scores {
     fn default() -> Self {

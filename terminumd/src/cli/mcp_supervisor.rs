@@ -116,7 +116,7 @@ pub(super) fn tools() -> Vec<Value> {
                 "routing":{"type":"object","additionalProperties":false,"required":["agent","task_type","change","why"],
                     "properties":{"agent":text,"task_type":text,"change":text,"why":text}}
             }), &["missed","noise","wrong","proposals"], false),
-        tool("record_finding", "Submit this investigation's cause, confidence, disproof and fix proposal. Copy typed evidence references and put numeric claims in measurements. Code resolves each row and reruns each named query.",
+        tool("record_finding", "Submit this investigation's cause, confidence, disproof and fix proposal. Copy typed evidence references and put numeric claims in measurements. Code resolves each row and reruns each named query. To ask for a critical escalation, add escalate with the score it raises to level 3 and why; it needs confidence of at least 0.7 and the recomputed measurement of the case's own signal.",
             json!({
                 "cause": text, "disproof": text, "fix_proposal": text, "confidence": {"type":"number", "minimum":0, "maximum":1},
                 "evidence": {"type":"array","minItems":1,"maxItems":128,"items":{
@@ -124,7 +124,9 @@ pub(super) fn tools() -> Vec<Value> {
                     "properties":{"table":{"type":"string"},"id":{}}}},
                 "measurements":{"type":"array","maxItems":16,"items":{
                     "type":"object","required":["query","signal","value"],"additionalProperties":false,
-                    "properties":{"query":text,"signal":text,"value":{"type":"number"}}}}
+                    "properties":{"query":text,"signal":text,"value":{"type":"number"}}}},
+                "escalate":{"type":"object","required":["score","level","reason"],"additionalProperties":false,
+                    "properties":{"score":{"enum":["blast","reversibility"]},"level":{"type":"integer","minimum":0,"maximum":3},"reason":text}}
             }), &["cause","confidence","disproof","fix_proposal","evidence","measurements"], false),
     ]
 }

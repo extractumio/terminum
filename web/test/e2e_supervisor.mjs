@@ -21,7 +21,7 @@ async function fixture(page, theme) {
   let ruling = null, held = true, stopped = true, wrong = false, breaker = false;
   const alerted = () => ({ ...INCIDENT, revision: 2 + Number(wrong),
     alerts: [{ id: 11, detector: RULE, metric: "reasonless_failures", response: "R5", wrong }] });
-  const incident = () => held ? { ...alerted(), held: "Integration queue paused.", holds: [{ id: HOLD.id, label: HOLD.label }],
+  const incident = () => held ? { ...alerted(), held: "Integration queue paused.", holds: [{ id: HOLD.id, label: HOLD.label, until: DATE }],
     needed: "Keep or release the hold.", no_answer: "Without an answer the hold stays." }
     : alerted();
   await page.route("**/api/supervisor/incidents/42", (route) => {
@@ -36,7 +36,7 @@ async function fixture(page, theme) {
     }
     return json(route, { rows: [], next: null });
   });
-  const activeHolds = () => [held && HOLD, stopped && { ...HOLD, id: 8, label: "Run stopped", task: "API-2", undo: "RUN" }].filter(Boolean);
+  const activeHolds = () => [held && { ...HOLD, until: DATE }, stopped && { ...HOLD, id: 8, label: "Run stopped", task: "API-2", undo: "RUN" }].filter(Boolean);
   let enabled = false, refusal = true, saved = structuredClone(SETTINGS), revision = 0, candidate = false, approved = false, commandViewed = false;
   const calls = [];
   let line = { revision: 0, settings: { channels: [], link_base: null, quiet: [1380, 480], ladder: [10, 30, 60] } };
@@ -293,6 +293,9 @@ async function screen(page, suffix, phone) {
     await hold.getByText(LITERAL, { exact: true }).isVisible() && await hold.locator("img").count() === 0
     && await hold.getByRole("link", { name: /Signal/ }).getAttribute("href") === "?project=api&signal=0#signal-0"
     && await release.isVisible() && await integrationHold.getByRole("button", { name: "Resume integration" }).isVisible());
+  check("AC-225 an interim hold says by when it ends on the incident card and in the screen's hold list",
+    (await incidentHold.textContent()).includes(`Hold ${HOLD.id} ends by `)
+    && await integrationHold.getByText(/^Interim: ends by .+ with its verification/).isVisible());
   if (phone) {
     for (const key of [undo, keep, release]) {
       check("AC-245 a hold key fits a finger and its card fits the phone",
