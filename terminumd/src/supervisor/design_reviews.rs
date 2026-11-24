@@ -62,7 +62,7 @@ pub(super) fn case(tx: &Transaction, key: &str, role: &str) -> Result<(Value, i6
     let gate = gates::get(tx, task)?.ok_or("No such task design.")?;
     let id = slug(tx, &gate)?;
     let title = ops::get(tx, &id)?.title;
-    let data = |s: &str| crate::sent::redact(s).chars().take(2000).collect::<String>();
+    let data = |s: &str| super::rounds::capped(s, 2000);
     let architecture: Option<String> = tx.query_row("SELECT record FROM supervisor_design_records
         WHERE task = ?1 AND role = 'architecture'", [&gate.key], |r| r.get(0)).optional().map_err(sql)?;
     Ok((json!({"kind":"design_review","task":id,"tier":gate.tier,"role":role,

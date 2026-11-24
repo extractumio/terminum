@@ -155,13 +155,15 @@ pub(crate) struct Candidate {
     generation: i64,
     revision: i64,
     pub agent: String,
+    /// An investigation's `memory_data`, its project's memory read before the saving transaction (AC-234).
+    pub memory: Option<Value>,
 }
 
 impl Candidate {
     /// The words an investigation's indexed memory is matched on; none for other rounds, which carry no memory.
     pub(crate) fn memory_terms(&self) -> Option<Vec<String>> {
         let Purpose::Investigation(signal) = &self.purpose else { return None };
-        Some(super::case_memory::terms(&signal.detector, &signal.metric, &signal.subject_id))
+        Some(super::case_memory::terms(&signal.detector, &signal.metric))
     }
 }
 
@@ -170,7 +172,7 @@ pub(crate) fn candidate(tx: &Transaction, project: &str, key: &str) -> Result<Ca
     if let Some(id) = active_id(tx, key)? { return Err(format!("Investigation {id} is already open.")); }
     if key.starts_with(design_reviews::PREFIX) {
         let (agent, role) = design_reviews::candidate(tx, project, key, now())?;
-        return Ok(Candidate { purpose: Purpose::DesignReview(role), key: key.into(), project: project.into(), generation, revision: 0, agent });
+        return Ok(Candidate { purpose: Purpose::DesignReview(role), key: key.into(), project: project.into(), generation, revision: 0, agent, memory: None });
     }
     let saved = settings::read(tx, project)?.settings;
     if key.starts_with("reflection_") {
@@ -179,13 +181,13 @@ pub(crate) fn candidate(tx: &Transaction, project: &str, key: &str) -> Result<Ca
             return Err("Choose a different agent from the one whose decision is being reviewed.".into());
         }
         if !saved.investigation_room() { return Err(governor::JUDGMENT_NOTICE.into()); }
-        return Ok(Candidate { purpose: Purpose::Reflection, key: key.into(), project: project.into(), generation, revision: 0, agent });
+        return Ok(Candidate { purpose: Purpose::Reflection, key: key.into(), project: project.into(), generation, revision: 0, agent, memory: None });
     }
     let signal = signals::get(tx, project, key)?;
     let agent = check_room(&saved, &signal)?.to_owned();
     let revision = tx.query_row("SELECT revision FROM supervisor_signals WHERE fingerprint = ?1",
         [key], |r| r.get(0)).map_err(sql)?;
-    Ok(Candidate { purpose: Purpose::Investigation(Box::new(signal)), key: key.into(), project: project.into(), generation, revision, agent })
+    Ok(Candidate { purpose: Purpose::Investigation(Box::new(signal)), key: key.into(), project: project.into(), generation, revision, agent, memory: None })
 }
 
 pub(crate) fn waiting_reason(tx: &Transaction, key: &str, reason: &str) -> Result<(), String> {
@@ -199,7 +201,12 @@ pub(crate) fn waiting_reason(tx: &Transaction, key: &str, reason: &str) -> Resul
 }
 
 fn excerpt(text: String) -> String {
-    crate::sent::redact(&text).chars().take(EXCERPT).collect()
+    capped(&text, EXCERPT)
+}
+
+/// Stored text a case file carries as data: redacted, then cut to `cap` characters.
+pub(super) fn capped(text: &str, cap: usize) -> String {
+    crate::sent::redact(text).chars().take(cap).collect()
 }
 
 fn task_data(tx: &Transaction, signal: &Signal) -> Result<Vec<Value>, String> {
@@ -238,9 +245,9 @@ pub(crate) struct Saved {
     pub nudges: super::nudges::Nudges,
 }
 
-/// Saves the round's case file; an investigation's carries `memory`, its project's memory read before this transaction.
-pub(crate) fn save(tx: &Transaction, run: &str, candidate: Candidate, memory: Option<Value>, at: i64, clock_scale: i64) -> Result<Saved, String> {
-    let Candidate { mut purpose, key, generation, revision, project, .. } = candidate;
+/// Saves the round's case file.
+pub(crate) fn save(tx: &Transaction, run: &str, candidate: Candidate, at: i64, clock_scale: i64) -> Result<Saved, String> {
+    let Candidate { mut purpose, key, generation, revision, project, memory, .. } = candidate;
     let id = format!("case_{run}");
     let important = matches!(&purpose, Purpose::Investigation(signal) if signal.level >= 2);
     let token_cap = governor::admit_round(tx, &project, at, important)?;
@@ -253,8 +260,7 @@ pub(crate) fn save(tx: &Transaction, run: &str, candidate: Candidate, memory: Op
         Purpose::Reflection => (super::reflection::case(tx, &project, &key, at)?, None, super::reflection::TIME_LIMIT, None,
             format!("Supervisor reflection case {id}. Call get_case_file with its ID. Review the code-built timeline independently. Explain misses, noise and wrong decisions, and submit configuration changes with replay_config_change and propose_config_change. Cite their change IDs with record_reflection.")),
         Purpose::Investigation(signal) => {
-            let (mut case, incident) = investigation_case(tx, signal, at)?;
-            case["memory_data"] = memory.unwrap_or_else(|| json!({"unavailable": "The project's memory was not read."}));
+            let (case, incident) = investigation_case(tx, signal, memory, at)?;
             (case, incident, TIME_LIMIT, None,
                 format!("Supervisor case {id}. Call get_case_file with its ID and report through the Supervisor tools."))
         }
@@ -288,7 +294,7 @@ pub(crate) fn save(tx: &Transaction, run: &str, candidate: Candidate, memory: Op
     Ok(Saved { prompt, held, nudges })
 }
 
-fn investigation_case(tx: &Transaction, signal: &mut Signal, at: i64) -> Result<(Value, Option<i64>), String> {
+fn investigation_case(tx: &Transaction, signal: &mut Signal, memory: Option<Value>, at: i64) -> Result<(Value, Option<i64>), String> {
     let verify = signal.level >= 2 && signal.scores.confidence < super::STRONG;
     let saved = settings::read(tx, &signal.project)?.settings;
     let charter = saved.investigation_charter().map(|lines| excerpt(lines.join("\n")));
@@ -308,7 +314,7 @@ fn investigation_case(tx: &Transaction, signal: &mut Signal, at: i64) -> Result<
         "register_problem": problem,
         "register_note": "Use the register tools before submitting the final finding.",
         "charter_data": {"never": charter[0], "priorities": charter[1]},
-        "task_data": task_data(tx, signal)?, "evidence_rows": evidence, "evidence_count": evidence_count,
+        "task_data": task_data(tx, signal)?, "memory_data": memory.unwrap_or_else(|| json!({"unavailable": "The project's memory was not read."})), "evidence_rows": evidence, "evidence_count": evidence_count,
         "question": if verify { "Does the named measurement and its evidence confirm the signal?" }
             else { "What caused this signal, what would disprove the cause, and what would address it?" },
         "tools": tools,
