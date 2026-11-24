@@ -190,6 +190,27 @@ fn ac228_a_waiting_notice_takes_quiet_hours_eligibility_from_its_own_latest_stat
 }
 
 #[test]
+fn ac228_a_waiting_page_goes_only_while_the_owner_still_needs_it() {
+    let f = Fixture::new("line-stale-page");
+    configure(&f, Some([23 * 60, 8 * 60]));
+    let morning = |offset| take(&f.store, NOW + offset, 8 * 60);
+    // Its signal moves on to a new incident before the first page goes: only the new one pages.
+    observed(&f, NOW, &[("target", false, 0, 1)]);
+    let first = incident_of(&f, "target");
+    let later = incidents::GROUP_WINDOW + 1;
+    observed(&f, NOW + later, &[("target", false, 0, 2)]);
+    let page = morning(later).unwrap();
+    assert_ne!(page.incident, first);
+    assert_eq!((page.kind, page.level, page.signals), (Kind::Opened, 3, 1));
+    assert!(morning(later + 1).is_none(), "the continued incident sends no empty page");
+    // The owner acknowledges a waiting incident in Terminum before its page goes.
+    observed(&f, NOW + later + 1, &[("target", false, 0, 2), ("acknowledged", false, 0, 1)]);
+    let id = incident_of(&f, "acknowledged");
+    assert!(f.store.with(|tx| incidents::act(tx, id, Action::Acknowledge, NOW + later + 2)).unwrap());
+    assert!(morning(later + 3).is_none(), "an acknowledged incident is not paged");
+}
+
+#[test]
 fn ac228_a_supervisor_turned_back_on_pages_its_open_incidents_once() {
     let f = Fixture::new("line-stale-enable");
     configure(&f, None);
@@ -197,7 +218,7 @@ fn ac228_a_supervisor_turned_back_on_pages_its_open_incidents_once() {
     observed(&f, NOW, &[("open", false, 0, 1), ("acknowledged", false, 0, 1), ("cleared", false, 0, 1)]);
     let acknowledged = incident_of(&f, "acknowledged");
     assert!(f.store.with(|tx| incidents::act(tx, acknowledged, Action::Acknowledge, NOW + 1)).unwrap());
-    assert_eq!(queued(&f), 3);
+    assert_eq!(queued(&f), 2, "an acknowledged incident's waiting page is dropped");
     assert!(set(false, 2).is_some());
     assert_eq!(queued(&f), 0, "turning the Supervisor off drops its queued notices");
     observed(&f, NOW + 3, &[("open", false, 0, 2), ("acknowledged", false, 0, 1)]);

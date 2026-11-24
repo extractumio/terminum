@@ -9,7 +9,7 @@ use crate::tasks::{ops::{rows, sql}, store::HUMAN};
 
 use super::{Finding, Rule, line_queue::{self, Kind}};
 
-const GROUP_WINDOW: i64 = 15 * 60;
+pub(super) const GROUP_WINDOW: i64 = 15 * 60;
 const SNOOZE: i64 = 60 * 60;
 
 pub(super) struct Observation<'a> {
@@ -221,7 +221,10 @@ fn close_if_clear(tx: &Transaction, id: i64, at: i64, continued: Option<i64>, ur
                 "incident_postmortem", &serde_json::json!({"incident":id}), at)?;
         }
         line_queue::stop_repeats(tx, id)?;
-        line_queue::enqueue(tx, id, notice, urgent)?;
+        // A continued incident the owner was never paged about needs no notice: its successor's covers it.
+        if continued.is_none() || !line_queue::drop_unsent_page(tx, id)? {
+            line_queue::enqueue(tx, id, notice, urgent)?;
+        }
     }
     Ok(changed != 0)
 }
@@ -245,6 +248,8 @@ pub(super) fn act(tx: &Transaction, id: i64, action: Action, at: i64) -> Result<
     let changed = changed.map_err(sql)? != 0;
     if changed {
         // Acknowledge stops repeats in the claim (AC-228); the row's last send keeps the updates' cool-down.
+        // A page still waiting would ask for the acknowledgment the owner just gave.
+        if matches!(action, Action::Acknowledge) { line_queue::drop_unsent_page(tx, id)?; }
         tx.execute("INSERT INTO supervisor_incident_events (incident, at, kind, actor)
             VALUES (?1, ?2, ?3, ?4)", (id, at, kind, HUMAN)).map_err(sql)?;
     }

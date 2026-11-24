@@ -124,6 +124,12 @@ pub(super) fn enqueue(tx: &Transaction, incident: i64, kind: Kind, ended_urgent:
         .map(drop).map_err(sql)
 }
 
+/// Drops an incident's waiting page, the notice that asks for acknowledgment; true when one waited.
+pub(super) fn drop_unsent_page(tx: &Transaction, incident: i64) -> Result<bool, String> {
+    tx.execute("DELETE FROM supervisor_line_pending WHERE incident = ?1 AND kind = 'opened'", [incident])
+        .map(|n| n != 0).map_err(sql)
+}
+
 /// When the first channel is saved, start with current unacknowledged incidents.
 pub(super) fn seed(tx: &Transaction) -> Result<(), String> {
     seed_where(tx, "1", [])
