@@ -124,6 +124,8 @@ use crate::tasks::store::Store;
 mod register_tests;
 #[cfg(test)]
 mod register_recurrence_tests;
+#[cfg(test)]
+mod register_archive_tests;
 
 pub(crate) use catalog::Rule;
 pub(crate) use signals::Signal;

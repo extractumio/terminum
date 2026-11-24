@@ -7,7 +7,7 @@ use crate::tasks::{auto, ops::{self, NewTask, rows, sql}, store::HUMAN};
 
 use super::{DAY, WEEK, engine_tests::{Fixture, NOW, OTHER, PROJECT}, fix_tasks, governor, register, settings, task_policy};
 
-fn enabled(f: &Fixture, budgets: serde_json::Value) {
+pub(super) fn enabled(f: &Fixture, budgets: serde_json::Value) {
     f.write("INSERT INTO project_supervisor (project, enabled, generation, enabled_at) VALUES (?1, 1, 1, ?2)", (PROJECT, NOW));
     f.store.with(|tx| {
         let settings = serde_json::from_value(json!({"budgets":budgets})).unwrap();
@@ -231,7 +231,7 @@ fn ac236_ac238_a_round_proposal_needs_a_checked_finding() {
     }).unwrap();
 }
 
-fn seeded(f: &Fixture, key: &str, (detector, kind, subject, metric): (&str, &str, &str, &str), measure: serde_json::Value, evidence: serde_json::Value) {
+pub(super) fn seeded(f: &Fixture, key: &str, (detector, kind, subject, metric): (&str, &str, &str, &str), measure: serde_json::Value, evidence: serde_json::Value) {
     let scores = json!({"impact":2,"blast":0,"reversibility":0,"confidence":1.0,"charter_breach":false,
         "impact_basis":{"ranked":true,"shares":[{"week":1,"complete":true,"unit":"tasks","amount":30.0,"total":100.0,"noise":0.0}]}});
     f.write("INSERT INTO supervisor_signals (fingerprint, project, detector, subject_kind, subject_id, metric,
