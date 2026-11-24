@@ -1,0 +1,106 @@
+// SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
+//! AC-236, AC-211: an owner's Accept holds until its signal's count takes a repeat with evidence the ruling did not
+//! see. Each test drives the real detector and signal write, so a retaken sample or a window's new input changes the
+//! evidence the way the live collector does.
+
+use crate::tasks::ops::sql;
+
+use super::engine_tests::{Fixture, NOW, PROJECT};
+use super::register_tests::draft;
+use super::{DAY, Rule, Signal, evaluate, probe_arch::Architecture, probes, register, settings, signals};
+
+fn signal(f: &Fixture, pick: impl Fn(&Signal) -> bool) -> Signal {
+    signals(&f.store, PROJECT).unwrap().into_iter().find(pick).expect("the detector fired")
+}
+
+/// The owner accepts as is a problem opened on the signal `key`.
+fn accepted(f: &Fixture, key: &str) -> i64 {
+    f.store.with(|tx| {
+        let id = register::open(tx, PROJECT, draft("Accepted as is", &[key]), NOW)?;
+        register::rule(tx, PROJECT, id, "The owner accepts this condition as is.", NOW)?;
+        Ok(id)
+    }).unwrap()
+}
+
+/// The problem's state after the register's sweep at `at`.
+fn swept(f: &Fixture, id: i64, at: i64) -> String {
+    f.store.with(|tx| {
+        register::advance(tx, PROJECT, at)?;
+        Ok(register::get(tx, PROJECT, id, at)?.state)
+    }).unwrap()
+}
+
+#[test]
+fn ac236_a_retaken_probe_sample_keeps_an_accepted_problem_accepted() {
+    let f = Fixture::new("accept-probe");
+    f.write("UPDATE projects SET dir = ?1 WHERE id = ?2", (f.path.parent().unwrap().to_str().unwrap(), PROJECT));
+    f.write("INSERT INTO project_supervisor (project, enabled, generation, enabled_at) VALUES (?1, 1, 1, ?2)",
+        (PROJECT, NOW - 5 * DAY));
+    f.store.with(|tx| settings::write(tx, PROJECT, 0, serde_json::from_value(serde_json::json!({})).unwrap(), false).map(drop)).unwrap();
+    let arch = Architecture { since: NOW - 90 * DAY, migrations: vec![(NOW - 4 * DAY, "schema1.sql".into())], ..Architecture::default() };
+    let data = serde_json::to_string(&arch).unwrap();
+    let beat = |at| {
+        probes::tests::publish_sample(&f, probes::ARCH, at, data.clone());
+        f.live(Rule::MigrationEdited, at).record(&f.store).unwrap();
+    };
+    beat(NOW - 3 * DAY);
+    let ruled = signal(&f, |s| s.detector == "arch.migration_edited");
+    let id = accepted(&f, &ruled.fingerprint);
+    for (n, at) in [NOW - 2 * DAY, NOW - DAY, NOW].into_iter().enumerate() {
+        beat(at);
+        let now = signal(&f, |s| s.fingerprint == ruled.fingerprint);
+        assert_ne!(now.evidence, ruled.evidence, "beat {n} retook the sample the ruling saw");
+        assert_eq!(now.count, 1, "the same edited migration is one occurrence");
+        assert_eq!(swept(&f, id, at + 1), "accepted", "beat {n}");
+    }
+}
+
+#[test]
+fn ac236_a_window_input_keeps_an_accepted_spend_problem_accepted() {
+    let f = Fixture::new("accept-spend");
+    let old = NOW - 5 * super::WEEK;
+    f.task("cheap", Some("Feature"), "P2", "IN PROGRESS", old - 1);
+    f.run("cheap", "cheap-run", "agent", old);
+    f.cost("cheap-run", old + 1, 10_000);
+    f.task("expensive", Some("Feature"), "P2", "IN PROGRESS", NOW - 110);
+    f.failed_run("expensive", "expensive-run", NOW - 90);
+    f.cost("expensive-run", NOW - 89, 3_000_000);
+    let d = Fixture::detector("flow.cost_outlier");
+    let beat = |at| evaluate(&f.store, PROJECT, at, std::slice::from_ref(&d)).unwrap().record(&f.store).unwrap();
+    beat(NOW);
+    let ruled = signal(&f, |s| s.metric == "task_dollars");
+    let id = accepted(&f, &ruled.fingerprint);
+    for (n, at) in [NOW + 10, NOW + 20].into_iter().enumerate() {
+        f.cost("expensive-run", at - 5, 3_000_000);
+        beat(at);
+        let now = signal(&f, |s| s.fingerprint == ruled.fingerprint);
+        assert!(now.evidence.len() > ruled.evidence.len(), "usage row {n} joined the evidence");
+        assert_eq!(now.count, 1, "a growing spend total is one occurrence");
+        assert_eq!(swept(&f, id, at + 1), "accepted", "usage row {n}");
+    }
+}
+
+#[test]
+fn ac236_a_new_failed_run_reopens_an_accepted_problem() {
+    let f = Fixture::new("accept-failures");
+    f.task("repeat", Some("Bug"), "P2", "IN PROGRESS", NOW - 200);
+    f.failed_run("repeat", "run-a", NOW - 50);
+    f.failed_run("repeat", "run-b", NOW - 20);
+    let d = Fixture::detector("repeated_failures");
+    let beat = |at| evaluate(&f.store, PROJECT, at, std::slice::from_ref(&d)).unwrap().record(&f.store).unwrap();
+    beat(NOW);
+    let key = signal(&f, |s| s.detector == "flow.failed_repeat").fingerprint;
+    let id = accepted(&f, &key);
+    beat(NOW + 10);
+    assert_eq!(swept(&f, id, NOW + 11), "accepted", "a sweep of the same failed runs is no repeat");
+
+    f.failed_run("repeat", "run-c", NOW + 15);
+    beat(NOW + 20);
+    assert_eq!(signal(&f, |s| s.fingerprint == key).count, 2);
+    assert_eq!(swept(&f, id, NOW + 21), "recurred", "a new failed run is a new counted event");
+    f.store.with(|tx| {
+        let detail: String = tx.query_row("SELECT new_evidence FROM supervisor_problems WHERE id = ?1", [id], |r| r.get(0)).map_err(sql)?;
+        assert_eq!(detail, format!("New evidence from signal {key}."));
+        Ok(())
+    }).unwrap();
+}
