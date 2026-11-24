@@ -82,11 +82,31 @@ def seed_incident(db, project, level):
     return incident
 
 
+PROBED = """SELECT
+    (SELECT count(DISTINCT source) FROM supervisor_probe_samples WHERE project = p.project)
+      >= 2 * coalesce((SELECT json_extract(pack, '$.probes.git') FROM supervisor_settings WHERE project = p.project), 1)
+       + coalesce((SELECT json_extract(pack, '$.probes.gate_record') FROM supervisor_settings WHERE project = p.project), 1)
+       + (SELECT count(*) FROM supervisor_probe_commands WHERE project = p.project)
+    AND p.last_ok IS NOT NULL
+    AND p.cursor >= coalesce((SELECT max(seq) FROM supervisor_changes WHERE project = p.project), 0)
+    FROM project_supervisor p WHERE p.project = ?"""
+
+
+def probed(fixture, projects):
+    """Each project's first, once-a-day probe samples are in and scanned: a probe's first state is a change that
+    rescans the project in full, which resolves the fixture's synthetic signals and clears their incidents."""
+    def read():
+        with closing(sqlite3.connect(fixture.db)) as db:
+            return [db.execute(PROBED, (project,)).fetchone() for project in projects]
+    wait_for(read, lambda rows: all(row and row[0] for row in rows), 60, every=0.5)
+
+
 def shared_line(fixture, paths):
     channel, output = (Path(fixture.server.root, name) for name in ("shared channel", "notices"))
     channel.write_text("#!/bin/sh\ncat >> " + shlex.quote(str(output)) + "\n")
     channel.chmod(0o700)
     low_path, high_path = paths
+    probed(fixture, [path.split("/")[-2] for path in paths])
     with closing(sqlite3.connect(fixture.db)) as db, db:
         low, high = (seed_incident(db, path.split("/")[-2], level)
                      for path, level in [(low_path, 2), (high_path, 3)])
