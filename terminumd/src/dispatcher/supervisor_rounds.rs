@@ -92,7 +92,7 @@ async fn admit(app: &Shared, project: &str, key: &str) -> Result<(), String> {
     let (agent, host, folder, server) = places::place(app, project, Some(desired)).await?;
     let like = Run::of(&agent, host, folder.clone(), project.to_owned(), None);
     let key = key.to_owned();
-    let (run, prompt) = store(app, move |tx| {
+    let (run, prompt, held) = store(app, move |tx| {
         let at = now();
         let candidate = rounds::candidate(tx, &like.project, &key)?;
         let (_, current_host, current_folder) = ops::project_place(tx, &like.project)?;
@@ -106,9 +106,10 @@ async fn admit(app: &Shared, project: &str, key: &str) -> Result<(), String> {
             return Err(full.words);
         }
         let id = runs::add(tx, &like, &[], runs::Started::of(runs::How::Supervisor), at)?;
-        let prompt = rounds::save(tx, &id, candidate, at, scale())?;
-        Ok((id, prompt))
+        let (prompt, held) = rounds::save(tx, &id, candidate, at, scale())?;
+        Ok((id, prompt, held))
     }).await?;
+    if let Some(task) = held { crate::supervisor::holds_api::interim_changed(app, &task); }
     let hold = Held::take(app, |d| &d.starting, &run).ok_or("Its start is already watched.")?;
     let (a, project) = (app.clone(), project.to_owned());
     tokio::spawn(async move {
@@ -184,7 +185,7 @@ async fn check(app: &Shared, active: Active, panes: &[String]) -> Result<(), Str
     } else if why.is_none() && !active.finished && !active.failed {
         why = Some("The round's marked pane is gone.");
     }
-    store(app, move |tx| {
+    let held = store(app, move |tx| {
         let found: bool = tx.query_row("SELECT finding IS NOT NULL FROM supervisor_rounds WHERE run = ?1",
             [&id], |r| r.get(0)).map_err(sql)?;
         if let Some(why) = why.filter(|_| !found) {
@@ -196,8 +197,9 @@ async fn check(app: &Shared, active: Active, panes: &[String]) -> Result<(), Str
         }
         runs::change(tx, &id, |r| r.state = Phase::Closed)?;
         tx.execute("UPDATE supervisor_rounds SET ended_at = ?2 WHERE run = ?1", (&id, now())).map_err(sql)?;
-        Ok(())
+        crate::supervisor::interim::round_ended(tx, &id, now())
     }).await?;
+    if let Some(task) = held { crate::supervisor::holds_api::interim_changed(app, &task); }
     app.dispatcher.soon.notify_one();
     Ok(())
 }

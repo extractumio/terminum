@@ -33,6 +33,12 @@ pub(super) fn heard(app: &Shared, applied: Applied) {
     changed(app);
 }
 
+/// An interim verification hold began or ended on this task (AC-233).
+pub(crate) fn interim_changed(app: &Shared, task: &str) {
+    told(app, task);
+    changed(app);
+}
+
 fn changed(app: &Shared) {
     crate::page::projects::tell(app);
     app.dispatcher.soon();

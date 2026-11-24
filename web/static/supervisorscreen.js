@@ -195,7 +195,10 @@ function heldAction(hold) {
   keys.append(signal, release);
   return part("article", "incident-card",
     el("h3", "incident-title", hold.task ? `${hold.label} · ${hold.task}` : hold.label),
-    note(hold.reason), keys, error);
+    note(hold.reason),
+    ...[hold.until && note(`Interim: ends by ${stamp(hold.until)} with its verification, unless verification confirms the signal.`),
+      hold.end_failed && note(`Could not end with its verification: ${hold.end_failed}`)].filter(Boolean),
+    keys, error);
 }
 
 function drawHolds(holds) {

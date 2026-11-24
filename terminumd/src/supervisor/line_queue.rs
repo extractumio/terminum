@@ -34,7 +34,8 @@ pub(super) struct Notice {
     pub signals: i64,
     pub channels: usize,
     pub(super) budget: Option<&'static str>,
-    pub(super) holds: Vec<super::holds::Kind>,
+    /// Each hold in force, and whether it is an interim verification hold (AC-233).
+    pub(super) holds: Vec<(super::holds::Kind, bool)>,
 }
 
 impl Notice {
@@ -48,8 +49,14 @@ impl Notice {
         };
         if !self.holds.is_empty() && matches!(self.kind, Kind::Opened | Kind::Updated | Kind::Repeat) {
             use std::fmt::Write;
-            for hold in &self.holds { let _ = writeln!(text, "{}.", hold.label()); }
-            text.push_str("Keep or release in Terminum. Without an answer the hold stays.\n");
+            for (hold, interim) in &self.holds {
+                let _ = match interim {
+                    true => writeln!(text, "{} while its verification runs, for up to {} minutes.", hold.label(), super::rounds::TIME_LIMIT / 60),
+                    false => writeln!(text, "{}.", hold.label()),
+                };
+            }
+            let end = if self.holds.iter().all(|(_, interim)| *interim) { super::holds::INTERIM_END } else { "Without an answer the hold stays." };
+            let _ = writeln!(text, "Keep or release in Terminum. {end}");
         }
         // Only generated project IDs are eligible for the outbound deep link.
         if let Some(base) = link_base
@@ -177,11 +184,11 @@ pub(super) fn claim(tx: &Transaction, settings: &Settings, at: i64, quiet: bool)
         stop_repeats(tx, id)?;
         return Ok(Claim::Discarded);
     }
-    notice.holds = crate::tasks::ops::rows(tx, "SELECT h.kind FROM supervisor_holds h
+    notice.holds = crate::tasks::ops::rows(tx, "SELECT h.kind, h.until IS NOT NULL FROM supervisor_holds h
         WHERE h.incident = ?1 AND h.shadow = 0 AND h.released_at IS NULL
           AND NOT EXISTS (SELECT 1 FROM supervisor_breakers b WHERE b.project = h.project
             AND b.detector = h.detector AND b.response = h.response AND b.closed_at IS NULL) ORDER BY h.id", [id],
-        |r| Ok(super::holds::Kind::read(&r.get::<_, String>(0)?)))?;
+        |r| Ok((super::holds::Kind::read(&r.get::<_, String>(0)?), r.get(1)?)))?;
     match notice.kind {
         // The row's last_at is every open incident's update cool-down, acknowledged or not;
         // the repeat branch above skips acknowledged incidents.

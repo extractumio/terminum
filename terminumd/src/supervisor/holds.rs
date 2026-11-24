@@ -14,6 +14,8 @@ use super::{Evidence, Level, Mode, Rule, Signal, attach::{self, HoldState}, inci
 
 pub(crate) const TOOLS: &[&str] = &["hold", "release_hold"];
 const PAUSED_DISPATCH: &str = "Paused by the Supervisor.";
+/// What follows an interim verification hold without an answer (AC-225), on every surface.
+pub(super) const INTERIM_END: &str = "Without an answer the hold ends with its verification, unless verification confirms the signal.";
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
@@ -81,12 +83,16 @@ pub(crate) struct Hold {
     pub(super) incident: Option<i64>,
     released_by: Option<String>,
     released_at: Option<i64>,
+    /// An interim verification hold's deadline: it ends with its round unless code confirms its signal (AC-233).
+    pub until: Option<i64>,
+    /// Why an interim hold could not end with its round; it then stays until a key releases it.
+    pub end_failed: Option<String>,
     #[serde(skip)]
     undo_data: Option<String>,
 }
 
 const SELECT: &str = "SELECT h.id, h.kind, t.slug, h.fingerprint, h.detector, h.response, h.level,
-    h.reason, h.actor, h.applied_at, h.shadow, h.incident, h.released_by, h.released_at, h.undo_data
+    h.reason, h.actor, h.applied_at, h.shadow, h.incident, h.released_by, h.released_at, h.undo_data, h.until, h.end_failed
     FROM supervisor_holds h LEFT JOIN tasks t ON t.id = h.target AND t.project = h.project";
 
 fn read(r: &rusqlite::Row<'_>) -> rusqlite::Result<Hold> {
@@ -94,7 +100,7 @@ fn read(r: &rusqlite::Row<'_>) -> rusqlite::Result<Hold> {
     Ok(Hold { id: r.get(0)?, kind, label: kind.label(), undo: kind.undo(), task: r.get(2)?,
         signal: r.get(3)?, detector: r.get(4)?, response: r.get(5)?, level: r.get(6)?, reason: r.get(7)?,
         actor: r.get(8)?, applied_at: r.get(9)?, shadow: r.get(10)?, incident: r.get(11)?,
-        released_by: r.get(12)?, released_at: r.get(13)?, undo_data: r.get(14)? })
+        released_by: r.get(12)?, released_at: r.get(13)?, undo_data: r.get(14)?, until: r.get(15)?, end_failed: r.get(16)? })
 }
 
 pub(super) fn list(tx: &Transaction, project: &str) -> Result<Vec<Hold>, String> {
@@ -156,6 +162,19 @@ pub(super) struct Applied {
 }
 
 pub(super) fn apply(tx: &Transaction, project: &str, request: Request, actor: &str, at: i64) -> Result<Disposition, String> {
+    apply_as(tx, project, request, actor, at, false)
+}
+
+/// AC-233: code's interim hold while a low-confidence signal is verified. It needs no confidence, and an open
+/// breaker refuses it rather than making a decision card for a hold that ends with its round.
+pub(super) fn apply_interim(tx: &Transaction, project: &str, request: Request, at: i64) -> Result<Applied, String> {
+    match apply_as(tx, project, request, "system", at, true)? {
+        Disposition::Applied(applied) => Ok(applied),
+        Disposition::Card(_) => unreachable!("an interim hold refuses an open breaker before diverting"),
+    }
+}
+
+fn apply_as(tx: &Transaction, project: &str, request: Request, actor: &str, at: i64, interim: bool) -> Result<Disposition, String> {
     let signal = signals::get(tx, project, &request.signal)?;
     let shadow = state(tx, &signal, at)? == HoldState::Shadow;
     let reason = request.reason.trim();
@@ -166,7 +185,7 @@ pub(super) fn apply(tx: &Transaction, project: &str, request: Request, actor: &s
     if request.task.is_some() == kind.project_wide() {
         return Err("Name a task for a run or queue-entry hold only.".into());
     }
-    if signal.scores.confidence < 0.7 && !shadow {
+    if signal.scores.confidence < super::STRONG && !shadow && !interim {
         return Err("This signal needs verification before a hold can apply.".into());
     }
     let task = request.task.as_deref().map(|id| scoped_task(tx, project, id)).transpose()?;
@@ -195,6 +214,9 @@ pub(super) fn apply(tx: &Transaction, project: &str, request: Request, actor: &s
         WHERE fingerprint = ?1 AND kind = ?2 AND target = ?3 AND released_by = ?4 AND released_at > ?5)",
         (&signal.fingerprint, kind.name(), target, HUMAN, at - super::DAY), |r| r.get(0)).map_err(sql)?;
     if blocked { return Err("The owner released this hold. The Supervisor waits 24 hours.".into()); }
+    if interim && super::breakers::open_id(tx, project, &signal.detector, signal.response)?.is_some() {
+        return Err("The rule's breaker is open.".into());
+    }
     if let Some(card) = super::breakers::divert(tx, &signal, kind.name(), target, reason, at)? {
         return Ok(Disposition::Card(card));
     }
@@ -266,7 +288,7 @@ fn insert(tx: &Transaction, s: &Signal, kind: Kind, target: &str, audit: (&str, 
 /// Cost outliers can stop only the marked task run named in the actual retained usage evidence.
 pub(super) fn automatic(tx: &Transaction, project: &str, fingerprint: &str, at: i64) -> Result<Option<Disposition>, String> {
     let signal = signals::get(tx, project, fingerprint)?;
-    if signal.detector != Rule::CostOutlier.id() || signal.level != 3 || signal.scores.confidence < 0.7
+    if signal.detector != Rule::CostOutlier.id() || signal.level != 3 || signal.scores.confidence < super::STRONG
         || signal.subject_kind != "task" || signal.metric != "task_dollars"
     {
         return Ok(None);
@@ -302,7 +324,8 @@ pub(super) fn release(tx: &Transaction, project: &str, hold: &Hold, actor: &str,
             let (event, entry) = serde_json::from_str(hold.undo_data.as_deref().ok_or("The previous queue entry is missing.")?)
                 .map_err(|e| format!("The previous queue entry is not readable: {e}"))?;
             let task = scoped_task(tx, project, hold.task.as_deref().ok_or("The held task is gone.")?)?;
-            if actor != HUMAN { super::task_policy::check(tx, &task, at)?; }
+            // An interim hold's end undoes code's own action: a human's recent touch does not keep it.
+            if actor != HUMAN && hold.until.is_none() { super::task_policy::check(tx, &task, at)?; }
             queue::restore_entry(tx, &task, event, entry, at)?;
         }
         Kind::StopRun => return Err("Use RUN to release a stopped run.".into()),

@@ -98,6 +98,12 @@ pub(super) struct Assessment {
 }
 
 impl Assessment {
+    /// The latest measured week's largest share; a verification weighs waiting by it (AC-233).
+    pub fn latest_share(&self) -> Option<f64> {
+        let week = self.shares.iter().map(|s| s.week).max()?;
+        self.shares.iter().filter(|s| s.week == week && s.total > 0.0).map(Share::fraction).reduce(f64::max)
+    }
+
     pub fn peak_share(&self) -> f64 {
         self.shares.iter().map(Share::fraction).fold(0.0, f64::max)
     }

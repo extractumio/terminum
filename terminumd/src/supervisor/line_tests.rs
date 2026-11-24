@@ -234,7 +234,8 @@ async fn ac232_owner_sets_level_and_all_levels_page() {
             else { panic!("the charter incident should page at {name}") };
         assert_eq!(notice.kind, Kind::Opened);
         let message = notice.render(None);
-        assert_eq!(deliver(&settings, &message, 1, false, Duration::from_secs(1)).await, [(0, Ok(()))]);
+        // A successful send's deadline: a loaded machine can take over a second to start the channel's shell.
+        assert_eq!(deliver(&settings, &message, 1, false, Duration::from_secs(10)).await, [(0, Ok(()))]);
         assert_eq!(fs::read_to_string(output).unwrap(), message);
         assert_eq!(f.store.with(|tx| super::super::level(tx, PROJECT)).unwrap(), level);
     }

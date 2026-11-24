@@ -43,6 +43,9 @@ pub(crate) struct Signal {
     pub(super) impact_basis: Assessment,
     pub(super) charter_breach: bool,
     pub(super) charter_never: Option<String>,
+    /// The score a checked round's critical escalation raised, while the evidence it judged stands (AC-213).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) escalated: Option<super::escalations::Score>,
     pub level: u8,
     pub response: &'static str,
     pub first_seen: i64,
@@ -256,16 +259,19 @@ pub(super) fn decode<T: serde::de::DeserializeOwned>(row: &rusqlite::Row<'_>, co
 }
 
 const COLUMNS: &str = "fingerprint, detector, subject_kind, subject_id, metric, evidence, measure, scores,
-    first_seen, last_seen, count, json_quote(state)";
+    first_seen, last_seen, count, json_quote(state), (SELECT e.score FROM supervisor_escalations e
+        WHERE e.fingerprint = supervisor_signals.fingerprint AND e.evidence = supervisor_signals.evidence)";
 
 fn read(project: &str, r: &rusqlite::Row<'_>) -> rusqlite::Result<Signal> {
     let RecordedScores { scores, impact_basis, charter_breach, charter_never } = decode(r, 7)?;
-    let level = scores.level();
+    let escalated = r.get::<_, Option<String>>(12)?.as_deref().and_then(super::escalations::Score::read);
+    let effective = escalated.map_or(scores, |score| score.raise(scores));
+    let level = effective.level();
     let count = r.get(10)?;
     Ok(Signal {
         fingerprint: r.get(0)?, project: project.into(), detector: r.get(1)?, subject_kind: r.get(2)?,
         subject_id: r.get(3)?, metric: r.get(4)?, evidence: decode(r, 5)?, measure: decode(r, 6)?,
-        scores, impact_basis, charter_breach, charter_never, level, response: scores.response(count > 1),
+        scores, impact_basis, charter_breach, charter_never, escalated, level, response: effective.response(count > 1),
         first_seen: r.get(8)?, last_seen: r.get(9)?, count, state: decode(r, 11)?,
     })
 }
