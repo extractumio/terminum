@@ -49,7 +49,6 @@ import { promptRail } from "./promptrail.js";
 import { askedMarks } from "./asked.js";
 import { askBox } from "./ask.js";
 import { recentSessions } from "./recent.js";
-import "./inbox.js";                              // the Inbox above the Sessions (terminum-reports.md AC-267)
 import { rowMenus, saveOrder } from "./rowmenu.js";
 import { ideKeys } from "./idekeys.js";
 import { editChoices, undoKey, undoTouch } from "./undo.js";

@@ -18,7 +18,7 @@
   .nav-head .search { flex: 1 1 100%; }
   .search { height: 44px; padding: 0 12px; }
   #filter { font-size: 16px; }
-  #sessions { padding: 0 10px 12px; gap: 14px; --st-w: 22px; --st-gap: 10px; }   /* --st-*: the rows' state column (.item, a header's count) */
+  #sessions { padding: 0 10px 12px; gap: 14px; --st-w: 22px; --st-gap: 10px; }   /* --st-*: the rows' state column (.item, a header's count); wider with a crown or subagents: style.css */
   .grp h2 { font-size: 13.5px; }
   .item { min-height: 60px; padding: 10px 12px; border-radius: var(--r-sm); }
   .item .t { font-size: 15px; }

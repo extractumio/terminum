@@ -167,8 +167,13 @@ pub fn unshaped(id: &str, questions: &str) -> Option<String> {
 
 /// The first Outcome content line, on its Markdown heading or the next nonempty line.
 pub(crate) fn outcome(result: &str) -> Option<&str> {
+    section_line(result, "Outcome")
+}
+
+/// Section `name`'s first content line, on its Markdown heading or the next nonempty line.
+pub(crate) fn section_line<'a>(result: &'a str, name: &str) -> Option<&'a str> {
     let mut lines = result.lines();
-    let rest = lines.by_ref().find_map(|l| after_name(head(l), "Outcome"))?;
+    let rest = lines.by_ref().find_map(|l| after_name(head(l), name))?;
     // its words, on its heading's line or the next one: read as text, since "Not done" is also a section's name
     Some(if rest.trim().is_empty() { lines.find(|l| !l.trim().is_empty()).unwrap_or_default() } else { rest })
 }

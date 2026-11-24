@@ -3,15 +3,19 @@
 // by the web page through its /fb proxy on first need: the panel's own Markdown rules (raw HTML
 // off, only safe link schemes) and highlighter, and Mermaid (mermaid.ts), loaded only for a diagram.
 
-import { renderMd } from "./markdown-core";
+import { ownFile, renderMd } from "./markdown-core";
 import { highlightInto } from "./highlight";
+import "./doc.css";   // dist/renderers.css: a rendered document's look, which a report's pane loads
 
 /** Markdown → HTML, as the panel renders a document; images show as their alt text (the page
  *  loads no image a terminal's text names, local or remote). Links are the page's to handle. */
 export const markdownHtml = (text: string): string => renderMd(text, { dir: "/", imagePath: () => "" });
 /** A task's Markdown (terminum-kanban.md AC-109): the same rules, and its own files' pictures. */
 /** said: a comment's, its label lines set apart (said.ts, AC-149). */
-export const taskMarkdownHtml = (text: string, said = false): string => renderMd(text, { dir: "/", imagePath: (p) => (p.startsWith("/api/task-files/") ? p : ""), said });
+export const taskMarkdownHtml = (text: string, said = false): string => renderMd(text, { dir: "/", imagePath: ownFile, said });
+
+/** A report's body as the viewer shows a document (report-doc.ts, terminum-reports.md AC-268). */
+export { reportInto } from "./report-doc";
 
 /** Highlights `code` into `into` (tok-* spans); false when the language is not known. `lang`
  *  is a fence's word ("py") or a file's name ("tool.py"). */

@@ -2,19 +2,28 @@
 // The Inbox and a report's pane (terminum-reports.md AC-267, AC-268, AC-269, AC-271, AC-273) against a fake terminumd,
 // wide and on a phone: above the Sessions with its unread count; critical first and red, unread bold; a press opens the
 // pane over the board's right part and reads the report after 2 seconds; Esc gives the columns back; U, Backspace and
-// Undo; the row's menu; Find; a critical report's line; the session page opening the board with the report.
+// Undo; the row's menu; Find; a critical report's line; each row's type and sender; a body shown as the Files viewer shows
+// a document (code highlighted, Mermaid drawn, an HTML document in a frame without scripts, no file read but its own);
+// the session page with no Inbox, its row's envelope opening the board with the report.
 import { check, until } from "./check.mjs";
 import { drawn, fakeBoard, openPage, ORIGIN, PHONE, serveRenderers, shot, THEME, WIDE } from "./fake.mjs";
 
 const NOW = Math.floor(Date.now() / 1000);
 const report = (id, extra = {}) => ({ id, project: "api", project_name: "API", project_color: 0, title: `Report ${id}`, summary: `What ${id} found`, critical: false, read: false,
-  source: { task: "API-41", schedule: null, incident: null, name: "API-41" }, author_name: "Opus", role: "worker", session: null, created_at: NOW - 3600, updated_at: NOW - 3600,
-  deleted_at: null, number: Number(id.split("-")[1]), ...extra });
+  source: { task: "API-41", schedule: null, incident: null, name: "API-41", sender: "task", label: "API-41 · Opus" }, kind: "report", author_name: "Opus", role: "worker", session: null, created_at: NOW - 3600,
+  updated_at: NOW - 3600, deleted_at: null, number: Number(id.split("-")[1]), ...extra });
+/** Bodies an agent wrote: Markdown with code, a diagram and pictures it may not read; an HTML document with a script. */
+const BODIES = {
+  "R_API-7": "## Findings\n\n- **serde** 1.0.200\n\n```rust\nfn main() { let x = 1; }\n```\n\n```mermaid\ngraph TD\n  A --> B\n```\n\n![key](../../.ssh/id.png) ![home](/Users/alex/a.png)\n",
+  "R_API-6": "<!doctype html><html><body><h1 id=\"t\">Weekly</h1><script>parent.pwned = 1</script><img src=\"/api/raw?path=/etc/hosts\" onerror=\"parent.pwned = 2\"><link rel=\"stylesheet\" href=\"x.css\"></body></html>",
+};
 const meta = () => ({ projects: [{ id: "api", name: "API", color: 0 }], users: [], sessions: [], hosts: [], theme: THEME, agents: [] });
 
 /** The fake's reports and what the page asked of them. */
 function reports(page) {
-  const st = { replied: [], rows: [report("R_API-7"), report("R_API-6", { read: true }), report("R_API-8", { critical: true, title: "Build broken", created_at: NOW - 7200 })], asked: [], rev: 1 };
+  const st = { replied: [], rows: [report("R_API-7", { kind: "attention", summary: "Two outdated", source: { task: "API-41", schedule: "SCH-1", incident: null, name: "Nightly deps", sender: "routine", label: "Routine Nightly deps · Opus" } }),
+    report("R_API-6", { read: true }), report("R_API-8", { critical: true, title: "Build broken", created_at: NOW - 7200 })], asked: [], rev: 1, reads: [] };
+  page.on("request", (q) => { if (/\/api\/raw|\.ssh|\/Users\/|\/x\.css/.test(q.url())) st.reads.push(q.url()); });
   const unread = () => ({ projects: { api: st.rows.filter((r) => !r.read && !r.deleted_at).length }, schedules: {}, sessions: {} });
   const json = (r, data, status = 200) => r.fulfill({ status, contentType: "application/json", body: JSON.stringify(data) });
   page.route("**/api/reports**", (r) => {
@@ -27,7 +36,7 @@ function reports(page) {
     }
     const row = st.rows.find((x) => x.id === decodeURIComponent(parts[0]));
     if (!row) return json(r, { error: `No report ${parts[0]}.` }, 400);
-    if (req.method() === "GET") return json(r, { ...row, body: "## Findings\n\n- **serde** 1.0.200", notes: [{ id: "n1", at: NOW - 60, author_name: "Opus", author_kind: "agent", kind: "comment", text: "One more thing, as R_API-6 said" }], files: [], follows: null, follow_ups: [],
+    if (req.method() === "GET") return json(r, { ...row, body: BODIES[row.id] ?? "## Findings\n\n- **serde** 1.0.200", notes: [{ id: "n1", at: NOW - 60, author_name: "Opus", author_kind: "agent", kind: "comment", text: "One more thing, as R_API-6 said" }], files: [], follows: null, follow_ups: [],
       replyable: !row.critical, why_not: row.critical ? `${row.id} was made in a session terminum did not start: answer in that session.` : undefined, answering: st.replied.includes(row.id) ? "Opus" : null });
     if (parts[1] === "reply") {
       const text = JSON.parse(req.postData() ?? "{}").text;
@@ -53,7 +62,7 @@ const look = (page) => page.evaluate(() => {
   return { inbox: box(document.getElementById("inbox")), sessions: box(document.getElementById("sessions")), count: document.querySelector(".inboxcount")?.textContent,
     rows: rows.map((r) => ({ id: r.dataset.id, unread: r.classList.contains("unread"), critical: r.classList.contains("critical"), weight: getComputedStyle(r.querySelector(".rtitle")).fontWeight })),
     pane: box(document.getElementById("reportpane")), board: box(document.getElementById("board")), pool: box(document.getElementById("agentbar")),
-    paneTitle: document.querySelector(".rptitle")?.textContent, body: document.querySelector(".rpmarkdown strong")?.textContent, docW: document.documentElement.scrollWidth, win: innerWidth };
+    paneTitle: document.querySelector(".rptitle > span:not(.rpcritical)")?.textContent, body: document.querySelector(".rpmarkdown strong")?.textContent, docW: document.documentElement.scrollWidth, win: innerWidth };
 });
 
 async function onBoard(browser, device, w) {
@@ -73,6 +82,8 @@ async function onBoard(browser, device, w) {
   check(`AC-267 ${w}: the Inbox stands above the Sessions with its unread count`, g.inbox && g.sessions && g.inbox.b <= g.sessions.t + 1 && g.count === "2", JSON.stringify(g));
   check(`AC-267 ${w}: critical unread first, unread rows bold, a read one plain`, g.rows.map((r) => r.id).join() === "R_API-8,R_API-7,R_API-6"
     && g.rows[0].critical && g.rows[1].unread && Number(g.rows[1].weight) > Number(g.rows[2].weight), JSON.stringify(g.rows));
+  const row7 = await page.evaluate(() => { const r = document.querySelector('.inboxrow[data-id="R_API-7"]'); return { kind: r.querySelector(".rkind")?.textContent, sum: r.querySelector(".rsumtext")?.textContent, from: r.querySelector(".rsource").textContent }; });
+  check(`AC-267 ${w}: a row shows its type, its summary and its sender`, row7.kind === "attention" && row7.sum === "Two outdated" && row7.from === "From Routine Nightly deps · Opus · R_API-7", JSON.stringify(row7));
   await shot(page, `inbox-${w}`);
   // a press: the pane over the board's right part; read after 2 seconds
   await page.click('.inboxrow[data-id="R_API-7"] .report');
@@ -84,12 +95,25 @@ async function onBoard(browser, device, w) {
   const sheetOpen = () => page.evaluate(() => document.getElementById("app").classList.contains("nav-open"));
   if (narrow) check(`AC-268 ${w}: the list's sheet closes when a report opens`, !await sheetOpen());
   check(`AC-268 ${w}: its body by the Markdown rules, its comments below`, g.body === "serde" && await page.isVisible(".rpnotes li"), JSON.stringify(g));
+  // as the Files viewer shows a document: its code highlighted, its diagram drawn, its typography the viewer's
+  const doc = await until(() => page.evaluate(() => !!document.querySelector(".rpmarkdown pre code .tok-keyword") && !!document.querySelector(".rpmarkdown .md-diagram img.diagram")), 8000);
+  const look2 = await page.evaluate(() => ({ cls: document.querySelector(".rpmarkdown").className, font: getComputedStyle(document.querySelector(".rpmarkdown")).lineHeight,
+    lang: document.querySelector(".rpmarkdown pre[data-lang]")?.dataset.lang, imgs: document.querySelectorAll(".rpmarkdown img:not(.diagram)").length }));
+  check(`AC-268 ${w}: the body as the Files viewer shows it: code highlighted, a Mermaid diagram drawn, the viewer's prose`, doc && look2.cls.includes("md-body") && look2.lang === "rust", JSON.stringify(look2));
+  check(`AC-268 ${w}: pictures a report names outside its own files are never read`, look2.imgs === 0 && st.reads.length === 0, JSON.stringify({ ...look2, reads: st.reads }));
+  check(`AC-265 ${w}: the pane names its type and its sender`, (await page.textContent(".rptitle .rkind")) === "attention" && (await page.textContent(".rpmeta")).startsWith("From Routine Nightly deps · Opus"),
+    await page.textContent(".rpmeta"));
   // a report's ID in a comment opens it (AC-273)
   await page.click('.rpnotes .linklike:has-text("R_API-6")');
   check(`AC-273 ${w}: a report's ID in a comment is a link that opens it`, await until(async () => (await look(page)).paneTitle === "Report R_API-6", 3000), (await look(page)).paneTitle);
+  const html = await until(() => page.evaluate(() => document.querySelector(".rpmarkdown iframe.html-doc")?.contentDocument?.querySelector("h1")?.textContent === "Weekly"), 4000);
+  const frame = await page.evaluate(() => { const f = document.querySelector(".rpmarkdown iframe.html-doc"), d = f?.contentDocument;
+    return { sandbox: f?.getAttribute("sandbox"), scripts: d?.querySelectorAll("script").length, handlers: d?.querySelectorAll("[onerror]").length, pwned: window.pwned ?? null }; });
+  check(`AC-268 ${w}: an HTML body shows in a frame without scripts, its handlers and other files dropped`, html && frame.sandbox === "allow-same-origin" && frame.scripts === 0 && frame.handlers === 0
+    && frame.pwned === null && st.reads.length === 0, JSON.stringify({ ...frame, reads: st.reads }));
   if (narrow) await page.click("#navbtn");          // the list's sheet over the pane, as a phone shows it
   await page.click('.inboxrow[data-id="R_API-7"] .report');
-  await page.waitForFunction(() => document.querySelector(".rptitle")?.textContent === "Report R_API-7");
+  await page.waitForFunction(() => document.querySelector(".rptitle > span:not(.rpcritical)")?.textContent === "Report R_API-7");
   check(`AC-269 ${w}: not read before 2 seconds`, !st.asked.includes("POST /api/reports/R_API-7/read"), st.asked.join());
   await shot(page, `inbox-pane-${w}`);
   check(`AC-269 ${w}: read once open 2 seconds`, await until(() => st.asked.includes("POST /api/reports/R_API-7/read"), 4000), st.asked.join());
@@ -154,12 +178,12 @@ async function fromSessions(browser, w, device) {
   const st = reports(page);
   st.marks(f.say);
   if (w === "390×844") await page.click("#navbtn");
-  await page.waitForSelector(".inboxrow");
   // the session that made unread reports wears an envelope with their count (AC-273)
-  const envelope = await page.textContent('#sessions .item[data-id="tmux:local:terminum:%1"] .reportmark').catch(() => null);
+  const envelope = await page.waitForSelector('#sessions .item[data-id="tmux:local:terminum:%1"] .reportmark', { timeout: 5000 }).then((e) => e.textContent(), () => null);
   check(`AC-273 ${w}: a session row shows its unread reports' count`, envelope === "2", String(envelope));
-  await Promise.all([page.waitForURL(/\/kanban\/\?report=R_API-8/, { timeout: 5000 }).catch(() => {}), page.click('.inboxrow[data-id="R_API-8"] .report')]);
-  check(`AC-268 ${w}: on the session page a report opens the board with its pane`, page.url().endsWith("/kanban/?report=R_API-8"), page.url());
+  check(`AC-267 ${w}: the session page has no Inbox: it is the board's alone`, !await page.$("#inbox") && !await page.$(".inboxrow"));
+  await Promise.all([page.waitForURL(/\/kanban\/\?report=R_API-7/, { timeout: 5000 }).catch(() => {}), page.click('#sessions .item[data-id="tmux:local:terminum:%1"] .reportmark')]);
+  check(`AC-273 ${w}: on the session page a row's envelope opens the board with its newest report`, page.url().endsWith("/kanban/?report=R_API-7"), page.url());
   await f.close();
 }
 

@@ -7,7 +7,7 @@
 use rusqlite::Transaction;
 
 use super::record::{self, role, New};
-use super::sources::{summary_of, titled};
+use super::sources::{of_result, titled};
 use crate::tasks::ops::{self, rows, sql};
 use crate::tasks::store::DISPATCHER;
 
@@ -26,8 +26,8 @@ pub fn waiting_reports(tx: &Transaction) -> Result<Vec<String>, String> {
         let result: String = tx.query_row("SELECT coalesce((SELECT text FROM events WHERE task = ?1 AND kind = 'comment' AND author = ?2 AND at <= ?3
                 AND text IS NOT NULL ORDER BY at DESC, rowid DESC LIMIT 1), '')", (&key, &author, at), |r| r.get(0)).map_err(sql)?;
         let schedule = crate::tasks::schedules::of_task(tx, &key)?.map(|s| s.id);
-        let new = New { project: t.project.clone(), title: titled(&t.title), summary: summary_of(&result), body: result, author,
-            role: role::TERMINUM, session: t.session.clone(), task: Some(key.clone()), schedule, ..New::default() };
+        let new = New { project: t.project.clone(), title: titled(&t.title), author, role: role::TERMINUM, session: t.session.clone(), task: Some(key.clone()),
+            schedule, ..of_result(&result) };
         let (_, id, _) = record::create(tx, new, at)?;     // made at the result's time, its task linking it
         let words = format!("its report went to the Inbox as {id}");
         ops::move_marked(tx, DISPATCHER, &t.id, "DONE", Some(("inbox", &words)), ops::now())?;

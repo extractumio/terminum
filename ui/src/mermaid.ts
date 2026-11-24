@@ -45,11 +45,12 @@ export async function diagramImage(source: string, dark: boolean): Promise<HTMLI
   return img;
 }
 
-/** Whether the panel's background is dark (its theme's, or the system's without one). */
-function darkPanel(): boolean {
+/** Whether the background at `at` is dark (the panel's theme's, or the system's without one; a
+ *  report's pane gives the page's theme as the panel's tokens). */
+function darkPanel(at: Element = document.body): boolean {
   const probe = document.createElement("span");
   probe.style.color = "var(--bg)";
-  document.body.append(probe);
+  at.append(probe);
   const [r, g, b] = (getComputedStyle(probe).color.match(/[\d.]+/g) ?? []).map(Number);
   probe.remove();
   return 0.2126 * r + 0.7152 * g + 0.0722 * b < 128;
@@ -74,7 +75,7 @@ export async function redrawDiagrams(): Promise<void> {
  *  show the fence and "Diagram" back; a fence Mermaid cannot draw keeps its source, Mermaid's
  *  message above it. Dark as the panel's theme (drawn again when it changes). */
 export async function drawFence(pre: HTMLElement, source: string): Promise<void> {
-  const dark = darkPanel(), run = redraws;
+  const dark = darkPanel(pre.parentElement ?? document.body), run = redraws;
   let img: HTMLImageElement;
   try {
     img = await diagramImage(source, dark);
