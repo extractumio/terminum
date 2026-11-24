@@ -8,7 +8,9 @@ so a run of another session is safe:
 - the one test helper that outlives its test, TEST_HELPER, with no parent (ppid 1): ended by its
   pid with SIGTERM, its command read again just before; one that stays is named, never SIGKILLed;
 - a dead `tm-*` socket of tmux (a connection refused): removed;
-- a folder of this user with a prefix tests use, nothing in it recent or held open: removed.
+- a folder of this user with a prefix tests use, nothing in it recent or held open: removed;
+- files a Mac's Linux VM still holds under the checkout from old bind mounts, over vm_files.MAX: the Docker
+  VM's caches dropped (vm_files.py), which ends nothing.
 Named only, since either can be someone's work: a live tmux server on a `tm-*` socket, and any
 other test binary or terminumd of a build folder with no parent."""
 import os
@@ -21,6 +23,9 @@ import subprocess
 import sys
 import tempfile
 import time
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import vm_files  # noqa: E402
 
 OLD_S = 6 * 3600
 TEST_HELPER = re.compile(r"/\S*/terminumd/target/(?:debug|release)/deps/terminumd-[0-9a-f]{16} --exact cli::tests::fake_terminumd( |$)")
@@ -175,6 +180,8 @@ def main(argv):
         print(f"removed {len(dead)} dead tmux sockets, {len(old) - kept} test folders ({kept} could not go)")
     else:
         print(f"{len(dead)} dead tmux sockets, {len(old)} test folders (--end removes them)")
+    over = vm_files.report(ending)   # a plain look says, as of the folders, and exits 0
+    stuck += over if ending else 0
     return 1 if stuck else 0
 
 
