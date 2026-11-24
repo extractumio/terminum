@@ -132,7 +132,7 @@ def main():
         write("""CREATE TRIGGER stall_supervisor BEFORE UPDATE OF last_ok ON project_supervisor
                  BEGIN SELECT RAISE(ABORT, 'test collector stopped'); END""")
         last_ok = call(api_path)["last_ok"]
-        fault = wait_for(lambda: call(api_path), lambda s: s["collector_dead"], 45, every=0.25)
+        fault = wait_for(lambda: call(api_path), lambda s: s["collector_dead"], 60, every=0.25)
         check("AC-219 the independent watchdog records and exposes a stopped collector",
               fault["last_ok"] == last_ok and signals(api_id).get("self.collector_dead") == 1 and not signals(web_id))
         opened = wait_for(incident, lambda entry: entry is not None, 15)

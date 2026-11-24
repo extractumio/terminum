@@ -18,7 +18,7 @@ use super::{DAY, Evaluation, EvaluationInputs, Evidence, Reading, Rule, SCHEMA, 
     attach, evaluate_snapshot, flow, incidents, rounds, samples, sensors::{Pending, Sensors}, settings, settings_api, signals};
 
 const BEAT: i64 = 10;
-const DEAD_AFTER: i64 = 2 * BEAT;
+const DEAD_AFTER: i64 = 3 * BEAT;
 const AGE_EVERY: i64 = 30;
 
 #[derive(Default)]
@@ -376,13 +376,14 @@ fn commit(store: &Store, project: &Project, batch: Batch, pending: &Pending<'_>,
 pub(crate) async fn watch(app: Shared) {
     let mut clock = interval(Duration::from_secs(BEAT as u64));
     clock.set_missed_tick_behavior(MissedTickBehavior::Skip);
+    let watchdog = std::sync::Arc::new(Mutex::new(Watchdog::default()));
     loop {
         clock.tick().await;
         if app.started.elapsed().as_secs() < DEAD_AFTER as u64 {
             continue;
         }
-        let a = app.clone();
-        match off(move || check_heartbeat(&a.tasks, now())).await {
+        let (a, w) = (app.clone(), watchdog.clone());
+        match off(move || w.lock().check(&a.tasks, now())).await {
             Ok(true) => app.supervisor.incident_changed(),
             Ok(false) => (),
             Err(error) => tracing::warn!(event = "supervisor.watchdog", %error),
@@ -390,12 +391,33 @@ pub(crate) async fn watch(app: Shared) {
     }
 }
 
-fn check_heartbeat(store: &Store, at: i64) -> Result<bool, String> {
+/// The watchdog shares the collector's process: when its own tick came late by about the collector's
+/// silence, the whole process stalled (load, the store's turn) and the collector is not dead (AC-219).
+#[derive(Default)]
+struct Watchdog {
+    previous: Option<i64>,
+}
+
+impl Watchdog {
+    fn check(&mut self, store: &Store, at: i64) -> Result<bool, String> {
+        let late = self.previous.map_or(0, |previous| (at - previous - BEAT).max(0));
+        self.previous = Some(at);
+        check_heartbeat(store, at, late)
+    }
+}
+
+fn check_heartbeat(store: &Store, at: i64, late: i64) -> Result<bool, String> {
     let stale = store.snapshot(SCHEMA, |tx| {
         Ok(enabled(tx)?.into_iter().filter(|p| at - p.last_ok.unwrap_or(p.enabled_at) >= DEAD_AFTER).collect::<Vec<_>>())
     })?;
     let mut changed = false;
     for project in stale {
+        let silent = at - project.last_ok.unwrap_or(project.enabled_at);
+        if !project.reported_dead && silent - late < DEAD_AFTER {
+            tracing::warn!(event = "runtime.lag", ms = late * 1000, source = "supervisor.watchdog", project = %project.id,
+                silent_s = silent, "the watchdog came late with the collector: a stalled process, no incident");
+            continue;
+        }
         if !project.reported_dead {
             match report_dead(store, &project, at) {
                 Ok(written) => changed |= written,
