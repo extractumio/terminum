@@ -14,7 +14,7 @@ from unittest import mock
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import cargo_profile  # noqa: E402
 import target_bound  # noqa: E402
-from testrun import short_tmp  # noqa: E402
+from testrun import backup_exclusion as excluded, short_tmp  # noqa: E402
 
 UNIT = "terminumd-0123456789abcdef"
 KIB = 1024
@@ -32,6 +32,7 @@ class Bound(unittest.TestCase):
         self.kept = [self.write(self.deps / "libtokio-89abcdef01234567.rlib", 64),
                      self.write(self.folder("debug") / "incremental" / "terminumd-x" / "s-1" / "query-cache.bin", 64),
                      self.write(self.folder("debug") / ".fingerprint" / UNIT / "bin-terminumd", 4)]
+        (self.target / "CACHEDIR.TAG").write_text(cargo_profile.CACHE_TAG)   # as cargo leaves it
         self.said, self.cleaned = [], []
 
     def folder(self, profile):
@@ -134,6 +135,32 @@ class Bound(unittest.TestCase):
         with mock.patch.object(target_bound, "bound", side_effect=PermissionError("denied")):
             target_bound.keep(self.tree, self.said.append)
         self.assertEqual(self.said, ["target: its bound was not kept: denied"])
+
+    def test_a_target_cargo_did_not_make_is_marked_as_cargo_marks_its_own(self):  # AC-206
+        (self.target / "CACHEDIR.TAG").unlink()
+        self.bound(1 << 40)
+        self.assertEqual((self.target / "CACHEDIR.TAG").read_text(), cargo_profile.CACHE_TAG)
+        if sys.platform == "darwin":
+            self.assertEqual(excluded(self.target), cargo_profile.BACKUP_EXCLUDED, "out of Time Machine's backups")
+        with mock.patch.object(cargo_profile, "mark_cache", return_value="denied") as mark:
+            self.bound(1 << 40)
+            mark.assert_not_called()   # tagged: cargo's, or marked already
+            (self.target / "CACHEDIR.TAG").unlink()
+            self.bound(1 << 40)
+        self.assertEqual(self.said[-2:], ["target: not excluded from Time Machine: denied", self.said[-1]])
+        self.assertIn("nothing removed", self.said[-1], "a mark it cannot write stops nothing")
+
+    @unittest.skipUnless(sys.platform == "darwin", "Time Machine")
+    def test_an_exclusion_it_cannot_write_leaves_no_tag_so_the_next_bound_tries_again(self):  # AC-206
+        (self.target / "CACHEDIR.TAG").unlink()
+        refused = subprocess.CompletedProcess([], 1, "", "xattr: [Errno 1] Operation not permitted\n")
+        with mock.patch.object(cargo_profile.subprocess, "run", return_value=refused):
+            self.assertEqual(cargo_profile.mark_cache(self.target), "xattr: [Errno 1] Operation not permitted")
+        self.assertFalse((self.target / "CACHEDIR.TAG").exists())
+
+    def test_make_build_keeps_the_bound_before_cargo_builds(self):  # AC-206
+        make = (Path(__file__).resolve().parents[2] / "Makefile").read_text()
+        self.assertLess(make.index("\tpython3 scripts/target_bound.py\n"), make.index("\tcd terminumd && cargo build --locked --release"))
 
     def test_disk_use_counts_a_linked_file_once(self):  # AC-206
         before = self.size()

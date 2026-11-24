@@ -36,6 +36,13 @@ def short_tmp():
     return folder if len(folder) <= 40 else "/tmp"
 
 
+def backup_exclusion(folder):
+    """Time Machine's exclusion attribute of `folder` (macOS), in lowercase hex; "" when it has none."""
+    read = subprocess.run(["xattr", "-px", "com.apple.metadata:com_apple_backup_excludeItem", str(folder)],
+                          capture_output=True, text=True)
+    return "".join(read.stdout.split()).lower()
+
+
 def own_server_pids(ps_text, names):
     """The pids in `pid command` lines of tmux servers on these sockets: named with this run's pid."""
     pids = []

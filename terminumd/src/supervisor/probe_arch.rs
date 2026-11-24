@@ -151,6 +151,13 @@ fn dependencies(raw: &str) -> Result<Vec<(i64, u64)>, Failure> {
 const SOURCE_FILES: &[&str] = &["*.rs", "*.ts", "*.tsx", "*.js", "*.jsx", "*.mjs", "*.css", "*.html",
     "*.py", "*.sh", "*.go", "*.java", "*.kt", "*.swift", "*.c", "*.h", "*.cpp", "*.hpp", "*.rb", "*.php", "*.lua"];
 
+/// AC-212: a path the line cap, `arch.hotspot` and `arch.bug_cluster` cover: code, not a spec or a guide that every fix
+/// updates by rule.
+pub(super) fn source_file(path: &str) -> bool {
+    let name = path.rsplit('/').next().unwrap_or(path);
+    SOURCE_FILES.iter().any(|glob| super::surfaces::component_matches(glob, name))
+}
+
 async fn file_lines(dir: &Path, head: &str, cap: Option<u32>) -> Result<Option<String>, Failure> {
     if cap.is_none() { return Ok(None); }
     let empty = git(dir, &["hash-object", "-t", "tree", "--stdin"]).await?;

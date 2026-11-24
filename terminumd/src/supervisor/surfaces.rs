@@ -108,7 +108,7 @@ fn path_matches(pattern: &str, path: &str) -> bool {
     matched[parts.len()]
 }
 
-fn component_matches(pattern: &str, part: &str) -> bool {
+pub(super) fn component_matches(pattern: &str, part: &str) -> bool {
     let mut pattern = pattern.chars().peekable();
     let mut part = part.chars().peekable();
     let mut retry = None;

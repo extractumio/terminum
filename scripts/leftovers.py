@@ -11,7 +11,9 @@ so a run of another session is safe:
   with it, so nothing reaches it but its pid: ended by its pid with SIGTERM, as that helper (every tmux
   server has parent 1); one whose socket went from elsewhere (a /tmp cleaner) is only named;
 - a dead `tm-*` socket of tmux (a connection refused): removed;
-- a folder of this user with a prefix tests use, nothing in it recent or held open: removed.
+- a folder of this user with a prefix tests use, nothing in it recent or held open: removed;
+- the files Docker Desktop's VM still holds from old bind mounts, over vm_files.MAX or uncountable: its caches
+  dropped (vm_files.py), which ends nothing.
 Named only, since either can be someone's work: a live tmux server on a `tm-*` socket, and any
 other test binary or terminumd of a build folder with no parent."""
 import os
@@ -25,8 +27,9 @@ import sys
 import tempfile
 import time
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 from process_cwd import InspectionError, socket_paths  # noqa: E402
+import vm_files  # noqa: E402
 
 OLD_S = 6 * 3600
 TEST_HELPER = re.compile(r"/\S*/terminumd/target/(?:debug|release)/deps/terminumd-[0-9a-f]{16} --exact cli::tests::fake_terminumd( |$)")
@@ -189,14 +192,14 @@ def main(argv):
     socket_folder = Path(os.environ.get("TMUX_TMPDIR", "/tmp")) / f"tmux-{os.getuid()}"
     roots = sorted({Path(tempfile.gettempdir()).resolve(), Path("/tmp").resolve()})
     stuck = 0
-    listed = processes()
+    ps_text = processes()
 
     def bound():
         try:
             return socket_paths()
         except InspectionError as error:
             print(f"{error}: no tmux server is ended")
-    for pid, command, ours in strays(listed) + lost_servers(listed, bound):
+    for pid, command, ours in strays(ps_text) + lost_servers(ps_text, bound):
         if ours and ending:
             gone = end(pid, command)
             stuck += not gone
@@ -206,6 +209,10 @@ def main(argv):
     dead, live = sockets(socket_folder, now)
     for path in live:
         print(f"named only, a live tmux server: {path.name} (tmux -L {path.name} kill-server if it is yours)")
+    # first, so a test folder Docker's VM held from a bind mount is no longer open when the folders are judged
+    vm_over = vm_files.report(ending, ps_text=ps_text)
+    if ending:   # a plain look says it, as of the folders, and exits 0
+        stuck += vm_over
     held = open_paths()
     if held is None:
         print("lsof says nothing of what is open: every test folder stays")
