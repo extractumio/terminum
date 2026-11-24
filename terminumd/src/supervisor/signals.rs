@@ -193,41 +193,37 @@ impl Prepared<'_> {
             }
             let complete = checked.unavailable.is_empty() && checked.measured.is_none();
             let fired: std::collections::HashSet<_> = findings.iter().map(|f| f.key.as_str()).collect();
-            let known = rows(tx, "SELECT y.fingerprint, y.threshold, s.subject_kind, s.subject_id, s.metric, y.clear_at, y.clear_seen, y.weeks
+            let known = rows(tx, "SELECT y.fingerprint, y.threshold, s.subject_kind, s.subject_id, s.metric, y.clear_at, y.clear_seen
                 FROM supervisor_problem_signals y JOIN supervisor_signals s USING (fingerprint)
                 WHERE s.project = ?1 AND s.detector = ?2", (&evaluation.project, rule),
                 |r| Ok((r.get::<_, String>(0)?, r.get::<_, f64>(1)?, (r.get::<_, String>(2)?, r.get::<_, String>(3)?,
-                    r.get::<_, String>(4)?), r.get::<_, Option<i64>>(5)?, r.get::<_, Option<i64>>(6)?, r.get::<_, i64>(7)?)))?;
-            let mut windowed = std::collections::HashSet::new();
-            for (key, threshold, subject, previous, sampled, weeks) in known {
+                    r.get::<_, String>(4)?), r.get::<_, Option<i64>>(5)?, r.get::<_, Option<i64>>(6)?)))?;
+            for (key, threshold, subject, previous, sampled) in known {
                 let clear = checked.mode == Mode::Live && !fired.contains(key.as_str()) &&
                     match checked.observations.get(&subject) {
                         Some(reading) => reading.is_some_and(|(value, compare)| !compare.fires(value, threshold)),
                         None => complete || checked.complete_metrics.iter().any(|m| *m == subject.2),
                     };
-                let kept = previous.zip(sampled).filter(|(_, seen)| evaluation.at - seen <= super::register::FRESH_EVIDENCE);
-                if !clear && kept.is_some_and(|(from, seen)| seen - from >= weeks * super::WEEK) {
-                    windowed.insert(key.clone());
-                }
-                let since = clear.then(|| kept.map_or(evaluation.at, |(from, _)| from));
+                let since = clear.then(|| previous.filter(|_| sampled.is_some_and(|t| evaluation.at - t <= super::register::FRESH_EVIDENCE))
+                    .unwrap_or(evaluation.at));
                 tx.execute("UPDATE supervisor_problem_signals SET clear_at = ?2, clear_seen = ?3
                     WHERE fingerprint = ?1 AND (clear_at, clear_seen) IS NOT (?2, ?3)",
                     (&key, since, clear.then_some(evaluation.at))).map_err(sql)?;
             }
             let mut ruling = tx.prepare_cached("SELECT EXISTS (SELECT 1 FROM supervisor_incident_rulings
                 WHERE fingerprint = ?1 AND evidence = ?2)").map_err(sql)?;
+            // AC-236: a level reading's rows are its latest sample, never new evidence, so an owner's Accept takes them
+            // as they come, until `register::advance` lets its window's clear stretch expire the ruling's rows.
+            let mut follow = tx.prepare_cached("UPDATE supervisor_problem_signals AS y SET ruling_evidence = ?2
+                WHERE fingerprint = ?1 AND ruling_evidence IS NOT NULL AND ruling_evidence IS NOT ?2
+                  AND EXISTS (SELECT 1 FROM supervisor_problems p WHERE p.id = y.problem AND p.state = 'accepted')").map_err(sql)?;
             for row in findings {
                 let ruled: bool = ruling.query_row((&row.key, &row.evidence), |r| r.get(0)).map_err(sql)?;
                 if ruled { continue; }
                 let counted = matches!(row.found.source, Source::Count(_));
                 let fresh = counted && fresh_rows(tx, &row.key, &row.evidence, &row.found.evidence)?;
                 if !counted {
-                    // AC-236: a level reading's rows are its latest sample, never new evidence; an Accept takes them as
-                    // they come until the reading has stayed clear for its problem's window, then lets its return reopen.
-                    tx.prepare_cached("UPDATE supervisor_problem_signals SET ruling_evidence = CASE WHEN ?3 THEN NULL ELSE ?2 END
-                        WHERE fingerprint = ?1 AND ruling_evidence IS NOT NULL AND ruling_evidence IS NOT ?2
-                          AND problem IN (SELECT id FROM supervisor_problems WHERE state = 'accepted')").map_err(sql)?
-                        .execute((&row.key, &row.evidence, windowed.contains(&row.key))).map_err(sql)?;
+                    follow.execute((&row.key, &row.evidence)).map_err(sql)?;
                 }
                 let accepted: bool = upsert.query_row(params![row.key, evaluation.project, rule, row.found.subject_kind,
                     row.found.subject_id, row.found.metric, row.evidence, row.measure, row.scores, evaluation.at,

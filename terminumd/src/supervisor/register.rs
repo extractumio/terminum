@@ -14,6 +14,9 @@ const MAX_SIGNALS: usize = 16;
 const MAX_TEXT: usize = 1_000;
 const YARDSTICK_WEEKS: u8 = 4;
 pub(super) const FRESH_EVIDENCE: i64 = 30 * 60;
+/// A link `y` has stayed clear for its observation window, seen clear within `FRESH_EVIDENCE` of ?2 (?3 `WEEK`,
+/// ?4 `FRESH_EVIDENCE`); NULL when it is not clear.
+const CLEARED: &str = "y.clear_at + y.weeks * ?3 <= ?2 AND y.clear_seen > ?2 - ?4";
 const STATES: [&str; 3] = ["suspected", "confirmed", "fix_in_work"];
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -371,13 +374,13 @@ fn retext_old_seeds(tx: &Transaction, project: &str, at: i64) -> Result<(), Stri
 /// AC-236: an accepted problem reopens on a repeat its signal's count took since the ruling (AC-211: a counted
 /// reading's new event, or a return after resolving) that brings a row the ruling did not see. A repeat of the
 /// evidence the ruling saw stays closed and joins the ruling's count; a retaken sample or a window's new input is no
-/// repeat, so its new rows reopen nothing. A level reading's return finds its rows already in the ruling, unless it had
-/// stayed clear for its window first (`signals.rs`).
+/// repeat, so its new rows reopen nothing. A level reading's ruling follows its rows (`signals.rs`) until the reading
+/// has stayed clear for its window: the ruling's rows then expire, so its next return reopens the problem.
 pub(super) fn advance(tx: &Transaction, project: &str, at: i64) -> Result<(), String> {
     retext_old_seeds(tx, project, at)?;
     seed(tx, project, at)?;
     release_archived(tx, project, at)?;
-    let changes = rows(tx, "SELECT p.id, p.state,
+    let changes = rows(tx, &format!("SELECT p.id, p.state,
         (SELECT s.fingerprint FROM supervisor_problem_signals y JOIN supervisor_signals s USING (fingerprint)
         WHERE y.problem = p.id AND s.state IN ('new','raised','recurred')
           AND (p.state = 'resolved' OR (p.state = 'accepted' AND s.count > coalesce(y.ruling_count, 0)
@@ -385,11 +388,10 @@ pub(super) fn advance(tx: &Transaction, project: &str, at: i64) -> Result<(), St
               SELECT 1 FROM json_each(y.ruling_evidence) old WHERE old.value = e.value))))
         ORDER BY s.fingerprint LIMIT 1),
         EXISTS (SELECT 1 FROM supervisor_problem_signals y WHERE y.problem = p.id)
-        AND NOT EXISTS (SELECT 1 FROM supervisor_problem_signals y WHERE y.problem = p.id
-            AND (y.clear_at IS NULL OR y.clear_at + y.weeks * ?3 > ?2 OR y.clear_seen <= ?2 - ?4)),
+        AND NOT EXISTS (SELECT 1 FROM supervisor_problem_signals y WHERE y.problem = p.id AND ({CLEARED}) IS NOT 1),
         EXISTS (SELECT 1 FROM supervisor_problem_signals y WHERE y.problem = p.id AND y.clear_at IS NOT NULL)
         AND NOT EXISTS (SELECT 1 FROM supervisor_problem_signals y WHERE y.problem = p.id AND y.clear_at IS NULL)
-        FROM supervisor_problems p WHERE p.project = ?1", (project, at, WEEK, FRESH_EVIDENCE), |r| Ok((
+        FROM supervisor_problems p WHERE p.project = ?1"), (project, at, WEEK, FRESH_EVIDENCE), |r| Ok((
             r.get::<_, i64>(0)?, r.get::<_, String>(1)?, r.get::<_, Option<String>>(2)?, r.get::<_, bool>(3)?, r.get::<_, bool>(4)?)))?;
     for (id, state, new, cleared, watching) in changes {
         let next = if let Some(ref key) = new {
@@ -421,6 +423,9 @@ pub(super) fn advance(tx: &Transaction, project: &str, at: i64) -> Result<(), St
     tx.execute("UPDATE supervisor_problem_signals AS y SET ruling_count = s.count FROM supervisor_signals s, supervisor_problems p
         WHERE s.fingerprint = y.fingerprint AND p.id = y.problem AND p.project = ?1 AND p.state = 'accepted'
           AND s.state IN ('new','raised','recurred') AND s.count > coalesce(y.ruling_count, 0)", [project]).map_err(sql)?;
+    tx.execute(&format!("UPDATE supervisor_problem_signals AS y SET ruling_evidence = NULL FROM supervisor_problems p
+        WHERE p.id = y.problem AND p.project = ?1 AND p.state = 'accepted' AND y.ruling_evidence IS NOT NULL AND {CLEARED}"),
+        (project, at, WEEK, FRESH_EVIDENCE)).map_err(sql)?;
     Ok(())
 }
 
