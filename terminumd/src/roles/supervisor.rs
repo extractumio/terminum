@@ -85,10 +85,12 @@ impl Role {
             Self::Worker | Self::Token { manager: false } => !super::MANAGER_TOOLS.contains(&tool) && !crate::reports::tools::MANAGERS.contains(&tool),
             Self::Supervisor(None) | Self::Reflection(_) | Self::Audit(_) | Self::DesignReview(_) => false,
             Self::Supervisor(Some(level)) => {
-                // every level reports to the owner, and changes or deletes its project's reports (terminum-reports.md AC-266)
-                crate::reports::tools::NAMES.contains(&tool) || OBSERVER_TOOLS.contains(&tool)
-                    || (level != Level::Observer && ADVISOR_TOOLS.contains(&tool))
-                    || (level == Level::Operator && OPERATOR_TOOLS.contains(&tool))
+                // reports by level (terminum-reports.md AC-280): an Observer reads them, an Advisor also writes them, an
+                // Operator also changes and deletes them
+                use crate::reports::tools::{MANAGERS, READS, WRITES};
+                OBSERVER_TOOLS.contains(&tool) || READS.contains(&tool)
+                    || (level != Level::Observer && (ADVISOR_TOOLS.contains(&tool) || WRITES.contains(&tool)))
+                    || (level == Level::Operator && (OPERATOR_TOOLS.contains(&tool) || MANAGERS.contains(&tool)))
             }
         }
     }

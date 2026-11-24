@@ -93,6 +93,11 @@ pub(crate) fn is_run(tx: &Transaction, run: &str) -> Result<bool, String> {
         |r| r.get(0)).map_err(sql)
 }
 
+/// Whether `task` (its key) is a quarterly audit's, its report kept (AC-259).
+pub(crate) fn is_report_task(tx: &Transaction, task: &str) -> Result<bool, String> {
+    tx.query_row("SELECT EXISTS (SELECT 1 FROM supervisor_audit_reports WHERE task = ?1)", [task], |r| r.get(0)).map_err(sql)
+}
+
 pub(crate) fn check_start(tx: &Transaction, run: &str) -> Result<(), String> {
     let selected = tx.query_row("SELECT v.project, r.agent_id
         FROM supervisor_review_runs v JOIN runs r ON r.id = v.run
