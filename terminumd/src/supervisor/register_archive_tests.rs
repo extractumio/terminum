@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 //! AC-238: a fix task archived before it ran frees its problem for one new task, and a second is the owner's ruling;
-//! a measure-alone problem that still claims a cause gets the words code writes from its measure. AC-211: counts
-//! grown on every evaluation pass keep one occurrence (`schema65.sql`).
+//! a measure-alone problem that still claims a cause gets the words code writes from its measure.
 
 use rusqlite::Transaction;
 use serde_json::json;
@@ -20,14 +19,13 @@ fn funded(name: &str) -> Fixture {
     f
 }
 
-fn backlog(f: &Fixture, key: &str) {
+pub(super) fn backlog(f: &Fixture, key: &str) {
     seeded(f, key, ("flow.backlog_growth", "project", PROJECT, "growing_weeks"),
         json!({"value":4,"threshold":3,"baseline":3,"window_start":NOW-4*WEEK,"window_end":NOW}), json!([]));
 }
 
 fn problem_of(tx: &Transaction, key: &str) -> Result<register::Problem, String> {
-    let id = tx.query_row("SELECT problem FROM supervisor_problem_signals WHERE fingerprint = ?1", [key], |r| r.get(0)).map_err(sql)?;
-    register::get(tx, PROJECT, id, NOW + WEEK)
+    register::case_context(tx, PROJECT, key, NOW + WEEK)?.ok_or_else(|| format!("no problem holds {key}"))
 }
 
 fn history(tx: &Transaction, id: i64) -> Result<Vec<(String, String)>, String> {
@@ -38,13 +36,12 @@ fn history(tx: &Transaction, id: i64) -> Result<Vec<(String, String)>, String> {
 fn ac238_a_fix_task_archived_unrun_frees_its_problem_for_one_new_task() {
     let f = funded("archived-fix");
     for key in ["archived", "done-by-hand", "ran"] { backlog(&f, key); }
-    let first = f.store.with(|tx| {
+    let [archived, by_hand, ran] = f.store.with(|tx| {
         let made = fix_tasks::advance(tx, PROJECT, NOW)?;
         assert_eq!(made.len(), 3, "one task per problem");
-        let task = |key| problem_of(tx, key).map(|p| p.tasks[0].clone());
+        let task = |key| ops::get(tx, &problem_of(tx, key)?.tasks[0]);
         Ok([task("archived")?, task("done-by-hand")?, task("ran")?])
     }).unwrap();
-    let [archived, by_hand, ran] = first.map(|slug| f.store.with(|tx| ops::get(tx, &slug)).unwrap());
     f.transition(&by_hand.key, NOW + 1, "TODO", "DONE");
     f.run(&ran.key, "fix-run", "agent", NOW + 1);
     f.store.with(|tx| {
@@ -76,18 +73,17 @@ fn ac238_a_measure_alone_problem_that_claims_a_cause_is_rewritten() {
     let f = funded("old-seed");
     backlog(&f, "old");
     backlog(&f, "round");
-    let old_words = |key: &str| f.store.with(|tx| {
+    let old_words = |key: &str, automatic: bool| f.store.with(|tx| {
         let id = problem_of(tx, key)?.id;
-        tx.execute("UPDATE supervisor_problems SET title = 'growing weeks: project',
+        tx.execute("UPDATE supervisor_problems SET title = 'growing weeks: project', automatic = ?2,
             hypothesis = 'The condition measured by flow.backlog_growth is contributing to this problem.',
             disproof = 'The detector remains clear during the observation window without the proposed change.',
             options = '[{\"layer\":\"check\",\"action\":\"Confirm the cause in the retained evidence and fix the measured condition.\"}]'
-            WHERE id = ?1", [id]).map_err(sql)?;
+            WHERE id = ?1", (id, automatic)).map_err(sql)?;
         Ok(id)
     }).unwrap();
     f.store.with(|tx| register::advance(tx, PROJECT, NOW)).unwrap();
-    let (old, round) = (old_words("old"), old_words("round"));
-    f.write("UPDATE supervisor_problems SET automatic = 0 WHERE id = ?1", [round]);
+    let (old, round) = (old_words("old", true), old_words("round", false));
     f.store.with(|tx| {
         register::advance(tx, PROJECT, NOW + 1)?;
         let p = register::get(tx, PROJECT, old, NOW + 1)?;
@@ -100,25 +96,6 @@ fn ac238_a_measure_alone_problem_that_claims_a_cause_is_rewritten() {
         assert_eq!(kept.title, "growing weeks: project", "a problem that waits for a round's finding keeps its words");
         register::advance(tx, PROJECT, NOW + 2)?;
         assert_eq!(history(tx, old)?.iter().filter(|(_, d)| d.starts_with("Its text is rewritten")).count(), 1, "once");
-        Ok(())
-    }).unwrap();
-}
-
-#[test]
-fn ac211_schema65_resets_counts_that_counted_evaluation_passes() {
-    let f = Fixture::new("count-reset");
-    for (key, count, state) in [("passes", 146, "new"), ("back", 404, "recurred"), ("once", 1, "raised"), ("ruled", 23, "new")] {
-        backlog(&f, key);
-        f.write("UPDATE supervisor_signals SET count = ?2, state = ?3 WHERE fingerprint = ?1", (key, count, state));
-    }
-    f.store.with(|tx| {
-        let id = register::open(tx, PROJECT, super::register_tests::draft("Ruled", &["ruled"]), NOW)?;
-        register::rule(tx, PROJECT, id, "The owner accepts this as is.", NOW)?;
-        tx.execute_batch(include_str!("../tasks/schema65.sql")).map_err(sql)?;
-        let counts = rows(tx, "SELECT fingerprint, count FROM supervisor_signals ORDER BY fingerprint", [], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))?;
-        assert_eq!(counts, [("back".into(), 2), ("once".into(), 1), ("passes".into(), 1), ("ruled".into(), 1)]);
-        let ruling: i64 = tx.query_row("SELECT ruling_count FROM supervisor_problem_signals WHERE fingerprint = 'ruled'", [], |r| r.get(0)).map_err(sql)?;
-        assert_eq!(ruling, 1, "a ruling's count is no higher than its signal's, so its next repeat reopens it");
         Ok(())
     }).unwrap();
 }

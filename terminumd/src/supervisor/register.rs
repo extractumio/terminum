@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::tasks::ops::{rows, sql};
 
-use super::{Level, Rule, Signal, WEEK, settings, signals};
+use super::{Level, Rule, Signal, WEEK, flow::archived_unrun, settings, signals};
 
 const MAX_SIGNALS: usize = 16;
 const MAX_TEXT: usize = 1_000;
@@ -265,12 +265,6 @@ pub(crate) fn ranked(tx: &Transaction, project: &str, at: i64, closed: bool) -> 
     Ok(problems)
 }
 
-/// A fix task `t` taken off the board before Dispatcher launched it and not done by hand (§9's "Archived unrun").
-fn archived_unrun() -> String {
-    format!("(t.archived_at IS NOT NULL AND t.status <> 'DONE' AND NOT EXISTS (SELECT 1 FROM run_tasks m
-        JOIN inputs i ON i.run = m.run WHERE m.task = t.id AND {}))", super::flow::LAUNCH)
-}
-
 /// AC-238: a problem in work whose every fix task was archived unrun goes back to `confirmed`, so the fix gate may make
 /// one new task; its second such task is the owner's ruling, and the problem is accepted as is.
 fn release_archived(tx: &Transaction, project: &str, at: i64) -> Result<(), String> {
@@ -330,6 +324,12 @@ pub(super) fn follow_up(tx: &Transaction, p: &Problem, task: &crate::tasks::ops:
     event(tx, p.id, at, "fix_in_work", &format!("Fix task {} is linked.", task.id))
 }
 
+/// The words code writes for a problem opened from `s`'s measure alone: title, hypothesis, disproof and fix option.
+fn measure_text(tx: &Transaction, s: &Signal) -> Result<(String, String, String, Fix), String> {
+    let (hypothesis, disproof, fix) = super::problem_text::unexplained(s, YARDSTICK_WEEKS);
+    Ok((super::problem_text::title(tx, s)?, hypothesis, disproof, fix))
+}
+
 fn seed(tx: &Transaction, project: &str, at: i64) -> Result<(), String> {
     let keys = rows(tx, "SELECT s.fingerprint FROM supervisor_signals s LEFT JOIN supervisor_attach_seeds a USING (fingerprint)
         WHERE s.project = ?1 AND s.state IN ('new','raised','recurred')
@@ -340,10 +340,9 @@ fn seed(tx: &Transaction, project: &str, at: i64) -> Result<(), String> {
         let s = signals::get(tx, project, &key)?;
         if Rule::named(&s.detector).is_err() { continue }
         let lens = s.detector.split('.').next().unwrap_or_default();
-        let (hypothesis, disproof, fix) = super::problem_text::unexplained(&s, YARDSTICK_WEEKS);
+        let (title, hypothesis, disproof, fix) = measure_text(tx, &s)?;
         open(tx, project, Draft {
-            title: super::problem_text::title(tx, &s)?,
-            lens: match lens { "product" | "owner" => lens, "drift" => "architecture", _ => "flow" }.into(),
+            title, lens: match lens { "product" | "owner" => lens, "drift" => "architecture", _ => "flow" }.into(),
             hypothesis, disproof, fix_options: vec![fix],
             confidence: s.scores.confidence, effort: 1, signals: vec![key],
         }, at)?;
@@ -351,20 +350,19 @@ fn seed(tx: &Transaction, project: &str, at: i64) -> Result<(), String> {
     Ok(())
 }
 
-/// AC-238: a problem code seeded before its text came from the measure (`problem_text`) still says only "The condition
-/// measured by … is contributing to this problem."; it gets the words a seed writes now, from its one signal. A
-/// rewritten problem never matches again, so after the first sweep this is one empty lookup.
+/// AC-238: a problem code seeded from one measure before its words came from that measure still says only "The
+/// condition measured by … is contributing to this problem."; it gets the words a seed writes. A rewritten problem
+/// never matches again, so after the first sweep this is one empty lookup.
 fn retext_old_seeds(tx: &Transaction, project: &str, at: i64) -> Result<(), String> {
-    let old: Vec<(i64, String, String, String)> = rows(tx, "SELECT p.id, p.project, p.state, y.fingerprint FROM supervisor_problems p
+    let old: Vec<(i64, String, String)> = rows(tx, "SELECT p.id, p.state, min(y.fingerprint) FROM supervisor_problems p
         JOIN supervisor_problem_signals y ON y.problem = p.id
-        WHERE p.project = ?1 AND p.automatic AND p.source_round IS NULL AND p.hypothesis LIKE 'The condition measured by % is contributing to this problem.'
-          AND (SELECT count(*) FROM supervisor_problem_signals n WHERE n.problem = p.id) = 1", [project], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?;
-    for (id, project, state, key) in old {
-        let s = signals::get(tx, &project, &key)?;
-        let (hypothesis, disproof, fix) = super::problem_text::unexplained(&s, YARDSTICK_WEEKS);
+        WHERE p.project = ?1 AND p.automatic AND p.source_round IS NULL
+          AND p.hypothesis LIKE 'The condition measured by % is contributing to this problem.'
+        GROUP BY p.id HAVING count(*) = 1", [project], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
+    for (id, state, key) in old {
+        let (title, hypothesis, disproof, fix) = measure_text(tx, &signals::get(tx, project, &key)?)?;
         tx.execute("UPDATE supervisor_problems SET title = ?2, hypothesis = ?3, disproof = ?4, options = ?5 WHERE id = ?1",
-            (id, check_words(&super::problem_text::title(tx, &s)?)?, check_words(&hypothesis)?, check_words(&disproof)?,
-                checked_options(vec![fix])?)).map_err(sql)?;
+            (id, check_words(&title)?, check_words(&hypothesis)?, check_words(&disproof)?, checked_options(vec![fix])?)).map_err(sql)?;
         event(tx, id, at, &state, "Its text is rewritten from its detector's measure.")?;
     }
     Ok(())

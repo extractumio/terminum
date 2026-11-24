@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 //! AC-236, AC-211: an owner's Accept holds until its signal's count takes a repeat with evidence the ruling did not
 //! see. Each test drives the real detector and signal write, so a retaken sample or a window's new input changes the
-//! evidence the way the live collector does.
+//! evidence the way the live collector does. Counts grown on every evaluation pass keep one occurrence (`schema65.sql`).
 
-use crate::tasks::ops::sql;
+use crate::tasks::ops::{rows, sql};
 
 use super::engine_tests::{Fixture, NOW, PROJECT};
 use super::register_tests::draft;
@@ -112,4 +112,23 @@ fn ac236_a_repeat_counted_while_its_signal_is_held_reopens_once_it_is_active() {
     assert_eq!(swept(&f, id, NOW + 1), "accepted", "a held signal reopens nothing");
     f.write("UPDATE supervisor_signals SET state = 'new' WHERE fingerprint = 'held'", []);
     assert_eq!(swept(&f, id, NOW + 2), "recurred", "the repeat counted while held was not absorbed");
+}
+
+#[test]
+fn ac211_schema65_resets_counts_that_counted_evaluation_passes() {
+    let f = Fixture::new("count-reset");
+    for (key, count, state) in [("passes", 146, "new"), ("back", 404, "recurred"), ("once", 1, "raised"), ("ruled", 23, "new")] {
+        super::register_archive_tests::backlog(&f, key);
+        f.write("UPDATE supervisor_signals SET count = ?2, state = ?3 WHERE fingerprint = ?1", (key, count, state));
+    }
+    f.store.with(|tx| {
+        let id = register::open(tx, PROJECT, draft("Ruled", &["ruled"]), NOW)?;
+        register::rule(tx, PROJECT, id, "The owner accepts this as is.", NOW)?;
+        tx.execute_batch(include_str!("../tasks/schema65.sql")).map_err(sql)?;
+        let counts = rows(tx, "SELECT fingerprint, count FROM supervisor_signals ORDER BY fingerprint", [], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))?;
+        assert_eq!(counts, [("back".into(), 2), ("once".into(), 1), ("passes".into(), 1), ("ruled".into(), 1)]);
+        let ruling: i64 = tx.query_row("SELECT ruling_count FROM supervisor_problem_signals WHERE fingerprint = 'ruled'", [], |r| r.get(0)).map_err(sql)?;
+        assert_eq!(ruling, 1, "a ruling's count is no higher than its signal's, so its next repeat reopens it");
+        Ok(())
+    }).unwrap();
 }

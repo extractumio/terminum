@@ -3,7 +3,7 @@
 
 use rusqlite::{OptionalExtension, Transaction};
 use crate::tasks::ops::sql;
-use super::flow::{LAUNCH, RETURNED};
+use super::flow::{LAUNCH, RETURNED, archived_unrun};
 use super::outcomes::{Action, Judgment, Kind, Verdict::{Right, Undecided, Wrong}};
 
 const MISSING: Judgment = (Undecided, "The store has no conclusive evidence yet.");
@@ -91,14 +91,13 @@ fn problem(tx: &Transaction, project: &str, fingerprint: &str, since: i64) -> Re
 }
 
 fn fix(tx: &Transaction, project: &str, a: &Action) -> Result<Judgment, String> {
-    let row = tx.query_row(&format!("SELECT status, archived_at IS NOT NULL,
-        EXISTS (SELECT 1 FROM run_tasks m JOIN inputs i ON i.run = m.run WHERE m.task = t.id AND {LAUNCH}),
+    let row = tx.query_row(&format!("SELECT status, {},
         (SELECT max(e.at) FROM events e WHERE e.task = t.id AND e.kind = 'move' AND json_extract(e.data, '$.to') = 'DONE')
-        FROM tasks t WHERE project = ?1 AND id = ?2"), (project, &a.target), |r|
-        Ok((r.get::<_, String>(0)?, r.get::<_, bool>(1)?, r.get::<_, bool>(2)?, r.get::<_, Option<i64>>(3)?)))
+        FROM tasks t WHERE project = ?1 AND id = ?2", archived_unrun()), (project, &a.target), |r|
+        Ok((r.get::<_, String>(0)?, r.get::<_, bool>(1)?, r.get::<_, Option<i64>>(2)?)))
         .optional().map_err(sql)?;
-    let Some((status, archived, ran, done)) = row else { return Ok(MISSING) };
-    if archived && !ran { return Ok((Wrong, "The fix was archived without running.")); }
+    let Some((status, unrun, done)) = row else { return Ok(MISSING) };
+    if unrun { return Ok((Wrong, "The fix was archived without running.")); }
     let Some(done) = done.filter(|_| status == "DONE") else { return Ok(MISSING) };
     Ok(match problem(tx, project, &a.fingerprint, done.max(a.at))?.as_deref() {
         Some("resolved") => (Right, "The fix finished and its problem stayed resolved."),

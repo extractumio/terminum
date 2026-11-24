@@ -54,6 +54,12 @@ pub(super) const FIRST_DONE: &str = "first_done AS NOT MATERIALIZED (
 
 pub(super) const LAUNCH: &str = "i.component = 'dispatcher.start' AND i.kind = 'launch' AND i.error IS NULL";
 
+/// The task `t` was taken off the board before Dispatcher launched it, and not done by hand (§9's "Archived unrun").
+pub(super) fn archived_unrun() -> String {
+    format!("(t.archived_at IS NOT NULL AND t.status <> 'DONE' AND NOT EXISTS (SELECT 1 FROM run_tasks m
+        JOIN inputs i ON i.run = m.run WHERE m.task = t.id AND {LAUNCH}))")
+}
+
 pub(super) fn events(id: String) -> Evidence { Evidence::Events(id) }
 fn task(id: &str) -> Evidence { Evidence::Tasks(id.into()) }
 
