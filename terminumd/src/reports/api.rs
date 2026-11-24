@@ -57,9 +57,17 @@ async fn act(State(app): State<Shared>, Path((id, act)): Path<(String, String)>)
             "seen" => (Stamp::LineSeen, Some(ops::now())),
             other => return Err(format!("No act {other} on a report")),
         };
-        record::stamp(tx, &record::key_of(tx, &id)?, stamp, at)
+        let key = record::key_of(tx, &id)?;
+        let changed = record::stamp(tx, &key, stamp, at)?;
+        // reading it is the owner's acknowledgement of its incident (AC-276)
+        let acknowledged = act == "read" && changed && record::acknowledge_by_reading(tx, &key, at.unwrap_or_default())?;
+        Ok((changed, acknowledged))
     }).await;
-    changed(&app, done)
+    if matches!(done, Ok((_, true))) {
+        app.supervisor.incident_changed();
+        app.supervisor.wake();
+    }
+    changed(&app, done.map(|(changed, _)| changed))
 }
 
 /// Every page hears of a change that took; the answer says whether it changed anything.

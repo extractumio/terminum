@@ -41,6 +41,8 @@ pub(super) struct Incident {
     held: String,
     holds: Vec<IncidentHold>,
     alerts: Vec<IncidentAlert>,
+    /// its reports: those it alerts for, and its own (terminum-reports.md AC-276)
+    reports: Vec<String>,
     needed: &'static str,
     no_answer: &'static str,
 }
@@ -69,7 +71,9 @@ const SUMMARY: &str = "SELECT i.id, i.project, p.name, m.level,
         WHERE a.project = i.project AND a.kind = 'alert' AND a.target = CAST(i.id AS TEXT)
           AND a.id = (SELECT max(other.id) FROM supervisor_actions other WHERE other.project = a.project
             AND other.kind = a.kind AND other.target = a.target AND other.fingerprint = a.fingerprint)
-        ORDER BY a.id DESC LIMIT 50))
+        ORDER BY a.id DESC LIMIT 50)),
+      (SELECT json_group_array(slug) FROM (SELECT slug FROM reports
+        WHERE (alerted_by = i.id OR incident = i.id) AND deleted_at IS NULL ORDER BY created_at, rowid))
     FROM supervisor_incidents i JOIN projects p ON p.id = i.project
     JOIN supervisor_incident_events m ON m.id = coalesce(
       (SELECT event FROM supervisor_incident_signals WHERE incident = i.id ORDER BY level DESC, event DESC LIMIT 1),
@@ -79,6 +83,8 @@ fn measurement(metric: &str, value: f64, threshold: f64) -> String {
     match metric {
         "missed_beats" => format!("Supervisor collector missed {value:.0} heartbeats."),
         "failed_deliveries" => format!("Critical line failed {value:.0} deliveries."),
+        "critical_reports" if value == 1.0 => "A critical report is unread.".into(),
+        "critical_reports" => format!("{value:.0} critical reports are unread."),
         _ => format!("{} measured {value:.3} against a threshold of {threshold:.3}.", metric.replace('_', " ")),
     }
 }
@@ -103,6 +109,7 @@ fn incident(row: &Row<'_>) -> rusqlite::Result<Incident> {
     let raw: Vec<(i64, String, String, String, u8)> = super::signals::decode(row, 17)?;
     let alerts = raw.into_iter().map(|(id, detector, metric, response, wrong)|
         IncidentAlert { id, detector, metric, response, wrong: wrong != 0 }).collect();
+    let reports = super::signals::decode(row, 18)?;
     let held = if holds.is_empty() { "No hold in effect.".into() } else {
         holds.iter().map(|h| if h.until.is_some() { format!("{} while its verification runs.", h.label) }
             else { format!("{}.", h.label) }).collect::<Vec<_>>().join(" ")
@@ -118,7 +125,7 @@ fn incident(row: &Row<'_>) -> rusqlite::Result<Incident> {
         no_answer: if holds.is_empty() { "No automatic action without an answer." }
             else if interim_only { super::holds::INTERIM_END }
             else { "Without an answer the hold stays." },
-        holds, alerts,
+        holds, alerts, reports,
     })
 }
 
@@ -289,7 +296,8 @@ async fn owner_press(app: &Shared, id: i64, press: Press) -> Result<Incident, St
             .optional().map_err(sql)?.ok_or("Incident not found.")?;
         Ok((summary, changed))
     }).await?;
-    if changed { app.supervisor.incident_changed(); app.supervisor.wake(); }
+    // acknowledging or snoozing reads the incident's reports (terminum-reports.md AC-276)
+    if changed { app.supervisor.incident_changed(); app.supervisor.wake(); crate::reports::changed(app); }
     Ok(summary)
 }
 

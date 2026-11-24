@@ -82,7 +82,8 @@ pub(super) fn evaluate_snapshot(
             let readings = indexed.iter().map(|week| week.get(&found.key()).copied());
             found.assessment = calculator.assess(detector, found, readings);
             found.scores = Scores {
-                impact: found.assessment.score(at - first < 3 * WEEK, found.charter_breach()),
+                impact: detector.rule.fixed_impact()
+                    .unwrap_or_else(|| found.assessment.score(at - first < 3 * WEEK, found.charter_breach())),
                 ..detector.scores
             };
         }

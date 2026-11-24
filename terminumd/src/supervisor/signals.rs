@@ -54,7 +54,7 @@ pub(crate) struct Signal {
     pub state: State,
 }
 
-fn fingerprint(project: &str, detector: &str, (kind, id, metric): (&str, &str, &str)) -> String {
+pub(super) fn fingerprint(project: &str, detector: &str, (kind, id, metric): (&str, &str, &str)) -> String {
     let mut hash = Sha256::new();
     for field in [project, detector, kind, id, metric] {
         hash.update((field.len() as u64).to_be_bytes());

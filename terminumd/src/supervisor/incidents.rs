@@ -68,7 +68,10 @@ pub(super) fn observe(tx: &Transaction, seen: Observation<'_>) -> Result<(), Str
     };
     if opened {
         super::thread::ensure(tx, project, incident, at)?;
-        // its critical report in the Inbox, alerting through the incident alone (terminum-reports.md AC-271, AC-272)
+    }
+    // its critical report in the Inbox, alerting through the incident alone (terminum-reports.md AC-271, AC-272); a
+    // critical report's incident has that report already (AC-276)
+    if opened && rule != Rule::ReportCritical {
         let why = format!("{} on {}: {} against a threshold of {}", rule.id(), finding.metric, value, threshold);
         crate::reports::sources::incident(tx, project, incident, &format!("{} {}", finding.subject_kind, finding.subject_id), &why, at)?;
     }
@@ -252,8 +255,19 @@ pub(super) fn act(tx: &Transaction, id: i64, action: Action, at: i64) -> Result<
         // Acknowledge stops repeats in the claim (AC-228); the row's last send keeps the updates' cool-down.
         tx.execute("INSERT INTO supervisor_incident_events (incident, at, kind, actor)
             VALUES (?1, ?2, ?3, ?4)", (id, at, kind, HUMAN)).map_err(sql)?;
+        // the owner has seen its reports: acknowledging or snoozing reads them (terminum-reports.md AC-276)
+        crate::reports::record::read_of_incident(tx, id, at)?;
     }
     Ok(changed)
+}
+
+/// The owner read a report of open incident `id`, which waits for them: that is its acknowledgement
+/// (terminum-reports.md AC-276).
+pub(crate) fn acknowledged_by_reading(tx: &Transaction, id: i64, at: i64) -> Result<bool, String> {
+    let waits: bool = tx.query_row("SELECT EXISTS (SELECT 1 FROM supervisor_incidents WHERE id = ?1 AND closed_at IS NULL
+        AND acknowledged_at IS NULL)", [id], |r| r.get(0)).map_err(sql)?;
+    if !waits { return Ok(false); }
+    act(tx, id, Action::Acknowledge, at)
 }
 
 /// A grouped incident may belong to several rules. The owner identifies one retained alert.

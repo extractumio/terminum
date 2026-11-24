@@ -41,7 +41,7 @@ pub(crate) mod holds;
 pub(crate) mod holds_api;
 #[cfg(test)]
 mod holds_tests;
-mod incidents;
+pub(crate) mod incidents;
 pub(crate) mod thread;
 pub(crate) mod talk;
 mod incidents_api;
@@ -58,6 +58,9 @@ mod outside_indicators;
 mod probe_rules;
 mod integration_rules;
 mod review_rules;
+pub(crate) mod report_rules;
+#[cfg(test)]
+mod report_rules_tests;
 mod line_queue;
 mod replay;
 pub(crate) mod runtime;
@@ -254,6 +257,7 @@ pub(crate) enum Evidence {
     SupervisorRounds(String),
     SupervisorActions(i64),
     SupervisorLine { channel: i64, failure: String },
+    Reports(String),
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

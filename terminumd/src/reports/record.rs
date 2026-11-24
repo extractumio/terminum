@@ -109,8 +109,38 @@ pub fn create(tx: &Transaction, new: New, at: i64) -> Result<(String, String, St
     if let Some(task) = &new.task {
         ops::log(tx, task, &new.author, "report", &format!("Report {slug}: {title}"), Some(&serde_json::json!({"report": slug})), at)?;
     }
+    if new.critical && new.incident.is_none() {
+        supervised(tx, &key, at)?;
+    }
     bump(tx)?;
     Ok((key, slug, title))
+}
+
+/// A critical report under its project's Supervisor: the incident it opens or joins alerts, its own line not
+/// (AC-276); with no incident to alert (the Supervisor off, its detector muted or held back) the line stands.
+pub fn supervised(tx: &Transaction, key: &str, at: i64) -> Result<(), String> {
+    if crate::supervisor::report_rules::supervise(tx, key, at)?.is_some() {
+        tx.execute("UPDATE reports SET line = 0 WHERE id = ?1", [key]).map_err(sql)?;
+    }
+    Ok(())
+}
+
+/// Incident `id` was acknowledged or snoozed: the reports it alerts for, and its own, are read (AC-276).
+pub fn read_of_incident(tx: &Transaction, id: i64, at: i64) -> Result<(), String> {
+    if tx.execute("UPDATE reports SET read_at = ?2 WHERE (alerted_by = ?1 OR incident = ?1) AND read_at IS NULL AND deleted_at IS NULL",
+        (id, at)).map_err(sql)? > 0
+    {
+        bump(tx)?;
+    }
+    Ok(())
+}
+
+/// The owner read report `key`: the open incident alerting for it, or whose own report it is, is acknowledged
+/// by them (AC-276).
+pub fn acknowledge_by_reading(tx: &Transaction, key: &str, at: i64) -> Result<bool, String> {
+    let incident = tx.query_row("SELECT coalesce(alerted_by, incident) FROM reports WHERE id = ?1", [key],
+        |r| r.get::<_, Option<i64>>(0)).map_err(sql)?;
+    incident.map_or(Ok(false), |id| crate::supervisor::incidents::acknowledged_by_reading(tx, id, at))
 }
 
 /// A report's key, from its ID; a deleted one too.

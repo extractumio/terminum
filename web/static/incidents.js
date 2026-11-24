@@ -2,6 +2,7 @@
 // AC-225–226: one signed-in incident feed and the same owner keys on every surface.
 import { held, prove, protocols, socketUrl } from "./signin.js";
 import { sessionUrl, taskUrl } from "./tasklink.js";
+import { openReport, reportUrl } from "./reportlink.js";
 import { oneAtATime } from "./dialogs.js";
 import { api, button, placeChildren, showError, stamp } from "./kanbanutil.js";
 import { el, part, textKey } from "./listparts.js";
@@ -123,8 +124,11 @@ export function incidentCard(initial, surface) {
     textKey(link);
     keys.append(link);
   }
+  // its reports, each opening in the board's reading pane (terminum-reports.md AC-276)
+  const reportKeys = part("div", "incident-actions");
+  card.append(reportKeys);
   const put = (node, words) => { if (node.textContent !== words) node.textContent = words; };
-  let shownHolds = "", shownAlerts = "";
+  let shownHolds = "", shownAlerts = "", shownReports = "";
   function update(next) {
     i = next;
     const snoozed = i.snoozed_until > Date.now() / 1000;
@@ -162,6 +166,17 @@ export function incidentCard(initial, surface) {
       alertKeys.hidden = !alerts.length;
       shownAlerts = alertSignature;
       if (focused) (alertKeys.querySelector("button") ?? keys.querySelector("button:not([hidden]),a"))?.focus();
+    }
+    const reports = i.reports ?? [];
+    if (reports.join(",") !== shownReports) {
+      reportKeys.replaceChildren(...reports.map((id) => {
+        const link = el("a", KEY, id);
+        link.href = reportUrl(id);
+        link.addEventListener("click", (e) => { e.preventDefault(); openReport(id); });
+        return link;
+      }));
+      reportKeys.hidden = !reports.length;
+      shownReports = reports.join(",");
     }
     thread.hidden = !i.task;
     if (i.task) thread.href = taskUrl(i.task);
