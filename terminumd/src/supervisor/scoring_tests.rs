@@ -152,6 +152,7 @@ fn ac213_project_failure_process_scores_do_not_claim_a_single_task_scope() {
     f.task("failed", Some("Bug"), "P2", "IN PROGRESS", NOW - DAY);
     f.failed_run("failed", "run", NOW - 60);
     f.cost("run", NOW - 59, 1_000_000);
+    f.failed_run("failed", "again", NOW - 30);
     let reasonless = f.live(Rule::FailedWithoutReason, NOW);
     assert_eq!(reasonless.detectors[0].findings[0].scores.blast, 1);
     f.live(Rule::CostOutlier, NOW).record(&f.store).unwrap();
