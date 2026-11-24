@@ -330,10 +330,45 @@ export function downloadBlob(blob, name) {
  *  loaded); a task's own pictures are fetched with the sign-in, its files download. */
 export async function renderInto(box, text, { comment = false } = {}) {
   box.textContent = text;
+  try { box.innerHTML = (await renderers()).taskMarkdownHtml(text, comment); } catch { return; }
+  wireRendered(box);
+}
+
+/** A report's body as the Files viewer shows a document (terminum-reports.md AC-268): its code highlighted, its
+ *  Mermaid fences drawn, an HTML document in a frame without scripts; in the viewer's look (/fb/renderers.css), loaded
+ *  with the first report shown. */
+export async function renderReportInto(box, text) {
+  box.textContent = text;
   try {
-    box.innerHTML = (await renderers()).taskMarkdownHtml(text, comment);
-  } catch { return; }
-  for (const img of box.querySelectorAll("img[data-raw]")) {
+    const [lib] = await Promise.all([renderers(), docLook()]);
+    if (lib.reportInto(box, text) === "html") { wireFrame(box.querySelector("iframe")); return; }
+  } catch { box.textContent = text; return; }
+  wireRendered(box);
+}
+
+let looked = null;
+const docLook = () => (looked ??= new Promise((done) => {
+  const link = Object.assign(document.createElement("link"), { rel: "stylesheet", href: "/fb/renderers.css" });
+  link.onload = link.onerror = done;              // unstyled rather than never: the body shows either way
+  document.head.append(link);
+}));
+
+/** Rendered words wired: their own pictures fetched, report IDs and links made keys. */
+function wireRendered(box) {
+  ownPictures(box);
+  linkReports(box);
+  for (const a of box.querySelectorAll("a")) wireLink(a, box);
+}
+
+/** `#anchor` scrolled to in `scope`, by its id or name, as the Files viewer does (ui/src/docview.ts scrollToAnchor). */
+function scrollToAnchor(scope, href) {
+  const id = CSS.escape(decodeURIComponent(href.slice(1)));
+  scope.querySelector(`[id="${id}"], [name="${id}"]`)?.scrollIntoView({ block: "start" });
+}
+
+/** The pictures of a task's or report's own files (data-raw), fetched with the sign-in. */
+function ownPictures(root) {
+  for (const img of root.querySelectorAll("img[data-raw]")) {
     signin.blobUrl(img.dataset.raw).then((got) => {
       if (!got.url) return;
       const done = () => URL.revokeObjectURL(got.url);   // a picture decoded needs its address no more
@@ -342,12 +377,35 @@ export async function renderInto(box, text, { comment = false } = {}) {
       img.src = got.url;
     });
   }
-  linkReports(box);
-  for (const a of box.querySelectorAll("a")) {
-    const id = /^\/api\/task-files\/([0-9a-f]{32})$/.exec(a.getAttribute("href") ?? "")?.[1];
-    if (id) a.addEventListener("click", (e) => { e.preventDefault(); download(id, a.textContent).catch((err) => say(err.message)); });
-    else { a.target = "_blank"; a.rel = "noopener noreferrer"; }
-  }
+}
+
+/** A link: its own file downloads, an anchor scrolls in `scope`, any other opens in a new tab. */
+function wireLink(a, scope) {
+  const href = a.getAttribute("href") ?? "";
+  const id = /^\/api\/task-files\/([0-9a-f]{32})$/.exec(href)?.[1];
+  if (id) a.addEventListener("click", (e) => { e.preventDefault(); download(id, a.textContent).catch((err) => say(err.message)); });
+  else if (href.startsWith("#")) a.addEventListener("click", (e) => { e.preventDefault(); scrollToAnchor(scope, href); });
+  else { a.target = "_blank"; a.rel = "noopener noreferrer"; }
+}
+
+/** A report's HTML document in its frame: its own pictures, its links as the page's, as tall as it is. */
+function wireFrame(frame) {
+  const fit = () => { const d = frame.contentDocument; if (d?.documentElement) frame.style.height = `${d.documentElement.scrollHeight}px`; };
+  frame.addEventListener("load", () => {
+    const doc = frame.contentDocument;
+    if (!doc) return;
+    ownPictures(doc);
+    for (const img of doc.images) img.addEventListener("load", fit);
+    doc.addEventListener("click", (e) => {
+      const a = e.target.closest?.("a[href]");
+      if (!a) return;
+      e.preventDefault();
+      const href = a.getAttribute("href");
+      if (href.startsWith("#")) scrollToAnchor(doc, href);
+      else if (/^(https?:|mailto:)/i.test(href)) window.open(href, "_blank", "noopener,noreferrer");
+    });
+    fit();
+  });
 }
 
 /** A report's ID in rendered words, outside code and links, a key that opens it (terminum-reports.md AC-273). */

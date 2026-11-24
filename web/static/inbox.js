@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-// The Inbox (terminum-reports.md AC-267, AC-269): reports above the Sessions in the session list, on the session page,
-// the board and a phone's sheet; unread in bold, critical in red and first; it follows the board's project choice and
-// Find. A press opens the report's pane over the board (reportpane.js), on the session page by going there. Keys, a
+// The Inbox (terminum-reports.md AC-267, AC-269): reports above the Sessions in the board's session list and a phone's
+// sheet, never on the session page; unread in bold, critical in red and first, each with its type and sender; it
+// follows the board's project choice and Find. A press opens the report's pane over the board (reportpane.js). Keys, a
 // right-click or long-press menu and each row's buttons read, unread and delete; a delete is undone from its toast.
 import { icon } from "./icons.js";
 import { el, iconButton, plural, projectInk, read, write } from "./listparts.js";
@@ -27,7 +27,7 @@ function chosen() {
 /** The board's Find, which finds reports too (AC-273). */
 const findWords = () => (new URLSearchParams(location.search).get("q") ?? "").trim().toLowerCase();
 
-const st = { rows: [], more: false, next: 0, failed: "", unread: {}, rev: null, deleted: false, all: false, folded: !!read(FOLDED), key: "", undo: null, focus: null };
+const st = { rows: [], more: false, next: 0, failed: "", unread: {}, rev: null, deleted: false, all: false, folded: !!read(FOLDED), key: "", undo: null, focus: null, asks: 0 };
 let box = null;
 
 
@@ -49,8 +49,10 @@ async function load(older = false) {
   if (projects.length === 1) q.set("project", projects[0]);
   if (st.deleted) q.set("deleted", "1");
   if (older) q.set("from", String(st.next));
+  const ask = ++st.asks;                          // a list asked before a later read or a delete is not drawn
   try {
     const got = await api(`/api/reports?${q}`);
+    if (ask !== st.asks) return;
     st.next = got.next;
     const rows = got.reports.filter((r) => projects.length < 2 || projects.includes(r.project));
     st.rows = older ? [...st.rows, ...rows] : rows;
@@ -103,7 +105,10 @@ function rowOf(r) {
   const head = el("span", "rhead");
   if (r.critical) head.append(icon("triangle-alert", 13));
   head.append(el("span", "rtitle", r.title), el("span", "rage", st.deleted ? `deleted ${age(r.deleted_at)}` : age(r.created_at)));
-  b.append(head, el("span", "rsum", r.summary || r.id), el("span", "rsource", `${r.id} · ${r.source.name}${r.answering ? ` · ${r.answering} is answering` : ""}`));
+  const sum = el("span", "rsum");
+  sum.append(kindChip(r));
+  if (r.summary && r.summary.toLowerCase() !== r.kind) sum.append(el("span", "rsumtext", r.summary));   // a type's word once
+  b.append(head, sum, el("span", "rsource", `From ${r.source.label} · ${r.id}${r.answering ? ` · ${r.answering} is answering` : ""}`));
   b.addEventListener("click", () => { st.focus = r.id; if (!st.deleted) openReport(r.id); });
   b.addEventListener("focus", () => { st.focus = r.id; });
   const acts = el("span", "racts");
@@ -113,6 +118,13 @@ function rowOf(r) {
     iconButton("icon rdelete", "x", `Delete ${r.id}`, "Delete (Backspace)", () => remove(r.id)));
   li.append(b, acts);
   return li;
+}
+
+/** Report `r`'s type as a chip: a dot of its meaning's hue and its word (AC-265). Shared with the report's pane. */
+export function kindChip(r) {
+  const chip = el("span", `rkind k-${r.kind}`, r.kind);
+  chip.title = `Type: ${r.kind}`;
+  return chip;
 }
 
 /** read, unread, restore of report `id`: terminumd's word, every page hearing it; a refusal said in the Inbox's own
@@ -125,6 +137,7 @@ export async function act(id, what, whereSaid = say) {
 
 /** Report `id` deleted at once, with Undo for 8 seconds (AC-269): whether it went. */
 export async function remove(id, whereSaid = say) {
+  st.asks++;                                       // a list read before the delete would bring the row back
   st.rows = st.rows.filter((x) => x.id !== id);
   draw();
   try { await api(`/api/reports/${encodeURIComponent(id)}`, { method: "DELETE" }); }
@@ -216,5 +229,6 @@ function mount(at) {
   st.key = `${chosen().join(",")}|${findWords()}`;
 }
 
-const at = document.getElementById("inbox");
-if (at) { mount(at); onTaskMarks(inboxMarks); }
+// above the board's Sessions, its own section: the session list's markup stays the session page's (AC-267)
+const sessions = document.getElementById("sessions");
+if (sessions) { const at = el("section"); at.id = "inbox"; sessions.before(at); mount(at); onTaskMarks(inboxMarks); }

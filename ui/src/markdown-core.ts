@@ -45,3 +45,6 @@ md.renderer.rules.heading_open = (tokens, idx, opts, _env, self) => {
 };
 
 export const renderMd = (text: string, env: MdEnv): string => md.render(text, env);
+
+/** The path a task's or report's local picture is read from: its own file's, else none (an `imagePath`). */
+export const ownFile = (path: string) => (path.startsWith("/api/task-files/") ? path : "");
