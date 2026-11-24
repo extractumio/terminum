@@ -78,7 +78,7 @@ async fn beat(app: &Shared) -> Result<(), String> {
 
 async fn admit(app: &Shared, project: &str, key: &str) -> Result<(), String> {
     let (p, k) = (project.to_owned(), key.to_owned());
-    let desired = store(app, move |tx| {
+    let (desired, terms) = store(app, move |tx| {
         let candidate = rounds::candidate(tx, &p, &k)?;
         if ops::project_place(tx, &p)?.1.is_some() {
             return Err("Supervisor investigations need a local pool agent for pane identity checks.".into());
@@ -87,9 +87,17 @@ async fn admit(app: &Shared, project: &str, key: &str) -> Result<(), String> {
         if let Some(full) = pool::Slots::read(tx)?.check_in(tx, &agent, &p, Some(pool::Slot::Supervisor), None)? {
             return Err(full.words);
         }
-        Ok(candidate.agent)
+        Ok((candidate.agent.clone(), candidate.memory_terms()))
     }).await?;
     let (agent, host, folder, server) = places::place(app, project, Some(desired)).await?;
+    // AC-234: the project's own memory, read off the store's write turn; admission below checks the folder is unchanged.
+    let memory = match terms {
+        Some(terms) => {
+            let dir = crate::tasks::integration::local_dir(&folder);
+            Some(off(move || Ok(crate::supervisor::case_memory::snapshot(&dir, &terms))).await?)
+        }
+        None => None,
+    };
     let like = Run::of(&agent, host, folder.clone(), project.to_owned(), None);
     let key = key.to_owned();
     let (run, saved) = store(app, move |tx| {
@@ -106,7 +114,7 @@ async fn admit(app: &Shared, project: &str, key: &str) -> Result<(), String> {
             return Err(full.words);
         }
         let id = runs::add(tx, &like, &[], runs::Started::of(runs::How::Supervisor), at)?;
-        let saved = rounds::save(tx, &id, candidate, at, scale())?;
+        let saved = rounds::save(tx, &id, candidate, memory, at, scale())?;
         Ok((id, saved))
     }).await?;
     let rounds::Saved { prompt, held, nudges } = saved;

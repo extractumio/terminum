@@ -157,6 +157,14 @@ pub(crate) struct Candidate {
     pub agent: String,
 }
 
+impl Candidate {
+    /// The words an investigation's indexed memory is matched on; none for other rounds, which carry no memory.
+    pub(crate) fn memory_terms(&self) -> Option<Vec<String>> {
+        let Purpose::Investigation(signal) = &self.purpose else { return None };
+        Some(super::case_memory::terms(&signal.detector, &signal.metric, &signal.subject_id))
+    }
+}
+
 pub(crate) fn candidate(tx: &Transaction, project: &str, key: &str) -> Result<Candidate, String> {
     let generation = enabled(tx, project)?.ok_or("The Supervisor is off.")?;
     if let Some(id) = active_id(tx, key)? { return Err(format!("Investigation {id} is already open.")); }
@@ -230,8 +238,8 @@ pub(crate) struct Saved {
     pub nudges: super::nudges::Nudges,
 }
 
-/// Saves the round's case file.
-pub(crate) fn save(tx: &Transaction, run: &str, candidate: Candidate, at: i64, clock_scale: i64) -> Result<Saved, String> {
+/// Saves the round's case file; an investigation's carries `memory`, its project's memory read before this transaction.
+pub(crate) fn save(tx: &Transaction, run: &str, candidate: Candidate, memory: Option<Value>, at: i64, clock_scale: i64) -> Result<Saved, String> {
     let Candidate { mut purpose, key, generation, revision, project, .. } = candidate;
     let id = format!("case_{run}");
     let important = matches!(&purpose, Purpose::Investigation(signal) if signal.level >= 2);
@@ -245,7 +253,8 @@ pub(crate) fn save(tx: &Transaction, run: &str, candidate: Candidate, at: i64, c
         Purpose::Reflection => (super::reflection::case(tx, &project, &key, at)?, None, super::reflection::TIME_LIMIT, None,
             format!("Supervisor reflection case {id}. Call get_case_file with its ID. Review the code-built timeline independently. Explain misses, noise and wrong decisions, and submit configuration changes with replay_config_change and propose_config_change. Cite their change IDs with record_reflection.")),
         Purpose::Investigation(signal) => {
-            let (case, incident) = investigation_case(tx, signal, at)?;
+            let (mut case, incident) = investigation_case(tx, signal, at)?;
+            case["memory_data"] = memory.unwrap_or_else(|| json!({"unavailable": "The project's memory was not read."}));
             (case, incident, TIME_LIMIT, None,
                 format!("Supervisor case {id}. Call get_case_file with its ID and report through the Supervisor tools."))
         }
