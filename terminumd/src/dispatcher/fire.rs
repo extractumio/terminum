@@ -62,9 +62,9 @@ pub fn prompt(s: &Schedule, task: &str, title: &str, body: &str, again: bool, by
     parts.push(budget_words(s.budget_seconds));
     let form = if s.supervisor_review {
         parts.push(crate::supervisor::review::DIRECTIONS.into());
-        crate::tasks::closeout::form_words(crate::supervisor::review::FORM)
-    } else { crate::tasks::closeout::short_form() };
-    parts.push(format!("This is a scheduled run: its result waits on the board for a human to read. When it is done, call {FINISH} with the result as {}, in this form:{form}", crate::tasks::closeout::markdown_shape!()));
+        crate::supervisor::review::FORM
+    } else { &crate::tasks::closeout::SCHEDULED };
+    parts.push(format!("This is a scheduled run: its result waits on the board for a human to read. When it is done, call {FINISH} with the result {}", crate::tasks::closeout::in_form(form)));
     parts.push(ASK.to_string());
     parts.join("\n\n")
 }

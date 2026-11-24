@@ -29,7 +29,7 @@ pub(crate) use waits_for_task;
 /// How a result or a report is laid out (terminum-reports.md AC-266): a document the Inbox and the board read as one,
 /// never "Name:" lines that Markdown runs into one paragraph. A macro, as `removable!`.
 macro_rules! markdown_shape {
-    () => { "a Markdown document: each section a \"## \" heading, its name as written, with its text below it; \"### \" for a part within a section; lists and tables where they help; no \"# \" heading: the title stands above it" };
+    () => { "a Markdown document: a \"## \" heading for each section with its text below it, \"### \" for a part within a section, lists and tables where they help, no \"# \" heading (the title stands above it)" };
 }
 pub(crate) use markdown_shape;
 
@@ -70,9 +70,9 @@ pub fn form_words(form: &[(&str, &str)]) -> String {
     form.iter().map(|(name, what)| format!("\n## {name}\n{what}")).collect()
 }
 
-/// The short form as a prompt lists it.
-pub fn short_form() -> String {
-    form_words(&SCHEDULED)
+/// How a prompt asks for a result in `form`: the document's shape, then its sections.
+pub fn in_form(form: &[(&str, &str)]) -> String {
+    format!("as {}, in this form:{}", markdown_shape!(), form_words(form))
 }
 
 /// The form `task`'s result is written in: a schedule's task and Auto-Dispatcher's round the short one, any other the
@@ -270,13 +270,12 @@ pub fn set_language(tx: &Transaction, project: &str, language: &str) -> Result<(
 /// What RUN's prompt asks before the result: `finish` is how the result is given; `each`: several
 /// tasks went in one press, each closed out before its own result.
 pub fn words(language: &str, finish: &str, each: bool) -> String {
-    let sections = SECTIONS.iter().map(|(name, what)| format!("## {name}\n{what}.")).collect::<Vec<_>>().join("\n");
+    let sections = form_words(&SECTIONS);
     let (before, that) = if each { (format!("Before each {finish}, close that task out"), "that task's") } else { (format!("Before you call {finish}, close the task out"), "the task's") };
     format!("{before}; short of time, write the result (step 3) first. The session closes minutes after the result: work left that is in no task is lost then.
 1. What you noticed and did not do that a human would plan work for (what is left of {that} own work, a bug or gap outside {that} scope, a follow-up, a decision to take): look for an open task on it with execute_tool(\"list_tasks\", {{}}); none: a task by execute_tool(\"create_task\", {{title, severity, text}}); one: a comment on it by execute_tool(\"add_comment\", {{id, text}}). Smaller things go into the result's Issues and discoveries.
 2. Review the tasks you made in this run: rename, re-prioritize or regroup them by execute_tool(\"update_task\", {{id, title?, severity?, parent?}}) where your work changed them; archive one by execute_tool(\"update_task\", {{id, archive?, reason?}}) only when your work resolved it or it was made in this run and is no longer needed, naming the commit or task in the reason. Another task that looks stale gets a comment, never a change.
-3. The result, in the language named \"{language}\": plain words a newcomer reads without this session, each item short and whole, every heading there, its name as written below (\"None\" when empty), as {}:
-{sections}
+3. The result, in the language named \"{language}\": plain words a newcomer reads without this session, each item short and whole, every heading there, its name as written below (\"None\" when empty), as {}:{sections}
 Write in \"{language}\" also the titles (after their type's word, Bug:, Feat:, Debt:, Story:), texts and comments you write on tasks; the project's template's headings stay as it writes them.", markdown_shape!())
 }
 
@@ -311,7 +310,7 @@ mod tests {
         assert!(w.starts_with("Before you call execute_tool(\"finish_task\", {id, result}), close the task out") && w.contains("The result, in the language named \"Русский\":"));
         assert!(words("English", "F", true).starts_with("Before each F, close that task out") && words("English", "F", true).contains("that task's scope"));
         assert!(w.contains("The session closes minutes after the result: work left that is in no task is lost then.") && w.contains("(what is left of the task's own work, "), "nothing is left in the session alone: {w}");
-        assert!(w.contains("as a Markdown document: each section a \"## \" heading") && w.contains("\n## Not done\nwhat of the task is left or dropped, and why; what is left names its task's ID.\n") && w.contains("each one a human would plan names its task's ID."));
+        assert!(w.contains(markdown_shape!()) && w.contains("\n## Not done\nwhat of the task is left or dropped, and why; what is left names its task's ID\n") && w.contains("each one a human would plan names its task's ID\nWrite in"));
     }
 
     #[test]

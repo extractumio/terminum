@@ -164,8 +164,8 @@ Scenario: AC-266 happy path — read
   Then it gets its project's reports newest first, at most limit (default 20, at most 100), not deleted, each with ID, title, summary, critical, read, source, made
 
 Scenario: AC-266 edge — what the agent is told
-  Then RUN's prompt says after its finish_task line "When the deliverable is a report for a person to read (a review, an audit, an answer to a question), give it by execute_tool(\"create_report\", {task, title, summary, body}), its body a Markdown document with a \"## \" heading for each section, before finish_task: it goes to the human's Inbox, and the task is DONE as any."
-  And create_report's description says the same, asking for the body as a Markdown document: a "## " heading for each section with its text below, "### " within a section, no "# " heading, the title standing above it; and finish_task's: "A report for the human to read goes first by create_report; a routine's result also goes to their Inbox as one."
+  Then RUN's prompt says after its finish_task line "When the deliverable is a report for a person to read (a review, an audit, an answer to a question), give it by execute_tool(\"create_report\", {task, title, summary, body}), its body a Markdown document: a \"## \" heading for each section with its text below it, \"### \" for a part within a section, lists and tables where they help, no \"# \" heading (the title stands above it), before finish_task: it goes to the human's Inbox, and the task is DONE as any."
+  And create_report's description says the same, and finish_task's: "A report for the human to read goes first by create_report; a routine's result also goes to their Inbox as one."
 
 Scenario: AC-266 failure — finish_task's old report argument
   When an agent calls finish_task with report: "yes"
