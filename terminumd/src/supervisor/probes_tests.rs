@@ -320,9 +320,9 @@ fn ac212_ac221_hotspot_baseline_ranks_the_projects_fixed_files() {
         let mut arch = Architecture { since: NOW - 90 * DAY, ..Architecture::default() };
         for (path, size, churn, fixes) in files {
             arch.sizes.insert(path.clone(), size);
-            arch.changes.push(Changed { at: NOW - 40 * DAY, path: path.clone(), churn, fix: false });
-            arch.changes.push(Changed { at: NOW - DAY, path: path.clone(), churn, fix: false });
-            arch.changes.extend((0..fixes).map(|_| Changed { at: NOW - DAY, path: path.clone(), churn: 0, fix: true }));
+            arch.changes.push(Changed { at: NOW - 40 * DAY, path: path.clone(), churn, fix: false, commit: String::new() });
+            arch.changes.push(Changed { at: NOW - DAY, path: path.clone(), churn, fix: false, commit: String::new() });
+            arch.changes.extend((0..fixes).map(|_| Changed { at: NOW - DAY, path: path.clone(), churn: 0, fix: true, commit: String::new() }));
         }
         at += 1;
         let observation = Observation { data: serde_json::to_string(&arch).unwrap(), reports: Vec::new() };

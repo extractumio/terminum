@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 //! AC-260 and AC-261: detector queries over retained probe samples.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use super::{Comparison, DAY, Evidence, Measurements, Query, Reading, Threshold, catalog, percentile, percentile_of_others,
     impact::Source, probe_arch::Architecture, probe_gate::Gate, probe_git::Releases, probes};
@@ -146,6 +146,33 @@ pub(super) fn hotspots(q: &Query<'_, '_>) -> Result<Measurements, String> {
     }
     out.readings = readings;
     Ok(out)
+}
+
+/// `arch.bug_cluster`: per folder, the distinct commits of Bug tasks (or `fix:` commits) that changed it in the window,
+/// ranked, as `hotspots` ranks files, against every folder's count in either period: an active project's every busy folder
+/// takes fixes, so only its top few percent are a cluster.
+pub(super) fn bug_clusters(q: &Query<'_, '_>) -> Result<Measurements, String> {
+    let Some((id, arch)) = architecture(q)? else { return Ok(Measurements::missing(ARCH_MISSING)); };
+    let mut periods: [BTreeMap<&str, BTreeSet<(&str, i64)>>; 2] = Default::default();
+    for row in arch.changes.iter().filter(|c| c.fix && c.at >= q.window.before) {
+        periods[usize::from(q.window.current(row.at))].entry(row.path.rsplit_once('/').map_or(".", |(folder, _)| folder))
+            .or_default().insert((&row.commit, row.at));
+    }
+    let mut counts = periods.iter().flat_map(|period| period.values().map(|commits| commits.len() as f64)).collect::<Vec<_>>();
+    counts.sort_unstable_by(f64::total_cmp);
+    let baseline = |value| match q.detector.threshold {
+        Threshold::Baseline { percentile: p, .. } => percentile_of_others(&counts, value, p).into_iter().collect(),
+        _ => Vec::new(),
+    };
+    let [_, recent] = periods;
+    Ok(Measurements {
+        readings: recent.into_iter().map(|(folder, commits)| {
+            let value = commits.len() as f64;
+            Reading::new("folder", folder, "fix_commits", value, evidence(id), Source::Unsized(CODE)).history(baseline(value))
+        }).collect(),
+        complete_metrics: (arch.since <= q.window.start).then_some("fix_commits").into_iter().collect(),
+        ..Measurements::default()
+    })
 }
 
 pub(super) fn failures(q: &Query<'_, '_>) -> Result<Measurements, String> {

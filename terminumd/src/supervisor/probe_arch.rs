@@ -30,6 +30,9 @@ pub(super) struct Changed {
     pub path: String,
     pub churn: u64,
     pub fix: bool,
+    /// Its commit, so files changed in one commit count once; empty in samples kept before it was recorded.
+    #[serde(default)]
+    pub commit: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -91,7 +94,7 @@ fn churn(raw: &str, by_merge: BTreeMap<String, Integrated>, out: &mut Architectu
             let churn = added.parse::<u64>().ok().zip(removed.parse::<u64>().ok())
                 .and_then(|(a, b)| a.checked_add(b)).ok_or(Failure::Invalid)?;
             if safe_path(path) {
-                out.changes.push(Changed { at, path: path.into(), churn, fix });
+                out.changes.push(Changed { at, path: path.into(), churn, fix, commit: sha.into() });
                 if out.changes.len() > MAX_FILES { return Err(Failure::Output); }
             }
             total = total.checked_add(churn).ok_or(Failure::Invalid)?;

@@ -116,12 +116,13 @@ pub(super) fn load(q: &Query<'_, '_>) -> Result<Measurements, String> {
 
 pub(super) const QUESTIONS: &str = "questions AS (
     SELECT e.id, e.task, e.at, e.seq, json_extract(e.data, '$.question.kind') AS kind,
+        json_extract(e.data, '$.question.recommended') AS recommended,
         (SELECT min(n.seq) FROM project_events n WHERE n.task = e.task AND n.seq > e.seq
             AND n.kind = 'comment' AND json_extract(n.data, '$.questions') IS NOT NULL) AS next
     FROM project_events e WHERE e.kind = 'comment' AND json_extract(e.data, '$.questions') IS NOT NULL
 ), answers AS (
     SELECT q.id AS question, q.task, q.at AS asked_at, q.next, a.id AS answer, a.at AS answered_at,
-        q.kind, json_extract(a.data, '$.choice.option') AS chosen
+        q.kind, json_extract(a.data, '$.choice.option') AS chosen, q.recommended, a.seq AS answer_seq
     FROM questions q LEFT JOIN project_events a ON a.seq = coalesce(
         (SELECT min(h.seq) FROM project_events h WHERE h.task = q.task AND h.seq > q.seq
             AND h.kind = 'comment' AND h.author = 'human' AND h.at >= q.at
@@ -339,4 +340,37 @@ pub(super) fn guard_broken(q: &Query<'_, '_>) -> Result<Measurements, String> {
         }
     }
     Ok(out)
+}
+
+const STAMP_EVIDENCE: usize = 20;
+const STAMP: &str = "Choosing the recommended option is a habit of answering, in no weekly project total; a standing rule's effect is measured by AC-240.";
+
+/// `owner.rubber_stamp`: per question kind, how many of the owner's latest choices in a row took the recommended option.
+pub(super) fn rubber_stamp(q: &Query<'_, '_>) -> Result<Measurements, String> {
+    // A reply in words to a question with options takes no option, so it ends the streak too.
+    let answers = rows(q.tx, &format!("{}, {QUESTIONS} SELECT kind, answer, answered_at, coalesce(chosen = recommended, 0)
+        FROM answers WHERE kind IS NOT NULL AND answer IS NOT NULL ORDER BY answer_seq", project_events()),
+        (q.project, q.window.end), |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, i64>(2)?, r.get::<_, bool>(3)?)))?;
+    if answers.is_empty() { return Ok(Measurements::missing("No answered question with options is retained.")); }
+    // Per kind: the streak's length, its latest answers as evidence, and when the kind was last answered.
+    let mut streaks = BTreeMap::<String, (usize, Vec<Evidence>, i64)>::new();
+    for (kind, event, at, recommended) in answers {
+        let (count, evidence, last) = streaks.entry(kind).or_default();
+        *last = at;
+        if recommended {
+            *count += 1;
+            evidence.push(events(event));
+            if evidence.len() > STAMP_EVIDENCE { evidence.remove(0); }
+        } else {
+            (*count, *evidence) = (0, Vec::new());
+        }
+    }
+    // A kind not answered in the window has no current habit to report.
+    Ok(Measurements {
+        readings: streaks.into_iter().filter(|(_, (_, _, last))| q.window.current(*last)).map(|(kind, (count, evidence, _))|
+            Reading::new("question_kind", kind, "recommended_streak", count as f64, evidence, Source::Unsized(STAMP))
+                .comparison(Comparison::AtLeast)).collect(),
+        complete_metrics: vec!["recommended_streak"],
+        ..Measurements::default()
+    })
 }
