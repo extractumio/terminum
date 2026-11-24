@@ -9,7 +9,7 @@ use crate::tasks::{ops::{rows, sql}, store::HUMAN};
 
 use super::{Finding, Rule, line_queue::{self, Kind}};
 
-const GROUP_WINDOW: i64 = 15 * 60;
+pub(super) const GROUP_WINDOW: i64 = 15 * 60;
 const SNOOZE: i64 = 60 * 60;
 
 pub(super) struct Observation<'a> {

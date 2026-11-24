@@ -84,33 +84,71 @@ const ALERT_MEMBERS: &str = "LEFT JOIN json_each(ready.alerts) list ON true
     LEFT JOIN supervisor_breakers b ON b.project = a.project AND b.detector = a.detector
       AND b.response = a.response AND b.closed_at IS NULL";
 
-/// Snapshots numeric notice fields in the same transaction as the timeline change.
-/// The incident thread (AC-244) can enqueue an answer using only the incident ID.
-pub(super) fn enqueue(tx: &Transaction, incident: i64, kind: Kind, ended_urgent: bool) -> Result<(), String> {
-    debug_assert_ne!(kind, Kind::Repeat);
-    if kind == Kind::Updated {
-        tx.execute("DELETE FROM supervisor_line_pending WHERE kind = 'updated' AND id = (
-            SELECT max(id) FROM supervisor_line_pending WHERE incident = ?1)", [incident]).map_err(sql)?;
-    }
-    tx.execute(&format!("INSERT INTO supervisor_line_pending (incident, kind, level, signals, urgent, alerts)
-        SELECT i.id, ?2, coalesce(max(m.level), (
-            SELECT max(level) FROM supervisor_holds WHERE incident = i.id AND shadow = 0 AND released_at IS NULL), 0),
-            count(m.fingerprint), (?3 OR coalesce(max(m.urgent), 0)), {ALERTS}
+/// The current numbers of the incidents `filter` selects.
+/// No configured channel, or a project whose Supervisor is off, queues nothing.
+fn snapshot(filter: &str) -> String {
+    format!("SELECT i.id AS incident, coalesce(max(m.level), (
+            SELECT max(level) FROM supervisor_holds WHERE incident = i.id AND shadow = 0 AND released_at IS NULL), 0) AS level,
+            count(m.fingerprint) AS signals, coalesce(max(m.urgent), 0) AS urgent, {ALERTS} AS alerts
         FROM supervisor_incidents i LEFT JOIN supervisor_incident_signals m ON m.incident = i.id
-        WHERE i.id = ?1 AND i.subject_kind <> 'critical_line'
+        WHERE {filter} AND i.subject_kind <> 'critical_line'
           AND EXISTS (SELECT 1 FROM supervisor_line WHERE json_array_length(settings, '$.channels') > 0)
-        GROUP BY i.id"), (incident, kind.name(), ended_urgent)).map(drop).map_err(sql)
+          AND EXISTS (SELECT 1 FROM project_supervisor s WHERE s.project = i.project AND s.enabled)
+        GROUP BY i.id")
 }
 
-/// When the first channel is saved, start with current unacknowledged incidents.
-pub(super) fn seed(tx: &Transaction) -> Result<(), String> {
+/// Snapshots numeric notice fields in the same transaction as the timeline change.
+/// The incident thread (AC-244) can enqueue an answer using only the incident ID.
+/// An incident keeps at most one waiting incident or update notice (AC-228): a change
+/// refreshes its numbers and urgency, and an all-clear replaces it, so a backlog that
+/// waited through quiet hours carries only the incident's latest state.
+pub(super) fn enqueue(tx: &Transaction, incident: i64, kind: Kind, ended_urgent: bool) -> Result<(), String> {
+    debug_assert_ne!(kind, Kind::Repeat);
+    let fresh = snapshot("i.id = ?1");
+    let waiting = "SELECT id FROM supervisor_line_pending WHERE incident = ?1 AND kind IN ('opened', 'updated')";
+    match kind {
+        Kind::Opened | Kind::Updated => {
+            let row = tx.query_row(&format!("{waiting} ORDER BY id LIMIT 1"), [incident], |r| r.get::<_, i64>(0))
+                .optional().map_err(sql)?;
+            if let Some(row) = row {
+                return tx.execute(&format!("UPDATE supervisor_line_pending AS q
+                    SET level = f.level, signals = f.signals, urgent = (f.urgent OR ?2), alerts = f.alerts
+                    FROM ({fresh}) f WHERE q.id = ?3"), (incident, ended_urgent, row)).map(drop).map_err(sql);
+            }
+        }
+        Kind::AllClear => {
+            tx.execute(&format!("DELETE FROM supervisor_line_pending WHERE id IN ({waiting})"), [incident]).map_err(sql)?;
+        }
+        Kind::Answer | Kind::Repeat => {}
+    }
     tx.execute(&format!("INSERT INTO supervisor_line_pending (incident, kind, level, signals, urgent, alerts)
-        SELECT i.id, 'opened', coalesce(max(m.level), (
-            SELECT max(level) FROM supervisor_holds WHERE incident = i.id AND shadow = 0 AND released_at IS NULL), 0),
-            count(m.fingerprint), coalesce(max(m.urgent), 0), {ALERTS}
-        FROM supervisor_incidents i LEFT JOIN supervisor_incident_signals m ON m.incident = i.id
-        WHERE i.closed_at IS NULL AND i.acknowledged_at IS NULL AND i.subject_kind <> 'critical_line'
-        GROUP BY i.id"), []).map(drop).map_err(sql)
+        SELECT incident, ?2, level, signals, (urgent OR ?3), alerts FROM ({fresh})"), (incident, kind.name(), ended_urgent))
+        .map(drop).map_err(sql)
+}
+
+/// Queues the current unacknowledged incidents, of one project or all: when the first channel
+/// is saved, and when a project's Supervisor is turned back on.
+pub(super) fn seed(tx: &Transaction, project: Option<&str>) -> Result<(), String> {
+    let open = snapshot("(?1 IS NULL OR i.project = ?1) AND i.closed_at IS NULL AND i.acknowledged_at IS NULL");
+    tx.execute(&format!("INSERT INTO supervisor_line_pending (incident, kind, level, signals, urgent, alerts)
+        SELECT incident, 'opened', level, signals, urgent, alerts FROM ({open})"), [project]).map(drop).map_err(sql)
+}
+
+/// Drops the waiting notices and repeat steps, of one project or all.
+pub(super) fn clear(tx: &Transaction, project: Option<&str>) -> Result<(), String> {
+    for table in ["supervisor_line_pending", "supervisor_line_repeats"] {
+        tx.execute(&format!("DELETE FROM {table} WHERE ?1 IS NULL OR incident IN (
+            SELECT id FROM supervisor_incidents WHERE project = ?1)"), [project]).map_err(sql)?;
+    }
+    Ok(())
+}
+
+/// A project's Supervisor turned off or on (AC-228): its queued notices and repeat steps
+/// are stale and go; turned on, its open, unacknowledged incidents reach the owner once.
+pub(super) fn restart(tx: &Transaction, project: &str, on: bool) -> Result<(), String> {
+    clear(tx, Some(project))?;
+    if on { seed(tx, Some(project))?; }
+    Ok(())
 }
 
 pub(super) fn stop_repeats(tx: &Transaction, id: i64) -> Result<(), String> {
@@ -127,6 +165,11 @@ pub(super) enum Claim {
 /// one-shot notification or send several missed repeat steps at once.
 pub(super) fn claim(tx: &Transaction, settings: &Settings, at: i64, quiet: bool) -> Result<Claim, String> {
     let first = settings.delay(0);
+    // A waiting page the owner no longer needs goes (AC-228): its incident was acknowledged, or
+    // it closed because its signals moved on to a new incident, whose own page covers it.
+    tx.execute("DELETE FROM supervisor_line_pending AS q WHERE kind = 'opened' AND EXISTS (
+        SELECT 1 FROM supervisor_incidents i WHERE i.id = q.incident
+          AND (i.acknowledged_at IS NOT NULL OR i.closed_at IS NOT NULL))", []).map_err(sql)?;
     let selected = tx.query_row(&format!("WITH ready AS (
         SELECT q.id AS pending, i.id AS incident, i.project, q.kind,
                CASE WHEN q.kind IN ('all_clear', 'answer') THEN 0 ELSE q.level END AS level, q.signals,
@@ -134,11 +177,11 @@ pub(super) fn claim(tx: &Transaction, settings: &Settings, at: i64, quiet: bool)
         FROM supervisor_line_pending q JOIN supervisor_incidents i ON i.id = q.incident
         JOIN project_supervisor s ON s.project = i.project AND s.enabled
         LEFT JOIN supervisor_line_repeats r ON r.incident = i.id
-        WHERE (NOT ?2 OR (q.kind IN ('all_clear','answer') AND q.urgent) OR EXISTS (
+        WHERE (NOT ?2 OR (q.urgent AND (q.kind IN ('all_clear','answer') OR EXISTS (
             SELECT 1 FROM supervisor_incident_signals m JOIN supervisor_signals s USING (fingerprint)
             WHERE m.incident = i.id AND m.urgent AND NOT EXISTS (SELECT 1 FROM supervisor_breakers b
               WHERE b.project = i.project AND b.detector = s.detector AND b.response = CASE m.level WHEN 3 THEN 'R5' ELSE 'R4' END
-                AND b.closed_at IS NULL)))
+                AND b.closed_at IS NULL)))))
           AND q.id = (SELECT min(id) FROM supervisor_line_pending WHERE incident = i.id)
           AND (q.kind <> 'updated' OR r.last_at IS NULL OR r.last_at + ?3 <= ?1 OR i.closed_at IS NOT NULL)
         UNION ALL

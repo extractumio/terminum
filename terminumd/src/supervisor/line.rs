@@ -13,6 +13,7 @@ use super::{Evaluation, Evidence, Reading, Rule, SCHEMA, WEEK, Window, impact::O
 const TEST: &str = "Terminum critical line test alert.\n";
 const CHECK: &str = "Terminum critical line health check.\n";
 const CHANNEL_LIMIT: usize = 6;
+const PACE: Duration = Duration::from_secs(1);
 
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -132,10 +133,9 @@ fn save(tx: &Transaction, revision: i64, mut settings: Settings, at: i64) -> Res
         }
         clear_if_healthy(tx, at)?;
         if settings.channels.is_empty() {
-            tx.execute("DELETE FROM supervisor_line_pending", []).map_err(sql)?;
-            tx.execute("DELETE FROM supervisor_line_repeats", []).map_err(sql)?;
+            line_queue::clear(tx, None)?;
         } else if previous.settings.channels.is_empty() {
-            line_queue::seed(tx)?;
+            line_queue::seed(tx, None)?;
         }
     }
     Ok(Saved { revision, settings, checked_at })
@@ -224,7 +224,8 @@ pub(crate) async fn run(app: Shared) {
                 other => other,
             };
             match sent {
-                Ok(true) => tokio::task::yield_now().await,
+                // A backlog goes out paced, never back to back (AC-228).
+                Ok(true) => tokio::time::sleep(PACE).await,
                 Ok(false) => break,
                 Err(error) => {
                     tracing::warn!(event = "supervisor.critical_line", %error);
