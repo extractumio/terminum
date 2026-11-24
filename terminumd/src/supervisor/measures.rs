@@ -17,6 +17,18 @@ pub(super) fn page_dispatched(tx: &Transaction, project: &str, at: i64) -> Resul
         SELECT id, ?2 FROM projects WHERE id = ?1", (project, at)).map(drop).map_err(sql)
 }
 
+/// A report verdict `v` that is its item's latest as of the SQL time expression `at`.
+pub(super) fn latest_report_verdict(at: &str) -> String {
+    format!("v.id = (SELECT max(last.id) FROM supervisor_verdicts last
+        WHERE last.task = v.task AND last.fingerprint = v.fingerprint AND last.at <= {at})")
+}
+
+/// The fix observation `f` of problem `p` saw no recurrence up to the SQL time expression `at`.
+pub(super) fn stayed_resolved(at: &str) -> String {
+    format!("NOT EXISTS (SELECT 1 FROM supervisor_problem_events e WHERE e.problem = p.id
+        AND e.state = 'recurred' AND e.at > f.confirmed_at AND e.at <= {at})")
+}
+
 fn decisions(tx: &Transaction, project: &str) -> Result<(Value, Vec<Value>), String> {
     let groups = rows(tx, &format!("SELECT a.kind, a.detector, a.response,
         count(*) FILTER (WHERE o.verdict = 'right'), count(*) FILTER (WHERE o.verdict = 'wrong'), count(*)
@@ -137,10 +149,9 @@ pub(super) fn read(tx: &Transaction, project: &str, at: i64, spending: &Spending
         AND NOT EXISTS (SELECT 1 FROM supervisor_reflections f WHERE f.round = q.id)
         AND json_extract(case_file,'$.kind') IN ('investigation','verification')", [project],
         |r| Ok((r.get(0)?, r.get(1)?))).map_err(sql)?;
-    let (useful, rated): (i64, i64) = tx.query_row("SELECT count(*) FILTER (WHERE v.verdict = 'useful'), count(*)
+    let (useful, rated): (i64, i64) = tx.query_row(&format!("SELECT count(*) FILTER (WHERE v.verdict = 'useful'), count(*)
         FROM supervisor_verdicts v JOIN supervisor_review_reports p USING(task)
-        WHERE p.project = ?1 AND v.at <= ?2 AND v.id = (SELECT max(last.id) FROM supervisor_verdicts last
-            WHERE last.task = v.task AND last.fingerprint = v.fingerprint AND last.at <= ?2)", (project, at),
+        WHERE p.project = ?1 AND v.at <= ?2 AND {}", latest_report_verdict("?2")), (project, at),
         |r| Ok((r.get(0)?, r.get(1)?))).map_err(sql)?;
     let calibration = rows(tx, &format!("SELECT round(json_extract(q.finding,'$.confidence') * 10) / 10, count(*),
         count(*) FILTER (WHERE o.verdict = 'right') FROM supervisor_actions a {LATEST}
@@ -152,11 +163,9 @@ pub(super) fn read(tx: &Transaction, project: &str, at: i64, spending: &Spending
             "rate":(n >= super::spend::MIN_RATE_SAMPLE as i64).then(|| share(right, n))}))
     })?;
     let (cards, pages, presses, timed, minutes) = owner_load(tx, project, at)?;
-    let weekly_resolved: i64 = tx.query_row("SELECT count(DISTINCT p.id) FROM supervisor_problems p
+    let weekly_resolved: i64 = tx.query_row(&format!("SELECT count(DISTINCT p.id) FROM supervisor_problems p
         JOIN supervisor_fix_observations f ON f.problem = p.id
-        WHERE p.project = ?1 AND f.confirmed_at BETWEEN ?2 AND ?3
-          AND NOT EXISTS (SELECT 1 FROM supervisor_problem_events e WHERE e.problem = p.id
-            AND e.state = 'recurred' AND e.at > f.confirmed_at AND e.at <= ?3)",
+        WHERE p.project = ?1 AND f.confirmed_at BETWEEN ?2 AND ?3 AND {}", stayed_resolved("?3")),
         (project, at - WEEK + 1, at), |r| r.get(0)).map_err(sql)?;
     let judgment = &spending.judgment;
     let fixes = &spending.fixes;

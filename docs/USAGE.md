@@ -860,6 +860,9 @@ Run `terminum supervisor replay --project <ID>` to inspect a project's retained 
 Use the project ID (`default` for the default project). The command shows ranked findings,
 the evidence and weekly amounts behind them, historical firings at weekly cutoffs, unavailable detector inputs, and the seven
 improvement indicators with their guards.
+Its last section measures the Supervisor's judgment only in weeks with labels: judged
+decisions, hold verdicts, report verdicts, miss checks and confirmed fixes. It says
+"insufficient labels" where there are none; historical firings alone are not a quality measure.
 
 Replay anchors the report to the newest retained observation for that project. Use
 `--at <unix-seconds>` to choose an earlier UTC cutoff. Historical results omit checks

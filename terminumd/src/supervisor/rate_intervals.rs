@@ -34,6 +34,12 @@ pub(super) fn share(hit: usize, sample: usize, unavailable: Option<&'static str>
         [Some(((center - spread) / weight).max(0.)), Some(((center + spread) / weight).min(1.))], unavailable)
 }
 
+/// A share as a percentage with its 95% interval, or None without observations.
+pub(super) fn share_percent(hit: usize, sample: usize) -> Option<String> {
+    let Rate { value: Some(value), interval_95: Some([Some(low), Some(high)]), .. } = share(hit, sample, None) else { return None };
+    Some(format!("{:.1}%, 95% interval {:.1}–{:.1}%", value * 100., low * 100., high * 100.))
+}
+
 pub(super) fn questions(count: usize, sample: usize) -> Rate {
     // Poisson count interval (Byar approximation); multiple questions can come from one task.
     let exposure = sample.max(1) as f64;
