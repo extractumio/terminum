@@ -49,7 +49,7 @@ pub(super) struct Incident {
 struct IncidentAlert { id: i64, detector: String, metric: String, response: String, wrong: bool }
 
 #[derive(Debug, Serialize)]
-struct IncidentHold { id: i64, label: &'static str }
+struct IncidentHold { id: i64, label: &'static str, until: Option<i64> }
 
 const SUMMARY: &str = "SELECT i.id, i.project, p.name, m.level,
       i.opened_at, i.closed_at, i.acknowledged_at, i.snoozed_until,
@@ -60,7 +60,7 @@ const SUMMARY: &str = "SELECT i.id, i.project, p.name, m.level,
       (SELECT group_concat('Channel ' || channel || ': ' || failure, ' ' ORDER BY channel)
         FROM supervisor_line_failures WHERE i.subject_kind = 'critical_line' AND i.closed_at IS NULL),
       (SELECT t.slug FROM tasks t WHERE t.id = i.task AND t.project = i.project),
-      (SELECT json_group_array(json_array(h.id, h.kind) ORDER BY h.id)
+      (SELECT json_group_array(json_array(h.id, h.kind, h.until) ORDER BY h.id)
         FROM supervisor_holds h WHERE h.incident = i.id AND h.shadow = 0 AND h.released_at IS NULL),
       (SELECT json_group_array(json_array(id, detector, metric, response, wrong)) FROM (
         SELECT a.id, a.detector, e.metric, a.response,
@@ -96,22 +96,28 @@ fn incident(row: &Row<'_>) -> rusqlite::Result<Incident> {
         (Some(_), None) => "All-clear. ".into(),
         (None, None) => String::new(),
     };
-    let raw: Vec<(i64, String)> = super::signals::decode(row, 16)?;
-    let holds: Vec<_> = raw.into_iter().map(|(id, kind)| IncidentHold {
-        id, label: super::holds::Kind::read(&kind).label(),
+    let raw: Vec<(i64, String, Option<i64>)> = super::signals::decode(row, 16)?;
+    let holds: Vec<_> = raw.into_iter().map(|(id, kind, until)| IncidentHold {
+        id, label: super::holds::Kind::read(&kind).label(), until,
     }).collect();
     let raw: Vec<(i64, String, String, String, u8)> = super::signals::decode(row, 17)?;
     let alerts = raw.into_iter().map(|(id, detector, metric, response, wrong)|
         IncidentAlert { id, detector, metric, response, wrong: wrong != 0 }).collect();
-    let held = if holds.is_empty() { "No hold in effect.".into() }
-        else { format!("{}.", holds.iter().map(|h| h.label).collect::<Vec<_>>().join(". ")) };
+    let held = if holds.is_empty() { "No hold in effect.".into() } else {
+        holds.iter().map(|h| if h.until.is_some() { format!("{} while its verification runs.", h.label) }
+            else { format!("{}.", h.label) }).collect::<Vec<_>>().join(" ")
+    };
+    // AC-225: the page shows each interim hold's deadline in local time; this sentence says what follows it.
+    let interim_only = !holds.is_empty() && holds.iter().all(|h| h.until.is_some());
     Ok(Incident {
         id: row.get(0)?, project: row.get(1)?, project_name: row.get(2)?, level: row.get(3)?,
         opened_at: row.get(4)?, closed_at, acknowledged_at, snoozed_until: row.get(7)?, revision: row.get(8)?,
         happened: format!("{status}{measured} {count} {} recorded.{detail}", if count == 1 { "signal" } else { "signals" }),
         task: row.get(15)?,
         held, needed: if !holds.is_empty() { "Keep or release the hold." } else if acknowledged_at.is_some() { "Acknowledged." } else { "Acknowledge when seen." },
-        no_answer: if holds.is_empty() { "No automatic action without an answer." } else { "Without an answer the hold stays." },
+        no_answer: if holds.is_empty() { "No automatic action without an answer." }
+            else if interim_only { super::holds::INTERIM_END }
+            else { "Without an answer the hold stays." },
         holds, alerts,
     })
 }
@@ -216,6 +222,8 @@ pub(super) fn events(tx: &Transaction, id: i64, before: Option<i64>) -> Result<V
             let words = match kind.as_str() {
                 "signal" | "updated" => format!("Level {}. {}", level.unwrap_or(0),
                     measurement(&r.get::<_, String>(5)?, r.get(6)?, r.get(7)?)),
+                "escalated" => format!("Level {}. A checked round escalated the signal. {}", level.unwrap_or(0),
+                    measurement(&r.get::<_, String>(5)?, r.get(6)?, r.get(7)?)),
                 "cleared" => "Signal cleared.".into(),
                 "all_clear" => "All-clear. Every linked signal cleared.".into(),
                 "transferred" => format!("Signal moved to incident {}.", r.get::<_, i64>(8)?),
@@ -225,6 +233,8 @@ pub(super) fn events(tx: &Transaction, id: i64, before: Option<i64>) -> Result<V
                 "hold_applied" => format!("Hold {} applied.", r.get::<_, i64>(8)?),
                 "hold_kept" => format!("Hold {} kept.", r.get::<_, i64>(8)?),
                 "hold_released" => format!("Hold {} released.", r.get::<_, i64>(8)?),
+                "hold_confirmed" => format!("Hold {} stays: verification confirmed its signal.", r.get::<_, i64>(8)?),
+                "hold_end_failed" => format!("Hold {} could not end with its verification. Keep or release it.", r.get::<_, i64>(8)?),
                 "alert_wrong" => "Owner marked the alert wrong.".into(),
                 _ => unreachable!("incident event kind checked by the store"),
             };

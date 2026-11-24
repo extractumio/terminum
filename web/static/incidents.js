@@ -130,8 +130,10 @@ export function incidentCard(initial, surface) {
     const snoozed = i.snoozed_until > Date.now() / 1000;
     put(title, `${i.project_name} · Incident ${i.id} · Level ${i.level}`);
     put(happened, i.happened);
-    put(state, [i.held, i.needed, snoozed && `Repeats snoozed until ${stamp(i.snoozed_until)}.`, i.no_answer].filter(Boolean).join(" "));
     const holds = i.holds ?? [];
+    // AC-225: an interim verification hold says by when it ends, in this device's time.
+    const ends = holds.filter((h) => h.until).map((h) => `Hold ${h.id} ends by ${stamp(h.until)}.`);
+    put(state, [i.held, ...ends, i.needed, snoozed && `Repeats snoozed until ${stamp(i.snoozed_until)}.`, i.no_answer].filter(Boolean).join(" "));
     const signature = holds.map((h) => h.id).join(",");
     if (signature !== shownHolds) {
       const hadFocus = holdKeys.contains(document.activeElement);

@@ -10,7 +10,7 @@ use crate::tasks::{api::{answer, store}, ops::{now, rows, sql}};
 
 use super::{Evidence, Signal, design_reviews, governor, register, signals, settings};
 
-const TIME_LIMIT: i64 = 15 * 60;
+pub(super) const TIME_LIMIT: i64 = 15 * 60;
 const EXCERPT: usize = 1_000;
 const CASE_EVIDENCE: usize = 128;
 
@@ -222,7 +222,8 @@ fn task_data(tx: &Transaction, signal: &Signal) -> Result<Vec<Value>, String> {
     }).collect()
 }
 
-pub(crate) fn save(tx: &Transaction, run: &str, candidate: Candidate, at: i64, clock_scale: i64) -> Result<String, String> {
+/// The round's first prompt, and the task an interim verification hold took out of integration (AC-233).
+pub(crate) fn save(tx: &Transaction, run: &str, candidate: Candidate, at: i64, clock_scale: i64) -> Result<(String, Option<String>), String> {
     let Candidate { mut purpose, key, generation, revision, project, .. } = candidate;
     let id = format!("case_{run}");
     let important = matches!(&purpose, Purpose::Investigation(signal) if signal.level >= 2);
@@ -247,6 +248,14 @@ pub(crate) fn save(tx: &Transaction, run: &str, candidate: Candidate, at: i64, c
     {
         case[field] = value;
     }
+    let held = match &purpose {
+        Purpose::Investigation(signal) if case["kind"] == "verification" => {
+            let comparison = super::interim::verification_hold(tx, signal, &id, deadline, at)?;
+            case["verification_hold"] = json!(comparison);
+            comparison.task
+        }
+        _ => None,
+    };
     tx.execute("INSERT INTO supervisor_rounds (id, run, project, generation, fingerprint, signal_revision, case_file, deadline, token_cap, reserved_class, incident)
         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)",
         rusqlite::params![id, run, project, generation, key, revision, case.to_string(), deadline, token_cap as i64, important, incident]).map_err(sql)?;
@@ -259,11 +268,11 @@ pub(crate) fn save(tx: &Transaction, run: &str, candidate: Candidate, at: i64, c
             tx.execute("DELETE FROM supervisor_round_requests WHERE fingerprint = ?1", [&key]).map_err(sql)?;
         }
     }
-    Ok(prompt)
+    Ok((prompt, held))
 }
 
 fn investigation_case(tx: &Transaction, signal: &mut Signal, at: i64) -> Result<(Value, Option<i64>), String> {
-    let verify = signal.level >= 2 && signal.scores.confidence < 0.7;
+    let verify = signal.level >= 2 && signal.scores.confidence < super::STRONG;
     let saved = settings::read(tx, &signal.project)?.settings;
     let charter = saved.investigation_charter().map(|lines| excerpt(lines.join("\n")));
     let problem = register::case_context(tx, &signal.project, &signal.fingerprint, at)?;
@@ -286,7 +295,6 @@ fn investigation_case(tx: &Transaction, signal: &mut Signal, at: i64) -> Result<
         "question": if verify { "Does the named measurement and its evidence confirm the signal?" }
             else { "What caused this signal, what would disprove the cause, and what would address it?" },
         "tools": tools,
-        "verification_hold": verify.then_some("No authorized hold with a lower measured cost than waiting."),
     });
     let requested: Option<i64> = tx.query_row("SELECT incident FROM supervisor_round_requests WHERE fingerprint = ?1",
         [&signal.fingerprint], |r| r.get::<_, Option<i64>>(0)).optional().map_err(sql)?.flatten();
