@@ -149,9 +149,7 @@ fn ac213_allocation_sizes_spend_above_its_target() {
 #[test]
 fn ac213_returned_tasks_are_run_events() {
     let f = Fixture::new("impact-returned");
-    f.write("INSERT INTO project_integration
-        (project,is_on,target,check_line,publish_line,after_line,batch_most,check_minutes,agent_budget_minutes,red_rounds_most,prompt)
-        VALUES (?1,1,'main','','','',2,15,15,1,'')", [PROJECT]);
+    f.integration(true);
     f.agent("agent");
     for n in 0..4 {
         let task = format!("returned-{n}");

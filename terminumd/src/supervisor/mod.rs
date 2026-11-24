@@ -57,6 +57,7 @@ mod outside_feedback;
 mod outside_indicators;
 mod probe_rules;
 mod integration_rules;
+mod review_rules;
 mod line_queue;
 mod replay;
 pub(crate) mod runtime;
@@ -91,6 +92,10 @@ pub(crate) mod task_policy;
 mod engine_tests;
 #[cfg(test)]
 mod catalog_tests;
+#[cfg(test)]
+mod main_red_tests;
+#[cfg(test)]
+mod catalog_more_tests;
 #[cfg(test)]
 mod replay_tests;
 #[cfg(test)]

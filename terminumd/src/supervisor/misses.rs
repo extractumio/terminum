@@ -55,7 +55,7 @@ fn observe(tx: &Transaction, project: &str, source: &str, (kind, subject): (&str
             CASE WHEN s.episode_raised_at < ?4 THEN s.episode_raised_at END) AS raised
         FROM candidates s
         WHERE s.first_seen < ?4
-          AND s.detector <> 'self.miss' AND (?6 <> 'watchdog' OR s.detector = 'self.collector_dead')
+          AND s.detector NOT IN ('self.miss', 'flow.main_red') AND (?6 <> 'watchdog' OR s.detector = 'self.collector_dead')
           AND s.state <> 'resolved'
     ) SELECT fingerprint, state, min(first_proof) OVER (), raised, level, detector FROM matched
       ORDER BY raised IS NULL, first_seen, fingerprint LIMIT 1", (project, kind, subject, at, super::signals::encode(&task_keys)?, source),
