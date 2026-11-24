@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 
-use super::{Measurements, Query, Threshold, flow, integration_rules, people, probe_rules, review_rules, samples, spend};
+use super::{Measurements, Query, Threshold, flow, integration_rules, outside_feedback, outside_indicators, people, probe_rules,
+    review_rules, samples, spend};
 
 macro_rules! catalog {
     ($($name:ident, $id:literal, $query:literal, $threshold:expr, $run:path;)+) => {
@@ -71,6 +72,8 @@ catalog! {
     BugCluster, "arch.bug_cluster", "git_bug_clusters", baseline(95, 3.0), probe_rules::bug_clusters;
     ReleaseTime, "improve.release_time", "task_release_lead_time", change(1.0), probe_rules::release_time;
     Releases, "improve.releases", "release_cadence", change(0.0), probe_rules::releases;
+    External, "product.external", "outside_metric_moves", change(0.0), outside_indicators::external;
+    FeedbackAge, "product.feedback_age", "unanswered_feedback", Absolute(4320.0), outside_feedback::age;
     ProbeFailed, "self.probe_failed", "probe_failures", Absolute(0.0), probe_rules::failures;
     QueueGrowth, "flow.queue_growth", "queue_growth", Absolute(0.0), samples::snapshots;
     LimitNear, "flow.limit_near", "subscription_limits", Absolute(100.0), samples::snapshots;
@@ -161,8 +164,6 @@ pub(super) const UNAVAILABLE: &[(&str, &str)] = &[
     ("drift.rule_break", "Lint probe history is unavailable."),
     ("drift.scope", "Scope judgments require a recorded case."),
     ("arch.spec_drift", "Git probe history is unavailable."),
-    ("product.external", "No historical external metric probe is available."),
-    ("product.feedback_age", "No historical feedback probe is available."),
     ("process.handoff_overdue", "Indexed handoff observations are unavailable."),
     ("process.rules_growth", "Git probe history is unavailable."),
     ("process.rule_recurs", "Recorded rule judgments are unavailable."),

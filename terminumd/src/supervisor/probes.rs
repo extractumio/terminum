@@ -54,6 +54,7 @@ pub(super) fn probe_id(s: &str) -> bool {
 enum ProbeLine {
     Metric(Metric),
     Feedback(outside_feedback::Input),
+    Unanswered(outside_feedback::Unanswered),
 }
 
 #[derive(Debug, PartialEq)]
@@ -67,6 +68,7 @@ fn custom_output(bytes: &[u8], at: i64, feedback: bool) -> Result<Observation, F
     let mut rows = Vec::new();
     let mut reports = Vec::new();
     let mut identities = BTreeSet::new();
+    let mut unanswered = None;
     for line in text.lines() {
         let row = match serde_json::from_str(line).map_err(|_| Failure::Invalid)? {
             ProbeLine::Metric(row) => row,
@@ -74,7 +76,11 @@ fn custom_output(bytes: &[u8], at: i64, feedback: bool) -> Result<Observation, F
                 reports.push(outside_feedback::read(input)?);
                 continue;
             }
-            ProbeLine::Feedback(_) => return Err(Failure::Invalid),
+            ProbeLine::Unanswered(list) if feedback && unanswered.is_none() && list.valid(at) => {
+                unanswered = Some(list);
+                continue;
+            }
+            ProbeLine::Feedback(_) | ProbeLine::Unanswered(_) => return Err(Failure::Invalid),
         };
         if !identifier(&row.metric, 80) || !identifier(&row.unit, 24) || !row.value.is_finite()
             || !(1..=at).contains(&row.at) || row.dims.len() > 8
@@ -86,7 +92,11 @@ fn custom_output(bytes: &[u8], at: i64, feedback: bool) -> Result<Observation, F
         rows.push(row);
     }
     if rows.is_empty() && !feedback { return Err(Failure::Invalid); }
-    let data = serde_json::to_string(&rows).map_err(|_| Failure::Invalid)?;
+    let mut kept = serde_json::to_value(&rows).map_err(|_| Failure::Invalid)?;
+    if let (Some(list), Some(lines)) = (unanswered, kept.as_array_mut()) {
+        lines.push(serde_json::to_value(list).map_err(|_| Failure::Invalid)?);
+    }
+    let data = kept.to_string();
     Ok(Observation { data, reports })
 }
 
@@ -341,6 +351,21 @@ pub(super) fn read<T: DeserializeOwned>(tx: &Transaction, project: &str, name: &
     sample.filter(|s| at - s.at <= FRESH).and_then(|s| s.data.map(|data| (s.id, data))).map(|(id, data)| {
         serde_json::from_str(&data).map(|decoded| (id, decoded)).map_err(|_| "Invalid retained Supervisor probe data.".into())
     }).transpose()
+}
+
+/// A feedback probe's latest fresh, measured sample: its ID, time and retained data.
+pub(super) type Fresh = Option<(i64, i64, String)>;
+
+/// AC-212: each feedback probe's reference base with its latest fresh, measured sample.
+pub(super) fn feedback_samples(tx: &Transaction, project: &str, at: i64) -> Result<Vec<(ReferenceBase, Fresh)>, String> {
+    let dir = local_project_dir(tx, project)?;
+    custom_sources(tx, project)?.into_iter().filter_map(|source| {
+        let Source::Custom { feedback: Some(base), .. } = &source else { return None; };
+        let sample = latest_row(tx, project, source.name(), &source.key(dir.as_deref()), at, true).map(|row| {
+            row.filter(|s| s.state == MEASURED && at - s.at <= FRESH).and_then(|s| Some((s.id, s.at, s.data?)))
+        });
+        Some(sample.map(|sample| (base.clone(), sample)))
+    }).collect()
 }
 
 pub(super) fn first_sample(tx: &Transaction, project: &str, source: &str, at: i64) -> Result<Option<i64>, String> {

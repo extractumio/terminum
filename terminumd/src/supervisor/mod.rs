@@ -97,6 +97,8 @@ mod main_red_tests;
 #[cfg(test)]
 mod catalog_more_tests;
 #[cfg(test)]
+mod outside_detectors_tests;
+#[cfg(test)]
 mod replay_tests;
 #[cfg(test)]
 mod impact_tests;

@@ -8,7 +8,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::tasks::ops::rows;
 
-use super::{WEEK, impact::absolute_noise, probes, scoreboard::{self, Verdict}};
+use super::{Comparison, Evidence, Measurements, Query, Threshold, WEEK, impact::{Source, absolute_noise}, probes,
+    scoreboard::{self, Verdict}};
+
+const LEGACY: &str = "Choose a metric and a guard in project settings.";
+const UNSIZED: Source = Source::Unsized("An outside product metric is in no weekly task, owner or spend total.");
 
 #[derive(Serialize, Deserialize)]
 #[serde(untagged)]
@@ -60,9 +64,12 @@ struct Metric {
     current: Option<f64>,
     noise: f64,
     missing: Option<&'static str>,
+    #[serde(skip)]
+    samples: Vec<i64>,
 }
 
 struct Reading {
+    sample: i64,
     week: usize,
     value: f64,
     unit: String,
@@ -86,9 +93,9 @@ fn readings(tx: &Transaction, project: &str, probe: &str, config: &str, at: i64,
         SELECT *, row_number() OVER (PARTITION BY metric, week ORDER BY time DESC, id DESC) AS position
         FROM weekly
     )
-    SELECT metric, week, value, unit FROM latest WHERE position = 1",
+    SELECT metric, week, value, unit, id FROM latest WHERE position = 1",
         (project, format!("custom:{probe}"), config, start, at, WEEK, serde_json::json!(wanted).to_string()),
-        |r| Ok((r.get::<_, String>(0)?, Reading { week: usize::from(r.get::<_, u8>(1)?), value: r.get(2)?, unit: r.get(3)? })))?;
+        |r| Ok((r.get::<_, String>(0)?, Reading { week: usize::from(r.get::<_, u8>(1)?), value: r.get(2)?, unit: r.get(3)?, sample: r.get(4)? })))?;
     let mut by_metric = BTreeMap::<_, Vec<_>>::new();
     for (name, point) in points { by_metric.entry(name).or_default().push(point); }
     Ok(by_metric)
@@ -113,7 +120,8 @@ fn metric(name: &str, readings: &[Reading], higher_is_better: bool, missing: &'s
     let missing = if before.zip(current).is_some() { None }
         else if units_match { Some(missing) }
         else { Some("Probe units changed between readings.") };
-    (Metric { name: name.into(), unit: unit.filter(|_| units_match).cloned(), verdict: verdict.label(), before, current, noise, missing }, verdict)
+    let samples = readings.iter().map(|row| row.sample).collect();
+    (Metric { name: name.into(), unit: unit.filter(|_| units_match).cloned(), verdict: verdict.label(), before, current, noise, missing, samples }, verdict)
 }
 
 pub(super) fn read(tx: &Transaction, project: &str, at: i64, settings: &BTreeMap<String, Setting>)
@@ -137,7 +145,7 @@ pub(super) fn read(tx: &Transaction, project: &str, at: i64, settings: &BTreeMap
         let setting = match setting {
             Setting::Guarded(setting) => setting,
             Setting::Legacy(probe) => return Ok(Indicator { name: name.clone(), probe: probe.clone(),
-                verdict: Verdict::Unmeasured.label(), guard: "Choose a metric and a guard in project settings.".into(),
+                verdict: Verdict::Unmeasured.label(), guard: LEGACY.into(),
                 metrics: Vec::new() }),
         };
         let source = sources.get(setting.probe.as_str());
@@ -149,4 +157,28 @@ pub(super) fn read(tx: &Transaction, project: &str, at: i64, settings: &BTreeMap
         Ok(Indicator { name: name.clone(), probe: setting.probe.clone(), guard: format!("Guard metric · {}", setting.guard),
             verdict: scoreboard::guarded(verdict, guard_verdict).label(), metrics: vec![main, guard] })
     }).collect()
+}
+
+/// `product.external`: each guarded outside indicator's metric whose four-week average moved against its direction
+/// by more than its weekly noise plus the detector's margin, over the scoreboard's two four-week windows.
+pub(super) fn external(q: &Query<'_, '_>) -> Result<Measurements, String> {
+    let settings = super::settings::read(q.tx, q.project)?.settings.charter.outside_indicators;
+    if settings.is_empty() { return Ok(Measurements::missing("No outside indicator is set in the charter.")); }
+    let margin = match q.detector.threshold { Threshold::Change { by } => by, _ => 0.0 };
+    let mut out = Measurements::default();
+    for (setting, indicator) in settings.values().zip(read(q.tx, q.project, q.window.end, &settings)?) {
+        let (Setting::Guarded(setting), Some(main)) = (setting, indicator.metrics.into_iter().next()) else {
+            out.unavailable.push(LEGACY);
+            continue;
+        };
+        let Some((before, current)) = main.before.zip(main.current) else {
+            out.unavailable.extend(main.missing);
+            continue;
+        };
+        let worse = if setting.higher_is_better { Comparison::Below } else { Comparison::Above };
+        let evidence = main.samples.into_iter().map(Evidence::SupervisorProbes).collect();
+        out.readings.push(super::Reading::new("outside_indicator", indicator.name, "outside_metric_average", current, evidence, UNSIZED)
+            .history(vec![before]).comparison(worse).fixed(Threshold::Change { by: main.noise + margin }));
+    }
+    Ok(out)
 }
