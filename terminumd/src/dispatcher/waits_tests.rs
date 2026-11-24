@@ -401,3 +401,26 @@ fn ac210_a_human_s_move_calls_off_a_wait_for_other_tasks() {
         Ok(())
     }).unwrap();
 }
+
+#[test]
+fn ac210_a_wait_for_other_tasks_called_off_lets_go_of_its_run_and_the_task_stays_in_todo() {
+    store("waits-after-off").with(|tx| {
+        let (waiter, blocker) = (task(tx, "api"), task(tx, "api"));
+        let id = runs::add(tx, &Run { agent_id: "a".into(), kind: "claude".into(), command: "claude".into(), folder: "/srv".into(), project: "api".into(), ..Default::default() }, std::slice::from_ref(&waiter.key), Default::default(), 1)?;
+        runs::change(tx, &id, |r| { r.state = Phase::Working; r.pane_key = Some("tmux:local:t:%9".into()); r.asked = true; })?;
+        add_after(tx, &waiter, "a", "api", &json!({}), std::slice::from_ref(&blocker.key), 2)?;
+        // the manager's stop or the human's Stop waiting: the wait goes, and its run with it, the window left alone
+        call_off(tx, &waiter.key, "The project's manager called off its wait for Smith.")?;
+        assert!(of_task(tx, &waiter.key)?.is_none());
+        assert!(runs::by_id(tx, &id)?.is_over(), "no walk judges its window again: a close later fails nothing");
+        assert_eq!(ops::get(tx, &waiter.id)?.status, "TODO", "it stays where it stood (AC-158)");
+        assert!(ops::history(tx, &waiter.id)?.to_string().contains("Dispatcher let go of its session"));
+        // a wait for room alone is no run's: calling it off touches none
+        let (queued, other) = (task(tx, "api"), holding(tx, "b", "api"));
+        add(tx, &queued, "a", "api", &json!({}), 3)?;
+        tx.execute("INSERT INTO run_tasks (run, task) VALUES (?1, ?2)", (&other, &queued.key)).map_err(sql)?;
+        call_off(tx, &queued.key, "The human called off its wait for Smith.")?;
+        assert!(!runs::by_id(tx, &other)?.is_over(), "a slot's wait leaves every run as it was");
+        Ok(())
+    }).unwrap();
+}

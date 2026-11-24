@@ -103,19 +103,27 @@ pub(super) async fn promote_queued(app: &Shared, boss: &Boss, args: &Value, supe
     Ok(format!("{id} {} at the front of {name}'s queue{}. It starts when there is room.", if moved { "is now" } else { "is already" }, if behind { ", behind its schedules' tasks" } else { "" }))
 }
 
+/// Why a manager stops a task: at most this many characters, kept as its comment (AC-179).
+pub const WHY_MOST: usize = 1000;
+
 pub async fn stop_task(app: &Shared, boss: &Boss, args: &Value) -> Result<String, String> {
     let id = arg(args, "id")?.to_string();
+    let why = crate::plans::rules::clean(arg(args, "why")?);
+    if why.chars().count() > WHY_MOST {
+        return Err(format!("why: at most {WHY_MOST} characters"));
+    }
     let (scope, actor) = (boss.clone(), boss.clone());
     let stopped = crate::dispatcher::letgo::gave_up_checked(app, &id, crate::dispatcher::letgo::Giver::Manager, move |tx, wanted| {
         in_project(tx, &scope, wanted).map(drop)
     }, move |tx, ids| {
         for id in ids {
-            let key = ops::key_of(tx, id)?;
-            ops::log(tx, &key, &actor.user, "why", &format!("{} stopped it.", actor.name), None, ops::now())?;
+            let (key, at) = (ops::key_of(tx, id)?, ops::now());
+            ops::log(tx, &key, &actor.user, "why", &format!("{} stopped it.", actor.name), None, at)?;
+            crate::tasks::comments::comment_as(tx, &actor.user, true, id, &why, at)?;
         }
         Ok(())
     }).await?;
-    Ok(format!("Stopped: {}. Its window stays; its slot is free.", stopped.join(", ")))
+    Ok(format!("Stopped: {}. It waits in TODO; its slot is free. Its window stays, and an agent still working there goes on: close_session ends it.", stopped.join(", ")))
 }
 
 pub async fn dashboard(app: &Shared, boss: &Boss, args: &Value) -> Result<String, String> {

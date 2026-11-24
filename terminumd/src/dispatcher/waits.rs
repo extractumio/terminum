@@ -132,10 +132,14 @@ pub fn remove(tx: &Transaction, task: &str) -> Result<bool, String> {
 
 /// The wait of `task` is called off, `words` saying why on it; one gone already was said by what called it off.
 pub fn call_off(tx: &Transaction, task: &str, words: &str) -> Result<(), String> {
+    let for_tasks = of_task(tx, task)?.is_some_and(|w| w.for_tasks());
     if !remove(tx, task)? {
         return Ok(());
     }
     ops::log(tx, task, DISPATCHER, "told", words, None, ops::now())?;
+    if for_tasks {
+        super::runs::let_go_waiting(tx, task)?;
+    }
     super::fire::wait_ended(tx, task, words)
 }
 

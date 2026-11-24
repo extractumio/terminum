@@ -16,7 +16,7 @@ mod agents;
 pub mod peer;
 mod schedules;
 mod sessions;
-mod tasks;
+pub(crate) mod tasks;
 pub mod tokens;
 pub(crate) mod supervisor;
 pub(crate) use supervisor::Role;

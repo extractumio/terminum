@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 //! Letting go of what Dispatcher holds (`terminum-dispatcher.md` AC-138, AC-142): a human's, or the project's
-//! manager's by its stop_task (`terminum-agents.md` AC-179); and a budget changed on a running task (AC-126).
+//! manager's by its stop_task, which postpones (`terminum-agents.md` AC-179); and a budget changed on a running task
+//! (AC-126).
 
 use axum::extract::{Path, State};
 use axum::response::Response;
@@ -36,7 +37,11 @@ pub(super) async fn give_up(State(app): State<Shared>, Path(id): Path<String>) -
 #[derive(Clone, Copy, PartialEq)]
 pub(crate) enum Giver { Human, Manager }
 
-/// `who` gives up on task `id`: a wait is called off, the task where it stood (AC-158); else its run is given up.
+/// What a task stopped by its project's manager says: postponed, never failed (`terminum-agents.md` AC-179).
+pub const STOPPED: &str = "The project's manager stopped its run: it waits in TODO to run again.";
+
+/// `who` gives up on task `id`: a wait is called off, the task where it stood (AC-158); else its run is given up by
+/// the human, its open tasks FAILED, or stopped by the project's manager, its open tasks back in TODO.
 /// The tasks it concerned.
 pub(crate) async fn gave_up(app: &Shared, id: &str) -> Result<Vec<String>, String> {
     gave_up_checked(app, id, Giver::Human, |_, _| Ok(()), |tx, ids| {
@@ -89,10 +94,13 @@ pub(crate) async fn gave_up_checked(
                     return Err("Its run changed while Give up waited. Read the task and try again.".into());
                 }
             }
-            let run = runs::give_up(tx, &key)?;
-            if giver == Giver::Human {
+            let run = if giver == Giver::Human {
+                let run = runs::give_up(tx, &key)?;
                 super::giveup::record(tx, &run)?;
-            }
+                run
+            } else {
+                runs::stop(tx, &key, STOPPED)?
+            };
             record(tx, &run.ids)?;
             Ok(Some(run))
         }

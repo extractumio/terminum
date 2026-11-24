@@ -1606,8 +1606,9 @@ Scenario: AC-210 failure — refused
   Then it is refused and nothing changes, in words that say which and what to do: "API-9 is DONE already: bring in its work (merge the project's branch where it landed) and go on with API-12.", "API-9 is FAILED: it will not be DONE. If API-12 cannot go on without it, ask a human by execute_tool("ask_human", {id, questions}).", "This session also holds API-13, not finished: go on with them first; API-12 can wait once it is the last open task of this session, or ask a human by execute_tool("ask_human", {id, questions}).", "API-12 is not held by a run Dispatcher started, so nothing would go on with it by itself: link the tasks by execute_tool("link_task", {id, list: "blocked_by", task}) and say so in your answer."
 
 Scenario: AC-210 edge — a human or a restart
-  When the human presses Stop waiting, moves, runs or archives API-12
+  When the human presses Stop waiting, moves, runs or archives API-12, or the project's manager stops it (terminum-agents.md AC-179)
   Then the wait goes as AC-158's: "The human called off its wait for the tasks it waited for.", and a RUN starts as any RUN
+  And Dispatcher lets go of the session it kept for that wait, "Dispatcher let go of its session: the wait it was kept for is gone. The window stays.": a later close of its window, or its server's end, moves nothing
   When terminumd restarts while API-12 waits
   Then the wait is in the store and the walk after it goes on judging it
 

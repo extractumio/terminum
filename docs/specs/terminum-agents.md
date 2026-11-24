@@ -467,8 +467,15 @@ Scenario: AC-179 failure — a stale manager read cannot reopen a DONE task
   And a manager's run_task on FAILED or any other column is unchanged
 
 Scenario: AC-179 happy path — stopped, read
-  When the manager calls stop_task {id: "BILL-12"}
-  Then its run is given up as a human's Give up (terminum-dispatcher.md AC-138), or its wait called off, and the task's history says "Opus · manager stopped it."
+  Given BILL-12 IN PROGRESS in a worker's run, or waiting for a slot or for other tasks (terminum-dispatcher.md AC-158, AC-210)
+  When the manager calls stop_task {id: "BILL-12", why: "Postponed: the owner moved it to a later epic."}
+  Then a stop is a postponement, never a failure: its run's open tasks go back to TODO, "The project's manager stopped its run: it waits in TODO to run again." on each, but one whose commit is queued, which stays queued (terminum-integration.md AC-187); or its wait is called off and it stays where it stood
+  And Dispatcher lets go of the window, which stays, and frees its slot; nothing is typed into it, and a later close of that window fails nothing
+  And the why is the manager's comment on each, and the history says "Opus · manager stopped it.", never that a human gave up, so the Supervisor's owner stops and Auto-Dispatcher's failures count none of it
+  And it answers "Stopped: BILL-12. It waits in TODO; its slot is free. Its window stays, and an agent still working there goes on: close_session ends it."
+  When the why is missing or over 1000 characters
+  Then it is refused, "why is required" or "why: at most 1000 characters", and nothing changes
+  And failing a task stays the human's Give up (terminum-dispatcher.md AC-138); a manager drops work by archiving it (update_task)
   When it calls list_runs
   Then it reads its project's runs (tasks, agent, state, session, whether its agent asked a human) and the tasks waiting for a slot
   When it calls get_dashboard {tab: "costs", period: "month"}
@@ -799,7 +806,7 @@ MCP tools:
 
 The catalog (every tool above but the first three, with the task tools of `terminum-kanban.md` §9) and each tool's card: `terminumd/src/cli/mcp_catalog.rs`; the index: `mcp_search.rs`.
 
-A manager's tools (AC-174), every argument a string: `list_runs`; `run_task` `id`, `agent`, `comment`, `fresh` yes|no, `queue` yes|no, `reopen` yes|no; `promote_queued_task` `id`; `stop_task` `id`; `list_agents`; `create_agent` `name`, `kind` claude|codex, `command`, `effort`, `at_once`, `week_limit`, `month_limit`; `update_agent` `agent` and the same; `delete_agent` `agent`; `list_schedules`; `create_schedule` `title`, `text`, `agent`, `cron` or `once_at` (unix seconds), `budget_minutes`, `severity`, `paused` yes|no; `update_schedule` `schedule` and the same; `delete_schedule`, `run_schedule` `schedule`; `list_sessions`; `get_session` `session`, `lines`; `send_to_session` `session`, `text` (≤ 20,000 bytes), `enter` yes|no; `close_session` `session`; `get_dashboard` `tab` you|system|costs, `period` day|2w|month|quarter|year. Definitions and cards: `terminumd/src/cli/mcp_manager.rs`; what each does: `terminumd/src/roles/`.
+A manager's tools (AC-174), every argument a string: `list_runs`; `run_task` `id`, `agent`, `comment`, `fresh` yes|no, `queue` yes|no, `reopen` yes|no; `promote_queued_task` `id`; `stop_task` `id`, `why` (≤ 1000 characters); `list_agents`; `create_agent` `name`, `kind` claude|codex, `command`, `effort`, `at_once`, `week_limit`, `month_limit`; `update_agent` `agent` and the same; `delete_agent` `agent`; `list_schedules`; `create_schedule` `title`, `text`, `agent`, `cron` or `once_at` (unix seconds), `budget_minutes`, `severity`, `paused` yes|no; `update_schedule` `schedule` and the same; `delete_schedule`, `run_schedule` `schedule`; `list_sessions`; `get_session` `session`, `lines`; `send_to_session` `session`, `text` (≤ 20,000 bytes), `enter` yes|no; `close_session` `session`; `get_dashboard` `tab` you|system|costs, `period` day|2w|month|quarter|year. Definitions and cards: `terminumd/src/cli/mcp_manager.rs`; what each does: `terminumd/src/roles/`.
 
 Commands (AC-181): `terminum tools [search <words> | info <name>…]`, `terminum tool <name> ['<json>' | -]`, `terminum tokens [add <name> --role manager|worker --project <project> [--days N] | remove <name>]`. The private socket: `POST /agent` takes `{token, tool, args}` in place of a pane; `POST /tokens {action: list|add|remove, name, role, project, days}`. A probe answers `role`. Store: table `tokens` (`tasks/schema21.sql`).
 
