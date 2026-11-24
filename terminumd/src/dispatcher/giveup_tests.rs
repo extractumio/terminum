@@ -1,7 +1,6 @@
 //! AC-138: Give up through its real route, native foreground stand-ins and a private tmux server.
 
 use std::path::PathBuf;
-use std::os::unix::fs::PermissionsExt;
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
@@ -95,6 +94,7 @@ pub(super) struct Stage {
     pub(super) run: Run,
     log: PathBuf,
     database: PathBuf,
+    real: bool,
 }
 
 impl Stage {
@@ -146,7 +146,7 @@ impl Stage {
             app.hooks.apply(&key, &json!({"agent": kind, "event": "UserPromptSubmit", "session": "fixture", "prompt": "work"}), std::time::Instant::now());
             assert!(app.hooks.working(&key));
         }
-        Self { tm, app, pane, tasks, run, log, database }
+        Self { tm, app, pane, tasks, run, log, database, real: false }
     }
 
     async fn give_up(&self) {
@@ -171,7 +171,43 @@ impl Stage {
 }
 
 impl Drop for Stage {
-    fn drop(&mut self) { self.app.tmux.local.disconnect(); }
+    fn drop(&mut self) {
+        let mut ended = !self.real;
+        if self.real {
+            // Test teardown follows the keep-open assertions. Let the real CLI clean up its
+            // sleep inhibitor too, including after an assertion panics, before tmux ends.
+            self.tm.tmux(&["send-keys", "-t", &self.pane, "C-c"]);
+            std::thread::sleep(Duration::from_millis(200));
+            self.tm.tmux(&["send-keys", "-t", &self.pane, "C-c"]);
+            let until = std::time::Instant::now() + Duration::from_secs(5);
+            while std::time::Instant::now() < until {
+                if self.tm.tmux(&["show-option", "-p", "-v", "-t", &self.pane, "@terminum-exit"]).status.success() {
+                    ended = true;
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(100));
+            }
+        }
+        self.app.tmux.local.disconnect();
+        if !ended { eprintln!("real CLI did not end before test teardown"); }
+        assert!(ended || std::thread::panicking(), "real CLI did not end before test teardown");
+    }
+}
+
+#[tokio::test]
+async fn ac138_a_stuck_test_teardown_fails_and_still_cleans_up_on_unwind() {
+    for unwinding in [false, true] {
+        let mut stage = Stage::new(&format!("giveup-teardown-{unwinding}"), "claude", "idle", "").await;
+        stage.real = true; // The native stand-in stays open after Ctrl+C, exercising the timeout.
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
+            let _stage = stage;
+            assert!(!unwinding, "original test assertion");
+        }));
+        let panic = result.expect_err("incomplete teardown must not report a pass");
+        let message = panic.downcast_ref::<String>().map(String::as_str)
+            .or_else(|| panic.downcast_ref::<&str>().copied()).unwrap();
+        assert_eq!(message, if unwinding { "original test assertion" } else { "real CLI did not end before test teardown" });
+    }
 }
 
 #[tokio::test]
@@ -327,7 +363,7 @@ async fn ac138_real_agent_receives_give_up_and_keeps_its_window() {
         return;
     }
     for (kind, tui) in [("claude", "default"), ("claude", "fullscreen"), ("codex", "default")] {
-        let stage = Stage::new(&format!("giveup-real-{kind}-{tui}"), kind, "idle", "").await;
+        let mut stage = Stage::new(&format!("giveup-real-{kind}-{tui}"), kind, "idle", "").await;
         let config = stage.tm.dir.join("config");
         let work = stage.tm.dir.join("work");
         std::fs::create_dir(&config).unwrap();
@@ -335,20 +371,14 @@ async fn ac138_real_agent_receives_give_up_and_keeps_its_window() {
         let config_path = quote(config.to_str().unwrap());
         let command = if kind == "claude" {
             std::fs::write(config.join(".claude.json"), json!({"hasCompletedOnboarding": true, "projects": {work.to_str().unwrap(): {"hasTrustDialogAccepted": true}}}).to_string()).unwrap();
-            // A sleep inhibitor is unrelated to typing and can outlive the agent after tmux ends.
-            let bin = config.join("bin");
-            std::fs::create_dir(&bin).unwrap();
-            let inhibitor = bin.join("caffeinate");
-            std::fs::write(&inhibitor, "#!/bin/sh\nexit 0\n").unwrap();
-            std::fs::set_permissions(&inhibitor, std::fs::Permissions::from_mode(0o755)).unwrap();
-            let bin = quote(bin.to_str().unwrap());
-            format!("env -i HOME={config_path} PATH={bin}:\"$PATH\" TERM=xterm-256color LANG=en_US.UTF-8 SHELL=/bin/sh CLAUDE_CONFIG_DIR={config_path} ANTHROPIC_AUTH_TOKEN=no-model-call ANTHROPIC_BASE_URL=http://127.0.0.1:9 DISABLE_AUTOUPDATER=1 CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 claude --safe-mode --tools '' --settings '{{\"tui\":\"{tui}\"}}'")
+            format!("env -i HOME={config_path} PATH=\"$PATH\" TERM=xterm-256color LANG=en_US.UTF-8 SHELL=/bin/sh CLAUDE_CONFIG_DIR={config_path} ANTHROPIC_AUTH_TOKEN=no-model-call ANTHROPIC_BASE_URL=http://127.0.0.1:9 DISABLE_AUTOUPDATER=1 CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 claude --safe-mode --tools '' --settings '{{\"tui\":\"{tui}\"}}'")
         } else {
             format!("env -i HOME={config_path} PATH=\"$PATH\" TERM=xterm-256color LANG=en_US.UTF-8 SHELL=/bin/sh CODEX_HOME={config_path} codex --no-daemon --no-alt-screen -c check_for_update_on_startup=false -c model_provider='\"fixture\"' -c model_providers.fixture.name='\"Fixture\"' -c model_providers.fixture.base_url='\"http://127.0.0.1:9/v1\"' -c model_providers.fixture.wire_api='\"responses\"' -c model_providers.fixture.requires_openai_auth=false")
         };
         let tmux = crate::config::find_program("tmux", "TM_TMUX").unwrap();
         let command = ["/bin/sh", "-c", crate::dispatcher::start::window_wrapper(), "sh", work.to_str().unwrap(), &command, tmux.to_str().unwrap(), ""].map(quote).join(" ");
         stage.tm.read(&["respawn-pane", "-k", "-e", &format!("HOME={}", config.display()), "-e", "SHELL=/bin/sh", "-t", &stage.pane, &command]);
+        stage.real = true;
         stage.tm.read(&["set-option", "-p", "-t", &stage.pane, "@terminum-run", &stage.run.id]);
         tokio::time::timeout(Duration::from_secs(40), async {
             let mut trusted = false;
