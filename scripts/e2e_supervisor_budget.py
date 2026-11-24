@@ -126,7 +126,7 @@ def main():
         pane = page.until(lambda m: m.get("t") == "created", 15)["id"].rsplit(":", 1)[1]
         for event in ["SessionStart", "PreToolUse", "PreToolUse", "PreToolUse", "PreToolUse"]:
             status, _ = unix_request(t.sock, "POST", "/hook", {"agent": "claude", "session": "budget-session", "event": event,
-                                                              "socket": SOCKET, "pane": pane, "tool_name_hash": "abcdef1234567890"})
+                                                              "socket": SOCKET, "pane": pane, "tool_call_hash": "abcdef1234567890"})
             assert status in (200, 204), status
         loop = wait_for(lambda: signal("drift.loop"), bool, 30, every=0.2)
         check("AC-237 a new deterministic signal is still collected", loop is not None and loop[3] >= exhausted_at, loop)
@@ -167,9 +167,9 @@ def main():
         wait_for(lambda: signal("self.budget", "judgment_tokens"), lambda s: s[2] == "resolved", 20, every=0.2)
         task = call(f"/api/schedules/{schedule['id']}/run", "POST", {})["task"]
         review = wait_for(lambda: call(path + "/screen")["review"], lambda r: r and r["task"] == task, 30, every=0.2)
-        waiting = review["result"].split("## Top three register problems")[0] if review else ""
+        waiting = review["result"].split("Top three register problems")[0] if review else ""
         check("AC-237 once the owner raises the ceiling, the weekly review lists the budget card among decisions waiting",
-              f"{card[0][0]} · {CARD}" in waiting and NOTICE not in waiting, waiting)
+              f"[{card[0][0]}](/kanban/{card[0][0]}) · {CARD}" in waiting and NOTICE not in waiting, waiting)
     except Exception:
         print(t.log())
         raise

@@ -14,6 +14,7 @@ const MAX_SESSIONS: usize = 1024;
 const FLUSH_SESSIONS: usize = 256;
 const RETAIN_SECONDS: i64 = 30 * super::DAY;
 const KEEP_REPEAT_STATE: i64 = super::DAY;
+const MAX_THREADS: usize = 64;
 
 #[derive(Default)]
 pub(super) struct Sensors(Mutex<HashMap<String, Project>>);
@@ -32,7 +33,8 @@ struct HookSession {
 
 #[derive(Default)]
 struct Session {
-    last_tool: Option<String>,
+    /// each thread's previous call: the main agent's under "", a subagent's under its ID
+    last_calls: HashMap<String, String>,
     counts: Delta,
     seen_at: i64,
 }
@@ -92,15 +94,22 @@ impl Sensors {
         let s = scope.sessions.entry(key).or_default();
         s.seen_at = at;
         s.counts.add(kind, 1);
-        if kind == "tool" {
-            let tool = event["tool_name_hash"].as_str().filter(|hash| hash.len() == 16 && hash.bytes().all(|c| c.is_ascii_hexdigit()));
-            if tool.is_some() && tool == s.last_tool.as_deref() {
-                s.counts.add("repeat", 1);
+        // AC-212: a repeat is the same call again, its tool and input both equal to its thread's previous call's
+        let thread = event["sub"].as_str().unwrap_or_default();
+        match kind {
+            "tool" => {
+                let call = event["tool_call_hash"].as_str().filter(|hash| hash.len() == 16 && hash.bytes().all(|c| c.is_ascii_hexdigit()));
+                if call.is_some() && s.last_calls.get(thread).map(String::as_str) == call {
+                    s.counts.add("same_call", 1);
+                } else if let Some(call) = call.filter(|_| s.last_calls.len() < MAX_THREADS || s.last_calls.contains_key(thread)) {
+                    s.last_calls.insert(thread.to_owned(), call.to_owned());
+                } else {
+                    s.last_calls.remove(thread);
+                }
             }
-            s.last_tool = tool.map(str::to_owned);
-        }
-        if kind == "stop" {
-            s.last_tool = None;
+            "subagent_stop" if !thread.is_empty() => drop(s.last_calls.remove(thread)),
+            "stop" => s.last_calls.clear(),
+            _ => {}
         }
     }
 

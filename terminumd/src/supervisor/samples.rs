@@ -162,7 +162,7 @@ pub(super) fn snapshots(q: &Query<'_, '_>) -> Result<Measurements, String> {
 
 fn counter_events(rule: Rule) -> &'static str {
     match rule {
-        Rule::Loop => "('failure', 'repeat', 'compaction')",
+        Rule::Loop => "('failure', 'same_call', 'compaction')",
         Rule::Subagents => "('subagent_start')",
         _ => unreachable!("Only hook rules use the hook counter query"),
     }
@@ -196,7 +196,7 @@ pub(super) fn counters(q: &Query<'_, '_>) -> Result<Measurements, String> {
     for (agent, session, event, count, id, _) in days.iter().filter(|day| day.5) {
         let metric = match event.as_str() {
             "failure" => "tool_failures",
-            "repeat" => "repeated_tools",
+            "same_call" => "repeated_tools",
             "compaction" => "compactions",
             _ => "subagent_starts",
         };

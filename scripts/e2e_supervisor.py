@@ -108,20 +108,20 @@ def main():
 
         for event in ["SessionStart", "PreToolUse", "PreToolUse", "PreToolUse", "PreToolUse", "PreCompact"]:
             status, _ = unix_request(t.sock, "POST", "/hook", {"agent": "claude", "session": "fixture-session",
-                "event": event, "socket": SOCKET, "pane": pane, "tool_name_hash": "abcdef1234567890", "output": "discard this payload"})
+                "event": event, "socket": SOCKET, "pane": pane, "tool_call_hash": "abcdef1234567890", "output": "discard this payload"})
             assert status in (200, 204), status
         counters = lambda: dict(read("SELECT event, sum(count) FROM supervisor_hook_counts WHERE project = ? AND session = ? GROUP BY event",
                                      (api_id, "fixture-session")))
-        got = wait_for(counters, lambda c: c.get("repeat") == 3, 30)
+        got = wait_for(counters, lambda c: c.get("same_call") == 3, 30)
         check("AC-218 accepted hooks keep numerical session counts and the detector uses them",
-              got == {"compaction": 1, "repeat": 3, "tool": 4} and wait_for(
+              got == {"compaction": 1, "same_call": 3, "tool": 4} and wait_for(
                   lambda: signals(api_id), lambda s: "drift.loop" in s, 30, every=0.25))
         ac276_a_critical_report_opens_an_incident(t, SOCKET, pane, call, read)
 
         page.send({"t": "project", "action": "add", "id": pane_key, "project": web_id})
         wait_for(lambda: read("SELECT project FROM project_members WHERE pane_key = ?", (pane_key,)), lambda row: row == [(web_id,)], 10)
         unix_request(t.sock, "POST", "/hook", {"agent": "claude", "session": "fixture-session",
-            "event": "PreToolUse", "socket": SOCKET, "pane": pane, "tool_name_hash": "abcdef1234567890"})
+            "event": "PreToolUse", "socket": SOCKET, "pane": pane, "tool_call_hash": "abcdef1234567890"})
         beat = call(api_path)["last_ok"]
         wait_for(lambda: call(api_path), lambda s: s["last_ok"] > beat, 20, every=0.25)
         check("AC-218 moving a pane to an off project stops counting its hooks in the old project", counters() == got)
