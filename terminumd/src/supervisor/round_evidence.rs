@@ -55,6 +55,9 @@ pub(super) fn resolve(tx: &Transaction, project: &str, id: &Evidence) -> Result<
                 WHERE s.project = ?1 AND s.detector = 'self.line_dead'
                 AND json_extract(e.value, '$.id.channel') = ?2 AND json_extract(e.value, '$.id.failure') = ?3)",
             (project, channel, failure)),
+        // the report's state alone: its words are an agent's (terminum-reports.md AC-276)
+        Evidence::Reports(id) => select(tx, "SELECT json_object('report', slug, 'critical', critical, 'read', read_at IS NOT NULL,
+            'deleted', deleted_at IS NOT NULL) FROM reports WHERE project = ?1 AND id = ?2", (project, id)),
         Evidence::SupervisorActions(id) => select(tx, "SELECT json_object('kind', kind, 'detector', detector, 'response', response, 'at', at)
             FROM supervisor_actions WHERE project = ?1 AND id = ?2", (project, id)),
         Evidence::SupervisorRounds(id) => select(tx, "SELECT json_object('refused', refused, 'ended_at', ended_at)

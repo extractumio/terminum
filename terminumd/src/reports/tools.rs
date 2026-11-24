@@ -180,10 +180,17 @@ fn update(tx: &Transaction, h: &record::Head, who: &Who, args: &Value, at: i64) 
     if changed.is_empty() {
         return Err("Give title, summary, body or critical to change.".into());
     }
-    // made critical while unread: its line comes then (AC-271), unless an incident's
+    let (was, own): (bool, bool) = tx.query_row("SELECT critical, incident IS NULL FROM reports WHERE id = ?1", [&h.key],
+        |r| Ok((r.get(0)?, r.get(1)?))).map_err(sql)?;
     tx.execute("UPDATE reports SET title = coalesce(?1, title), summary = coalesce(?2, summary), body = coalesce(?3, body),
-        line = CASE WHEN ?4 AND NOT critical AND incident IS NULL THEN 1 ELSE line END, critical = coalesce(?4, critical), updated_at = ?5 WHERE id = ?6",
-        (title, summary, body, critical, at, &h.key)).map_err(sql)?;
+        critical = coalesce(?4, critical), updated_at = ?5 WHERE id = ?6", (title, summary, body, critical, at, &h.key)).map_err(sql)?;
+    match critical {
+        // made critical, not an incident's: it alerts once, by its incident or its own line (AC-271, AC-276)
+        Some(true) if !was && own => record::alert(tx, &h.key, at, true)?,
+        // no longer critical: its subject is measured again, its incident cleared
+        Some(false) if was && own => drop(crate::supervisor::report_rules::supervise(tx, &h.key, at)?),
+        _ => {}
+    }
     record::note(tx, &h.key, &author(tx, who)?, "change", &format!("changed its {}", changed.join(", ")), at)?;
     Ok((format!("{} is changed.", h.id), Vec::new()))
 }

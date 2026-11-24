@@ -41,7 +41,7 @@ pub(crate) mod holds;
 pub(crate) mod holds_api;
 #[cfg(test)]
 mod holds_tests;
-mod incidents;
+pub(crate) mod incidents;
 pub(crate) mod thread;
 pub(crate) mod talk;
 mod incidents_api;
@@ -58,6 +58,9 @@ mod outside_indicators;
 mod probe_rules;
 mod integration_rules;
 mod review_rules;
+pub(crate) mod report_rules;
+#[cfg(test)]
+mod report_rules_tests;
 mod line_queue;
 mod replay;
 pub(crate) mod runtime;
@@ -254,6 +257,7 @@ pub(crate) enum Evidence {
     SupervisorRounds(String),
     SupervisorActions(i64),
     SupervisorLine { channel: i64, failure: String },
+    Reports(String),
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -464,12 +468,14 @@ struct EvaluationInputs<'a> {
 }
 
 impl Evaluation {
-    fn critical(project: &str, rule: Rule, reading: Reading, window: Window) -> Option<Self> {
-        let mut finding = reading.finding(rule.defaults(), window)?;
-        finding.scores = Scores { impact: 3, ..Scores::default() };
-        Some(Self { project: project.into(), at: window.end, detectors: vec![Checked {
-            rule, mode: Mode::Live, unavailable: Vec::new(), findings: vec![finding],
-            thresholds: Default::default(), complete_metrics: Vec::new(), measured: None, observations: Default::default(),
+    /// One critical evaluation now, outside the collector: of `readings`; `measured` limits what an absent reading
+    /// resolves to those subjects (none: the rule's every subject). Nothing to find or resolve: none.
+    fn critical(project: &str, rule: Rule, readings: Vec<Reading>, measured: MeasuredSubjects, window: Window) -> Option<Self> {
+        let findings: Vec<_> = readings.into_iter().filter_map(|reading| reading.finding(rule.defaults(), window))
+            .map(|mut finding| { finding.scores = Scores { impact: 3, ..Scores::default() }; finding }).collect();
+        (!findings.is_empty() || measured.is_some()).then(|| Self { project: project.into(), at: window.end, detectors: vec![Checked {
+            rule, mode: Mode::Live, unavailable: Vec::new(), findings,
+            thresholds: Default::default(), complete_metrics: Vec::new(), measured, observations: Default::default(),
         }] })
     }
 

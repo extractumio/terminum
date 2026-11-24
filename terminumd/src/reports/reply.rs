@@ -94,22 +94,30 @@ async fn reply(State(app): State<Shared>, Path(id): Path<String>, Json(body): Js
     let kept = store(&app, move |tx| {
         let at = ops::now();
         record::note(tx, &key, HUMAN, "reply", &record::check_note(&text)?, at)?;
-        tx.execute("UPDATE reports SET replied_at = ?1 WHERE id = ?2", (at, &key)).map(drop).map_err(sql)
+        tx.execute("UPDATE reports SET replied_at = ?1 WHERE id = ?2", (at, &key)).map_err(sql)?;
+        // answering it is seeing it: its incident is acknowledged as reading would (AC-276)
+        record::acknowledge_by_reading(tx, &key, at)
     }).await;
     crate::tasks::api::told(&app, &task);
     super::changed(&app);
-    answer(kept.map(|()| json!({"task": task})))
+    if matches!(kept, Ok(true)) {
+        app.supervisor.incident_changed();
+        app.supervisor.wake();
+    }
+    answer(kept.map(|_| json!({"task": task})))
 }
+
+/// Report `p`'s reply has no answer yet: no agent's comment since it, no report following it (AC-270, AC-277).
+pub(crate) const UNANSWERED: &str = "NOT EXISTS (SELECT 1 FROM report_notes n JOIN users u ON u.id = n.author WHERE n.report = p.id AND u.kind = 'agent' AND n.kind = 'comment' AND n.at >= p.replied_at)
+          AND NOT EXISTS (SELECT 1 FROM reports f WHERE f.follows = p.id AND f.created_at >= p.replied_at)";
 
 /// Report `key`'s last reply still unanswered: the agent answering it now, else why no answer comes.
 pub fn answer_state(tx: &Transaction, key: &str) -> Result<(Option<String>, Option<String>), String> {
-    let got: Option<(String, String, Option<String>, bool)> = tx.query_row("SELECT t.slug, t.status,
+    let got: Option<(String, String, Option<String>, bool)> = tx.query_row(&format!("SELECT t.slug, t.status,
             (SELECT r.agent_name FROM run_tasks m JOIN runs r ON r.id = m.run WHERE m.task = t.id ORDER BY r.rowid DESC LIMIT 1),
             EXISTS (SELECT 1 FROM run_waits w WHERE w.task = t.id)
         FROM reports p JOIN tasks t ON t.id = p.task
-        WHERE p.id = ?1 AND p.replied_at IS NOT NULL
-          AND NOT EXISTS (SELECT 1 FROM report_notes n JOIN users u ON u.id = n.author WHERE n.report = p.id AND u.kind = 'agent' AND n.kind = 'comment' AND n.at >= p.replied_at)
-          AND NOT EXISTS (SELECT 1 FROM reports f WHERE f.follows = p.id AND f.created_at >= p.replied_at)", [key],
+        WHERE p.id = ?1 AND p.replied_at IS NOT NULL AND {UNANSWERED}"), [key],
         |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))).optional().map_err(sql)?;
     let Some((task, status, agent, waits)) = got else { return Ok((None, None)) };
     let agent = agent.unwrap_or_else(|| "Its agent".into());

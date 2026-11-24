@@ -21,7 +21,7 @@ export const SIGNAL = { fingerprint: "one", project: "api", detector: RULE, subj
   evidence: [{ table: "tasks", id: "API-2" }, { table: "events", id: LITERAL }, { table: "supervisor_line", id: { channel: 2, failure: "Exit status 17." } }] };
 export const INCIDENT = { id: 42, task: "API-40", project: "api", project_name: "API service", level: 3, revision: 1,
   happened: "The collector missed successive heartbeats.", held: "No hold in effect.",
-  needed: "Acknowledge when seen.", no_answer: "No automatic action without an answer." };
+  needed: "Acknowledge when seen.", no_answer: "No automatic action without an answer.", reports: ["R_API-8"] };
 export const HOLD = { id: 5, kind: "pause_integration", label: "Integration queue paused", undo: "Resume integration",
   signal: "0", detector: RULE, reason: LITERAL };
 export const PROBLEM = { id: 42, title: "Repeated failures", state: "confirmed", lens: "flow", impact: 2, share: 0.2,
