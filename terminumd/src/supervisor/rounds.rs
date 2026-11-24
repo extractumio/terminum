@@ -222,8 +222,16 @@ fn task_data(tx: &Transaction, signal: &Signal) -> Result<Vec<Value>, String> {
     }).collect()
 }
 
-/// The round's first prompt, and the task an interim verification hold took out of integration (AC-233).
-pub(crate) fn save(tx: &Transaction, run: &str, candidate: Candidate, at: i64, clock_scale: i64) -> Result<(String, Option<String>), String> {
+/// A saved round's first prompt, the task an interim verification hold took out of integration (AC-233), and that
+/// hold's comments, for their notices after commit (AC-241).
+pub(crate) struct Saved {
+    pub prompt: String,
+    pub held: Option<String>,
+    pub nudges: super::nudges::Nudges,
+}
+
+/// Saves the round's case file.
+pub(crate) fn save(tx: &Transaction, run: &str, candidate: Candidate, at: i64, clock_scale: i64) -> Result<Saved, String> {
     let Candidate { mut purpose, key, generation, revision, project, .. } = candidate;
     let id = format!("case_{run}");
     let important = matches!(&purpose, Purpose::Investigation(signal) if signal.level >= 2);
@@ -248,13 +256,13 @@ pub(crate) fn save(tx: &Transaction, run: &str, candidate: Candidate, at: i64, c
     {
         case[field] = value;
     }
-    let held = match &purpose {
+    let (held, nudges) = match &purpose {
         Purpose::Investigation(signal) if case["kind"] == "verification" => {
             let comparison = super::interim::verification_hold(tx, signal, &id, deadline, at)?;
-            case["verification_hold"] = json!(comparison);
-            comparison.task
+            case["verification_hold"] = json!(&comparison);
+            (comparison.task, comparison.nudges)
         }
-        _ => None,
+        _ => (None, Vec::new()),
     };
     tx.execute("INSERT INTO supervisor_rounds (id, run, project, generation, fingerprint, signal_revision, case_file, deadline, token_cap, reserved_class, incident)
         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)",
@@ -268,7 +276,7 @@ pub(crate) fn save(tx: &Transaction, run: &str, candidate: Candidate, at: i64, c
             tx.execute("DELETE FROM supervisor_round_requests WHERE fingerprint = ?1", [&key]).map_err(sql)?;
         }
     }
-    Ok((prompt, held))
+    Ok(Saved { prompt, held, nudges })
 }
 
 fn investigation_case(tx: &Transaction, signal: &mut Signal, at: i64) -> Result<(Value, Option<i64>), String> {

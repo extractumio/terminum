@@ -297,6 +297,7 @@ fn collect_project(app: &Shared, project: &Project, clock: impl Fn() -> i64) -> 
     for hold in holds {
         match hold {
             super::holds::Disposition::Applied(hold) => {
+                super::holds_api::nudged(app, &hold.nudges);
                 if let Some(run) = hold.run { crate::dispatcher::letgo::let_go_of(app, *run); }
             }
             super::holds::Disposition::Card(_) => (),
@@ -321,10 +322,7 @@ fn collect_project(app: &Shared, project: &Project, clock: impl Fn() -> i64) -> 
             Ok((changed, nudges))
         })?;
         for id in changed { crate::tasks::api::told(app, &id); }
-        for (id, event) in nudges {
-            if let Some(event) = event { crate::tasks::notify::comment_added(app, &id, &event, None); }
-            crate::tasks::api::told(app, &id);
-        }
+        super::holds_api::nudged(app, &nudges);
     }
     Ok(())
 }

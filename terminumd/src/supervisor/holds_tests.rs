@@ -184,3 +184,87 @@ fn ac247_two_unchanged_owner_releases_divert_only_that_rules_hold() {
         Ok(())
     }).unwrap();
 }
+
+const PANE: &str = "tmux:local:t:%41";
+
+/// A level 2 failed-repeat signal on a working task, which no other nudge trigger covers, stopped by a hold.
+fn stop_run(f: &Fixture, at: i64) -> (String, Result<Disposition, String>) {
+    arm(f, Rule::FailedRepeat, at);
+    f.task("lead", Some("Bug"), "P2", "IN PROGRESS", at - 120);
+    f.write("UPDATE tasks SET slug = 'FIX-' || number, session_key = ?1 WHERE id = 'lead'", [PANE]);
+    f.agent("agent");
+    f.run("lead", "original", "agent", at - 50);
+    f.write("UPDATE runs SET state = 'working', pane_key = ?1 WHERE id = 'original'", [PANE]);
+    signal(f, Rule::FailedRepeat, Some("lead"), 2, at);
+    f.store.with(|tx| {
+        let slug: String = tx.query_row("SELECT slug FROM tasks WHERE id = 'lead'", [], |r| r.get(0)).map_err(sql)?;
+        let request = Request { signal: "hold-signal".into(), kind: Kind::StopRun, task: Some(slug.clone()),
+            reason: "Fixture measured risk.".into() };
+        Ok((slug, holds::apply(tx, PROJECT, request, "system", at)))
+    }).unwrap()
+}
+
+fn comments(f: &Fixture) -> Vec<String> {
+    f.store.with(|tx| ops::rows(tx, "SELECT text FROM events WHERE task = 'lead' AND kind = 'comment'", [],
+        |r| r.get::<_, String>(0))).unwrap()
+}
+
+#[test]
+fn ac241_a_hold_comments_once_with_its_undo_and_a_retry_or_repeat_adds_none() {
+    let f = Fixture::new("hold-nudge");
+    let at = ops::now();
+    let (slug, done) = stop_run(&f, at);
+    let hold = applied(done.unwrap());
+    assert_eq!(hold.nudges.len(), 1, "the hold alone triggers its task's comment");
+    assert_eq!(hold.nudges[0].0, slug);
+    let said = comments(&f);
+    assert_eq!(said.len(), 1);
+    assert!(said[0].starts_with("Supervisor held this work: Run stopped.\n\n"), "{}", said[0]);
+    assert!(said[0].contains(&format!("Undo hold {}: RUN.", hold.id)) && said[0].contains("Signal `hold-signal`"), "{}", said[0]);
+    f.store.with(|tx| {
+        let retry = holds::apply(tx, PROJECT, Request { signal: "hold-signal".into(), kind: Kind::StopRun,
+            task: Some(slug.clone()), reason: "Fixture measured risk.".into() }, "system", at + 1);
+        assert!(retry.is_err(), "the retried hold is refused");
+        assert!(super::nudges::collected(tx, PROJECT, at, at + 2)?.is_empty(), "the signal's repeat does not stack");
+        Ok(())
+    }).unwrap();
+    assert_eq!(comments(&f), said);
+}
+
+#[test]
+fn ac241_a_shadow_hold_comments_nothing() {
+    let f = Fixture::new("hold-nudge-shadow");
+    let at = ops::now();
+    arm(&f, Rule::FailedRepeat, at);
+    f.task("lead", Some("Bug"), "P2", "IN PROGRESS", at - 120);
+    f.write("UPDATE tasks SET slug = 'FIX-' || number WHERE id = 'lead'", []);
+    signal(&f, Rule::FailedRepeat, Some("lead"), 2, at);
+    f.write("UPDATE supervisor_signals SET state = 'shadow'", []);
+    let hold = f.store.with(|tx| {
+        let slug: String = tx.query_row("SELECT slug FROM tasks WHERE id = 'lead'", [], |r| r.get(0)).map_err(sql)?;
+        holds::apply(tx, PROJECT, Request { signal: "hold-signal".into(), kind: Kind::StopRun, task: Some(slug),
+            reason: "Fixture measured risk.".into() }, "system", at)
+    }).map(applied).unwrap();
+    assert!(hold.shadow && hold.nudges.is_empty());
+    assert!(comments(&f).is_empty());
+}
+
+/// The comment reaches the held task's linked agent as any comment does, at its next hook (terminum-dispatcher.md AC-209).
+#[tokio::test]
+async fn ac241_a_hold_s_comment_waits_for_its_linked_agent() {
+    let (root, app) = crate::testutil::app_with_tasks("hold-nudge-agent");
+    let f = Fixture::in_path(root.join("state").join("kanban.sqlite"));
+    let at = ops::now();
+    *app.layout.write() = json!([{"items": [{"id": PANE, "agent": "codex"}]}]);
+    app.hooks.apply(PANE, &json!({"agent": "codex", "event": "SessionStart", "session": "s1"}), std::time::Instant::now());
+    let (slug, done) = stop_run(&f, at);
+    let hold = applied(done.unwrap());
+    super::holds_api::nudged(&app, &hold.nudges);
+    for _ in 0..200 {
+        if !app.task_lines.waiting_comments(&slug).is_empty() { break }
+        tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+    }
+    assert_eq!(app.task_lines.waiting_comments(&slug), std::collections::HashSet::from([hold.nudges[0].1.clone().unwrap()]));
+    let (_, said) = app.task_lines.offer(PANE, false).unwrap();
+    assert!(said.iter().any(|l| l.starts_with(&format!("[terminum] {slug} has a new comment by"))), "{said:?}");
+}
