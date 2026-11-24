@@ -16,7 +16,9 @@ SPEC.loader.exec_module(vm_files)
 ROOT = Path("/Users/alex/terminum")
 VM_PATH = ("/System/Library/Frameworks/Virtualization.framework/Versions/A/XPCServices/"
            "com.apple.Virtualization.VirtualMachine.xpc/Contents/MacOS/com.apple.Virtualization.VirtualMachine")
-PS = f"  74738 {VM_PATH}\n  528 /usr/sbin/cfprefsd\n 900 /usr/bin/vim com.apple.Virtualization.VirtualMachine.txt\n"
+PS = (f"  74738 1 2-03:04:05 {VM_PATH}\n  528 1 47-03:00:06 /usr/sbin/cfprefsd\n"
+      "  900 600 01:02 /usr/bin/vim com.apple.Virtualization.VirtualMachine.txt\n"
+      "  901 600 00:01 /usr/bin/grep -r /com.apple.Virtualization.VirtualMachine\n")
 DISK = "n/Users/alex/Library/Containers/com.docker.docker/Data/vms/0/data/Docker.raw"
 
 
@@ -25,11 +27,15 @@ def docker_vm(under, elsewhere=0):
                      + [f"n/private/tmp/tm-x/f{i}" for i in range(elsewhere)]) + "\n"
 
 
-def run(listings, ps=PS, **kwargs):
+def run(listings, ps=PS, why="", **kwargs):
     """report() with lsof answering `listings` in turn; (its return, what it printed, the drops)."""
-    answers, drops, out, why = iter(listings), [], io.StringIO(), kwargs.pop("why", "")
+    answers, drops, out = iter(listings), [], io.StringIO()
+
+    def list_files(pid, root):
+        text = next(answers)
+        return None if text is None else vm_files.counts(text, root)
     with contextlib.redirect_stdout(out):
-        code = vm_files.report(root=ROOT, ps_text=ps, list_files=lambda pid: next(answers),
+        code = vm_files.report(root=ROOT, ps_text=ps, list_files=list_files,
                                drop=lambda pid: drops.append(pid) or why, **kwargs)
     return code, out.getvalue(), drops
 
@@ -40,12 +46,13 @@ class Counting(unittest.TestCase):
 
     def test_every_file_counts_and_those_under_the_checkout_are_said(self):
         text = docker_vm(2, elsewhere=3) + f"n{ROOT}-other/y\n"
-        self.assertEqual(vm_files.counts(text, ROOT), (8, 2))
+        self.assertEqual(vm_files.counts(text, ROOT), (True, 8, 2))
+        self.assertEqual(vm_files.counts(text, None), (True, 8, None))
 
     def test_a_listing_lsof_stops_short_is_unknown(self):
         cut = subprocess.CompletedProcess([], 1, stdout=docker_vm(10)[:40], stderr="lsof: Too many open files in system")
         with mock.patch.object(vm_files.subprocess, "run", return_value=cut):
-            self.assertIsNone(vm_files.listing(74738))
+            self.assertIsNone(vm_files.listing(74738, ROOT))
 
 
 class Report(unittest.TestCase):
@@ -84,15 +91,15 @@ class Report(unittest.TestCase):
 
     def test_another_vm_is_never_counted_or_dropped(self):
         other = "\n".join(["p75000", "n/Users/alex/.colima/default/disk"] + [f"n{ROOT}/f{i}" for i in range(20_000)])
-        ps = PS + f"75000 {VM_PATH}\n"
+        ps = PS + f"75000 1 00:10 {VM_PATH}\n"
         code, out, drops = run([docker_vm(24), other], ps=ps, releasing=True)
         self.assertEqual((code, drops), (0, []))
         self.assertIn("Docker's VM 74738 holds 26 files", out)
-        code, out, drops = run([other], ps=f"75000 {VM_PATH}\n", releasing=True)
+        code, out, drops = run([other], ps=f"75000 1 00:10 {VM_PATH}\n", releasing=True)
         self.assertEqual((code, out, drops), (0, "", []))
 
     def test_no_vm_says_nothing(self):
-        self.assertEqual(run([], ps="528 /usr/sbin/cfprefsd\n", releasing=True), (0, "", []))
+        self.assertEqual(run([], ps="528 1 00:10 /usr/sbin/cfprefsd\n", releasing=True), (0, "", []))
 
     def test_the_drop_needs_no_host_namespace(self):
         done = subprocess.CompletedProcess([], 0, "", "")

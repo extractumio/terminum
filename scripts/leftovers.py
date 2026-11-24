@@ -153,7 +153,8 @@ def main(argv):
     socket_folder = Path(os.environ.get("TMUX_TMPDIR", "/tmp")) / f"tmux-{os.getuid()}"
     roots = sorted({Path(tempfile.gettempdir()).resolve(), Path("/tmp").resolve()})
     stuck = 0
-    for pid, command, ours in strays(processes()):
+    ps_text = processes()
+    for pid, command, ours in strays(ps_text):
         if ours and ending:
             gone = end(pid, command)
             stuck += not gone
@@ -164,8 +165,9 @@ def main(argv):
     for path in live:
         print(f"named only, a live tmux server: {path.name} (tmux -L {path.name} kill-server if it is yours)")
     # first, so a test folder Docker's VM held from a bind mount is no longer open when the folders are judged
-    over = vm_files.report(ending)
-    stuck += over if ending else 0   # a plain look says it, as of the folders, and exits 0
+    vm_over = vm_files.report(ending, ps_text=ps_text)
+    if ending:   # a plain look says it, as of the folders, and exits 0
+        stuck += vm_over
     held = open_paths()
     if held is None:
         print("lsof says nothing of what is open: every test folder stays")
