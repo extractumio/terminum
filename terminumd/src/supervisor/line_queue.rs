@@ -84,12 +84,12 @@ const ALERT_MEMBERS: &str = "LEFT JOIN json_each(ready.alerts) list ON true
     LEFT JOIN supervisor_breakers b ON b.project = a.project AND b.detector = a.detector
       AND b.response = a.response AND b.closed_at IS NULL";
 
-/// The current numbers of the incidents `filter` selects, with `urgent` also counting as urgent.
+/// The current numbers of the incidents `filter` selects.
 /// No configured channel, or a project whose Supervisor is off, queues nothing.
-fn snapshot(urgent: &str, filter: &str) -> String {
+fn snapshot(filter: &str) -> String {
     format!("SELECT i.id AS incident, coalesce(max(m.level), (
             SELECT max(level) FROM supervisor_holds WHERE incident = i.id AND shadow = 0 AND released_at IS NULL), 0) AS level,
-            count(m.fingerprint) AS signals, ({urgent} OR coalesce(max(m.urgent), 0)) AS urgent, {ALERTS} AS alerts
+            count(m.fingerprint) AS signals, coalesce(max(m.urgent), 0) AS urgent, {ALERTS} AS alerts
         FROM supervisor_incidents i LEFT JOIN supervisor_incident_signals m ON m.incident = i.id
         WHERE {filter} AND i.subject_kind <> 'critical_line'
           AND EXISTS (SELECT 1 FROM supervisor_line WHERE json_array_length(settings, '$.channels') > 0)
@@ -104,51 +104,50 @@ fn snapshot(urgent: &str, filter: &str) -> String {
 /// waited through quiet hours carries only the incident's latest state.
 pub(super) fn enqueue(tx: &Transaction, incident: i64, kind: Kind, ended_urgent: bool) -> Result<(), String> {
     debug_assert_ne!(kind, Kind::Repeat);
-    let fresh = snapshot("?3", "i.id = ?1");
+    let fresh = snapshot("i.id = ?1");
+    let waiting = "SELECT id FROM supervisor_line_pending WHERE incident = ?1 AND kind IN ('opened', 'updated')";
     match kind {
         Kind::Opened | Kind::Updated => {
-            let merged = tx.execute(&format!("UPDATE supervisor_line_pending AS q
-                SET level = f.level, signals = f.signals, urgent = f.urgent, alerts = f.alerts
-                FROM ({fresh}) f WHERE q.incident = f.incident AND q.kind IN ('opened', 'updated')"),
-                (incident, kind.name(), ended_urgent)).map_err(sql)?;
-            if merged != 0 { return Ok(()); }
+            let row = tx.query_row(&format!("{waiting} ORDER BY id LIMIT 1"), [incident], |r| r.get::<_, i64>(0))
+                .optional().map_err(sql)?;
+            if let Some(row) = row {
+                return tx.execute(&format!("UPDATE supervisor_line_pending AS q
+                    SET level = f.level, signals = f.signals, urgent = (f.urgent OR ?2), alerts = f.alerts
+                    FROM ({fresh}) f WHERE q.id = ?3"), (incident, ended_urgent, row)).map(drop).map_err(sql);
+            }
         }
         Kind::AllClear => {
-            tx.execute("DELETE FROM supervisor_line_pending WHERE incident = ?1 AND kind IN ('opened', 'updated')",
-                [incident]).map_err(sql)?;
+            tx.execute(&format!("DELETE FROM supervisor_line_pending WHERE id IN ({waiting})"), [incident]).map_err(sql)?;
         }
         Kind::Answer | Kind::Repeat => {}
     }
     tx.execute(&format!("INSERT INTO supervisor_line_pending (incident, kind, level, signals, urgent, alerts)
-        SELECT incident, ?2, level, signals, urgent, alerts FROM ({fresh})"), (incident, kind.name(), ended_urgent))
+        SELECT incident, ?2, level, signals, (urgent OR ?3), alerts FROM ({fresh})"), (incident, kind.name(), ended_urgent))
         .map(drop).map_err(sql)
 }
 
-/// Drops an incident's waiting page, the notice that asks for acknowledgment; true when one waited.
-pub(super) fn drop_unsent_page(tx: &Transaction, incident: i64) -> Result<bool, String> {
-    tx.execute("DELETE FROM supervisor_line_pending WHERE incident = ?1 AND kind = 'opened'", [incident])
-        .map(|n| n != 0).map_err(sql)
-}
-
-/// When the first channel is saved, start with current unacknowledged incidents.
-pub(super) fn seed(tx: &Transaction) -> Result<(), String> {
-    seed_where(tx, "1", [])
-}
-
-fn seed_where(tx: &Transaction, filter: &str, params: impl rusqlite::Params) -> Result<(), String> {
-    let open = snapshot("0", &format!("{filter} AND i.closed_at IS NULL AND i.acknowledged_at IS NULL"));
+/// Queues the current unacknowledged incidents, of one project or all: when the first channel
+/// is saved, and when a project's Supervisor is turned back on.
+pub(super) fn seed(tx: &Transaction, project: Option<&str>) -> Result<(), String> {
+    let open = snapshot("(?1 IS NULL OR i.project = ?1) AND i.closed_at IS NULL AND i.acknowledged_at IS NULL");
     tx.execute(&format!("INSERT INTO supervisor_line_pending (incident, kind, level, signals, urgent, alerts)
-        SELECT incident, 'opened', level, signals, urgent, alerts FROM ({open})"), params).map(drop).map_err(sql)
+        SELECT incident, 'opened', level, signals, urgent, alerts FROM ({open})"), [project]).map(drop).map_err(sql)
+}
+
+/// Drops the waiting notices and repeat steps, of one project or all.
+pub(super) fn clear(tx: &Transaction, project: Option<&str>) -> Result<(), String> {
+    for table in ["supervisor_line_pending", "supervisor_line_repeats"] {
+        tx.execute(&format!("DELETE FROM {table} WHERE ?1 IS NULL OR incident IN (
+            SELECT id FROM supervisor_incidents WHERE project = ?1)"), [project]).map_err(sql)?;
+    }
+    Ok(())
 }
 
 /// A project's Supervisor turned off or on (AC-228): its queued notices and repeat steps
 /// are stale and go; turned on, its open, unacknowledged incidents reach the owner once.
 pub(super) fn restart(tx: &Transaction, project: &str, on: bool) -> Result<(), String> {
-    for table in ["supervisor_line_pending", "supervisor_line_repeats"] {
-        tx.execute(&format!("DELETE FROM {table} WHERE incident IN (
-            SELECT id FROM supervisor_incidents WHERE project = ?1)"), [project]).map_err(sql)?;
-    }
-    if on { seed_where(tx, "i.project = ?1", [project])?; }
+    clear(tx, Some(project))?;
+    if on { seed(tx, Some(project))?; }
     Ok(())
 }
 
@@ -166,6 +165,11 @@ pub(super) enum Claim {
 /// one-shot notification or send several missed repeat steps at once.
 pub(super) fn claim(tx: &Transaction, settings: &Settings, at: i64, quiet: bool) -> Result<Claim, String> {
     let first = settings.delay(0);
+    // A waiting page the owner no longer needs goes (AC-228): its incident was acknowledged, or
+    // it closed because its signals moved on to a new incident, whose own page covers it.
+    tx.execute("DELETE FROM supervisor_line_pending AS q WHERE kind = 'opened' AND EXISTS (
+        SELECT 1 FROM supervisor_incidents i WHERE i.id = q.incident
+          AND (i.acknowledged_at IS NOT NULL OR i.closed_at IS NOT NULL))", []).map_err(sql)?;
     let selected = tx.query_row(&format!("WITH ready AS (
         SELECT q.id AS pending, i.id AS incident, i.project, q.kind,
                CASE WHEN q.kind IN ('all_clear', 'answer') THEN 0 ELSE q.level END AS level, q.signals,

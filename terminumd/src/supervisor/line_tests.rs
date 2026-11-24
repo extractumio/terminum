@@ -218,7 +218,7 @@ fn ac228_a_supervisor_turned_back_on_pages_its_open_incidents_once() {
     observed(&f, NOW, &[("open", false, 0, 1), ("acknowledged", false, 0, 1), ("cleared", false, 0, 1)]);
     let acknowledged = incident_of(&f, "acknowledged");
     assert!(f.store.with(|tx| incidents::act(tx, acknowledged, Action::Acknowledge, NOW + 1)).unwrap());
-    assert_eq!(queued(&f), 2, "an acknowledged incident's waiting page is dropped");
+    assert_eq!(queued(&f), 3);
     assert!(set(false, 2).is_some());
     assert_eq!(queued(&f), 0, "turning the Supervisor off drops its queued notices");
     observed(&f, NOW + 3, &[("open", false, 0, 2), ("acknowledged", false, 0, 1)]);

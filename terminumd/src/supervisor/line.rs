@@ -133,10 +133,9 @@ fn save(tx: &Transaction, revision: i64, mut settings: Settings, at: i64) -> Res
         }
         clear_if_healthy(tx, at)?;
         if settings.channels.is_empty() {
-            tx.execute("DELETE FROM supervisor_line_pending", []).map_err(sql)?;
-            tx.execute("DELETE FROM supervisor_line_repeats", []).map_err(sql)?;
+            line_queue::clear(tx, None)?;
         } else if previous.settings.channels.is_empty() {
-            line_queue::seed(tx)?;
+            line_queue::seed(tx, None)?;
         }
     }
     Ok(Saved { revision, settings, checked_at })
