@@ -64,7 +64,7 @@ Open questions: none open. Which clients exist (AC-11's drop) is terminum.md OQ-
 | AC-16 | [SHOULD / P1] | The user upgrades, rolls back and uninstalls with one command each, a new build is checked before it goes live, open pages reload themselves keeping unsaved edits, and state written by either build stays readable by both. |
 | AC-17 | [SHOULD / P1] | The user learns from the page that a newer release exists and can copy the command that installs it, skip that release, or stop the check. |
 | AC-96 | [SHOULD / P1] | After tmux restarts (a reboot, a killed server) a session's terminal begins with its last 300 lines from before the restart, and its menu opens them, the number set in settings.json. |
-| AC-102 | [SHOULD / P1] | A release starts from a machine with no leftovers of old test runs: the one test helper that outlives its test is ended, dead tmux sockets and test folders are removed, the files Docker Desktop's VM still holds from old bind mounts are released, and what may be someone's work is only named; a test run itself leaves nothing, and a step of `make check` that leaves something fails. |
+| AC-102 | [SHOULD / P1] | A release starts from a machine with no leftovers of old test runs: the one test helper that outlives its test and test tmux servers whose socket is gone are ended, dead tmux sockets and test folders are removed, the files Docker Desktop's VM still holds from old bind mounts are released, and what may be someone's work is only named; a test run itself leaves nothing, and a step of `make check` that leaves something fails. |
 | AC-103 | [SHOULD / P1] | The docs keep their shape on every `make test`, and a review of what changed since the last release removes duplicates and superseded requirements before a minor release. |
 | AC-104 | [SHOULD / P1] | A finished worktree lands by itself: its targeted checks green on its own work, then a short smoke set of the basics on one platform, with no timed check, on its merge with what others landed; pushed, the primary checkout brought up to it and the tree deleted; the full test run is the release's gate, and only failing tests block a release. |
 | AC-146 | [SHOULD / P1] | A release's full run starts only on a quiet machine: it queues behind another full run, waits for the load to stay low for 3 minutes, says each minute that it waits, and after 15 minutes ends the release with "the build server is not available"; a task's timed checks wait the same way, and after 15 minutes, or at once while a full run holds its turn, are skipped and said in red, never run under the load. |
@@ -379,6 +379,24 @@ Scenario: AC-102 happy path — a run leaves nothing
   Given a step of make check or of a landing's targeted checks, run by scripts/check_step.py with its own short folder as TMPDIR and TMUX_TMPDIR
   When the step passes, fails or gets a signal
   Then its folders, tmux servers, tmux socket files and processes have gone and that folder is removed
+
+Scenario Outline: AC-102 edge — a step's tmux server ends before its socket's folder goes
+  Given a step under scripts/check_step.py starts tmux -L tm-test-live-<pid>, whose server daemonizes out of the step's process group with its working directory outside the step's folder, its socket alone in the step's TMUX_TMPDIR
+  When the step <ends>
+  Then the guard prints "LEFT process <pid>: tmux …", ends the server and its pane's programs by their pids (SIGTERM, then SIGKILL) and only then removes the folder, and the step exits <status>
+  And no tmux -L tm-test-live-<pid> process remains, nor its pane's program that ignores SIGHUP and SIGTERM
+
+  Examples:
+    | ends                | status |
+    | passes              | 3      |
+    | fails with status 1 | 1      |
+    | gets SIGINT         | 130    |
+
+Scenario: AC-102 edge — a test's tmux server whose socket is gone is ended
+  Given a tmux server of this user on a tm-* name (-L tm-test-live-33522) with parent 1, running for 15 hours, every socket it bound gone with its run's folder (/tmp/tmc.indcv8il)
+  When make leftovers END=1 runs
+  Then it is ended by its pid with SIGTERM, its command read again just before, and printed as "ended <pid>: tmux -L tm-test-live-33522 …"
+  And one whose socket is still there, whose sockets cannot be read, or whose socket went from a folder no test names (/tmp/tmux-501) is not ended
 
 Scenario: AC-102 edge — macOS Python without os.waitid
   Given a guarded check runs on macOS under a Python that does not expose os.waitid

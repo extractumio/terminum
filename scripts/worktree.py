@@ -33,7 +33,7 @@ import sys
 import time
 
 import cargo_profile
-from process_cwd import directories, InspectionError
+from process_cwd import directories, InspectionError, within
 
 KINDS = ("feat", "fix", "test", "docs", "chore")
 SLUG = re.compile(r"^[a-z0-9][a-z0-9-]{0,40}$")
@@ -323,8 +323,7 @@ def working_in(tree, snapshot=None):
     """{pid: command} of the processes whose current folder is in `tree`, this one excepted."""
     tree = str(Path(tree).resolve())
     snapshot = directories() if snapshot is None else snapshot
-    return {pid: command for pid, (command, folder) in snapshot.items()
-            if pid != os.getpid() and (folder == tree or folder.startswith(tree + os.sep))}
+    return {pid: command for pid, (command, folder) in snapshot.items() if pid != os.getpid() and within(folder, tree)}
 
 
 def merged(rev, cwd):

@@ -133,10 +133,9 @@ const stop = () => (proc ? stopChild(proc) : Promise.resolve());   // SIGTERM, t
 const teardown = endOnSignal(async () => {
   ended = true;
   runningIn("");
-  await stop();
-  purge();
-  fs.rmSync(tmp, { recursive: true, force: true });
-  fs.rmSync(WORK, { recursive: true, force: true });
+  try { await stop(); } finally {   // its tmux server ends even when terminumd would not, before the folders go
+    purge(); for (const dir of [tmp, WORK]) fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 // The password, set once as `terminum password` does (a new one would sign every page out).
 const PASSWORD = "correct horse battery";
