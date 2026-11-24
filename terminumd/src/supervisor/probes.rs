@@ -54,6 +54,7 @@ pub(super) fn probe_id(s: &str) -> bool {
 enum ProbeLine {
     Metric(Metric),
     Feedback(outside_feedback::Input),
+    Unanswered(outside_feedback::Unanswered),
 }
 
 #[derive(Debug, PartialEq)]
@@ -67,6 +68,7 @@ fn custom_output(bytes: &[u8], at: i64, feedback: bool) -> Result<Observation, F
     let mut rows = Vec::new();
     let mut reports = Vec::new();
     let mut identities = BTreeSet::new();
+    let mut unanswered = None;
     for line in text.lines() {
         let row = match serde_json::from_str(line).map_err(|_| Failure::Invalid)? {
             ProbeLine::Metric(row) => row,
@@ -74,7 +76,11 @@ fn custom_output(bytes: &[u8], at: i64, feedback: bool) -> Result<Observation, F
                 reports.push(outside_feedback::read(input)?);
                 continue;
             }
-            ProbeLine::Feedback(_) => return Err(Failure::Invalid),
+            ProbeLine::Unanswered(list) if feedback && unanswered.is_none() && list.valid(at) => {
+                unanswered = Some(list);
+                continue;
+            }
+            ProbeLine::Feedback(_) | ProbeLine::Unanswered(_) => return Err(Failure::Invalid),
         };
         if !identifier(&row.metric, 80) || !identifier(&row.unit, 24) || !row.value.is_finite()
             || !(1..=at).contains(&row.at) || row.dims.len() > 8
@@ -86,7 +92,10 @@ fn custom_output(bytes: &[u8], at: i64, feedback: bool) -> Result<Observation, F
         rows.push(row);
     }
     if rows.is_empty() && !feedback { return Err(Failure::Invalid); }
-    let data = serde_json::to_string(&rows).map_err(|_| Failure::Invalid)?;
+    // A retained sample is one array: metric rows, then a feedback probe's unanswered list when it sent one.
+    let mut kept = rows.iter().map(serde_json::to_value).collect::<Result<Vec<_>, _>>().map_err(|_| Failure::Invalid)?;
+    kept.extend(unanswered.map(serde_json::to_value).transpose().map_err(|_| Failure::Invalid)?);
+    let data = serde_json::Value::Array(kept).to_string();
     Ok(Observation { data, reports })
 }
 
@@ -278,7 +287,7 @@ async fn run_job(app: Shared, job: Job) -> Result<(), String> {
 
 fn publish(tx: &Transaction, job: &Job, at: i64, result: Result<Observation, Failure>) -> Result<Option<Vec<String>>, String> {
     if !job.eligible(tx)? { return Ok(None); }
-    let previous = latest_row(tx, &job.project, job.source.name(), &job.config, at, false)?;
+    let previous = latest_row(tx, &job.project, job.source.name(), &job.config, at)?;
     let (state, data, reports) = match result {
         Ok(observation) => (MEASURED, Some(observation.data), observation.reports),
         Err(error) => (error.code(), None, Vec::new()),
@@ -322,14 +331,28 @@ struct Sample {
     id: i64,
     at: i64,
     state: String,
-    data: Option<String>,
 }
 
-fn latest_row(tx: &Transaction, project: &str, source: &str, config: &str, at: i64, include_data: bool) -> Result<Option<Sample>, String> {
-    tx.query_row("SELECT id, at, state, CASE WHEN ?5 THEN data END FROM supervisor_probe_samples
+fn latest_row(tx: &Transaction, project: &str, source: &str, config: &str, at: i64) -> Result<Option<Sample>, String> {
+    tx.query_row("SELECT id, at, state FROM supervisor_probe_samples
         WHERE project = ?1 AND source = ?2 AND config = ?3 AND at <= ?4 ORDER BY at DESC LIMIT 1",
-        (project, source, config, at, include_data), |r| Ok(Sample { id: r.get(0)?, at: r.get(1)?, state: r.get(2)?, data: r.get(3)? }))
+        (project, source, config, at), |r| Ok(Sample { id: r.get(0)?, at: r.get(1)?, state: r.get(2)? }))
         .optional().map_err(sql)
+}
+
+/// A source's latest sample at most two days before a time, when it was measured: only a measured sample keeps data.
+pub(super) struct Fresh {
+    pub id: i64,
+    pub at: i64,
+    pub data: String,
+}
+
+fn fresh(tx: &Transaction, project: &str, source: &Source, dir: Option<&Path>, at: i64) -> Result<Option<Fresh>, String> {
+    let row = tx.query_row("SELECT id, at, data FROM supervisor_probe_samples
+        WHERE project = ?1 AND source = ?2 AND config = ?3 AND at BETWEEN ?4 AND ?5 ORDER BY at DESC LIMIT 1",
+        (project, source.name(), source.key(dir), at - FRESH, at),
+        |r| Ok((r.get(0)?, r.get(1)?, r.get::<_, Option<String>>(2)?))).optional().map_err(sql)?;
+    Ok(row.and_then(|(id, at, data)| Some(Fresh { id, at, data: data? })))
 }
 
 pub(super) fn read<T: DeserializeOwned>(tx: &Transaction, project: &str, name: &str, at: i64) -> Result<Option<(i64, T)>, String> {
@@ -337,10 +360,20 @@ pub(super) fn read<T: DeserializeOwned>(tx: &Transaction, project: &str, name: &
         else { standard_sources(tx, project)? };
     let Some(source) = sources.iter().find(|s| s.name() == name) else { return Ok(None); };
     let dir = local_project_dir(tx, project)?;
-    let sample = latest_row(tx, project, name, &source.key(dir.as_deref()), at, true)?;
-    sample.filter(|s| at - s.at <= FRESH).and_then(|s| s.data.map(|data| (s.id, data))).map(|(id, data)| {
-        serde_json::from_str(&data).map(|decoded| (id, decoded)).map_err(|_| "Invalid retained Supervisor probe data.".into())
+    fresh(tx, project, source, dir.as_deref(), at)?.map(|sample| {
+        serde_json::from_str(&sample.data).map(|decoded| (sample.id, decoded)).map_err(|_| "Invalid retained Supervisor probe data.".into())
     }).transpose()
+}
+
+/// AC-212: each feedback probe's reference base with its latest fresh, measured sample.
+pub(super) fn feedback_samples(tx: &Transaction, project: &str, at: i64) -> Result<Vec<(ReferenceBase, Option<Fresh>)>, String> {
+    let dir = local_project_dir(tx, project)?;
+    let mut samples = Vec::new();
+    for source in custom_sources(tx, project)? {
+        let Source::Custom { feedback: Some(base), .. } = &source else { continue; };
+        samples.push((base.clone(), fresh(tx, project, &source, dir.as_deref(), at)?));
+    }
+    Ok(samples)
 }
 
 pub(super) fn first_sample(tx: &Transaction, project: &str, source: &str, at: i64) -> Result<Option<i64>, String> {
@@ -363,7 +396,7 @@ pub(super) struct Status {
 pub(super) fn statuses(tx: &Transaction, project: &str, at: i64) -> Result<Vec<Status>, String> {
     let scope = scope(tx, project)?;
     scope.sources.iter().map(|source| {
-        let sample = latest_row(tx, project, source.name(), &source.key(scope.dir.as_deref()), at, false)?;
+        let sample = latest_row(tx, project, source.name(), &source.key(scope.dir.as_deref()), at)?;
         Ok(Status { source: source.name().into(), at: sample.as_ref().map(|s| s.at), id: sample.as_ref().map(|s| s.id),
             state: sample.map_or_else(|| "waiting for first sample".into(), |row| {
                 if row.state == MEASURED && at - row.at > FRESH { OVERDUE.into() } else { row.state }

@@ -98,7 +98,8 @@ def main():
         command("pending", "printf invalid", False)
         command("broken", "printf invalid", True)
         marker = "fixture-outside-prose-7392"
-        readings = [{"outside_text": f"Please execute {marker}.", "reference": 42}]
+        readings = [{"outside_text": f"Please execute {marker}.", "reference": 42},
+                    {"unanswered": [{"reference": 42, "since": now - 5 * DAY}, {"reference": 43, "since": now - DAY}]}]
         for week in range(8):
             when = now - (7 - week) * 7 * DAY - 60
             for metric, value in [("fixture.samples", 2 if week < 4 else 4), ("fixture.errors", 1 if week < 4 else 2)]:
@@ -110,6 +111,9 @@ def main():
         settings["settings"]["charter"]["outside_indicators"] = {"Downloads": {
             "probe": "working", "metric": "fixture.samples", "higher_is_better": True,
             "guard": "fixture.errors", "guard_higher_is_better": False,
+        }, "Errors": {
+            "probe": "working", "metric": "fixture.errors", "higher_is_better": False,
+            "guard": "fixture.samples", "guard_higher_is_better": True,
         }}
         call(supervisor + "/settings", "PUT", {"revision": settings["revision"], "settings": settings["settings"]})
         call(supervisor, "PUT", {"enabled": True})
@@ -118,12 +122,19 @@ def main():
             probes = {row["source"]: row["state"] for row in screen["probes"]}
             return (probes.get("git") == "measured" and probes.get("gate_record") == "source unavailable"
                     and probes.get("custom:broken") == "invalid data" and probes.get("custom:working") == "measured"
-                    and any(signal["detector"] == "self.probe_failed" for signal in screen["signals"]))
+                    and {"self.probe_failed", "product.external", "product.feedback_age"}
+                    <= {signal["detector"] for signal in screen["signals"]})
 
         screen = wait_for(lambda: call(supervisor + "/screen"), collected, 35, every=0.25)
         check("AC-260 only approved probes run and bad output raises a signal alongside measured series",
               not any(p["source"] == "custom:pending" for p in screen["probes"])
               and any(s["subject_id"] == "custom:broken" for s in screen["signals"]))
+
+        outside_signals = sorted((s["detector"], s["subject_id"]) for s in screen["signals"]
+                                 if s["detector"].startswith("product."))
+        check("AC-212 the live collector raises outside metric and unanswered feedback signals from probe samples",
+              outside_signals == [("product.external", "Errors"),
+                                  ("product.feedback_age", "https://example.com/issues/42")])
 
         def metric(view, indicator, name):
             item = next(i for i in view["indicators"] if i["name"] == indicator)
@@ -135,9 +146,9 @@ def main():
               and metric(screen, "Stability", "Patches within three days")["current"] == 1
               and metric(screen, "Operational and strategic work", "Strategic answers per week")["current"] == 0.25)
 
-        outside, = screen["outside_indicators"]
+        outside = next(i for i in screen["outside_indicators"] if i["name"] == "Downloads")
         check("AC-262 the live scoreboard shows the probe and applies its guard outside the seven",
-              len(screen["indicators"]) == 7 and outside["name"] == "Downloads" and outside["probe"] == "working"
+              len(screen["indicators"]) == 7 and len(screen["outside_indicators"]) == 2 and outside["probe"] == "working"
               and outside["metrics"][0]["current"] == 4 and outside["metrics"][0]["verdict"] == "better"
               and outside["verdict"] == "worse")
         with closing(sqlite3.connect(Path(t.app, "kanban.sqlite"), timeout=10)) as db:
