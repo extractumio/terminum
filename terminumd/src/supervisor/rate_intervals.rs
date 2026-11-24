@@ -24,6 +24,14 @@ fn rate(n: usize, value: f64, interval: [Option<f64>; 2], missing: Option<&'stat
     }
 }
 
+impl Rate {
+    /// The rate with its 95% interval, or None without observations.
+    pub(super) fn percent(&self) -> Option<String> {
+        let (value, [Some(low), Some(high)]) = (self.value?, self.interval_95?) else { return None };
+        Some(format!("{:.1}%, 95% interval {:.1}–{:.1}%", value * 100., low * 100., high * 100.))
+    }
+}
+
 pub(super) fn share(hit: usize, sample: usize, unavailable: Option<&'static str>) -> Rate {
     let n = sample.max(1) as f64;
     let p = hit as f64 / n;

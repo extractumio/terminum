@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 //! AC-215: read-only replay over a fixed project history snapshot.
 
-use std::{collections::BTreeMap, fmt::Write, path::Path};
+use std::{collections::{BTreeMap, BTreeSet}, fmt::Write, path::Path};
 
 use rusqlite::{OptionalExtension, Transaction};
 
@@ -25,11 +25,16 @@ pub(crate) fn replay(path: &Path, project: &str, as_of: Option<i64>) -> Result<S
         let inputs = EvaluationInputs { first: Some(first), weeks: Some(&weeks), current_state, observe_thresholds: false };
         let evaluation = evaluate_snapshot(tx, project, at, &detectors, inputs)?;
         let mut historical = BTreeMap::new();
-        visit_history(tx, project, first, at, &detectors, |rule, _| {
+        let mut firings = BTreeSet::new();
+        visit_history(tx, project, first, at, &detectors, |rule, finding| {
             *historical.entry(rule).or_default() += 1;
+            firings.insert((rule, firing_key(project, rule, finding)?));
             Ok(())
         })?;
-        render(tx, &evaluation, &weeks, first, &historical)
+        let quality = super::replay_quality::read(tx, project, first, at, &firings)?;
+        let mut output = render(tx, &evaluation, &weeks, first, &historical)?;
+        quality.render(&mut output);
+        Ok(output)
     })
 }
 
@@ -135,7 +140,7 @@ fn render(tx: &Transaction, result: &Evaluation, weeks: &[scoreboard::Week], fir
         writeln!(output, "   Evidence: {} retained references; first: {preview}", f.evidence.len()).unwrap();
     }
 
-    writeln!(output, "\nHistorical firings (detector detections at weekly cutoffs before the last two weeks)").unwrap();
+    writeln!(output, "\nHistorical firings (calculable detections at weekly cutoffs before the last two weeks; not a quality measure)").unwrap();
     for (rule, count) in historical {
         writeln!(output, "- {}: {count}", rule.id()).unwrap();
     }
