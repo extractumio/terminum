@@ -133,6 +133,7 @@ pub(super) fn outliers(q: &Query<'_, '_>) -> Result<Measurements, String> {
         old.entry(kind).or_default().push(sample);
     }
     let mut out = Measurements::default();
+    let mut week = runaway::Week::default();
     for ((task, kind), mut current) in current {
         let Some(old) = old.get(kind) else {
             missing = true;
@@ -145,10 +146,8 @@ pub(super) fn outliers(q: &Query<'_, '_>) -> Result<Measurements, String> {
         if !q.historical && let Some((_, limit)) = reading.exceeds(q.detector.threshold) {
             let spends: Vec<_> = reading.attributed_runs.iter().filter_map(|run| usage.get(run)
                 .map(|s| runaway::RunSpend { run, dollars: s.dollars, last: s.last })).collect();
-            match runaway::judge(q.tx, q.project, q.window.end, task, &spends, limit, old.len())? {
-                Ok(raised) => reading.raised = raised,
-                Err(why) => out.unavailable.push(why),
-            }
+            reading.raised = runaway::judge(q.tx, q.project, q.window.end, task, &spends, limit, old.len(), &mut week,
+                &mut out.unavailable)?;
         }
         out.readings.push(reading);
     }

@@ -74,7 +74,7 @@ fn fingerprint(project: &str, detector: &str, (kind, id, metric): (&str, &str, &
     crate::auth::crypto::hex(&hash.finalize())
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Default, Serialize, Deserialize)]
 pub(super) struct RecordedScores {
     #[serde(flatten)]
     pub scores: Scores,
@@ -327,7 +327,7 @@ pub(super) fn diagnostic(tx: &Transaction, project: &str, detector: &str, subjec
     let evidence = encode(&rows)?;
     let fresh = detector == "self.round_failed" || fresh_rows(tx, &key, &evidence, rows)?;
     let measure = encode(&Measure { value, baseline: 0., threshold, window_start: at, window_end: at })?;
-    let scores = encode(&RecordedScores { scores: Scores { impact: 1, ..Scores::default() }, impact_basis: Default::default(), charter_breach: false, charter_never: None, raised: None })?;
+    let scores = encode(&RecordedScores { scores: Scores { impact: 1, ..Scores::default() }, ..RecordedScores::default() })?;
     tx.execute(&format!("INSERT INTO supervisor_signals (fingerprint, project, detector, subject_kind, subject_id,
         metric, evidence, measure, scores, first_seen, last_seen, count, state)
         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?10, 1, 'raised')

@@ -291,25 +291,29 @@ fn insert(tx: &Transaction, s: &Signal, kind: Kind, target: &str, audit: (&str, 
         audit.0, audit.1, audit.2, shadow, undo], |r| r.get(0)).map_err(sql)
 }
 
-/// The marked run of task `key` while it works, if it is an active task of `project`.
-pub(super) fn marked_run_of(tx: &Transaction, project: &str, key: &str) -> Result<Option<(Task, Run)>, String> {
+/// Task `key` when it is an active task of `project`.
+fn task_by_key(tx: &Transaction, project: &str, key: &str) -> Result<Option<Task>, String> {
     let slug = tx.query_row("SELECT coalesce(slug, CAST(number AS TEXT)) FROM tasks WHERE id = ?1 AND project = ?2",
         (key, project), |r| r.get::<_, String>(0)).optional().map_err(sql)?;
-    let Some(task) = slug.and_then(|slug| scoped_task(tx, project, &slug).ok()) else { return Ok(None) };
-    Ok(marked_run(tx, &task)?.map(|run| (task, run)))
+    Ok(slug.and_then(|slug| scoped_task(tx, project, &slug).ok()))
+}
+
+/// The marked run of task `key` while it works, if it is an active task of `project`.
+pub(super) fn marked_run_of(tx: &Transaction, project: &str, key: &str) -> Result<Option<Run>, String> {
+    task_by_key(tx, project, key)?.map_or(Ok(None), |task| marked_run(tx, &task))
 }
 
 /// Code stops only the marked run a cost outlier's runaway raise names (AC-213), with its retained usage evidence.
 pub(super) fn automatic(tx: &Transaction, project: &str, fingerprint: &str, at: i64) -> Result<Option<Disposition>, String> {
     let signal = signals::get(tx, project, fingerprint)?;
-    let Some(raised) = signal.raised.as_ref().filter(|r| r.rule == super::runaway::RULE) else { return Ok(None) };
+    let Some(raised) = &signal.raised else { return Ok(None) };
     if signal.detector != Rule::CostOutlier.id() || signal.level != 3 || signal.scores.confidence < super::STRONG
         || signal.subject_kind != "task" || signal.metric != "task_dollars"
     {
         return Ok(None);
     }
     let Ok(eligibility) = state(tx, &signal, at) else { return Ok(None) };
-    let Some((task, _)) = marked_run_of(tx, project, &signal.subject_id)? else { return Ok(None) };
+    let Some(task) = task_by_key(tx, project, &signal.subject_id)? else { return Ok(None) };
     let Ok(run) = stoppable(tx, &task, at) else { return Ok(None) };
     if run.id != raised.run || !signal.evidence.iter().any(|e| matches!(e, Evidence::Runs(id) if id == &run.id)) {
         return Ok(None);

@@ -8,12 +8,12 @@
 use rusqlite::Transaction;
 use serde::{Deserialize, Serialize};
 
-use super::{WEEK, spend::usage_reports};
+use super::{Window, spend::usage_reports};
 
 pub(super) const RULE: &str = "runaway_run";
 /// The run's own spend must reach this many times its type's threshold (the p95 of earlier tasks, or the floor).
 const TIMES_THRESHOLD: f64 = 3.0;
-/// ... and this share of the project's priced spend in the seven days to the evaluation.
+/// ... and this share of the project's priced spend in the week to the evaluation.
 const WEEK_SHARE: f64 = 0.10;
 /// ... and these dollars, so a small project's few dollars never stop a run.
 const FLOOR_DOLLARS: f64 = 20.0;
@@ -30,6 +30,7 @@ pub(super) const UNPRICED_WEEK: &str =
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub(crate) struct Raised {
     pub score: String,
+    /// The measured score, set where the finding is scored (`evaluation`).
     pub from: u8,
     pub rule: String,
     pub run: String,
@@ -44,22 +45,35 @@ pub(super) struct RunSpend<'a> {
     pub last: i64,
 }
 
-/// `Ok(None)`: no raise; `Err` holds why a candidate could not be judged (said as the detector's unavailable input).
+/// The project's priced spend in the week to the evaluation, read once per detector pass; `None` once unpriced.
+#[derive(Default)]
+pub(super) struct Week(Option<Option<f64>>);
+
+impl Week {
+    fn priced(&mut self, tx: &Transaction, project: &str, at: i64) -> Result<Option<f64>, String> {
+        if self.0.is_none() {
+            let reports = usage_reports(tx, project, Window::week(at).start, at)?;
+            self.0 = Some(reports.iter().map(|r| r.dollars).sum());
+        }
+        Ok(self.0.flatten())
+    }
+}
+
+/// The raise of task `task`'s reading, if fresh, decisive evidence names its marked run. An unpriced week that
+/// withholds a raise is said in `unavailable`.
+#[allow(clippy::too_many_arguments)]
 pub(super) fn judge(tx: &Transaction, project: &str, at: i64, task: &str, runs: &[RunSpend<'_>], threshold: f64,
-    baseline: usize) -> Result<Result<Option<Raised>, &'static str>, String>
+    baseline: usize, week: &mut Week, unavailable: &mut Vec<&'static str>) -> Result<Option<Raised>, String>
 {
-    if baseline < BASELINE_TASKS { return Ok(Ok(None)); }
-    let Some((_, marked)) = super::holds::marked_run_of(tx, project, task)? else { return Ok(Ok(None)) };
-    let Some(run) = runs.iter().find(|r| r.run == marked.id) else { return Ok(Ok(None)) };
-    if run.last < at - FRESH_SECONDS || run.dollars < FLOOR_DOLLARS.max(TIMES_THRESHOLD * threshold) {
-        return Ok(Ok(None));
-    }
-    let mut week = 0.0;
-    for report in usage_reports(tx, project, at - WEEK, at)? {
-        let Some(dollars) = report.dollars else { return Ok(Err(UNPRICED_WEEK)) };
-        week += dollars;
-    }
-    if run.dollars < WEEK_SHARE * week { return Ok(Ok(None)); }
-    Ok(Ok(Some(Raised { score: "impact".into(), from: 0, rule: RULE.into(), run: marked.id, run_dollars: run.dollars,
-        week_dollars: week })))
+    let bar = FLOOR_DOLLARS.max(TIMES_THRESHOLD * threshold);
+    let decisive = |r: &&RunSpend<'_>| r.last >= at - FRESH_SECONDS && r.dollars >= bar;
+    if baseline < BASELINE_TASKS || !runs.iter().any(|r| decisive(&r)) { return Ok(None); }
+    let Some(marked) = super::holds::marked_run_of(tx, project, task)? else { return Ok(None) };
+    let Some(run) = runs.iter().filter(decisive).find(|r| r.run == marked.id) else { return Ok(None) };
+    let Some(week) = week.priced(tx, project, at)? else {
+        if !unavailable.contains(&UNPRICED_WEEK) { unavailable.push(UNPRICED_WEEK); }
+        return Ok(None);
+    };
+    Ok((run.dollars >= WEEK_SHARE * week).then(|| Raised { score: "impact".into(), from: 0, rule: RULE.into(),
+        run: marked.id, run_dollars: run.dollars, week_dollars: week }))
 }

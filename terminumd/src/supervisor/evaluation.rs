@@ -89,7 +89,7 @@ pub(super) fn evaluate_snapshot(
             // A measured escalate rule raises the score it names and keeps the measured one beside it (AC-213).
             if let Some(raised) = &mut found.raised {
                 raised.from = found.scores.impact;
-                found.scores.impact = 3;
+                found.scores.impact = super::escalations::CRITICAL;
             }
         }
     }
