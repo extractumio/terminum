@@ -75,6 +75,7 @@ mod flow;
 mod people;
 mod signals;
 pub(crate) mod rounds;
+pub(crate) mod case_memory;
 pub(crate) mod round_tools;
 mod round_evidence;
 #[cfg(test)]

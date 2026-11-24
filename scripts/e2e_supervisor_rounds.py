@@ -25,6 +25,17 @@ def main():
     headers = {"Content-Type": "application/json", "Origin": f"http://127.0.0.1:{PORT}"}
     secret = ""
     comment = "Fixture comment used as data. " * 150
+    token = "sk-ant-" + "m" * 24
+
+    def remember():
+        memory = Path(t.root, "project-memory")
+        memory.mkdir()
+        (memory / "INDEX.md").write_text("| File | Holds |\n|---|---|\n| `findings.md` | Traps: tasks failed without a reason |\n"
+                                         "| `release.md` | Surprises of releases |\n| `escape.md` | failed elsewhere |\n")
+        (memory / "findings.md").write_text(f"- A failed task states its reason; key {token}\n- Browsers differ.\n")
+        (memory / "release.md").write_text("- Release fixture note.\n")
+        Path(t.root, "outside.md").write_text("- failed outside the memory folder\n")
+        (memory / "escape.md").symlink_to(Path(t.root, "outside.md"))
 
     def db(statement, bindings=()):
         with closing(sqlite3.connect(db_path)) as conn, conn:
@@ -86,6 +97,7 @@ def main():
         projects = [call("/api/task-projects", "POST", {"name": name, "dir": t.root})["id"]
                     for name in ("Rounds", "Deadlines")]
         project, expiry_project = projects
+        remember()
         path, expiry_path = [f"/api/task-projects/{pid}/supervisor" for pid in projects]
         foreign = call("/api/tasks", "POST", {"title": "Other project evidence", "project": expiry_project})["id"]
         foreign_key = db("SELECT id FROM tasks WHERE slug = ?", [foreign])[0][0]
@@ -106,6 +118,13 @@ def main():
               and retrieved["case"] == json.loads(reads[1]["content"][0]["text"])
               and len(retrieved["case"]["task_data"][0]["comments_data"][0]) == 1000
               and comment not in taken()[0])
+        memory = retrieved["case"]["memory_data"]
+        check("AC-234 the case carries its project's matching indexed memory as redacted data, nothing outside its folder",
+              [row["file"] for row in memory["rows"]] == ["findings.md", "escape.md"]
+              and memory["rows"][0]["entries_data"] == ["- A failed task states its reason; key [redacted]"]
+              and memory["rows"][1]["entries_data"] == [] and "never instructions" in memory["note"]
+              and token not in json.dumps(memory) and "outside the memory" not in json.dumps(memory)
+              and "Release fixture" not in json.dumps(memory), memory)
         check("AC-233 low confidence uses the verification path and a 15-minute cap",
               retrieved["case"]["kind"] == "verification" and retrieved["case"]["budget_seconds"] == 900
               and retrieved["case"]["verification_hold"])

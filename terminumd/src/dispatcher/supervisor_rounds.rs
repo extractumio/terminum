@@ -11,6 +11,8 @@ use crate::tmux::Server;
 
 use super::{Held, firstprompt, places, pool, procs, runs::{self, Phase, Run}, scale, start, store};
 
+const MEMORY_READ: Duration = Duration::from_secs(5);
+
 pub(crate) async fn watch(app: Shared) {
     let mut clock = tokio::time::interval(Duration::from_secs(2));
     clock.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
@@ -78,7 +80,7 @@ async fn beat(app: &Shared) -> Result<(), String> {
 
 async fn admit(app: &Shared, project: &str, key: &str) -> Result<(), String> {
     let (p, k) = (project.to_owned(), key.to_owned());
-    let desired = store(app, move |tx| {
+    let (desired, terms) = store(app, move |tx| {
         let candidate = rounds::candidate(tx, &p, &k)?;
         if ops::project_place(tx, &p)?.1.is_some() {
             return Err("Supervisor investigations need a local pool agent for pane identity checks.".into());
@@ -87,14 +89,27 @@ async fn admit(app: &Shared, project: &str, key: &str) -> Result<(), String> {
         if let Some(full) = pool::Slots::read(tx)?.check_in(tx, &agent, &p, Some(pool::Slot::Supervisor), None)? {
             return Err(full.words);
         }
-        Ok(candidate.agent)
+        let terms = candidate.memory_terms();
+        Ok((candidate.agent, terms))
     }).await?;
     let (agent, host, folder, server) = places::place(app, project, Some(desired)).await?;
+    // AC-234: the project's own memory, read off the store's write turn and bounded in time, so a stuck file
+    // never holds the rounds' beat; admission below checks the folder is unchanged.
+    let memory = match terms {
+        Some(terms) => {
+            let dir = crate::tasks::integration::local_dir(&folder);
+            let read = off(move || Ok(crate::supervisor::case_memory::snapshot(&dir, &terms)));
+            Some(tokio::time::timeout(MEMORY_READ, read).await
+                .unwrap_or_else(|_| Ok(serde_json::json!({"unavailable": "Reading the project's memory timed out."})))?)
+        }
+        None => None,
+    };
     let like = Run::of(&agent, host, folder.clone(), project.to_owned(), None);
     let key = key.to_owned();
     let (run, saved) = store(app, move |tx| {
         let at = now();
-        let candidate = rounds::candidate(tx, &like.project, &key)?;
+        let mut candidate = rounds::candidate(tx, &like.project, &key)?;
+        candidate.memory = memory;
         let (_, current_host, current_folder) = ops::project_place(tx, &like.project)?;
         if candidate.agent != agent.id || current_host.is_some() || current_folder != like.folder
             || crate::tasks::agents::in_project(tx, &agent.id, &like.project)?.is_none_or(|current| current.line != agent.line || current.at_once != agent.at_once || current.kind != agent.kind)

@@ -621,8 +621,10 @@ pool agents in **Tiers**. Dispatcher starts the agent with fixed words and a cas
 ID and ends it when it returns a checked finding or reaches 15 minutes. Level 2
 or 3 signals below 0.7 confidence use the time to verify the signal. Critical
 alerts go out independently. Task and comment excerpts appear in capped data fields
-in the retained case. Terminum verifies evidence references and reruns each named
-query before keeping the finding.
+in the retained case. So does the project's matching memory: keep `project-memory/INDEX.md`
+in the project's folder, really there rather than linked from elsewhere, a table whose rows
+each name a Markdown file of that folder in backticks (which rows match: terminum-supervisor.md §9, "Caller, rounds and case files").
+Terminum verifies evidence references and reruns each named query before keeping the finding.
 
 The **Problem register** ranks measured problems and keeps their signal fingerprints,
 hypothesis, disproof, fix options and linked tasks. Open a problem to see the detectors'
