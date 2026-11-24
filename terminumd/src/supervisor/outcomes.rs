@@ -133,6 +133,13 @@ pub(super) fn check(tx: &Transaction, project: &str, at: i64) -> Result<(), Stri
 pub(super) const LATEST: &str = "LEFT JOIN supervisor_outcomes o ON o.action = a.id AND o.days = (
     SELECT v.days FROM supervisor_outcomes v WHERE v.action = a.id ORDER BY (v.days = 0) DESC, v.days DESC LIMIT 1)";
 
+/// `LATEST` as known at the SQL time expression `bound`.
+pub(super) fn latest_as_of(bound: &str) -> String {
+    format!("JOIN supervisor_outcomes o ON o.action = a.id AND o.days = (
+    SELECT v.days FROM supervisor_outcomes v WHERE v.action = a.id AND v.at <= {bound}
+    ORDER BY (v.days = 0) DESC, v.days DESC LIMIT 1)")
+}
+
 #[derive(Serialize)]
 pub(super) struct Score {
     detector: String,
@@ -178,16 +185,13 @@ fn report_unjudged(tx: &Transaction, project: &str, detector: &str, response: &s
 pub(super) fn check_bands(tx: &Transaction, project: &str, generation: i64, at: i64) -> Result<(), String> {
     let width = 4 * super::WEEK;
     let (minimum, errors) = super::settings::read(tx, project)?.settings.decision_band();
-    let measures = rows(tx, "WITH observed AS (
+    let measures = rows(tx, &format!("WITH observed AS (
         SELECT a.detector, a.response, a.at >= ?3 AS recent, o.verdict
-        FROM supervisor_actions a JOIN supervisor_outcomes o ON o.action = a.id AND o.days = (
-            SELECT j.days FROM supervisor_outcomes j WHERE j.action = a.id
-              AND j.at <= CASE WHEN a.at >= ?3 THEN ?2 ELSE ?3 - 1 END
-            ORDER BY (j.days = 0) DESC, j.days DESC LIMIT 1)
+        FROM supervisor_actions a {}
         WHERE a.project = ?1 AND a.at BETWEEN ?4 AND ?2 AND a.response <> '' AND o.verdict <> 'undecided'
     ) SELECT detector, response, count(*) FILTER (WHERE recent), count(*) FILTER (WHERE recent AND verdict = 'right'),
         count(*) FILTER (WHERE NOT recent), count(*) FILTER (WHERE NOT recent AND verdict = 'right')
-        FROM observed GROUP BY detector, response", (project, at, at - width + 1, at - 2 * width + 1),
+        FROM observed GROUP BY detector, response", latest_as_of("CASE WHEN a.at >= ?3 THEN ?2 ELSE ?3 - 1 END")), (project, at, at - width + 1, at - 2 * width + 1),
         |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, u32>(2)?,
             r.get::<_, u32>(3)?, r.get::<_, u32>(4)?, r.get::<_, u32>(5)?)))?;
     for (detector, response, n, right, base_n, base_right) in measures {

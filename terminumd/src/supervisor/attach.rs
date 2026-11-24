@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use rusqlite::{OptionalExtension, Transaction};
 use serde::{Deserialize, Serialize};
 
-use crate::tasks::{integration::local_dir, ops::{project_place, rows, sql}};
+use crate::tasks::{integration::local_dir, ops::{project_place, sql}};
 
 use super::{Detector, Evaluation, Mode, Rule, Threshold, WEEK, catalog, replay, settings::Settings};
 
@@ -146,24 +146,16 @@ pub(super) fn scan(
     let at = evaluation.at;
     let attached_at = previous.map_or(at, |report| report.attached_at);
     let (first, latest) = bounds;
-    let mut firings = BTreeMap::<Rule, std::collections::BTreeSet<String>>::new();
+    let mut firings = replay::Firings::new();
     replay::visit_history(tx, project, first, attached_at, detectors, |rule, finding| {
         firings.entry(rule).or_default().insert(replay::firing_key(project, rule, finding)?);
         Ok(())
     })?;
-    let verdicts = rows(tx, "SELECT detector, firing, was_right FROM supervisor_hold_verdicts
-        WHERE project = ?1 AND fired_at < ?2", (project, at),
-        |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, bool>(2)?)))?;
     let mut judged = BTreeMap::<Rule, (u64, u64)>::new();
-    for (detector, firing, right) in verdicts {
-        if let Ok(rule) = Rule::named(&detector)
-            && rule.id() == detector
-            && firings.get(&rule).is_some_and(|keys| keys.contains(&firing))
-        {
-            let stats = judged.entry(rule).or_default();
-            stats.0 += 1;
-            stats.1 += u64::from(right);
-        }
+    for (rule, _, right) in replay::replayed_verdicts(tx, project, at, &firings)? {
+        let stats = judged.entry(rule).or_default();
+        stats.0 += 1;
+        stats.1 += u64::from(right);
     }
 
     let mut scans = BTreeMap::new();

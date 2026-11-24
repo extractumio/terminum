@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 //! AC-215: read-only replay over a fixed project history snapshot.
 
-use std::{collections::BTreeMap, fmt::Write, path::Path};
+use std::{collections::{BTreeMap, BTreeSet}, fmt::Write, path::Path};
 
 use rusqlite::{OptionalExtension, Transaction};
 
-use crate::tasks::{ops::{check_project, sql}, store::Store};
+use crate::tasks::{ops::{check_project, rows, sql}, store::Store};
 
 use super::{Detector, Evaluation, EvaluationInputs, Finding, Rule, SCHEMA, WEEK, Window, collect_findings, evaluate_snapshot, measure_detector, flow::history_bounds, scoreboard, settings};
 
@@ -25,11 +25,15 @@ pub(crate) fn replay(path: &Path, project: &str, as_of: Option<i64>) -> Result<S
         let inputs = EvaluationInputs { first: Some(first), weeks: Some(&weeks), current_state, observe_thresholds: false };
         let evaluation = evaluate_snapshot(tx, project, at, &detectors, inputs)?;
         let mut historical = BTreeMap::new();
-        visit_history(tx, project, first, at, &detectors, |rule, _| {
+        let mut firings = Firings::new();
+        visit_history(tx, project, first, at, &detectors, |rule, finding| {
             *historical.entry(rule).or_default() += 1;
+            firings.entry(rule).or_default().insert(firing_key(project, rule, finding)?);
             Ok(())
         })?;
-        render(tx, &evaluation, &weeks, first, &historical)
+        let mut output = render(tx, &evaluation, &weeks, first, &historical)?;
+        super::replay_quality::append(tx, project, (first, at), &firings, &mut output)?;
+        Ok(output)
     })
 }
 
@@ -96,6 +100,22 @@ pub(super) fn firing_key(project: &str, rule: Rule, finding: &Finding) -> Result
     Ok(crate::auth::crypto::sha256_hex(&key))
 }
 
+/// Distinct replayed firings per rule, keyed as hold verdicts name them.
+pub(super) type Firings = BTreeMap<Rule, BTreeSet<String>>;
+
+/// Hold verdicts on firings before `before` that this replay calculated again: (rule, fired_at, right).
+pub(super) fn replayed_verdicts(tx: &Transaction, project: &str, before: i64, firings: &Firings)
+    -> Result<Vec<(Rule, i64, bool)>, String>
+{
+    let verdicts = rows(tx, "SELECT detector, firing, fired_at, was_right FROM supervisor_hold_verdicts
+        WHERE project = ?1 AND fired_at < ?2 ORDER BY fired_at, detector, firing", (project, before),
+        |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, i64>(2)?, r.get::<_, bool>(3)?)))?;
+    Ok(verdicts.into_iter().filter_map(|(detector, firing, fired_at, right)| {
+        let rule = Rule::named(&detector).ok().filter(|rule| rule.id() == detector)?;
+        firings.get(&rule).is_some_and(|keys| keys.contains(&firing)).then_some((rule, fired_at, right))
+    }).collect())
+}
+
 fn subject(tx: &Transaction, f: &Finding) -> Result<String, String> {
     if f.subject_kind == "task" {
         let slug: Option<String> = tx.query_row("SELECT coalesce(slug, id) FROM tasks WHERE id = ?1",
@@ -135,7 +155,7 @@ fn render(tx: &Transaction, result: &Evaluation, weeks: &[scoreboard::Week], fir
         writeln!(output, "   Evidence: {} retained references; first: {preview}", f.evidence.len()).unwrap();
     }
 
-    writeln!(output, "\nHistorical firings (detector detections at weekly cutoffs before the last two weeks)").unwrap();
+    writeln!(output, "\nHistorical firings (calculable detections at weekly cutoffs before the last two weeks; not a quality measure)").unwrap();
     for (rule, count) in historical {
         writeln!(output, "- {}: {count}", rule.id()).unwrap();
     }

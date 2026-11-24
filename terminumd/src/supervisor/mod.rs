@@ -63,6 +63,9 @@ pub(crate) mod report_rules;
 mod report_rules_tests;
 mod line_queue;
 mod replay;
+mod replay_quality;
+#[cfg(test)]
+mod replay_quality_tests;
 pub(crate) mod runtime;
 mod samples;
 mod sensors;
