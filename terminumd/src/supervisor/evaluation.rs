@@ -96,9 +96,8 @@ pub(super) fn measure_detector(
     let query = Query { tx, project, detector, window, historical: !current_state };
     if detector.mode == Mode::Off {
         Ok(Measurements::missing("Detector is off."))
-    } else if !current_state && detector.rule.present_only() {
-        Ok(Measurements::missing(if detector.rule == Rule::MainRed { "Red-target history keeps only the open Bug task." }
-            else { "Historical slot or priority state is unavailable." }))
+    } else if let Some(why) = detector.rule.present_only().filter(|_| !current_state) {
+        Ok(Measurements::missing(why))
     } else {
         detector.rule.query(&query)
     }

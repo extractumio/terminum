@@ -7,7 +7,7 @@ use crate::supervisor::engine_tests::{Fixture, NOW, PROJECT};
 use crate::supervisor::register_tests::{draft, signal};
 use crate::tasks::ops::{self, rows, sql};
 
-use super::super::{DAY, Mode, Rule, config_lifecycle, evaluate, fix_tasks, probe_arch::Architecture, probes, register, settings};
+use super::super::{DAY, Rule, config_lifecycle, fix_tasks, probe_arch::Architecture, probes, register, settings};
 
 const NEVER: &str = "Lose user data.";
 
@@ -24,9 +24,7 @@ fn edited_migration(f: &Fixture) {
 }
 
 fn live(f: &Fixture) -> super::super::Evaluation {
-    let mut detector = f.store.with(|tx| Ok(settings::read(tx, PROJECT)?.settings.detector(Rule::MigrationEdited))).unwrap();
-    detector.mode = Mode::Live;
-    evaluate(&f.store, PROJECT, NOW, &[detector]).unwrap()
+    f.live(Rule::MigrationEdited, NOW)
 }
 
 /// A level 3 signal from its reversibility alone, with a problem that needs a fix.

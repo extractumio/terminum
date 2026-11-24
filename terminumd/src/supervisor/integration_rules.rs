@@ -32,11 +32,11 @@ pub(super) fn returned(q: &Query<'_, '_>) -> Result<Measurements, String> {
 /// AC-212, AC-224: the target is red while the project's Bug task for it is open (`terminum-integration.md` AC-198).
 /// Its subject is the target, as AC-255's miss check names it; tied to a never line, it opens a critical incident.
 pub(super) fn target_red(q: &Query<'_, '_>) -> Result<Measurements, String> {
-    if !catalog::integration_on(q.tx, q.project)? { return Ok(Measurements::missing(INTEGRATION_OFF)); }
-    let target = crate::tasks::integration::read(q.tx, q.project)?.target;
+    let settings = crate::tasks::integration::read(q.tx, q.project)?;
+    if !settings.on { return Ok(Measurements::missing(INTEGRATION_OFF)); }
     let bug = crate::integrate::red_target::open_bug_key(q.tx, q.project)?.map(Evidence::Tasks);
     Ok(Measurements {
-        readings: vec![Reading::new("target", target, "target_red", f64::from(bug.is_some()), bug.into_iter().collect(),
+        readings: vec![Reading::new("target", settings.target, "target_red", f64::from(bug.is_some()), bug.into_iter().collect(),
             Source::Present).fixed(Threshold::Absolute(0.0))],
         complete_metrics: vec!["target_red"],
         ..Measurements::default()

@@ -118,9 +118,7 @@ fn ac249_agent_rates_and_sample_floor() {
     let rates = read();
     assert_eq!(rates.len(), 8);
     assert!(row(&rates, "reviewed", "Debt")["return"]["value"].is_null());
-    f.write("INSERT INTO project_integration
-        (project,is_on,target,check_line,publish_line,after_line,batch_most,check_minutes,agent_budget_minutes,red_rounds_most,prompt)
-        VALUES (?1,1,'main','','','',2,15,15,1,'')", [PROJECT]);
+    f.integration(true);
     let rates = read();
     let r = row(&rates, "reviewed", "Debt");
     assert_eq!(r["return"]["value"], json!(1. / 30.));

@@ -116,12 +116,13 @@ pub(super) fn load(q: &Query<'_, '_>) -> Result<Measurements, String> {
 
 pub(super) const QUESTIONS: &str = "questions AS (
     SELECT e.id, e.task, e.at, e.seq, json_extract(e.data, '$.question.kind') AS kind,
+        json_extract(e.data, '$.question.recommended') AS recommended,
         (SELECT min(n.seq) FROM project_events n WHERE n.task = e.task AND n.seq > e.seq
             AND n.kind = 'comment' AND json_extract(n.data, '$.questions') IS NOT NULL) AS next
     FROM project_events e WHERE e.kind = 'comment' AND json_extract(e.data, '$.questions') IS NOT NULL
 ), answers AS (
     SELECT q.id AS question, q.task, q.at AS asked_at, q.next, a.id AS answer, a.at AS answered_at,
-        q.kind, json_extract(a.data, '$.choice.option') AS chosen
+        q.kind, json_extract(a.data, '$.choice.option') AS chosen, q.recommended, a.seq AS answer_seq
     FROM questions q LEFT JOIN project_events a ON a.seq = coalesce(
         (SELECT min(h.seq) FROM project_events h WHERE h.task = q.task AND h.seq > q.seq
             AND h.kind = 'comment' AND h.author = 'human' AND h.at >= q.at
@@ -345,12 +346,10 @@ const STAMP: &str = "Choosing the recommended option is a habit of answering, in
 
 /// `owner.rubber_stamp`: per question kind, how many of the owner's latest choices in a row took the recommended option.
 pub(super) fn rubber_stamp(q: &Query<'_, '_>) -> Result<Measurements, String> {
-    let answers = rows(q.tx, &format!("{} SELECT json_extract(asked.data, '$.question.kind'), e.id,
-            json_extract(e.data, '$.choice.option') = json_extract(asked.data, '$.question.recommended')
-        FROM project_events e JOIN events asked ON asked.id = json_extract(e.data, '$.choice.question')
-        WHERE e.kind = 'comment' AND e.author = ?3 AND json_extract(asked.data, '$.question.kind') IS NOT NULL
-        ORDER BY e.at, e.seq", project_events()),
-        (q.project, q.window.end, crate::tasks::store::HUMAN), |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, bool>(2)?)))?;
+    // A reply in words to a question with options takes no option, so it ends the streak too.
+    let answers = rows(q.tx, &format!("{}, {QUESTIONS} SELECT kind, answer, coalesce(chosen = recommended, 0)
+        FROM answers WHERE kind IS NOT NULL AND answer IS NOT NULL ORDER BY answer_seq", project_events()),
+        (q.project, q.window.end), |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, bool>(2)?)))?;
     if answers.is_empty() { return Ok(Measurements::missing("No answered question with options is retained.")); }
     let mut streaks = BTreeMap::<String, Vec<Evidence>>::new();
     for (kind, event, recommended) in answers {

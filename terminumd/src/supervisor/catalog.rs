@@ -107,16 +107,21 @@ impl Rule {
         }
     }
 
-    pub(super) fn present_only(self) -> bool {
-        matches!(self, Self::Starved | Self::UserBugAge | Self::MainRed)
+    /// A rule that measures only the present state, with why its history is unavailable.
+    pub(super) fn present_only(self) -> Option<&'static str> {
+        match self {
+            Self::Starved | Self::UserBugAge => Some("Historical slot or priority state is unavailable."),
+            Self::MainRed => Some("Red-target history keeps only the open Bug task."),
+            _ => None,
+        }
     }
 
     pub(super) fn needs_weekly_samples(self) -> bool {
-        !self.present_only() && !matches!(self, Self::WaitHuman | Self::CostOutlier | Self::QueueGrowth | Self::LimitNear | Self::StalePlan | Self::Loop | Self::Subagents | Self::CollectorDead | Self::LineDead | Self::ProbeFailed)
+        self.present_only().is_none() && !matches!(self, Self::WaitHuman | Self::CostOutlier | Self::QueueGrowth | Self::LimitNear | Self::StalePlan | Self::Loop | Self::Subagents | Self::CollectorDead | Self::LineDead | Self::ProbeFailed)
     }
 
     pub(super) fn has_historical_query(self) -> bool {
-        !self.present_only() && !matches!(self, Self::Misrouted
+        self.present_only().is_none() && !matches!(self, Self::Misrouted
             | Self::CollectorDead | Self::LineDead)
     }
 

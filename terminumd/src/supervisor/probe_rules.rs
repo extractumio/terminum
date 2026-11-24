@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 //! AC-260 and AC-261: detector queries over retained probe samples.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use super::{Comparison, DAY, Evidence, Measurements, Query, Reading, Threshold, catalog, percentile, percentile_of_others,
     impact::Source, probe_arch::Architecture, probe_gate::Gate, probe_git::Releases, probes};
@@ -151,9 +151,9 @@ pub(super) fn hotspots(q: &Query<'_, '_>) -> Result<Measurements, String> {
 /// `arch.bug_cluster`: per folder, the distinct commits of Bug tasks (or `fix:` commits) that changed it in the window.
 pub(super) fn bug_clusters(q: &Query<'_, '_>) -> Result<Measurements, String> {
     let Some((id, arch)) = architecture(q)? else { return Ok(Measurements::missing(ARCH_MISSING)); };
-    let mut folders = BTreeMap::<&str, std::collections::BTreeSet<i64>>::new();
-    for row in arch.changes.iter().filter(|c| c.fix && q.window.current(c.at) && c.at <= q.window.end) {
-        folders.entry(row.path.rsplit_once('/').map_or(".", |(folder, _)| folder)).or_default().insert(row.at);
+    let mut folders = BTreeMap::<&str, BTreeSet<(&str, i64)>>::new();
+    for row in arch.changes.iter().filter(|c| c.fix && q.window.current(c.at)) {
+        folders.entry(row.path.rsplit_once('/').map_or(".", |(folder, _)| folder)).or_default().insert((&row.commit, row.at));
     }
     Ok(Measurements {
         readings: folders.into_iter().map(|(folder, commits)| Reading::new("folder", folder, "fix_commits",
