@@ -7,8 +7,9 @@ The one exception to ending nothing by a pattern (CLAUDE.md §6). Nothing younge
 so a run of another session is safe:
 - the one test helper that outlives its test, TEST_HELPER, with no parent (ppid 1): ended by its
   pid with SIGTERM, its command read again just before; one that stays is named, never SIGKILLed;
-- a tmux server of a `tm-*` name with no parent whose socket file is gone (its run's folder went
-  first), so nothing reaches it but its pid: ended by its pid with SIGTERM, as that helper;
+- a tmux server of a `tm-*` name, older than OLD_S, whose every socket lay in a test's folder and is gone
+  with it, so nothing reaches it but its pid: ended by its pid with SIGTERM, as that helper (every tmux
+  server has parent 1); one whose socket went from elsewhere (a /tmp cleaner) is only named;
 - a dead `tm-*` socket of tmux (a connection refused): removed;
 - a folder of this user with a prefix tests use, nothing in it recent or held open: removed.
 Named only, since either can be someone's work: a live tmux server on a `tm-*` socket, and any
@@ -46,6 +47,11 @@ def age_s(etime):
     return seconds + int(days or 0) * 86400
 
 
+def in_test_folder(path):
+    """Whether `path` lies in a folder named as tests name theirs (check_step.py's tmc.*, a test's tml-*)."""
+    return any(part.startswith(FOLDER_PREFIXES) and part not in FOLDER_PREFIXES for part in Path(path).parts[:-1])
+
+
 def orphans(ps_text):
     """(pid, command) of each process with no parent (ppid 1) older than OLD_S."""
     for line in ps_text.splitlines():
@@ -68,7 +74,7 @@ def strays(ps_text):
 def lost_servers(ps_text, bound):
     """(pid, command, whether to end it) of each old test tmux server with no parent: ended only when
     every socket it bound (`bound`: (pid, command, path) of this user's processes, or None when unknown)
-    is gone from its path; one still reachable is a live socket's, said there."""
+    lay in a test's folder and is gone; one still reachable is a live socket's, said there."""
     paths = {}
     for pid, _, path in bound or []:
         paths.setdefault(pid, []).append(path)
@@ -78,7 +84,7 @@ def lost_servers(ps_text, bound):
             if pid not in paths:
                 found.append((pid, command, False))
             elif not any(os.path.lexists(path) for path in paths[pid]):
-                found.append((pid, command, True))
+                found.append((pid, command, all(in_test_folder(path) for path in paths[pid])))
     return found
 
 

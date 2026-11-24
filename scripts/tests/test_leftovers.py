@@ -64,7 +64,6 @@ class Processes(unittest.TestCase):
             child.wait()
 
 
-
 class LostServers(unittest.TestCase):
     """A test's tmux server whose socket went with its run's folder (TERM-912): ended by its pid."""
     SERVER = "tmux -L tm-test-live-33522 -f /tmp/tmc.indcv8il/tml-T9fNjm/h/tmux.conf new-session -d -s main"
@@ -77,6 +76,10 @@ class LostServers(unittest.TestCase):
         self.assertEqual(leftovers.lost_servers(listed, bound), [(7, self.SERVER, True), (10, self.SERVER, False)],
                          "a socket still there (8, or one of 9's) keeps it; an unknown socket (10) is only named")
         self.assertEqual(leftovers.lost_servers(listed, None), [(pid, self.SERVER, False) for pid in (7, 8, 9, 10)])
+
+    def test_a_server_whose_socket_went_from_outside_a_test_folder_is_only_named(self):
+        bound = [(7, "tmux", "/tmp/tmux-501/tm-mine")]   # a /tmp cleaner's doing: SIGUSR1 brings it back
+        self.assertEqual(leftovers.lost_servers(f"7 1 1-00:00:00 {self.SERVER}\n", bound), [(7, self.SERVER, False)])
 
     def test_what_is_never_ended(self):
         bound = [(7, "tmux", "/tmp/tmc.gone-912/tmux-501/x")]
@@ -93,7 +96,7 @@ class LostServers(unittest.TestCase):
         folder = tempfile.mkdtemp(prefix="tm-lost-")
         env = {**os.environ, "TMUX_TMPDIR": folder}
         name = f"tm-test-lost-{os.getpid()}"
-        subprocess.run(["tmux", "-f", "/dev/null", "-L", name, "new-session", "-d", "-s", "main", "-c", "/"], env=env, check=True, timeout=10)
+        subprocess.run(["tmux", "-f", "/dev/null", "-L", name, "new-session", "-d", "-s", "main", "-c", "/", "sleep 300"], env=env, check=True, timeout=10)
         pid = int(subprocess.run(["tmux", "-L", name, "display", "-p", "#{pid}"], env=env, capture_output=True, text=True, timeout=10).stdout)
         command = subprocess.run(["ps", "-o", "command=", "-p", str(pid)], capture_output=True, text=True).stdout.strip()
         self.addCleanup(lambda: f"-L {name} " in subprocess.run(["ps", "-o", "command=", "-p", str(pid)], capture_output=True, text=True).stdout

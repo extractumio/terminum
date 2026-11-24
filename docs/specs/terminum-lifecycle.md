@@ -369,8 +369,8 @@ Scenario: AC-102 happy path — a run leaves nothing
 Scenario Outline: AC-102 edge — a step's tmux server ends before its socket's folder goes
   Given a step under scripts/check_step.py starts tmux -L tm-test-live-<pid>, whose server daemonizes out of the step's process group with its working directory outside the step's folder, its socket alone in the step's TMUX_TMPDIR
   When the step <ends>
-  Then the guard prints "LEFT process <pid>: tmux …", ends the server by its pid (SIGTERM, then SIGKILL) and only then removes the folder, and the step exits <status>
-  And no tmux -L tm-test-live-<pid> process remains
+  Then the guard prints "LEFT process <pid>: tmux …", ends the server and its pane's programs by their pids (SIGTERM, then SIGKILL) and only then removes the folder, and the step exits <status>
+  And no tmux -L tm-test-live-<pid> process remains, nor its pane's program that ignores SIGHUP and SIGTERM
 
   Examples:
     | ends                | status |
@@ -379,10 +379,10 @@ Scenario Outline: AC-102 edge — a step's tmux server ends before its socket's 
     | gets SIGINT         | 130    |
 
 Scenario: AC-102 edge — a test's tmux server whose socket is gone is ended
-  Given a tmux server of this user on a tm-* name (-L tm-test-live-33522) with parent 1, running for 15 hours, every socket it bound gone with its run's folder
+  Given a tmux server of this user on a tm-* name (-L tm-test-live-33522) with parent 1, running for 15 hours, every socket it bound gone with its run's folder (/tmp/tmc.indcv8il)
   When make leftovers END=1 runs
   Then it is ended by its pid with SIGTERM, its command read again just before, and printed as "ended <pid>: tmux -L tm-test-live-33522 …"
-  And one whose socket is still there, or whose sockets cannot be read, is not ended
+  And one whose socket is still there, whose sockets cannot be read, or whose socket went from a folder no test names (/tmp/tmux-501) is not ended
 
 Scenario: AC-102 edge — macOS Python without os.waitid
   Given a guarded check runs on macOS under a Python that does not expose os.waitid

@@ -114,8 +114,9 @@ class Ownership(unittest.TestCase):
     def test_no_socket_at_all_is_an_empty_list_and_any_other_failure_is_unknown(self):
         for error, expect in ((subprocess.CalledProcessError(1, "lsof", output=""), []),
                               (subprocess.CalledProcessError(1, "lsof", output="p42\n"), None),
+                              (subprocess.CalledProcessError(1, "lsof", output="", stderr="lsof: WARNING: can't stat()"), None),
                               (subprocess.CalledProcessError(2, "lsof", output=""), None)):
-            with self.subTest(status=error.returncode, output=error.output), \
+            with self.subTest(status=error.returncode, output=error.output, said=error.stderr), \
                     mock.patch.object(process_cwd.Path, "exists", return_value=False), \
                     mock.patch.object(process_cwd.shutil, "which", return_value="lsof"), \
                     mock.patch.object(process_cwd.subprocess, "run", side_effect=error):

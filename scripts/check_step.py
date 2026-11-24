@@ -65,10 +65,20 @@ def own_processes(folder, group):
     """(pid, command) of each process of our private group, working in our private folder or holding a
     socket bound in it: a tmux server outlives the folder it was found by only through that socket."""
     try:
-        inside = {**working_in(folder), **bound_in(folder)}
+        bound = bound_in(folder)
+        inside = {**working_in(folder), **bound, **children_of(bound)}
     except InspectionError as error:
         raise OwnershipError(error, selected_processes(folder, group)) from error
     return selected_processes(folder, group, inside)
+
+
+def children_of(parents):
+    """{pid: ""} of the children of `parents`: a tmux server's pane programs, one ignoring SIGHUP
+    outliving the server's end with no parent, its working directory anywhere."""
+    if not parents:
+        return {}
+    listed = subprocess.run(["ps", "-axo", "pid=,ppid="], capture_output=True, text=True, check=True).stdout
+    return {int(f[0]): "" for line in listed.splitlines() if len(f := line.split()) == 2 and int(f[1]) in parents}
 
 
 def selected_processes(folder, group, inside=()):

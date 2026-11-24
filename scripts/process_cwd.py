@@ -55,7 +55,7 @@ def lsof(*selection, empty_ok=False):
             if attempt:
                 raise
         except subprocess.CalledProcessError as error:
-            if empty_ok and error.returncode == 1 and not error.stdout:
+            if empty_ok and error.returncode == 1 and not error.stdout and not error.stderr:
                 return ""
             raise
 
