@@ -474,7 +474,7 @@ Scenario: AC-179 happy path — stopped, read
   And the why is the manager's comment on each, and the history says "Opus · manager stopped it.", never that a human gave up, so the Supervisor's owner stops and Auto-Dispatcher's failures count none of it
   And it answers "Stopped: BILL-12. It waits in TODO; its slot is free. Its window stays, and an agent still working there goes on: close_session ends it."
   When the why is missing or over 1000 characters
-  Then it is refused, "why is required" or "why: at most 1000 characters", and nothing changes
+  Then it is refused, "why is required" or "why: at most 1000 characters.", and nothing changes
   And failing a task stays the human's Give up (terminum-dispatcher.md AC-138); a manager drops work by archiving it (update_task)
   When it calls list_runs
   Then it reads its project's runs (tasks, agent, state, session, whether its agent asked a human) and the tasks waiting for a slot

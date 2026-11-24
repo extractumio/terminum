@@ -94,8 +94,8 @@ async fn ac179_a_manager_runs_and_stops_only_its_project_s_tasks() {
     assert!(runs.starts_with(DATA) && runs.contains(&format!("\"tasks\":[\"{task}\"]")) && runs.contains("\"kind\":\"session\""), "{runs}");
     // stop: no why, or one too long, is refused and nothing changes
     assert_eq!(call(&app, BOSS, "stop_task", json!({"id": task})).await.unwrap_err(), "why is required");
-    let long = "x".repeat(tasks::WHY_MOST + 1);
-    assert_eq!(call(&app, BOSS, "stop_task", json!({"id": task, "why": long})).await.unwrap_err(), "why: at most 1000 characters");
+    let long = "x".repeat(crate::tasks::attrs::REASON_MOST + 1);
+    assert_eq!(call(&app, BOSS, "stop_task", json!({"id": task, "why": long})).await.unwrap_err(), "why: at most 1000 characters.");
     assert_eq!(app.tasks.with(|tx| Ok(ops::get(tx, &task)?.status)).unwrap(), "TODO", "still as it was: its run holds it");
     app.tasks.with(|tx| ops::move_to(tx, HUMAN, &task, "IN PROGRESS", 3)).unwrap();
     // stop: a postponement, never a failure: back to TODO, the why the manager's comment, the history naming the
@@ -105,7 +105,7 @@ async fn ac179_a_manager_runs_and_stops_only_its_project_s_tasks() {
     let (status, history) = app.tasks.with(|tx| Ok((ops::get(tx, &task)?.status, ops::history(tx, &task)?))).unwrap();
     assert_eq!(status, "TODO");
     let said = |kind: &str, text: &str| history.as_array().unwrap().iter().any(|e| e["kind"] == kind && e["text"] == text);
-    assert!(said("why", "Opus · manager stopped it.") && said("why", crate::dispatcher::letgo::STOPPED), "{history}");
+    assert!(said("why", "Opus · manager stopped it.") && said("why", crate::dispatcher::runs::STOPPED), "{history}");
     assert!(said("comment", "Postponed: the owner moved it to a later epic."), "{history}");
     assert!(!history.to_string().contains(crate::dispatcher::runs::GAVE_UP) && !history.to_string().contains("FAILED"), "no human gave up, nothing failed: {history}");
     assert!(app.tasks.with(|tx| Ok(runs::holding(tx, &ops::key_of(tx, &task)?)?.is_none())).unwrap(), "its run is let go");

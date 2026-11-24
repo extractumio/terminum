@@ -103,14 +103,11 @@ pub(super) async fn promote_queued(app: &Shared, boss: &Boss, args: &Value, supe
     Ok(format!("{id} {} at the front of {name}'s queue{}. It starts when there is room.", if moved { "is now" } else { "is already" }, if behind { ", behind its schedules' tasks" } else { "" }))
 }
 
-/// Why a manager stops a task: at most this many characters, kept as its comment (AC-179).
-pub const WHY_MOST: usize = 1000;
-
 pub async fn stop_task(app: &Shared, boss: &Boss, args: &Value) -> Result<String, String> {
     let id = arg(args, "id")?.to_string();
     let why = crate::plans::rules::clean(arg(args, "why")?);
-    if why.chars().count() > WHY_MOST {
-        return Err(format!("why: at most {WHY_MOST} characters"));
+    if why.chars().count() > crate::tasks::attrs::REASON_MOST {
+        return Err(format!("why: at most {} characters.", crate::tasks::attrs::REASON_MOST));
     }
     let (scope, actor) = (boss.clone(), boss.clone());
     let stopped = crate::dispatcher::letgo::gave_up_checked(app, &id, crate::dispatcher::letgo::Giver::Manager, move |tx, wanted| {

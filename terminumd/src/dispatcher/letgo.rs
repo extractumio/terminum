@@ -37,9 +37,6 @@ pub(super) async fn give_up(State(app): State<Shared>, Path(id): Path<String>) -
 #[derive(Clone, Copy, PartialEq)]
 pub(crate) enum Giver { Human, Manager }
 
-/// What a task stopped by its project's manager says: postponed, never failed (`terminum-agents.md` AC-179).
-pub const STOPPED: &str = "The project's manager stopped its run: it waits in TODO to run again.";
-
 /// `who` gives up on task `id`: a wait is called off, the task where it stood (AC-158); else its run is given up by
 /// the human, its open tasks FAILED, or stopped by the project's manager, its open tasks back in TODO.
 /// The tasks it concerned.
@@ -86,20 +83,18 @@ pub(crate) async fn gave_up_checked(
             record(tx, std::slice::from_ref(&wanted))?;
             Ok(None)
         } else {
-            if giver == Giver::Human {
+            let run = if giver == Giver::Human {
                 let current = runs::last_of(tx, &key)?;
                 if current.as_ref().map(|run| (run.id.clone(), run.pane_key.clone())) != expected
                     || (!had_queue && current.as_ref().and_then(|run| run.place(&guard_app)).is_some())
                 {
                     return Err("Its run changed while Give up waited. Read the task and try again.".into());
                 }
-            }
-            let run = if giver == Giver::Human {
                 let run = runs::give_up(tx, &key)?;
                 super::giveup::record(tx, &run)?;
                 run
             } else {
-                runs::stop(tx, &key, STOPPED)?
+                runs::stop(tx, &key)?
             };
             record(tx, &run.ids)?;
             Ok(Some(run))
