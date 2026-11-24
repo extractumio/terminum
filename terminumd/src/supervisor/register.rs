@@ -375,7 +375,7 @@ pub(super) fn advance(tx: &Transaction, project: &str, at: i64) -> Result<(), St
     }
     tx.execute("UPDATE supervisor_problem_signals AS y SET ruling_count = s.count FROM supervisor_signals s, supervisor_problems p
         WHERE s.fingerprint = y.fingerprint AND p.id = y.problem AND p.project = ?1 AND p.state = 'accepted'
-          AND s.count > coalesce(y.ruling_count, 0)", [project]).map_err(sql)?;
+          AND s.state IN ('new','raised','recurred') AND s.count > coalesce(y.ruling_count, 0)", [project]).map_err(sql)?;
     Ok(())
 }
 

@@ -101,3 +101,15 @@ fn ac236_a_new_failed_run_reopens_an_accepted_problem() {
         Ok(())
     }).unwrap();
 }
+
+#[test]
+fn ac236_a_repeat_counted_while_its_signal_is_held_reopens_once_it_is_active() {
+    let f = Fixture::new("accept-held");
+    super::register_tests::signal(&f, "held", "A", 1, 0.1, false);
+    let id = accepted(&f, "held");
+    f.write("UPDATE supervisor_signals SET state = 'held', count = 2, evidence = ?1 WHERE fingerprint = 'held'",
+        [r#"[{"table":"events","id":"event-a"},{"table":"events","id":"event-b"}]"#]);
+    assert_eq!(swept(&f, id, NOW + 1), "accepted", "a held signal reopens nothing");
+    f.write("UPDATE supervisor_signals SET state = 'new' WHERE fingerprint = 'held'", []);
+    assert_eq!(swept(&f, id, NOW + 2), "recurred", "the repeat counted while held was not absorbed");
+}
