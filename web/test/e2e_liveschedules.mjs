@@ -411,6 +411,9 @@ export async function liveSchedules(page, live) {
   const replied = await reportOf(task);
   const sentReply = await j(`/api/reports/${replied.id}/reply`, "POST", { text: "Which of them break the build? FINISHES" });
   check("AC-270 a reply to a routine's report goes on in its task's conversation", sentReply.code === 200 && sentReply.task === task, JSON.stringify(sentReply));
+  // a second reply while the first one's run starts is refused by RUN, and leaves nothing on the task (AC-270)
+  const second = await j(`/api/reports/${replied.id}/reply`, "POST", { text: "And the minor ones?" });
+  check("AC-270 a reply refused by RUN says why", second.code === 400 && !!second.error, JSON.stringify(second));
   check("AC-270 the reply stands below the report, and its task got the fixed words with it", await until(async () => {
     const [r, t] = [await j(`/api/reports/${replied.id}`), await j(`/api/tasks/${task}`)];
     return r.notes?.some((n) => n.kind === "reply" && n.text === "Which of them break the build? FINISHES")
@@ -421,6 +424,7 @@ export async function liveSchedules(page, live) {
     && e.at >= (sentReply.at ?? 0)), 20000) || (await j(`/api/tasks/${task}`)).status === "IN PROGRESS", (await j(`/api/tasks/${task}`)).status);
   check("AC-270 the reply's run ends with no second report of its result", await until(async () => { const t = await j(`/api/tasks/${task}`); return t.status === "DONE" && t.session?.closed
     && t.history.filter((e) => /to DONE/.test(e.text ?? "")).length >= 2
+    && t.history.filter((e) => e.kind === "comment" && e.text?.startsWith(`${task}: the human replied`)).length === 1
     && (await j("/api/reports")).reports.filter((r) => r.source.task === task).length === 1; }, 45000), JSON.stringify((await j(`/api/tasks/${task}`)).history.slice(-6).map((e) => e.text)));
 
   // AC-161: an agent running schedules is not deleted; a schedule deleted leaves its tasks

@@ -236,7 +236,16 @@ async fn press(State(app): State<Shared>, Path(id): Path<String>, Json(mut body)
 /// A human's reply to a report, by its route (terminum-reports.md AC-270): as a human's RUN of the report's task with
 /// the reply's fixed words as its message, every check of RUN and its gate holding; with no room it waits for one.
 pub(crate) async fn press_reply(app: &Shared, id: &str, words: String) -> Result<Value, String> {
-    pressed(app, id, Press { comment: Some(words), queue: true, reply: true, ..Default::default() }).await
+    let (task, said) = (id.to_string(), words.clone());
+    let before: i64 = store(app, move |tx| tx.query_row("SELECT coalesce(max(rowid), 0) FROM events", [], |r| r.get(0)).map_err(ops::sql)).await?;
+    let done = pressed(app, id, Press { comment: Some(words), queue: true, reply: true, ..Default::default() }).await;
+    if done.is_err() {
+        // a reply refused after RUN kept its words leaves nothing on its task: no later RUN types it (AC-270)
+        store(app, move |tx| tx.execute("DELETE FROM events WHERE task = ?1 AND kind = 'comment' AND author = ?2 AND text = ?3 AND rowid > ?4",
+            (ops::key_of(tx, &task)?, crate::tasks::store::HUMAN, said, before)).map(drop).map_err(ops::sql)).await?;
+        told(app, id);
+    }
+    done
 }
 
 /// Why a reply does not go on: its conversation is gone, or its task would take others with it.
