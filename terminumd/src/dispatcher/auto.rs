@@ -47,9 +47,9 @@ Do none of the tasks yourself, change no file and no other task.
 
 {budget}
 
-When you are done, call {FINISH} for {id} with the result in this form, each on its own line:{form}
+When you are done, call {FINISH} for {id} with the result as {shape}, in this form:{form}
 Summary names what you started; Details each candidate's score and why it was started or left.",
-            slots = r.slots, ids = r.candidates.join(", "), budget = budget_words(ROUND_MINUTES * 60))
+            shape = closeout::markdown_shape!(), slots = r.slots, ids = r.candidates.join(", "), budget = budget_words(ROUND_MINUTES * 60))
 }
 
 /// What the agent of a task a round started is told: terminum's own words and the task's ID, with those of its

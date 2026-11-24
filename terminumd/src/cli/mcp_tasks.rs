@@ -59,7 +59,7 @@ const TOOLS: [Tool; 29] = [
     Tool { name: crate::supervisor::design_gates::RECORD, read_only: false, description: "Record your own design review on a task. Role is architecture or independent. Verdict is approved or changes_requested. Rejected advice uses one advice | reason pair per line, or None.",
         fields: &[ID, ("role", true, 12), ("verdict", true, 18), ("compatibility", true, 1600), ("rejected_advice", true, 1600)] },
     // terminum-reports.md AC-266: the Inbox's reports, apart from tasks
-    Tool { name: "create_report", read_only: false, description: concat!("Gives the human a report to read in their Inbox: title, summary (one line), body in Markdown; task: the task it is for (default: this session's one task); critical \"yes\" alerts the human (a critical failure only); follows: the report it answers. ", crate::reports::tools::words!()),
+    Tool { name: "create_report", read_only: false, description: concat!("Gives the human a report to read in their Inbox: title, summary (one line), body as ", crate::tasks::closeout::markdown_shape!(), "; task: the task it is for (default: this session's one task); critical \"yes\" alerts the human (a critical failure only); follows: the report it answers. ", crate::reports::tools::words!()),
         fields: &[("title", true, 800), ("summary", true, 2000), ("body", true, TEXT_MOST), ("task", false, 24), ("critical", false, 3), ("follows", false, 24)] },
     Tool { name: "append_to_report", read_only: false, description: "Adds a Markdown comment below a report of your task or session.", fields: &[ID, ("text", true, COMMENT_MOST)] },
     Tool { name: "attach_report_file", read_only: false, description: "Attaches a file to a report of your task or session: path in this session's folder; from a host name and text.", fields: &[ID, ("path", false, 4096), ("name", false, 300), ("text", false, TEXT_FILE_MOST)] },
@@ -227,6 +227,12 @@ mod tests {
     fn ac166_finish_task_names_the_result_s_sections() {
         let d = TOOLS.iter().find(|t| t.name == "finish_task").unwrap().description;
         assert!(d.ends_with(&format!("{}.", crate::tasks::closeout::SECTIONS.map(|(s, _)| s).join(", "))), "{d}");
+    }
+
+    #[test]
+    fn ac266_create_report_asks_for_a_body_with_headings() {
+        let d = TOOLS.iter().find(|t| t.name == "create_report").unwrap().description;
+        assert!(d.contains("body as a Markdown document: each section a \"## \" heading") && d.contains("no \"# \" heading: the title stands above it"), "{d}");
     }
 
     #[test]
