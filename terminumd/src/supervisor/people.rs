@@ -340,3 +340,27 @@ pub(super) fn guard_broken(q: &Query<'_, '_>) -> Result<Measurements, String> {
     }
     Ok(out)
 }
+
+const STAMP: &str = "Choosing the recommended option is a habit of answering, in no weekly project total; a standing rule's effect is measured by AC-240.";
+
+/// `owner.rubber_stamp`: per question kind, how many of the owner's latest choices in a row took the recommended option.
+pub(super) fn rubber_stamp(q: &Query<'_, '_>) -> Result<Measurements, String> {
+    let answers = rows(q.tx, &format!("{} SELECT json_extract(asked.data, '$.question.kind'), e.id,
+            json_extract(e.data, '$.choice.option') = json_extract(asked.data, '$.question.recommended')
+        FROM project_events e JOIN events asked ON asked.id = json_extract(e.data, '$.choice.question')
+        WHERE e.kind = 'comment' AND e.author = ?3 AND json_extract(asked.data, '$.question.kind') IS NOT NULL
+        ORDER BY e.at, e.seq", project_events()),
+        (q.project, q.window.end, crate::tasks::store::HUMAN), |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, bool>(2)?)))?;
+    if answers.is_empty() { return Ok(Measurements::missing("No answered question with options is retained.")); }
+    let mut streaks = BTreeMap::<String, Vec<Evidence>>::new();
+    for (kind, event, recommended) in answers {
+        let streak = streaks.entry(kind).or_default();
+        if recommended { streak.push(events(event)); } else { streak.clear(); }
+    }
+    Ok(Measurements {
+        readings: streaks.into_iter().map(|(kind, streak)| Reading::new("question_kind", kind, "recommended_streak",
+            streak.len() as f64, streak, Source::Unsized(STAMP)).comparison(Comparison::AtLeast)).collect(),
+        complete_metrics: vec!["recommended_streak"],
+        ..Measurements::default()
+    })
+}

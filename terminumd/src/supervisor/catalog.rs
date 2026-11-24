@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 
-use super::{Measurements, Query, Threshold, flow, integration_rules, people, probe_rules, samples, spend};
+use super::{Measurements, Query, Threshold, flow, integration_rules, people, probe_rules, review_rules, samples, spend};
 
 macro_rules! catalog {
     ($($name:ident, $id:literal, $query:literal, $threshold:expr, $run:path;)+) => {
@@ -60,11 +60,15 @@ catalog! {
     VerifyRed, "drift.verify_red", "verify_failures", Absolute(0.0), integration_rules::verify;
     DiffOutlier, "drift.diff_outlier", "diff_outliers", baseline(95, 100.0), integration_rules::diffs;
     MainRed, "flow.main_red", "target_red", Absolute(0.0), integration_rules::target_red;
+    SurfaceTouched, "arch.surface_touched", "surface_touches", Absolute(1.0), review_rules::surface_touched;
+    ReviewMissing, "arch.review_missing", "verify_without_review", Absolute(0.0), review_rules::review_missing;
+    RubberStamp, "owner.rubber_stamp", "recommended_streak", Absolute(5.0), people::rubber_stamp;
     Misrouted, "drift.misrouted", "misrouted_tasks", Absolute(0.0), integration;
     Flaky, "flow.flaky", "gate_failures", Absolute(0.0), probe_rules::flaky;
     Hotspot, "arch.hotspot", "git_hotspots", baseline(95, 1000000.0), probe_rules::hotspots;
     Dependency, "arch.dependency", "git_dependencies", Absolute(0.0), probe_rules::dependencies;
     MigrationEdited, "arch.migration_edited", "git_migrations", Absolute(0.0), probe_rules::migrations;
+    BugCluster, "arch.bug_cluster", "git_bug_clusters", Absolute(3.0), probe_rules::bug_clusters;
     ReleaseTime, "improve.release_time", "task_release_lead_time", change(1.0), probe_rules::release_time;
     Releases, "improve.releases", "release_cadence", change(0.0), probe_rules::releases;
     ProbeFailed, "self.probe_failed", "probe_failures", Absolute(0.0), probe_rules::failures;
@@ -81,7 +85,7 @@ impl Rule {
     pub(super) fn probe_source(self) -> Option<&'static str> {
         use super::probes::{ARCH, GATE, GIT};
         match self {
-            Self::Hotspot | Self::Dependency | Self::MigrationEdited | Self::DiffOutlier => Some(ARCH),
+            Self::Hotspot | Self::Dependency | Self::MigrationEdited | Self::BugCluster | Self::DiffOutlier => Some(ARCH),
             Self::ReleaseTime | Self::Releases => Some(GIT),
             Self::Flaky => Some(GATE),
             _ => None,
@@ -151,15 +155,11 @@ fn line_health(_: &Query<'_, '_>) -> Result<Measurements, String> {
 pub(super) const UNAVAILABLE: &[(&str, &str)] = &[
     ("drift.rule_break", "Lint probe history is unavailable."),
     ("drift.scope", "Scope judgments require a recorded case."),
-    ("arch.surface_touched", "Historical integration and git surface data are unavailable."),
     ("arch.spec_drift", "Git probe history is unavailable."),
-    ("arch.bug_cluster", "Task-to-commit history is unavailable."),
-    ("arch.review_missing", "Historical Verify review records are unavailable."),
     ("product.external", "No historical external metric probe is available."),
     ("product.feedback_age", "No historical feedback probe is available."),
     ("process.handoff_overdue", "Indexed handoff observations are unavailable."),
     ("process.rules_growth", "Git probe history is unavailable."),
-    ("owner.rubber_stamp", "Structured question choices are unavailable."),
     ("process.rule_recurs", "Recorded rule judgments are unavailable."),
     ("self.budget", "Supervisor budget history is unavailable."),
     ("self.line_dead", LINE_UNAVAILABLE),

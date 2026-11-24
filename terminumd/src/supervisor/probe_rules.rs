@@ -148,6 +148,21 @@ pub(super) fn hotspots(q: &Query<'_, '_>) -> Result<Measurements, String> {
     Ok(out)
 }
 
+/// `arch.bug_cluster`: per folder, the distinct commits of Bug tasks (or `fix:` commits) that changed it in the window.
+pub(super) fn bug_clusters(q: &Query<'_, '_>) -> Result<Measurements, String> {
+    let Some((id, arch)) = architecture(q)? else { return Ok(Measurements::missing(ARCH_MISSING)); };
+    let mut folders = BTreeMap::<&str, std::collections::BTreeSet<i64>>::new();
+    for row in arch.changes.iter().filter(|c| c.fix && q.window.current(c.at) && c.at <= q.window.end) {
+        folders.entry(row.path.rsplit_once('/').map_or(".", |(folder, _)| folder)).or_default().insert(row.at);
+    }
+    Ok(Measurements {
+        readings: folders.into_iter().map(|(folder, commits)| Reading::new("folder", folder, "fix_commits",
+            commits.len() as f64, evidence(id), Source::Unsized(CODE)).comparison(Comparison::AtLeast)).collect(),
+        complete_metrics: (arch.since <= q.window.start).then_some("fix_commits").into_iter().collect(),
+        ..Measurements::default()
+    })
+}
+
 pub(super) fn failures(q: &Query<'_, '_>) -> Result<Measurements, String> {
     let mut out = Measurements::default();
     for status in probes::statuses(q.tx, q.project, q.window.end)? {
