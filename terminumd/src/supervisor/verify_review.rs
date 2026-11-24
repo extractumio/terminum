@@ -15,6 +15,8 @@ use crate::tasks::{api, integration, ops::{self, sql}};
 use super::{design_gates as gates, settings, surfaces::{self, Tier}};
 
 pub(crate) const MISSING_EXIT: i32 = 73;
+/// The `design_gate` mark of Verify's notice that a T2 or T3 change lacks its review: `arch.review_missing` counts it.
+pub(super) const REVIEW_MISSING: &str = "review_missing";
 const NO_VERIFY: &str = "This command runs inside its project's active integration Verify.";
 
 #[derive(Clone, Deserialize)]
@@ -94,7 +96,7 @@ pub(super) fn check_evidence(tx: &Transaction, task: &ops::Task, hit: Option<sur
     let by = gates::author(tx, &task.project)?;
     let condition = format!("T{tier}: {missing}");
     if !ops::noticed(tx, &by, &task.key, "review_condition", &condition)? {
-        ops::notice(tx, &by, &task.id, &words, json!({"design_gate":"review_missing","review_condition":condition}), at)?;
+        ops::notice(tx, &by, &task.id, &words, json!({"design_gate":REVIEW_MISSING,"review_condition":condition}), at)?;
     }
     tx.execute("INSERT OR IGNORE INTO supervisor_design_verify_misses (task, attempt) VALUES (?1, ?2)",
         (&task.key, attempt)).map_err(sql)?;

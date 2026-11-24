@@ -144,6 +144,11 @@ pub fn open_bug(tx: &Transaction, project: &str) -> Result<Option<String>, Strin
     Ok(red_bug(tx, project)?.filter(|b| b.2).map(|b| b.1))
 }
 
+/// The open Bug task's row key: the Supervisor's evidence of a red target (`terminum-supervisor.md` AC-212).
+pub(crate) fn open_bug_key(tx: &Transaction, project: &str) -> Result<Option<String>, String> {
+    Ok(red_bug(tx, project)?.filter(|b| b.2).map(|b| b.0))
+}
+
 /// Held task `task` left INTEGRATION for `status`: anything but DONE or FAILED, it is told the Bug task's end runs
 /// nothing for it, and is kept to be told to integrate again at that end (`release`); the Bug task hears of it.
 pub(crate) fn left(tx: &Transaction, task: &Task, status: &str, at: i64) -> Result<(), String> {

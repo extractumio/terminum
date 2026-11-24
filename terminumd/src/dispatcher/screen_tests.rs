@@ -73,6 +73,38 @@ fn as125_codex_empty_is_its_placeholder_in_dim() {
 }
 
 #[test]
+fn ac138_interrupt_waits_for_the_foreground_turn_but_not_background_agents() {
+    for (kind, mut screen) in [
+        ("claude", claude_box("\u{1b}[39m❯\u{a0}\u{1b}[7m \u{1b}[0m")),
+        ("codex", rows("\u{1b}[1m›\u{1b}[0m \u{1b}[2mAsk Codex to do anything\u{1b}[0m\n\n ? for shortcuts")),
+    ] {
+        assert!(interrupt_ready(kind, &screen));
+        screen.insert(0, "The status says esc to interrupt".into());
+        assert!(interrupt_ready(kind, &screen), "old conversation text is not the current status");
+        screen.insert(0, "• The status says esc to interrupt".into());
+        assert!(interrupt_ready(kind, &screen), "a Codex transcript bullet is not its working status");
+        screen.push("Working (Esc to interrupt)".into());
+        assert!(!interrupt_ready(kind, &screen));
+        screen.pop();
+        screen.push("Working (\u{1b}[2mEsc\u{1b}[0m to".into());
+        screen.push("interrupt)".into());
+        assert!(!interrupt_ready(kind, &screen));
+        screen.pop();
+        screen.pop();
+        screen.push("2 local agents".into());
+        assert!(interrupt_ready(kind, &screen), "the stop instruction asks the agent to stop its background agents");
+    }
+    assert!(!interrupt_ready("claude", &claude_box("❯ a draft")));
+    assert!(!interrupt_ready("codex", &rows("An unknown screen")));
+    assert!(!interrupt_ready("codex", &rows("Enter to confirm · Esc to cancel")));
+    let mut working = claude_box("❯ ");
+    working.insert(2, "✻ Thinking… (12s · esc to interrupt)".into());
+    assert!(!interrupt_ready("claude", &working));
+    let codex_working = rows("• Working (3s • esc to interrupt)\n\n\u{1b}[1m›\u{1b}[0m \u{1b}[2mAsk Codex to do anything\u{1b}[0m\n\n ? for shortcuts");
+    assert!(!interrupt_ready("codex", &codex_working));
+}
+
+#[test]
 fn as125_codex_the_same_words_typed_are_a_draft() {
     let screen = rows("\u{1b}[1m›\u{1b}[0m Ask Codex to do anything\n\n  ? for shortcuts");
     assert_eq!(read("codex", &screen), Screen::Holds("Ask Codex to do anything".into()));

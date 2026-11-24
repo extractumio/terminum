@@ -30,13 +30,16 @@ pub(crate) fn let_go_of(app: &Shared, r: Run) -> Vec<String> {
 
 /// The human gives up on a run they cannot reach or no longer want (AC-138).
 pub(super) async fn give_up(State(app): State<Shared>, Path(id): Path<String>) -> Response {
-    answer(gave_up(&app, &id, "The human").await.map(|ids| json!({"ok": true, "ids": ids})))
+    answer(gave_up(&app, &id).await.map(|ids| json!({"ok": true, "ids": ids})))
 }
+
+#[derive(Clone, Copy, PartialEq)]
+pub(crate) enum Giver { Human, Manager }
 
 /// `who` gives up on task `id`: a wait is called off, the task where it stood (AC-158); else its run is given up.
 /// The tasks it concerned.
-pub(crate) async fn gave_up(app: &Shared, id: &str, who: &'static str) -> Result<Vec<String>, String> {
-    gave_up_checked(app, id, who, |_, _| Ok(()), |tx, ids| {
+pub(crate) async fn gave_up(app: &Shared, id: &str) -> Result<Vec<String>, String> {
+    gave_up_checked(app, id, Giver::Human, |_, _| Ok(()), |tx, ids| {
         for id in ids {
             let key = ops::key_of(tx, id)?;
             ops::log(tx, &key, crate::tasks::store::HUMAN, "why", "The human gave up on its run.", None, ops::now())?;
@@ -46,10 +49,28 @@ pub(crate) async fn gave_up(app: &Shared, id: &str, who: &'static str) -> Result
 }
 
 pub(crate) async fn gave_up_checked(
-    app: &Shared, id: &str, who: &'static str,
+    app: &Shared, id: &str, giver: Giver,
     check: impl FnOnce(&rusqlite::Transaction, &str) -> Result<(), String> + Send + 'static,
     record: impl FnOnce(&rusqlite::Transaction, &[String]) -> Result<(), String> + Send + 'static,
 ) -> Result<Vec<String>, String> {
+    let decided = std::time::Instant::now();
+    let (held, expected) = if giver == Giver::Human {
+        let wanted = id.to_string();
+        let run = store(app, move |tx| {
+            let key = ops::key_of(tx, &wanted)?;
+            if super::waits::of_task(tx, &key)?.is_some() { return Ok(None); }
+            runs::last_of(tx, &key)
+        }).await?;
+        let expected = run.as_ref().map(|run| (run.id.clone(), run.pane_key.clone()));
+        let held = match run.and_then(|run| run.place(app)) {
+            Some((server, pane)) => Some(tokio::time::timeout(std::time::Duration::from_secs(5), server.typing(&pane).lock_owned()).await
+                .map_err(|_| "A prompt is being delivered in this session. Give up again once it finishes.".to_string())?),
+            None => None,
+        };
+        (held, expected)
+    } else { (None, None) };
+    let (had_queue, guard_app) = (held.is_some(), app.clone());
+    let who = match giver { Giver::Human => "The human", Giver::Manager => "The project's manager" };
     let wanted = id.to_string();
     let done = store(app, move |tx| {
         check(tx, &wanted)?;
@@ -60,17 +81,35 @@ pub(crate) async fn gave_up_checked(
             record(tx, std::slice::from_ref(&wanted))?;
             Ok(None)
         } else {
+            if giver == Giver::Human {
+                let current = runs::last_of(tx, &key)?;
+                if current.as_ref().map(|run| (run.id.clone(), run.pane_key.clone())) != expected
+                    || (!had_queue && current.as_ref().and_then(|run| run.place(&guard_app)).is_some())
+                {
+                    return Err("Its run changed while Give up waited. Read the task and try again.".into());
+                }
+            }
             let run = runs::give_up(tx, &key)?;
+            if giver == Giver::Human {
+                super::giveup::record(tx, &run)?;
+            }
             record(tx, &run.ids)?;
             Ok(Some(run))
         }
     }).await?;
+    drop(held);
     Ok(match done {
         None => {
             told(app, id);
             vec![id.to_string()]
         }
-        Some(r) => let_go_of(app, r),
+        Some(r) => {
+            let ids = let_go_of(app, r.clone());
+            if giver == Giver::Human {
+                super::giveup::interrupt(app, &r, decided).await;
+            }
+            ids
+        }
     })
 }
 

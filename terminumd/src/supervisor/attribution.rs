@@ -128,7 +128,7 @@ impl<'a> Attribution<'a> {
             };
             let measured = amounts.iter().any(|(_, amount)| *amount > 0.0);
             let firing = reading.is_some_and(|r| r.exceeds(detector.threshold).is_some() && !r.evidence.is_empty());
-            let present = detector.rule.present_only() || matches!(found.source, Source::Present | Source::BlockingLinks);
+            let present = detector.rule.present_only().is_some() || matches!(found.source, Source::Present | Source::BlockingLinks);
             if i + 2 >= self.weeks.len() && (measured || firing || present) {
                 assessment.ranked = true;
             }

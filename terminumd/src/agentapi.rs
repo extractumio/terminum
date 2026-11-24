@@ -134,6 +134,10 @@ async fn task_tool(app: &Shared, caller: &Caller, tool: String, args: Value) -> 
 
 /// A task tool for `who`: a pane's session, or a token's caller (`host`: the pane's, when it is on one).
 pub async fn task_tool_of(app: &Shared, who: crate::tasks::tools::Who, host: Option<String>, other: bool, tool: String, args: Value) -> Result<String, String> {
+    if let Some(id) = args["id"].as_str().or(args["task"].as_str()) {
+        let (pane, id) = (who.key.clone(), id.to_string());
+        crate::tasks::api::store(app, move |tx| crate::dispatcher::giveup::check_tool(tx, &pane, &id)).await?;
+    }
     if tool == "dispatch_task" && other {
         return Err(OTHER_SESSION_DISPATCH.into());
     }

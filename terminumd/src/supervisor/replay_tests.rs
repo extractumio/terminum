@@ -143,7 +143,7 @@ fn ac215_replay_rank_and_schema() {
     assert!(wait < spend, "{report}");
     assert!(report[wait..].lines().next().unwrap().contains("impact 2"));
     assert!(report[spend..].lines().next().unwrap().contains("impact 1"));
-    assert!(report.contains("flow.main_red: CI probe history is unavailable."));
+    assert!(report.contains("drift.scope: Scope judgments require a recorded case."), "{report}");
     assert!(report.contains("flow.queue_growth: Not enough retained snapshot points for this period."));
     assert!(!report.contains("private-other"));
     assert!(!report.contains("flow.wait_human_age resolved"));

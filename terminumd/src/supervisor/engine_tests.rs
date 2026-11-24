@@ -86,6 +86,20 @@ impl Fixture {
             SELECT id, agent_id, ?2, 0, ?3, 0, 0, 'gpt-6-sol' FROM runs WHERE id = ?1", (run, at, output));
     }
 
+    /// The project's integration settings row, on or off, its target `main`.
+    pub fn integration(&self, on: bool) {
+        self.write("INSERT INTO project_integration (project, is_on, target, check_line, publish_line, after_line, batch_most,
+            check_minutes, agent_budget_minutes, red_rounds_most, prompt) VALUES (?1, ?2, 'main', '', '', '', 2, 15, 15, 1, '')",
+            (PROJECT, on));
+    }
+
+    /// `rule` as the project's saved settings make it, live, evaluated at `at`.
+    pub fn live(&self, rule: super::Rule, at: i64) -> super::Evaluation {
+        let mut detector = self.store.with(|tx| Ok(super::settings::read(tx, PROJECT)?.settings.detector(rule))).unwrap();
+        detector.mode = Mode::Live;
+        evaluate(&self.store, PROJECT, at, &[detector]).unwrap()
+    }
+
     pub fn detector(id: &str) -> Detector {
         let mut detector = Detector::named(id).unwrap();
         detector.mode = Mode::Live;

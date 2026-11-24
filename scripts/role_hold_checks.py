@@ -104,7 +104,7 @@ def ac245_hold_undo_and_switch_off(call, db, wire, tmux, project, task, pane):
     check("AC-245 a level 2 integration pause opens a project incident",
           state() == 1 and pause["id"] == pause_hold and pause["undo"] == "Resume integration"
           and any(i["id"] == pause["incident"] and i["level"] == 2
-                  and i["holds"] == [{"id": pause_hold, "label": pause["label"]}]
+                  and [{"id": h["id"], "label": h["label"]} for h in i["holds"]] == [{"id": pause_hold, "label": pause["label"]}]
                   for i in okay("/api/supervisor/incidents")))
     check("AC-245 an incident refuses another hold's ID",
           call(incident, "POST", {"action": "release_hold", "hold": dispatch_hold})[0] == 400)
