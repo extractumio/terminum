@@ -86,6 +86,11 @@ pub(super) fn evaluate_snapshot(
                     .unwrap_or_else(|| found.assessment.score(at - first < 3 * WEEK, found.charter_breach())),
                 ..detector.scores
             };
+            // A measured escalate rule raises the score it names and keeps the measured one beside it (AC-213).
+            if let Some(raised) = &mut found.raised {
+                raised.from = found.scores.impact;
+                found.scores.impact = super::escalations::CRITICAL;
+            }
         }
     }
     Ok(result)

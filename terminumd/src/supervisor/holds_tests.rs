@@ -7,7 +7,7 @@ use crate::dispatcher::runs;
 use crate::tasks::{auto, ops::{self, sql}, store::HUMAN};
 use super::{Rule, WEEK, engine_tests::{Fixture, PROJECT}, holds::{self, Applied, Disposition, Kind, Request}, incidents, incidents_api, SCHEMA};
 
-fn arm(f: &Fixture, rule: Rule, at: i64) {
+pub(super) fn arm(f: &Fixture, rule: Rule, at: i64) {
     let report = json!({
         "attached_at": at - WEEK, "scanned_at": at, "first_observation": at - 4 * WEEK,
         "limited_history": false, "code_only": true,
@@ -22,7 +22,11 @@ fn arm(f: &Fixture, rule: Rule, at: i64) {
 
 fn signal(f: &Fixture, rule: Rule, task: Option<&str>, level: u8, at: i64) {
     let measure = json!({"value":5,"baseline":2,"threshold":4,"window_start":at-1,"window_end":at});
-    let scores = json!({"impact":level,"blast":0,"reversibility":0,"confidence":1.0});
+    let mut scores = json!({"impact":level,"blast":0,"reversibility":0,"confidence":1.0});
+    if level == 3 {
+        // What code stops: the cost outlier's runaway raise naming the run (AC-213), not a level 3 alone.
+        scores["raised"] = json!({"score":"impact","from":2,"rule":"runaway_run","run":"original","run_dollars":50,"week_dollars":100});
+    }
     let evidence = json!([{"table":"runs","id":"original"}]);
     f.write("INSERT INTO supervisor_signals (fingerprint, project, detector, subject_kind, subject_id, metric, evidence,
         measure, scores, first_seen, last_seen, count, state) VALUES ('hold-signal', ?1, ?2, ?3, ?4, 'task_dollars',
@@ -32,7 +36,7 @@ fn signal(f: &Fixture, rule: Rule, task: Option<&str>, level: u8, at: i64) {
 }
 
 /// Task `lead`'s working run `original`: what a level 3 cost outlier stops.
-fn working_lead(f: &Fixture, at: i64) {
+pub(super) fn working_lead(f: &Fixture, at: i64) {
     f.task("lead", Some("Bug"), "P2", "IN PROGRESS", at - 120);
     f.write("UPDATE tasks SET slug = 'FIX-' || number WHERE id = 'lead'", []);
     f.agent("agent");

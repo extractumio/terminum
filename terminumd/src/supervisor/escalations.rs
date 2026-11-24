@@ -9,7 +9,7 @@ use crate::tasks::ops::sql;
 
 use super::{Scores, Signal};
 
-const CRITICAL: u8 = 3;
+pub(super) const CRITICAL: u8 = 3;
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "snake_case")]

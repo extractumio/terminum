@@ -136,15 +136,28 @@ impl Assessment {
     }
 }
 
+pub(super) fn percentile(values: &mut [f64], p: u8) -> Option<f64> {
+    values.sort_unstable_by(f64::total_cmp);
+    values.get((values.len() * usize::from(p)).div_ceil(100).saturating_sub(1)).copied()
+}
+
+/// AC-212: `percentile` of sorted `values` with one `own` value left out, so a subject is ranked
+/// against the project's other subjects; none left gives `None`, and the floor decides.
+pub(super) fn percentile_of_others(values: &[f64], own: f64, p: u8) -> Option<f64> {
+    let own_at = values.partition_point(|v| v.total_cmp(&own).is_le()).checked_sub(1)?;
+    let at = ((values.len() - 1) * usize::from(p)).div_ceil(100).checked_sub(1)?;
+    values.get(if at < own_at { at } else { at + 1 }).copied()
+}
+
 /// Compare weekly values at their own scale. The median is robust against one outlier.
 pub(super) fn absolute_noise(series: &[Option<f64>]) -> f64 {
     let mut steps: Vec<_> = series.windows(2).filter_map(|p| Some((p[1]? - p[0]?).abs())).collect();
-    super::percentile(&mut steps, 50).unwrap_or(0.0)
+    percentile(&mut steps, 50).unwrap_or(0.0)
 }
 
 pub(super) fn relative_noise(series: &[Option<f64>]) -> f64 {
     let mut values: Vec<_> = series.iter().flatten().copied().collect();
-    let typical = super::percentile(&mut values, 50).unwrap_or(0.0);
+    let typical = percentile(&mut values, 50).unwrap_or(0.0);
     let noise = absolute_noise(series);
     if typical > 0.0 { noise / typical } else if noise > 0.0 { 1.0 } else { 0.0 }
 }
