@@ -157,7 +157,9 @@ def main():
               and audit["denied"]["isError"] and not audit["finished"].get("isError")
               and "settings_revision" not in json.dumps(audit["audit"])
               and call(path + "/screen")["audit"]["latest"]["report"] == audit["report"]
-              and call(f"/api/tasks/{task}")["status"] == "WAIT FOR HUMAN", audit)
+              # its result is a report in the owner's Inbox, its task DONE (terminum-reports.md AC-272, AC-279)
+              and call(f"/api/tasks/{task}")["status"] == "DONE"
+              and any(r["source"]["task"] == task for r in call("/api/reports")["reports"]), audit)
 
     except Exception:
         if db_path.exists():
