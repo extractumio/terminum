@@ -6,8 +6,6 @@ import ast
 from pathlib import Path
 import re
 
-CHECKS = re.compile(r"^(?:from|import) (\w+_checks)\b", re.M)
-
 
 def page_checks(root):
     """{web/test file: the check of e2e_all.mjs that runs it}, a helper its check imports included."""
@@ -62,26 +60,36 @@ def uncited(cases, root):
     return sorted(c for c in cases if not re.search(rf"\bAC-{c}\b", tests))
 
 
+def imported_checks(path):
+    """The `*_checks` module names a Python file imports, wherever it imports them."""
+    found = set()
+    for node in ast.walk(ast.parse(path.read_text(), filename=str(path))):
+        names = [a.name for a in node.names] if isinstance(node, ast.Import) else \
+            [node.module] if isinstance(node, ast.ImportFrom) and node.level == 0 and node.module else []
+        found |= {n for n in names if n.endswith("_checks")}
+    return found
+
+
 def check_modules(path, root):
-    """The `scripts/*_checks.py` modules a Python runner imports, directly or through one another."""
-    found, todo = [], [path]
+    """The `*_checks` module names a Python runner imports, directly or through one another's `scripts/` file."""
+    found, todo = set(), [path]
     while todo:
-        for name in CHECKS.findall(todo.pop().read_text(errors="replace")):
-            module = root / "scripts" / f"{name}.py"
-            if module.is_file() and module not in found:
-                found.append(module)
-                todo.append(module)
+        for name in imported_checks(todo.pop()) - found:
+            found.add(name)
+            if (root / "scripts" / f"{name}.py").is_file():
+                todo.append(root / "scripts" / f"{name}.py")
     return found
 
 
 def source(path, root):
     """A test file's text; a Python runner's with its check modules'."""
     runner = path.suffix == ".py" and path.parent == root / "scripts"
-    return "\n".join(p.read_text(errors="replace") for p in [path, *(check_modules(path, root) if runner else [])])
+    modules = [root / "scripts" / f"{n}.py" for n in sorted(check_modules(path, root))] if runner else []
+    return "\n".join(p.read_text(errors="replace") for p in [path, *modules] if p.is_file())
 
 
 def runners_of(files, root):
-    """The Python runners that import one of these changed check modules, relative to `root`."""
-    changed = {root / f for f in files if re.fullmatch(r"scripts/\w+_checks\.py", f)}
+    """The Python runners that import one of these changed (or deleted) check modules, relative to `root`."""
+    changed = {Path(f).stem for f in files if re.fullmatch(r"scripts/\w+_checks\.py", f)}
     return sorted(str(p.relative_to(root)) for p in root.glob("scripts/e2e_*.py")
-                  if changed and runnable_e2e(p) and changed & set(check_modules(p, root)))
+                  if changed and runnable_e2e(p) and changed & check_modules(p, root))

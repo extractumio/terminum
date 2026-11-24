@@ -19,7 +19,7 @@ class CheckModules(unittest.TestCase):
         scripts = Path(tmp) / "scripts"
         scripts.mkdir()
         (scripts / "e2e_runner.py").write_text(f"from first_checks import a  # noqa: E402\n{GUARD}")
-        (scripts / "first_checks.py").write_text("import json\nfrom second_checks import b\n")
+        (scripts / "first_checks.py").write_text("import json\ndef a():\n    import os, second_checks\n")
         (scripts / "second_checks.py").write_text(f'check("AC-{CASE} a thing")\n')
         (scripts / "e2e_other.py").write_text(f"from e2e_ws import check\n{GUARD}")
         (scripts / "e2e_ws.py").write_text(f"# AC-{CASE}\n")
@@ -42,6 +42,13 @@ class CheckModules(unittest.TestCase):
             self.assertNotIn("second_checks", got)
             self.assertNotIn("e2e_other", got)
             self.assertNotIn("e2e_runner", dict(check_changed.plan(["scripts/e2e_ws.py"], set(), root=root)))
+
+    def test_a_deleted_check_module_still_runs_the_runner_importing_it(self):  # AC-104
+        with tempfile.TemporaryDirectory(dir=short_tmp()) as tmp:
+            root = self.tree(tmp)
+            (root / "scripts" / "second_checks.py").unlink()
+            got = dict(check_changed.plan(["scripts/second_checks.py"], set(), root=root))
+            self.assertEqual(got["e2e_runner"], "python3 scripts/e2e_runner.py")
 
     def test_the_role_drills_hold_checks_run_with_e2e_roles(self):  # AC-104, AC-245
         self.assertIn("scripts/e2e_roles.py", check_changed.citing({"245"}, REPO))
