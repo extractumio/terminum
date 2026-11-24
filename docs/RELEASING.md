@@ -146,14 +146,17 @@ after updating `ui/package-lock.json`.
 
 An Ubuntu 24.04 machine; the runner under an unprivileged user of its own (no sudo, no docker,
 its home closed to others), as a systemd service confined (`ProtectHome=tmpfs`, `PrivateTmp`, its
-home bound in) and capped in memory (`MemoryMax=3G`, `OOMPolicy=continue`: a job that runs out
+home bound in) and capped in memory (`MemoryMax=5G`, `OOMPolicy=continue`: a job that runs out
 fails alone), labels `terminum`. Packages: `tmux build-essential` and the browsers' system
 libraries (`npx -y playwright-core@<ui's version> install-deps chromium webkit`, as root); Rust,
 Node and the browsers install per job into the runner's home (rustup-init: version and SHA-256
 pinned in the workflow's Rust step, a new rustup changes both; only a runner without rustup
 downloads it). rustc building the tests is
 the job's largest process and grows with terminumd: keep the cap above the peak each run prints
-(below it rustc is killed or stalls); each run also prints the job's cap hits. It builds with
+(below it rustc is killed or stalls). The ancestor runner slice also has a 5 GiB cap; the VM
+has 7 GiB of fixed RAM, leaving room for its other processes. Size all three together: a larger
+service cap alone cannot clear an ancestor cap or a VM-wide OOM. Each run prints both groups'
+cap hits and OOM kills. It builds with
 one rustc and no debug info (the workflow's env), since two rustc with it outgrew a 2 GB machine. The registration token travels on stdin,
 never on a command line:
 
