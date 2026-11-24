@@ -4,7 +4,7 @@
    (as the reminders' pane). */
 .item .plpct { flex: none; margin-left: auto; font-size: var(--fs-micro); font-variant-numeric: tabular-nums; color: var(--muted-text); cursor: pointer; }
 .item .plpct.stale, .item .pltrack.stale, #planfab.stale { opacity: .5; }
-.item .pltrack { display: block; height: 2px; margin-top: 3px; border-radius: 1px; background: color-mix(in srgb, currentColor 15%, transparent); overflow: hidden; }
+.item .pltrack { display: block; height: 2px; margin-top: 5px; border-radius: 1px; background: color-mix(in srgb, currentColor 15%, transparent); overflow: hidden; }
 .item .pltrack .plfill { display: block; height: 100%; width: var(--pct, 0%); background: currentColor; opacity: .6; }
 /* the header's Plan button: a key as ✎ (controls.css), right of it (10 px: the title line's 8 and 2; on a phone 4 px, style.css),
    its icon and the percent ("100%" fits: one width with a percent, the icon's alone without) */

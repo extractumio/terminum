@@ -278,7 +278,7 @@ body.board-page { margin: 0; overflow: hidden; background: var(--surface-0); col
 
 /* a phone, a tablet or a narrow window: every target a finger's (AC-105); the columns' place: boardpanel.css, a phone's below */
 @media (max-width: 860px), (pointer: coarse) {
-  .csession .item { min-height: var(--key-h-touch); box-sizing: border-box; align-items: center; }
+  .csession .item { min-height: var(--key-h-touch); box-sizing: border-box; align-items: center; align-content: center; }   /* its lines on the key's middle (a session row's are grid rows: style.css) */
   .card { padding: var(--sp-3); }
   .chead { min-height: var(--icon-key-list); }
   .crun { margin: calc(var(--sp-1) * -1) calc(var(--sp-1) * -1) calc(var(--sp-1) * -1) auto; }
