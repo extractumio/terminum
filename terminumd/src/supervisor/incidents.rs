@@ -61,21 +61,29 @@ pub(super) fn observe(tx: &Transaction, seen: Observation<'_>) -> Result<(), Str
     }
 
     // Only fresh critical evidence extends the grouping window. A level or measurement change
-    // against unchanged evidence updates the current incident, even after that window.
+    // against unchanged evidence updates the current incident, even after that window; so does an
+    // author's finding that shrank or was reworded while its incident is open: nothing new was declared.
+    let stale = same_evidence || match &prior {
+        Some(m) if rule.authored() && value <= m.value => is_open(tx, m.incident)?,
+        _ => false,
+    };
     let (incident, opened) = match &prior {
-        Some(m) if level < 3 || same_evidence => (m.incident, false),
+        Some(m) if level < 3 || stale => (m.incident, false),
         _ => find_or_open(tx, project, (finding.subject_kind, &finding.subject_id), at)?,
     };
     if opened {
         super::thread::ensure(tx, project, incident, at)?;
+        // its critical report in the Inbox, alerting through the incident alone (terminum-reports.md AC-271, AC-272);
+        // an author's finding is a report already (AC-276)
+        if !rule.authored() {
+            let why = format!("{} on {}: {} against a threshold of {}", rule.id(), finding.metric, value, threshold);
+            crate::reports::sources::incident(tx, project, incident, &format!("{} {}", finding.subject_kind, finding.subject_id), &why, at)?;
+        }
     }
-    // its critical report in the Inbox, alerting through the incident alone (terminum-reports.md AC-271, AC-272); a
-    // critical report's incident has that report already (AC-276)
-    if opened && rule != Rule::ReportCritical {
-        let why = format!("{} on {}: {} against a threshold of {}", rule.id(), finding.metric, value, threshold);
-        crate::reports::sources::incident(tx, project, incident, &format!("{} {}", finding.subject_kind, finding.subject_id), &why, at)?;
+    if rule.authored() {
+        super::report_rules::alerted(tx, incident, &finding.evidence)?;
     }
-    let kind = if level < 3 || same_evidence { "updated" } else { "signal" };
+    let kind = if level < 3 || stale { "updated" } else { "signal" };
     record_signal(tx, project, fingerprint, (rule.id(), finding.metric, kind),
         Member { incident, level, value, threshold, urgent, evidence_hash: evidence_hash.to_vec() }, at)?;
     line_queue::enqueue(tx, incident, if opened { Kind::Opened } else { Kind::Updated }, false)?;
@@ -123,6 +131,10 @@ fn find_or_open(tx: &Transaction, project: &str, subject: (&str, &str), at: i64)
             VALUES (?1, ?2, ?3, ?4, ?4) RETURNING id",
             (project, subject.0, subject.1, at), |r| Ok((r.get(0)?, true))).map_err(sql)
     }
+}
+
+fn is_open(tx: &Transaction, id: i64) -> Result<bool, String> {
+    tx.query_row("SELECT closed_at IS NULL FROM supervisor_incidents WHERE id = ?1", [id], |r| r.get(0)).map_err(sql)
 }
 
 /// The open incident a signal belongs to.
@@ -222,8 +234,9 @@ fn close_if_clear(tx: &Transaction, id: i64, at: i64, continued: Option<i64>, ur
         super::thread::clear(tx, id, at)?;
         if continued.is_none()
             && let Some(project) = tx.query_row("SELECT project FROM supervisor_incidents WHERE id = ?1 AND EXISTS (
-                SELECT 1 FROM supervisor_incident_events e WHERE e.incident = ?1 AND e.level = 3)",
-                [id], |r| r.get::<_, String>(0)).optional().map_err(sql)?
+                SELECT 1 FROM supervisor_incident_events e WHERE e.incident = ?1 AND e.level = 3 AND e.detector IS NOT ?2)",
+                // a critical report's incident gets no postmortem round: its author said what happened (AC-276)
+                (id, Rule::ReportCritical.id()), |r| r.get::<_, String>(0)).optional().map_err(sql)?
         {
             super::reflection::enqueue(tx, &project, ("incident", &id.to_string(), None),
                 "incident_postmortem", &serde_json::json!({"incident":id}), at)?;
@@ -240,9 +253,9 @@ pub(super) fn revision(tx: &Transaction) -> Result<i64, String> {
 
 #[derive(Clone, Copy, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub(super) enum Action { Acknowledge, Snooze }
+pub(crate) enum Action { Acknowledge, Snooze }
 
-pub(super) fn act(tx: &Transaction, id: i64, action: Action, at: i64) -> Result<bool, String> {
+pub(crate) fn act(tx: &Transaction, id: i64, action: Action, at: i64) -> Result<bool, String> {
     let (changed, kind) = match action {
         Action::Acknowledge => (tx.execute("UPDATE supervisor_incidents SET acknowledged_at = ?2, snoozed_until = NULL
             WHERE id = ?1 AND acknowledged_at IS NULL", (id, at)), "acknowledged"),
@@ -255,19 +268,8 @@ pub(super) fn act(tx: &Transaction, id: i64, action: Action, at: i64) -> Result<
         // Acknowledge stops repeats in the claim (AC-228); the row's last send keeps the updates' cool-down.
         tx.execute("INSERT INTO supervisor_incident_events (incident, at, kind, actor)
             VALUES (?1, ?2, ?3, ?4)", (id, at, kind, HUMAN)).map_err(sql)?;
-        // the owner has seen its reports: acknowledging or snoozing reads them (terminum-reports.md AC-276)
-        crate::reports::record::read_of_incident(tx, id, at)?;
     }
     Ok(changed)
-}
-
-/// The owner read a report of open incident `id`, which waits for them: that is its acknowledgement
-/// (terminum-reports.md AC-276).
-pub(crate) fn acknowledged_by_reading(tx: &Transaction, id: i64, at: i64) -> Result<bool, String> {
-    let waits: bool = tx.query_row("SELECT EXISTS (SELECT 1 FROM supervisor_incidents WHERE id = ?1 AND closed_at IS NULL
-        AND acknowledged_at IS NULL)", [id], |r| r.get(0)).map_err(sql)?;
-    if !waits { return Ok(false); }
-    act(tx, id, Action::Acknowledge, at)
 }
 
 /// A grouped incident may belong to several rules. The owner identifies one retained alert.

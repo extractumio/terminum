@@ -17,11 +17,14 @@ def ac276_a_critical_report_opens_an_incident(t, socket, pane, call, read):
 
         def status():
             try:
-                return open(out + ".rc").read().strip()
+                return open(out + ".rc").read().strip()     # the shell makes the file, then writes it
             except OSError:
                 return ""
-        rc = wait_for(status, bool, 20, 0.2, last=True)
-        return open(out + ".txt").read(), rc
+        rc = wait_for(status, bool, 20, 0.2, last=True) or "no answer"
+        try:
+            return open(out + ".txt").read(), rc
+        except OSError:
+            return "", rc
 
     args = {"title": "Build broken", "summary": "main is red", "body": "## What\nThe build fails.", "critical": "yes"}
     out, rc = typed(f"{shlex.quote(BIN)} tool create_report {shlex.quote(json.dumps(args))}")

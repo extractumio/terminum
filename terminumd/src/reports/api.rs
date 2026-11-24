@@ -60,7 +60,7 @@ async fn act(State(app): State<Shared>, Path((id, act)): Path<(String, String)>)
         let key = record::key_of(tx, &id)?;
         let changed = record::stamp(tx, &key, stamp, at)?;
         // reading it is the owner's acknowledgement of its incident (AC-276)
-        let acknowledged = act == "read" && changed && record::acknowledge_by_reading(tx, &key, at.unwrap_or_default())?;
+        let acknowledged = match (act.as_str(), at) { ("read", Some(at)) if changed => record::acknowledge_by_reading(tx, &key, at)?, _ => false };
         Ok((changed, acknowledged))
     }).await;
     if matches!(done, Ok((_, true))) {

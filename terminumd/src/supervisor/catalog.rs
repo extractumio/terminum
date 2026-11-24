@@ -102,10 +102,14 @@ impl Rule {
         !matches!(self, Self::CollectorDead | Self::LineDead | Self::ProbeFailed | Self::ReportCritical)
     }
 
-    /// A rule whose level is its finding's author's, never sized by the project's weeks: a critical report
-    /// (terminum-reports.md AC-276).
+    /// A rule whose finding its author declared, a critical report (terminum-reports.md AC-276): its level is
+    /// theirs, never sized by the project's weeks; its incident makes no report of its own and names its reports.
+    pub(super) fn authored(self) -> bool {
+        self == Self::ReportCritical
+    }
+
     pub(super) fn fixed_impact(self) -> Option<u8> {
-        (self == Self::ReportCritical).then_some(3)
+        self.authored().then_some(3)
     }
 
     /// A detector whose firing is a counted fact, in the owner's words: only such a detector can break

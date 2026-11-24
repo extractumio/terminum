@@ -408,8 +408,9 @@ red and first, the count of unread in its head. WAIT FOR HUMAN keeps only what n
 - **Alerts**: none, but for a critical report: a red line as a waiting task's, until you read it
   or close the line. With the project's Supervisor on, a critical report opens (or joins) its
   task's incident instead, which alerts once and links it; reading the report acknowledges the
-  incident, and acknowledging or snoozing the incident reads its reports. A Supervisor incident's
-  own report alerts through the incident alone.
+  incident, and acknowledging the incident reads its reports (a snooze leaves them unread). A
+  report alerts once: unread again later, it raises nothing. A Supervisor incident's own report
+  alerts through the incident alone.
 - **Reply** under a report made in a task's run: Send (⌘Enter) goes on in that task's
   conversation as Run with your words does; "Opus is answering" until its agent answers below the
   report (it is unread again) or in a new report that follows it. A report of a session terminum

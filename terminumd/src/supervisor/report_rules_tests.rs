@@ -68,29 +68,44 @@ fn ac276_a_critical_report_opens_its_task_s_incident_and_alerts_once() {
     assert_eq!(incident(&f, id).2, None, "task build's incident stays open");
 }
 
+/// The owner's Acknowledge press: the incident acknowledged, its reports read (incidents_api.rs).
+fn acknowledge(f: &Fixture, id: i64, at: i64) {
+    f.store.with(|tx| { assert!(incidents::act(tx, id, Action::Acknowledge, at)?); record::read_of_incident(tx, id, at) }).unwrap();
+}
+
+fn open_incidents(f: &Fixture) -> i64 {
+    f.store.with(|tx| tx.query_row("SELECT count(*) FROM supervisor_incidents WHERE closed_at IS NULL", [], |r| r.get(0)).map_err(sql)).unwrap()
+}
+
 #[test]
-fn ac276_acknowledging_reads_and_reading_acknowledges() {
+fn ac276_acknowledging_reads_reading_acknowledges_and_a_snooze_keeps_them_unread() {
     let f = Fixture::new("report-ack");
     enabled(&f);
     f.task("build", Some("Bug"), "P1", "IN PROGRESS", NOW - DAY);
     let key = report(&f, Some("build"), true, NOW);
     let id = alert(&f, &key).0.unwrap();
     assert!(f.store.with(|tx| incidents::act(tx, id, Action::Snooze, NOW + 60)).unwrap());
-    assert_eq!(read_at(&f, &key), Some(NOW + 60), "snoozing reads its report");
+    assert_eq!(read_at(&f, &key), None, "a snooze leaves its report unread");
+    f.live(Rule::ReportCritical, NOW + 120).record(&f.store).unwrap();
+    assert_eq!(incident(&f, id).2, None, "so the incident stays open and its repeats come back");
+    acknowledge(&f, id, NOW + 180);
+    assert_eq!(read_at(&f, &key), Some(NOW + 180), "acknowledging reads its report");
 
     f.task("deploy", Some("Bug"), "P1", "IN PROGRESS", NOW - DAY);
-    let key = report(&f, Some("deploy"), true, NOW + 100);
-    let id = alert(&f, &key).0.unwrap();
+    let first = report(&f, Some("deploy"), true, NOW + 300);
+    let second = report(&f, Some("deploy"), true, NOW + 301);
+    let id = alert(&f, &first).0.unwrap();
     f.store.with(|tx| {
-        assert!(record::stamp(tx, &key, Stamp::Read, Some(NOW + 200))?);
-        assert!(record::acknowledge_by_reading(tx, &key, NOW + 200)?, "reading it acknowledges the incident");
-        assert!(!record::acknowledge_by_reading(tx, &key, NOW + 300)?, "once");
+        assert!(record::stamp(tx, &first, Stamp::Read, Some(NOW + 400))?);
+        assert!(record::acknowledge_by_reading(tx, &first, NOW + 400)?, "reading one acknowledges the incident");
+        assert!(!record::acknowledge_by_reading(tx, &first, NOW + 500)?, "once");
         let by: Option<String> = tx.query_row("SELECT actor FROM supervisor_incident_events WHERE incident = ?1 AND kind = 'acknowledged'",
             [id], |r| r.get(0)).optional().map_err(sql)?;
         assert_eq!(by.as_deref(), Some(HUMAN), "recorded as the owner's");
         Ok(())
     }).unwrap();
-    assert_eq!(incident(&f, id).1, Some(NOW + 200));
+    assert_eq!(incident(&f, id).1, Some(NOW + 400));
+    assert_eq!(read_at(&f, &second), None, "its other report stays unread: reading one reads no other");
 }
 
 #[test]
@@ -130,6 +145,61 @@ fn ac276_with_the_supervisor_off_or_for_an_incident_s_own_report_the_line_stands
     assert_eq!(alert(&f, &own).0, None, "an incident never feeds itself");
     let signals: i64 = f.store.with(|tx| tx.query_row("SELECT count(*) FROM supervisor_signals WHERE detector = 'reports.critical'", [], |r| r.get(0)).map_err(sql)).unwrap();
     assert_eq!(signals, 0);
+}
+
+#[test]
+fn ac276_a_report_alerts_once_whatever_happens_to_it_later() {
+    let f = Fixture::new("report-once");
+    // made with the Supervisor off, it alerted by its own line: turning the Supervisor on pages nothing more
+    f.task("build", Some("Bug"), "P1", "IN PROGRESS", NOW - DAY);
+    let lined = report(&f, Some("build"), true, NOW - 600);
+    enabled(&f);
+    f.live(Rule::ReportCritical, NOW).record(&f.store).unwrap();
+    assert_eq!((alert(&f, &lined), open_incidents(&f)), ((None, true), 0), "its line alerted; no incident");
+
+    // one of two deleted, past the grouping window: the incident is updated, not a new one
+    f.task("deploy", Some("Bug"), "P1", "IN PROGRESS", NOW - DAY);
+    let first = report(&f, Some("deploy"), true, NOW);
+    let second = report(&f, Some("deploy"), true, NOW + 1);
+    let id = alert(&f, &first).0.unwrap();
+    f.store.with(|tx| record::stamp(tx, &first, Stamp::Deleted, Some(NOW + 3600))).unwrap();
+    f.live(Rule::ReportCritical, NOW + 3600).record(&f.store).unwrap();
+    assert_eq!((alert(&f, &second).0, open_incidents(&f)), (Some(id), 1), "the remaining report stays with its open incident");
+
+    // read, the incident closes; made unread again, it raises nothing
+    acknowledge(&f, id, NOW + 3700);
+    f.live(Rule::ReportCritical, NOW + 3800).record(&f.store).unwrap();
+    assert!(incident(&f, id).2.is_some());
+    f.store.with(|tx| record::stamp(tx, &second, Stamp::Read, None)).unwrap();
+    f.live(Rule::ReportCritical, NOW + 3900).record(&f.store).unwrap();
+    assert_eq!(open_incidents(&f), 0, "unread again after its incident closed: no second alert");
+    let postmortems: i64 = f.store.with(|tx| tx.query_row("SELECT count(*) FROM supervisor_reflections WHERE triggers LIKE '%incident_postmortem%'",
+        [], |r| r.get(0)).map_err(sql)).unwrap();
+    assert_eq!(postmortems, 0, "a critical report's incident gets no postmortem round: its author said what happened");
+
+    // a Supervisor round's own critical report never feeds an incident
+    let own = f.store.with(|tx| record::create(tx, New { project: PROJECT.into(), title: "Round".into(), summary: "s".into(), body: "b".into(),
+        critical: true, author: HUMAN.into(), role: role::SUPERVISOR, ..New::default() }, NOW + 4000).map(|(key, _, _)| key)).unwrap();
+    assert_eq!(alert(&f, &own).0, None);
+    assert_eq!(open_incidents(&f), 0);
+}
+
+#[test]
+fn ac276_a_report_made_critical_by_update_report_opens_its_incident() {
+    let f = Fixture::new("report-update");
+    enabled(&f);
+    f.task("build", Some("Bug"), "P1", "IN PROGRESS", NOW - DAY);
+    let key = report(&f, Some("build"), false, NOW);
+    // the project's Supervisor at Operator may change its reports (AC-280)
+    let manager = crate::tasks::tools::Who { key: "tmux:local:terminum:%9".into(), agent: "supervisor".into(), title: "Supervisor".into(),
+        project: Some(PROJECT.into()), dir: None, supervisor: true };
+    let id: String = f.store.with(|tx| tx.query_row("SELECT slug FROM reports WHERE id = ?1", [&key], |r| r.get(0)).map_err(sql)).unwrap();
+    crate::reports::tools::run(&f.store, &f.path, &manager, "update_report", &serde_json::json!({"id": id, "critical": "yes"})).unwrap();
+    let (by, line) = alert(&f, &key);
+    assert!(by.is_some() && !line, "its incident alerts for it, its line not");
+    crate::reports::tools::run(&f.store, &f.path, &manager, "update_report", &serde_json::json!({"id": id, "critical": "no"})).unwrap();
+    f.live(Rule::ReportCritical, NOW + 60).record(&f.store).unwrap();
+    assert_eq!(open_incidents(&f), 0, "no longer critical: its signal clears");
 }
 
 #[test]

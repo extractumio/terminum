@@ -278,7 +278,8 @@ async fn owner_press(app: &Shared, id: i64, press: Press) -> Result<Incident, St
     let (summary, changed) = store(app, move |tx| {
         let at = now();
         let changed = match press.action {
-            Key::Acknowledge => incidents::act(tx, id, Action::Acknowledge, at)?,
+            // the owner has seen its reports: acknowledging reads them; a snooze leaves them, so the repeats come (terminum-reports.md AC-276)
+            Key::Acknowledge => incidents::act(tx, id, Action::Acknowledge, at)? && { crate::reports::record::read_of_incident(tx, id, at)?; true },
             Key::Snooze => incidents::act(tx, id, Action::Snooze, at)?,
             Key::KeepHold => {
                 let hold = press.hold.unwrap();
@@ -296,7 +297,6 @@ async fn owner_press(app: &Shared, id: i64, press: Press) -> Result<Incident, St
             .optional().map_err(sql)?.ok_or("Incident not found.")?;
         Ok((summary, changed))
     }).await?;
-    // acknowledging or snoozing reads the incident's reports (terminum-reports.md AC-276)
     if changed { app.supervisor.incident_changed(); app.supervisor.wake(); crate::reports::changed(app); }
     Ok(summary)
 }

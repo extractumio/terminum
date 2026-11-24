@@ -9,7 +9,7 @@ use sha2::{Digest, Sha256};
 use crate::tasks::{ops::{rows, sql}, store::Store};
 
 use super::impact::{Assessment, Source};
-use super::{Evaluation, Evidence, Finding, Measure, Mode, Scores, incidents};
+use super::{Evaluation, Evidence, Finding, Measure, Mode, Rule, Scores, incidents};
 
 pub(super) type Observations = std::collections::BTreeMap<(String, String, String), Option<(f64, super::Comparison)>>;
 
@@ -54,7 +54,15 @@ pub(crate) struct Signal {
     pub state: State,
 }
 
-pub(super) fn fingerprint(project: &str, detector: &str, (kind, id, metric): (&str, &str, &str)) -> String {
+/// `at`, or one second past `rule`'s last evaluation: an evaluation recorded twice in one second must still
+/// advance the detector's clock, or the second is skipped (AC-212).
+pub(super) fn after_last(tx: &Transaction, project: &str, rule: Rule, at: i64) -> Result<i64, String> {
+    let last = tx.query_row("SELECT evaluated_at FROM supervisor_evaluations WHERE project = ?1 AND detector = ?2",
+        (project, rule.id()), |r| r.get::<_, i64>(0)).optional().map_err(sql)?;
+    Ok(last.map_or(at, |last| at.max(last + 1)))
+}
+
+fn fingerprint(project: &str, detector: &str, (kind, id, metric): (&str, &str, &str)) -> String {
     let mut hash = Sha256::new();
     for field in [project, detector, kind, id, metric] {
         hash.update((field.len() as u64).to_be_bytes());

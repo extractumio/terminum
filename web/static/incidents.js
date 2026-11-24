@@ -167,16 +167,17 @@ export function incidentCard(initial, surface) {
       shownAlerts = alertSignature;
       if (focused) (alertKeys.querySelector("button") ?? keys.querySelector("button:not([hidden]),a"))?.focus();
     }
-    const reports = i.reports ?? [];
-    if (reports.join(",") !== shownReports) {
+    const reports = i.reports ?? [], reportSignature = reports.join(",");
+    if (reportSignature !== shownReports) {
       reportKeys.replaceChildren(...reports.map((id) => {
         const link = el("a", KEY, id);
         link.href = reportUrl(id);
+        textKey(link);
         link.addEventListener("click", (e) => { e.preventDefault(); openReport(id); });
         return link;
       }));
       reportKeys.hidden = !reports.length;
-      shownReports = reports.join(",");
+      shownReports = reportSignature;
     }
     thread.hidden = !i.task;
     if (i.task) thread.href = taskUrl(i.task);

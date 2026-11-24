@@ -3,76 +3,70 @@
 //! signal of its subject, opening or joining that subject's incident at once; the owner's unread reports and
 //! unanswered replies are readings of their own.
 
-use std::collections::BTreeMap;
-
 use rusqlite::{OptionalExtension, Transaction};
 
 use crate::tasks::ops::{rows, sql};
 
-use super::{Checked, Evaluation, Evidence, Measurements, Mode, Query, Reading, Rule, Scores, Window, impact::Source, rounds, signals};
+use super::{Evaluation, Evidence, Measurements, Query, Reading, Rule, Window, impact::Source, rounds, signals};
 
 /// A critical report's level is its author's, not a share of the project's week.
 const DECLARED: Source = Source::Unsized("A critical report is its author's declaration, in no weekly project total.");
 const READ_STATE: Source = Source::Unsized("A report's read state is in no weekly project total.");
 const METRIC: &str = "critical_reports";
 
-/// The unread critical reports not an incident's own, one reading per subject: the task they were made for,
-/// else the report itself; each lists every such report as evidence. Present only: reading or deleting them
-/// clears the signal, and with it the incident (AC-276).
+/// A critical report alerts once (AC-276): it counts while unread, not an incident's or a Supervisor round's own,
+/// not alerted by its own line, not answered by the owner's reply, and its incident, if any, still open.
+const ALERTING: &str = "critical AND incident IS NULL AND role <> 'supervisor' AND line = 0 AND replied_at IS NULL
+    AND read_at IS NULL AND deleted_at IS NULL
+    AND (alerted_by IS NULL OR alerted_by IN (SELECT id FROM supervisor_incidents WHERE closed_at IS NULL))";
+
+/// The reports alerting, one reading per subject: the task they were made for, else the report itself; each lists
+/// every such report as evidence. Present only: reading or deleting them clears the signal, and with it the incident.
 pub(super) fn critical(q: &Query<'_, '_>) -> Result<Measurements, String> {
     Ok(Measurements { readings: subjects(q.tx, q.project, None)?, ..Measurements::default() })
 }
 
-fn subjects(tx: &Transaction, project: &str, only: Option<(&str, &str)>) -> Result<Vec<Reading>, String> {
-    let found = rows(tx, "SELECT CASE WHEN task IS NULL THEN 'report' ELSE 'task' END, coalesce(task, id), id FROM reports
-        WHERE project = ?1 AND critical AND incident IS NULL AND read_at IS NULL AND deleted_at IS NULL
-          AND (?2 IS NULL OR (CASE WHEN task IS NULL THEN 'report' ELSE 'task' END = ?2 AND coalesce(task, id) = ?3))
-        ORDER BY 1, 2, created_at, id", (project, only.map(|o| o.0), only.map(|o| o.1)),
-        |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?)))?;
-    let mut by: BTreeMap<(String, String), Vec<Evidence>> = BTreeMap::new();
-    for (kind, subject, key) in found {
-        by.entry((kind, subject)).or_default().push(Evidence::Reports(key));
+fn subjects(tx: &Transaction, project: &str, only: Option<&str>) -> Result<Vec<Reading>, String> {
+    let found = rows(tx, &format!("SELECT task IS NULL, coalesce(task, id), id FROM reports
+        WHERE project = ?1 AND {ALERTING} AND (?2 IS NULL OR coalesce(task, id) = ?2) ORDER BY 2, created_at, id"),
+        (project, only), |r| Ok((r.get::<_, bool>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?)))?;
+    let mut readings: Vec<Reading> = Vec::new();
+    for (alone, subject, key) in found {
+        match readings.last_mut() {
+            Some(last) if last.subject_id == subject => { last.evidence.push(Evidence::Reports(key)); last.value += 1.0; }
+            _ => readings.push(Reading::new(if alone { "report" } else { "task" }, subject, METRIC, 1.0, vec![Evidence::Reports(key)], DECLARED)),
+        }
     }
-    Ok(by.into_iter().map(|((kind, subject), evidence)| {
-        Reading::new(if kind == "task" { "task" } else { "report" }, subject, METRIC, evidence.len() as f64, evidence, DECLARED)
-    }).collect())
+    Ok(readings)
 }
 
-/// Report `key` was made or turned critical: with its project's Supervisor on, its subject is measured now, as
-/// the collector would, limited to that subject. Answers the incident whose alert stands for it, which every
-/// unread report of that subject then names (`alerted_by`); none (Supervisor off, the detector muted, a breaker
-/// open) leaves the report's own line to alert.
-pub(crate) fn supervise(tx: &Transaction, key: &str, at: i64) -> Result<Option<i64>, String> {
-    let Some((project, task)) = tx.query_row("SELECT project, task FROM reports WHERE id = ?1", [key],
-        |r| Ok((r.get::<_, String>(0)?, r.get::<_, Option<String>>(1)?))).optional().map_err(sql)? else { return Ok(None) };
-    if rounds::enabled(tx, &project)?.is_none() { return Ok(None); }
-    let subject = match &task { Some(task) => ("task", task.as_str()), None => ("report", key) };
-    let rule = Rule::ReportCritical;
-    // two reports in one second are two evaluations: each must advance the detector's clock (AC-212)
-    let last = tx.query_row("SELECT evaluated_at FROM supervisor_evaluations WHERE project = ?1 AND detector = ?2",
-        (&project, rule.id()), |r| r.get::<_, i64>(0)).optional().map_err(sql)?;
-    let at = last.map_or(at, |last| at.max(last + 1));
-    let window = Window { before: at, start: at, end: at };
-    let findings = subjects(tx, &project, Some(subject))?.into_iter()
-        .filter_map(|reading| reading.finding(rule.defaults(), window))
-        .map(|mut found| { found.scores = Scores { impact: rule.fixed_impact().unwrap_or(3), ..Scores::default() }; found }).collect();
-    let evaluation = Evaluation { project: project.clone(), at, detectors: vec![Checked {
-        rule, mode: Mode::Live, unavailable: Vec::new(), findings, thresholds: Default::default(),
-        complete_metrics: Vec::new(), measured: Some(vec![(subject.0, subject.1.to_string(), METRIC)]),
-        observations: Default::default(),
-    }] };
-    let before: i64 = tx.query_row("SELECT coalesce(max(id), 0) FROM supervisor_incident_events", [], |r| r.get(0)).map_err(sql)?;
-    signals::prepare(&evaluation)?.write(tx, false)?;
-    let fingerprint = signals::fingerprint(&project, rule.id(), (subject.0, subject.1, METRIC));
-    let incident = tx.query_row("SELECT incident FROM supervisor_incident_events
-        WHERE id > ?1 AND fingerprint = ?2 AND kind IN ('signal', 'updated') ORDER BY id DESC LIMIT 1",
-        (before, &fingerprint), |r| r.get::<_, i64>(0)).optional().map_err(sql)?;
-    if let Some(incident) = incident {
-        // a newer incident taking the subject over takes its unread reports with it
-        tx.execute("UPDATE reports SET alerted_by = ?1 WHERE project = ?2 AND critical AND incident IS NULL
-            AND read_at IS NULL AND deleted_at IS NULL AND coalesce(task, id) = ?3", (incident, &project, subject.1)).map_err(sql)?;
+/// The incident a critical signal opened or joined now alerts for each of its reports (`alerted_by`), a newer one
+/// taking the subject's reports over from an older (AC-276); called by the incident's own transition, on every path.
+pub(super) fn alerted(tx: &Transaction, incident: i64, evidence: &[Evidence]) -> Result<(), String> {
+    for key in evidence.iter().filter_map(|e| match e { Evidence::Reports(key) => Some(key), _ => None }) {
+        tx.execute("UPDATE reports SET alerted_by = ?1 WHERE id = ?2", (incident, key)).map_err(sql)?;
     }
-    Ok(incident)
+    Ok(())
+}
+
+/// Report `key` was made or turned critical, or not: with its project's Supervisor on, its subject is measured
+/// now, as the collector would, limited to that subject. Answers the incident alerting for it; none (Supervisor
+/// off, the detector ruled wrong, a breaker open) leaves the report's own line to alert.
+pub(crate) fn supervise(tx: &Transaction, key: &str, at: i64) -> Result<Option<i64>, String> {
+    let Some((project, subject)) = tx.query_row("SELECT project, coalesce(task, id) FROM reports WHERE id = ?1", [key],
+        |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))).optional().map_err(sql)? else { return Ok(None) };
+    if rounds::enabled(tx, &project)?.is_none() { return Ok(None); }
+    let rule = Rule::ReportCritical;
+    let kind = if subject == key { "report" } else { "task" };
+    let at = signals::after_last(tx, &project, rule, at)?;
+    let window = Window { before: at, start: at, end: at };
+    if let Some(evaluation) = Evaluation::critical(&project, rule, subjects(tx, &project, Some(&subject))?,
+        Some(vec![(kind, subject.clone(), METRIC)]), window)
+    {
+        signals::prepare(&evaluation)?.write(tx, false)?;
+    }
+    tx.query_row("SELECT alerted_by FROM reports WHERE id = ?1 AND alerted_by IN (SELECT id FROM supervisor_incidents WHERE closed_at IS NULL)",
+        [key], |r| r.get(0)).optional().map_err(sql)
 }
 
 /// The owner's oldest unread report, one reading per project, in minutes (AC-277).
