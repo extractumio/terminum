@@ -11,8 +11,6 @@ use crate::tasks::{api::store, ops, tools::Who};
 const OBSERVER_TOOLS: &[&str] = &["list_tasks", "get_task"];
 const ADVISOR_TOOLS: &[&str] = &["add_comment", "ask_human"];
 const OPERATOR_TOOLS: &[&str] = &["run_task", "promote_queued_task", "stop_task", "list_runs", "get_dashboard"];
-const REPORT_READS: &[&str] = &["get_report", "list_reports"];
-const REPORT_WRITES: &[&str] = &["create_report", "append_to_report", "attach_report_file"];
 
 pub(crate) fn task_tool(tool: &str) -> bool {
     OBSERVER_TOOLS.contains(&tool) || ADVISOR_TOOLS.contains(&tool) || crate::reports::tools::NAMES.contains(&tool)
@@ -89,11 +87,10 @@ impl Role {
             Self::Supervisor(Some(level)) => {
                 // reports by level (terminum-reports.md AC-280): an Observer reads them, an Advisor also writes them, an
                 // Operator also changes and deletes them
-                (REPORT_READS.contains(&tool) || (level != Level::Observer && REPORT_WRITES.contains(&tool))
-                    || (level == Level::Operator && crate::reports::tools::MANAGERS.contains(&tool)))
-                    || OBSERVER_TOOLS.contains(&tool)
-                    || (level != Level::Observer && ADVISOR_TOOLS.contains(&tool))
-                    || (level == Level::Operator && OPERATOR_TOOLS.contains(&tool))
+                use crate::reports::tools::{MANAGERS, READS, WRITES};
+                OBSERVER_TOOLS.contains(&tool) || READS.contains(&tool)
+                    || (level != Level::Observer && (ADVISOR_TOOLS.contains(&tool) || WRITES.contains(&tool)))
+                    || (level == Level::Operator && (OPERATOR_TOOLS.contains(&tool) || MANAGERS.contains(&tool)))
             }
         }
     }

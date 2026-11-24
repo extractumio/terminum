@@ -358,27 +358,13 @@ fn ac279_the_supervisor_neither_changes_nor_deletes_the_audit_s_report() {
     let (s, dir) = fresh("reports-audit");
     let task = running(&s, "Quarterly audit", KEY);
     let id = call(&s, &dir, KEY, "create_report", report("Audit")).unwrap().split_whitespace().next().unwrap().to_string();
-    s.with(|tx| {
-        let key = ops::key_of(tx, &task)?;
-        tx.execute("INSERT INTO supervisor_audit_reports VALUES (?1, 'api', 1, 'the audit')", [&key]).map_err(sql)?;
-        let h = record::head(tx, &id)?;
-        assert_eq!(super::tools::unedited(tx, &h, super::record::role::SUPERVISOR).unwrap_err(), format!("{id} is the quarterly audit's report: it reaches the owner unedited."));
-        assert!(super::tools::unedited(tx, &h, super::record::role::MANAGER).is_ok(), "the owner's side may");
-        Ok(())
-    }).unwrap();
-}
-
-/// terminum-reports.md AC-280: the Supervisor's report tools by its level.
-#[test]
-fn ac280_the_supervisor_s_report_tools_follow_its_level() {
-    use crate::roles::Role;
-    use crate::supervisor::Level::{Advisor, Observer, Operator};
-    for (level, tools) in [(Observer, vec!["get_report", "list_reports"]),
-        (Advisor, vec!["create_report", "append_to_report", "attach_report_file", "get_report", "list_reports"]),
-        (Operator, super::tools::NAMES.to_vec())] {
-        let allowed: Vec<&str> = super::tools::NAMES.into_iter().filter(|t| Role::Supervisor(Some(level)).allows(t)).collect();
-        assert_eq!(allowed, tools, "{level:?}");
+    s.with(|tx| crate::supervisor::audit::complete(tx, "api", &ops::get(tx, &task)?, HUMAN, "the audit", 3)).unwrap();
+    let supervisor = Who { supervisor: true, ..who("tmux:local:terminum:%5") };
+    let refused = format!("{id} is the quarterly audit's report: it reaches the owner unedited.");
+    for (tool, args) in [("update_report", json!({"id": id, "title": "Softer"})), ("delete_report", json!({"id": id}))] {
+        assert_eq!(super::tools::run(&s, &dir, &supervisor, tool, &args).unwrap_err(), refused, "{tool}");
     }
+    assert!(call(&s, &dir, MANAGER, "update_report", json!({"id": id, "title": "Renamed"})).is_ok(), "the owner's side may");
 }
 
 /// terminum-reports.md AC-276 (its edge as built: the Supervisor off) and AC-277 (owner waits are questions alone):

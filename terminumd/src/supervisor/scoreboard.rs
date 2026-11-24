@@ -38,8 +38,7 @@ pub(super) struct Week {
     net: BTreeMap<String, f64>,
     archived: f64,
     pub load: Load,
-    /// reports the owner read, and the hours each took from made to read (terminum-reports.md AC-278)
-    reports_read: f64,
+    /// the hours each report the owner read took from made to read (terminum-reports.md AC-278)
     read_hours: Vec<f64>,
     pub operations: [f64; 4],
     strategic: [f64; 4],
@@ -171,7 +170,6 @@ fn owner(tx: &Transaction, project: &str, start: i64, week: &mut Week) -> Result
     week.load = owner_load(tx, project, start, week.end)?;
     // reading is the owner's too, counted apart from answering (terminum-reports.md AC-278)
     week.read_hours = crate::reports::inbox::read_hours(tx, project, start, week.end)?;
-    week.reports_read = week.read_hours.len() as f64;
     for (kind, _, _) in owner_actions(tx, project, start, week.end)? {
         match kind {
             OwnerAction::OperationalAnswer => week.operations[0] += 1.0,
@@ -377,7 +375,7 @@ pub(super) fn indicators(weeks: &[Week]) -> [Indicator; 7] {
         M::compare("Active hours per week", false, |w| mean(w, |x| x.load.hours)),
         M::compare("Peak concurrent sessions", false, |w| w.iter().map(|x| x.load.peak).reduce(f64::max)),
         M::compare("Off-hours share", false, |w| ratio(w, |x| x.load.off_hours, |x| x.load.hours)),
-        M::context("Reports read per week", |w| mean(w, |x| x.reports_read)),
+        M::context("Reports read per week", |w| mean(w, |x| x.read_hours.len() as f64)),
         M::context("Median hours to read a report", |w| percentile(&mut w.iter().flat_map(|x| x.read_hours.iter().copied()).collect::<Vec<_>>(), 50))
             .because("no report read in the window"),
     ]);

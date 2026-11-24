@@ -298,6 +298,7 @@ fn session_tools() -> impl Iterator<Item = &'static str> {
     ["update_session_plan", "get_session_plan"].into_iter().chain(crate::tasks::tools::NAMES)
 }
 
+/// terminum-supervisor.md AC-231, AC-232 and terminum-reports.md AC-280: each level's tools, its report tools among them.
 #[test]
 fn ac231_ac232_each_level_allows_exactly_its_list_of_the_catalog() {
     use crate::supervisor::Level::{Advisor, Observer, Operator};
