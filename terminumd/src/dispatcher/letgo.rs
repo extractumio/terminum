@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 //! Letting go of what Dispatcher holds (`terminum-dispatcher.md` AC-138, AC-142): a human's, or the project's
-//! manager's by its stop_task (`terminum-agents.md` AC-179); and a budget changed on a running task (AC-126).
+//! manager's by its stop_task, which postpones (`terminum-agents.md` AC-179); and a budget changed on a running task
+//! (AC-126).
 
 use axum::extract::{Path, State};
 use axum::response::Response;
@@ -36,7 +37,8 @@ pub(super) async fn give_up(State(app): State<Shared>, Path(id): Path<String>) -
 #[derive(Clone, Copy, PartialEq)]
 pub(crate) enum Giver { Human, Manager }
 
-/// `who` gives up on task `id`: a wait is called off, the task where it stood (AC-158); else its run is given up.
+/// `who` gives up on task `id`: a wait is called off, the task where it stood (AC-158); else its run is given up by
+/// the human, its open tasks FAILED, or stopped by the project's manager, its open tasks back in TODO.
 /// The tasks it concerned.
 pub(crate) async fn gave_up(app: &Shared, id: &str) -> Result<Vec<String>, String> {
     gave_up_checked(app, id, Giver::Human, |_, _| Ok(()), |tx, ids| {
@@ -81,18 +83,19 @@ pub(crate) async fn gave_up_checked(
             record(tx, std::slice::from_ref(&wanted))?;
             Ok(None)
         } else {
-            if giver == Giver::Human {
+            let run = if giver == Giver::Human {
                 let current = runs::last_of(tx, &key)?;
                 if current.as_ref().map(|run| (run.id.clone(), run.pane_key.clone())) != expected
                     || (!had_queue && current.as_ref().and_then(|run| run.place(&guard_app)).is_some())
                 {
                     return Err("Its run changed while Give up waited. Read the task and try again.".into());
                 }
-            }
-            let run = runs::give_up(tx, &key)?;
-            if giver == Giver::Human {
+                let run = runs::give_up(tx, &key)?;
                 super::giveup::record(tx, &run)?;
-            }
+                run
+            } else {
+                runs::stop(tx, &key)?
+            };
             record(tx, &run.ids)?;
             Ok(Some(run))
         }

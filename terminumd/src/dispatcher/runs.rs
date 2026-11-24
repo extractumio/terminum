@@ -5,7 +5,7 @@ use std::collections::HashMap;
 
 use rusqlite::{OptionalExtension, Row, Transaction};
 
-use crate::tasks::ops::{rows, sql};
+use crate::tasks::ops::{self, rows, sql};
 
 /// Where a run stands (terminum-dispatcher.md §9), kept as its label: a label the store holds that is none of these is an
 /// error, not a run in some state of its own.
@@ -439,8 +439,13 @@ pub const GAVE_UP: &str = "The human gave up on it.";
 
 /// The human gives up on `task`'s run (AC-138): its open tasks fail, Dispatcher lets go of the window, which stays.
 pub fn give_up(tx: &Transaction, task: &str) -> Result<Run, String> {
-    let run = last_of(tx, task)?.filter(|r| !r.is_over()).ok_or("It has no run to give up.")?;
+    let run = still_open(tx, task)?.ok_or("It has no run to give up.")?;
     let_go(tx, &run.id)
+}
+
+/// The last run of store key `task` while Dispatcher still holds it.
+fn still_open(tx: &Transaction, task: &str) -> Result<Option<Run>, String> {
+    Ok(last_of(tx, task)?.filter(|r| !r.is_over()))
 }
 
 /// The same by the run: a + Session's too, its host out of reach (AC-142).
@@ -452,8 +457,34 @@ pub fn let_go(tx: &Transaction, id: &str) -> Result<Run, String> {
     if run.ad_hoc() && started(tx, id)?.0 == How::Supervisor {
         return Err("Dispatcher keeps this investigation until its case ends. Turn off the project's Supervisor to stop its rounds.".into());
     }
-    super::move_task(tx, &run, "FAILED", GAVE_UP)?;
-    change(tx, &run.id, |r| r.state = Phase::Left)
+    release(tx, run, "FAILED", GAVE_UP)
+}
+
+/// What a task stopped by its project's manager says: postponed, never failed (`terminum-agents.md` AC-179).
+pub const STOPPED: &str = "The project's manager stopped its run: it waits in TODO to run again.";
+
+/// The project's manager stops task `task`'s run (`terminum-agents.md` AC-179): its open tasks go back to TODO, a
+/// postponement and no failure, and Dispatcher lets go of the window, which stays.
+pub fn stop(tx: &Transaction, task: &str) -> Result<Run, String> {
+    let run = still_open(tx, task)?.ok_or("It has no run to stop.")?;
+    release(tx, run, "TODO", STOPPED)
+}
+
+fn release(tx: &Transaction, mut run: Run, to: &str, words: &str) -> Result<Run, String> {
+    super::move_task(tx, &run, to, words)?;
+    run.state = Phase::Left;
+    save(tx, &run)?;
+    Ok(run)
+}
+
+/// The wait of store key `task` for other tasks was called off (AC-210, AC-158): the run that held it while it waited
+/// holds it no more, so neither its window's end nor its quiet close says anything of a wait that is gone; the task
+/// stays where it stood, and the window stays.
+pub fn let_go_waiting(tx: &Transaction, task: &str) -> Result<(), String> {
+    let Some(mut run) = still_open(tx, task)? else { return Ok(()) };
+    run.state = Phase::Left;
+    save(tx, &run)?;
+    ops::log(tx, task, crate::tasks::store::DISPATCHER, "told", "Dispatcher let go of its session: the wait it was kept for is gone. The window stays.", None, ops::now()).map(drop)
 }
 
 /// A run that still holds `task` open: its session stays until it ends, or the human gives up (AC-138).

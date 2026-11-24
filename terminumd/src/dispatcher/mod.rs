@@ -353,11 +353,12 @@ pub fn close_after() -> i64 {
 }
 
 /// Moves one task and says why, as Dispatcher; one already there says nothing.
-/// Dispatcher never fails a task whose commit is queued: its session's end, failure or Give up is not its commit's,
-/// which lands as any (terminum-integration.md AC-187); a batch's integration task is in no queue and moves as any.
+/// Dispatcher never fails nor stops a task whose commit is queued: its session's end, failure, Give up or a manager's
+/// stop is not its commit's, which lands as any (terminum-integration.md AC-187); a batch's integration task is in no
+/// queue and moves as any.
 fn move_one(tx: &rusqlite::Transaction, id: &str, to: &str, words: &str) -> Result<(), String> {
     let t = ops::get(tx, id)?;
-    if t.status == to || (to == "FAILED" && t.status == ops::INTEGRATION && crate::tasks::integration_queue::entry_of(tx, &t.key)?.is_some()) {
+    if t.status == to || (matches!(to, "FAILED" | "TODO") && t.status == ops::INTEGRATION && crate::tasks::integration_queue::entry_of(tx, &t.key)?.is_some()) {
         return Ok(());
     }
     let at = ops::now();
