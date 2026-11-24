@@ -64,7 +64,7 @@ Open questions: none open. Which clients exist (AC-11's drop) is terminum.md OQ-
 | AC-16 | [SHOULD / P1] | The user upgrades, rolls back and uninstalls with one command each, a new build is checked before it goes live, open pages reload themselves keeping unsaved edits, and state written by either build stays readable by both. |
 | AC-17 | [SHOULD / P1] | The user learns from the page that a newer release exists and can copy the command that installs it, skip that release, or stop the check. |
 | AC-96 | [SHOULD / P1] | After tmux restarts (a reboot, a killed server) a session's terminal begins with its last 300 lines from before the restart, and its menu opens them, the number set in settings.json. |
-| AC-102 | [SHOULD / P1] | A release starts from a machine with no leftovers of old test runs: the one test helper that outlives its test is ended, dead tmux sockets and test folders are removed, the files a Mac's Linux VM still holds under the checkout from old bind mounts are released, and what may be someone's work is only named; a test run itself leaves nothing, and a step of `make check` that leaves something fails. |
+| AC-102 | [SHOULD / P1] | A release starts from a machine with no leftovers of old test runs: the one test helper that outlives its test is ended, dead tmux sockets and test folders are removed, the files Docker Desktop's VM still holds from old bind mounts are released, and what may be someone's work is only named; a test run itself leaves nothing, and a step of `make check` that leaves something fails. |
 | AC-103 | [SHOULD / P1] | The docs keep their shape on every `make test`, and a review of what changed since the last release removes duplicates and superseded requirements before a minor release. |
 | AC-104 | [SHOULD / P1] | A finished worktree lands by itself: its targeted checks green on its own work, then a short smoke set of the basics on one platform, with no timed check, on its merge with what others landed; pushed, the primary checkout brought up to it and the tree deleted; the full test run is the release's gate, and only failing tests block a release. |
 | AC-146 | [SHOULD / P1] | A release's full run starts only on a quiet machine: it queues behind another full run, waits for the load to stay low for 3 minutes, says each minute that it waits, and after 15 minutes ends the release with "the build server is not available"; a task's timed checks wait the same way, and after 15 minutes, or at once while a full run holds its turn, are skipped and said in red, never run under the load. |
@@ -354,17 +354,17 @@ Scenario: AC-102 failure — a cleanup problem never stops a release
 
 Scenario: AC-102 edge — the Docker VM keeps the files its containers read
   Given containers bind-mounted folders of the checkout (a worktree's ui/node_modules, .toolchain/venv) and ended, and the folders were deleted
-  And Docker Desktop's VM process still holds 156,000 files under the checkout, over the limit of 10,000
+  And Docker Desktop's VM process (the one holding Docker's disk) still holds 156,010 files, 156,000 of them under the checkout, over the limit of 10,000 in all
   When the maintainer runs make leftovers
-  Then it prints "the VM <pid> holds 156000 files under the checkout (over 10000): make leftovers END=1 drops its caches" and changes nothing
-  And make leftovers END=1, make release and make rehearse drop the Docker VM's dentry and inode caches and print "the VM <pid> held 156000 files under the checkout, <n> now", its containers left running
-  And under the limit, or with no VM running, nothing is dropped
-  And after a test or experiment of its own with a bind mount, a session runs python3 scripts/vm_files.py --release
+  Then it prints "Docker's VM <pid> holds 156010 files, 156000 under the checkout (over 10000): make leftovers END=1 drops its caches" and changes nothing
+  And make leftovers END=1, make release and make rehearse drop that VM's dentry and inode caches once, before the test folders are judged, and print "Docker's VM <pid> held 156010 files, 156000 under the checkout; <n> files, <m> under the checkout now", its containers left running
+  And python3 scripts/vm_files.py --release drops them under the limit too
+  And under the limit, with no Docker VM running, or for another Virtualization.framework VM, nothing is dropped
 
 Scenario: AC-102 failure — the VM's files cannot be counted or released
-  Given lsof dies (the Mac's file table is full) or Docker does not answer
+  Given lsof dies or stops short (the Mac's file table is full), or Docker does not answer
   When make leftovers END=1 runs
-  Then an uncounted VM's caches are dropped all the same; a drop that fails prints "could not drop the Docker VM's caches: <why>", a count still over the limit or unknown makes leftovers.py exit 1, and the release goes on
+  Then a VM lsof could not list fully counts as over the limit and its caches are dropped all the same; a drop that fails prints "could not drop the Docker VM's caches: <why>", a count still over the limit or unknown makes leftovers.py exit 1, and the release goes on
 
 Scenario: AC-102 failure — the helper cannot outlive its test by long
   Given a fake terminumd of a test whose socket's folder is removed (its test's home), or that has run for five minutes

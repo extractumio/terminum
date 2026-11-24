@@ -9,8 +9,8 @@ so a run of another session is safe:
   pid with SIGTERM, its command read again just before; one that stays is named, never SIGKILLed;
 - a dead `tm-*` socket of tmux (a connection refused): removed;
 - a folder of this user with a prefix tests use, nothing in it recent or held open: removed;
-- files a Mac's Linux VM still holds under the checkout from old bind mounts, over vm_files.MAX: the Docker
-  VM's caches dropped (vm_files.py), which ends nothing.
+- the files Docker Desktop's VM still holds from old bind mounts, over vm_files.MAX or uncountable: its caches
+  dropped (vm_files.py), which ends nothing.
 Named only, since either can be someone's work: a live tmux server on a `tm-*` socket, and any
 other test binary or terminumd of a build folder with no parent."""
 import os
@@ -163,6 +163,9 @@ def main(argv):
     dead, live = sockets(socket_folder, now)
     for path in live:
         print(f"named only, a live tmux server: {path.name} (tmux -L {path.name} kill-server if it is yours)")
+    # first, so a test folder Docker's VM held from a bind mount is no longer open when the folders are judged
+    over = vm_files.report(ending)
+    stuck += over if ending else 0   # a plain look says it, as of the folders, and exits 0
     held = open_paths()
     if held is None:
         print("lsof says nothing of what is open: every test folder stays")
@@ -180,8 +183,6 @@ def main(argv):
         print(f"removed {len(dead)} dead tmux sockets, {len(old) - kept} test folders ({kept} could not go)")
     else:
         print(f"{len(dead)} dead tmux sockets, {len(old)} test folders (--end removes them)")
-    over = vm_files.report(ending)   # a plain look says, as of the folders, and exits 0
-    stuck += over if ending else 0
     return 1 if stuck else 0
 
 
