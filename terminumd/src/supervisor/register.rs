@@ -332,16 +332,11 @@ fn seed(tx: &Transaction, project: &str, at: i64) -> Result<(), String> {
 /// repeat, so its new rows reopen nothing.
 pub(super) fn advance(tx: &Transaction, project: &str, at: i64) -> Result<(), String> {
     seed(tx, project, at)?;
-    tx.execute("UPDATE supervisor_problem_signals AS y SET ruling_count = s.count FROM supervisor_signals s, supervisor_problems p
-        WHERE s.fingerprint = y.fingerprint AND p.id = y.problem AND p.project = ?1 AND p.state = 'accepted'
-          AND s.count > coalesce(y.ruling_count, 0)
-          AND NOT EXISTS (SELECT 1 FROM json_each(s.evidence) e WHERE NOT EXISTS (
-            SELECT 1 FROM json_each(y.ruling_evidence) old WHERE old.value = e.value))", [project]).map_err(sql)?;
     let changes = rows(tx, "SELECT p.id, p.state,
         (SELECT s.fingerprint FROM supervisor_problem_signals y JOIN supervisor_signals s USING (fingerprint)
         WHERE y.problem = p.id AND s.state IN ('new','raised','recurred')
-          AND (p.state = 'resolved' OR (p.state = 'accepted' AND s.count > coalesce(y.ruling_count, 0) AND EXISTS (
-            SELECT 1 FROM json_each(s.evidence) e WHERE NOT EXISTS (
+          AND (p.state = 'resolved' OR (p.state = 'accepted' AND s.count > coalesce(y.ruling_count, 0)
+            AND s.evidence IS NOT y.ruling_evidence AND EXISTS (SELECT 1 FROM json_each(s.evidence) e WHERE NOT EXISTS (
               SELECT 1 FROM json_each(y.ruling_evidence) old WHERE old.value = e.value))))
         ORDER BY s.fingerprint LIMIT 1),
         EXISTS (SELECT 1 FROM supervisor_problem_signals y WHERE y.problem = p.id)
@@ -378,6 +373,9 @@ pub(super) fn advance(tx: &Transaction, project: &str, at: i64) -> Result<(), St
             }
         }
     }
+    tx.execute("UPDATE supervisor_problem_signals AS y SET ruling_count = s.count FROM supervisor_signals s, supervisor_problems p
+        WHERE s.fingerprint = y.fingerprint AND p.id = y.problem AND p.project = ?1 AND p.state = 'accepted'
+          AND s.count > coalesce(y.ruling_count, 0)", [project]).map_err(sql)?;
     Ok(())
 }
 

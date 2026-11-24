@@ -11,7 +11,7 @@ use super::super::{DAY, Rule, config_lifecycle, fix_tasks, probe_arch::Architect
 
 const NEVER: &str = "Lose user data.";
 
-fn attached(f: &Fixture, checks: serde_json::Value) {
+pub(in crate::supervisor) fn attached(f: &Fixture, checks: serde_json::Value) {
     f.write("UPDATE projects SET dir = ?1 WHERE id = ?2", (f.path.parent().unwrap().to_str().unwrap(), PROJECT));
     f.write("INSERT INTO project_supervisor (project, enabled, generation, enabled_at) VALUES (?1, 1, 1, ?2)", (PROJECT, NOW - 2 * DAY));
     let pack = json!({"budgets":{"fixes_ceiling":0.0}, "charter":{"never":[NEVER, "Break a release."], "never_checks":checks}});

@@ -7,7 +7,7 @@ use crate::tasks::ops::sql;
 
 use super::engine_tests::{Fixture, NOW, PROJECT};
 use super::register_tests::draft;
-use super::{DAY, Rule, Signal, evaluate, probe_arch::Architecture, probes, register, settings, signals};
+use super::{DAY, Rule, Signal, evaluate, probe_arch::Architecture, probes, register, signals};
 
 fn signal(f: &Fixture, pick: impl Fn(&Signal) -> bool) -> Signal {
     signals(&f.store, PROJECT).unwrap().into_iter().find(pick).expect("the detector fired")
@@ -33,10 +33,7 @@ fn swept(f: &Fixture, id: i64, at: i64) -> String {
 #[test]
 fn ac236_a_retaken_probe_sample_keeps_an_accepted_problem_accepted() {
     let f = Fixture::new("accept-probe");
-    f.write("UPDATE projects SET dir = ?1 WHERE id = ?2", (f.path.parent().unwrap().to_str().unwrap(), PROJECT));
-    f.write("INSERT INTO project_supervisor (project, enabled, generation, enabled_at) VALUES (?1, 1, 1, ?2)",
-        (PROJECT, NOW - 5 * DAY));
-    f.store.with(|tx| settings::write(tx, PROJECT, 0, serde_json::from_value(serde_json::json!({})).unwrap(), false).map(drop)).unwrap();
+    super::breach::tests::attached(&f, serde_json::json!({}));
     let arch = Architecture { since: NOW - 90 * DAY, migrations: vec![(NOW - 4 * DAY, "schema1.sql".into())], ..Architecture::default() };
     let data = serde_json::to_string(&arch).unwrap();
     let beat = |at| {
