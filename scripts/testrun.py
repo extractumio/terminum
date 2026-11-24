@@ -58,13 +58,13 @@ def end_own_servers():
 
 
 def remove_dead_sockets():
-    """Ends what still runs, then the socket file of each `own` name whose tmux server has gone (a killed
-    one may take a moment to)."""
+    """Ends what still runs, then the socket file of each `own` name whose tmux server has gone: tmux leaves
+    it, and one SIGTERMed may answer for seconds on a busy machine (the guard then finds the file left)."""
     end_own_servers()
     base = os.path.join(os.environ.get("TMUX_TMPDIR") or "/tmp", f"tmux-{os.getuid()}")
     for name in _sockets:
         path = os.path.join(base, name)
-        for _ in range(20):
+        for _ in range(100):
             with socket.socket(socket.AF_UNIX) as probe:
                 try:
                     probe.connect(path)
