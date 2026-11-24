@@ -80,7 +80,7 @@ catalog! {
     StalePlan, "drift.stale_plan", "stale_plans", Absolute(0.0), samples::snapshots;
     Loop, "drift.loop", "tool_loops", baseline(90, 2.0), samples::counters;
     Subagents, "drift.subagents", "subagent_counts", baseline(90, 2.0), samples::counters;
-    CollectorDead, "self.collector_dead", "collector_heartbeat", Absolute(2.0), heartbeat;
+    CollectorDead, "self.collector_dead", "collector_heartbeat", Absolute(3.0), heartbeat;
     LineDead, "self.line_dead", "line_health", Absolute(0.0), line_health;
     ReportCritical, "reports.critical", "critical_reports", Absolute(0.0), report_rules::critical;
     UnreadReports, "reports.unread_age", "unread_reports", Absolute(1440.0), report_rules::unread_age;

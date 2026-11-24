@@ -266,17 +266,19 @@ fn ac218_unobserved_subscription_does_not_clear_its_signal() {
 }
 
 #[tokio::test]
-async fn ac219_independent_watchdog_reports_two_misses_once_and_honors_recovery() {
+async fn ac219_independent_watchdog_reports_three_misses_once_and_honors_recovery() {
     let (_, app) = crate::testutil::app_with_tasks("supervisor-watch");
     let s = &app.tasks;
     set_enabled(s, PROJECT, true, NOW).unwrap();
     let project = ready(s);
     collect_project(&app, &project, || NOW).unwrap();
     let live = ready(s);
-    check_heartbeat(s, NOW + BEAT).unwrap();
-    assert!(supervisor::signals(s, PROJECT).unwrap().is_empty());
-    check_heartbeat(s, NOW + 2 * BEAT).unwrap();
-    check_heartbeat(s, NOW + 3 * BEAT).unwrap();
+    let mut watchdog = Watchdog::default();
+    watchdog.check(s, NOW + BEAT).unwrap();
+    watchdog.check(s, NOW + 2 * BEAT).unwrap();
+    assert!(supervisor::signals(s, PROJECT).unwrap().is_empty(), "two missed beats open no incident");
+    watchdog.check(s, NOW + 3 * BEAT).unwrap();
+    watchdog.check(s, NOW + 4 * BEAT).unwrap();
     let fault = supervisor::signals(s, PROJECT).unwrap().pop().unwrap();
     assert_eq!((&*fault.detector, fault.level, fault.count), ("self.collector_dead", 3, 1));
     assert_eq!(fault.evidence, [Evidence::SupervisorHeartbeat { project: PROJECT.into(), last_ok: Some(NOW) }]);
@@ -284,6 +286,28 @@ async fn ac219_independent_watchdog_reports_two_misses_once_and_honors_recovery(
     collect_project(&app, &ready(s), || NOW + 3 * BEAT).unwrap();
     report_dead(s, &live, NOW + 3 * BEAT).unwrap();
     assert_eq!(supervisor::signals(s, PROJECT).unwrap()[0].state, State::Resolved);
+}
+
+// AC-219: the watchdog's own tick late by about the collector's silence is a stall of the whole process, said
+// as runtime.lag; the same collector still silent while the watchdog runs on time is dead.
+#[tokio::test]
+async fn ac219_a_whole_process_stall_opens_no_incident_a_stuck_collector_does() {
+    let (_, app) = crate::testutil::app_with_tasks("supervisor-stall");
+    let s = &app.tasks;
+    set_enabled(s, PROJECT, true, NOW).unwrap();
+    collect_project(&app, &ready(s), || NOW).unwrap();
+    let mut watchdog = Watchdog::default();
+    watchdog.check(s, NOW + 5).unwrap();
+    let (logs, guard) = crate::testutil::logs();
+    watchdog.check(s, NOW + 5 + BEAT + 25).unwrap();
+    drop(guard);
+    assert!(supervisor::signals(s, PROJECT).unwrap().is_empty(), "a 40 s silence while the watchdog was 25 s late");
+    let said = logs.text();
+    assert!(said.contains("event=\"runtime.lag\"") && said.contains("source=\"supervisor.watchdog\"")
+        && said.contains("ms=25000") && said.contains("silent_s=40"), "{said}");
+    watchdog.check(s, NOW + 50).unwrap();
+    let fault = supervisor::signals(s, PROJECT).unwrap().pop().expect("a collector stuck past three beats is dead");
+    assert_eq!((&*fault.detector, fault.level, fault.count), ("self.collector_dead", 3, 1));
 }
 
 #[tokio::test]
