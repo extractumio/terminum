@@ -5,6 +5,7 @@ import importlib.util
 import os
 from pathlib import Path
 import re
+import shutil
 import socket
 import subprocess
 import tempfile
@@ -61,6 +62,47 @@ class Processes(unittest.TestCase):
         finally:
             child.kill()
             child.wait()
+
+
+
+class LostServers(unittest.TestCase):
+    """A test's tmux server whose socket went with its run's folder (TERM-912): ended by its pid."""
+    SERVER = "tmux -L tm-test-live-33522 -f /tmp/tmc.indcv8il/tml-T9fNjm/h/tmux.conf new-session -d -s main"
+
+    def test_only_an_old_test_server_with_no_parent_and_no_socket_is_ended(self):
+        gone, there = "/tmp/tmc.gone-912/tmux-501/tm-test-live-33522", tempfile.mkdtemp(prefix="tm-lost-")
+        self.addCleanup(os.rmdir, there)
+        bound = [(7, "tmux", gone), (8, "tmux", there), (9, "tmux", gone), (9, "tmux", there)]
+        listed = "".join(f"{pid} 1 1-00:00:00 {self.SERVER}\n" for pid in (7, 8, 9, 10))
+        self.assertEqual(leftovers.lost_servers(listed, bound), [(7, self.SERVER, True), (10, self.SERVER, False)],
+                         "a socket still there (8, or one of 9's) keeps it; an unknown socket (10) is only named")
+        self.assertEqual(leftovers.lost_servers(listed, None), [(pid, self.SERVER, False) for pid in (7, 8, 9, 10)])
+
+    def test_what_is_never_ended(self):
+        bound = [(7, "tmux", "/tmp/tmc.gone-912/tmux-501/x")]
+        for line in [
+            f"7 900 1-00:00:00 {self.SERVER}",                                  # a test run still owns it
+            f"7 1 05:59:00 {self.SERVER}",                                      # young: another session's run
+            "7 1 1-00:00:00 tmux -L terminum new-session -d -s main",           # the user's own server
+            "7 1 1-00:00:00 /usr/bin/ssh devbox.example tmux -L tm-test-live-1 attach",
+        ]:
+            with self.subTest(line=line):
+                self.assertEqual(leftovers.lost_servers(line + "\n", bound), [])
+
+    def test_a_real_server_whose_folder_went_is_found_and_ended(self):
+        folder = tempfile.mkdtemp(prefix="tm-lost-")
+        env = {**os.environ, "TMUX_TMPDIR": folder}
+        name = f"tm-test-lost-{os.getpid()}"
+        subprocess.run(["tmux", "-f", "/dev/null", "-L", name, "new-session", "-d", "-s", "main", "-c", "/"], env=env, check=True, timeout=10)
+        pid = int(subprocess.run(["tmux", "-L", name, "display", "-p", "#{pid}"], env=env, capture_output=True, text=True, timeout=10).stdout)
+        command = subprocess.run(["ps", "-o", "command=", "-p", str(pid)], capture_output=True, text=True).stdout.strip()
+        self.addCleanup(lambda: f"-L {name} " in subprocess.run(["ps", "-o", "command=", "-p", str(pid)], capture_output=True, text=True).stdout
+                        and os.kill(pid, 9))
+        old = f"{pid} 1 1-00:00:00 {command}\n"
+        self.assertEqual(leftovers.lost_servers(old, leftovers.socket_paths()), [], "its socket is still there")
+        shutil.rmtree(folder)
+        self.assertEqual(leftovers.lost_servers(old, leftovers.socket_paths()), [(pid, command, True)])
+        self.assertTrue(leftovers.end(pid, command))
 
 
 class Sockets(unittest.TestCase):

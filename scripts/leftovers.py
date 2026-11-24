@@ -7,6 +7,8 @@ The one exception to ending nothing by a pattern (CLAUDE.md §6). Nothing younge
 so a run of another session is safe:
 - the one test helper that outlives its test, TEST_HELPER, with no parent (ppid 1): ended by its
   pid with SIGTERM, its command read again just before; one that stays is named, never SIGKILLed;
+- a tmux server of a `tm-*` name with no parent whose socket file is gone (its run's folder went
+  first), so nothing reaches it but its pid: ended by its pid with SIGTERM, as that helper;
 - a dead `tm-*` socket of tmux (a connection refused): removed;
 - a folder of this user with a prefix tests use, nothing in it recent or held open: removed.
 Named only, since either can be someone's work: a live tmux server on a `tm-*` socket, and any
@@ -22,8 +24,13 @@ import sys
 import tempfile
 import time
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from process_cwd import InspectionError, socket_paths  # noqa: E402
+
 OLD_S = 6 * 3600
 TEST_HELPER = re.compile(r"/\S*/terminumd/target/(?:debug|release)/deps/terminumd-[0-9a-f]{16} --exact cli::tests::fake_terminumd( |$)")
+# a test's own socket name (testrun's `own`: tm-test-live-<pid>), never the user's `-L terminum`
+TEST_TMUX = re.compile(r"(?:\S*/)?tmux(?: \S+)*? -L tm-\S+(?: |$)")
 BUILD_OUTPUT = re.compile(r"/\S*/terminumd/target/(?:debug|release)/(?:terminumd|deps/terminumd-[0-9a-f]{16})( |$)")
 # what tests name their folders; test_leftovers.py fails on a test's prefix missing here
 FOLDER_PREFIXES = ("tm-", "tma-", "tmb-", "tme-", "tmh-", "tmi-", "tml-", "tmln-", "tmlo-", "tmlp-", "tmlw-",
@@ -39,18 +46,39 @@ def age_s(etime):
     return seconds + int(days or 0) * 86400
 
 
+def orphans(ps_text):
+    """(pid, command) of each process with no parent (ppid 1) older than OLD_S."""
+    for line in ps_text.splitlines():
+        fields = line.split(None, 3)
+        if len(fields) == 4 and fields[0].isdigit() and fields[1] == "1" and age_s(fields[2]) >= OLD_S:
+            yield int(fields[0]), fields[3]
+
+
 def strays(ps_text):
     """(pid, command, whether to end it) of each process no test run owns any more."""
     found = []
-    for line in ps_text.splitlines():
-        fields = line.split(None, 3)
-        if len(fields) < 4 or not fields[0].isdigit() or fields[1] != "1" or age_s(fields[2]) < OLD_S:
-            continue
-        command = fields[3]
+    for pid, command in orphans(ps_text):
         if TEST_HELPER.match(command):
-            found.append((int(fields[0]), command, True))
+            found.append((pid, command, True))
         elif BUILD_OUTPUT.match(command):
-            found.append((int(fields[0]), command, False))
+            found.append((pid, command, False))
+    return found
+
+
+def lost_servers(ps_text, bound):
+    """(pid, command, whether to end it) of each old test tmux server with no parent: ended only when
+    every socket it bound (`bound`: (pid, command, path) of this user's processes, or None when unknown)
+    is gone from its path; one still reachable is a live socket's, said there."""
+    paths = {}
+    for pid, _, path in bound or []:
+        paths.setdefault(pid, []).append(path)
+    found = []
+    for pid, command in orphans(ps_text):
+        if TEST_TMUX.match(command):
+            if pid not in paths:
+                found.append((pid, command, False))
+            elif not any(os.path.lexists(path) for path in paths[pid]):
+                found.append((pid, command, True))
     return found
 
 
@@ -148,7 +176,13 @@ def main(argv):
     socket_folder = Path(os.environ.get("TMUX_TMPDIR", "/tmp")) / f"tmux-{os.getuid()}"
     roots = sorted({Path(tempfile.gettempdir()).resolve(), Path("/tmp").resolve()})
     stuck = 0
-    for pid, command, ours in strays(processes()):
+    listed = processes()
+    try:
+        bound = socket_paths()
+    except InspectionError as error:
+        bound = None
+        print(f"{error}: no tmux server is ended")
+    for pid, command, ours in strays(listed) + lost_servers(listed, bound):
         if ours and ending:
             gone = end(pid, command)
             stuck += not gone
