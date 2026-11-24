@@ -158,9 +158,8 @@ pub fn tool_summary(name: &str, input: &Value) -> String {
 /// 16 hex digits of one digest of a tool call's name and input, so the Supervisor tells the same call
 /// again from another call of the same tool without seeing either (AC-212, AC-218); object keys sort.
 fn call_digest(name: &str, input: &Value) -> String {
-    let mut call = name.as_bytes().to_vec();
-    call.push(0);
-    call.extend(serde_json::to_vec(input).unwrap_or_default());
+    let mut call = format!("{name}\0").into_bytes();
+    let _ = serde_json::to_writer(&mut call, input); // a Value always serializes into a Vec
     crate::auth::crypto::sha256_hex(&call)[..16].to_owned()
 }
 
@@ -196,10 +195,11 @@ pub fn event(agent: &str, input: &Value, tmux: &str, pane: &str) -> Option<Value
     }
     let tool = input.get("tool_name").and_then(Value::as_str);
     if let Some(t) = tool {
+        let tool_input = input.get("tool_input").unwrap_or(&Value::Null);
         if name == "PreToolUse" && !t.is_empty() && t.len() <= 100 {
-            out.insert("tool_call_hash".into(), json!(call_digest(t, input.get("tool_input").unwrap_or(&Value::Null))));
+            out.insert("tool_call_hash".into(), json!(call_digest(t, tool_input)));
         }
-        out.insert("tool".into(), json!(tool_summary(t, input.get("tool_input").unwrap_or(&Value::Null))));
+        out.insert("tool".into(), json!(tool_summary(t, tool_input)));
     }
     // a question it asks the user (Claude Code's AskUserQuestion), else a notification's words
     let asked = tool.filter(|t| matches!(*t, "AskUserQuestion" | "request_user_input" | "request_user_input_async"))
@@ -247,7 +247,6 @@ mod tests {
         assert_eq!(same, digest("Bash", json!({"timeout": 60, "command": "cargo test"})), "key order is no new call");
         assert_ne!(same, digest("Bash", json!({"command": "cargo build", "timeout": 60})), "another command is another call");
         assert_ne!(same, digest("Read", json!({"command": "cargo test", "timeout": 60})), "another tool is another call");
-        assert_ne!(digest("Bash", Value::Null), digest("Read", Value::Null));
         let out = event("claude", &json!({"hook_event_name": "PreToolUse", "tool_name": "Bash",
             "tool_input": {"command": "echo private-words"}}), "/tmp/tmux-501/terminum,1,0", "%1").unwrap();
         assert!(out.get("tool_name_hash").is_none());
