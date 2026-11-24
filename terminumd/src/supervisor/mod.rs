@@ -326,6 +326,11 @@ impl Measurements {
     }
 }
 
+/// Records why some subjects went unmeasured, once per reason.
+fn unavailable(out: &mut Measurements, why: &'static str) {
+    if !out.unavailable.contains(&why) { out.unavailable.push(why); }
+}
+
 struct Reading {
     subject_kind: &'static str,
     subject_id: String,

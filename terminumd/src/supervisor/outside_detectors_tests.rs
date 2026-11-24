@@ -29,21 +29,28 @@ fn configured(f: &Fixture, project: &str, probes: &[&str], pack: serde_json::Val
     f.store.with(|tx| settings::write(tx, project, 0, serde_json::from_value(pack).unwrap(), false).map(drop)).unwrap();
 }
 
+fn indicator(probe: &str, metric: &str, higher_is_better: bool, guard: &str) -> serde_json::Value {
+    json!({"probe": probe, "metric": metric, "higher_is_better": higher_is_better, "guard": guard, "guard_higher_is_better": true})
+}
+
 fn indicators() -> serde_json::Value {
     json!({"charter": {"outside_indicators": {
-        "Downloads": {"probe": "store", "metric": "downloads", "higher_is_better": true, "guard": "errors", "guard_higher_is_better": false},
-        "Errors": {"probe": "store", "metric": "errors", "higher_is_better": false, "guard": "downloads", "guard_higher_is_better": true},
+        "Downloads": indicator("store", "downloads", true, "errors"),
+        "Errors": indicator("store", "errors", false, "downloads"),
+        "Visits": indicator("store", "visits", true, "downloads"),
     }}})
 }
 
-/// One sample a week, each with that week's points: downloads 10 → 20, errors 1 → 5 from week `turn` on.
+/// One sample a week, each with that week's points: from week `turn` on, downloads 10 → 20 and errors 1 → 5
+/// rise, visits 20 → 10 fall.
 fn weekly_store_samples(f: &Fixture, weeks: i64, turn: i64) {
     for week in 0..weeks {
         let at = NOW - (weeks - 1 - week) * WEEK - 1;
-        let (downloads, errors) = if week < turn { (10, 1) } else { (20, 5) };
+        let (downloads, errors, visits) = if week < turn { (10, 1, 20) } else { (20, 5, 10) };
         let points = json!([
             {"metric": "downloads", "value": downloads, "unit": "count", "at": at, "dims": {}},
             {"metric": "errors", "value": errors, "unit": "count", "at": at, "dims": {}},
+            {"metric": "visits", "value": visits, "unit": "count", "at": at, "dims": {}},
         ]);
         publish_sample(f, "custom:store", at, points.to_string());
     }
@@ -60,22 +67,25 @@ fn ac212_outside_metric_fires_only_against_its_direction_beyond_its_band() {
     weekly_store_samples(&f, 6, 2);
     let (fired, unavailable, _) = run(&f, PROJECT, "product.external", None);
     assert!(fired.is_empty());
-    assert_eq!(unavailable, ["The probe needs a reading in each week of the comparison."; 2]);
+    assert_eq!(unavailable, ["The probe needs a reading in each week of the comparison."], "one reason, once");
 
     let f = Fixture::new("external-moves");
     configured(&f, PROJECT, &["store"], indicators());
     weekly_store_samples(&f, 8, 4);
     let (fired, unavailable, evidence) = run(&f, PROJECT, "product.external", None);
     assert!(unavailable.is_empty(), "{unavailable:?}");
-    assert_eq!(fired, [("Errors".into(), 5.0)], "downloads rose, their better direction; errors rose against theirs");
-    assert_eq!(evidence.len(), 8, "each week's retained sample is evidence");
+    assert_eq!(fired, [("Errors".into(), 5.0), ("Visits".into(), 10.0)],
+        "downloads rose, their better direction; errors rose and visits fell, against theirs");
+    assert_eq!(evidence.len(), 16, "each week's retained sample is evidence");
     assert!(evidence.iter().all(|e| matches!(e, Evidence::SupervisorProbes(_))));
-    let margin = |by| run(&f, PROJECT, "product.external", Some(Threshold::Change { by })).0.len();
-    assert_eq!(margin(4.0), 0, "a move of 4 equal to noise 0 plus a margin of 4 stays inside the band");
-    assert_eq!(margin(3.9), 1, "the same move crosses a narrower band");
+    let margin = |by| run(&f, PROJECT, "product.external", Some(Threshold::Change { by })).0.into_iter()
+        .map(|(name, _)| name).collect::<Vec<String>>();
+    assert_eq!(margin(4.0), ["Visits"], "errors' move of 4 over noise 0 stays inside a margin of 4; visits' fall of 10 does not");
+    assert_eq!(margin(3.9), ["Errors", "Visits"], "the same move crosses a narrower band");
+    assert_eq!(margin(10.0), Vec::<String>::new());
 
     f.write("UPDATE supervisor_probe_commands SET command = 'printf replaced' WHERE project = ?1", [PROJECT]);
-    assert_eq!(run(&f, PROJECT, "product.external", None).1, ["The probe needs a reading in each week of the comparison."; 2],
+    assert_eq!(run(&f, PROJECT, "product.external", None).1, ["The probe needs a reading in each week of the comparison."],
         "a replaced probe's old readings measure nothing");
 }
 
@@ -83,9 +93,9 @@ fn ac212_outside_metric_fires_only_against_its_direction_beyond_its_band() {
 fn ac212_outside_metric_names_each_missing_input_and_stays_in_its_project() {
     let f = Fixture::new("external-isolated");
     let pack = json!({"charter": {"outside_indicators": {
-        "Errors": {"probe": "store", "metric": "errors", "higher_is_better": false, "guard": "downloads", "guard_higher_is_better": true},
+        "Errors": indicator("store", "errors", false, "downloads"),
         "Legacy": "store",
-        "Unapproved": {"probe": "survey", "metric": "score", "higher_is_better": true, "guard": "replies", "guard_higher_is_better": true},
+        "Unapproved": indicator("survey", "score", true, "replies"),
     }}});
     configured(&f, PROJECT, &["store"], pack);
     weekly_store_samples(&f, 8, 4);
@@ -96,7 +106,7 @@ fn ac212_outside_metric_names_each_missing_input_and_stays_in_its_project() {
 
     f.write("UPDATE supervisor_probe_samples SET project = ?1 WHERE project = ?2", (OTHER, PROJECT));
     assert!(run(&f, PROJECT, "product.external", None).0.is_empty(), "another project's samples are not this project's");
-    assert_eq!(run(&f, OTHER, "product.external", None).0, [("Errors".into(), 5.0)]);
+    assert_eq!(run(&f, OTHER, "product.external", None).0, [("Errors".into(), 5.0), ("Visits".into(), 10.0)]);
 }
 
 fn feedback(open: &[(u64, i64)]) -> String {
@@ -125,6 +135,10 @@ fn ac212_unanswered_feedback_fires_past_its_age_and_names_missing_input() {
     assert_eq!(fired, [(format!("{BASE}42"), 4321.0)], "three days exactly is the limit, not past it");
     assert!(matches!(evidence[..], [Evidence::SupervisorProbes(_)]));
     assert_eq!(run(&f, PROJECT, "product.feedback_age", Some(Threshold::Absolute(1440.0))).0.len(), 2);
+    f.write("INSERT INTO supervisor_probe_samples (project, source, config, at, state)
+        SELECT project, source, config, ?1, 'invalid data' FROM supervisor_probe_samples WHERE project = ?2 LIMIT 1", (NOW - 60, PROJECT));
+    assert_eq!(run(&f, PROJECT, "product.feedback_age", None).1, ["Feedback probe history is unavailable for this window."],
+        "a failed latest sample hides the older measured one");
 
     configured(&f, OTHER, &["feedback"], json!({"probes": {"feedback": {"feedback": BASE}}}));
     assert!(run(&f, OTHER, "product.feedback_age", None).0.is_empty(), "this project's feedback is not another's");
@@ -142,7 +156,7 @@ fn ac215_replay_counts_outside_firings_from_retained_samples() {
 
     let report = replay(&f.path, PROJECT, Some(NOW)).unwrap();
     assert_eq!(report, replay(&f.path, PROJECT, Some(NOW)).unwrap());
-    assert!(report.contains("- product.external: 1\n"), "only the cutoff two weeks back has eight retained weeks: {report}");
+    assert!(report.contains("- product.external: 2\n"), "errors and visits at the one cutoff with eight retained weeks: {report}");
     assert!(report.contains("- product.feedback_age: 2\n"), "{report}");
     assert!(report.contains("product.feedback_age: Feedback probe history is unavailable for this window."),
         "the current cutoff has no fresh feedback sample: {report}");

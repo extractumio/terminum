@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 //! AC-262: a local reading pass projects outside prose into closed categories.
 
+use std::collections::BTreeSet;
+
 use rusqlite::Transaction;
 use serde::{Deserialize, Serialize};
 
@@ -87,13 +89,13 @@ pub(super) const MAX_UNANSWERED: usize = 256;
 
 /// AC-212, AC-262: a feedback probe's typed list of the items still unanswered, by reference and
 /// the time each was opened; it carries no outside prose.
-#[derive(Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct Unanswered {
     unanswered: Vec<Open>,
 }
 
-#[derive(Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Open {
     reference: u64,
@@ -102,7 +104,7 @@ struct Open {
 
 impl Unanswered {
     pub(super) fn valid(&self, at: i64) -> bool {
-        let mut references = std::collections::BTreeSet::new();
+        let mut references = BTreeSet::new();
         self.unanswered.len() <= MAX_UNANSWERED && self.unanswered.iter().all(|open| {
             open.reference > 0 && (1..=at).contains(&open.since) && references.insert(open.reference)
         })
@@ -125,19 +127,21 @@ pub(super) fn age(q: &Query<'_, '_>) -> Result<Measurements, String> {
     if sources.is_empty() { return Ok(Measurements::missing("No approved probe has an outside feedback reference base.")); }
     let mut out = Measurements::default();
     for (base, sample) in sources {
-        let Some((id, at, data)) = sample else {
-            out.unavailable.push("Feedback probe history is unavailable for this window.");
-            continue;
+        let lines = sample.map(|s| (s.id, s.at, serde_json::from_str::<Vec<Kept>>(&s.data)));
+        let list = match lines {
+            None => Err("Feedback probe history is unavailable for this window."),
+            Some((_, _, Err(_))) => Err("Invalid retained Supervisor probe data."),
+            Some((id, at, Ok(lines))) => lines.into_iter()
+                .find_map(|line| match line { Kept::Unanswered(list) => Some((id, at, list)), Kept::Other(_) => None })
+                .ok_or("The feedback probe reports no unanswered list."),
         };
-        let lines: Vec<Kept> = serde_json::from_str(&data).map_err(|_| "Invalid retained Supervisor probe data.")?;
-        let Some(list) = lines.into_iter().find_map(|line| match line { Kept::Unanswered(list) => Some(list), Kept::Other(_) => None }) else {
-            out.unavailable.push("The feedback probe reports no unanswered list.");
-            continue;
-        };
-        out.readings.extend(list.unanswered.into_iter().map(|open| {
-            Reading::new("outside_feedback", format!("{}{}", base.as_str(), open.reference), "unanswered_minutes",
-                (at - open.since) as f64 / 60.0, vec![Evidence::SupervisorProbes(id)], UNSIZED)
-        }));
+        match list {
+            Ok((id, at, list)) => out.readings.extend(list.unanswered.into_iter().map(|open| {
+                Reading::new("outside_feedback", format!("{}{}", base.as_str(), open.reference), "unanswered_minutes",
+                    (at - open.since) as f64 / 60.0, vec![Evidence::SupervisorProbes(id)], UNSIZED)
+            })),
+            Err(why) => super::unavailable(&mut out, why),
+        }
     }
     Ok(out)
 }

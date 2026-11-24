@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::tasks::ops::rows;
 
-use super::{Comparison, Evidence, Measurements, Query, Threshold, WEEK, impact::{Source, absolute_noise}, probes,
+use super::{Comparison, Evidence, Measurements, Query, Reading, Threshold, WEEK, impact::{Source, absolute_noise}, probes,
     scoreboard::{self, Verdict}};
 
 const LEGACY: &str = "Choose a metric and a guard in project settings.";
@@ -68,7 +68,7 @@ struct Metric {
     samples: Vec<i64>,
 }
 
-struct Reading {
+struct Point {
     sample: i64,
     week: usize,
     value: f64,
@@ -76,9 +76,10 @@ struct Reading {
 }
 
 fn readings(tx: &Transaction, project: &str, probe: &str, config: &str, at: i64, wanted: &BTreeSet<&str>)
-    -> Result<BTreeMap<String, Vec<Reading>>, String>
+    -> Result<BTreeMap<String, Vec<Point>>, String>
 {
     let start = at - scoreboard::WEEKS as i64 * WEEK;
+    // `metric IN` also skips a feedback probe's unanswered list, the one retained element without a metric.
     let points = rows(tx, "WITH inputs AS (
         SELECT s.id, json_extract(m.value, '$.at') AS time,
                json_extract(m.value, '$.metric') AS metric,
@@ -95,13 +96,13 @@ fn readings(tx: &Transaction, project: &str, probe: &str, config: &str, at: i64,
     )
     SELECT metric, week, value, unit, id FROM latest WHERE position = 1",
         (project, format!("custom:{probe}"), config, start, at, WEEK, serde_json::json!(wanted).to_string()),
-        |r| Ok((r.get::<_, String>(0)?, Reading { week: usize::from(r.get::<_, u8>(1)?), value: r.get(2)?, unit: r.get(3)?, sample: r.get(4)? })))?;
+        |r| Ok((r.get::<_, String>(0)?, Point { week: usize::from(r.get::<_, u8>(1)?), value: r.get(2)?, unit: r.get(3)?, sample: r.get(4)? })))?;
     let mut by_metric = BTreeMap::<_, Vec<_>>::new();
     for (name, point) in points { by_metric.entry(name).or_default().push(point); }
     Ok(by_metric)
 }
 
-fn metric(name: &str, readings: &[Reading], higher_is_better: bool, missing: &'static str)
+fn metric(name: &str, readings: &[Point], higher_is_better: bool, missing: &'static str)
     -> (Metric, Verdict)
 {
     let mut series = [None; scoreboard::WEEKS];
@@ -168,16 +169,16 @@ pub(super) fn external(q: &Query<'_, '_>) -> Result<Measurements, String> {
     let mut out = Measurements::default();
     for (setting, indicator) in settings.values().zip(read(q.tx, q.project, q.window.end, &settings)?) {
         let (Setting::Guarded(setting), Some(main)) = (setting, indicator.metrics.into_iter().next()) else {
-            out.unavailable.push(LEGACY);
+            super::unavailable(&mut out, LEGACY);
             continue;
         };
         let Some((before, current)) = main.before.zip(main.current) else {
-            out.unavailable.extend(main.missing);
+            if let Some(why) = main.missing { super::unavailable(&mut out, why); }
             continue;
         };
         let worse = if setting.higher_is_better { Comparison::Below } else { Comparison::Above };
         let evidence = main.samples.into_iter().map(Evidence::SupervisorProbes).collect();
-        out.readings.push(super::Reading::new("outside_indicator", indicator.name, "outside_metric_average", current, evidence, UNSIZED)
+        out.readings.push(Reading::new("outside_indicator", indicator.name, "outside_metric_average", current, evidence, UNSIZED)
             .history(vec![before]).comparison(worse).fixed(Threshold::Change { by: main.noise + margin }));
     }
     Ok(out)
