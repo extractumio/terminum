@@ -131,6 +131,11 @@ Scenario: AC-01 happy path — what runs in a pane
   Then a row's line under its title names Claude Code's program "claude", never its version
   And a subagent Claude Code runs in its own pane shows the name it was started with, its command's --agent-name ("simplify-altitude"), not its pane's title, which only says its type ("✳ general-purpose", the same for all of them): the type stays on the line under it; a window the user named keeps that name, and another program started with the same flag shows its own title
   And each row, before its title, and the header, before the shown pane's title, show Claude Code's mark, Codex's mark, OpenCode's mark (their owners' trademarks, outside terminum's licenses: NOTICE) or the terminal icon (`docs/UI-GUIDELINES.md`); a build without the marks' files shows the terminal icon for them
+Scenario: AC-01 happy path — a row's right side
+  Given rows with a plan ("60%"), a program ("claude"), a state's mark, a manager's crown and subagents ("12")
+  Then the percent on the title's line and the program on the line under it end at one edge, in every row, on a phone too
+  And the marks stand in a column of fixed cells, each on its text line's middle: the crown, then the state, on the title's line; the bot under the crown, its count under the state, on the line under it; a kind of mark in the same cell in every row, none past the column
+  And a list with no crown and no subagents keeps the state's cell alone, the titles keeping that room
 Scenario: AC-01 happy path — a folder's color
   Given rows in ~/work/api, ~/work/web, ~/notes and two in ~/tools, and a row in ~/work/api/db
   Then the bar left of each row (and of the header's title), at one place in every row, is a pastel color of its folder: rows in the same folder (on the same host) share it, folders not inside one another get hues as far apart as their count allows
