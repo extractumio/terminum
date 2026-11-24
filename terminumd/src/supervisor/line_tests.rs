@@ -138,6 +138,78 @@ fn ac228_quiet_hours_defer_ordinary_notices_and_keep_all_incidents() {
     assert!(morning().is_none());
 }
 
+fn incident_of(f: &Fixture, subject: &str) -> i64 {
+    f.store.snapshot(SCHEMA, |tx| tx.query_row("SELECT id FROM supervisor_incidents WHERE subject_id = ?1",
+        [subject], |r| r.get(0)).map_err(crate::tasks::ops::sql)).unwrap()
+}
+
+fn queued(f: &Fixture) -> i64 {
+    f.store.snapshot(SCHEMA, |tx| tx.query_row("SELECT count(*) FROM supervisor_line_pending", [],
+        |r| r.get(0)).map_err(crate::tasks::ops::sql)).unwrap()
+}
+
+#[test]
+fn ac228_an_incident_that_cleared_during_quiet_hours_sends_one_all_clear() {
+    let f = Fixture::new("line-stale-clear");
+    configure(&f, Some([23 * 60, 8 * 60]));
+    observed(&f, NOW, &[("ordinary", false, 0, 1)]);
+    let id = incident_of(&f, "ordinary");
+    assert!(take(&f.store, NOW, 23 * 60).is_none(), "an ordinary incident waits for the morning");
+    observed(&f, NOW + 10, &[]);
+    assert!(take(&f.store, NOW + 10, 23 * 60).is_none());
+    assert_eq!(queued(&f), 1, "the all-clear replaces the incident notice still waiting");
+    let morning = take(&f.store, NOW + 20, 8 * 60).unwrap();
+    assert_eq!((morning.incident, morning.kind), (id, Kind::AllClear));
+    assert!(take(&f.store, NOW + 21, 8 * 60).is_none());
+    assert!(take(&f.store, NOW + 4000, 9 * 60).is_none(), "a closed incident has no repeat");
+}
+
+#[test]
+fn ac228_a_waiting_notice_takes_quiet_hours_eligibility_from_its_own_latest_state() {
+    let f = Fixture::new("line-stale-urgent");
+    configure(&f, Some([23 * 60, 8 * 60]));
+    let night = |offset| take(&f.store, NOW + offset, 23 * 60);
+    observed(&f, NOW, &[("target", false, 0, 1)]);
+    assert!(night(0).is_none());
+    // The waiting notice turns urgent with its incident: one notice goes, with the current numbers.
+    observed(&f, NOW + 10, &[("target", true, 0, 2)]);
+    assert_eq!(queued(&f), 1, "the change merges into the waiting notice");
+    let page = night(10).unwrap();
+    assert_eq!((page.kind, page.signals), (Kind::Opened, 1));
+    assert_eq!(night(70).unwrap().kind, Kind::Repeat);
+    assert!(night(130).is_none(), "no stale update follows the page");
+
+    // An urgent notice that turns ordinary before it goes waits like any ordinary one.
+    let f = Fixture::new("line-stale-ordinary");
+    configure(&f, Some([23 * 60, 8 * 60]));
+    observed(&f, NOW, &[("target", true, 0, 1)]);
+    observed(&f, NOW + 1, &[("target", false, 0, 2)]);
+    assert!(take(&f.store, NOW + 1, 23 * 60).is_none(), "its older urgent state no longer passes quiet hours");
+    let morning = take(&f.store, NOW + 2, 8 * 60).unwrap();
+    assert_eq!((morning.kind, morning.signals), (Kind::Opened, 1));
+}
+
+#[test]
+fn ac228_a_supervisor_turned_back_on_pages_its_open_incidents_once() {
+    let f = Fixture::new("line-stale-enable");
+    configure(&f, None);
+    let set = |on, offset| super::super::runtime::set_enabled(&f.store, PROJECT, on, NOW + offset).unwrap();
+    observed(&f, NOW, &[("open", false, 0, 1), ("acknowledged", false, 0, 1), ("cleared", false, 0, 1)]);
+    let acknowledged = incident_of(&f, "acknowledged");
+    assert!(f.store.with(|tx| incidents::act(tx, acknowledged, Action::Acknowledge, NOW + 1)).unwrap());
+    assert_eq!(queued(&f), 3);
+    assert!(set(false, 2).is_some());
+    assert_eq!(queued(&f), 0, "turning the Supervisor off drops its queued notices");
+    observed(&f, NOW + 3, &[("open", false, 0, 2), ("acknowledged", false, 0, 1)]);
+    assert_eq!(queued(&f), 0, "nothing queues while it is off");
+    assert!(take(&f.store, NOW + 3, 600).is_none());
+    assert!(set(true, 4).is_some());
+    let page = take(&f.store, NOW + 4, 600).unwrap();
+    assert_eq!((page.incident, page.kind), (incident_of(&f, "open"), Kind::Opened));
+    assert!(take(&f.store, NOW + 5, 600).is_none(), "no update, all-clear or acknowledged incident follows");
+    assert_eq!(take(&f.store, NOW + 64, 600).unwrap().kind, Kind::Repeat, "the ladder starts again from the page");
+}
+
 fn command(root: &Path, name: &str, body: &str) -> String {
     let path = root.join(name);
     fs::write(&path, format!("#!/bin/sh\n{body}\n")).unwrap();

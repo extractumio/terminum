@@ -13,6 +13,7 @@ use super::{Evaluation, Evidence, Reading, Rule, SCHEMA, WEEK, Window, impact::O
 const TEST: &str = "Terminum critical line test alert.\n";
 const CHECK: &str = "Terminum critical line health check.\n";
 const CHANNEL_LIMIT: usize = 6;
+const PACE: Duration = Duration::from_secs(1);
 
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -224,7 +225,8 @@ pub(crate) async fn run(app: Shared) {
                 other => other,
             };
             match sent {
-                Ok(true) => tokio::task::yield_now().await,
+                // A backlog goes out paced, never back to back (AC-228).
+                Ok(true) => tokio::time::sleep(PACE).await,
                 Ok(false) => break,
                 Err(error) => {
                     tracing::warn!(event = "supervisor.critical_line", %error);

@@ -112,7 +112,7 @@ async fn set(State(app): State<Shared>, Path(id): Path<String>, Json(switch): Js
     }).await)
 }
 
-fn set_enabled(store: &Store, project: &str, on: bool, at: i64) -> Result<Option<i64>, String> {
+pub(super) fn set_enabled(store: &Store, project: &str, on: bool, at: i64) -> Result<Option<i64>, String> {
     store.with(|tx| {
         check_project(tx, project)?;
         let generation = if on {
@@ -127,7 +127,10 @@ fn set_enabled(store: &Store, project: &str, on: bool, at: i64) -> Result<Option
             tx.query_row("UPDATE project_supervisor SET enabled = 0, generation = generation + 1, reported_dead = 0
                 WHERE project = ?1 AND enabled = 1 RETURNING generation", [project], |r| r.get(0)).optional().map_err(sql)
         }?;
-        if generation.is_some() { super::review::sync_on_enable(tx, project, at)?; }
+        if generation.is_some() {
+            super::review::sync_on_enable(tx, project, at)?;
+            super::line_queue::restart(tx, project, on)?;
+        }
         Ok(generation)
     })
 }

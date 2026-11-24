@@ -84,33 +84,66 @@ const ALERT_MEMBERS: &str = "LEFT JOIN json_each(ready.alerts) list ON true
     LEFT JOIN supervisor_breakers b ON b.project = a.project AND b.detector = a.detector
       AND b.response = a.response AND b.closed_at IS NULL";
 
+/// The current numbers of the incidents `filter` selects, with `urgent` also counting as urgent.
+/// No configured channel, or a project whose Supervisor is off, queues nothing.
+fn snapshot(urgent: &str, filter: &str) -> String {
+    format!("SELECT i.id AS incident, coalesce(max(m.level), (
+            SELECT max(level) FROM supervisor_holds WHERE incident = i.id AND shadow = 0 AND released_at IS NULL), 0) AS level,
+            count(m.fingerprint) AS signals, ({urgent} OR coalesce(max(m.urgent), 0)) AS urgent, {ALERTS} AS alerts
+        FROM supervisor_incidents i LEFT JOIN supervisor_incident_signals m ON m.incident = i.id
+        WHERE {filter} AND i.subject_kind <> 'critical_line'
+          AND EXISTS (SELECT 1 FROM supervisor_line WHERE json_array_length(settings, '$.channels') > 0)
+          AND EXISTS (SELECT 1 FROM project_supervisor s WHERE s.project = i.project AND s.enabled)
+        GROUP BY i.id")
+}
+
 /// Snapshots numeric notice fields in the same transaction as the timeline change.
 /// The incident thread (AC-244) can enqueue an answer using only the incident ID.
+/// An incident keeps at most one waiting incident or update notice (AC-228): a change
+/// refreshes its numbers and urgency, and an all-clear replaces it, so a backlog that
+/// waited through quiet hours carries only the incident's latest state.
 pub(super) fn enqueue(tx: &Transaction, incident: i64, kind: Kind, ended_urgent: bool) -> Result<(), String> {
     debug_assert_ne!(kind, Kind::Repeat);
-    if kind == Kind::Updated {
-        tx.execute("DELETE FROM supervisor_line_pending WHERE kind = 'updated' AND id = (
-            SELECT max(id) FROM supervisor_line_pending WHERE incident = ?1)", [incident]).map_err(sql)?;
+    let fresh = snapshot("?3", "i.id = ?1");
+    match kind {
+        Kind::Opened | Kind::Updated => {
+            let merged = tx.execute(&format!("UPDATE supervisor_line_pending AS q
+                SET level = f.level, signals = f.signals, urgent = f.urgent, alerts = f.alerts
+                FROM ({fresh}) f WHERE q.incident = f.incident AND q.kind IN ('opened', 'updated')"),
+                (incident, kind.name(), ended_urgent)).map_err(sql)?;
+            if merged != 0 { return Ok(()); }
+        }
+        Kind::AllClear => {
+            tx.execute("DELETE FROM supervisor_line_pending WHERE incident = ?1 AND kind IN ('opened', 'updated')",
+                [incident]).map_err(sql)?;
+        }
+        Kind::Answer | Kind::Repeat => {}
     }
     tx.execute(&format!("INSERT INTO supervisor_line_pending (incident, kind, level, signals, urgent, alerts)
-        SELECT i.id, ?2, coalesce(max(m.level), (
-            SELECT max(level) FROM supervisor_holds WHERE incident = i.id AND shadow = 0 AND released_at IS NULL), 0),
-            count(m.fingerprint), (?3 OR coalesce(max(m.urgent), 0)), {ALERTS}
-        FROM supervisor_incidents i LEFT JOIN supervisor_incident_signals m ON m.incident = i.id
-        WHERE i.id = ?1 AND i.subject_kind <> 'critical_line'
-          AND EXISTS (SELECT 1 FROM supervisor_line WHERE json_array_length(settings, '$.channels') > 0)
-        GROUP BY i.id"), (incident, kind.name(), ended_urgent)).map(drop).map_err(sql)
+        SELECT incident, ?2, level, signals, urgent, alerts FROM ({fresh})"), (incident, kind.name(), ended_urgent))
+        .map(drop).map_err(sql)
 }
 
 /// When the first channel is saved, start with current unacknowledged incidents.
 pub(super) fn seed(tx: &Transaction) -> Result<(), String> {
+    seed_where(tx, "1", [])
+}
+
+fn seed_where(tx: &Transaction, filter: &str, params: impl rusqlite::Params) -> Result<(), String> {
+    let open = snapshot("0", &format!("{filter} AND i.closed_at IS NULL AND i.acknowledged_at IS NULL"));
     tx.execute(&format!("INSERT INTO supervisor_line_pending (incident, kind, level, signals, urgent, alerts)
-        SELECT i.id, 'opened', coalesce(max(m.level), (
-            SELECT max(level) FROM supervisor_holds WHERE incident = i.id AND shadow = 0 AND released_at IS NULL), 0),
-            count(m.fingerprint), coalesce(max(m.urgent), 0), {ALERTS}
-        FROM supervisor_incidents i LEFT JOIN supervisor_incident_signals m ON m.incident = i.id
-        WHERE i.closed_at IS NULL AND i.acknowledged_at IS NULL AND i.subject_kind <> 'critical_line'
-        GROUP BY i.id"), []).map(drop).map_err(sql)
+        SELECT incident, 'opened', level, signals, urgent, alerts FROM ({open})"), params).map(drop).map_err(sql)
+}
+
+/// A project's Supervisor turned off or on (AC-228): its queued notices and repeat steps
+/// are stale and go; turned on, its open, unacknowledged incidents reach the owner once.
+pub(super) fn restart(tx: &Transaction, project: &str, on: bool) -> Result<(), String> {
+    for table in ["supervisor_line_pending", "supervisor_line_repeats"] {
+        tx.execute(&format!("DELETE FROM {table} WHERE incident IN (
+            SELECT id FROM supervisor_incidents WHERE project = ?1)"), [project]).map_err(sql)?;
+    }
+    if on { seed_where(tx, "i.project = ?1", [project])?; }
+    Ok(())
 }
 
 pub(super) fn stop_repeats(tx: &Transaction, id: i64) -> Result<(), String> {
@@ -134,11 +167,11 @@ pub(super) fn claim(tx: &Transaction, settings: &Settings, at: i64, quiet: bool)
         FROM supervisor_line_pending q JOIN supervisor_incidents i ON i.id = q.incident
         JOIN project_supervisor s ON s.project = i.project AND s.enabled
         LEFT JOIN supervisor_line_repeats r ON r.incident = i.id
-        WHERE (NOT ?2 OR (q.kind IN ('all_clear','answer') AND q.urgent) OR EXISTS (
+        WHERE (NOT ?2 OR (q.urgent AND (q.kind IN ('all_clear','answer') OR EXISTS (
             SELECT 1 FROM supervisor_incident_signals m JOIN supervisor_signals s USING (fingerprint)
             WHERE m.incident = i.id AND m.urgent AND NOT EXISTS (SELECT 1 FROM supervisor_breakers b
               WHERE b.project = i.project AND b.detector = s.detector AND b.response = CASE m.level WHEN 3 THEN 'R5' ELSE 'R4' END
-                AND b.closed_at IS NULL)))
+                AND b.closed_at IS NULL)))))
           AND q.id = (SELECT min(id) FROM supervisor_line_pending WHERE incident = i.id)
           AND (q.kind <> 'updated' OR r.last_at IS NULL OR r.last_at + ?3 <= ?1 OR i.closed_at IS NOT NULL)
         UNION ALL

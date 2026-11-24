@@ -662,6 +662,11 @@ command falls through to the next one. Quiet hours use the server’s clock and 
 to 23:00–08:00. A charter-never breach or reversibility 3 bypasses quiet hours. An
 acknowledgment stops repeats. Snooze delays them for an hour.
 
+A waiting notice always carries its incident's latest state, so quiet hours end without a
+burst: an incident that opened and cleared overnight sends only its all-clear. Turning a
+project's Supervisor off drops its waiting notices; turning it back on sends each open,
+unacknowledged incident once. The line sends at most one message a second.
+
 Use **Send a test alert** to run a saved channel and check that the message arrives.
 The command receives the fixed message on standard input. For the weekly health check,
 it receives a fixed health-check message and the argument `--check`. In that mode the
