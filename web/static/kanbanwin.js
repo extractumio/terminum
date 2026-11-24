@@ -14,6 +14,7 @@ import { family } from "./kanbansubs.js";
 import { expandable } from "./expand.js";
 import { waitWords } from "./cardstate.js";
 import { detailsPane } from "./taskattrs.js";
+import { openReport } from "./reportlink.js";
 
 // a text or a comment being edited; one saved or cancelled is off (refresh) and holds nothing
 const EDITS = ".tasktext textarea:not(:disabled), .markdown textarea:not(:disabled)";
@@ -360,17 +361,13 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
     if (stopWaiting) stopWaiting.title = `${waitWords(t)}: call it off, ${t.waits_for ? "Dispatcher will not go on with it" : "nothing starts"}`;
     // a task nobody needs leaves the board by this (AC-118); it stands where it stood when it comes back
     const shelve = button(null, t.archived_at ? "Bring back" : "Archive", () => api(`/api/tasks/${t.id}/archive`, { method: "POST", body: { on: !t.archived_at } }).then(() => refresh(), (e) => say(e.message)));
-    // a report waiting for its human: read, it is DONE (terminum-dispatcher.md AC-264)
-    const read = t.report ? button("primary", "Done", () => api(`/api/tasks/${t.id}/read`, { method: "POST" }).then(() => refresh(), (e) => say(e.message))) : null;
-    if (read) read.title = "I read the report: move it to DONE";
-    run.classList.toggle("primary", !busy && !read);
+    run.classList.toggle("primary", !busy);
     // its keys at the window's foot, in sight while the task scrolls above them
     const acts = $("taskacts"), paint = () => {
       for (const key of [...acts.children]) if (key !== save && key !== run) key.remove();
       if (save.parentNode !== acts) acts.append(save);
       save.before(...[t.run_holds ? null : shelve, stopWaiting, giveUp].filter(Boolean));
       if (save.nextElementSibling !== run) save.after(run);
-      if (read) run.after(read);
     };
     // A pressed footer key keeps its place until the click or cancellation.
     pendingKeys = keyHeld() ? () => { if (save.isConnected && box.open) paint(); } : null;
@@ -391,8 +388,11 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
     // made by a schedule: its name, a press opening its window (terminum-schedules.md AC-163)
     const from = t.schedule ? el("p", "taskfrom") : null;
     if (from) from.append("From schedule ", button("linklike", `${t.schedule.key}: ${t.schedule.title}`, () => openSchedule(t.schedule.key)));
+    // its reports, each opening in the Inbox's pane (terminum-reports.md AC-273)
+    const reports = t.reports?.length ? el("p", "taskfrom") : null;
+    reports?.append("Reports: ", ...t.reports.flatMap((id, i) => [i ? ", " : "", button("linklike", id, () => { $("taskbox").close(); openReport(id); })]));
     const when = el("div", "taskwhen");
-    when.append(...[stamps, from].filter(Boolean));
+    when.append(...[stamps, from, reports].filter(Boolean));
     const details = detailsPane({ v: { ...t, ...t.lists }, self: t.id, project: () => t.project, open: attrsOpen, onToggle: (o) => { attrsOpen = o; }, openTask,
       set: (field, value) => patch(t.id, { [field]: value }),
       link: (list, task, reason) => patch(t.id, { link: { list, task, reason } }),
@@ -416,7 +416,7 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
     });
     const { lead, rest } = activity(t, { refresh, confirmed, pickChoice, leads });
     leads = Boolean(lead);
-    n.area.placeholder = `${lead && t.status === "WAIT FOR HUMAN" && !t.report ? "Your answer" : "Comment"}, Markdown. Drop or paste files here.`;
+    n.area.placeholder = `${lead && t.status === "WAIT FOR HUMAN" ? "Your answer" : "Comment"}, Markdown. Drop or paste files here.`;
     // the comment being written stays where it is, never taken out: its focus, cursor and files on their way stay too
     if (n.wrap.parentNode !== body) body.replaceChildren(n.wrap);
     for (const c of [...body.children]) if (c !== n.wrap) c.remove();

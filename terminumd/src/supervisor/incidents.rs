@@ -66,7 +66,12 @@ pub(super) fn observe(tx: &Transaction, seen: Observation<'_>) -> Result<(), Str
         Some(m) if level < 3 || same_evidence => (m.incident, false),
         _ => find_or_open(tx, project, (finding.subject_kind, &finding.subject_id), at)?,
     };
-    if opened { super::thread::ensure(tx, project, incident, at)?; }
+    if opened {
+        super::thread::ensure(tx, project, incident, at)?;
+        // its critical report in the Inbox, alerting through the incident alone (terminum-reports.md AC-271, AC-272)
+        let why = format!("{} on {}: {} against a threshold of {}", rule.id(), finding.metric, value, threshold);
+        crate::reports::sources::incident(tx, project, incident, &format!("{} {}", finding.subject_kind, finding.subject_id), &why, at)?;
+    }
     let kind = if level < 3 || same_evidence { "updated" } else { "signal" };
     record_signal(tx, project, fingerprint, (rule.id(), finding.metric, kind),
         Member { incident, level, value, threshold, urgent, evidence_hash: evidence_hash.to_vec() }, at)?;

@@ -100,7 +100,7 @@ export async function webLook(browser, name) {
     check("look: a link the theme made too dark for a dark background is lightened to read (4.5:1)", themed.link[1] >= 4.5, themed.link.join(" "));
     check("look: a primary key's words read on its fill on a light theme with a white cursor (4.5:1)", themed.create[2] >= 4.5, themed.create.join(" "));
     // one type in every dialog: its text, fields and buttons in the terminal's font at its size (a field of 16 px stood out)
-    const type = await f.page.evaluate(() => [...document.querySelectorAll("dialog:not(#rowmenu)")].map((d) => {
+    const type = await f.page.evaluate(() => [...document.querySelectorAll("dialog:not(#rowmenu, #reportmenu)")].map((d) => {
       d.showModal();
       const cs = (e) => `${getComputedStyle(e).fontSize} ${getComputedStyle(e).fontFamily.split(",")[0]}`;
       const want = cs(d), odd = [...d.querySelectorAll("input:not([type=checkbox]), textarea, .actions button")].map((e) => [e.id || e.textContent.trim(), cs(e)]).filter(([, c]) => c !== want);

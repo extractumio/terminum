@@ -410,7 +410,7 @@ pub fn pause(tx: &Transaction, id: &str, why: &str, now: i64) -> Result<(), Stri
 /// What the board shows of each schedule (AC-163): its next runs, its cadence in words, its last task, why that
 /// one did not start, and the firings skipped since it.
 pub fn listed(tx: &Transaction, now: i64) -> Result<Vec<Value>, String> {
-    let mut out = Vec::new();
+    let (mut out, reports) = (Vec::new(), crate::reports::inbox::by_schedule(tx)?);
     for s in all(tx)? {
         let next = match (s.when(), s.paused) {
             (Ok(when), false) => when.upcoming(now, 3),
@@ -425,6 +425,10 @@ pub fn listed(tx: &Transaction, now: i64) -> Result<Vec<Value>, String> {
         v["next"] = json!(next);
         v["last"] = json!(last.map(|t| json!({"task": t.id, "status": t.status})));
         v["skipped"] = json!(skipped);
+        // its last report and how many of its reports are unread, in place of a waiting report (terminum-reports.md AC-272)
+        let report = reports.get(&s.id);
+        v["report"] = json!(report.map(|(id, at, _)| json!({"id": id, "at": at})));
+        v["unread"] = json!(report.map_or(0, |r| r.2));
         v["failed_why"] = json!(never_started(tx, &s)?.map(|(_, why)| why));
         out.push(v);
     }

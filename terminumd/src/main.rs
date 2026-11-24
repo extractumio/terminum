@@ -52,6 +52,7 @@ mod plans;
 mod process;
 mod raw_body;
 mod remote;
+mod reports;
 mod lastlines;
 mod links;
 mod restore;
@@ -289,6 +290,7 @@ async fn serve() {
     webaccess::apply(&app);
     tokio::spawn(manager::run(app.clone()));
     tokio::spawn(dispatcher::walking(app.clone()));
+    tokio::spawn(reports::sweeping(app.clone()));
     tokio::spawn(dispatcher::supervisor_rounds::watch(app.clone()));
     tokio::spawn(supervisor::runtime::collect(app.clone()));
     tokio::spawn(supervisor::runtime::watch(app.clone()));

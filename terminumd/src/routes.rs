@@ -76,6 +76,7 @@ pub fn pages(app: Shared) -> Router {
         .route("/fb/{*path}", get(panel_asset))
         .nest("/fb", files_api(&app))
         .merge(crate::tasks::api::routes())
+        .merge(crate::reports::api::routes())
         .merge(crate::messages::api::routes())
         .merge(crate::dashboard::routes())
         .merge(crate::interact::routes())

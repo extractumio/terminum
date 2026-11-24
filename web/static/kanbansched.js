@@ -7,7 +7,8 @@ import { askConfirm } from "./dialogs.js";
 import { el, iconButton } from "./listparts.js";
 import { rail } from "./kanbanrail.js";
 import { scheduleWindow } from "./kanbanschedwin.js";
-import { $, agentColor, api, say, statusBox } from "./kanbanutil.js";
+import { $, agentColor, api, button, say, statusBox } from "./kanbanutil.js";
+import { age, openReport } from "./reportlink.js";
 
 /** `getMeta()`: projects and agents; `chosen()`: the projects shown, none for all; `openTask(id)`. */
 export function scheduledSection({ getMeta, chosen, openTask }) {
@@ -37,8 +38,15 @@ export function scheduledSection({ getMeta, chosen, openTask }) {
     const last = el("div", "schedlast");
     if (s.last) {
       last.append(statusBox({ id: s.last.task, status: s.last.status }, openTask));
-      if (s.last.status === "WAIT FOR HUMAN") last.append(el("span", "schedwaits", "waits for you"));
+      if (s.last.status === "WAIT FOR HUMAN") last.append(el("span", "schedwaits", "waits for you"));   // a question (AC-157)
     }
+    // its last report and how many of its reports are unread (terminum-reports.md AC-272)
+    if (s.report) {
+      // the card's own press opens its window: this one opens the report
+      const go = button("linklike", s.report.id, (e) => { e.stopPropagation(); openReport(s.report.id); });
+      last.append(go, el("span", "schedage", age(s.report.at)));
+    }
+    if (s.unread) last.append(el("span", "schedunread", `${s.unread} unread`));
     if (s.skipped) last.append(el("span", "schedskips", `skipped ${s.skipped}`));
     if (s.failed_why) last.append(el("span", "schedfailed", s.failed_why));   // its last run did not start: the next firing tries again
     c.append(...[top, el("div", "ctitle", s.title), foot, last.children.length ? last : null].filter(Boolean));

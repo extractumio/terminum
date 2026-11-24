@@ -115,7 +115,8 @@ fn a_line_too_long_is_dropped_to_its_newline() {
 /// terminum-dispatcher.md AC-137: the pool is not an agent's to read or change.
 #[test]
 fn ac137_no_tool_reaches_a_projects_agents() {
-    assert_eq!(tool_names(), ["update_session_plan", "get_session_plan", "list_tasks", "get_task", "create_task", "update_task", "link_task", "take_task", "move_task", "ask_human", "wait_for_task", "add_comment", "attach_file", "get_file", "finish_task", "integrate", "withdraw_integration", "integration_status", "integration_return", "integration_recheck", "integration_add_fix", "dispatch_task", "request_design_review", "record_design_review"],
+    assert_eq!(tool_names(), ["update_session_plan", "get_session_plan", "list_tasks", "get_task", "create_task", "update_task", "link_task", "take_task", "move_task", "ask_human", "wait_for_task", "add_comment", "attach_file", "get_file", "finish_task", "integrate", "withdraw_integration", "integration_status", "integration_return", "integration_recheck", "integration_add_fix", "dispatch_task", "request_design_review", "record_design_review",
+                             "create_report", "append_to_report", "attach_report_file", "get_report", "list_reports", "update_report", "delete_report"],
                "dispatch_task starts a task on a pool agent (AC-170). The catalog provides no tool that changes the pool");
 }
 
@@ -183,7 +184,11 @@ fn outside_a_pane_each_tool_says_so_and_nothing_is_sent() {
                 "get_tool_info" => json!({"names": ["get_task"]}),
                 "execute_tool" => json!({"name": "get_task", "arguments": {"id": "T-1"}}),
                 "update_session_plan" => json!({"items": [{"text": "a", "status": "pending"}]}),
-                "list_tasks" | "get_session_plan" => json!({}),
+                "list_tasks" | "get_session_plan" | "list_reports" => json!({}),
+                "create_report" => json!({"title": "t", "summary": "s", "body": "b"}),
+                "append_to_report" => json!({"id": "R_T-1", "text": "a"}),
+                "attach_report_file" => json!({"id": "R_T-1", "name": "a", "text": "b"}),
+                "update_report" => json!({"id": "R_T-1", "title": "a"}),
                 "create_task" => json!({"title": "Bug: t", "text": "x", "severity": "P2"}),
                 "move_task" => json!({"id": "T-1", "to": "DONE"}),
                 "add_comment" => json!({"id": "T-1", "text": "a"}),

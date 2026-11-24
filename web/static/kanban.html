@@ -19,6 +19,7 @@
 <link rel="stylesheet" href="tmux.css">
 <link rel="stylesheet" href="projects.css">
 <link rel="stylesheet" href="listdrag.css">
+<link rel="stylesheet" href="inbox.css">
 <link rel="stylesheet" href="kanban.css">
 <link rel="stylesheet" href="supervisor.css">
 <link rel="stylesheet" href="controls.css">
@@ -53,6 +54,7 @@
       <button id="navnew" class="textkey wide-only" type="button" aria-haspopup="menu" aria-expanded="false" title="A session of an agent in a project, no task" aria-label="New agent session"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:14px"><path d="M5 12h14"/><path d="M12 5v14"/></svg><span class="word">Session</span></button>
       <button id="navclose" class="icon wide-only" type="button" aria-label="Hide the session list"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:17px"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/><path d="m16 15-3-3 3-3"/></svg></button>
     </div>
+    <section id="inbox"></section>
     <div id="sessions"></div>
     <div id="hostmenu" class="box" role="menu" hidden></div>
     <form id="newsess" class="footform box" aria-labelledby="newsesstitle" hidden>
@@ -116,6 +118,7 @@
   </aside>
   <div id="scrim"></div>
   <dialog id="rowmenu" class="box" role="menu" aria-label="Session"></dialog>
+  <dialog id="reportmenu" class="box" role="menu" aria-label="Report"></dialog>
   <dialog id="cardmenu" class="box" role="menu" aria-label="Task"></dialog>
   <section id="main">
 <header id="bar" class="wavebar">

@@ -23,6 +23,8 @@ struct Held {
     attention: Vec<Asks>,
     /// the Kanban key's counts, as the board's cards: (waiting for a human, failed) (AC-117)
     cards: (i64, i64),
+    /// the Inbox's unread counts and its revision: a page reads its list again when it moves (terminum-reports.md AC-267)
+    reports: serde_json::Value,
 }
 
 /// A task that stands on its session's row: not archived, not done (AC-113).
@@ -46,6 +48,8 @@ struct Asks {
     key: String,
     /// an agent or Dispatcher made the move and no human closed or saw its line
     due: bool,
+    /// a critical report's line, not a task's (terminum-reports.md AC-271)
+    report: bool,
 }
 
 /// WAIT FOR HUMAN and FAILED, or only task `one` (its store key) of them; the reason is the one its mover gave with
@@ -67,8 +71,14 @@ fn asks(tx: &Transaction, one: Option<&str>) -> Result<Vec<Asks>, String> {
         };
         let key = format!("{}|{words}", r.get::<_, i64>(4)?);
         let due = r.get::<_, bool>(2)? && r.get::<_, Option<String>>(5)?.as_deref() != Some(key.as_str());
-        Ok(Asks { id, project: r.get(6)?, failed, words, key, due })
+        Ok(Asks { id, project: r.get(6)?, failed, words, key, due, report: false })
     })
+}
+
+/// Critical reports' lines, in FAILED's red until read or closed (terminum-reports.md AC-271).
+fn critical_reports(tx: &Transaction) -> Result<Vec<Asks>, String> {
+    Ok(crate::reports::record::lines(tx)?.into_iter().map(|(id, project, words)|
+        Asks { key: format!("report|{id}"), id, project, words, failed: true, due: true, report: true }).collect())
 }
 
 /// A reason's first line that says something: blank and invisible characters round it dropped, a blank line
@@ -154,7 +164,9 @@ impl Marks {
                     AND (t.status = 'FAILED' OR NOT {queued})
                     AND NOT EXISTS (SELECT 1 FROM tasks p WHERE p.id = t.parent AND p.status = t.status AND p.archived_at IS NULL
                         AND (p.status = 'FAILED' OR NOT {parent_queued}))"), [], |r| Ok((r.get(0)?, r.get(1)?))).map_err(ops::sql)?;
-            Ok(Held { counts, sessions, attention: asks(tx, None)?, cards })
+            let mut attention = critical_reports(tx)?;
+            attention.extend(asks(tx, None)?);
+            Ok(Held { counts, sessions, attention, cards, reports: crate::reports::inbox::marks(tx)? })
         });
         // a passing failure says nothing about the tasks: the last numbers stand
         let read = read?;
@@ -171,9 +183,13 @@ impl Marks {
 
     fn message(&self) -> String {
         let held = self.held.lock();
-        let lines: Vec<_> = held.attention.iter().filter(|a| a.due).map(|a| json!({"id": a.id, "project": a.project, "failed": a.failed, "words": a.words, "key": a.key})).collect();
+        let lines: Vec<_> = held.attention.iter().filter(|a| a.due).map(|a| json!({"id": a.id, "project": a.project, "failed": a.failed, "words": a.words, "key": a.key, "report": a.report})).collect();
         let (waiting, failed) = held.cards;
-        json!({"t": "taskmarks", "marks": held.sessions, "counts": held.counts, "waiting": waiting, "failed": failed, "lines": lines}).to_string()
+        let mut told = json!({"t": "taskmarks", "marks": held.sessions, "counts": held.counts, "waiting": waiting, "failed": failed, "lines": lines});
+        if !held.reports.is_null() {
+            told["reports"] = held.reports.clone();      // the Inbox's, once a report was written (terminum-reports.md AC-267)
+        }
+        told.to_string()
     }
 }
 

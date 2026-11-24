@@ -5,6 +5,7 @@
 // strip when it has bookmarks (AC-57), the window
 // number and title, then host · program · folder · titles, and a coding agent's state in a
 // column of its own.
+import { openReport } from "./reportlink.js";
 import { folderHues, folderKey } from "./dircolors.js";
 import { subOf } from "./follow.js";
 import { icon } from "./icons.js";
@@ -142,7 +143,14 @@ const sessionCount = (n) => el("span", "count", n ? plural(n, "session") : ""); 
 /** Open tasks by session (terminumd's): a row shows them, each opening its window on the board (AC-113). */
 let taskMarks = {}, projectTasks = {};
 /** terminumd's `taskmarks`: open tasks by session, tasks by project. */
-export function setTaskMarks(m) { taskMarks = m.marks ?? {}; projectTasks = m.counts ?? {}; }
+export function setTaskMarks(m) {
+  taskMarks = m.marks ?? {}; projectTasks = m.counts ?? {}; reportMarks = m.reports?.sessions ?? {};
+  for (const heard of marksHeard) heard(m);
+}
+/** Each session's unread reports, newest first (terminum-reports.md AC-273); what else hears the marks (the Inbox). */
+let reportMarks = {};
+const marksHeard = [];
+export const onTaskMarks = (fn) => marksHeard.push(fn);
 export const taskMarksOf = (id) => taskMarks[id] ?? [];
 export const tasksOfProject = (id) => projectTasks[id] ?? 0;
 
@@ -159,6 +167,14 @@ export function row(item, current, onPick, movable, child = false, marked = new 
   const idx = el("span", "idx", child ? "" : item.index || "");
   if (item.index && !child) idx.title = item.host ?? "This machine";     // where the window runs
   head.append(idx, agentMark(item), el("span", "t", item.title));
+  const reports = reportMarks[item.id] ?? [];          // the unread reports it made (terminum-reports.md AC-273)
+  if (reports.length) {
+    const m = el("span", "taskmark reportmark");
+    m.append(icon("mail", 12), String(reports.length));
+    m.title = `${reports.length === 1 ? "An unread report" : `${reports.length} unread reports`}: open ${reports[0]}`;
+    m.addEventListener("click", (e) => { e.stopPropagation(); openReport(reports[0]); });
+    head.append(m);
+  }
   for (const task of taskMarksOf(item.id)) {
     const t = el("span", "taskmark", task);
     t.title = `Open ${task} on the board`;

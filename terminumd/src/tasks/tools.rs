@@ -16,7 +16,7 @@ use super::query::{self, Query};
 use super::store::{Store, DEFAULT_PROJECT};
 use crate::plans::rules;
 
-pub const NAMES: [&str; 22] = ["list_tasks", "get_task", "create_task", "update_task", "link_task", "take_task", "move_task", "ask_human", "wait_for_task", "add_comment", "attach_file", "get_file", "finish_task", "integrate", "withdraw_integration", "integration_status", "integration_return", "integration_recheck", "integration_add_fix", "dispatch_task", crate::supervisor::design_gates::BRIEF, crate::supervisor::design_gates::RECORD];
+pub const NAMES: [&str; 29] = ["list_tasks", "get_task", "create_task", "update_task", "link_task", "take_task", "move_task", "ask_human", "wait_for_task", "add_comment", "attach_file", "get_file", "finish_task", "integrate", "withdraw_integration", "integration_status", "integration_return", "integration_recheck", "integration_add_fix", "dispatch_task", crate::supervisor::design_gates::BRIEF, crate::supervisor::design_gates::RECORD, "create_report", "append_to_report", "attach_report_file", "get_report", "list_reports", "update_report", "delete_report"];
 /// All Auto-Dispatcher's round may call (terminum-dispatcher.md AC-170): it reads, starts by dispatch_task and finishes
 /// its own; a tool added later is not its until named here.
 const A_ROUNDS: [&str; 4] = ["list_tasks", "get_task", "get_file", "finish_task"];
@@ -62,7 +62,7 @@ pub(crate) fn arg<'a>(args: &'a Value, key: &str) -> Result<&'a str, String> {
     args[key].as_str().filter(|s| !s.is_empty()).ok_or_else(|| format!("{key} is required"))
 }
 
-pub(super) fn visible(tx: &Transaction, who: &Who, id: &str) -> Result<Task, String> {
+pub(crate) fn visible(tx: &Transaction, who: &Who, id: &str) -> Result<Task, String> {
     let t = ops::get(tx, id)?;
     let allowed = if who.supervisor {
         who.project.as_deref() == Some(&t.project)
@@ -76,8 +76,7 @@ pub(super) fn visible(tx: &Transaction, who: &Who, id: &str) -> Result<Task, Str
 pub(super) fn own(tx: &Transaction, who: &Who, id: &str) -> Result<Task, String> {
     let t = if who.supervisor { visible(tx, who, id)? } else { ops::get(tx, id)? };
     match &t.session {
-        // a report waits for its human's Done or RUN alone (terminum-dispatcher.md AC-264)
-        Some(s) if s == &who.key => super::report::untouched(tx, &t).map(|()| t),
+        Some(s) if s == &who.key => Ok(t),
         Some(s) => Err(format!("{id} belongs to session {}: only its agent asks on it. You can comment.", ops::pane_of(s))),
         None => Err(format!("{id} has no session: take_task first, or comment.")),
     }
@@ -91,7 +90,6 @@ pub(super) fn movable(tx: &Transaction, who: &Who, id: &str) -> Result<Task, Str
         return Err(format!("{} is archived: a human brings it back from the Archived list.", t.id));
     }
     not_run_elsewhere(tx, who, &t)?;
-    super::report::untouched(tx, &t)?;
     not_queued(tx, &t).map(|()| t)
 }
 
@@ -220,6 +218,10 @@ fn run_in(store: &Store, state_dir: &Path, who: &Who, tool: &str, args: &Value, 
     })?;
     if let Some((_, own)) = auto_round && (!A_ROUNDS.contains(&tool) || (tool == "finish_task" && args["id"].as_str() != Some(&own.id))) {
         return Err(format!("Auto-Dispatcher's round reads tasks, starts them with dispatch_task and finishes its own, {}: {tool} is not its.", own.id));
+    }
+    if crate::reports::tools::NAMES.contains(&tool) {
+        store.with(|tx| check_supervisor(tx, who, tool))?;
+        return crate::reports::tools::run(store, state_dir, who, tool, args);
     }
     match tool {
         "attach_file" => return attach_file(store, state_dir, who, args),
@@ -456,7 +458,7 @@ fn get_task(store: &Store, who: &Who, args: &Value) -> Result<String, String> {
 fn attach_file(store: &Store, state_dir: &Path, who: &Who, args: &Value) -> Result<(String, Vec<String>), String> {
     let id = arg(args, "task")?;
     store.with(|tx| visible(tx, who, id).map(|_| ()))?;
-    let (name, data) = file_of(who, args)?;
+    let (name, data) = files::handed_in(who, args)?;
     let at = ops::now();
     let file = files::keep_from(store, state_dir, &name, data, at)?;
     store.with(|tx| {
@@ -469,31 +471,6 @@ fn attach_file(store: &Store, state_dir: &Path, who: &Who, args: &Value) -> Resu
     Ok((format!("{} is on {id}.", file.name), vec![id.to_string()]))
 }
 
-/// A file an agent hands in: on this Mac a path inside its session's folder, judged on resolved
-/// paths; from a host its text alone.
-fn file_of(who: &Who, args: &Value) -> Result<(String, Box<dyn std::io::Read>), String> {
-    if let (Some(name), Some(text)) = (args["name"].as_str(), args["text"].as_str()) {
-        if text.len() > TEXT_FILE_MOST {
-            return Err(format!("A file given as text holds at most {TEXT_FILE_MOST} bytes."));
-        }
-        return Ok((rules::clean(name), Box::new(std::io::Cursor::new(rules::clean(text).into_bytes()))));
-    }
-    let Some(dir) = &who.dir else {
-        return Err("From a host give {task, name, text}.".into());
-    };
-    let path = arg(args, "path")?;
-    // a relative path is the session's, never terminumd's own folder
-    let (resolved, folder) = (std::fs::canonicalize(Path::new(dir).join(path)).map_err(|e| format!("{path}: {e}"))?, std::fs::canonicalize(dir).map_err(|e| format!("{dir}: {e}"))?);
-    if !resolved.starts_with(&folder) {
-        return Err(format!("{path} is outside this session's folder."));
-    }
-    let (opened, meta) = crate::files::open_regular(&resolved).map_err(|e| format!("{path}: {}", e.message()))?;
-    let name = resolved.file_name().and_then(|n| n.to_str()).unwrap_or("file").to_string();
-    if meta.len() as usize > files::MOST_BYTES {
-        return Err(format!("{name} is over 100 MB"));
-    }
-    Ok((name, Box::new(opened)))
-}
 
 #[cfg(test)]
 #[path = "tools_tests.rs"]

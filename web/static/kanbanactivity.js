@@ -20,15 +20,14 @@ export function editor(text, label) {
   return area;
 }
 
-/** What `t` waits for its human to react to, with its heading: the questions it waits with, or the report it waits
- *  with (terminumd's `report`: its agent's last comment, terminum-dispatcher.md AC-264), a finished task's result
+/** What `t` waits for its human to react to, with its heading: the questions it waits with, a finished task's result
  *  (its agent's last comment), a failed one's last word from its agent or Dispatcher; none: null. */
 function reactsTo(t) {
   const last = (heading, fits) => {
     const e = t.history.findLast((h) => h.kind === "comment" && fits(h));
     return e ? { e, heading } : null;
   };
-  if (t.status === "WAIT FOR HUMAN") return t.report ? last("Report", (e) => e.author_kind === "agent") : last("Asks you", (e) => t.active_question ? e.id === t.active_question : e.questions);
+  if (t.status === "WAIT FOR HUMAN") return last("Asks you", (e) => t.active_question ? e.id === t.active_question : e.questions);
   if (t.status === "DONE") return last("Result", (e) => e.author_kind === "agent");
   if (t.status === "FAILED") return last("Why it failed", (e) => e.author_kind !== "human");
   return null;
