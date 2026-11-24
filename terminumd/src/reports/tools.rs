@@ -16,7 +16,7 @@ use crate::tasks::tools::{arg, author, visible, Who};
 
 /// What RUN's prompt, the MCP server's instructions and create_report's description say of a report (AC-266).
 macro_rules! words {
-    () => { "When the deliverable is a report for a person to read (a review, an audit, an answer to a question), give it by execute_tool(\"create_report\", {task, title, summary, body}) before finish_task: it goes to the human's Inbox, and the task is DONE as any." };
+    () => { concat!("When the deliverable is a report for a person to read (a review, an audit, an answer to a question), give it by execute_tool(\"create_report\", {task, title, summary, body}), its body ", crate::tasks::closeout::markdown_shape!(), ", before finish_task: it goes to the human's Inbox, and the task is DONE as any.") };
 }
 pub(crate) use words;
 

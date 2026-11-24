@@ -34,7 +34,7 @@ const ONLY_ROUND: &str = "Only Auto-Dispatcher's round starts tasks: this sessio
 
 /// What the picking agent is told (AC-170): terminum's own words, the number of free slots and the candidates' IDs.
 pub(super) fn round_prompt(id: &str, r: &Round) -> String {
-    let form = closeout::short_form();
+    let form = closeout::in_form(&closeout::SCHEDULED);
     format!("[terminum Auto-Dispatcher] Task {id}: a round of Auto-Dispatcher, which a human turned on for this project; no human started this run or watches it now.
 
 Free agent slots: {slots}. Candidates, this project's TODO tasks: {ids}.
@@ -47,7 +47,7 @@ Do none of the tasks yourself, change no file and no other task.
 
 {budget}
 
-When you are done, call {FINISH} for {id} with the result in this form, each on its own line:{form}
+When you are done, call {FINISH} for {id} with the result {form}
 Summary names what you started; Details each candidate's score and why it was started or left.",
             slots = r.slots, ids = r.candidates.join(", "), budget = budget_words(ROUND_MINUTES * 60))
 }
