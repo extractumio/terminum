@@ -230,6 +230,12 @@ mod tests {
     }
 
     #[test]
+    fn ac266_create_report_asks_for_a_body_with_headings() {
+        let d = TOOLS.iter().find(|t| t.name == "create_report").unwrap().description;
+        assert!(d.contains(concat!("its body ", crate::tasks::closeout::markdown_shape!())), "{d}");
+    }
+
+    #[test]
     fn ac230_ask_human_schema_and_call_keep_the_choice_fields() {
         let schema = &tools().into_iter().find(|d| d["name"] == "ask_human").unwrap()["inputSchema"];
         assert_eq!(schema["properties"]["options"]["items"]["required"], json!(["id", "label"]));

@@ -7,7 +7,7 @@ use crate::tasks::{auto, ops::{self, NewTask, rows, sql}, store::HUMAN};
 
 use super::{DAY, WEEK, engine_tests::{Fixture, NOW, OTHER, PROJECT}, fix_tasks, governor, register, settings, task_policy};
 
-fn enabled(f: &Fixture, budgets: serde_json::Value) {
+pub(super) fn enabled(f: &Fixture, budgets: serde_json::Value) {
     f.write("INSERT INTO project_supervisor (project, enabled, generation, enabled_at) VALUES (?1, 1, 1, ?2)", (PROJECT, NOW));
     f.store.with(|tx| {
         let settings = serde_json::from_value(json!({"budgets":budgets})).unwrap();
@@ -57,11 +57,17 @@ fn ac236_register_rank_ruling_and_recurrence() {
 
         assert!(serde_json::from_value::<register::Update>(json!({"id":high, "observation_weeks":5})).is_err());
         register::rule(tx, PROJECT, high, "Accept only the evidence already seen.", NOW)?;
+        // A return after resolving with the evidence the ruling saw is a repeat that stays closed.
         tx.execute("UPDATE supervisor_signals SET count = count + 1 WHERE fingerprint = 'high'", []).map_err(sql)?;
         register::advance(tx, PROJECT, NOW + 1)?;
         assert_eq!(register::get(tx, PROJECT, high, NOW + 1)?.state, "accepted");
-        tx.execute("UPDATE supervisor_signals SET evidence = ?1 WHERE fingerprint = 'high'",
-            [r#"[{"table":"events","id":"new-event"},{"table":"events","id":"event-a"}]"#]).map_err(sql)?;
+        // A new row with no repeat counted is a retaken input, never new evidence (AC-211).
+        let set_evidence = |rows: &str| tx.execute("UPDATE supervisor_signals SET evidence = ?1 WHERE fingerprint = 'high'", [rows]).map_err(sql);
+        set_evidence(r#"[{"table":"events","id":"retaken"},{"table":"events","id":"event-a"}]"#)?;
+        register::advance(tx, PROJECT, NOW + 1)?;
+        assert_eq!(register::get(tx, PROJECT, high, NOW + 1)?.state, "accepted");
+        set_evidence(r#"[{"table":"events","id":"new-event"},{"table":"events","id":"event-a"}]"#)?;
+        tx.execute("UPDATE supervisor_signals SET count = count + 1 WHERE fingerprint = 'high'", []).map_err(sql)?;
         register::advance(tx, PROJECT, NOW + 2)?;
         assert_eq!(register::get(tx, PROJECT, high, NOW + 2)?.state, "recurred");
         let set_clear = |at| tx.execute("UPDATE supervisor_problem_signals SET clear_at = ?2, clear_seen = ?3 WHERE problem = ?1",
@@ -225,7 +231,7 @@ fn ac236_ac238_a_round_proposal_needs_a_checked_finding() {
     }).unwrap();
 }
 
-fn seeded(f: &Fixture, key: &str, (detector, kind, subject, metric): (&str, &str, &str, &str), measure: serde_json::Value, evidence: serde_json::Value) {
+pub(super) fn seeded(f: &Fixture, key: &str, (detector, kind, subject, metric): (&str, &str, &str, &str), measure: serde_json::Value, evidence: serde_json::Value) {
     let scores = json!({"impact":2,"blast":0,"reversibility":0,"confidence":1.0,"charter_breach":false,
         "impact_basis":{"ranked":true,"shares":[{"week":1,"complete":true,"unit":"tasks","amount":30.0,"total":100.0,"noise":0.0}]}});
     f.write("INSERT INTO supervisor_signals (fingerprint, project, detector, subject_kind, subject_id, metric,

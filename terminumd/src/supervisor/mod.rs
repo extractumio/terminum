@@ -122,6 +122,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::tasks::store::Store;
 #[cfg(test)]
 mod register_tests;
+#[cfg(test)]
+mod register_recurrence_tests;
+#[cfg(test)]
+mod register_archive_tests;
 
 pub(crate) use catalog::Rule;
 pub(crate) use signals::Signal;
