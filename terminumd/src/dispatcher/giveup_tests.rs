@@ -176,16 +176,19 @@ impl Drop for Stage {
         if self.real {
             // Test teardown follows the keep-open assertions. Let the real CLI clean up its
             // sleep inhibitor too, including after an assertion panics, before tmux ends.
-            self.tm.tmux(&["send-keys", "-t", &self.pane, "C-c"]);
-            std::thread::sleep(Duration::from_millis(200));
-            self.tm.tmux(&["send-keys", "-t", &self.pane, "C-c"]);
-            let until = std::time::Instant::now() + Duration::from_secs(5);
-            while std::time::Instant::now() < until {
-                if self.tm.tmux(&["show-option", "-p", "-v", "-t", &self.pane, "@terminum-exit"]).status.success() {
-                    ended = true;
-                    break;
+            for _ in 0..4 { // As web/test/e2e_liveprogs.mjs: a busy turn may take the first pair.
+                self.tm.tmux(&["send-keys", "-t", &self.pane, "C-c"]);
+                std::thread::sleep(Duration::from_millis(400));
+                self.tm.tmux(&["send-keys", "-t", &self.pane, "C-c"]);
+                let until = std::time::Instant::now() + Duration::from_secs(3);
+                while std::time::Instant::now() < until {
+                    if self.tm.tmux(&["show-option", "-p", "-v", "-t", &self.pane, "@terminum-exit"]).status.success() {
+                        ended = true;
+                        break;
+                    }
+                    std::thread::sleep(Duration::from_millis(100));
                 }
-                std::thread::sleep(Duration::from_millis(100));
+                if ended { break; }
             }
         }
         self.app.tmux.local.disconnect();
