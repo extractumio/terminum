@@ -212,10 +212,19 @@ impl Prepared<'_> {
             }
             let mut ruling = tx.prepare_cached("SELECT EXISTS (SELECT 1 FROM supervisor_incident_rulings
                 WHERE fingerprint = ?1 AND evidence = ?2)").map_err(sql)?;
+            // AC-236: a level reading's rows are its latest sample, never new evidence, so an owner's Accept takes them
+            // as they come, until `register::advance` lets its window's clear stretch expire the ruling's rows.
+            let mut follow = tx.prepare_cached("UPDATE supervisor_problem_signals AS y SET ruling_evidence = ?2
+                WHERE fingerprint = ?1 AND ruling_evidence IS NOT NULL AND ruling_evidence IS NOT ?2
+                  AND EXISTS (SELECT 1 FROM supervisor_problems p WHERE p.id = y.problem AND p.state = 'accepted')").map_err(sql)?;
             for row in findings {
                 let ruled: bool = ruling.query_row((&row.key, &row.evidence), |r| r.get(0)).map_err(sql)?;
                 if ruled { continue; }
-                let fresh = matches!(row.found.source, Source::Count(_)) && fresh_rows(tx, &row.key, &row.evidence, &row.found.evidence)?;
+                let counted = matches!(row.found.source, Source::Count(_));
+                let fresh = counted && fresh_rows(tx, &row.key, &row.evidence, &row.found.evidence)?;
+                if !counted {
+                    follow.execute((&row.key, &row.evidence)).map_err(sql)?;
+                }
                 let accepted: bool = upsert.query_row(params![row.key, evaluation.project, rule, row.found.subject_kind,
                     row.found.subject_id, row.found.metric, row.evidence, row.measure, row.scores, evaluation.at,
                     if checked.mode == Mode::Shadow { "shadow" } else { "new" }, fresh],
