@@ -265,15 +265,40 @@ pub(crate) fn ranked(tx: &Transaction, project: &str, at: i64, closed: bool) -> 
     Ok(problems)
 }
 
+/// A fix task `t` taken off the board before Dispatcher launched it and not done by hand (§9's "Archived unrun").
+fn archived_unrun() -> String {
+    format!("(t.archived_at IS NOT NULL AND t.status <> 'DONE' AND NOT EXISTS (SELECT 1 FROM run_tasks m
+        JOIN inputs i ON i.run = m.run WHERE m.task = t.id AND {}))", super::flow::LAUNCH)
+}
+
+/// AC-238: a problem in work whose every fix task was archived unrun goes back to `confirmed`, so the fix gate may make
+/// one new task; its second such task is the owner's ruling, and the problem is accepted as is.
+fn release_archived(tx: &Transaction, project: &str, at: i64) -> Result<(), String> {
+    let freed: Vec<(i64, String, i64)> = rows(tx, &format!("SELECT p.id, group_concat(coalesce(t.slug, t.id), ' and ' ORDER BY t.number), count(*)
+        FROM supervisor_problems p JOIN supervisor_problem_tasks f ON f.problem = p.id JOIN tasks t ON t.id = f.task
+        WHERE p.project = ?1 AND p.state = 'fix_in_work' GROUP BY p.id HAVING min({}) = 1 ORDER BY p.id", archived_unrun()),
+        [project], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
+    for (id, tasks, archived) in freed {
+        if archived > 1 {
+            rule(tx, project, id, &format!("Its fix tasks {tasks} were archived without running."), at)?;
+        } else {
+            tx.execute("UPDATE supervisor_problems SET state = 'confirmed' WHERE id = ?1", [id]).map_err(sql)?;
+            event(tx, id, at, "confirmed", &format!("Fix task {tasks} was archived without running; the fix gate may make one new task."))?;
+        }
+    }
+    Ok(())
+}
+
 pub(super) fn needing_fixes(tx: &Transaction, project: &str, at: i64) -> Result<Vec<Problem>, String> {
-    let ids = rows(tx, "SELECT p.id FROM supervisor_problems p WHERE project = ?1
+    let ids = rows(tx, &format!("SELECT p.id FROM supervisor_problems p WHERE project = ?1
         AND p.state NOT IN ('resolved','accepted','watching') AND p.options <> '[]'
         AND (p.automatic OR EXISTS (SELECT 1 FROM supervisor_rounds q
             WHERE q.run = p.source_round AND q.finding IS NOT NULL AND q.failure IS NULL))
-        AND NOT EXISTS (SELECT 1 FROM supervisor_problem_tasks t WHERE t.problem = p.id)
+        AND NOT EXISTS (SELECT 1 FROM supervisor_problem_tasks f JOIN tasks t ON t.id = f.task
+            WHERE f.problem = p.id AND NOT ({}))
         AND EXISTS (SELECT 1 FROM supervisor_problem_signals y JOIN supervisor_signals s USING (fingerprint)
             WHERE y.problem = p.id AND json_extract(s.scores, '$.impact') >= 2
-              AND s.state IN ('new','raised','recurred'))", [project], |r| r.get(0))?;
+              AND s.state IN ('new','raised','recurred'))", archived_unrun()), [project], |r| r.get(0))?;
     sorted(tx, project, at, ids)
 }
 
@@ -326,12 +351,33 @@ fn seed(tx: &Transaction, project: &str, at: i64) -> Result<(), String> {
     Ok(())
 }
 
+/// AC-238: a problem code seeded before its text came from the measure (`problem_text`) still says only "The condition
+/// measured by … is contributing to this problem."; it gets the words a seed writes now, from its one signal. A
+/// rewritten problem never matches again, so after the first sweep this is one empty lookup.
+fn retext_old_seeds(tx: &Transaction, project: &str, at: i64) -> Result<(), String> {
+    let old: Vec<(i64, String, String, String)> = rows(tx, "SELECT p.id, p.project, p.state, y.fingerprint FROM supervisor_problems p
+        JOIN supervisor_problem_signals y ON y.problem = p.id
+        WHERE p.project = ?1 AND p.automatic AND p.source_round IS NULL AND p.hypothesis LIKE 'The condition measured by % is contributing to this problem.'
+          AND (SELECT count(*) FROM supervisor_problem_signals n WHERE n.problem = p.id) = 1", [project], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?;
+    for (id, project, state, key) in old {
+        let s = signals::get(tx, &project, &key)?;
+        let (hypothesis, disproof, fix) = super::problem_text::unexplained(&s, YARDSTICK_WEEKS);
+        tx.execute("UPDATE supervisor_problems SET title = ?2, hypothesis = ?3, disproof = ?4, options = ?5 WHERE id = ?1",
+            (id, check_words(&super::problem_text::title(tx, &s)?)?, check_words(&hypothesis)?, check_words(&disproof)?,
+                checked_options(vec![fix])?)).map_err(sql)?;
+        event(tx, id, at, &state, "Its text is rewritten from its detector's measure.")?;
+    }
+    Ok(())
+}
+
 /// AC-236: an accepted problem reopens on a repeat its signal's count took since the ruling (AC-211: a counted
 /// reading's new event, or a return after resolving) that brings a row the ruling did not see. A repeat of the
 /// evidence the ruling saw stays closed and joins the ruling's count; a retaken sample or a window's new input is no
 /// repeat, so its new rows reopen nothing.
 pub(super) fn advance(tx: &Transaction, project: &str, at: i64) -> Result<(), String> {
+    retext_old_seeds(tx, project, at)?;
     seed(tx, project, at)?;
+    release_archived(tx, project, at)?;
     let changes = rows(tx, "SELECT p.id, p.state,
         (SELECT s.fingerprint FROM supervisor_problem_signals y JOIN supervisor_signals s USING (fingerprint)
         WHERE y.problem = p.id AND s.state IN ('new','raised','recurred')
