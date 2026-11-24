@@ -25,7 +25,7 @@ pub fn move_to(tx: &Transaction, author: &str, id: &str, status: &str, at: i64) 
     move_marked(tx, author, id, status, None, at)
 }
 
-/// What a move's history says it was for, its field kept on the move: (field, words) (terminum-dispatcher.md AC-264).
+/// What a move's history says it was for, its field kept on the move: (field, words).
 pub type Mark<'a> = Option<(&'a str, &'a str)>;
 
 /// `move_to`, its history saying why by `mark`.

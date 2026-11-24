@@ -151,9 +151,14 @@ pub async fn task_tool_of(app: &Shared, who: crate::tasks::tools::Who, host: Opt
     let open_most = app.looks.settings.read().agent_open_tasks;
     let a = app.clone();
     let from = who.key.clone();
+    // a report made or changed, a routine's result among them: every Inbox reads again (terminum-reports.md AC-267)
+    let reported = crate::reports::tools::NAMES.contains(&tool.as_str()) || tool == "finish_task";
     let (text, changed, noted) = crate::http::off(move || crate::tasks::tools::run_with(&a.tasks, &a.cfg.dir, &who, &tool, &args, open_most)).await?;
     for task in &changed {
         crate::tasks::api::told(app, task);
+    }
+    if reported {
+        crate::reports::changed(app);
     }
     // a comment's task's session hears of it, unless its own agent wrote it (terminum-dispatcher.md AC-209)
     if let Some((task, event)) = noted {

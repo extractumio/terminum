@@ -1,0 +1,69 @@
+/* SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial */
+/* The Inbox above the Sessions (inbox.js, terminum-reports.md AC-267) and a report's pane over the board's right part
+   (reportpane.js, AC-268). Its head is a group's head; its rows read as the list's: unread bold, critical in the danger
+   hue, the project's color a dot as a row's; no new 1px border (docs/UI-GUIDELINES.md §2.1). */
+.inbox { flex: 0 0 auto; max-height: 45%; overflow-y: auto; overscroll-behavior: contain; padding: 0 8px; display: flex; flex-direction: column; }
+.inboxhead { display: flex; align-items: center; gap: 6px; height: calc(var(--icon-key-list) + 2 * var(--row-inset)); font-size: 12.5px; font-weight: 600; position: sticky; top: 0; background: var(--chrome); z-index: 1; }
+.inboxfold { flex: 1; min-width: 0; height: 28px; display: flex; align-items: center; gap: 6px; padding: 0 6px; border-radius: var(--r-sm); text-align: left; font-weight: inherit; }
+@media (hover: hover) { .inboxfold:hover { background: var(--chrome-2); } }
+.inboxfold .lu { color: var(--muted); flex: 0 0 auto; transition: transform .15s; }
+.inboxfold[aria-expanded="false"] > .lu { transform: rotate(-90deg); }
+.inboxcount:not(:empty) { margin-left: auto; min-width: 18px; padding: 0 6px; border-radius: 9px; background: var(--accent); color: var(--t-bg); font-size: 11px; line-height: 18px; text-align: center; }
+.inboxrows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 1px; }
+.inboxrow { position: relative; display: flex; align-items: stretch; border-radius: var(--r-lg); }
+.inboxrow .report { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; padding: 6px 8px 6px 18px; border-radius: inherit; text-align: left; font-weight: 400; color: var(--t-fg); }
+.inboxrow .report::before { content: ""; position: absolute; left: 7px; top: 12px; width: 6px; height: 6px; border-radius: 50%; background: var(--proj, var(--muted)); }
+@media (hover: hover) { .inboxrow .report:hover { background: var(--chrome-2); } }
+.inboxrow .rhead { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.inboxrow .rtitle { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 13px; }
+.inboxrow.unread .rtitle { font-weight: 650; }
+.inboxrow .rage, .inboxrow .rsource { color: var(--muted-text); font-size: 11.5px; white-space: nowrap; }
+.inboxrow .rsum { color: var(--muted-text); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.inboxrow.unread .rsum { color: var(--t-fg); }
+.inboxrow.critical.unread .report { background: color-mix(in srgb, var(--danger) 14%, transparent); }
+.inboxrow.critical .rhead .lu, .inboxrow.critical.unread .rtitle { color: var(--danger-text); }
+/* its buttons: at hover or focus with a mouse, always on a touch screen (every action has a button: CLAUDE.md §1) */
+.inboxrow .racts { position: absolute; right: 4px; top: 4px; display: flex; gap: 2px; background: var(--chrome-2); border-radius: var(--r-sm); visibility: hidden; }
+@media (hover: hover) { .inboxrow:is(:hover, :focus-within) .racts { visibility: visible; } }
+@media (hover: none) { .inboxrow .racts { position: static; visibility: visible; background: none; align-self: center; } }
+.inboxmore { align-self: flex-start; margin: 4px 0 4px 10px; }
+.inboxnone { margin: 2px 10px 8px; color: var(--muted-text); font-size: 12px; }
+.inboxundo { position: sticky; bottom: 0; display: flex; align-items: center; gap: var(--sp-2); margin: 4px 0; padding: 6px 10px; border-radius: var(--r-lg); background: var(--chrome-2); box-shadow: var(--shadow-far); font-size: 12.5px; }
+.inboxundo .inboxerr { color: var(--danger-text); }
+.inboxmenu { position: fixed; z-index: 60; min-width: 200px; box-shadow: var(--shadow-far); }
+#navbtn.hasunread { position: relative; }
+#navbtn.hasunread::after { content: ""; position: absolute; top: 6px; right: 6px; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
+
+/* the reading pane: over the board's agents, routines and columns, the board's head and the list staying */
+#main:has(> .reportpane) { position: relative; }
+.reportpane { position: absolute; left: 0; right: 0; bottom: 0; z-index: 8; display: flex; flex-direction: column; background: var(--t-bg); outline: none; }
+.reportpane[hidden] { display: none; }
+.rphead { padding: var(--sp-3) var(--sp-4) var(--sp-2); background: var(--chrome); }
+.rphead > :first-child { display: flex; align-items: flex-start; gap: var(--sp-2); }
+.rptitle { flex: 1; min-width: 0; margin: 0; font-size: 17px; font-weight: 650; overflow-wrap: anywhere; display: flex; gap: 6px; align-items: center; }
+.rpcritical { color: var(--danger-text); display: inline-flex; }
+.rphead { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: var(--sp-2); }
+.rpacts { display: flex; gap: 2px; }
+.rpmeta, .rpnote { grid-column: 1 / -1; margin: 4px 0 0; color: var(--muted-text); font-size: 12px; overflow-wrap: anywhere; }
+.rpnote:empty { display: none; }
+.rpbody { flex: 1; min-height: 0; overflow-y: auto; padding: var(--sp-3) var(--sp-4) var(--sp-4); overscroll-behavior: contain; }
+.rpsummary { margin: 0 0 var(--sp-3); font-size: 14px; font-weight: 600; }
+.rpbody h3 { margin: var(--sp-4) 0 var(--sp-2); font-size: 12.5px; color: var(--muted-text); font-weight: 600; }
+.rpfiles, .rpnotes { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
+.rpnotes li { padding: var(--sp-2) var(--sp-3); border-radius: var(--r-lg); background: var(--chrome); }
+.rpnotes .by-human { background: var(--chrome-2); }
+.rpnotes .evhead { color: var(--muted-text); font-size: 11.5px; margin-bottom: 2px; }
+.rpdeleted { color: var(--danger-text); }
+.rplinks { color: var(--muted-text); font-size: 12.5px; }
+.rpnone { padding: var(--sp-4); color: var(--muted-text); }
+.rpfoot { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: flex-end; gap: var(--sp-2); padding: var(--sp-2) var(--sp-4) calc(var(--sp-2) + env(safe-area-inset-bottom)); background: var(--chrome); }
+.rpfoot:empty { display: none; }
+.rpreply { flex: 1 1 100%; min-height: 64px; max-height: 30vh; resize: vertical; }
+.rpanswering, .rpnoanswer, .rpwhy { flex: 1 1 100%; margin: 0; color: var(--muted-text); font-size: 12.5px; }
+.rpanswering { color: var(--t-fg); }
+.rpsaid { flex: 1; margin: 0; color: var(--danger-text); font-size: 12.5px; }
+.rpsaid:empty { visibility: hidden; }
+@media (max-width: 860px) { .rphead, .rpbody, .rpfoot { padding-left: var(--sp-3); padding-right: var(--sp-3); } }
+/* a finger's size where the list's group heads have it (controls.css) */
+@media (max-width: 860px), (pointer: coarse) { .inboxfold { height: 40px; } .inboxhead { height: auto; min-height: calc(var(--icon-key-list) + 2 * var(--row-inset)); } }
+@media (prefers-reduced-motion: reduce) { .inboxfold .lu { transition: none; } }

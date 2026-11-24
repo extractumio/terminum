@@ -82,13 +82,11 @@ pub(super) struct Saved {
     asked: bool,
     answered: bool,
     earlier: bool,
-    /// a task of the press waits with its report: the comments are the human's on it (AC-264)
-    read: bool,
 }
 
 /// Read only human comments after each task's cutoff. Exclude the press's own field even when it was kept for a wait.
 pub(super) fn saved(tx: &Transaction, tasks: &[Task], drafts: &[String], asked: bool) -> Result<Saved, String> {
-    let mut out = Saved { comments: Vec::new(), asked: false, answered: false, earlier: false, read: false };
+    let mut out = Saved { comments: Vec::new(), asked: false, answered: false, earlier: false };
     let mut saved = Vec::new();
     let mut size = 0;
     let drafts = serde_json::to_string(drafts).map_err(|e| e.to_string())?;
@@ -100,7 +98,6 @@ pub(super) fn saved(tx: &Transaction, tasks: &[Task], drafts: &[String], asked: 
     for task in tasks {
         let question = if asked { last_question(tx, &task.key)? } else { None };
         out.asked |= question.is_some();
-        out.read |= crate::tasks::report::waits_on(tx, task)?;
         let mut rows = stmt.query((&task.key, &drafts)).map_err(ops::sql)?;
         while let Some(row) = rows.next().map_err(ops::sql)? {
             let at: i64 = row.get(0).map_err(ops::sql)?;
@@ -128,10 +125,7 @@ pub(super) fn saved(tx: &Transaction, tasks: &[Task], drafts: &[String], asked: 
 impl Saved {
     pub(super) fn words(mut self, id: &str, who: &str, draft: Option<&str>) -> Result<String, String> {
         let carries_saved = !self.comments.is_empty();
-        let words = if self.read && (carries_saved || draft.is_some()) {
-            self.comments.extend(draft.map(str::to_string));
-            format!("{id}: the human read your report and commented below. Go on with the task, taking it into account.\n\n{}", self.comments.join(COMMENT_SEPARATOR))
-        } else if self.asked && (self.answered || draft.is_some()) {
+        let words = if self.asked && (self.answered || draft.is_some()) {
             self.comments.extend(draft.map(str::to_string));
             let answers = again_words(id, who, None, Some(&self.comments), false);
             if self.earlier {

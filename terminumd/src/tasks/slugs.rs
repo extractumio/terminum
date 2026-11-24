@@ -16,6 +16,8 @@ pub const UID_LEN: usize = 8;
 pub(super) const SCHEDULED: &str = "S_";
 /// A batch's integration task (terminum-integration.md AC-194).
 pub(super) const INTEGRATING: &str = "I_";
+/// A report (terminum-reports.md AC-265): in the same count, never a task.
+pub const REPORT: &str = "R_";
 
 /// A batch's integration task, by its ID's mark (`terminum-integration.md` AC-194).
 pub fn is_integration(id: &str) -> bool {
@@ -59,14 +61,39 @@ fn free_prefix(tx: &Transaction, base: &str, project: &str) -> Result<String, St
 fn bump_above_found(tx: &Transaction, project: &str, prefix: &str) -> Result<(), String> {
     // "TERM-" up to "TERM." ('.' follows '-'): a range the key's index walks, where a LIKE would scan; a schedule's
     // tasks count with the others
-    for mark in ["", SCHEDULED, INTEGRATING] {
-        let top: Option<i64> = tx.query_row("SELECT max(CAST(substr(slug, ?3) AS INTEGER)) FROM task_slugs WHERE slug >= ?1 AND slug < ?2",
+    for mark in ["", SCHEDULED, INTEGRATING, REPORT] {
+        // a report's ID is in the same count (terminum-reports.md AC-265), kept in its own table
+        let table = if mark == REPORT { "reports" } else { "task_slugs" };
+        let top: Option<i64> = tx.query_row(&format!("SELECT max(CAST(substr(slug, ?3) AS INTEGER)) FROM {table} WHERE slug >= ?1 AND slug < ?2"),
                                             (format!("{mark}{prefix}-"), format!("{mark}{prefix}."), (mark.len() + prefix.len()) as i64 + 2), |r| r.get(0)).map_err(sql)?;
         if let Some(top) = top {
             tx.execute("UPDATE projects SET next_seq = max(next_seq, ?1) WHERE id = ?2", (top + 1, project)).map_err(sql)?;
         }
     }
     Ok(())
+}
+
+/// `project`'s prefix and the next number of its count, taken: a task's or a report's.
+fn next_number(tx: &Transaction, project: &str) -> Result<(String, i64), String> {
+    let (prefix, seq, dir, name): (Option<String>, i64, String, String) = tx.query_row("SELECT prefix, next_seq, dir, name FROM projects WHERE id = ?1", [project],
+        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))).map_err(sql)?;
+    let Some(prefix) = prefix else {
+        fill_project(tx, project, &dir, &name)?;       // a project written since the last fill
+        return next_number(tx, project);
+    };
+    tx.execute("UPDATE projects SET next_seq = ?1 WHERE id = ?2", (seq + 1, project)).map_err(sql)?;
+    Ok((prefix, seq))
+}
+
+/// The next ID of `project`'s count for a report: R_TERM-7, a number no task's ID holds (terminum-reports.md AC-265).
+pub fn take_report(tx: &Transaction, project: &str) -> Result<(String, i64), String> {
+    next_number(tx, project).map(|(prefix, seq)| (format!("{REPORT}{prefix}-{seq}"), seq))
+}
+
+/// What a task's lookup says of an ID that names none: a report's says where to read it (terminum-reports.md AC-265).
+pub fn not_found(id: &str) -> String {
+    let id = id.trim();
+    if id.get(..REPORT.len()).is_some_and(|m| m.eq_ignore_ascii_case(REPORT)) { format!("{id} is a report: use get_report.") } else { format!("No task {id}") }
 }
 
 /// Every project gets a prefix and every task an ID, once: after a migration and when projects are written.
@@ -99,17 +126,11 @@ fn fill_project(tx: &Transaction, project: &str, dir: &str, name: &str) -> Resul
 /// that said so keeps saying it in the project it moves to.
 /// `mark`: "S_" for a schedule's task, "I_" for a batch's, "" else; a task that had one keeps it.
 pub fn assign(tx: &Transaction, key: &str, project: &str, mark: &str) -> Result<String, String> {
-    let (prefix, seq, dir, name): (Option<String>, i64, String, String) = tx.query_row("SELECT prefix, next_seq, dir, name FROM projects WHERE id = ?1", [project],
-        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))).map_err(sql)?;
-    let Some(prefix) = prefix else {
-        fill_project(tx, project, &dir, &name)?;       // a project written since the last fill
-        return assign(tx, key, project, mark);
-    };
+    let (prefix, seq) = next_number(tx, project)?;
     let had = |tx: &Transaction| tx.query_row("SELECT slug FROM tasks WHERE id = ?1", [key], |r| r.get::<_, Option<String>>(0)).optional().map(Option::flatten).map_err(sql);
     let had = had(tx)?;
     let mark = [SCHEDULED, INTEGRATING].into_iter().find(|m| *m == mark || had.as_deref().is_some_and(|s| s.starts_with(m))).unwrap_or("");
     let slug = format!("{mark}{prefix}-{seq}");
-    tx.execute("UPDATE projects SET next_seq = ?1 WHERE id = ?2", (seq + 1, project)).map_err(sql)?;
     put_slug(tx, key, &slug)?;
     Ok(slug)
 }

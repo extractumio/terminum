@@ -13,7 +13,7 @@ const ADVISOR_TOOLS: &[&str] = &["add_comment", "ask_human"];
 const OPERATOR_TOOLS: &[&str] = &["run_task", "promote_queued_task", "stop_task", "list_runs", "get_dashboard"];
 
 pub(crate) fn task_tool(tool: &str) -> bool {
-    OBSERVER_TOOLS.contains(&tool) || ADVISOR_TOOLS.contains(&tool)
+    OBSERVER_TOOLS.contains(&tool) || ADVISOR_TOOLS.contains(&tool) || crate::reports::tools::NAMES.contains(&tool)
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -82,10 +82,11 @@ impl Role {
         match self {
             Self::Token { .. } if matches!(tool, supervisor::review::TOOL | supervisor::design_gates::RECORD | supervisor::design_gates::BRIEF) => false,
             Self::Manager | Self::Token { manager: true } => true,
-            Self::Worker | Self::Token { manager: false } => !super::MANAGER_TOOLS.contains(&tool),
+            Self::Worker | Self::Token { manager: false } => !super::MANAGER_TOOLS.contains(&tool) && !crate::reports::tools::MANAGERS.contains(&tool),
             Self::Supervisor(None) | Self::Reflection(_) | Self::Audit(_) | Self::DesignReview(_) => false,
             Self::Supervisor(Some(level)) => {
-                OBSERVER_TOOLS.contains(&tool)
+                // every level reports to the owner, and changes or deletes its project's reports (terminum-reports.md AC-266)
+                crate::reports::tools::NAMES.contains(&tool) || OBSERVER_TOOLS.contains(&tool)
                     || (level != Level::Observer && ADVISOR_TOOLS.contains(&tool))
                     || (level == Level::Operator && OPERATOR_TOOLS.contains(&tool))
             }

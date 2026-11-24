@@ -53,7 +53,7 @@ fn ac230_ac157_picks_once_and_free_text_uses_the_same_resume_path() {
     tools::run(&store, &dir, &who, "ask_human", &a).unwrap();
     let event = store.with(|tx| {
         let t = ops::get(tx, &task)?;
-        let question = current(tx, &t, false)?.unwrap();
+        let question = current(tx, &t)?.unwrap();
         let e = ops::history(tx, &task)?.as_array().unwrap().iter().find(|e| e["id"] == question).unwrap().clone();
         assert_eq!(e["question"], json!({"kind": a["kind"], "options": a["options"], "recommended": a["recommended"]}));
         assert_eq!(e["text"], a["questions"]);
@@ -86,7 +86,7 @@ fn ac230_ac157_picks_once_and_free_text_uses_the_same_resume_path() {
     assert_eq!(choose(&event, "wait").unwrap_err(), STALE, "a later question supersedes it");
     let newest = store.with(|tx| {
         let t = ops::get(tx, &task)?;
-        let next = current(tx, &t, false)?.unwrap();
+        let next = current(tx, &t)?.unwrap();
         assert_eq!(ops::answers(tx, &task)?.unwrap(), Vec::<String>::new());
         ops::move_to(tx, HUMAN, &task, "IN PROGRESS", 14)?;
         ops::move_to(tx, HUMAN, &task, "WAIT FOR HUMAN", 15)?;
@@ -101,7 +101,7 @@ fn ac230_kind_can_be_recorded_without_making_a_free_text_question_selectable() {
     tools::run(&store, &dir, &who, "ask_human", &json!({"id": task, "questions": ASKED, "kind": "strategic"})).unwrap();
     store.with(|tx| {
         let t = ops::get(tx, &task)?;
-        assert_eq!(current(tx, &t, false)?, None);
+        assert_eq!(current(tx, &t)?, None);
         assert!(ops::history(tx, &task)?.as_array().unwrap().iter().any(|e| e["question"] == json!({"kind": "strategic"})));
         Ok(())
     }).unwrap();

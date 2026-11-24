@@ -1,19 +1,22 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-//! finish_task (`terminum-dispatcher.md` AC-123, AC-166): an agent's result in its sections makes its task DONE, or,
-//! a report for a person to read, makes it wait for its human (AC-264); a result without them, or of work not done,
-//! stays a comment.
+//! finish_task (`terminum-dispatcher.md` AC-123, AC-166): an agent's result in its sections makes its task DONE, a
+//! routine's result a report in the human's Inbox too (terminum-reports.md AC-272); a result without them, or of work
+//! not done, stays a comment.
 
 use rusqlite::Transaction;
 use serde_json::Value;
 
 use super::closeout;
 use super::tools::{arg, movable, Who};
-use super::{ops::{self, Task}, report};
+use super::ops::{self, Task};
 use crate::plans::rules;
 
 /// `args.id`'s result `args.result`, written by `me`: what the agent is told, and the tasks it changed.
 pub(super) fn finish(tx: &Transaction, who: &Who, args: &Value, me: &str, at: i64) -> Result<(String, Vec<String>), String> {
     let id = arg(args, "id")?;
+    if args.get("report").is_some_and(|r| !r.is_null()) {
+        return Err(GONE_REPORT.into());
+    }
     let t = movable(tx, who, id)?;
     if let Some(why) = crate::integrate::agent::finish_refused(tx, &t.key)? {
         return Err(why);
@@ -45,14 +48,12 @@ pub(super) fn finish(tx: &Transaction, who: &Who, args: &Value, me: &str, at: i6
             return Ok((closeout::not_done_words(id, &t.status), vec![id.to_string()]));
         }
     }
-    let mut changed = vec![id.to_string()];
-    let mut said = if report::wanted(tx, &t.key, args)? {
-        changed.extend(report::wait(tx, me, &t, at)?);
-        vec![format!("{id} waits for the human to read your report.")]
-    } else {
-        ops::move_to(tx, me, id, "DONE", at)?;
-        vec![format!("{id} is DONE, with your result.")]
-    };
+    let changed = vec![id.to_string()];
+    ops::move_to(tx, me, id, "DONE", at)?;
+    let mut said = vec![match crate::reports::sources::routine_result(tx, &t, &result, me, at)? {
+        Some(report) => format!("{id} is DONE; its result went to the human's Inbox as {report}."),
+        None => format!("{id} is DONE, with your result."),
+    }];
     crate::dispatcher::runs::finished(tx, &t.key)?;
     if review.is_some() { return Ok((said.join(" "), changed)); }
     // what it leaves is on the board by terminum's word, and what it names and is not there is said (AC-166)
@@ -67,6 +68,9 @@ pub(super) fn finish(tx: &Transaction, who: &Who, args: &Value, me: &str, at: i6
     }
     Ok((said.join(" "), changed))
 }
+
+/// What finish_task's old report argument is refused with: the report goes by its own tool (terminum-reports.md AC-266).
+pub(crate) const GONE_REPORT: &str = "finish_task takes no report: give the report by execute_tool(\"create_report\", {task, title, summary, body}), then call finish_task again without it.";
 
 /// A main task ends last: refused while a subtask its run took is not DONE (terminum-dispatcher.md AC-185).
 pub(super) fn after_its_subtasks(tx: &Transaction, t: &Task) -> Result<(), String> {

@@ -34,6 +34,7 @@ import { cardKeys } from "./kanbancardkeys.js";
 import { boardColumns } from "./kanbancols.js";
 import { columnPanel } from "./kanbanpanel.js";
 import { incidentCards, onIncidents } from "./incidents.js";
+import "./reportpane.js";                        // a report's pane over the board (terminum-reports.md AC-268)
 import { $, COLUMNS, agentChip, api, button, guardQueuedRun, hasFiles, placeChildren, say, sessionLine, showError, signInElsewhere, shortStamp, statusBox, timeOf, needBoxes, underParents } from "./kanbanutil.js";
 
 const signIn = signInElsewhere();                  // with no sign-in the board goes to /sessions/, whose form signs in
