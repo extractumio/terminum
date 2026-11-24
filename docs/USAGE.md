@@ -523,6 +523,9 @@ its metric and its guard metric. Set the favorable direction for each metric. Th
 scoreboard shows the probe name and compares the latest reading from each week across
 two four-week periods. Supply undimensioned readings in consistent units. A worsening
 guard cancels a favorable move. The seven project indicators determine the project verdict.
+The `product.external` detector raises a signal when an indicator's metric moves against
+its favorable direction by more than its weekly noise; its threshold adds a margin in the
+metric's own units.
 
 In **Feedback probes**, add the ID of an approved custom probe and an HTTPS reference
 base ending in a slash, such as `https://example.com/issues/`. The command can emit
@@ -534,6 +537,12 @@ the report count and a link formed from the base and reference. The server disca
 prose. Move the task between columns to let Auto-Dispatcher consider it under its usual
 settings. A probe may emit up to 32 feedback objects per sample and may output nothing
 when there is no new feedback.
+To watch replies, the same probe can also emit one list of the items still unanswered,
+by reference and the Unix seconds each was opened, for example
+`{"unanswered":[{"reference":42,"since":1800000000}]}`. It carries no prose and holds up
+to 256 distinct references. The `product.feedback_age` detector raises a signal for each
+item older than its threshold, three days (4320 minutes) by default, at the probe's latest
+sample. A probe that omits the list leaves the detector unavailable and says so.
 
 In **Surface map**, enter repository-relative patterns, one per line. Use `*` and `?`
 within a path segment and `**` as a whole segment for any depth. T1 identifies internal
