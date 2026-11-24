@@ -343,3 +343,23 @@ async fn ac254_collector_resumes_at_mute_expiry_without_new_events() {
     assert_eq!(ready(store).cursor, before.cursor);
     assert_eq!(state(), State::New);
 }
+
+#[tokio::test]
+async fn ac221_integration_switch_rescans_the_attachment_and_a_quiet_beat_keeps_it() {
+    let (root, app) = crate::testutil::app_with_tasks("supervisor-rescan");
+    let fixture = Fixture::in_path(root.join("state/kanban.sqlite"));
+    let store = &app.tasks;
+    set_enabled(store, PROJECT, true, NOW).unwrap();
+    collect_project(&app, &ready(store), || NOW).unwrap();
+    let scanned = || value(store, "SELECT json_extract(attachment, '$.scanned_at') FROM project_supervisor");
+    assert_eq!(scanned(), NOW);
+    write(store, "UPDATE project_supervisor SET attachment = json_set(attachment, '$.scanned_at', 0)", []);
+
+    // A beat with no scan source writes no attachment: an edit made between scans stays (TERM-841).
+    collect_project(&app, &ready(store), || NOW + 20).unwrap();
+    assert_eq!(scanned(), 0);
+    // Integration's switch is a scan source: the next beat recomputes the attachment from real inputs.
+    fixture.integration(true);
+    collect_project(&app, &ready(store), || NOW + 40).unwrap();
+    assert_eq!(scanned(), NOW + 40);
+}
