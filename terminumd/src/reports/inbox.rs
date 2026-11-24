@@ -84,7 +84,9 @@ pub fn marks(tx: &Transaction) -> Result<Value, String> {
     let mut sessions = serde_json::Map::new();
     for (key, id) in rows(tx, "SELECT session_key, slug FROM reports WHERE deleted_at IS NULL AND read_at IS NULL AND session_key IS NOT NULL
             ORDER BY created_at DESC, rowid DESC", [], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))? {
-        sessions.entry(key).or_insert_with(|| json!([])).as_array_mut().map(|a| a.push(json!(id)));
+        if let Some(ids) = sessions.entry(key).or_insert_with(|| json!([])).as_array_mut() {
+            ids.push(json!(id));
+        }
     }
     Ok(json!({"rev": rev, "unread": unread(tx)?, "sessions": sessions}))
 }
@@ -92,8 +94,9 @@ pub fn marks(tx: &Transaction) -> Result<Value, String> {
 /// One report whole (AC-268): its row, its body, comments oldest first, files and links.
 pub fn detail(tx: &Transaction, key: &str) -> Result<Value, String> {
     let mut v = tx.query_row(&format!("{ROW} WHERE r.id = ?1"), [key], row_of).map_err(sql)?;
-    for k in ["key", "replied"] {
-        v.as_object_mut().map(|o| o.remove(k));
+    if let Some(o) = v.as_object_mut() {
+        o.remove("key");
+        o.remove("replied");
     }
     let (body, follows): (String, Option<String>) = tx.query_row("SELECT r.body, (SELECT f.slug FROM reports f WHERE f.id = r.follows) FROM reports r WHERE r.id = ?1",
         [key], |r| Ok((r.get(0)?, r.get(1)?))).map_err(sql)?;

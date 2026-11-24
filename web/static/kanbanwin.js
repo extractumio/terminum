@@ -14,7 +14,7 @@ import { family } from "./kanbansubs.js";
 import { expandable } from "./expand.js";
 import { waitWords } from "./cardstate.js";
 import { detailsPane } from "./taskattrs.js";
-import { openReport } from "./inbox.js";
+import { openReport } from "./reportlink.js";
 
 // a text or a comment being edited; one saved or cancelled is off (refresh) and holds nothing
 const EDITS = ".tasktext textarea:not(:disabled), .markdown textarea:not(:disabled)";

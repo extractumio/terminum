@@ -409,15 +409,18 @@ export async function liveSchedules(page, live) {
 
   // AC-270: a reply to the firing's report goes on in its task's conversation, as a human's RUN does, through the gate
   const replied = await reportOf(task);
-  const sentReply = await j(`/api/reports/${replied.id}/reply`, "POST", { text: "Which of them break the build?" });
+  const sentReply = await j(`/api/reports/${replied.id}/reply`, "POST", { text: "Which of them break the build? FINISHES" });
   check("AC-270 a reply to a routine's report goes on in its task's conversation", sentReply.code === 200 && sentReply.task === task, JSON.stringify(sentReply));
   check("AC-270 the reply stands below the report, and its task got the fixed words with it", await until(async () => {
     const [r, t] = [await j(`/api/reports/${replied.id}`), await j(`/api/tasks/${task}`)];
-    return r.notes?.some((n) => n.kind === "reply" && n.text === "Which of them break the build?")
-      && t.history.some((e) => e.kind === "comment" && e.text?.startsWith(`${task}: the human replied to your report ${replied.id}. Answer below it`) && e.text.endsWith("Which of them break the build?"));
+    return r.notes?.some((n) => n.kind === "reply" && n.text === "Which of them break the build? FINISHES")
+      && t.history.some((e) => e.kind === "comment" && e.text?.startsWith(`${task}: the human replied to your report ${replied.id}. Answer below it`) && e.text.endsWith("Which of them break the build? FINISHES"));
   }, 20000), JSON.stringify((await j(`/api/tasks/${task}`)).history?.slice(-4).map((e) => e.text)));
-  // …and its session closes after it as any finished run's, so what follows finds the routine as before (AC-125)
+  // …its run starts, then ends and its session closes as any finished run's, so what follows finds the routine as before (AC-125)
+  check("AC-270 the reply starts its task's run again", await until(async () => (await j(`/api/tasks/${task}`)).history.some((e) => /moved it from DONE to IN PROGRESS/.test(e.text ?? "")
+    && e.at >= (sentReply.at ?? 0)), 20000) || (await j(`/api/tasks/${task}`)).status === "IN PROGRESS", (await j(`/api/tasks/${task}`)).status);
   check("AC-270 the reply's run ends with no second report of its result", await until(async () => { const t = await j(`/api/tasks/${task}`); return t.status === "DONE" && t.session?.closed
+    && t.history.filter((e) => /to DONE/.test(e.text ?? "")).length >= 2
     && (await j("/api/reports")).reports.filter((r) => r.source.task === task).length === 1; }, 45000), JSON.stringify((await j(`/api/tasks/${task}`)).history.slice(-6).map((e) => e.text)));
 
   // AC-161: an agent running schedules is not deleted; a schedule deleted leaves its tasks

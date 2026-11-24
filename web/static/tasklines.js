@@ -6,7 +6,7 @@ import { icon } from "./icons.js";
 import { el, iconButton, plural, tagProject } from "./listparts.js";
 import { kanbanLinks } from "./sections.js";
 import { api } from "./kanbanutil.js";
-import { openReport } from "./inbox.js";
+import { openReport } from "./reportlink.js";
 
 /** Lines in `box`; `open(id)` shows a task (its window then says it was seen); `say(text)` tells a refused close;
  *  `project(id)`: the project of that id the page knows, which names a line (terminumd says a task's: AC-117). */

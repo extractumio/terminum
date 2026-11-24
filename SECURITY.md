@@ -101,9 +101,10 @@ Three things hold everywhere below:
   typing gate of `terminum-dispatcher.md` §9 lists: task IDs with fixed words; the prompt of a
   human's RUN, with the human comments saved since its previous run on a continuation (AC-122) and, on a fresh start, the humans' and the project's manager's comments, each said to be whose (AC-209); a schedule's; a project's manager's; the integration
   queue's own words; your first prompt in + Session's box, once, into the pane that request
-  started (`terminum-dispatcher.md` AC-204); your reply to a report, as a RUN of the task the report was made in,
-  in fixed words naming the report by its ID with your text (`terminum-reports.md` AC-270): an agent's report text
-  is never typed, and a report of a session terminum did not start gets no reply field. A task's words never reach the shell an agent leaves. **Left**: in one
+  started (`terminum-dispatcher.md` AC-204); your reply to a report made in a task's Dispatcher run, as a RUN of
+  that task in that run's conversation, never a fresh or grouped start, in fixed words naming the task and the
+  report by their IDs with your text (`terminum-reports.md` AC-270): an agent's report text is never typed, and any
+  other report (a session you opened, a manager's, the Supervisor's, an incident's, a digest) gets no reply field. A task's words never reach the shell an agent leaves. **Left**: in one
   session of several tasks an agent-written task can still sway the others once read.
 - **Closing and ending**: it closes only such a pane, its agent idle, and at a task's time budget
   signals what runs under it by pid and start time, its shell spared, never by name or pattern.

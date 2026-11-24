@@ -35,7 +35,7 @@ fn who(key: &str) -> Who {
 fn running(s: &Store, title: &str, key: &str) -> String {
     s.with(|tx| {
         let t = ops::create(tx, HUMAN, NewTask { title: title.into(), text: "body".into(), project: Some("api".into()), ..Default::default() }, 1)?;
-        let r = runs::add(tx, &Run { agent_id: "a1".into(), agent_name: "Opus".into(), kind: "claude".into(), project: "api".into(), ..Default::default() }, &[t.key.clone()], Default::default(), 1)?;
+        let r = runs::add(tx, &Run { agent_id: "a1".into(), agent_name: "Opus".into(), kind: "claude".into(), project: "api".into(), ..Default::default() }, std::slice::from_ref(&t.key), Default::default(), 1)?;
         runs::change(tx, &r, |r| { r.state = Phase::Working; r.pane_key = Some(key.into()); })?;
         ops::link(tx, HUMAN, &t.id, Some(key), 2)?;
         ops::move_to(tx, DISPATCHER, &t.id, "IN PROGRESS", 2)?;

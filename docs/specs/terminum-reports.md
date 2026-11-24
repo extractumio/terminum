@@ -270,11 +270,13 @@ Scenario: AC-270 happy path — a reply goes on in the conversation
   When the user writes "Which of them break the build?" under R_TERM-7 and presses Send
   Then S_TERM-41 goes on as a human's RUN of it does (terminum-dispatcher.md AC-122): in its live session, else from its pane's shell, else its conversation resumed in a new window, on its agent's slot or waiting for one (AC-158)
   And RUN's message (AC-122), kept as the user's comment on S_TERM-41, is fixed but for the reply: "S_TERM-41: the human replied to your report R_TERM-7. Answer below it by execute_tool(\"append_to_report\", {\"id\": \"R_TERM-7\", \"text\": ...}), or, when they ask for a new report, by execute_tool(\"create_report\", {\"task\": \"S_TERM-41\", \"follows\": \"R_TERM-7\", \"title\": ..., \"summary\": ..., \"body\": ...}); then call finish_task on S_TERM-41 as before.\n\n<reply>"
-  And only once the press is accepted is the reply kept below R_TERM-7 as the user's
+  And only once the press is accepted is the reply kept below R_TERM-7 as the user's reply
 
 Scenario: AC-270 failure — refused, nothing kept
   When Send is refused (the agent works, a draft stands in its box, a RUN of it waits, the gate refuses: terminum-dispatcher.md AC-122)
-  Then no comment is kept on R_TERM-7, the reply stays in its field, and RUN's refusal shows under it in its words
+  Then nothing is kept on R_TERM-7 or on S_TERM-41, the reply stays in its field, and RUN's refusal shows under it in its words
+  When the reply would start S_TERM-41 anew (no conversation of its agent is known) or take other tasks with it (a main task's subtasks, AC-185)
+  Then it is refused: "This reply would start a new session or take other tasks with it: answer in the task's window, with RUN."
   When the cause clears and the user presses Send again
   Then the reply is kept once
 
@@ -295,6 +297,11 @@ Scenario: AC-270 edge — a reply's run makes no second report
 Scenario: AC-270 edge — a routine's next firing during a reply
   Given S_TERM-41 of SCH-1 runs from a reply when SCH-1 is due
   Then that firing is skipped as AC-162 skips one while a task of it runs, the Scheduled page saying why
+
+Scenario: AC-270 failure — not its run's report
+  Given R_TERM-9 that TERM-41's project manager, the Supervisor, or an agent that took TERM-41 later made on TERM-41
+  Then R_TERM-9 is not replyable: "R_TERM-9 was not made in TERM-41's last run: answer in its window, with RUN.": the human's words never go into a pane whose agent did not write the report
+  And a report made in TERM-41's run stays replyable while TERM-41's newest run goes on in the same conversation (a reply's resume among them)
 
 Scenario: AC-270 failure — no one to answer
   Given a report whose source is no task Dispatcher ran: a session the human opened, a manager's, the Supervisor's digest or incident

@@ -10,29 +10,13 @@ import { CHOSEN } from "./kanbanfilters.js";
 import { menuBox } from "./menubox.js";
 import { longPress } from "./rowmenu.js";
 import { taskUrl } from "./tasklink.js";
+import { age, openReport, reportUrl } from "./reportlink.js";
+import { onTaskMarks } from "./nav.js";
 
 const SHOWN = 8;                                   // rows before "Show all"
 const FOLDED = "inbox.folded";
 const UNDO_MS = 8000;
-export const REPORT_EVENT = "tm-report";           // reportpane.js opens the report this names
 export const CHANGED_EVENT = "tm-reports";         // the reports changed: an open pane reads its report again
-
-/** The board's address of report `id`. */
-export const reportUrl = (id) => `/kanban/?report=${encodeURIComponent(id)}`;
-
-/** Opens report `id`: its pane on the board, else the board with it (AC-268). */
-export function openReport(id) {
-  if (!document.body.classList.contains("board-page")) { location.href = reportUrl(id); return; }
-  if (matchMedia("(max-width: 860px)").matches) document.getElementById("drawerclose")?.click();   // a phone's list sheet gives way
-  dispatchEvent(new CustomEvent(REPORT_EVENT, { detail: id }));
-}
-
-/** "now", "5 min", "3 h", "2 d": how old. */
-export function age(at, now = Date.now() / 1000) {
-  const s = Math.max(0, now - at);
-  return s < 60 ? "now" : s < 3600 ? `${Math.floor(s / 60)} min` : s < 86400 ? `${Math.floor(s / 3600)} h` : `${Math.floor(s / 86400)} d`;
-}
-
 /** The projects the Inbox shows: the board's choice in its address, else this browser's last one; none: all. */
 function chosen() {
   const named = new URLSearchParams(location.search).get("project");
@@ -45,15 +29,11 @@ const findWords = () => (new URLSearchParams(location.search).get("q") ?? "").tr
 
 const st = { rows: [], more: false, next: 0, failed: "", unread: {}, rev: null, deleted: false, all: false, folded: !!read(FOLDED), key: "", undo: null, focus: null };
 let box = null;
-let bySession = {};
 
-/** Session `key`'s unread reports, newest first: its row's envelope (AC-273). */
-export const unreadOfSession = (key) => bySession[key] ?? [];
 
 /** terminumd's `taskmarks`: the Inbox's revision and unread counts; a moved revision reads the list again. */
 export function inboxMarks(m) {
   const r = m.reports ?? { rev: "", unread: {} };   // none while no report was ever written
-  bySession = r.sessions ?? {};
   if (!box) return;
   st.unread = r.unread ?? {};
   if (r.rev === st.rev) { drawHead(); return; }
@@ -237,4 +217,4 @@ function mount(at) {
 }
 
 const at = document.getElementById("inbox");
-if (at) mount(at);
+if (at) { mount(at); onTaskMarks(inboxMarks); }

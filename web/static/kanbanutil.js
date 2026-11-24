@@ -7,6 +7,7 @@ import { toast } from "./toast.js";
 import { askConfirm } from "./dialogs.js";
 import { dropLit } from "./droplit.js";
 import { cardState } from "./cardstate.js";
+import { openReport } from "./reportlink.js";
 
 export const COLUMNS = ["TODO", "IN PROGRESS", "WAIT FOR HUMAN", "INTEGRATION", "FAILED", "DONE"];
 export const SEVERITIES = ["P0", "P1", "P2", "P3"];
@@ -357,7 +358,7 @@ function linkReports(box) {
   for (let n = walk.nextNode(); n; n = walk.nextNode()) if (REPORT_ID.test(n.data)) found.push(n);
   for (const n of found) {
     const parts = n.data.split(/(R_[A-Z][A-Z0-9]{0,7}-\d+)/);
-    n.replaceWith(...parts.map((p, i) => (i % 2 ? button("linklike", p, () => import("./inbox.js").then((m) => m.openReport(p))) : p)));
+    n.replaceWith(...parts.map((p, i) => (i % 2 ? button("linklike", p, () => openReport(p)) : p)));
   }
 }
 

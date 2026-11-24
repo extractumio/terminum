@@ -7,7 +7,8 @@ import { icon } from "./icons.js";
 import { el, iconButton } from "./listparts.js";
 import { api, button, download, onSend, renderInto, stamp } from "./kanbanutil.js";
 import { sessionUrl } from "./tasklink.js";
-import { CHANGED_EVENT, REPORT_EVENT, act as inboxAct, age, copyLink, openReport, remove as inboxRemove } from "./inbox.js";
+import { CHANGED_EVENT, act as inboxAct, copyLink, remove as inboxRemove } from "./inbox.js";
+import { REPORT_EVENT, age, openReport } from "./reportlink.js";
 
 const READ_AFTER = 2000;
 const $ = (id) => document.getElementById(id);

@@ -8,7 +8,7 @@ import { el, iconButton } from "./listparts.js";
 import { rail } from "./kanbanrail.js";
 import { scheduleWindow } from "./kanbanschedwin.js";
 import { $, agentColor, api, button, say, statusBox } from "./kanbanutil.js";
-import { age, openReport } from "./inbox.js";
+import { age, openReport } from "./reportlink.js";
 
 /** `getMeta()`: projects and agents; `chosen()`: the projects shown, none for all; `openTask(id)`. */
 export function scheduledSection({ getMeta, chosen, openTask }) {
