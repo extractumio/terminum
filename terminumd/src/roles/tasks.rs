@@ -106,7 +106,7 @@ pub(super) async fn promote_queued(app: &Shared, boss: &Boss, args: &Value, supe
 pub async fn stop_task(app: &Shared, boss: &Boss, args: &Value) -> Result<String, String> {
     let id = arg(args, "id")?.to_string();
     let (scope, actor) = (boss.clone(), boss.clone());
-    let stopped = crate::dispatcher::letgo::gave_up_checked(app, &id, "The project's manager", move |tx, wanted| {
+    let stopped = crate::dispatcher::letgo::gave_up_checked(app, &id, crate::dispatcher::letgo::Giver::Manager, move |tx, wanted| {
         in_project(tx, &scope, wanted).map(drop)
     }, move |tx, ids| {
         for id in ids {
