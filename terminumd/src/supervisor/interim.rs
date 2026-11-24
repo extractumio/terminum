@@ -25,9 +25,9 @@ pub(super) struct Comparison {
     pub task: Option<String>,
     pub hold: Option<i64>,
     pub decision: String,
-    /// The applied hold's comments, task and event, for their notices (AC-241).
+    /// The applied hold's comments, for their notices after commit (AC-241).
     #[serde(skip)]
-    pub nudges: Vec<(String, String)>,
+    pub nudges: super::nudges::Nudges,
 }
 
 impl Comparison {

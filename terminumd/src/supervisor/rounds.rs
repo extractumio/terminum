@@ -222,9 +222,13 @@ fn task_data(tx: &Transaction, signal: &Signal) -> Result<Vec<Value>, String> {
     }).collect()
 }
 
-/// The round's first prompt, the task an interim verification hold took out of integration (AC-233), and that
-/// hold's comments, task and event (AC-241).
-type Saved = (String, Option<String>, Vec<(String, String)>);
+/// A saved round's first prompt, the task an interim verification hold took out of integration (AC-233), and that
+/// hold's comments, for their notices after commit (AC-241).
+pub(crate) struct Saved {
+    pub prompt: String,
+    pub held: Option<String>,
+    pub nudges: super::nudges::Nudges,
+}
 
 /// Saves the round's case file.
 pub(crate) fn save(tx: &Transaction, run: &str, candidate: Candidate, at: i64, clock_scale: i64) -> Result<Saved, String> {
@@ -272,7 +276,7 @@ pub(crate) fn save(tx: &Transaction, run: &str, candidate: Candidate, at: i64, c
             tx.execute("DELETE FROM supervisor_round_requests WHERE fingerprint = ?1", [&key]).map_err(sql)?;
         }
     }
-    Ok((prompt, held, nudges))
+    Ok(Saved { prompt, held, nudges })
 }
 
 fn investigation_case(tx: &Transaction, signal: &mut Signal, at: i64) -> Result<(Value, Option<i64>), String> {

@@ -264,7 +264,7 @@ async fn ac241_a_hold_s_comment_waits_for_its_linked_agent() {
         if !app.task_lines.waiting_comments(&slug).is_empty() { break }
         tokio::time::sleep(std::time::Duration::from_millis(5)).await;
     }
-    assert_eq!(app.task_lines.waiting_comments(&slug), std::collections::HashSet::from([hold.nudges[0].1.clone()]));
+    assert_eq!(app.task_lines.waiting_comments(&slug), std::collections::HashSet::from([hold.nudges[0].1.clone().unwrap()]));
     let (_, said) = app.task_lines.offer(PANE, false).unwrap();
     assert!(said.iter().any(|l| l.starts_with(&format!("[terminum] {slug} has a new comment by"))), "{said:?}");
 }

@@ -34,10 +34,10 @@ pub(super) fn heard(app: &Shared, applied: Applied) {
     changed(app);
 }
 
-/// A hold's comments reach their tasks' linked agents as any comment does (AC-241, terminum-dispatcher.md AC-209).
-pub(crate) fn nudged(app: &Shared, nudges: &[(String, String)]) {
+/// Supervisor comments reach their tasks' linked agents as any comment does (AC-241, terminum-dispatcher.md AC-209).
+pub(crate) fn nudged(app: &Shared, nudges: &[(String, Option<String>)]) {
     for (task, event) in nudges {
-        crate::tasks::notify::comment_added(app, task, event, None);
+        if let Some(event) = event { crate::tasks::notify::comment_added(app, task, event, None); }
         told(app, task);
     }
 }

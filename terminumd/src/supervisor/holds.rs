@@ -44,7 +44,7 @@ impl Kind {
         }
     }
 
-    pub(super) fn undo(self) -> &'static str {
+    fn undo(self) -> &'static str {
         match self {
             Self::StopRun => "RUN", Self::PauseDispatch => "Turn on Auto-Dispatcher",
             Self::PauseIntegration => "Resume integration", Self::TakeOut => "Queue for integration",
@@ -159,8 +159,7 @@ pub(super) struct Applied {
     pub shadow: bool,
     pub run: Option<Box<Run>>,
     pub task: Option<String>,
-    /// Its comments, task and event, for their notices (AC-241).
-    pub nudges: Vec<(String, String)>,
+    pub nudges: super::nudges::Nudges,
 }
 
 pub(super) fn apply(tx: &Transaction, project: &str, request: Request, actor: &str, at: i64) -> Result<Disposition, String> {
