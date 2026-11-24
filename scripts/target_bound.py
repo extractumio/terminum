@@ -4,13 +4,17 @@
 without cargo's cache tag (a clone made it) is marked as cargo marks its own. Under the bound nothing is removed. Over it,
 each executable's object files that its debug map no longer names go first: on macOS every incremental build of a
 crate leaves its previous objects in `deps` beside the new ones, and nothing else removes them. The executables,
-libraries, fingerprints and the incremental cache stay, so the next build stays incremental. Still over,
-`cargo clean`. If Cargo holds a profile lock, that profile is left in place and `cargo clean` is skipped.
+libraries, fingerprints and the incremental cache stay, so the next build stays incremental. Still over, build
+folders are emptied one at a time, under the locks still held, until it is under: the `debug` ones (they grow) first,
+`release` and the cross-compiled ones (`make install` packages them) last, only where that gets it under. In a
+worktree, each emptied folder gets the primary's dependencies' builds cloned back. If Cargo holds a profile lock, that
+profile is left in place and nothing is emptied.
 
   target_bound.py [<tree>]   keeps the bound of <tree>'s terminumd/target (default: this checkout)"""
 from contextlib import ExitStack
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 
@@ -65,13 +69,45 @@ def stale_objects(deps, names_of=debug_map):
             yield from (deps / name for name in objects if name not in used)
 
 
-def cargo_clean(tree):
-    """`cargo clean`, then clone the primary's idle profiles as a new tree does. What it did, in words."""
-    subprocess.run(["cargo", "clean", "--quiet", "--manifest-path", str(Path(tree) / "terminumd" / "Cargo.toml")], check=True)
-    return worktree.link_target(Path(tree).resolve(), worktree.primary_of(tree))
+def empty(folder):
+    """Everything in a build folder whose locks this run holds but those locks, so a cargo waiting on them waits on
+    the same files."""
+    for entry in folder.iterdir():
+        if entry.name not in cargo_profile.LOCKS:
+            shutil.rmtree(entry) if entry.is_dir() and not entry.is_symlink() else entry.unlink()
 
 
-def bound(tree, limit=BOUND_GIB * GIB, say=print, clean=cargo_clean, names_of=debug_map):
+def refill(tree, name):
+    """In a worktree, the primary's idle `name` folder's dependencies' builds cloned into its emptied one, as a new
+    tree gets them; what it did, in words, or None in the primary checkout or with no such folder there."""
+    primary = worktree.primary_of(tree)
+    source = primary / "terminumd" / "target" / name
+    if Path(tree).resolve() == primary or not source.is_dir():
+        return None
+    return {"cloned": f"{name}: its dependencies' builds cloned from the primary checkout",
+            "busy": f"{name}: the primary's is busy, cargo builds it whole",
+            "no clone": f"{name}: no clone on this disk, cargo builds it whole"}[
+        worktree.clone_profile(source, Path(tree) / "terminumd" / "target" / name)]
+
+
+def empty_until_under(target, folders, left, limit, clean):
+    """Empties `folders` (their locks held) one at a time until `target` is under `limit`: the `debug` ones (they grow)
+    first, then the rest, the largest first within each; one of the rest only while emptying it and those after it
+    could get it under. The names emptied, the bytes left, and why it stopped over, if it did."""
+    sizes = {folder: disk_use(folder) for folder in folders}
+    order = sorted(folders, key=lambda folder: (folder.name != "debug", -sizes[folder]))
+    emptied = []
+    for at, folder in enumerate(order):
+        if folder.name != "debug" and left - sum(sizes[rest] for rest in order[at:]) > limit:
+            return emptied, left, "the rest kept: emptying it would not get it under"
+        clean(folder)
+        emptied.append(folder.relative_to(target).as_posix())
+        if (left := disk_use(target)) <= limit:   # before any refill: its clones share the primary's blocks
+            break
+    return emptied, left, None
+
+
+def bound(tree, limit=BOUND_GIB * GIB, say=print, clean=empty, names_of=debug_map, refill=refill):
     """Keeps `tree`'s terminumd/target under `limit` (bytes; default the bound), saying what it did in one line."""
     target = Path(tree) / "terminumd" / "target"
     if not target.is_dir():
@@ -81,20 +117,28 @@ def bound(tree, limit=BOUND_GIB * GIB, say=print, clean=cargo_clean, names_of=de
     size = disk_use(target)
     if size <= limit:
         return say(f"target: {gib(size)}, under its bound of {gib(limit)}: nothing removed")
-    busy = []
+    busy, free = [], []
     with ExitStack() as held:
         for folder in build_folders(target):
             if not held.enter_context(cargo_profile.try_lock(folder)):
                 busy.append(folder.relative_to(target).as_posix())
-            elif (folder / "deps").is_dir():
+                continue
+            free.append(folder)
+            if (folder / "deps").is_dir():
                 for path in stale_objects(folder / "deps", names_of):
                     path.unlink(missing_ok=True)
-    left = disk_use(target)
-    words = f"target: {gib(size)}, over its bound of {gib(limit)}: {gib(size - left)} of objects no build uses removed, {gib(left)} left"
-    if busy:
-        words += f"; a build runs in {', '.join(busy)}: left as it is"
-    if left > limit:
-        words += "; still over: " + ("no cargo clean while a build runs" if busy else f"cargo clean; {clean(tree)}")
+        left = disk_use(target)
+        words = f"target: {gib(size)}, over its bound of {gib(limit)}: {gib(size - left)} of objects no build uses removed, {gib(left)} left"
+        if busy:
+            words += f"; a build runs in {', '.join(busy)}: left as it is"
+        if left > limit:
+            if busy:
+                words += "; still over: nothing emptied while a build runs"
+            else:
+                emptied, left, stopped = empty_until_under(target, free, left, limit, clean)
+                words += f"; still over: {', '.join(emptied) or 'nothing'} emptied, {gib(left)} left"
+                notes = [stopped] + [refill(tree, name) for name in emptied]   # under the emptied folders' locks
+                words += "".join(f"; {note}" for note in notes if note)
     return say(words)
 
 

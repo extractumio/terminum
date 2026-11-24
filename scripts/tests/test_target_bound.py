@@ -20,7 +20,8 @@ UNIT = "terminumd-0123456789abcdef"
 KIB = 1024
 
 
-class Bound(unittest.TestCase):
+class Target:
+    """A stand-in tree with a debug folder: an executable, the objects it names, older ones, what stays."""
     def setUp(self):
         self.tree = Path(tempfile.mkdtemp(prefix="tm-bound-", dir=short_tmp()))
         self.addCleanup(shutil.rmtree, self.tree, ignore_errors=True)
@@ -48,6 +49,8 @@ class Bound(unittest.TestCase):
             path.chmod(0o755)
         return path
 
+
+class Bound(Target, unittest.TestCase):
     def hold(self, name=".cargo-lock"):
         """A build folder's lock, held as cargo holds it while it builds, until the test ends."""
         lock = self.deps.parent / name
@@ -57,13 +60,13 @@ class Bound(unittest.TestCase):
         fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         return fd
 
-    def bound(self, limit):
+    def bound(self, limit, refill=lambda tree, name: None):
         names = {p.name for p in self.current}
-        target_bound.bound(self.tree, limit, self.said.append, self.clean, lambda exe: names)
+        target_bound.bound(self.tree, limit, self.said.append, self.clean, lambda exe: names, refill)
 
-    def clean(self, tree):
-        self.cleaned.append(tree)
-        return "cloned terminumd/target/{debug}"
+    def clean(self, folder):
+        self.cleaned.append(folder.relative_to(self.target).as_posix())
+        target_bound.empty(folder)
 
     def size(self):
         return target_bound.disk_use(self.target)
@@ -80,15 +83,61 @@ class Bound(unittest.TestCase):
         self.assertFalse(any(p.exists() for p in self.old))
         self.assertTrue(all(p.exists() for p in self.current + self.kept + [self.deps / UNIT]),
                         "the executable, the objects it names, libraries, fingerprints, the incremental cache stay")
-        self.assertEqual(self.cleaned, [], "under the bound once they went: no cargo clean")
+        self.assertEqual(self.cleaned, [], "under the bound once they went: nothing emptied")
         self.assertIn("of objects no build uses removed", self.said[-1])
-        self.assertNotIn("cargo clean", self.said[-1])
+        self.assertNotIn("still over", self.said[-1])
 
-    def test_still_over_after_that_cargo_clean(self):  # AC-206
-        self.bound(1)
+    def test_still_over_after_that_debug_is_emptied_and_release_and_the_cross_targets_kept(self):  # AC-206
+        self.write(self.folder("release") / "deps" / "librelease.rlib", 64)
+        self.write(self.folder("x86_64-unknown-linux-musl/release") / "deps" / "libcross.rlib", 64)
+        self.bound(self.size() - 4 * 256 * KIB - 64 * KIB)   # over by 64 KiB once the old objects went
         self.assertFalse(any(p.exists() for p in self.old))
-        self.assertEqual(self.cleaned, [self.tree])
-        self.assertIn("still over: cargo clean; cloned terminumd/target/{debug}", self.said[-1])
+        self.assertEqual(self.cleaned, ["debug"], "the folder that grows, and nothing once under")
+        self.assertRegex(self.said[-1], r"; still over: debug emptied, \d+\.\d GiB left$")
+
+    def test_still_over_after_debug_the_largest_of_the_rest_next(self):  # AC-206
+        self.write(self.folder("aarch64-apple-darwin/debug") / "deps" / "libd.rlib", 4)
+        small = self.write(self.folder("release") / "deps" / "libsmall.rlib", 4)
+        self.write(self.folder("x86_64-apple-darwin/release") / "deps" / "liblarge.rlib", 128)
+        self.bound(64 * KIB)   # under once the large one went
+        self.assertEqual(self.cleaned, ["debug", "aarch64-apple-darwin/debug", "x86_64-apple-darwin/release"],
+                         "every debug folder, however small, before the largest of the rest")
+        self.assertTrue(small.exists())
+
+    def test_release_is_kept_where_emptying_it_would_not_get_the_target_under(self):  # AC-206
+        """Over in a folder that is no build folder (target/doc): release and the cross builds would go for nothing."""
+        self.write(self.target / "doc" / "index.html", 512)
+        release = self.write(self.folder("release") / "deps" / "librelease.rlib", 64)
+        self.bound(256 * KIB)
+        self.assertEqual(self.cleaned, ["debug"])
+        self.assertTrue(release.exists())
+        self.assertIn("; the rest kept: emptying it would not get it under", self.said[-1])
+
+    def test_the_clones_a_worktree_gets_back_do_not_empty_release(self):  # AC-206
+        """Its clones count whole (du), though they share the primary's blocks: under once emptied is under."""
+        release = self.write(self.folder("release") / "deps" / "librelease.rlib", 64)
+
+        def refill(tree, name):
+            self.write(self.target / name / "deps" / "libtokio.rlib", 1024)
+            return f"{name}: its dependencies' builds cloned from the primary checkout"
+        self.bound(self.size() - 4 * 256 * KIB - 64 * KIB, refill)
+        self.assertEqual(self.cleaned, ["debug"])
+        self.assertTrue(release.exists())
+        self.assertRegex(self.said[-1], r"still over: debug emptied, \d+\.\d GiB left; debug: its dependencies' builds cloned from the primary checkout$")
+
+    def test_it_empties_a_folder_under_the_locks_it_pruned_it_under(self):  # AC-206
+        """No cargo starts in the folder between its pruning and its emptying or refill."""
+        free = []
+
+        def clean(folder):
+            with cargo_profile.try_lock(folder) as held:
+                free.append(held)
+
+        def refill(tree, name):
+            with cargo_profile.try_lock(self.target / name) as held:
+                free.append(held)
+        target_bound.bound(self.tree, 1, self.said.append, clean, lambda exe: set(), refill)
+        self.assertEqual(free, [False, False])
 
     def test_a_build_running_in_the_tree_is_never_cleaned_under_it(self):  # AC-206
         release = self.folder("release")
@@ -100,9 +149,9 @@ class Bound(unittest.TestCase):
             fcntl.flock(fd, fcntl.LOCK_UN)
             self.assertTrue(all(p.exists() for p in self.old + self.current), f"{name}: the folder a build runs in is left as it is")
             self.assertFalse(stale_release.exists(), "a folder no build holds is pruned")
-            self.assertEqual(self.cleaned, [], "no cargo clean while a build runs")
+            self.assertEqual(self.cleaned, [], "nothing emptied while a build runs")
             self.assertIn("a build runs in debug: left as it is", self.said[-1])
-            self.assertIn("no cargo clean while a build runs", self.said[-1])
+            self.assertIn("still over: nothing emptied while a build runs", self.said[-1])
 
     def test_it_holds_the_build_locks_while_it_prunes(self):  # AC-206
         """As cargo's own build does, so a build that starts meanwhile waits for it."""
@@ -112,13 +161,13 @@ class Bound(unittest.TestCase):
             with cargo_profile.try_lock(self.deps.parent) as held:
                 free.append(held)
             return {p.name for p in self.current}
-        target_bound.bound(self.tree, 1, self.said.append, self.clean, names)
+        target_bound.bound(self.tree, 1, self.said.append, self.clean, names, lambda tree, name: None)
         self.assertEqual(free, [False])
 
     def test_objects_kept_when_the_map_is_unknown_empty_or_the_unit_has_no_executable(self):  # AC-206
         orphan = self.write(self.deps / "launchd-fedcba9876543210.cgu0.s1.rcgu.o", 4)
         for unknown in (None, set()):
-            target_bound.bound(self.tree, 1, self.said.append, self.clean, lambda exe: unknown)
+            target_bound.bound(self.tree, 1, self.said.append, lambda folder: None, lambda exe: unknown, lambda tree, name: None)
             self.assertTrue(all(p.exists() for p in self.old + self.current + [orphan]))
 
     def test_no_target_yet(self):  # AC-206
@@ -166,6 +215,46 @@ class Bound(unittest.TestCase):
         before = self.size()
         os.link(self.old[0], self.deps / "a-link")
         self.assertEqual(self.size(), before)
+
+
+class Refill(Target, unittest.TestCase):
+    """empty() and refill(): what stays in an emptied folder, and what a worktree gets back from the primary."""
+    def setUp(self):
+        super().setUp()
+        self.primary = Path(tempfile.mkdtemp(prefix="tm-bound-", dir=short_tmp()))
+        self.addCleanup(shutil.rmtree, self.primary, ignore_errors=True)
+        self.source = self.primary / "terminumd" / "target" / "debug"
+        self.dep = self.write(self.source / "deps" / "libtokio-0011223344556677.rlib", 4)
+        self.write(self.source / "deps" / f"{UNIT}.rlib", 4)
+        self.write(self.source / ".fingerprint" / "tokio-0011223344556677" / "lib-tokio", 1)
+        (self.source / ".cargo-lock").touch()
+
+    def refill(self, primary):
+        target_bound.empty(self.deps.parent)
+        with mock.patch.object(target_bound.worktree, "primary_of", return_value=primary.resolve()):
+            return target_bound.refill(self.tree, "debug")
+
+    def test_the_locks_stay_and_the_rest_goes(self):  # AC-206
+        for name in cargo_profile.LOCKS:
+            (self.deps.parent / name).touch()
+        self.assertIsNone(self.refill(self.tree), "the primary checkout: nothing to clone from")
+        self.assertEqual(sorted(p.name for p in self.deps.parent.iterdir()), sorted(cargo_profile.LOCKS))
+
+    def test_a_worktree_gets_the_primarys_dependencies_builds_back(self):  # AC-206
+        self.assertEqual(self.refill(self.primary), "debug: its dependencies' builds cloned from the primary checkout")
+        self.assertTrue((self.deps / self.dep.name).exists())
+        self.assertFalse((self.deps / f"{UNIT}.rlib").exists(), "terminumd's own build: the tree rebuilds it")
+        self.assertTrue((self.deps.parent / ".fingerprint" / "tokio-0011223344556677" / "lib-tokio").exists())
+
+    def test_the_primarys_busy_profile_is_not_cloned(self):  # AC-206
+        with cargo_profile.try_lock(self.source) as held:
+            self.assertTrue(held)
+            self.assertEqual(self.refill(self.primary), "debug: the primary's is busy, cargo builds it whole")
+        self.assertFalse(self.deps.exists())
+
+    def test_no_clone_on_this_disk(self):  # AC-206
+        with mock.patch.object(target_bound.worktree, "clone_builds", return_value=False):
+            self.assertEqual(self.refill(self.primary), "debug: no clone on this disk, cargo builds it whole")
 
 
 @unittest.skipUnless(sys.platform == "darwin" and shutil.which("cc") and shutil.which("nm"), "macOS's debug map")

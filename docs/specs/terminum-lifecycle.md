@@ -73,7 +73,7 @@ Open questions: none open. Which clients exist (AC-11's drop) is terminum.md OQ-
 | AC-200 | [SHOULD / P1] | A release promotes a commit: `make release` pins the newest commit of origin/main that passed the full run in 48 hours, or differs from one only in docs, else origin/main, or `PIN=`, and runs its full run, the Mac test runner's checks, the build and the tag in a tree of its own detached at it, by that commit's own code, while landings, Afters and installs go on; a fix for a red release lands first and is pinned. |
 | AC-201 | [SHOULD / P1] | The full run keeps a pass per step and content, shared by every tree, and runs only the steps without one, or the scan alone after a docs-only change; its steps see only an allow-listed environment; a budget over under its own load is said and judged on a quiet machine; a red step of real programs runs its red checks once more, never for a check of code changed since the last full pass or one retried in 3 of the last 7 runs, said in red, in a task and in the release notes; each run and each release leaves a line in a record. |
 | AC-202 | [SHOULD / P1] | A nightly schedule runs every rehearsal step on origin/main, even after a pass on the same content, and judges the budgets on a quiet machine. A red step makes a task naming the commits since the last full pass. A weekly schedule runs /simplify and /docs-review over what landed since its last run, with findings filed as ordinary tasks. Releases require neither schedule. |
-| AC-206 | [SHOULD / P1] | Every checkout (the primary, a worktree, the integration candidate's, `.worktrees/release`, `.worktrees/rehearse`) keeps `terminumd/target` out of Time Machine and under a bound of 20 GiB, kept where a build begins there: over it, the object files no executable of the current build names go first, the current build's stay so the next build is incremental, and only a target still over is cleaned; a build running there is never cleaned under it. |
+| AC-206 | [SHOULD / P1] | Every checkout (the primary, a worktree, the integration candidate's, `.worktrees/release`, `.worktrees/rehearse`) keeps `terminumd/target` out of Time Machine and under a bound of 20 GiB, kept where a build begins there: over it, the object files no executable of the current build names go first, the current build's stay so the next build is incremental; a target still over has its build folders emptied, debug first, release and the cross-compiled ones last; a build running there is never cleaned under it. |
 
 ## 5. BDD scenarios
 
@@ -1245,15 +1245,18 @@ Scenario: AC-206 happy path — over it, the objects no build uses go first
   And the log says "target: 31.0 GiB, over its bound of 20.0 GiB: 21.4 GiB of objects no build uses removed, 9.6 GiB left"
 
 Scenario: AC-206 edge — still over after that
-  Given the target still over its bound once those objects went
-  And the primary checkout's debug and release profiles are idle
-  Then `cargo clean` empties it and the dependencies' builds are cloned from the primary checkout again, as a new tree gets them, so only terminumd's own build is cold
-  And the log's line ends "still over: cargo clean; cloned terminumd/target/{release,debug} (their dependencies' builds; terminumd itself rebuilds)"
+  Given the target still over its bound once those objects went, no build running in it
+  When the bound is kept, in the primary checkout or a worktree
+  Then its build folders are emptied one at a time until it is under: the debug ones first (target/debug, target/<triple>/debug: the folders that grow), the largest first, then the others, the largest first
+  And release and the cross-compiled folders make install packages are emptied only where emptying them can get it under, else they are kept and the line says "the rest kept: emptying it would not get it under"
+  And each is emptied under the locks held since its pruning, which stay, so a cargo starting meanwhile waits and then finds an empty folder
+  And in a worktree, an emptied folder then gets the primary checkout's idle same folder's dependencies' builds cloned back, as a new tree gets them, so only terminumd's own build is cold; whether it is under is judged before those clones, which share the primary's blocks
+  And the log's line ends "still over: debug emptied, 8.2 GiB left; debug: its dependencies' builds cloned from the primary checkout", in the primary checkout "still over: debug emptied, 8.2 GiB left"; a clone not made says "debug: the primary's is busy, cargo builds it whole" or "debug: no clone on this disk, cargo builds it whole"
 
 Scenario: AC-206 edge — a build runs in the tree
   Given cargo holds a lock of a build folder (target/debug's .cargo-lock, .cargo-build-lock or .cargo-artifact-lock) while it builds there
   When the bound is kept
-  Then that folder is left as it is, the other folders are pruned, no cargo clean runs, and the line says "a build runs in debug: left as it is"
+  Then that folder is left as it is, the other folders are pruned, none is emptied, and the line says "a build runs in debug: left as it is"
   And while it prunes a folder it holds that folder's locks, so a build starting meanwhile waits for it as for another cargo
 
 Scenario: AC-206 edge — objects it cannot judge
@@ -1272,7 +1275,7 @@ Scenario: AC-206 happy path — a target cargo did not make is out of Time Machi
   And where the exclusion cannot be written, the tree is still made and the build goes on, the line says "not excluded from Time Machine: <the error>", and no tag is written, so the next bound tries again
 
 Scenario: AC-206 failure — the bound cannot be kept
-  When reading or removing in the target fails, or cargo clean does
+  When reading or removing in the target fails
   Then the line says "target: its bound was not kept: <the error>" and the Check, or the release, goes on
 ```
 
