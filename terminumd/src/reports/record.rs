@@ -23,7 +23,18 @@ pub mod role {
     pub const TERMINUM: &str = "terminum";
 }
 
-/// What a new report holds; `task`, `follows`: store keys.
+/// A report's type (AC-265), shown beside it in the Inbox: terminumd sets it from where the report came from and what
+/// it holds, never from an agent's word (an agent's report is a report).
+pub mod kind {
+    pub const REPORT: &str = "report";
+    pub const OK: &str = "ok";
+    pub const ATTENTION: &str = "attention";
+    pub const FAILED: &str = "failed";
+    pub const INCIDENT: &str = "incident";
+    pub const DIGEST: &str = "digest";
+}
+
+/// What a new report holds; `task`, `follows`: store keys; `kind`: empty for a report.
 #[derive(Default)]
 pub struct New {
     pub project: String,
@@ -39,6 +50,7 @@ pub struct New {
     pub run: Option<String>,
     pub incident: Option<i64>,
     pub follows: Option<String>,
+    pub kind: &'static str,
 }
 
 /// A summary on one line, within its limit (AC-265).
@@ -103,10 +115,11 @@ pub fn create(tx: &Transaction, new: New, at: i64) -> Result<(String, String, St
     let line = line_due(tx, &new, at)?;
     // a critical report alerts once: by the incident it opens or joins, else by its own line (AC-276)
     let supervised = new.critical && new.incident.is_none();
+    let kind = if new.kind.is_empty() { kind::REPORT } else { new.kind };
     tx.execute("INSERT INTO reports (id, project, number, slug, title, summary, body, critical, author, role, session_key, task, schedule, run,
-            incident, follows, line, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?18)",
+            incident, follows, line, created_at, updated_at, kind) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?18, ?19)",
         rusqlite::params![key, new.project, number, slug, title, summary, body, new.critical, new.author, new.role, new.session, new.task,
-            new.schedule, new.run, new.incident, new.follows, line && !supervised, at]).map_err(sql)?;
+            new.schedule, new.run, new.incident, new.follows, line && !supervised, at, kind]).map_err(sql)?;
     // a line of its task's history, never a comment: the task's result stays its agent's last comment
     if let Some(task) = &new.task {
         ops::log(tx, task, &new.author, "report", &format!("Report {slug}: {title}"), Some(&serde_json::json!({"report": slug})), at)?;

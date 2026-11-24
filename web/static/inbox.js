@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-// The Inbox (terminum-reports.md AC-267, AC-269): reports above the Sessions in the session list, on the session page,
-// the board and a phone's sheet; unread in bold, critical in red and first; it follows the board's project choice and
-// Find. A press opens the report's pane over the board (reportpane.js), on the session page by going there. Keys, a
+// The Inbox (terminum-reports.md AC-267, AC-269): reports above the Sessions in the board's session list and a phone's
+// sheet, never on the session page; unread in bold, critical in red and first, each with its type and sender; it
+// follows the board's project choice and Find. A press opens the report's pane over the board (reportpane.js). Keys, a
 // right-click or long-press menu and each row's buttons read, unread and delete; a delete is undone from its toast.
 import { icon } from "./icons.js";
 import { el, iconButton, plural, projectInk, read, write } from "./listparts.js";
@@ -10,7 +10,7 @@ import { CHOSEN } from "./kanbanfilters.js";
 import { menuBox } from "./menubox.js";
 import { longPress } from "./rowmenu.js";
 import { taskUrl } from "./tasklink.js";
-import { age, openReport, reportUrl } from "./reportlink.js";
+import { age, kindOf, openReport, reportUrl, senderOf } from "./reportlink.js";
 import { onTaskMarks } from "./nav.js";
 
 const SHOWN = 8;                                   // rows before "Show all"
@@ -103,7 +103,10 @@ function rowOf(r) {
   const head = el("span", "rhead");
   if (r.critical) head.append(icon("triangle-alert", 13));
   head.append(el("span", "rtitle", r.title), el("span", "rage", st.deleted ? `deleted ${age(r.deleted_at)}` : age(r.created_at)));
-  b.append(head, el("span", "rsum", r.summary || r.id), el("span", "rsource", `${r.id} · ${r.source.name}${r.answering ? ` · ${r.answering} is answering` : ""}`));
+  const sum = el("span", "rsum");
+  sum.append(kindChip(r));
+  if (r.summary && r.summary.toLowerCase() !== kindOf(r)) sum.append(el("span", "rsumtext", r.summary));   // a type's word once
+  b.append(head, sum, el("span", "rsource", `From ${senderOf(r)} · ${r.id}${r.answering ? ` · ${r.answering} is answering` : ""}`));
   b.addEventListener("click", () => { st.focus = r.id; if (!st.deleted) openReport(r.id); });
   b.addEventListener("focus", () => { st.focus = r.id; });
   const acts = el("span", "racts");
@@ -113,6 +116,13 @@ function rowOf(r) {
     iconButton("icon rdelete", "x", `Delete ${r.id}`, "Delete (Backspace)", () => remove(r.id)));
   li.append(b, acts);
   return li;
+}
+
+/** Report `r`'s type as a chip: a dot of its meaning's hue and its word (AC-265). Shared with the report's pane. */
+export function kindChip(r) {
+  const k = kindOf(r), chip = el("span", `rkind k-${k}`, k);
+  chip.title = `Type: ${k}`;
+  return chip;
 }
 
 /** read, unread, restore of report `id`: terminumd's word, every page hearing it; a refusal said in the Inbox's own

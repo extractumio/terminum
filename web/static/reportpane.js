@@ -1,18 +1,19 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // A report's reading pane (terminum-reports.md AC-268, AC-269): over the board's right part, its agents, routines and
 // columns, the list staying beside it; on a phone over the whole board. Its address is /kanban/?report=<ID>; × or Esc
-// gives the columns back. Open 2 seconds with its page shown, the report is read. Its body is agents' text: it shows only
-// through the Panel's Markdown rules (renderInto), its files download, nothing of it runs.
+// gives the columns back. Open 2 seconds with its page shown, the report is read. Its body is agents' text: it shows as
+// the Files viewer shows a document (renderInto's report: the Panel's Markdown rules, code highlighted, Mermaid in strict
+// mode, an HTML document in a frame without scripts), its files download, nothing of it runs.
 import { icon } from "./icons.js";
 import { el, iconButton } from "./listparts.js";
 import { api, button, download, onSend, renderInto, stamp } from "./kanbanutil.js";
 import { sessionUrl } from "./tasklink.js";
-import { CHANGED_EVENT, act as inboxAct, copyLink, remove as inboxRemove } from "./inbox.js";
-import { REPORT_EVENT, age, openReport } from "./reportlink.js";
+import { CHANGED_EVENT, act as inboxAct, copyLink, kindChip, remove as inboxRemove } from "./inbox.js";
+import { REPORT_EVENT, age, openReport, senderOf } from "./reportlink.js";
 
 const READ_AFTER = 2000;
 const $ = (id) => document.getElementById(id);
-const pane = el("section", "reportpane");
+const pane = el("section", "reportpane rpdoc");
 pane.id = "reportpane";
 pane.hidden = true;
 pane.tabIndex = -1;
@@ -104,6 +105,7 @@ function head(r, id) {
     title.append(mark);
   }
   title.append(el("span", null, r?.title ?? id));
+  if (r) title.append(kindChip(r));
   const acts = el("div", "rpacts");
   if (r && !r.deleted_at) {
     acts.append(iconButton("icon", r.read ? "mail" : "mail-open", r.read ? "Mark as unread" : "Mark as read", r.read ? "Mark as unread (U)" : "Mark as read",
@@ -116,10 +118,11 @@ function head(r, id) {
   if (r) {
     const meta = el("p", "rpmeta");
     const src = r.source;
-    const bits = [`${r.id}`, r.project_name, `by ${r.author_name}${r.role === "terminum" ? "" : ` (${r.role})`}`, `made ${stamp(r.created_at)}`];
+    const role = r.role === "terminum" || r.source.sender === "supervisor" ? "" : ` (${r.role})`;   // the sender names its agent already
+    const bits = [`From ${senderOf(r)}${role}`, `${r.id}`, r.project_name, `made ${stamp(r.created_at)}`];
     if (r.updated_at > r.created_at) bits.push(`changed ${stamp(r.updated_at)}`);
     meta.append(el("span", null, bits.join(" · ")));
-    if (src.task) meta.append(" · ", link(`from ${src.task}${src.schedule ? ` (${src.name})` : ""}`, () => openTask(src.task)));
+    if (src.task) meta.append(" · ", link(`Open ${src.task}`, () => openTask(src.task)));
     else if (src.incident) meta.append(" · ", link(`incident ${src.incident}`, () => { location.href = `/supervisor/?incident=${src.incident}`; }));
     h.append(meta, el("p", "rpnote"));
   }
@@ -145,7 +148,7 @@ async function draw(r) {
       Object.assign(el("button", "textkey", "Restore"), { type: "button", onclick: () => act(r, "restore") }));
   }
   if (r.summary) body.append(el("p", "rpsummary", r.summary));
-  const md = el("div", "markdown rpmarkdown");
+  const md = el("div", "md-body rpmarkdown");
   body.append(md);
   if (r.files.length) {
     const files = el("ul", "rpfiles");
@@ -171,7 +174,7 @@ async function draw(r) {
   }
   if (r.notes.length) body.append(el("h3", null, `Below it · ${r.notes.length}`), notes);
   pane.replaceChildren(head(r), body, foot(r));
-  await renderInto(md, r.body);
+  await renderInto(md, r.body, { report: true });
 }
 
 /** The reply (AC-270): a field and Send when its task's conversation can go on, its agent's answer awaited said; else

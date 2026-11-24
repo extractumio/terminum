@@ -18,7 +18,17 @@
 .inboxrow .rtitle { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 13px; }
 .inboxrow.unread .rtitle { font-weight: 650; }
 .inboxrow .rage, .inboxrow .rsource { color: var(--muted-text); font-size: 11.5px; white-space: nowrap; }
-.inboxrow .rsum { color: var(--muted-text); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.inboxrow .rsum { display: flex; align-items: center; gap: 6px; min-width: 0; color: var(--muted-text); font-size: 12px; white-space: nowrap; }
+.inboxrow .rsumtext { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.inboxrow .rsource { overflow: hidden; text-overflow: ellipsis; }
+/* a report's type (AC-265): its meaning's hue as a dot, its word muted (docs/UI-GUIDELINES.md §2.2: waiting never as text) */
+.rkind { flex: none; display: inline-flex; align-items: center; gap: 4px; color: var(--muted-text); font-size: 11.5px; font-weight: 500; }
+.rkind::before { content: ""; width: 6px; height: 6px; border-radius: var(--blob-a); background: var(--muted); }
+.rkind.k-ok::before { background: var(--ok); }
+.rkind.k-attention::before { background: var(--waiting); }
+.rkind:is(.k-failed, .k-incident)::before { background: var(--danger); }
+.rkind:is(.k-failed, .k-incident) { color: var(--danger-text); }
+.rptitle .rkind { font-size: 12.5px; margin-left: 4px; }
 .inboxrow.unread .rsum { color: var(--t-fg); }
 .inboxrow.critical.unread .report { background: color-mix(in srgb, var(--danger) 14%, transparent); }
 .inboxrow.critical .rhead .lu, .inboxrow.critical.unread .rtitle { color: var(--danger-text); }
@@ -46,7 +56,17 @@
 .rpacts { display: flex; gap: 2px; }
 .rpmeta, .rpnote { grid-column: 1 / -1; margin: 4px 0 0; color: var(--muted-text); font-size: 12px; overflow-wrap: anywhere; }
 .rpnote:empty { display: none; }
-.rpbody { flex: 1; min-height: 0; overflow-y: auto; padding: var(--sp-3) var(--sp-4) var(--sp-4); overscroll-behavior: contain; }
+.rpbody { flex: 1; min-height: 0; overflow-y: auto; padding: var(--sp-3) max(var(--sp-4), calc((100% - 82ch) / 2)) var(--sp-4); overscroll-behavior: contain; }
+/* the body as the Files viewer shows a document (/fb/renderers.css: .md-body, tok-*, .html-doc), on the panel's tokens
+   made of the page's theme as the panel's html.themed makes them (ui/src/style.css) */
+.rpdoc { --bg: var(--t-bg); --fg: var(--t-fg); --bad: var(--danger-text);
+  --bg-2: color-mix(in srgb, var(--t-fg) 5%, var(--t-bg)); --bg-hover: color-mix(in srgb, var(--t-fg) 9%, var(--t-bg));
+  --fg-dim: color-mix(in srgb, var(--t-fg) 64%, var(--t-bg)); --fg-faint: color-mix(in srgb, var(--t-fg) 42%, var(--t-bg));
+  --mono: TermFont, TermFontShipped, ui-monospace, "SF Mono", Menlo, monospace; --prose: -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
+  --tk-kw: #c792ea; --tk-str: #a5d6a7; --tk-num: #f2c47c; --tk-fn: #82aaff; --tk-type: #7fdbca; --tk-prop: #9cc4ff; --tk-tag: #f07178; --tk-cmt: var(--fg-faint); }
+:root.light .rpdoc { --tk-kw: #8e3fc9; --tk-str: #2f7d32; --tk-num: #a6620c; --tk-fn: #2d5fd0; --tk-type: #127a70; --tk-prop: #2d5fd0; --tk-tag: #c2383f; }
+.rpbody .md-body { max-width: none; margin: 0 0 var(--sp-4); padding: 0; }   /* the pane's own column and margins */
+.rpbody .html-doc { height: 60vh; padding: 6px; border-radius: var(--r-md); background: var(--bg-2); }   /* boxed, apart from the pane's own head; as tall as its page once loaded */
 .rpsummary { margin: 0 0 var(--sp-3); font-size: 14px; font-weight: 600; }
 .rpbody h3 { margin: var(--sp-4) 0 var(--sp-2); font-size: 12.5px; color: var(--muted-text); font-weight: 600; }
 .rpfiles, .rpnotes { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-2); }

@@ -24,19 +24,25 @@ pub struct Filter {
 const ROW: &str = "SELECT r.slug, r.project, r.title, r.summary, r.critical, r.read_at IS NOT NULL, (SELECT t.slug FROM tasks t WHERE t.id = r.task),
     (SELECT 'SCH-' || s.number FROM schedules s WHERE s.id = r.schedule), (SELECT s.title FROM schedules s WHERE s.id = r.schedule),
     (SELECT u.name FROM users u WHERE u.id = r.author), r.role, r.session_key, r.created_at, r.updated_at, r.deleted_at, r.incident, r.number,
-    p.name, p.color, r.id, r.replied_at IS NOT NULL
+    p.name, p.color, r.id, r.replied_at IS NOT NULL, r.kind
     FROM reports r JOIN projects p ON p.id = r.project";
 
 fn row_of(r: &Row) -> rusqlite::Result<Value> {
     let (task, schedule, routine, author): (Option<String>, Option<String>, Option<String>, String) = (r.get(6)?, r.get(7)?, r.get(8)?, r.get(9)?);
-    let incident: Option<i64> = r.get(15)?;
-    // what the row names as its source: a routine by its name, the Supervisor, a task, else its author (AC-267)
-    let name = routine.clone().or_else(|| incident.map(|_| "Supervisor".to_string())).or_else(|| task.clone()).unwrap_or_else(|| author.clone());
+    let (incident, kind, role): (Option<i64>, String, String) = (r.get(15)?, r.get(21)?, r.get(10)?);
+    // who sent it, as the row names it: a routine by its name, the Supervisor, a task, else its author (AC-267)
+    let supervisor = incident.is_some() || kind == super::record::kind::DIGEST || role == super::record::role::SUPERVISOR;
+    let (sender, name) = match (&routine, &task) {
+        (Some(routine), _) => ("routine", routine.clone()),
+        _ if supervisor => ("supervisor", "Supervisor".to_string()),
+        (None, Some(task)) => ("task", task.clone()),
+        (None, None) => ("agent", author.clone()),
+    };
     Ok(json!({
         "id": r.get::<_, String>(0)?, "project": r.get::<_, String>(1)?, "title": r.get::<_, String>(2)?, "summary": r.get::<_, String>(3)?,
         "critical": r.get::<_, bool>(4)?, "read": r.get::<_, bool>(5)?,
-        "source": {"task": task, "schedule": schedule, "incident": incident, "name": name},
-        "author_name": author, "role": r.get::<_, String>(10)?, "session": r.get::<_, Option<String>>(11)?,
+        "source": {"task": task, "schedule": schedule, "incident": incident, "name": name, "sender": sender}, "kind": kind,
+        "author_name": author, "role": role, "session": r.get::<_, Option<String>>(11)?,
         "created_at": r.get::<_, i64>(12)?, "updated_at": r.get::<_, i64>(13)?, "deleted_at": r.get::<_, Option<i64>>(14)?,
         "number": r.get::<_, i64>(16)?, "project_name": r.get::<_, String>(17)?, "project_color": r.get::<_, i64>(18)?,
         "key": r.get::<_, String>(19)?, "replied": r.get::<_, bool>(20)?,

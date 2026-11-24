@@ -1,0 +1,61 @@
+/* SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial */
+/* A rendered document's look: the viewer's (style.css imports it) and a report's pane on the board, which loads it as
+   /fb/renderers.css and gives it the panel's tokens from the page's theme (inbox.css .rpdoc, terminum-reports.md AC-268). */
+/* ── syntax tokens (CodeMirror + Markdown code blocks) ───── */
+.tok-keyword, .tok-modifier, .tok-controlKeyword, .tok-operatorKeyword { color: var(--tk-kw); }
+.tok-string, .tok-string2, .tok-inserted, .tok-character { color: var(--tk-str); }
+.tok-number, .tok-bool, .tok-atom, .tok-literal { color: var(--tk-num); }
+.tok-variableName.tok-definition, .tok-function, .tok-macroName { color: var(--tk-fn); }
+.tok-typeName, .tok-className, .tok-namespace { color: var(--tk-type); }
+.tok-propertyName, .tok-attributeName { color: var(--tk-prop); }
+.tok-tagName, .tok-deleted, .tok-invalid { color: var(--tk-tag); }
+.tok-comment { color: var(--tk-cmt); font-style: italic; }
+.tok-meta { color: var(--tk-cmt); }
+.tok-operator, .tok-punctuation { color: var(--fg-dim); }
+.tok-heading { color: var(--accent); font-weight: 700; }
+.tok-emphasis { font-style: italic; } .tok-strong { font-weight: 700; } .tok-strikethrough { text-decoration: line-through; }
+.tok-link, .tok-url { color: var(--link); text-decoration: underline; }
+
+/* ── rendered Markdown: prose typography ──────────────────── */
+.md-body { font: var(--md-size, 15px)/1.65 var(--prose);   /* the page's Markdown size (prefs.js) */ color: var(--fg); max-width: 76ch; margin: 0 auto; padding: 18px 22px 60px;
+  font-feature-settings: "kern", "liga"; text-rendering: optimizeLegibility; hyphens: auto; overflow-wrap: break-word; }
+.md-body > :first-child { margin-top: 0; }
+.md-body h1, .md-body h2, .md-body h3, .md-body h4 { line-height: 1.25; margin: 1.6em 0 .55em; font-weight: 650; letter-spacing: -.01em; }
+.md-body h1 { font-size: 1.85em; }   /* headings set apart by space, not a rule */
+.md-body h2 { font-size: 1.45em; }
+.md-body h3 { font-size: 1.18em; } .md-body h4 { font-size: 1em; }
+.md-body h5, .md-body h6 { font-size: .9em; color: var(--fg-dim); text-transform: uppercase; letter-spacing: .04em; }
+.md-body p, .md-body ul, .md-body ol, .md-body blockquote, .md-body table, .md-body pre { margin: 0 0 1em; }
+.md-body a { color: var(--link); text-decoration: none; border-bottom: 1px solid color-mix(in srgb, var(--link) 35%, transparent); }
+.md-body a:hover { border-bottom-color: var(--link); }
+.md-body strong { font-weight: 650; }
+.md-body ul, .md-body ol { padding-left: 1.5em; }
+.md-body li + li { margin-top: .25em; }
+.md-body li > p { margin: .3em 0; }
+.md-body .task-list-item { list-style: none; margin-left: -1.3em; }
+.md-body .task-list-item input { margin: 0 .45em 0 0; vertical-align: -1px; accent-color: var(--accent); }
+.md-body blockquote { padding: .5em 1em; color: var(--fg-dim); background: var(--bg-2); border-radius: var(--r-md); }   /* a tint, not a bar */
+.md-body code { font: .88em var(--mono); background: var(--bg-hover); padding: .12em .38em; border-radius: var(--r-xs); }
+.md-body pre { background: var(--bg-2); border-radius: var(--r-md); padding: 12px 14px; overflow: auto; position: relative; line-height: 1.5; }
+.md-body pre code { background: none; padding: 0; font-size: .85em; }
+.md-body pre[data-lang]::before { content: attr(data-lang); position: absolute; top: 4px; right: 8px; font: 10px var(--mono);
+  color: var(--fg-faint); text-transform: lowercase; }
+/* a ```mermaid fence drawn as its diagram (AC-54), on the code's own tint; its source behind a toggle */
+.md-body .md-diagram { position: relative; margin: 0 0 1em; padding: 26px 14px 12px; background: var(--bg-2); border-radius: var(--r-md); overflow-x: auto; }
+.md-body .md-diagram img.diagram { display: block; max-width: 100%; height: auto; margin: 0 auto; }
+.md-body .md-diagram pre { margin: 0; padding: 0; background: none; }
+.md-body .md-diagram-toggle { position: absolute; top: 4px; right: 8px; font: 10px var(--mono); color: var(--fg-dim); background: none; border: 0; padding: 2px 4px; border-radius: var(--r-xs); cursor: pointer; }
+.md-body .md-diagram-toggle:hover { background: var(--bg-hover); color: var(--fg); }
+.md-body .md-diagram-error { color: var(--bad); font: .85em var(--mono); margin: 0 0 .3em; }
+@media (pointer: coarse) { .md-body .md-diagram-toggle { top: 0; right: 0; min-width: 44px; min-height: 44px; } }   /* a finger's target */
+.md-body table { border-collapse: collapse; display: block; overflow-x: auto; font-size: .93em; }
+/* tables: no frame, no columns' lines, no stripes; a muted head, rows apart by a hairline */
+.md-body th, .md-body td { padding: 6px 14px; border-bottom: 1px solid color-mix(in srgb, var(--fg) 8%, transparent); text-align: left; vertical-align: top; }
+.md-body th { font-size: .86em; font-weight: 600; color: var(--fg-dim); border-bottom-color: color-mix(in srgb, var(--fg) 15%, transparent); }
+.md-body tr:last-child td { border-bottom: 0; }
+.md-body :is(th, td):first-child { padding-left: 0; }
+.md-body hr { border: 0; border-top: 1px solid color-mix(in srgb, var(--fg) 8%, transparent); margin: 2em 0; }
+.md-body img { max-width: 100%; border-radius: var(--r-md); }
+.md-body .footnotes { font-size: .88em; color: var(--fg-dim); }
+.md-body .remote-img { font-size: .9em; }
+.html-doc { display: block; width: 100%; height: 100%; border: 0; background: var(--bg); }

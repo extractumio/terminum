@@ -179,7 +179,7 @@ export async function foldFoot(page) {
 export const serveRenderers = (page) => page.route("**/fb/**", (route) => {
   const dist = path.join(import.meta.dirname, "../../ui/dist");
   const file = path.join(dist, path.normalize(new URL(route.request().url()).pathname.slice(4)));
-  return file.startsWith(dist) && fs.existsSync(file) ? route.fulfill({ contentType: "text/javascript", body: fs.readFileSync(file) }) : route.fulfill({ status: 404, body: "" });
+  return file.startsWith(dist) && fs.existsSync(file) ? route.fulfill({ contentType: file.endsWith(".css") ? "text/css" : "text/javascript", body: fs.readFileSync(file) }) : route.fulfill({ status: 404, body: "" });
 });
 export const drawn = (page) => page.waitForFunction(() => document.querySelectorAll("#screen .ln").length > 0, null, { timeout: 10000 });
 export const pause = (page, ms = 150) => page.waitForTimeout(ms);
