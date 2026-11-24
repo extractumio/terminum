@@ -171,6 +171,15 @@ fn ac240_two_drifting_sessions_open_a_retro_card() {
             WHERE task = ?1 AND json_extract(data, '$.questions') = 1", [&task.key], |r| r.get(0)).map_err(sql)?;
         assert_eq!(recommended, "retro");
         assert!(decisions::retro(tx, PROJECT, NOW + 1)?.is_none(), "the same sessions are asked about once");
+        tx.execute("UPDATE supervisor_signals SET state = 'resolved' WHERE fingerprint = 'agents-2'", []).map_err(sql)?;
+        assert!(decisions::retro(tx, PROJECT, NOW + 2)?.is_none(), "a set inside one asked about asks nothing new");
+        tx.execute("UPDATE supervisor_signals SET state = 'raised' WHERE fingerprint = 'agents-2'", []).map_err(sql)?;
+        tx.execute("UPDATE supervisor_signals SET measure = ?1 WHERE fingerprint = 'loop-4'", [figures(3.0, 2.0).to_string()]).map_err(sql)?;
+        assert_eq!(decisions::retro(tx, PROJECT, NOW + 3)?.as_deref(), Some(card.as_str()), "a third session joins the waiting card");
+        let text: String = tx.query_row("SELECT body FROM tasks WHERE id = ?1", [&task.key], |r| r.get(0)).map_err(sql)?;
+        assert!(text.contains("3 sessions exceeded") && text.contains("`claude/s4`"), "{text}");
+        let cards: i64 = tx.query_row("SELECT count(*) FROM tasks WHERE title = 'Review repeated session drift'", [], |r| r.get(0)).map_err(sql)?;
+        assert_eq!(cards, 1);
         assert!(review_data::decisions(tx, PROJECT, NOW + 1)?.contains(&format!("- {card} · Review repeated session drift")));
         assert!(decisions::retro(tx, OTHER, NOW)?.is_none());
         Ok(())
@@ -230,16 +239,28 @@ fn ac240_standing_rule_weighed_by_its_recurring_question() {
     f.event(&key, NOW + 1, "human", "comment", "First fix", Some(json!({"choice":{"question":question,"option":"first"}})));
     asked(NOW + 2 * DAY);
     f.store.with(|tx| {
+        let recurring: String = tx.query_row("SELECT recurring FROM supervisor_decisions", [], |r| r.get(0)).map_err(sql)?;
+        assert_eq!(recurring, "Which port should the test use?", "code keeps the question's text, not the round's words");
         let soon = review_data::decisions(tx, PROJECT, NOW + 3600)?;
         assert!(soon.contains(&format!("{card}: standing rule on register problem")) && soon.contains("Effect unknown: accepted less than a day ago."), "{soon}");
         let week = review_data::decisions(tx, PROJECT, NOW + 1 + WEEK)?;
         assert!(week.contains("asked 4 times in the 7.0 days before you accepted it and 1 in the same span after: 3 fewer."), "{week}");
-        assert!(week.contains("The standing rules below removed 3 askings of their recurring questions."), "{week}");
+        assert!(week.contains("Askings of the recurring questions of the standing rules below: 3 fewer."), "{week}");
         tx.execute("UPDATE supervisor_decisions SET recurring = NULL", []).map_err(sql)?;
         let unnamed = review_data::decisions(tx, PROJECT, NOW + 1 + WEEK)?;
         assert!(unnamed.contains("Effect unknown: it names no recurring question."), "{unnamed}");
-        assert!(unnamed.contains("The standing rules below removed 0 askings"), "an unknown effect adds nothing");
+        assert!(unnamed.contains("The effect of the standing rules below is unknown."), "{unnamed}");
         assert!(review_data::decisions(tx, PROJECT, NOW + 1 + 5 * WEEK)?.contains("No standing rule was accepted in the last four weeks."));
+        tx.execute("UPDATE supervisor_decisions SET recurring = ?1", [&recurring]).map_err(sql)?;
+        Ok(())
+    }).unwrap();
+    for day in 3..8 { asked(NOW + day * DAY); }
+    f.store.with(|tx| {
+        let more = review_data::decisions(tx, PROJECT, NOW + 1 + WEEK)?;
+        assert!(more.contains("4 times in the 7.0 days before you accepted it and 6 in the same span after: 2 more."), "{more}");
+        assert!(more.contains("standing rules below: 2 more."), "{more}");
+        tx.execute("UPDATE events SET data = json_set(data, '$.choice.option', 'second') WHERE json_extract(data, '$.choice.option') = 'first'", []).map_err(sql)?;
+        assert!(review_data::decisions(tx, PROJECT, NOW + 1 + WEEK)?.contains("No standing rule was accepted"), "another option accepts no rule");
         Ok(())
     }).unwrap();
 }
