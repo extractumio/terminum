@@ -66,6 +66,11 @@ Open questions: none.
 | AC-271 | [MUST / P0] | A report raises no alert, no toast and no line: only the Inbox's count; a critical one raises `terminum-kanban.md` AC-117's line in red until it is read or the line closed, once: a report of a Supervisor incident alerts through the incident alone. |
 | AC-272 | [MUST / P0] | A routine's run that ends with a result and made no report of its own makes one from its result, its task DONE; its card shows its last report and how many of its reports are unread; every report stays (none supersedes another); a routine's question still waits in WAIT FOR HUMAN. The Supervisor's daily digest is a report, and an incident it opens makes a critical report. |
 | AC-273 | [SHOULD / P1] | A task's window lists its reports; a report's ID in a comment or result opens it; a session row marks the unread reports its session made; Find finds reports by ID, title and summary. |
+| AC-276 | [MUST / P0] | With its project's Supervisor on, a critical report not an incident's is a critical signal: it opens or joins its subject's incident, which links it; one alert, the incident's; acknowledging or snoozing the incident reads the report, and reading the report acknowledges the incident; with the Supervisor off the report's own line alerts. |
+| AC-277 | [SHOULD / P1] | Reports are the Supervisor's evidence: owner waits count WAIT FOR HUMAN's questions only, and reports give readings of their own (unread count and age, critical count, follow-ups), each with fixtures; no detector loses its input. |
+| AC-278 | [SHOULD / P1] | The Supervisor's scorecard counts the owner's reading apart from answering: reports read per week and the median hours from made to read, beside cognitive load. |
+| AC-279 | [SHOULD / P1] | The Supervisor's weekly review and quarterly audit reach the owner as reports; a decision stays a question on its task, linked from the review's report; the audit's report the Supervisor neither changes nor deletes. |
+| AC-280 | [MUST / P0] | The Supervisor's report tools follow its level: an Observer reads reports, an Advisor also makes and adds to them, an Operator also changes and deletes them; a report gets no Supervisor comment (`terminum-supervisor.md` AC-241); an incident's report is answered through Talk (AC-244), never a reply. |
 | AC-274 | [MUST / P0] | At upgrade every task waiting in WAIT FOR HUMAN with its report becomes a report in the Inbox, unread, with that result as its body, and its task DONE with a comment linking it: nothing lost, done once. |
 
 ## 5. BDD scenarios
@@ -392,6 +397,74 @@ Scenario: AC-274 happy path — at upgrade
   And a task in WAIT FOR HUMAN with questions stays as it is
 ```
 
+### AC-276 — A critical report and the Supervisor [MUST / P0]
+
+```gherkin
+Scenario: AC-276 happy path — an incident, one alert
+  Given API's Supervisor enabled (terminum-supervisor.md AC-216)
+  When a worker of API makes the critical report R_API-8 "Build broken"
+  Then it is a critical signal of the detector reports.critical, its subject the report's task (else the report): it opens that subject's incident, or joins one open on it (AC-224), and the incident's timeline links R_API-8
+  And the owner is alerted once, by the incident (AC-225): R_API-8 raises no line of its own and stands red and first in the Inbox
+  When the owner acknowledges or snoozes the incident (AC-226)
+  Then R_API-8 is read; and when the owner reads R_API-8 first, the incident is acknowledged by them, both recorded with who and when
+
+Scenario: AC-276 edge — the Supervisor off
+  Given API's Supervisor not enabled
+  Then R_API-8 raises its own line (AC-271), as with no Supervisor at all
+
+Scenario: AC-276 edge — an incident's own report
+  Given the report the Supervisor made of incident 12 (AC-272)
+  Then it is no new signal: an incident never feeds itself
+```
+
+### AC-277 — Reports as evidence [SHOULD / P1]
+
+```gherkin
+Scenario: AC-277 happy path — owner waits and reading
+  Given the Supervisor's detectors that measure owner waits (terminum-supervisor.md AC-212)
+  Then they read WAIT FOR HUMAN's questions alone: a report never waits there
+  And readings of reports stand beside them: unread reports and their age, critical reports, follow-ups asked by replies, each from the store, each detector with a firing and a quiet fixture
+```
+
+### AC-278 — Reading in the owner's burden [SHOULD / P1]
+
+```gherkin
+Scenario: AC-278 happy path — reading counted
+  Given the owner read 4 reports this week, made 1, 2, 3 and 30 hours before they read them
+  When the Supervisor's scorecard renders (terminum-supervisor.md AC-214, AC-256)
+  Then its cognitive load shows "Reports read per week" 4 and "Median hours to read a report" 2.5 as context, apart from the answers' measures
+  And a window with no report read says "no report read in the window"
+```
+
+### AC-279 — The Supervisor's own reports [SHOULD / P1]
+
+```gherkin
+Scenario: AC-279 happy path — the weekly review
+  When the weekly review is due (terminum-supervisor.md AC-242)
+  Then its findings reach the owner as a report, and each decision it asks for stays a question on its task (AC-240, AC-230), linked from the report
+
+Scenario: AC-279 happy path — the quarterly audit, unedited
+  When the quarterly audit finishes (terminum-supervisor.md AC-259)
+  Then its result is a report in the owner's Inbox, as a routine's (AC-272)
+  When the Supervisor calls update_report or delete_report on it
+  Then it is refused: "R_API-30 is the quarterly audit's report: it reaches the owner unedited."; the project's manager may still change it for the owner
+```
+
+### AC-280 — The Supervisor's report tools [MUST / P0]
+
+```gherkin
+Scenario: AC-280 happy path — by level
+  Given API's Supervisor at Observer, Advisor or Operator (terminum-supervisor.md AC-231)
+  Then an Observer has get_report and list_reports; an Advisor also create_report, append_to_report and attach_report_file; an Operator also update_report and delete_report; a tool above its level is not found for it
+
+Scenario: AC-280 edge — no nudge on a report
+  Then a report gets no Supervisor comment (terminum-supervisor.md AC-241): that comment tells the agent working on a task, and no agent works on a report; a finding about it goes to the task it was made in
+
+Scenario: AC-280 edge — Talk, not a reply
+  Given an incident's report
+  Then its pane offers no reply field but the incident's Talk (terminum-supervisor.md AC-244): one subject, one session (AC-270)
+```
+
 ## 6. Flow and sequence diagrams
 
 ```mermaid
@@ -413,7 +486,11 @@ sequenceDiagram
 
 ## 7. Current behavior and gaps
 
-None open.
+| Case | Gap |
+|---|---|
+| AC-276 | A critical report is no Supervisor signal: it alerts by its own line whether or not the Supervisor is on. |
+| AC-277 | No detector reads reports. |
+| AC-279 | The weekly review is a report only as a routine's result; its decisions are not linked from it. |
 
 ## 8. Recommendation and ownership
 
@@ -461,7 +538,7 @@ The list's answer carries the unread counts by project, by schedule and by sessi
 
 | Stage | Cases | Exit |
 |---|---|---|
-| 3 | The Supervisor's use of reports, the maintainer's addition (TERM-822): a critical report as a signal and incident, reports as detector evidence, the weekly review and the quarterly audit as reports, reading in the owner's burden, the report tools by the Supervisor's level; its cases written here first, agreed with `terminum-supervisor.md`'s open work | landed green |
+| 3b | AC-276, AC-277, AC-279's weekly review: after the Supervisor's open work on its detector catalog, incidents and review (TERM-682's pieces) | landed green |
 
 ## 11. Checklist with Definition of Done
 
@@ -474,4 +551,9 @@ The list's answer carries the unread counts by project, by schedule and by sessi
 - [x] AC-271 — `cargo test reports` (`ac271_…`: only critical, one an hour per worker's session, read takes it, an incident's none), `web/test/e2e_all.mjs` (`webInbox`: a line opens the report, its × the report's route)
 - [x] AC-272 — `cargo test reports` (`ac272_…`), `cargo test dispatcher::fire` (`ac272_…`: none superseded), `web/test/e2e_liveschedules.mjs`, `scripts/e2e_roles.py`
 - [x] AC-273 — `web/test/e2e_all.mjs` (`webTaskWin`: a task's window lists its reports; `webInbox`: Find, a report's ID in a comment opens it, a session row's envelope)
+- [ ] AC-276 — stage 3b
+- [ ] AC-277 — stage 3b
+- [x] AC-278 — `cargo test reports` (`ac278_…`: reading in a window)
+- [ ] AC-279 — `cargo test reports` (`ac279_…`: the audit's report unedited); the weekly review as a report: stage 3b
+- [x] AC-280 — `cargo test reports` (`ac280_…`: by level), `cargo test roles` (`ac231_…`), `cargo test reports` (`ac270_…`: Talk for an incident's report)
 - [x] AC-274 — `cargo test reports` (`ac274_…`: moved once, its task DONE and linked, a question's task stays)

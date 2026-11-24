@@ -118,6 +118,13 @@ pub fn detail(tx: &Transaction, key: &str) -> Result<Value, String> {
     Ok(v)
 }
 
+/// The hours from made to read of `project`'s reports read in [`from`, `until`): the owner's reading, which the
+/// Supervisor's scorecard counts apart from answering (AC-278).
+pub fn read_hours(tx: &Transaction, project: &str, from: i64, until: i64) -> Result<Vec<f64>, String> {
+    rows(tx, "SELECT (read_at - created_at) / 3600.0 FROM reports WHERE project = ?1 AND read_at >= ?2 AND read_at < ?3 ORDER BY read_at",
+        (project, from, until), |r| r.get(0))
+}
+
 /// A task's reports not deleted, oldest first: their IDs (terminum-reports.md AC-273).
 pub fn of_task(tx: &Transaction, task_key: &str) -> Result<Vec<String>, String> {
     rows(tx, "SELECT slug FROM reports WHERE task = ?1 AND deleted_at IS NULL ORDER BY created_at, rowid", [task_key], |r| r.get(0))

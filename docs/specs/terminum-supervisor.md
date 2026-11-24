@@ -1170,6 +1170,7 @@ Scenario: AC-256 happy path — code-measured results
   Given API has fixes, judged decisions, misses, overrides and refused findings
   When the owner views the Supervisor screen
   Then it shows sample sizes, decisions right, stayed resolved, misses, time to detect, overrides, refusals, judgment and fix spend, and owner load
+  And the owner's reading of reports, apart from answering (terminum-reports.md AC-278)
 
 Scenario: AC-256 edge — verdicts supplement outcomes
   Given the weekly batch contains few verdicts and several fixes are still watching
@@ -1227,6 +1228,7 @@ Scenario: AC-259 happy path — independent report
   Given a quarter has elapsed and an audit agent is available
   When the audit reads the ledger and register
   Then the agent receives no Supervisor reflections and reports missed issues, noise and unsupported conclusions directly to the owner unedited
+  And its report stands in the owner's Inbox, which the Supervisor neither changes nor deletes (terminum-reports.md AC-279)
 
 Scenario: AC-259 edge — available pool
   Given the project has a qualified auditor from a different model family

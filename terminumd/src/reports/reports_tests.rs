@@ -335,3 +335,63 @@ fn ac270_a_reply_s_run_makes_no_report_of_its_result() {
     assert!(call(&s, &dir, KEY, "finish_task", json!({"id": task, "result": ROUTINE})).unwrap().starts_with(&format!("{task} is DONE, with your result.")), "no second report");
     assert_eq!(s.with(|tx| inbox::list(tx, &Filter::default())).unwrap()["reports"].as_array().unwrap().len(), 1);
 }
+
+/// terminum-reports.md AC-278: the owner's reading, counted by the hours from made to read in a window.
+#[test]
+fn ac278_the_owner_s_reading_is_measured_apart_from_answering() {
+    let (s, dir) = fresh("reports-reading");
+    running(&s, "Audit", KEY);
+    let id = call(&s, &dir, KEY, "create_report", report("Read")).unwrap().split_whitespace().next().unwrap().to_string();
+    s.with(|tx| {
+        let key = record::key_of(tx, &id)?;
+        let made: i64 = tx.query_row("SELECT created_at FROM reports WHERE id = ?1", [&key], |r| r.get(0)).map_err(sql)?;
+        record::stamp(tx, &key, Stamp::Read, Some(made + 7200))?;
+        assert_eq!(inbox::read_hours(tx, "api", made, made + 3 * 3600)?, vec![2.0]);
+        assert!(inbox::read_hours(tx, "api", made + 3 * 3600, made + 9 * 3600)?.is_empty(), "read before the window: not in it");
+        Ok(())
+    }).unwrap();
+}
+
+/// terminum-reports.md AC-279: the quarterly audit's report reaches the owner unedited, a manager's change aside.
+#[test]
+fn ac279_the_supervisor_neither_changes_nor_deletes_the_audit_s_report() {
+    let (s, dir) = fresh("reports-audit");
+    let task = running(&s, "Quarterly audit", KEY);
+    let id = call(&s, &dir, KEY, "create_report", report("Audit")).unwrap().split_whitespace().next().unwrap().to_string();
+    s.with(|tx| {
+        let key = ops::key_of(tx, &task)?;
+        tx.execute("INSERT INTO supervisor_audit_reports VALUES (?1, 'api', 1, 'the audit')", [&key]).map_err(sql)?;
+        let h = record::head(tx, &id)?;
+        assert_eq!(super::tools::unedited(tx, &h, super::record::role::SUPERVISOR).unwrap_err(), format!("{id} is the quarterly audit's report: it reaches the owner unedited."));
+        assert!(super::tools::unedited(tx, &h, super::record::role::MANAGER).is_ok(), "the owner's side may");
+        Ok(())
+    }).unwrap();
+}
+
+/// terminum-reports.md AC-280: the Supervisor's report tools by its level.
+#[test]
+fn ac280_the_supervisor_s_report_tools_follow_its_level() {
+    use crate::roles::Role;
+    use crate::supervisor::Level::{Advisor, Observer, Operator};
+    for (level, tools) in [(Observer, vec!["get_report", "list_reports"]),
+        (Advisor, vec!["create_report", "append_to_report", "attach_report_file", "get_report", "list_reports"]),
+        (Operator, super::tools::NAMES.to_vec())] {
+        let allowed: Vec<&str> = super::tools::NAMES.into_iter().filter(|t| Role::Supervisor(Some(level)).allows(t)).collect();
+        assert_eq!(allowed, tools, "{level:?}");
+    }
+}
+
+/// terminum-reports.md AC-276 (its edge as built: the Supervisor off) and AC-277 (owner waits are questions alone):
+/// a critical report alerts by its own line, and no report ever stands in WAIT FOR HUMAN.
+#[test]
+fn ac276_ac277_without_the_supervisor_a_critical_report_alerts_alone_and_never_waits() {
+    let (s, dir) = fresh("reports-supervisor-off");
+    let task = running(&s, "Audit", KEY);
+    let mut loud = report("Build broken");
+    loud["critical"] = json!("yes");
+    let id = call(&s, &dir, KEY, "create_report", loud).unwrap().split_whitespace().next().unwrap().to_string();
+    assert_eq!(s.with(record::lines).unwrap().len(), 1, "{id}: its own line");
+    call(&s, &dir, KEY, "finish_task", json!({"id": task, "result": result()})).unwrap();
+    let waiting: i64 = s.with(|tx| tx.query_row("SELECT count(*) FROM tasks WHERE status = 'WAIT FOR HUMAN'", [], |r| r.get(0)).map_err(sql)).unwrap();
+    assert_eq!(waiting, 0, "a report is no wait for the owner");
+}

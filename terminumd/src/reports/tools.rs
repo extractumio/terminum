@@ -50,6 +50,13 @@ fn in_project(tx: &Transaction, who: &Who, id: &str) -> Result<record::Head, Str
     Ok(h)
 }
 
+/// The quarterly audit's report reaches the owner unedited: the Supervisor neither changes nor deletes it
+/// (terminum-reports.md AC-279, terminum-supervisor.md AC-259).
+pub(crate) fn unedited(tx: &Transaction, h: &record::Head, rank: &str) -> Result<(), String> {
+    let audit: bool = tx.query_row("SELECT EXISTS (SELECT 1 FROM supervisor_audit_reports WHERE task = ?1)", [&h.task], |r| r.get(0)).map_err(sql)?;
+    if audit && rank == role::SUPERVISOR { Err(format!("{} is the quarterly audit's report: it reaches the owner unedited.", h.id)) } else { Ok(()) }
+}
+
 /// A worker writes only to a report of its own task or session (AC-266).
 fn own(tx: &Transaction, who: &Who, h: &record::Head, why: &str) -> Result<(), String> {
     let mine = h.session.as_deref() == Some(who.key.as_str())
@@ -112,9 +119,13 @@ pub fn run(store: &Store, dir: &Path, who: &Who, tool: &str, args: &Value) -> Re
                 let f = Filter { project: Some(project_of(who)), limit: Some(limit), unread_only: args["unread"] == "yes", ..Filter::default() };
                 Ok((format!("{DATA}\n{}", inbox::list(tx, &f)?["reports"]), Vec::new()))
             }
-            "update_report" => update(tx, who, args, at),
+            "update_report" => {
+                unedited(tx, &in_project(tx, who, arg(args, "id")?)?, rank)?;
+                update(tx, who, args, at)
+            }
             "delete_report" => {
                 let h = in_project(tx, who, arg(args, "id")?)?;
+                unedited(tx, &h, rank)?;
                 record::stamp(tx, &h.key, record::Stamp::Deleted, Some(at))?;
                 record::note(tx, &h.key, &author(tx, who)?, "change", "deleted it", at)?;
                 Ok((format!("{} is deleted: the human can restore it from the Inbox for 30 days.", h.id), Vec::new()))

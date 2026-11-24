@@ -301,12 +301,12 @@ fn session_tools() -> impl Iterator<Item = &'static str> {
 #[test]
 fn ac231_ac232_each_level_allows_exactly_its_list_of_the_catalog() {
     use crate::supervisor::Level::{Advisor, Observer, Operator};
-    // every level reports to the owner (terminum-reports.md AC-266)
-    let observer = ["list_tasks", "get_task"].into_iter().chain(crate::reports::tools::NAMES)
+    // reports by level (terminum-reports.md AC-280): read, then write, then change and delete
+    let observer = ["list_tasks", "get_task", "get_report", "list_reports"].into_iter()
         .chain(crate::supervisor::round_tools::NAMES.iter().copied()).collect::<Vec<_>>();
-    let advisor = ["add_comment", "ask_human"].into_iter()
+    let advisor = ["add_comment", "ask_human", "create_report", "append_to_report", "attach_report_file"].into_iter()
         .chain(crate::supervisor::round_tools::ADVISOR.iter().copied()).collect::<Vec<_>>();
-    let operator = ["run_task", "promote_queued_task", "stop_task", "list_runs", "get_dashboard"];
+    let operator = ["run_task", "promote_queued_task", "stop_task", "list_runs", "get_dashboard", "update_report", "delete_report"];
     let expected = [(Observer, observer.len()), (Advisor, observer.len() + advisor.len()), (Operator, observer.len() + advisor.len() + operator.len())];
     for (level, count) in expected {
         let wanted: Vec<&str> = observer.iter().chain(advisor.iter().filter(|_| level != Observer))
