@@ -25,6 +25,9 @@ pub(super) struct Comparison {
     pub task: Option<String>,
     pub hold: Option<i64>,
     pub decision: String,
+    /// The applied hold's comments, for their notices after commit (AC-241).
+    #[serde(skip)]
+    pub nudges: super::nudges::Nudges,
 }
 
 impl Comparison {
@@ -88,7 +91,7 @@ pub(super) fn verification_hold(tx: &Transaction, signal: &Signal, round: &str, 
         return Ok(found.decided("Holding costs less than waiting; the detector is in shadow, so the hold is recorded without effect."));
     }
     tx.execute("UPDATE supervisor_holds SET round = ?2, until = ?3 WHERE id = ?1", (applied.id, round, until)).map_err(sql)?;
-    Ok(Comparison { task: Some(task), ..found }
+    Ok(Comparison { task: Some(task), nudges: applied.nudges, ..found }
         .decided("Holding costs less than waiting: the task is out of integration until its verification ends."))
 }
 
