@@ -77,8 +77,8 @@ def ac231_supervisor_tools_pane_and_token(t, call, typed, tool, tmux, page, proj
     catalog = names(manager)
     assert rc == "0" and {"get_task", "send_to_session", "integrate"} <= catalog, manager
     review_context = "get_supervisor_review"
-    check("AC-231 the authorization matrix covers all 43 published tools",
-          len(catalog) == 43 and review_context in catalog, sorted(catalog))
+    check("AC-231 the authorization matrix covers all 50 published tools",
+          len(catalog) == 50 and review_context in catalog, sorted(catalog))
 
     # The mark wins even though this pane was opened by the human in the project.
     found = wire("probe", {})
@@ -103,7 +103,9 @@ def ac231_supervisor_tools_pane_and_token(t, call, typed, tool, tmux, page, proj
     out, rc = typed(boss, tool(review_context))
     check("AC-244 the project's own manager can read its Supervisor context", rc == "0" and project in out, out[:240])
 
-    observer = {"list_tasks", "get_task", "get_case_file", "list_signals", "get_signal", "get_metric", "record_finding"}
+    # every level reports to the owner and keeps its project's reports (terminum-reports.md AC-266)
+    reports = {"create_report", "append_to_report", "attach_report_file", "get_report", "list_reports", "update_report", "delete_report"}
+    observer = {"list_tasks", "get_task", "get_case_file", "list_signals", "get_signal", "get_metric", "record_finding"} | reports
     advisor = observer | {"add_comment", "ask_human", "open_problem", "update_problem", "propose_rank", "propose_decision",
                           "post_incident_answer", "replay_config_change", "propose_config_change"}
     hold_tools = {"hold", "release_hold"}
@@ -166,7 +168,7 @@ def ac231_supervisor_tools_pane_and_token(t, call, typed, tool, tmux, page, proj
         assert len(answers) == len(requests)
         for name, answer in zip(requests, answers):
             refused = f'The {level} Supervisor cannot call "{name}".'
-            validated = answer["text"] in {"id is required", "title is required"} or (
+            validated = answer["text"] in {"id is required", "title is required", "Title: 1–200 characters"} or (
                 name in hold_tools | {"stop_task"} and "missing field" in answer["text"])
             check(f"AC-231 {level} reaches {name}'s own validation" if name in allowed else f"AC-231 {level} is refused {name}",
                   answer.get("role") == "supervisor" and
