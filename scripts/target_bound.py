@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-"""The kept trees' build cache under a bound (spec AC-206): the integration candidate's tree at its Check's start
-(scripts/land_stages.py), `.worktrees/release` and `.worktrees/rehearse` when a run takes them
-(scripts/release_tree.py). Under the bound nothing is removed. Over it, each executable's object files that its
-debug map no longer names go first: on macOS every incremental build of a crate leaves its previous objects in
-`deps` beside the new ones, and nothing else removes them. The executables, libraries, fingerprints and the
-incremental cache stay, so the next build stays incremental. Still over, `cargo clean`. If Cargo holds a profile
-lock, that profile is left in place and `cargo clean` is skipped.
+"""Every checkout's build cache under a bound and out of backups (spec AC-206, which says where it is kept). A target
+without cargo's cache tag (a clone made it) is marked as cargo marks its own. Under the bound nothing is removed. Over it,
+each executable's object files that its debug map no longer names go first: on macOS every incremental build of a
+crate leaves its previous objects in `deps` beside the new ones, and nothing else removes them. The executables,
+libraries, fingerprints and the incremental cache stay, so the next build stays incremental. Still over,
+`cargo clean`. If Cargo holds a profile lock, that profile is left in place and `cargo clean` is skipped.
 
   target_bound.py [<tree>]   keeps the bound of <tree>'s terminumd/target (default: this checkout)"""
 from contextlib import ExitStack
@@ -77,6 +76,8 @@ def bound(tree, limit=BOUND_GIB * GIB, say=print, clean=cargo_clean, names_of=de
     target = Path(tree) / "terminumd" / "target"
     if not target.is_dir():
         return say("target: no build yet")
+    if not (target / "CACHEDIR.TAG").exists() and (failed := cargo_profile.mark_cache(target)):   # cargo did not make it
+        say(f"target: not excluded from Time Machine: {failed}")
     size = disk_use(target)
     if size <= limit:
         return say(f"target: {gib(size)}, under its bound of {gib(limit)}: nothing removed")

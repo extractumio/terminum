@@ -64,7 +64,9 @@ ui/node_modules: ui/package.json ui/package-lock.json
 ui: ui/node_modules
 	cd ui && npm run -s build
 
+# the build cache under its bound first, here as in every checkout (spec AC-206)
 terminumd: ui
+	python3 scripts/target_bound.py
 	cd terminumd && cargo build --locked --release
 
 test: ui
