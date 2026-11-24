@@ -1,16 +1,18 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 //! AC-262: a local reading pass projects outside prose into closed categories.
 
+use std::collections::BTreeSet;
+
 use rusqlite::Transaction;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::tasks::{attrs::Attrs, ops::{self, NewTask, sql}};
 
-use super::{probe_command::Failure, task_policy};
+use super::{Evidence, Measurements, Query, Reading, impact::Source, probe_command::Failure, task_policy};
 
 pub(super) const MAX_REPORTS: usize = 32;
 
-#[derive(Clone, PartialEq, Eq, serde::Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(transparent)]
 pub(super) struct ReferenceBase(String);
 
@@ -81,6 +83,67 @@ pub(super) fn read(input: Input) -> Result<Report, Failure> {
         _ => Sentiment::Neutral,
     };
     Ok(Report { reference: input.reference, theme, kind, sentiment, reports: 1 })
+}
+
+pub(super) const MAX_UNANSWERED: usize = 256;
+
+/// AC-212, AC-262: a feedback probe's typed list of the items still unanswered, by reference and
+/// the time each was opened; it carries no outside prose.
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct Unanswered {
+    unanswered: Vec<Open>,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Open {
+    reference: u64,
+    since: i64,
+}
+
+impl Unanswered {
+    pub(super) fn valid(&self, at: i64) -> bool {
+        let mut references = BTreeSet::new();
+        self.unanswered.len() <= MAX_UNANSWERED && self.unanswered.iter().all(|open| {
+            open.reference > 0 && (1..=at).contains(&open.since) && references.insert(open.reference)
+        })
+    }
+}
+
+/// A retained line of a feedback probe's sample: its unanswered list, or a metric this rule ignores.
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum Kept {
+    Unanswered(Unanswered),
+    Other(serde::de::IgnoredAny),
+}
+
+const UNSIZED: Source = Source::Unsized("Outside feedback is in no weekly task, owner or spend total.");
+
+/// `product.feedback_age`: each unanswered outside item's age in minutes at its probe's latest fresh sample.
+pub(super) fn age(q: &Query<'_, '_>) -> Result<Measurements, String> {
+    let sources = super::probes::feedback_samples(q.tx, q.project, q.window.end)?;
+    if sources.is_empty() { return Ok(Measurements::missing("No approved probe has an outside feedback reference base.")); }
+    let mut out = Measurements::default();
+    for (base, sample) in sources {
+        let lines = sample.map(|s| (s.id, s.at, serde_json::from_str::<Vec<Kept>>(&s.data)));
+        let list = match lines {
+            None => Err("Feedback probe history is unavailable for this window."),
+            Some((_, _, Err(_))) => Err("Invalid retained Supervisor probe data."),
+            Some((id, at, Ok(lines))) => lines.into_iter()
+                .find_map(|line| match line { Kept::Unanswered(list) => Some((id, at, list)), Kept::Other(_) => None })
+                .ok_or("The feedback probe reports no unanswered list."),
+        };
+        match list {
+            Ok((id, at, list)) => out.readings.extend(list.unanswered.into_iter().map(|open| {
+                Reading::new("outside_feedback", format!("{}{}", base.as_str(), open.reference), "unanswered_minutes",
+                    (at - open.since) as f64 / 60.0, vec![Evidence::SupervisorProbes(id)], UNSIZED)
+            })),
+            Err(why) => super::unavailable(&mut out, why),
+        }
+    }
+    Ok(out)
 }
 
 pub(super) fn publish(tx: &Transaction, project: &str, base: &ReferenceBase, report: Report, at: i64)

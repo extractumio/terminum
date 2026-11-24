@@ -97,6 +97,8 @@ mod main_red_tests;
 #[cfg(test)]
 mod catalog_more_tests;
 #[cfg(test)]
+mod outside_detectors_tests;
+#[cfg(test)]
 mod replay_tests;
 #[cfg(test)]
 mod impact_tests;
@@ -322,6 +324,11 @@ impl Measurements {
     fn missing(reason: &'static str) -> Self {
         Self { unavailable: vec![reason], ..Self::default() }
     }
+}
+
+/// Records why some subjects went unmeasured, once per reason.
+fn unavailable(out: &mut Measurements, why: &'static str) {
+    if !out.unavailable.contains(&why) { out.unavailable.push(why); }
 }
 
 struct Reading {

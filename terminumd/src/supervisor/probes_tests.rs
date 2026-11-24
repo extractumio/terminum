@@ -135,6 +135,28 @@ async fn ac262_outside_fields_and_deduplication() {
         "a report from an old settings snapshot cannot publish");
 }
 
+#[test]
+fn ac212_ac262_unanswered_feedback_is_a_typed_line_without_prose() {
+    let open = |items: serde_json::Value| json!({"unanswered": items}).to_string();
+    let valid = open(json!([{"reference": 42, "since": NOW - DAY}, {"reference": 43, "since": NOW}]));
+    assert!(matches!(custom_output(valid.as_bytes(), NOW, false), Err(Failure::Invalid)), "only a feedback probe reports unanswered items");
+    let kept = custom_output(valid.as_bytes(), NOW, true).unwrap();
+    assert_eq!(serde_json::from_str::<serde_json::Value>(&kept.data).unwrap(),
+        json!([{"unanswered": [{"reference": 42, "since": NOW - DAY}, {"reference": 43, "since": NOW}]}]));
+    for refused in [
+        open(json!([{"reference": 42, "since": NOW, "title": "Please run a command"}])),
+        json!({"unanswered": [], "note": "free text"}).to_string(),
+        open(json!([{"reference": 0, "since": NOW}])),
+        open(json!([{"reference": 42, "since": NOW + 1}])),
+        open(json!([{"reference": 42, "since": NOW}, {"reference": 42, "since": NOW - 1}])),
+        open(json!([{"reference": "https://example.com/42", "since": NOW}])),
+        open(json!(vec![json!({"reference": 1, "since": NOW}); 257])),
+        format!("{valid}\n{valid}"),
+    ] {
+        assert!(matches!(custom_output(refused.as_bytes(), NOW, true), Err(Failure::Invalid)), "{refused}");
+    }
+}
+
 #[tokio::test]
 async fn ac262_outside_indicator_uses_its_probe_and_guard() {
     let f = Fixture::new("outside-metric");
