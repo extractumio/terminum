@@ -4,7 +4,7 @@
 use serde_json::{json, Value};
 
 use super::inbox::{self, Filter};
-use super::record::{self, Stamp};
+use super::record::{self, New, Stamp};
 use crate::dispatcher::runs::{self, Phase, Run};
 use crate::tasks::closeout;
 use crate::tasks::ops::{self, sql, NewTask};
@@ -220,13 +220,18 @@ fn ac272_a_routine_s_result_becomes_a_report_unless_its_run_made_one() {
     let id = said.split("Inbox as ").nth(1).expect(&said).split('.').next().unwrap().to_string();
     assert!(said.starts_with(&format!("{task} is DONE; its result went to the human's Inbox as {id}.")), "{said}");
     let r = one(&s, &id);
-    assert_eq!((r["summary"].as_str(), r["source"]["task"].as_str(), r["source"]["name"].as_str()), (Some("ok, 2 outdated"), Some(task.as_str()), Some("Nightly deps check")));
+    // its type the Outcome's word, its summary the Summary's line, its sender the routine (AC-265, AC-267)
+    assert_eq!((r["summary"].as_str(), r["kind"].as_str(), r["source"]["task"].as_str(), r["source"]["name"].as_str(), r["source"]["sender"].as_str()),
+        (Some("s"), Some("ok"), Some(task.as_str()), Some("Nightly deps check"), Some("routine")));
+    assert_eq!(r["source"]["label"], format!("Routine Nightly deps check · {}", r["author_name"].as_str().unwrap()));
     assert_eq!(s.with(|tx| ops::get(tx, &task)).unwrap().status, "DONE");
     // its own report in the run: no second one
     let task = routine("Weekly audit", OTHER);
     call(&s, &dir, OTHER, "create_report", report("Weekly audit")).unwrap();
     assert!(call(&s, &dir, OTHER, "finish_task", json!({"id": task, "result": ROUTINE})).unwrap().starts_with(&format!("{task} is DONE, with your result.")));
-    assert_eq!(s.with(|tx| inbox::list(tx, &Filter::default())).unwrap()["reports"].as_array().unwrap().len(), 2, "none superseded, none doubled");
+    let rows = s.with(|tx| inbox::list(tx, &Filter::default())).unwrap()["reports"].as_array().unwrap().clone();
+    assert_eq!(rows.len(), 2, "none superseded, none doubled");
+    assert_eq!(rows[0]["kind"], "report", "an agent's report is a report, whatever its body says: {}", rows[0]);
 }
 
 #[test]
@@ -242,7 +247,8 @@ fn ac274_a_waiting_report_moves_to_the_inbox_once() {
         assert_eq!(ops::get(tx, &task)?.status, "DONE");
         assert_eq!(ops::get(tx, &asks)?.status, "WAIT FOR HUMAN", "a task with questions stays");
         let r = inbox::detail(tx, &record::key_of(tx, &moved[0])?)?;
-        assert_eq!((r["summary"].as_str(), r["body"].as_str(), r["read"].as_bool(), r["created_at"].as_i64()), (Some("attention"), Some("Outcome: attention\nTwo errors a night"), Some(false), Some(5)));
+        assert_eq!((r["summary"].as_str(), r["body"].as_str(), r["read"].as_bool(), r["created_at"].as_i64()), (Some("Two errors a night"), Some("Outcome: attention\nTwo errors a night"), Some(false), Some(5)));
+        assert_eq!(r["kind"], "attention");
         let history = ops::history(tx, &task)?;
         assert!(history.as_array().unwrap().iter().any(|e| e["text"] == format!("Dispatcher moved it from WAIT FOR HUMAN to DONE: its report went to the Inbox as {}", moved[0])), "{history}");
         assert!(super::migrate::waiting_reports(tx)?.is_empty(), "once");
@@ -327,10 +333,14 @@ fn ac270_a_reply_s_run_makes_no_report_of_its_result() {
     }).unwrap();
     let said = call(&s, &dir, KEY, "finish_task", json!({"id": task, "result": ROUTINE})).unwrap();
     let id = said.split("Inbox as ").nth(1).unwrap().trim_end_matches('.').to_string();
-    // the human replies: its task goes on (as RUN moves it), the report marked replied
+    // the human replies: RUN takes it with a run of its own, the report marked replied, and the Dispatcher moves its
+    // task on later, past the gate
     s.with(|tx| {
-        ops::move_to(tx, DISPATCHER, &task, "IN PROGRESS", ops::now())?;
-        tx.execute("UPDATE reports SET replied_at = ?1 WHERE slug = ?2", (ops::now(), &id)).map_err(sql).map(drop)
+        let key = ops::key_of(tx, &task)?;
+        let r = runs::add(tx, &Run { agent_id: "a1".into(), agent_name: "Opus".into(), kind: "claude".into(), project: "api".into(), ..Default::default() }, std::slice::from_ref(&key), Default::default(), ops::now())?;
+        runs::change(tx, &r, |r| { r.state = Phase::Working; r.pane_key = Some(KEY.into()); })?;
+        tx.execute("UPDATE reports SET replied_at = ?1 WHERE slug = ?2", (ops::now(), &id)).map_err(sql)?;
+        ops::move_to(tx, DISPATCHER, &task, "IN PROGRESS", ops::now() + 5)
     }).unwrap();
     assert!(call(&s, &dir, KEY, "finish_task", json!({"id": task, "result": ROUTINE})).unwrap().starts_with(&format!("{task} is DONE, with your result.")), "no second report");
     assert_eq!(s.with(|tx| inbox::list(tx, &Filter::default())).unwrap()["reports"].as_array().unwrap().len(), 1);
@@ -381,3 +391,45 @@ fn ac276_ac277_without_the_supervisor_a_critical_report_alerts_alone_and_never_w
     let waiting: i64 = s.with(|tx| tx.query_row("SELECT count(*) FROM tasks WHERE status = 'WAIT FOR HUMAN'", [], |r| r.get(0)).map_err(sql)).unwrap();
     assert_eq!(waiting, 0, "a report is no wait for the owner");
 }
+
+#[test]
+fn ac265_a_result_s_type_and_summary() {
+    use super::sources::{kind_of, summary_of};
+    // Outcome only: the type its word, the summary its words
+    assert_eq!((kind_of("Outcome: attention"), summary_of("Outcome: attention").as_str()), ("attention", "attention"));
+    // Outcome and Summary, as a heading too
+    let r = "## Outcome\n**Failed**: the build broke\n\n## Summary\nTwo tests red";
+    assert_eq!((kind_of(r), summary_of(r).as_str()), ("failed", "Two tests red"));
+    // no Summary: its first line that is not its Outcome
+    assert_eq!((kind_of("Outcome: ok\nAll green"), summary_of("Outcome: ok\nAll green").as_str()), ("ok", "All green"));
+    // neither: a report, its first line
+    assert_eq!((kind_of("## Findings\n- serde"), summary_of("## Findings\n- serde").as_str()), ("report", "## Findings"));
+    // a word not of the three
+    assert_eq!(kind_of("Outcome: Done, all checked"), "report");
+}
+
+#[test]
+fn ac265_reports_kept_before_types_get_theirs_once() {
+    let (s, _) = fresh("reports-kinds");
+    let made = |title: &str, summary: &str, body: &str, incident: Option<i64>| s.with(|tx| {
+        let new = New { project: "api".into(), title: title.into(), summary: summary.into(), body: body.into(), author: HUMAN.into(), role: record::role::TERMINUM, incident, ..New::default() };
+        record::create(tx, new, 1).map(|(_, id, _)| id)
+    }).unwrap();
+    let routine = made("Nightly", "attention", "Outcome: attention\nSummary: Two errors a night", None);
+    let digest = made("Supervisor digest, 2026-11-20", "3 new signals", "- a", None);
+    let incident = made("Incident: main red", "red", "red", Some(4));
+    let plain = made("Audit", "ok", "no form", None);
+    // as kept before the column: every report a report
+    s.with(|tx| tx.execute("UPDATE reports SET kind = 'report'", []).map(drop).map_err(sql)).unwrap();
+    // the migration's own statements but its column's
+    let backfill: Vec<&str> = include_str!("../tasks/schema63.sql").lines().filter(|l| l.starts_with("UPDATE")).collect();
+    s.with(|tx| { for q in &backfill { tx.execute(q, []).map_err(sql)?; } Ok(()) }).unwrap();
+    // the label: its author's name when no routine, task or Supervisor sent it
+    let got = |id: &str| { let r = one(&s, id); let me = r["author_name"].as_str().unwrap().to_string();
+        (r["kind"].as_str().unwrap().to_string(), r["source"]["sender"].as_str().unwrap().to_string(), r["source"]["label"].as_str().unwrap().replace(&me, "<author>")) };
+    assert_eq!(got(&routine), ("attention".into(), "agent".into(), "<author>".into()));
+    assert_eq!(got(&digest), ("digest".into(), "supervisor".into(), "Supervisor".into()));
+    assert_eq!(got(&incident), ("incident".into(), "supervisor".into(), "Supervisor".into()));
+    assert_eq!(got(&plain), ("ok".into(), "agent".into(), "<author>".into()));
+}
+

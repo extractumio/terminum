@@ -152,7 +152,8 @@ dialog.dlg > form { display: flex; flex-direction: column; gap: var(--sp-2); }
   .sections a { height: 40px; min-width: 44px; }   /* a section: a finger's */
   .sections a[aria-current] { flex: 1 1 auto; }   /* the shown one takes the row's rest */
   #planpane button { min-height: 44px; min-width: 44px; }   /* the Plan pane (planpane.css) */
-  .item .plpct { padding: 12px 6px; margin: -12px 0; }   /* the row's percent: a finger's height, the row's own kept */
+  .item .plpct { position: relative; }   /* the row's percent: a finger's height around its words, the row's own kept */
+  .item .plpct::after { content: ""; position: absolute; inset: -12px -6px; }
 }
 
 /* a box's left bar: a box set apart by what it holds (a comment, an agent's questions, the plan's Now) carries

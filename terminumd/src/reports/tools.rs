@@ -160,7 +160,7 @@ fn create(tx: &Transaction, who: &Who, rank: &'static str, args: &Value, at: i64
     let schedule = match &task { Some(t) => crate::tasks::schedules::of_task(tx, &t.key)?.map(|s| s.id), None => None };
     let new = New { project, title: clean("title"), summary: clean("summary"), body: clean("body"), critical: args["critical"] == "yes",
         author: me, role: rank, session: (!who.key.starts_with("token:")).then(|| who.key.clone()), task: task.as_ref().map(|t| t.key.clone()),
-        schedule, run, incident: None, follows };
+        schedule, run, incident: None, follows, ..New::default() };   // a report: an agent's word never sets the type (AC-265)
     let (_, id, _) = record::create(tx, new, at)?;
     Ok(match task {
         Some(t) => (format!("{id} is in the human's Inbox. Finish {} with finish_task as usual: the report is not its result.", t.id), vec![t.id]),

@@ -76,7 +76,7 @@ Open questions: none.
 | AC-136 | [MUST / P0] | A card says what became of its session's agent: working, waiting, failed with why, stopped with its task open, gone; the task's history says so once; nothing moves by it unless Dispatcher started the session. |
 | AC-133 | [MUST / P0] | The board's flow survives what people and machines do: the last drop stands, a move shows at once and a refused one goes back; a late answer never stands over a newer; what is typed is never lost by a slip, a refusal or a change by another. |
 | AC-134 | [MUST / P0] | A card with a live session carries that session's own row from the session list: bar in the project's color, pulsing while its agent works, plan, what it does now, every state; a press opens that session. |
-| AC-135 | [MUST / P0] | The board's head chooses the project; left of the columns stands the session page's own list, as wide as there, with its menus and its head, without its foot; it hides and shows; a press opens a session. |
+| AC-135 | [MUST / P0] | The board's head chooses the project; left of the columns stands the session page's own list, as wide as there, with its menus and its head, without its foot, the Inbox above its Sessions (`terminum-reports.md` AC-267); it hides and shows; a press opens a session. |
 | AC-139 | [MUST / P0] | New project…, the last row of the project's menu, makes an empty project on its server, in a window with its name, its full folder path, a picker for it and Agents at once; a project's pencil, or the board's cog with that project shown alone, opens the same window, with its pool's keys and Auto-Dispatch beside. |
 | AC-120 | [SHOULD / P1] | An agent on a remote host sees and works with its whole project through the Mac's link. |
 | AC-148 | [MUST / P0] | A task's ID is its project's letters and the project's own count (TERM-7), "S_" before them for a task a schedule made (S_TERM-8), "I_" for a batch's integration task (`terminum-integration.md` AC-194): the letters come from the project's folder and can be set; every ID a task had, and its key's start, still find it. |
@@ -113,7 +113,7 @@ Scenario: AC-105 happy path — TODO and the panel
   And the shown column's sort keys stand at the end of the tabs' row; its cards fill the panel as a grid, the cards of a row as tall as its tallest, their foot and session at its bottom
   When the user presses DONE's tab
   Then the panel shows DONE's cards, and this browser shows DONE first next time; when INTEGRATION's tab goes, the panel shows IN PROGRESS
-  And the board has tracks: six from 1500 px of board, TODO two of them, the panel's cards four columns, an agent a track (terminum-dispatcher.md AC-138); three from 1100 px, TODO one, the cards two; under 1100 px TODO stands over the panel, as tall as its cards up to 40% of the board, the cards two columns
+  And the board has tracks: six from 1500 px of board, TODO two of them, the panel's cards four columns; three from 1100 px, TODO one, the cards two; under 1100 px TODO stands over the panel, as tall as its cards up to 40% of the board, the cards two columns
   And TODO's head and the tabs' row stand on one line, their cards start on one line, and every left edge is the gutter's or a track's
 
 Scenario: AC-105 edge — a tablet
@@ -1309,8 +1309,8 @@ Scenario: AC-203 happy path — a rail folds its section
   And a folded pool takes no dropped task: the user folded it
 
 Scenario: AC-203 happy path — add tiles
-  Then each block's last item is a 44 px [+] tile as tall as its cards, right after the last one ("Add agent", "Add routine"); a full row of six puts it on the next row; no add key stands elsewhere
-  And the cards use every track across their section; a task selection's hint stands on its own full-width row under the pool, taking no room when no tasks are chosen
+  Then each block's last item is a 44 px [+] tile as tall as its cards, right after the last one ("Add agent", "Add routine"); when the row has no room for it, it wraps onto the next row; no add key stands elsewhere
+  And each row of cards fills its section, adjusting and wrapping with the browser (terminum-dispatcher.md AC-138, terminum-schedules.md AC-163); a task selection's hint stands on its own full-width row under the pool, taking no room when no tasks are chosen
 
 Scenario: AC-203 edge — a phone
   Given a phone (AC-105: the pool and the routines in the sheet behind one line)

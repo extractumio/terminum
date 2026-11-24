@@ -69,13 +69,13 @@ export async function webHeader(browser, name) {
       });
       check("AC-01 a computer: the title's line, ✎ and the header's keys share their middle with ⋯, the list's head and docked Files' ×; ✎ as tall as ⋯",
         level.keys.every(([, b]) => b && Math.abs(b.mid - level.menu.mid) <= 1) && level.keys[1][1].h === level.menu.h && level.keys[0][1].h === level.menu.h, JSON.stringify(level));
-      const edge = await page.evaluate(() => {        // the header's mark and folder, the terminal's text, the list's first block (the Inbox, AC-267)
+      const edge = await page.evaluate(() => {        // the header's mark and folder, the terminal's text, the list's first block (the Sessions: the Inbox is the board's, AC-267)
         const text = document.querySelector("#screen .ln span")?.firstChild, r = new Range(); r.setStart(text, 0); r.setEnd(text, 1);
         const box = (s) => document.querySelector(s)?.getBoundingClientRect();
         return { text: Math.round(r.getBoundingClientRect().left), mark: Math.round(box("#curagent").left), folder: Math.round(box("#cursub > .dir").left),
-          bar: Math.round(box("#curbar").right), group: Math.round(box("#inbox").top), term: Math.round(box("#term").top) };
+          bar: Math.round(box("#curbar").right), group: Math.round(box("#sessions").top), term: Math.round(box("#term").top) };
       });
-      check("AC-01 a computer: the header's mark and folder start 7 px right of the terminal's text, the folder's bar before the text; the list's first block, the Inbox, level with the terminal's top",
+      check("AC-01 a computer: the header's mark and folder start 7 px right of the terminal's text, the folder's bar before the text; the list's first block, the Sessions, level with the terminal's top",
         edge.mark === edge.text + 7 && edge.folder === edge.text + 7 && edge.bar < edge.text && edge.group === edge.term, JSON.stringify(edge));
     }
     const target = await page.evaluate(() => {      // the Copy's finger target (its ::after), the title's text, the header

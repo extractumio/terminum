@@ -106,6 +106,14 @@ svg.lu.two { width: calc(var(--s, 16px) * 50 / 24); }   /* two icons side by sid
 .pbar.busy { opacity: 1; animation: pulse-bar 1.4s ease-in-out infinite; }
 @keyframes pulse-bar { 0%, 100% { opacity: 1; box-shadow: 0 0 6px var(--dot, transparent); } 50% { opacity: .25; box-shadow: none; } }
 .item .txt { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+/* a session's row (nav.js row): three lines its text and its marks' column share (subgrid), the title's,
+   the plan's track, the meta line; a mark on its line's middle, a kind of mark in one cell in every row */
+.item:has(> .st) { grid-template-rows: auto minmax(0, min-content) auto; align-content: start; }   /* the track's line: its own height alone, never the bar's minimum; a row's spare height under its lines */
+.item:has(> .st) > :is(.pbar, .txt, .st) { grid-row: 1 / -1; }
+.item:has(> .st) > .txt { display: grid; grid-template-rows: subgrid; grid-template-columns: minmax(0, 1fr); gap: 0; }
+.item:has(> .st) > .txt > .head { grid-row: 1; }
+.item:has(> .st) > .txt > .pltrack { grid-row: 2; }
+.item:has(> .st) > .txt > .s { grid-row: 3; margin-top: 2px; }   /* the 2 px the flex gap gave; the track's 5 (planpane.css) is its 3 and this 2 */
 .item .head { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
 .item .idx { flex: 0 0 auto; width: 14px; text-align: right; color: var(--muted); font: 11px ui-monospace, Menlo, monospace; font-variant-numeric: tabular-nums; }
 .item .t { min-width: 0; font-size: 13.5px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -132,9 +140,13 @@ svg.lu.two { width: calc(var(--s, 16px) * 50 / 24); }   /* two icons side by sid
 .s .ag-claude { color: color-mix(in srgb, #f0b48a 60%, var(--t-fg)); }     /* pale orange, readable on a light theme too */
 .s .ag-codex { color: color-mix(in srgb, #c9b8ff 60%, var(--t-fg)); }      /* pale violet */
 .s .ag-opencode { color: color-mix(in srgb, #a9c4ff 60%, var(--t-fg)); }   /* pale blue */
-.item .st { display: grid; place-items: center; padding-top: 2px; }
-.item .st .mgr { display: inline-flex; color: var(--muted); }   /* its project's manager (terminum-agents.md AC-174) */
-.item .st .subs { display: inline-flex; align-items: center; gap: 2px; font-size: var(--fs-micro); line-height: 1; color: var(--muted); font-variant-numeric: tabular-nums; }   /* its subagents (AC-39) */
+/* the marks' column, a 2×2 grid: the crown and the state on the title's line, the bot and its count on the
+   meta line; a list without a crown or subagents keeps the state's cell alone (its first column 0 wide) */
+.item .st { display: grid; grid-template-rows: subgrid; grid-template-columns: minmax(0, 1fr) 16px; column-gap: 2px; place-items: center; }
+#sessions:has(.st > :is(.mgr, .subs)), .item:has(> .st > :is(.mgr, .subs)) { --st-w: 34px; }   /* two 16 px cells and their 2 px gap */
+.item .st > .state { grid-area: 1 / 2; }
+.item .st > .mgr { grid-area: 1 / 1; display: inline-flex; color: var(--muted); }   /* its project's manager (terminum-agents.md AC-174) */
+.item .st > .subs { grid-row: 3; grid-column: 1 / -1; margin-top: 2px; display: grid; grid-template-columns: subgrid; place-items: center; font-size: var(--fs-micro); line-height: 1; color: var(--muted); font-variant-numeric: tabular-nums; }   /* its subagents (AC-39): the bot under the crown, the count under the state */
 /* a tab's other panes (a coding agent's subagents) under its first, shifted in as children */
 #sessions .kids { margin: 0 0 2px 22px; padding: 0 0 0 6px; list-style: none; border-left: 1px solid var(--line); }
 .item.child { padding-top: 4px; padding-bottom: 4px; }
