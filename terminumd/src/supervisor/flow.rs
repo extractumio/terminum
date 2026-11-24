@@ -11,6 +11,9 @@ use super::{Comparison, Evidence, Measurements, Query, Reading, Threshold, WEEK,
 
 // Event IDs survive maintenance; rowid orders transitions within a second. Prior-project history
 // cannot be recovered reliably because the old move did not record its project as structured data.
+/// A question asked on a task, over `project_events`' columns.
+pub(super) const ASKED: &str = "kind = 'comment' AND json_extract(data, '$.questions') IS NOT NULL";
+
 pub(super) fn project_events() -> String {
     format!("WITH project_events AS NOT MATERIALIZED (
         SELECT e.id, e.task, e.at, e.kind, e.author, e.text, e.data, e.rowid AS seq FROM events e JOIN tasks t ON t.id = e.task
