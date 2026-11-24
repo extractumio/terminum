@@ -57,11 +57,17 @@ fn ac236_register_rank_ruling_and_recurrence() {
 
         assert!(serde_json::from_value::<register::Update>(json!({"id":high, "observation_weeks":5})).is_err());
         register::rule(tx, PROJECT, high, "Accept only the evidence already seen.", NOW)?;
+        // A return after resolving with the evidence the ruling saw is a repeat that stays closed.
         tx.execute("UPDATE supervisor_signals SET count = count + 1 WHERE fingerprint = 'high'", []).map_err(sql)?;
         register::advance(tx, PROJECT, NOW + 1)?;
         assert_eq!(register::get(tx, PROJECT, high, NOW + 1)?.state, "accepted");
-        tx.execute("UPDATE supervisor_signals SET evidence = ?1 WHERE fingerprint = 'high'",
-            [r#"[{"table":"events","id":"new-event"},{"table":"events","id":"event-a"}]"#]).map_err(sql)?;
+        // A new row with no repeat counted is a retaken input, never new evidence (AC-211).
+        let set_evidence = |rows: &str| tx.execute("UPDATE supervisor_signals SET evidence = ?1 WHERE fingerprint = 'high'", [rows]).map_err(sql);
+        set_evidence(r#"[{"table":"events","id":"retaken"},{"table":"events","id":"event-a"}]"#)?;
+        register::advance(tx, PROJECT, NOW + 1)?;
+        assert_eq!(register::get(tx, PROJECT, high, NOW + 1)?.state, "accepted");
+        set_evidence(r#"[{"table":"events","id":"new-event"},{"table":"events","id":"event-a"}]"#)?;
+        tx.execute("UPDATE supervisor_signals SET count = count + 1 WHERE fingerprint = 'high'", []).map_err(sql)?;
         register::advance(tx, PROJECT, NOW + 2)?;
         assert_eq!(register::get(tx, PROJECT, high, NOW + 2)?.state, "recurred");
         let set_clear = |at| tx.execute("UPDATE supervisor_problem_signals SET clear_at = ?2, clear_seen = ?3 WHERE problem = ?1",

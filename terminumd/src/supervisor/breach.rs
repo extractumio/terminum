@@ -36,4 +36,4 @@ pub(super) fn validate(never: &[String], ties: &BTreeMap<String, String>) -> Res
 
 #[cfg(test)]
 #[path = "breach_tests.rs"]
-mod tests;
+pub(super) mod tests;

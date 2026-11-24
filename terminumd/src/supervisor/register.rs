@@ -196,8 +196,8 @@ pub(super) fn rule(tx: &Transaction, project: &str, id: i64, reason: &str, at: i
     let reason = check_words(reason)?;
     tx.execute("UPDATE supervisor_problems SET state = 'accepted', ruling = ?2, new_evidence = NULL WHERE id = ?1",
         (id, &reason)).map_err(sql)?;
-    tx.execute("UPDATE supervisor_problem_signals SET ruling_evidence =
-        (SELECT evidence FROM supervisor_signals s WHERE s.fingerprint = supervisor_problem_signals.fingerprint)
+    tx.execute("UPDATE supervisor_problem_signals SET (ruling_evidence, ruling_count) =
+        (SELECT evidence, count FROM supervisor_signals s WHERE s.fingerprint = supervisor_problem_signals.fingerprint)
         WHERE problem = ?1", [id]).map_err(sql)?;
     event(tx, id, at, "accepted", &reason)
 }
@@ -326,13 +326,17 @@ fn seed(tx: &Transaction, project: &str, at: i64) -> Result<(), String> {
     Ok(())
 }
 
+/// AC-236: an accepted problem reopens on a repeat its signal's count took since the ruling (AC-211: a counted
+/// reading's new event, or a return after resolving) that brings a row the ruling did not see. A repeat of the
+/// evidence the ruling saw stays closed and joins the ruling's count; a retaken sample or a window's new input is no
+/// repeat, so its new rows reopen nothing.
 pub(super) fn advance(tx: &Transaction, project: &str, at: i64) -> Result<(), String> {
     seed(tx, project, at)?;
     let changes = rows(tx, "SELECT p.id, p.state,
         (SELECT s.fingerprint FROM supervisor_problem_signals y JOIN supervisor_signals s USING (fingerprint)
         WHERE y.problem = p.id AND s.state IN ('new','raised','recurred')
-          AND (p.state = 'resolved' OR (p.state = 'accepted' AND EXISTS (
-            SELECT 1 FROM json_each(s.evidence) e WHERE NOT EXISTS (
+          AND (p.state = 'resolved' OR (p.state = 'accepted' AND s.count > coalesce(y.ruling_count, 0)
+            AND s.evidence IS NOT y.ruling_evidence AND EXISTS (SELECT 1 FROM json_each(s.evidence) e WHERE NOT EXISTS (
               SELECT 1 FROM json_each(y.ruling_evidence) old WHERE old.value = e.value))))
         ORDER BY s.fingerprint LIMIT 1),
         EXISTS (SELECT 1 FROM supervisor_problem_signals y WHERE y.problem = p.id)
@@ -369,6 +373,9 @@ pub(super) fn advance(tx: &Transaction, project: &str, at: i64) -> Result<(), St
             }
         }
     }
+    tx.execute("UPDATE supervisor_problem_signals AS y SET ruling_count = s.count FROM supervisor_signals s, supervisor_problems p
+        WHERE s.fingerprint = y.fingerprint AND p.id = y.problem AND p.project = ?1 AND p.state = 'accepted'
+          AND s.state IN ('new','raised','recurred') AND s.count > coalesce(y.ruling_count, 0)", [project]).map_err(sql)?;
     Ok(())
 }
 
