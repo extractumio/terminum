@@ -98,11 +98,11 @@ fn ac213_one_week_with_two_additive_quantities_is_high() {
     assert!(shared[0].impact_basis.shares.iter().all(|s| s.unit == Unit::FailureEvents));
 }
 
-fn replay_args() -> Vec<String> {
+pub(super) fn replay_args() -> Vec<String> {
     ["supervisor", "replay", "--project", PROJECT].map(str::to_owned).to_vec()
 }
 
-fn cli(path: &std::path::Path, args: &[String]) -> Result<String, String> {
+pub(super) fn cli(path: &std::path::Path, args: &[String]) -> Result<String, String> {
     let mut context = crate::cli::Ctx::new(HashMap::new(), path.to_owned()).unwrap();
     context.app_dir = path.to_owned();
     context.captured = Some(Default::default());

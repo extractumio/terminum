@@ -1,19 +1,16 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-//! AC-215, AC-253: the replay measures judgment quality only in labelled weeks of its own project.
+//! AC-215: the replay measures judgment quality only in labelled weeks of its own project.
 
-use std::{collections::HashMap, fs};
+use std::fs;
 
 use super::engine_tests::{Fixture, NOW, OTHER, PROJECT};
+use super::replay_tests::{cli, replay_args};
 use super::{Rule, WEEK, flow, replay, settings};
 
 fn replay_at(dir: &std::path::Path, at: Option<i64>) -> String {
-    let mut args = ["supervisor", "replay", "--project", PROJECT].map(str::to_owned).to_vec();
+    let mut args = replay_args();
     if let Some(at) = at { args.extend(["--at".into(), at.to_string()]); }
-    let mut context = crate::cli::Ctx::new(HashMap::new(), dir.to_owned()).unwrap();
-    context.app_dir = dir.to_owned();
-    context.captured = Some(Default::default());
-    assert_eq!(crate::cli::run(&context, crate::cli::parse(&args).unwrap()).unwrap(), 0);
-    context.captured.take().unwrap().into_inner().concat()
+    cli(dir, &args).unwrap()
 }
 
 fn quality_section(report: &str) -> &str {
