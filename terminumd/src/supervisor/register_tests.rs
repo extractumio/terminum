@@ -113,6 +113,35 @@ fn ac237_judgment_reserve_and_caps() {
 }
 
 #[test]
+fn ac237_exhausted_judgment_holds_back_a_due_fix_until_the_owner_raises_the_ceiling() {
+    let f = Fixture::new("judgment-stopped");
+    enabled(&f, json!({"judgment_floor_tokens":100, "judgment_ceiling":100, "fixes_ceiling":1.0}));
+    f.task("baseline", Some("Feature"), "P2", "DONE", NOW - DAY);
+    f.run("baseline", "baseline-run", "agent", NOW - DAY);
+    f.cost("baseline-run", NOW - DAY, 100_000);
+    f.run("baseline", "round-run", "agent", NOW - 60);
+    f.write("INSERT INTO supervisor_rounds (id,run,project,generation,fingerprint,signal_revision,case_file,
+        deadline,token_cap,ended_at) VALUES ('case','round-run',?1,1,'spent',1,'{}',?2,100,?2)", (PROJECT, NOW - 30));
+    f.cost("round-run", NOW - 30, 100);
+    signal(&f, "high", "A", 2, 0.3, false);
+    let budget = |tx: &Transaction| tx.query_row("SELECT state FROM supervisor_signals
+        WHERE detector = 'self.budget' AND metric = 'judgment_tokens'", [], |r| r.get::<_, String>(0)).map_err(sql);
+    f.store.with(|tx| {
+        register::open(tx, PROJECT, draft("High", &["high"]), NOW)?;
+        assert!(governor::spending(tx, PROJECT, NOW)?.judgment.stopped());
+        assert!(fix_tasks::advance(tx, PROJECT, NOW)?.is_empty());
+        assert_eq!((count(tx, "supervisor_task_marks")?, count(tx, "supervisor_budget_cards")?), (0, 0));
+        assert_eq!(budget(tx)?, "raised");
+        let (mut raised, rev) = { let saved = settings::read(tx, PROJECT)?; (saved.settings, saved.revision) };
+        (raised.budgets.judgment_floor_tokens, raised.budgets.judgment_ceiling) = (1000, Some(1000.0));
+        settings::write(tx, PROJECT, rev, raised, false)?;
+        assert_eq!(fix_tasks::advance(tx, PROJECT, NOW + 1)?.len(), 1);
+        assert_eq!(budget(tx)?, "resolved");
+        Ok(())
+    }).unwrap();
+}
+
+#[test]
 fn ac238_fix_budget_and_critical_exception() {
     let f = Fixture::new("fixes");
     enabled(&f, json!({"fixes_ceiling":1.0}));
