@@ -11,6 +11,7 @@ def ac245_hold_undo_and_switch_off(call, db, wire, tmux, project, task, pane):
     auto = f"/api/task-projects/{project}/auto"
     at = int(time.time())
     rule = "drift.diff_outlier"
+    scan = f'$.detectors."{rule}"'
 
     def okay(path, method="GET", body=None):
         code, data = call(path, method, body)
@@ -35,7 +36,7 @@ def ac245_hold_undo_and_switch_off(call, db, wire, tmux, project, task, pane):
     def applied(kind, signal="hold-wide", task=None):
         reply = held(kind, signal, task)
         assert not reply["error"], (reply, db("SELECT cursor, json_extract(attachment, ?) FROM project_supervisor"
-                                              " WHERE project = ?", (f'$.detectors."{rule}"', project)))
+                                              " WHERE project = ?", (scan, project)))
         return json.loads(reply["text"])
 
     def active():
@@ -51,10 +52,8 @@ def ac245_hold_undo_and_switch_off(call, db, wire, tmux, project, task, pane):
     db("INSERT INTO project_integration (project, is_on, target, check_line, publish_line, after_line, "
        "batch_most, check_minutes, agent_budget_minutes, red_rounds_most, prompt, paused) "
        "VALUES (?, 1, 'main', '', '', '', 1, 1, 1, 1, '', 0)", [project])
-    # Turning integration on, and each standard probe's first sample, log a change that makes the collector
-    # rescan the attachment; a rescan recomputes can_run from real inputs (this detector then lacks git
-    # observations). Patch only after the collector's cursor covers them, so no scan is left to write over
-    # the patch (TERM-841). A change the collector already took is gone from the table: 0 then.
+    # Integration's switch and each standard probe's first sample make the collector rescan, which recomputes
+    # can_run (false here: no git observations); patch once its cursor covers them (TERM-841).
     wait_for(lambda: db("SELECT count(DISTINCT source) FROM supervisor_probe_samples WHERE project = ?"
                         " AND source IN ('git', 'git_architecture', 'gate_record')", [project]),
              lambda rows: rows == [(3,)], 30)
@@ -63,7 +62,6 @@ def ac245_hold_undo_and_switch_off(call, db, wire, tmux, project, task, pane):
                         " FROM supervisor_settings WHERE project = ?), 0) FROM project_supervisor WHERE project = ?",
                         [logged, project, project]),
              lambda rows: rows == [(1,)], 30)
-    scan = f'$.detectors."{rule}"'
     args = (scan + ".mode", scan + ".can_run", scan + ".holds.live_at_attach", project)
     db("UPDATE project_supervisor SET attachment = json_set(attachment, '$.attached_at', ?, ?, 'live', ?, json('true'), ?, json('true')) "
        "WHERE project = ?", (at, *args))
