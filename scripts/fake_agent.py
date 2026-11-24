@@ -13,7 +13,7 @@ none`: never a box; `--start fast`: exits at once with 7; `--start slow`: its fi
 machine's does, and a prompt pasted twice is not worked on. `--title`: an idle OSC title after Stop to
 identify the stand-in after terminumd restarts; `--prompts <file>`: each prompt it takes, a line; `--stop-after <file>`: hold Stop until the file exists and write
 <file>.sent after attempting the hook, so the test can place it during downtime. `--round-tokens <n>`: a Supervisor
-investigation ends its turn with a transcript of n input tokens, the round's spend."""
+case round ends its turn with a transcript of n input tokens, the round's spend."""
 import json
 import os
 import re

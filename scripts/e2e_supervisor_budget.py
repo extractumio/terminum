@@ -58,6 +58,10 @@ def main():
                   " AND (? IS NULL OR metric = ?)", (project, detector, metric, metric))
         return rows[0] if rows else None
 
+    def raise_stakes(key):
+        # The collector supplied the signal and its evidence. A drill raises only its stakes, to level 2.
+        db("UPDATE supervisor_signals SET scores = json_set(scores, '$.blast', 2, '$.confidence', 0.9) WHERE fingerprint = ?", [key])
+
     def judgment():
         return call(path + "/screen")["spending"]["judgment"]
 
@@ -87,8 +91,7 @@ def main():
         call(path, "PUT", {"enabled": True})
         [schedule] = [s for s in call("/api/schedules")["schedules"] if s["project"] == project]
         key = wait_for(lambda: signal("flow.failed_no_reason"), bool, 20, every=0.2)[0]
-        # The collector supplied the signal and its evidence. A drill raises only its stakes, to level 2.
-        db("UPDATE supervisor_signals SET scores = json_set(scores, '$.blast', 2, '$.confidence', 0.9) WHERE fingerprint = ?", [key])
+        raise_stakes(key)
 
         rounds = lambda: db("SELECT id, run, ended_at, failure, finding FROM supervisor_rounds WHERE project = ?", [project])
         [(case, run, _, failure, finding)] = wait_for(rounds, lambda r: len(r) == 1 and r[0][2], 30, every=0.2)
@@ -100,9 +103,9 @@ def main():
               and call(f"{path}/rounds/{case}")["case"]["budget_tokens"] == CEILING
               and stopped["tokens"] == stopped["limit_tokens"] == CEILING and stopped["routine_left"] == 0,
               (spent, failure, stopped))
-        raised = wait_for(lambda: signal("self.budget", "judgment_tokens"), lambda s: s and s[2] == "raised", 20, every=0.2)
-        exhausted_at = raised[3]
-        check("AC-237 code raises self.budget once the ceiling is reached", raised[2] == "raised", raised)
+        raised = wait_for(lambda: signal("self.budget", "judgment_tokens"), lambda s: s and s[2] == "raised", 20, every=0.2, last=True)
+        check("AC-237 code raises self.budget once the ceiling is reached", bool(raised) and raised[2] == "raised", raised)
+        exhausted_at = raised[3] if raised else time.time()
 
         status, refused = request(f"{path}/signals/{key}/investigate", "POST", {})
         check("AC-237 the owner's investigate press waits on the budget notice", status != 200 and NOTICE in refused.get("error", ""),
@@ -111,7 +114,7 @@ def main():
         beat = call(path)["last_ok"]
         failed_tasks(2)
         grown = wait_for(lambda: signal("flow.failed_no_reason"), lambda s: s[1] > before, 30, every=0.2)
-        db("UPDATE supervisor_signals SET scores = json_set(scores, '$.blast', 2, '$.confidence', 0.9) WHERE fingerprint = ?", [key])
+        raise_stakes(key)   # the new evidence rewrote its scores
         reason = wait_for(lambda: db("SELECT reason FROM supervisor_round_requests WHERE fingerprint = ?", [key]),
                           lambda r: r == [(NOTICE,)], 20, every=0.2)
         check("AC-237 collection goes on and the new evidence's investigation waits with the budget notice",
@@ -137,17 +140,21 @@ def main():
 
         # The daily digest already went out today: the drill moves it back a day, as if the next day had come.
         db("UPDATE supervisor_digests SET at = at - 86400 WHERE project = ?", [project])
-        digest = wait_for(lambda: call(path + "/screen")["digest"], lambda d: d and d["at"] >= exhausted_at, 30, every=0.2)
-        check("AC-237 the exception digest is still published without a round",
-              bool(digest and digest["entries"] and digest["last_ok"]) and len(rounds()) == 1, digest)
+        critical = signal("reports.critical")
+        digest = wait_for(lambda: call(path + "/screen")["digest"], lambda d: d and d["at"] >= exhausted_at, 30, every=0.2, last=True)
+        check("AC-237 the exception digest is still published without a round, with a signal first seen after the ceiling",
+              bool(digest and critical and critical[3] >= exhausted_at and digest["last_ok"])
+              and any(e["fingerprint"] == critical[0] for e in digest["entries"]) and len(rounds()) == 1, (critical, digest))
 
         status, pressed = request(f"/api/schedules/{schedule['id']}/run", "POST", {})
         check("AC-237 the owner's press of the weekly review waits on the budget notice",
               status != 200 and NOTICE in pressed.get("error", ""), (status, pressed))
         edit_schedule(schedule, "* * * * *")
+        # A save starts the cadence at its own time: set back two minutes, this minute's firing is due now, not late.
+        db("UPDATE schedules SET last_due = last_due - 120 WHERE id = ?", [schedule["id"]])
         cards = lambda: db("SELECT t.slug, t.status FROM supervisor_budget_cards c JOIN tasks t ON t.id = c.task"
                            " WHERE c.project = ? AND c.kind = 'judgment' AND t.title = ?", (project, CARD))
-        card = wait_for(cards, bool, 90, every=0.5)
+        card = wait_for(cards, bool, 20, every=0.2)
         skipped = db("SELECT why FROM schedule_fires WHERE schedule = ? AND state = 'skipped'", [schedule["id"]])
         check("AC-237 the due weekly review that cannot run becomes one decision card, and no review starts",
               len(card) == 1 and card[0][1] == "WAIT FOR HUMAN" and (NOTICE,) in skipped

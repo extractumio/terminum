@@ -11,9 +11,6 @@ from e2e_ws import BIN, check, tmux_on, wait_for
 def critical_report(t, socket, pane):
     """A critical report made by `terminum tool create_report` typed into a project's pane: its ID, its output, its exit status."""
     out = os.path.join(t.root, "report-tool")
-    for name in (out + ".txt", out + ".rc"):
-        if os.path.exists(name):
-            os.remove(name)
     args = {"title": "Build broken", "summary": "main is red", "body": "## What\nThe build fails.", "critical": "yes"}
     command = f"{shlex.quote(BIN)} tool create_report {shlex.quote(json.dumps(args))}"
     line = f"TM_HOME={shlex.quote(t.home)} TM_APP_DIR={shlex.quote(t.app)} {command} > {out}.txt 2>&1; echo $? > {out}.rc"

@@ -31,6 +31,15 @@ fn signal(f: &Fixture, rule: Rule, task: Option<&str>, level: u8, at: i64) {
             evidence.to_string(), measure.to_string(), scores.to_string(), at));
 }
 
+/// Task `lead`'s working run `original`: what a level 3 cost outlier stops.
+fn working_lead(f: &Fixture, at: i64) {
+    f.task("lead", Some("Bug"), "P2", "IN PROGRESS", at - 120);
+    f.write("UPDATE tasks SET slug = 'FIX-' || number WHERE id = 'lead'", []);
+    f.agent("agent");
+    f.run("lead", "original", "agent", at - 50);
+    f.write("UPDATE runs SET state = 'working', pane_key = 'fixture-pane' WHERE id = 'original'", []);
+}
+
 fn applied(result: Disposition) -> Applied {
     match result { Disposition::Applied(hold) => hold, Disposition::Card(_) => panic!("expected a hold") }
 }
@@ -40,11 +49,7 @@ fn ac245_code_can_hold_a_level_three_run_without_a_round() {
     let f = Fixture::new("holds-code");
     let at = ops::now();
     arm(&f, Rule::CostOutlier, at);
-    f.task("lead", Some("Bug"), "P2", "IN PROGRESS", at - 120);
-    f.write("UPDATE tasks SET slug = 'FIX-' || number WHERE id = 'lead'", []);
-    f.agent("agent");
-    f.run("lead", "original", "agent", at - 50);
-    f.write("UPDATE runs SET state = 'working', pane_key = 'fixture-pane' WHERE id = 'original'", []);
+    working_lead(&f, at);
     signal(&f, Rule::CostOutlier, Some("lead"), 3, at);
     f.store.with(|tx| {
         let stopped = applied(holds::automatic(tx, PROJECT, "hold-signal", at)?.expect("L3 evidence names the current run"));
@@ -71,12 +76,8 @@ fn ac237_ac245_code_still_holds_a_level_three_run_once_judgment_is_exhausted() {
     }).unwrap();
     // the collector scanned these settings, as a hold requires
     f.write("UPDATE project_supervisor SET settings_revision = (SELECT revision FROM supervisor_settings WHERE project = ?1)", [PROJECT]);
-    f.task("lead", Some("Bug"), "P2", "IN PROGRESS", at - 120);
-    f.write("UPDATE tasks SET slug = 'FIX-' || number WHERE id = 'lead'", []);
+    working_lead(&f, at);
     f.task("judged", Some("Feature"), "P2", "DONE", at - 120);
-    f.agent("agent");
-    f.run("lead", "original", "agent", at - 50);
-    f.write("UPDATE runs SET state = 'working', pane_key = 'fixture-pane' WHERE id = 'original'", []);
     f.run("judged", "round-run", "agent", at - 40);
     f.write("INSERT INTO supervisor_rounds (id, run, project, generation, fingerprint, signal_revision, case_file,
         deadline, token_cap, ended_at) VALUES ('case', 'round-run', ?1, 1, 'spent', 1, '{}', ?2, 100, ?2)", (PROJECT, at - 30));
