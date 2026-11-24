@@ -8,7 +8,6 @@ from e2e_ws import check, wait_for
 
 def ac245_hold_undo_and_switch_off(call, db, wire, tmux, project, task, pane):
     supervisor = f"/api/task-projects/{project}/supervisor"
-    integration = f"/api/integration/project/{project}/pause"
     auto = f"/api/task-projects/{project}/auto"
     at = int(time.time())
     rule = "drift.diff_outlier"
@@ -101,11 +100,13 @@ def ac245_hold_undo_and_switch_off(call, db, wire, tmux, project, task, pane):
     pause_hold = applied("pause_integration")["id"]
     [pause] = active()
     incident = f"/api/supervisor/incidents/{pause['incident']}"
-    check("AC-245 a level 2 integration pause opens a project incident",
-          state() == 1 and pause["id"] == pause_hold and pause["undo"] == "Resume integration"
-          and any(i["id"] == pause["incident"] and i["level"] == 2
-                  and [{"id": h["id"], "label": h["label"]} for h in i["holds"]] == [{"id": pause_hold, "label": pause["label"]}]
-                  for i in okay("/api/supervisor/incidents")))
+    incidents, paused = okay("/api/supervisor/incidents"), state()
+    opened = (paused == 1 and pause["id"] == pause_hold and pause["undo"] == "Resume integration"
+              and any(i["id"] == pause["incident"] and i["level"] == 2
+                      and [{"id": h["id"], "label": h["label"]} for h in i["holds"]] == [{"id": pause_hold, "label": pause["label"]}]
+                      for i in incidents))
+    check("AC-245 a level 2 integration pause opens a project incident", opened,
+          "" if opened else dict(paused=paused, hold=pause_hold, pause=pause, incidents=incidents))
     check("AC-245 an incident refuses another hold's ID",
           call(incident, "POST", {"action": "release_hold", "hold": dispatch_hold})[0] == 400)
     okay(incident, "POST", {"action": "keep_hold", "hold": pause_hold})
