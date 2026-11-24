@@ -412,13 +412,13 @@ fn check_heartbeat(store: &Store, at: i64, late: i64) -> Result<bool, String> {
     })?;
     let mut changed = false;
     for project in stale {
-        let silent = at - project.last_ok.unwrap_or(project.enabled_at);
-        if !project.reported_dead && silent - late < DEAD_AFTER {
-            tracing::warn!(event = "runtime.lag", ms = late * 1000, source = "supervisor.watchdog", project = %project.id,
-                silent_s = silent, "the watchdog came late with the collector: a stalled process, no incident");
-            continue;
-        }
         if !project.reported_dead {
+            let silent = at - project.last_ok.unwrap_or(project.enabled_at);
+            if silent - late < DEAD_AFTER {
+                tracing::warn!(event = "runtime.lag", ms = late * 1000, source = "supervisor.watchdog", project = %project.id,
+                    silent_s = silent, "the watchdog came late with the collector: a stalled process, no incident");
+                continue;
+            }
             match report_dead(store, &project, at) {
                 Ok(written) => changed |= written,
                 Err(error) => tracing::warn!(event = "supervisor.watchdog", project = %project.id, %error),
