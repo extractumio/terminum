@@ -34,7 +34,8 @@ def ac245_hold_undo_and_switch_off(call, db, wire, tmux, project, task, pane):
 
     def applied(kind, signal="hold-wide", task=None):
         reply = held(kind, signal, task)
-        assert not reply["error"], reply
+        assert not reply["error"], (reply, db("SELECT cursor, json_extract(attachment, ?) FROM project_supervisor"
+                                              " WHERE project = ?", (f'$.detectors."{rule}"', project)))
         return json.loads(reply["text"])
 
     def active():
@@ -50,9 +51,18 @@ def ac245_hold_undo_and_switch_off(call, db, wire, tmux, project, task, pane):
     db("INSERT INTO project_integration (project, is_on, target, check_line, publish_line, after_line, "
        "batch_most, check_minutes, agent_budget_minutes, red_rounds_most, prompt, paused) "
        "VALUES (?, 1, 'main', '', '', '', 1, 1, 1, 1, '', 0)", [project])
-    wait_for(lambda: db("SELECT last_ok IS NOT NULL AND settings_revision IS coalesce((SELECT revision FROM supervisor_settings"
-                        " WHERE project = ?), 0) FROM project_supervisor WHERE project = ?", [project, project]),
-             lambda rows: rows == [(1,)], 15)
+    # Turning integration on, and each standard probe's first sample, log a change that makes the collector
+    # rescan the attachment; a rescan recomputes can_run from real inputs (this detector then lacks git
+    # observations). Patch only after the collector's cursor covers them, so no scan is left to write over
+    # the patch (TERM-841). A change the collector already took is gone from the table: 0 then.
+    wait_for(lambda: db("SELECT count(DISTINCT source) FROM supervisor_probe_samples WHERE project = ?"
+                        " AND source IN ('git', 'git_architecture', 'gate_record')", [project]),
+             lambda rows: rows == [(3,)], 30)
+    [[logged]] = db("SELECT coalesce(max(seq), 0) FROM supervisor_changes WHERE project = ?", [project])
+    wait_for(lambda: db("SELECT last_ok IS NOT NULL AND cursor >= ? AND settings_revision IS coalesce((SELECT revision"
+                        " FROM supervisor_settings WHERE project = ?), 0) FROM project_supervisor WHERE project = ?",
+                        [logged, project, project]),
+             lambda rows: rows == [(1,)], 30)
     scan = f'$.detectors."{rule}"'
     args = (scan + ".mode", scan + ".can_run", scan + ".holds.live_at_attach", project)
     db("UPDATE project_supervisor SET attachment = json_set(attachment, '$.attached_at', ?, ?, 'live', ?, json('true'), ?, json('true')) "
