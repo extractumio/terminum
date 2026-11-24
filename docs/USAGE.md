@@ -394,11 +394,13 @@ Routines, the board's word for them, are a strip over the columns; its + opens o
 ### The Inbox
 
 Reports, what agents, routines and the Supervisor give you to read, stand in the **Inbox** at the
-top of the session list, on both pages and in a phone's list sheet: unread in bold, critical in
-red and first, the count of unread in its head. WAIT FOR HUMAN keeps only what needs your answer.
+top of the board's session list and its phone's sheet (the session page has none): unread in bold,
+critical in red and first, the count of unread in its head. Each row says its type (ok, attention,
+failed, incident, digest, report) and who sent it ("From Routine Nightly deps · Opus"). WAIT FOR HUMAN keeps only what needs your answer.
 
-- **Read**: press a report; on the board its pane covers the agents, routines and columns
-  (`/kanban/?report=R_TERM-7`, a link to share), from the session page the board opens with it.
+- **Read**: press a report; its pane covers the agents, routines and columns
+  (`/kanban/?report=R_TERM-7`, a link to share). Its body reads as the Files viewer shows a
+  document: code highlighted, Mermaid diagrams drawn, an HTML report in a frame without scripts.
   Open 2 seconds, it is read. × or Esc gives the columns back.
 - **Keys** on a row: ↑ ↓, Enter opens, U marks read or unread, Backspace or Delete deletes. A
   right click (a long press on a phone) and the row's buttons do the same, and Copy link, Open
@@ -415,10 +417,10 @@ red and first, the count of unread in its head. WAIT FOR HUMAN keeps only what n
   conversation as Run with your words does; "Opus is answering" until its agent answers below the
   report (it is unread again) or in a new report that follows it. A report of a session terminum
   did not start, a digest or an incident's says where to answer instead (an incident: its Talk).
-- **Links**: a session's row wears an envelope with its unread reports; a report's ID in a comment
-  opens it.
+- **Links**: a session's row wears an envelope with its unread reports, which opens the newest on
+  the board; a report's ID in a comment opens it.
 - **Find** on the board finds reports too; the Inbox follows the board's project.
-- Agents report by `create_report` (title, summary, Markdown body, files by `attach_report_file`,
+- Agents report by `create_report` (title, summary, a Markdown body or an HTML document, files by `attach_report_file`,
   comments by `append_to_report`); a worker only on its own task, at most 10 an hour; a manager or
   the Supervisor also changes or deletes reports of its project. A report's ID, R_TERM-7, is in
   the project's count of task IDs.
