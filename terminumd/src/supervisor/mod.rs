@@ -36,6 +36,7 @@ mod interim_tests;
 #[cfg(test)]
 mod escalations_tests;
 mod impact;
+mod scoring;
 mod escalations;
 mod runaway;
 #[cfg(test)]
@@ -112,6 +113,8 @@ mod outside_detectors_tests;
 mod replay_tests;
 #[cfg(test)]
 mod impact_tests;
+#[cfg(test)]
+mod scoring_tests;
 #[cfg(test)]
 mod incidents_tests;
 
@@ -202,7 +205,7 @@ impl Detector {
     fn for_rule(rule: Rule) -> Self {
         let threshold = rule.defaults();
         let window_days = if rule == Rule::FailedWithoutReason { 7 } else { 28 };
-        Self { rule, mode: Mode::Off, window_days, threshold, allocation: BTreeMap::new(), scores: Scores::default(), never: None }
+        Self { rule, mode: Mode::Off, window_days, threshold, allocation: BTreeMap::new(), scores: rule.scores(), never: None }
     }
 
     /// Initial attachment can set its mode in the pack. Enabling an additional rule always starts here.
@@ -294,6 +297,7 @@ pub(crate) struct Finding {
     charter_never: Option<String>,
     assessment: impact::Assessment,
     scores: Scores,
+    score_raises: Vec<scoring::Raise>,
     /// The measured escalate rule that raised a score, and what it named (AC-213).
     raised: Option<runaway::Raised>,
 }
@@ -428,7 +432,7 @@ impl Reading {
         Some(Finding {
             subject_kind: self.subject_kind, subject_id: self.subject_id, metric: self.metric,
             evidence: self.evidence, attributed_runs: self.attributed_runs, source: self.source, charter_never: None, raised: self.raised,
-            assessment: Default::default(), scores: Scores::default(), measure: Measure {
+            assessment: Default::default(), scores: Scores::default(), score_raises: Vec::new(), measure: Measure {
                 value: self.value, baseline, threshold: limit,
                 window_start: window.start, window_end: window.end,
             },
@@ -474,7 +478,7 @@ impl Evaluation {
     /// resolves to those subjects (none: the rule's every subject). Nothing to find or resolve: none.
     fn critical(project: &str, rule: Rule, readings: Vec<Reading>, measured: MeasuredSubjects, window: Window) -> Option<Self> {
         let findings: Vec<_> = readings.into_iter().filter_map(|reading| reading.finding(rule.defaults(), window))
-            .map(|mut finding| { finding.scores = Scores { impact: 3, ..Scores::default() }; finding }).collect();
+            .map(|mut finding| { finding.scores = Scores { impact: 3, ..rule.scores() }; finding }).collect();
         (!findings.is_empty() || measured.is_some()).then(|| Self { project: project.into(), at: window.end, detectors: vec![Checked {
             rule, mode: Mode::Live, unavailable: Vec::new(), findings,
             thresholds: Default::default(), complete_metrics: Vec::new(), measured, observations: Default::default(),

@@ -40,6 +40,8 @@ pub(crate) struct Signal {
     pub evidence: Vec<Evidence>,
     pub measure: Measure,
     pub scores: Scores,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub(super) score_raises: Vec<super::scoring::Raise>,
     pub(super) impact_basis: Assessment,
     pub(super) charter_breach: bool,
     pub(super) charter_never: Option<String>,
@@ -87,6 +89,8 @@ pub(super) struct RecordedScores {
     pub charter_never: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub raised: Option<super::runaway::Raised>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub score_raises: Vec<super::scoring::Raise>,
 }
 
 struct PreparedFinding<'a> {
@@ -154,7 +158,7 @@ pub(super) fn prepare(evaluation: &Evaluation) -> Result<Prepared<'_>, String> {
                 evidence: encode(&found.evidence)?, measure: encode(&found.measure)?,
                 scores: encode(&RecordedScores { scores: found.scores, impact_basis: found.assessment.clone(),
                     charter_breach: found.charter_breach(), charter_never: found.charter_never.clone(),
-                    raised: found.raised.clone() })?,
+                    raised: found.raised.clone(), score_raises: found.score_raises.clone() })?,
             })
         }).collect::<Result<_, _>>()?;
         let keys = encode(&findings.iter().map(|f| &f.key).collect::<Vec<_>>())?;
@@ -286,7 +290,7 @@ const COLUMNS: &str = "fingerprint, detector, subject_kind, subject_id, metric, 
         WHERE e.fingerprint = supervisor_signals.fingerprint AND e.evidence = supervisor_signals.evidence)";
 
 fn read(project: &str, r: &rusqlite::Row<'_>) -> rusqlite::Result<Signal> {
-    let RecordedScores { scores, impact_basis, charter_breach, charter_never, raised } = decode(r, 7)?;
+    let RecordedScores { scores, impact_basis, charter_breach, charter_never, raised, score_raises } = decode(r, 7)?;
     let escalated = r.get::<_, Option<String>>(12)?.as_deref().and_then(super::escalations::Score::read);
     let effective = escalated.map_or(scores, |score| score.raise(scores));
     let level = effective.level();
@@ -294,7 +298,7 @@ fn read(project: &str, r: &rusqlite::Row<'_>) -> rusqlite::Result<Signal> {
     Ok(Signal {
         fingerprint: r.get(0)?, project: project.into(), detector: r.get(1)?, subject_kind: r.get(2)?,
         subject_id: r.get(3)?, metric: r.get(4)?, evidence: decode(r, 5)?, measure: decode(r, 6)?,
-        scores, impact_basis, charter_breach, charter_never, escalated, raised, level, response: effective.response(count > 1),
+        scores, impact_basis, charter_breach, charter_never, escalated, raised, score_raises, level, response: effective.response(count > 1),
         first_seen: r.get(8)?, last_seen: r.get(9)?, count, state: decode(r, 11)?,
     })
 }

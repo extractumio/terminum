@@ -227,6 +227,11 @@ fn ac277_unread_reports_and_unanswered_replies_are_readings_and_owner_waits_stay
     };
     let key = report(&f, None, false, NOW - 2 * DAY);
     assert_eq!(fired("reports.unread_age", NOW), [(PROJECT.to_string(), 2880.0)], "the oldest unread report, in minutes");
+    // AC-213: the unread-report area still has a level without an additive impact share.
+    f.live(Rule::UnreadReports, NOW).record(&f.store).unwrap();
+    let signal = super::signals(&f.store, PROJECT).unwrap().remove(0);
+    assert_eq!((signal.scores.impact, signal.scores.blast, signal.scores.reversibility, signal.level), (0, 1, 0, 1));
+    assert!(signal.impact_basis.shares.is_empty() && signal.impact_basis.no_share.is_some());
     assert!(fired("reports.unread_age", NOW - 2 * DAY + 60).is_empty(), "quiet under a day");
     assert!(fired("flow.wait_human_age", NOW).is_empty(), "a report never waits in WAIT FOR HUMAN");
 
