@@ -360,14 +360,20 @@ Scenario: AC-219 happy path — independent timer
   When terminumd's watchdog runs
   Then it records self.collector_dead and shows the resulting incident with the last successful run
 
-Scenario: AC-219 edge — one missed beat
-  Given only one expected sweep has passed
+Scenario: AC-219 edge — fewer than three missed beats
+  Given one or two expected sweeps have passed without a heartbeat
   When the watchdog checks the heartbeat
   Then it opens no dead-collector incident
 
+Scenario: AC-219 edge — the whole process stalled
+  Given the machine's load or the store's turn held terminumd, so the watchdog's own tick came late by about as long as the collector has been silent
+  When the watchdog checks the heartbeat
+  Then it opens no dead-collector incident and writes a `runtime.lag` line naming the watchdog, its lateness and the collector's silence
+  And once the watchdog runs on time, a collector still silent for three beats opens the incident
+
 Scenario: AC-219 failure — collector cannot report its own failure
   Given the collector has stopped while terminumd still serves the signed-in page
-  When two beats pass without a heartbeat
+  When three beats pass without a heartbeat
   Then the watchdog exposes the fault without asking the collector or a model to report it
 ```
 
@@ -1508,7 +1514,7 @@ A detector names a schema-pinned engine query plus typed parameters: `measure`, 
 | Store trends and baselines | Measure store trends every 15 minutes. Store points for current waits, subscription readings and plan ETAs. Update baselines daily. |
 | Hook sensors | Count tool use and failures, repeats, subagent starts and stops, stops and compactions per session in terminumd's memory; the collector flushes them in its one transaction a beat, so a hook never waits on the store. Do analysis on the collector and expire counters on their retention schedule. |
 | Git and logs | Hourly, with the project's git checkout or log source where available. |
-| Probes | Daily by default. A separate heartbeat watchdog signals two missed beats even when the collector stops. |
+| Probes | Daily by default. A separate heartbeat watchdog signals three missed beats even when the collector stops, and none while its own tick came late with them (AC-219). |
 | Gates | Match calibrated terms at task creation, inspect the first worktree diff and check the review record at Verify. |
 
 The collector runs off the async workers through a read-only store connection. Each enabled project uses one small transaction for its signals, measurements, heartbeat and cursor. The cursor acknowledges the enabled project’s change journal up to the high-water mark of the same read snapshot. The collector coalesces changes in one snapshot and prunes acknowledged journal entries in bounded batches. Reuse Dashboard measures and keep collection off Dispatcher's walk. On equal timestamps or restart, no committed event is skipped or counted twice. A store migration preserves old questions, event evidence references and existing project settings. Hook counter rows expire after 30 days. A repeat is a tool call whose tool and input both equal its thread's previous call's, the main agent's or one subagent's, back to back, so calls taking turns (A, B, A, B) are no repeat; the hook sends one digest of the two, which terminumd compares in memory and never stores. A schema mismatch in replay fails with the versions named and leaves the store untouched.
@@ -1781,7 +1787,7 @@ Enable none of the runtime cases by default. The stages below list the cases in 
 - [x] AC-216 — `e2e_supervisor.py` and `ac216_project_off_is_inert_and_a_new_generation_rejects_old_work` cover the signed-in switch, its project scope and disabling during collection. `e2e_supervisor_rounds.py` checks that switch-off ends the active round and frees its slot. `ac245_hold_undo_and_switch_off` covers retained holds.
 - [x] AC-217 — `e2e_supervisor.py` checks live detection within a minute. `ac217_cursor_restart_and_rollback_with_same_time_nonmonotonic_ids` and `ac217_open_detector_snapshot_does_not_take_the_store_write_turn` cover durable order, retry and concurrent writes. `ac217_persisting_signals_write_only_what_changed` covers persisting signals and a counted one with thousands of rows. `scripts/bench_busy.py --supervisor` measures the active collector under load.
 - [x] AC-218 — `e2e_supervisor.py`, `ac218_points_and_hook_counter_retention` and `ac218_queue_growth_uses_only_the_first_available_samples` cover the sample and baseline cadence, numerical hook counts, retention and unavailable history.
-- [x] AC-219 — `e2e_supervisor.py` and `ac219_independent_watchdog_reports_two_misses_once_and_honors_recovery` cover the independent failure signal, the two-beat threshold and recovery. `liveIncidents` checks the signed-in incident and recovery.
+- [x] AC-219 — `e2e_supervisor.py` and `ac219_independent_watchdog_reports_three_misses_once_and_honors_recovery` cover the independent failure signal, the three-beat threshold and recovery; `ac219_a_whole_process_stall_opens_no_incident_a_stuck_collector_does` covers the stalled process and the collector stuck past it. `liveIncidents` checks the signed-in incident and recovery.
 - [x] AC-220 — `ac220_export_redaction_and_import_confirmation` in `scripts/e2e_supervisor_settings.py` covers per-project defaults and export, unset imports and preview-bound command confirmation on private terminumd. The project tab is AC-222.
 - [x] AC-221 — `ac221_switch_attaches_two_projects` in `scripts/e2e_supervisor_settings.py` covers switch-only attachment, project-specific calibration and unavailable inputs. `ac221_attach_short_history_and_hold_shadow` covers the seven-day boundary and charter exception. `ac221_attach_replays_distinct_verdicts_seeds_problems_and_retires_disabled_rule` covers the collector's replay qualification, register seeds and fast off/on edits. `ac221_integration_switch_rescans_the_attachment_and_a_quiet_beat_keeps_it` covers what makes the collector scan again. `ac212_ac221_hotspot_baseline_ranks_the_projects_fixed_files` and `ac212_ac221_loop_baseline_ranks_the_projects_session_days` cover a baseline without an earlier window. `ac213_an_edited_migration_breaks_a_never_only_when_the_owner_tied_it` records a live breach on the signal that hold shadow reads.
 - [x] AC-222 — `webSupervisor` in `web/test/e2e_supervisor.mjs` and `liveSupervisor` in `web/test/e2e_livesupervisor.mjs` cover the settings tab, switch, project pool, draft after refusal, portable settings, line test and surface preview.
