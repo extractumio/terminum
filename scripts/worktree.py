@@ -279,6 +279,8 @@ def link_target(tree, primary):
         cloned.append(profile)
     if cloned:
         notes.insert(0, f"cloned terminumd/target/{{{','.join(cloned)}}} (their dependencies' builds; terminumd itself rebuilds)")
+        if failed := cargo_profile.mark_cache(target):
+            notes.append(f"terminumd/target: not excluded from Time Machine: {failed}")
     return "; ".join(notes) or "terminumd/target: cargo builds it (the primary has no build)"
 
 

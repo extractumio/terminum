@@ -25,7 +25,7 @@ A snapshot of what terminum must do, not a record of how it came to be: git hold
 In scope:
 - One-line install, launchd and systemd, signed packages, the upgrade, rollback, restart and uninstall commands, `terminum status`, `terminum folders`.
 - What survives: terminumd's restart (AC-14), a reboot or a killed tmux (AC-15, AC-96), an upgrade or rollback (AC-16).
-- The update notice (AC-17). Tidying before a release (AC-102, AC-103). Landing a worktree (AC-104); a release's full run on a quiet machine (AC-146); a release of a pinned commit in its own tree (AC-200); the full run's passes, retry, environment and record (AC-201); the nightly full run and the weekly review (AC-202); the kept trees' build cache under a bound (AC-206).
+- The update notice (AC-17). Tidying before a release (AC-102, AC-103). Landing a worktree (AC-104); a release's full run on a quiet machine (AC-146); a release of a pinned commit in its own tree (AC-200); the full run's passes, retry, environment and record (AC-201); the nightly full run and the weekly review (AC-202); every checkout's build cache under a bound and out of backups (AC-206).
 
 Out of scope (explicit):
 - A native app (AC-11 dropped; terminum.md OQ-04). No notarization and no hardened runtime (`docs/RELEASING.md`).
@@ -73,7 +73,7 @@ Open questions: none open. Which clients exist (AC-11's drop) is terminum.md OQ-
 | AC-200 | [SHOULD / P1] | A release promotes a commit: `make release` pins the newest commit of origin/main that passed the full run in 48 hours, or differs from one only in docs, else origin/main, or `PIN=`, and runs its full run, the Mac test runner's checks, the build and the tag in a tree of its own detached at it, by that commit's own code, while landings, Afters and installs go on; a fix for a red release lands first and is pinned. |
 | AC-201 | [SHOULD / P1] | The full run keeps a pass per step and content, shared by every tree, and runs only the steps without one, or the scan alone after a docs-only change; its steps see only an allow-listed environment; a budget over under its own load is said and judged on a quiet machine; a red step of real programs runs its red checks once more, never for a check of code changed since the last full pass or one retried in 3 of the last 7 runs, said in red, in a task and in the release notes; each run and each release leaves a line in a record. |
 | AC-202 | [SHOULD / P1] | A nightly schedule runs every rehearsal step on origin/main, even after a pass on the same content, and judges the budgets on a quiet machine. A red step makes a task naming the commits since the last full pass. A weekly schedule runs /simplify and /docs-review over what landed since its last run, with findings filed as ordinary tasks. Releases require neither schedule. |
-| AC-206 | [SHOULD / P1] | The trees kept for warm builds (the integration candidate's, `.worktrees/release`, `.worktrees/rehearse`) keep `terminumd/target` under a bound of 20 GiB, kept where a build begins there: over it, the object files no executable of the current build names go first, the current build's stay so the next build is incremental, and only a target still over is cleaned; a build running there is never cleaned under it. |
+| AC-206 | [SHOULD / P1] | Every checkout (the primary, a worktree, the integration candidate's, `.worktrees/release`, `.worktrees/rehearse`) keeps `terminumd/target` out of Time Machine and under a bound of 20 GiB, kept where a build begins there: over it, the object files no executable of the current build names go first, the current build's stay so the next build is incremental, and only a target still over is cleaned; a build running there is never cleaned under it. |
 
 ## 5. BDD scenarios
 
@@ -1213,9 +1213,9 @@ Scenario: AC-202 happy path — the weekly review
   And make release asks for neither: a release ships what main has (CLAUDE.md §10)
 ```
 
-### AC-206 — The kept trees' build cache under a bound [SHOULD / P1]
+### AC-206 — Every checkout's build cache under a bound and out of backups [SHOULD / P1]
 
-The bound is `BOUND_GIB` of `scripts/target_bound.py`, 20 GiB: a kept tree's own build (debug, release, the agents' targets) is about 10 GiB. It is kept at the integration candidate's Check's start (`land.py check` in the tree `TM_INTEGRATION_TREE` names, while `TM_INTEGRATION_BATCH` is set: one batch is checked at a time, so nothing else builds there), and when `make release` or `make rehearse` moves its tree to its pin (`release_tree.py`, under the tree's own turn). Not at Cleanup: it runs in the project's folder beside the next batch's Check in that tree. By hand: `python3 scripts/target_bound.py <tree>`. The primary checkout's own target is outside this case.
+The bound is `BOUND_GIB` of `scripts/target_bound.py`, 20 GiB: a kept tree's own build (debug, release, the agents' targets) is about 10 GiB. It is kept at each `make build`, in whichever checkout it runs (the primary checkout's, as after each change and at a landing's install, and a worktree's), before cargo builds; at the integration candidate's Check's start (`land.py check` in the tree `TM_INTEGRATION_TREE` names, while `TM_INTEGRATION_BATCH` is set: one batch is checked at a time, so nothing else builds there); and when `make release` or `make rehearse` moves its tree to its pin (`release_tree.py`, under the tree's own turn). Not at Cleanup: it runs in the project's folder beside the next batch's Check in that tree. By hand: `python3 scripts/target_bound.py <tree>`. A target cargo makes carries cargo's `CACHEDIR.TAG` and, on macOS, Time Machine's exclusion (the item attribute `tmutil addexclusion` sets); a target without that tag (`scripts/worktree.py` made it by cloning the primary's builds) gets both where it is made and wherever the bound is kept, the attribute written directly (`tmutil` takes seconds a call).
 
 ```gherkin
 Scenario: AC-206 happy path — under the bound
@@ -1245,6 +1245,17 @@ Scenario: AC-206 edge — a build runs in the tree
 Scenario: AC-206 edge — objects it cannot judge
   Given a unit with no executable (its link failed), an executable whose debug map names no object (Linux keeps none, a stripped one), or nm failing
   Then that unit keeps all of its objects
+
+Scenario: AC-206 happy path — the primary checkout's make build
+  Given the primary checkout's terminumd/target at 37 GiB, most of it object files no executable names
+  When `make build` runs there
+  Then the bound is kept before cargo builds, as in a kept tree, and make's output carries its line
+
+Scenario: AC-206 happy path — a target cargo did not make is out of Time Machine
+  Given a terminumd/target with no CACHEDIR.TAG: `scripts/worktree.py add` cloned the primary's dependencies' builds into it
+  When the tree is made, or the bound is next kept there
+  Then that folder holds cargo's CACHEDIR.TAG and `tmutil isexcluded` says "[Excluded]" for it on macOS
+  And where the exclusion cannot be written, the tree is still made and the build goes on, the line says "not excluded from Time Machine: <the error>", and no tag is written, so the next bound tries again
 
 Scenario: AC-206 failure — the bound cannot be kept
   When reading or removing in the target fails, or cargo clean does
@@ -1449,7 +1460,7 @@ All cases are shipped; nothing is staged.
 - [x] AC-146 — `scripts/tests/test_load_gate.py`, `scripts/tests/test_release_turn.py`, `scripts/tests/test_check_changed.py`, `scripts/tests/test_check_live_slots.py`, `scripts/tests/test_access.py`, `scripts/e2e_access.py`
 - [ ] AC-200 — `scripts/tests/test_release_turn.py`, `scripts/tests/test_release_tree.py`, `scripts/tests/test_land_stages.py`, `scripts/tests/test_release.py`
 - [ ] AC-201 — `scripts/tests/test_check_all.py`, `scripts/tests/test_gate_retry.py`, `scripts/tests/test_gate_record.py`, `scripts/tests/test_e2e_ws.py`
-- [ ] AC-206 — `scripts/tests/test_target_bound.py`, `scripts/tests/test_land_stages.py`, `scripts/tests/test_release_tree.py`; on this Mac: the integration tree's next Check line and `du -sh`
+- [ ] AC-206 — `scripts/tests/test_target_bound.py`, `scripts/tests/test_worktree.py`, `scripts/tests/test_land_stages.py`, `scripts/tests/test_release_tree.py`; on this Mac: the integration tree's next Check line, the primary checkout's next `make build` line, `du -sh`, `tmutil isexcluded` of a new tree's target
 - [ ] AC-202 — the project's schedules "Nightly full run" and "Weekly review" (terminum's board), `scripts/tests/test_check_all.py` (a rehearsal runs every step with a full pass already recorded), `scripts/tests/test_gate_record.py`
 - [x] AC-197 — `scripts/tests/test_check_changed.py` (`test_ac197_*`), `cargo test integrate::retry_notes`, `cargo test integrate::stages::tests::ac197` (Verify and Check histories, cleanup, a reused tree), `cargo test integrate::retry_live_tests` (real retry commands through private tmux, Verify and Check)
 - [x] AC-103 — `scripts/tests/test_check_docs.py`; `python3 scripts/check_docs.py`
