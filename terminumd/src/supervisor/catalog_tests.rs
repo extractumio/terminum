@@ -295,7 +295,7 @@ fn ac212_shared_run_remains_shared_after_a_task_moves() {
 }
 
 // AC-212, AC-221: a project whose hook counters start today ranks each session against the others, so
-// ordinary same-tool runs stay quiet and only the outlier fires; a lone session meets the floor; earlier days join.
+// ordinary repeated calls stay quiet and only the outlier fires; a lone session meets the floor; earlier days join.
 #[test]
 fn ac212_ac221_loop_baseline_ranks_the_projects_session_days() {
     let f = Fixture::new("loop-baseline");
@@ -306,14 +306,14 @@ fn ac212_ac221_loop_baseline_ranks_the_projects_session_days() {
         let found = evaluate(&f.store, PROJECT, NOW, &[Fixture::detector("drift.loop")]).unwrap();
         found.detectors[0].findings.iter().map(|s| (s.subject_id.clone(), s.metric)).collect::<Vec<_>>()
     };
-    count("looping", NOW - 600, "repeat", 300);
+    count("looping", NOW - 600, "same_call", 300);
     assert_eq!(fired(), [("claude/looping".to_owned(), "repeated_tools")], "a lone session meets only the floor");
     // One failure per session stays under the floor of 2, so tool_failures never fires here.
     for i in 0..19 {
-        count(&format!("ordinary{i}"), NOW - 600, "repeat", 60);
+        count(&format!("ordinary{i}"), NOW - 600, "same_call", 60);
         count(&format!("ordinary{i}"), NOW - 600, "failure", 1);
     }
     assert_eq!(fired(), [("claude/looping".to_owned(), "repeated_tools")], "the floor of 2 alone would flag all 20");
-    for i in 0..20 { count(&format!("busy{i}"), NOW - 3 * DAY, "repeat", 400); }
+    for i in 0..20 { count(&format!("busy{i}"), NOW - 3 * DAY, "same_call", 400); }
     assert!(fired().is_empty(), "earlier busier days make today's 300 ordinary");
 }

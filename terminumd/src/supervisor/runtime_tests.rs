@@ -160,7 +160,7 @@ async fn ac218_points_and_hook_counter_retention() {
 
     for event in ["PreToolUse", "PreToolUse", "PostToolUseFailure", "SubagentStart", "SubagentStop", "PreCompact"] {
         app.supervisor.sensors.heard(PROJECT, "test-pane", &json!({"agent":"claude", "session":"counted", "event":event,
-            "tool_name_hash":"abcdef1234567890", "tool":"Read: private fixture input", "output":"fixture output"}), NOW);
+            "tool_call_hash":"abcdef1234567890", "tool":"Read: private fixture input", "output":"fixture output"}), NOW);
     }
     app.supervisor.sensors.heard(OTHER, "other-pane", &json!({"agent":"claude", "session":"ignored", "event":"Stop"}), NOW);
     app.supervisor.sensors.heard(PROJECT, "moved-pane", &json!({"agent":"claude", "session":"moved", "event":"Stop"}), NOW);
@@ -170,7 +170,7 @@ async fn ac218_points_and_hook_counter_retention() {
     collect_project(&app, &ready(s), || later).unwrap();
     assert_eq!(value(s, "SELECT sum(count) FROM supervisor_hook_counts WHERE session = 'counted'"), 7);
     assert_eq!(value(s, "SELECT count(*) FROM supervisor_hook_counts WHERE session != 'counted'"), 0);
-    assert_eq!(value(s, "SELECT sum(count) FROM supervisor_hook_counts WHERE event IN ('repeat', 'failure', 'compaction')"), 3);
+    assert_eq!(value(s, "SELECT sum(count) FROM supervisor_hook_counts WHERE event IN ('same_call', 'failure', 'compaction')"), 3);
     assert_eq!(value(s, "SELECT count(*) FROM supervisor_points WHERE metric = 'queue_waits'"), 2);
     assert_eq!(value(s, "SELECT cast(value AS INTEGER) FROM supervisor_points WHERE metric = 'queue_waits' AND at > 1800000000"), 0);
 
@@ -184,6 +184,34 @@ async fn ac218_points_and_hook_counter_retention() {
     assert_eq!(value(s, "SELECT count(*) FROM supervisor_points WHERE metric = 'queue_waits_p90'"), 2);
     collect_project(&app, &ready(s), || NOW + 31 * DAY).unwrap();
     assert_eq!(value(s, "SELECT count(*) FROM supervisor_hook_counts"), 0);
+}
+
+// AC-212: a repeat is the same call again; a session running many different commands is busy, not looping.
+#[tokio::test]
+async fn ac212_drift_loop_counts_the_same_call_not_the_same_tool() {
+    let (_, app) = crate::testutil::app_with_tasks("supervisor-same-call");
+    let s = &app.tasks;
+    write(s, "INSERT INTO project_members VALUES ('default', 'test-pane', 0)", []);
+    set_enabled(s, PROJECT, true, NOW - DAY).unwrap();
+    let projects = app.supervisor.read_scopes(s, NOW).unwrap();
+    let call = |session: &str, input: serde_json::Value| {
+        let hook = json!({"hook_event_name": "PreToolUse", "session_id": session, "tool_name": "Bash", "tool_input": input});
+        let event = crate::cli::hook::event("claude", &hook, "/tmp/tmux-501/terminum,1,0", "%1").unwrap();
+        app.supervisor.sensors.heard(PROJECT, "test-pane", &event, NOW - 600);
+    };
+    for n in 0..40 {
+        call("busy", json!({"command": format!("cargo test case_{n}"), "description": "Run one case"}));
+        call("looping", json!({"command": "cargo test", "description": "Run the tests"}));
+    }
+    // the same input with its keys in another order is the same call
+    call("looping", json!({"description": "Run the tests", "command": "cargo test"}));
+    collect_project(&app, &projects[0], || NOW).unwrap();
+    assert_eq!(value(s, "SELECT sum(count) FROM supervisor_hook_counts WHERE event = 'tool'"), 81);
+    assert_eq!(value(s, "SELECT count(*) FROM supervisor_hook_counts WHERE event = 'same_call' AND session = 'busy'"), 0);
+    assert_eq!(value(s, "SELECT sum(count) FROM supervisor_hook_counts WHERE event = 'same_call' AND session = 'looping'"), 40);
+    let found = supervisor::evaluate(s, PROJECT, NOW, &[Fixture::detector("drift.loop")]).unwrap();
+    let fired = found.detectors[0].findings.iter().map(|f| (f.subject_id.as_str(), f.metric)).collect::<Vec<_>>();
+    assert_eq!(fired, [("claude/looping", "repeated_tools")], "Bash after Bash with other commands is no repeat");
 }
 
 #[test]

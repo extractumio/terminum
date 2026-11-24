@@ -32,7 +32,7 @@ struct HookSession {
 
 #[derive(Default)]
 struct Session {
-    last_tool: Option<String>,
+    last_call: Option<String>,
     counts: Delta,
     seen_at: i64,
 }
@@ -92,15 +92,16 @@ impl Sensors {
         let s = scope.sessions.entry(key).or_default();
         s.seen_at = at;
         s.counts.add(kind, 1);
+        // AC-212: a repeat is the same call again, its tool and input both equal to the previous call's
         if kind == "tool" {
-            let tool = event["tool_name_hash"].as_str().filter(|hash| hash.len() == 16 && hash.bytes().all(|c| c.is_ascii_hexdigit()));
-            if tool.is_some() && tool == s.last_tool.as_deref() {
-                s.counts.add("repeat", 1);
+            let call = event["tool_call_hash"].as_str().filter(|hash| hash.len() == 16 && hash.bytes().all(|c| c.is_ascii_hexdigit()));
+            if call.is_some() && call == s.last_call.as_deref() {
+                s.counts.add("same_call", 1);
             }
-            s.last_tool = tool.map(str::to_owned);
+            s.last_call = call.map(str::to_owned);
         }
         if kind == "stop" {
-            s.last_tool = None;
+            s.last_call = None;
         }
     }
 

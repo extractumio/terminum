@@ -126,7 +126,7 @@ def main():
         pane = page.until(lambda m: m.get("t") == "created", 15)["id"].rsplit(":", 1)[1]
         for event in ["SessionStart", "PreToolUse", "PreToolUse", "PreToolUse", "PreToolUse"]:
             status, _ = unix_request(t.sock, "POST", "/hook", {"agent": "claude", "session": "budget-session", "event": event,
-                                                              "socket": SOCKET, "pane": pane, "tool_name_hash": "abcdef1234567890"})
+                                                              "socket": SOCKET, "pane": pane, "tool_call_hash": "abcdef1234567890"})
             assert status in (200, 204), status
         loop = wait_for(lambda: signal("drift.loop"), bool, 30, every=0.2)
         check("AC-237 a new deterministic signal is still collected", loop is not None and loop[3] >= exhausted_at, loop)
