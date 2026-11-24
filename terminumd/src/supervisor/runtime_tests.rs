@@ -194,21 +194,31 @@ async fn ac212_drift_loop_counts_the_same_call_not_the_same_tool() {
     write(s, "INSERT INTO project_members VALUES ('default', 'test-pane', 0)", []);
     set_enabled(s, PROJECT, true, NOW - DAY).unwrap();
     let projects = app.supervisor.read_scopes(s, NOW).unwrap();
-    let call = |session: &str, input: serde_json::Value| {
-        let hook = json!({"hook_event_name": "PreToolUse", "session_id": session, "tool_name": "Bash", "tool_input": input});
+    let call_in = |session: &str, sub: &str, input: serde_json::Value| {
+        let hook = json!({"hook_event_name": "PreToolUse", "session_id": session, "agent_id": sub, "tool_name": "Bash", "tool_input": input});
         let event = crate::cli::hook::event("claude", &hook, "/tmp/tmux-501/terminum,1,0", "%1").unwrap();
         app.supervisor.sensors.heard(PROJECT, "test-pane", &event, NOW - 600);
     };
+    let call = |session: &str, input| call_in(session, "", input);
     for n in 0..40 {
         call("busy", json!({"command": format!("cargo test case_{n}"), "description": "Run one case"}));
         call("looping", json!({"command": "cargo test", "description": "Run the tests"}));
     }
     // the same input with its keys in another order is the same call
     call("looping", json!({"description": "Run the tests", "command": "cargo test"}));
+    // each thread is compared with itself: two subagents' one `git diff` each is no repeat, while one
+    // subagent's same call again counts though the main agent's calls come between
+    call_in("threads", "a1", json!({"command": "git diff"}));
+    call_in("threads", "b2", json!({"command": "git diff"}));
+    for n in 0..3 {
+        call_in("threads", "c3", json!({"command": "cargo test"}));
+        call("threads", json!({"command": format!("ls part_{n}")}));
+    }
     collect_project(&app, &projects[0], || NOW).unwrap();
-    assert_eq!(value(s, "SELECT sum(count) FROM supervisor_hook_counts WHERE event = 'tool'"), 81);
+    assert_eq!(value(s, "SELECT sum(count) FROM supervisor_hook_counts WHERE event = 'tool'"), 89);
     assert_eq!(value(s, "SELECT count(*) FROM supervisor_hook_counts WHERE event = 'same_call' AND session = 'busy'"), 0);
     assert_eq!(value(s, "SELECT sum(count) FROM supervisor_hook_counts WHERE event = 'same_call' AND session = 'looping'"), 40);
+    assert_eq!(value(s, "SELECT sum(count) FROM supervisor_hook_counts WHERE event = 'same_call' AND session = 'threads'"), 2);
     let found = supervisor::evaluate(s, PROJECT, NOW, &[Fixture::detector("drift.loop")]).unwrap();
     let fired = found.detectors[0].findings.iter().map(|f| (f.subject_id.as_str(), f.metric)).collect::<Vec<_>>();
     assert_eq!(fired, [("claude/looping", "repeated_tools")], "Bash after Bash with other commands is no repeat");
