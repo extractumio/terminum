@@ -204,7 +204,7 @@ OWN_BUILDS = ("terminumd", "libterminumd", "terminusd")   # the crate's own: the
 def clone_builds(source, target):
     """A cargo profile's folder with its dependencies' builds only: the crate's own are most of a debug
     folder's files (tens of thousands) and the tree rebuilds them anyway."""
-    target.mkdir(parents=True)
+    target.mkdir(parents=True, exist_ok=True)
     if not all(clone(source / sub, target / sub) for sub in ("build", ".fingerprint") if (source / sub).is_dir()):
         return False
     deps = [str(p) for p in (source / "deps").iterdir() if not p.name.startswith(OWN_BUILDS)] if (source / "deps").is_dir() else []
@@ -258,6 +258,14 @@ def link_modules(tree, primary):
     return "cloned ui/node_modules"
 
 
+def clone_profile(source, target):
+    """`clone_builds` under the source profile's locks: "cloned", "busy" (a build holds them) or "no clone"."""
+    with cargo_profile.try_lock(source) as held:
+        if not held:
+            return "busy"
+        return "cloned" if clone_builds(source, target) else "no clone"
+
+
 def link_target(tree, primary):
     source, target = primary / "terminumd/target", tree / "terminumd/target"
     if target.exists():
@@ -267,12 +275,11 @@ def link_target(tree, primary):
         folder = source / profile
         if not folder.is_dir():
             continue
-        with cargo_profile.try_lock(folder) as held:
-            if not held:
-                notes.append(f"cargo builds {profile} in this tree (the primary's {profile} profile is busy)")
-                continue
-            copied = clone_builds(folder, target / profile)
-        if not copied:
+        copied = clone_profile(folder, target / profile)
+        if copied == "busy":
+            notes.append(f"cargo builds {profile} in this tree (the primary's {profile} profile is busy)")
+            continue
+        if copied == "no clone":
             shutil.rmtree(target, ignore_errors=True)
             notes.append("terminumd/target: no clone on this disk; cargo builds it")
             return "; ".join(notes)
