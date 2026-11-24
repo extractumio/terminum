@@ -96,11 +96,15 @@ async fn reply(State(app): State<Shared>, Path(id): Path<String>, Json(body): Js
         record::note(tx, &key, HUMAN, "reply", &record::check_note(&text)?, at)?;
         tx.execute("UPDATE reports SET replied_at = ?1 WHERE id = ?2", (at, &key)).map_err(sql)?;
         // answering it is seeing it: its incident is acknowledged as reading would (AC-276)
-        record::acknowledge_by_reading(tx, &key, at).map(drop)
+        record::acknowledge_by_reading(tx, &key, at)
     }).await;
     crate::tasks::api::told(&app, &task);
     super::changed(&app);
-    answer(kept.map(|()| json!({"task": task})))
+    if matches!(kept, Ok(true)) {
+        app.supervisor.incident_changed();
+        app.supervisor.wake();
+    }
+    answer(kept.map(|_| json!({"task": task})))
 }
 
 /// Report `p`'s reply has no answer yet: no agent's comment since it, no report following it (AC-270, AC-277).
