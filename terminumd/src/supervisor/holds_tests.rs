@@ -60,6 +60,38 @@ fn ac245_code_can_hold_a_level_three_run_without_a_round() {
 }
 
 #[test]
+fn ac237_ac245_code_still_holds_a_level_three_run_once_judgment_is_exhausted() {
+    let f = Fixture::new("holds-exhausted");
+    let at = ops::now();
+    arm(&f, Rule::CostOutlier, at);
+    f.store.with(|tx| {
+        let settings = serde_json::from_value(json!({"level":"operator",
+            "budgets":{"judgment_floor_tokens":100,"judgment_ceiling":100}})).unwrap();
+        super::settings::write(tx, PROJECT, 0, settings, false).map(drop)
+    }).unwrap();
+    // the collector scanned these settings, as a hold requires
+    f.write("UPDATE project_supervisor SET settings_revision = (SELECT revision FROM supervisor_settings WHERE project = ?1)", [PROJECT]);
+    f.task("lead", Some("Bug"), "P2", "IN PROGRESS", at - 120);
+    f.write("UPDATE tasks SET slug = 'FIX-' || number WHERE id = 'lead'", []);
+    f.task("judged", Some("Feature"), "P2", "DONE", at - 120);
+    f.agent("agent");
+    f.run("lead", "original", "agent", at - 50);
+    f.write("UPDATE runs SET state = 'working', pane_key = 'fixture-pane' WHERE id = 'original'", []);
+    f.run("judged", "round-run", "agent", at - 40);
+    f.write("INSERT INTO supervisor_rounds (id, run, project, generation, fingerprint, signal_revision, case_file,
+        deadline, token_cap, ended_at) VALUES ('case', 'round-run', ?1, 1, 'spent', 1, '{}', ?2, 100, ?2)", (PROJECT, at - 30));
+    f.cost("round-run", at - 30, 100);
+    signal(&f, Rule::CostOutlier, Some("lead"), 3, at);
+    f.store.with(|tx| {
+        assert_eq!(super::governor::admit_round(tx, PROJECT, at, true).unwrap_err(), super::governor::JUDGMENT_NOTICE);
+        let stopped = applied(holds::automatic(tx, PROJECT, "hold-signal", at)?.expect("the budget never gates a code hold"));
+        assert!(!stopped.shadow);
+        assert_eq!(stopped.run.unwrap().state, runs::Phase::Left);
+        Ok(())
+    }).unwrap();
+}
+
+#[test]
 fn ac245_grouped_run_retains_its_open_members_and_failed_release_stays_held() {
     let f = Fixture::new("holds-group");
     let at = ops::now();

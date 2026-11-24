@@ -12,7 +12,8 @@ quits`: ends after receiving its first paste, without echoing or taking it; `--s
 none`: never a box; `--start fast`: exits at once with 7; `--start slow`: its first paste shows 3 s late, as a busy
 machine's does, and a prompt pasted twice is not worked on. `--title`: an idle OSC title after Stop to
 identify the stand-in after terminumd restarts; `--prompts <file>`: each prompt it takes, a line; `--stop-after <file>`: hold Stop until the file exists and write
-<file>.sent after attempting the hook, so the test can place it during downtime."""
+<file>.sent after attempting the hook, so the test can place it during downtime. `--round-tokens <n>`: a Supervisor
+investigation ends its turn with a transcript of n input tokens, the round's spend."""
 import json
 import os
 import re
@@ -64,6 +65,13 @@ def main():
             draw(["  OpenAI Codex", "", shown, "", "  ? for shortcuts"])
         else:
             draw(["  Claude Code", "", RULE, f"\x1b[39m❯ {held.replace(chr(10), ' ')}\x1b[7m \x1b[0m", RULE, background or "  ? for shortcuts"])
+
+    def stop_with_usage(usage):
+        """A turn's end whose transcript reports `usage`, as Claude Code's does."""
+        path = os.path.join(os.getcwd(), f"transcript-{os.getpid()}.jsonl")
+        with open(path, "w", encoding="utf8") as f:
+            f.write(json.dumps({"type": "assistant", "message": {"id": "m1", "model": "claude-opus-5-5", "usage": usage}}) + "\n")
+        hook("Stop", last_assistant_message="done", transcript_path=path)
 
     def tool(name, arguments):
         rpc = lambda i, m, p=None: json.dumps({"jsonrpc": "2.0", **({} if i is None else {"id": i}), "method": m, **({"params": p} if p else {})})
@@ -254,6 +262,8 @@ def main():
                     box()
             if opt("--round-log", "") and (case := re.fullmatch(r"Supervisor (?:reflection |design review )?case (case_[a-f0-9]+)\..*", prompt)):
                 investigate(case[1])
+                if tokens := opt("--round-tokens", ""):
+                    stop_with_usage({"input_tokens": int(tokens)})
             elif opt("--round-log", "") and (case := re.fullmatch(r"Supervisor incident case (case_[a-f0-9]+)\..*", prompt)):
                 talk(case[1])
                 hook("Stop", last_assistant_message="An incident conversation is open.")
@@ -291,10 +301,7 @@ def main():
             elif "SUBAGENT" in prompt:
                 pass
             elif "TOKENS" in prompt:
-                path = os.path.join(os.getcwd(), f"transcript-{os.getpid()}.jsonl")
-                with open(path, "w", encoding="utf8") as f:
-                    f.write(json.dumps({"type": "assistant", "message": {"id": "m1", "model": "claude-opus-5-5", "usage": {"input_tokens": 1200, "output_tokens": 34, "cache_read_input_tokens": 5}}}) + "\n")
-                hook("Stop", last_assistant_message="done", transcript_path=path)
+                stop_with_usage({"input_tokens": 1200, "output_tokens": 34, "cache_read_input_tokens": 5})
                 hook("PreToolUse", tool_name="Bash", tool_input={"command": "sleep"})   # then at work: its session stays to be read
             elif "WORKS" in prompt or prompt.startswith("Auto-Dispatcher, which a human turned on"):
                 hook("PreToolUse", tool_name="Bash", tool_input={"command": "sleep"})   # a long tool: no Stop
