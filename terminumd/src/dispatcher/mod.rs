@@ -18,6 +18,7 @@ mod firstprompt;
 mod queue;
 mod resume;
 mod gate;
+pub(crate) mod giveup;
 mod hooks;
 pub mod plan;
 pub mod pool;
