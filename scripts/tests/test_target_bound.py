@@ -246,7 +246,9 @@ class Refill(Target, unittest.TestCase):
         self.assertEqual(self.refill(self.tree), [], "the primary checkout: nothing to clone from")
         self.assertEqual(sorted(p.name for p in self.deps.parent.iterdir()), sorted(cargo_profile.LOCKS))
 
+    @mock.patch.object(target_bound.worktree, "CLONE", ["cp", "-R"])
     def test_a_worktree_gets_the_primarys_dependencies_builds_back(self):  # AC-206
+        # Exercise cache filtering even on filesystems without reflinks.
         self.assertEqual(self.refill(self.primary), ["debug: its dependencies' builds cloned from the primary checkout"])
         self.assertTrue((self.deps / self.dep.name).exists())
         self.assertFalse((self.deps / f"{UNIT}.rlib").exists(), "terminumd's own build: the tree rebuilds it")
