@@ -408,9 +408,14 @@ Scenario: AC-276 happy path — an incident, one alert
   When the owner acknowledges or snoozes the incident (AC-226)
   Then R_API-8 is read; and when the owner reads R_API-8 first, the incident is acknowledged by them, both recorded with who and when
 
-Scenario: AC-276 edge — the Supervisor off
-  Given API's Supervisor not enabled
-  Then R_API-8 raises its own line (AC-271), as with no Supervisor at all
+Scenario: AC-276 edge — the Supervisor off, or no incident to alert
+  Given API's Supervisor not enabled, or the owner ruled reports.critical wrong (AC-226), or its breaker is open (AC-255)
+  Then R_API-8 raises its own line (AC-271), as with no Supervisor at all: one alert, always
+
+Scenario: AC-276 edge — read, the signal clears
+  When the owner reads or deletes every unread critical report of its subject
+  Then its signal clears at the Supervisor's next look, and the incident closes when nothing else holds it open (AC-226)
+  And a later critical report of the subject past the incident's grouping opens a new incident, which its subject's unread reports then name
 
 Scenario: AC-276 edge — an incident's own report
   Given the report the Supervisor made of incident 12 (AC-272)
@@ -488,8 +493,6 @@ sequenceDiagram
 
 | Case | Gap |
 |---|---|
-| AC-276 | A critical report is no Supervisor signal: it alerts by its own line whether or not the Supervisor is on. |
-| AC-277 | No detector reads reports. |
 | AC-279 | The weekly review is a report only as a routine's result; its decisions are not linked from it. |
 
 ## 8. Recommendation and ownership
@@ -505,7 +508,8 @@ CREATE TABLE reports (id TEXT PRIMARY KEY, project TEXT NOT NULL REFERENCES proj
   title TEXT NOT NULL, summary TEXT NOT NULL, body TEXT NOT NULL, critical INTEGER NOT NULL DEFAULT 0,
   author TEXT NOT NULL REFERENCES users, role TEXT NOT NULL, session_key TEXT, task TEXT REFERENCES tasks, schedule TEXT REFERENCES schedules,
   run TEXT, incident INTEGER, follows TEXT REFERENCES reports, read_at INTEGER, line INTEGER NOT NULL DEFAULT 0, line_seen INTEGER,
-  deleted_at INTEGER, replied_at INTEGER, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
+  deleted_at INTEGER, replied_at INTEGER, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
+  alerted_by INTEGER REFERENCES supervisor_incidents ON DELETE SET NULL);
 CREATE TABLE report_notes (id TEXT PRIMARY KEY, report TEXT NOT NULL REFERENCES reports ON DELETE CASCADE, at INTEGER NOT NULL,
   author TEXT NOT NULL REFERENCES users, kind TEXT NOT NULL, text TEXT NOT NULL);   -- kind: comment, reply, change
 ALTER TABLE files ADD COLUMN report TEXT REFERENCES reports;
@@ -532,13 +536,23 @@ The list's answer carries the unread counts by project, by schedule and by sessi
 
 **Security.** The reply is a human's message carried by a human's RUN, named in `CLAUDE.md` §2's list as "a human's reply to a report (`terminum-reports.md` AC-270): through the §9 gate, as a RUN of the report's task Dispatcher ran, fixed words with the report's ID and the human's text, never the report's text", and in `SECURITY.md`: only a signed-in page sends it, only into the pane of a task Dispatcher started, through the §9 gate; an agent's report text is never typed. A worker's reports are bounded (10 an hour, one critical line an hour per session) so a misled agent cannot flood the Inbox or the human's attention. A report's body is agents' text: the page shows it only through the Panel's Markdown rules. An agent's report tools write only to its project's reports, a worker only to its own.
 
+**Supervisor** (`terminumd/src/supervisor/report_rules.rs`, `terminum-supervisor.md` AC-212). Three detectors read reports, each present-only (a report's read state keeps no history):
+
+| Detector (query) | Reads | Fires |
+|---|---|---|
+| `reports.critical` (`critical_reports`) | unread critical reports not an incident's, one reading per subject (the report's task, else the report), each report a `reports` evidence row | any: level 3 by its author (`Rule::fixed_impact`), never sized; not configurable |
+| `reports.unread_age` (`unread_reports`) | the project's oldest unread report, one reading per project | older than 1440 minutes |
+| `reports.follow_up_age` (`unanswered_replies`) | a reply no agent answered (no agent comment, no follow-up since it, as AC-270's "is answering") | older than 1440 minutes |
+
+A critical report made, or changed to critical, is measured at once in its own transaction, as the collector would, limited to its subject (so no other subject's signal resolves) and one second past the detector's last evaluation; the incident whose event that moves is kept as `alerted_by` on every unread critical report of the subject, and the report's `line` is 0. An incident opened by `reports.critical` makes no report of its own (AC-272). Acknowledging or snoozing an incident sets `read_at` on its reports (`alerted_by` or `incident` it); `POST …/read` acknowledges the open, unacknowledged incident of the report, as the owner. A round reads a `reports` evidence row as its ID, critical, read and deleted, never its text.
+
 **Limits.** Title 200 characters, summary 500, body 1 MiB, comment 256 KiB, 50 files of 100 MB each; the Inbox reads 100 rows a page; deleted reports kept 30 days.
 
 ## 10. Delivery stages
 
 | Stage | Cases | Exit |
 |---|---|---|
-| 3b | AC-276, AC-277, AC-279's weekly review: after the Supervisor's open work on its detector catalog, incidents and review (TERM-682's pieces) | landed green |
+| 3b | AC-279's weekly review: after the Supervisor's open work on its weekly review (TERM-682's pieces) | landed green |
 
 ## 11. Checklist with Definition of Done
 
@@ -551,9 +565,9 @@ The list's answer carries the unread counts by project, by schedule and by sessi
 - [x] AC-271 — `cargo test reports` (`ac271_…`: only critical, one an hour per worker's session, read takes it, an incident's none), `web/test/e2e_all.mjs` (`webInbox`: a line opens the report, its × the report's route)
 - [x] AC-272 — `cargo test reports` (`ac272_…`), `cargo test dispatcher::fire` (`ac272_…`: none superseded), `web/test/e2e_liveschedules.mjs`, `scripts/e2e_roles.py`
 - [x] AC-273 — `web/test/e2e_all.mjs` (`webTaskWin`: a task's window lists its reports; `webInbox`: Find, a report's ID in a comment opens it, a session row's envelope)
-- [ ] AC-276 — stage 3b
-- [ ] AC-277 — stage 3b
+- [x] AC-276 — `cargo test supervisor::report_rules` (`ac276_…`: an incident at level 3, one alert, two reports joined, another task's apart and open, acknowledging reads and reading acknowledges, clearing on read, a newer incident taking the subject's reports, the Supervisor off and an incident's own report), `scripts/e2e_supervisor.py` (a worker's critical report through `terminum tool`, its incident, the Inbox's read acknowledging it), `web/test/e2e_all.mjs` (`webSupervisor`: the card links its report)
+- [x] AC-277 — `cargo test supervisor::report_rules` (`ac277_…`: unread age and unanswered replies firing and quiet, owner waits ignoring reports), `cargo test supervisor::catalog` (`ac212_store_detector_catalog`: quiet on a clean store)
 - [x] AC-278 — `cargo test reports` (`ac278_…`: reading in a window)
 - [ ] AC-279 — `cargo test reports` (`ac279_…`: the audit's report unedited); the weekly review as a report: stage 3b
-- [x] AC-280 — `cargo test reports` (`ac280_…`: by level), `cargo test roles` (`ac231_…`), `cargo test reports` (`ac270_…`: Talk for an incident's report)
+- [x] AC-280 — `cargo test roles` (`ac231_…`: the report tools by level), `scripts/e2e_roles.py` (the matrix by level), `cargo test reports` (`ac270_…`: Talk for an incident's report)
 - [x] AC-274 — `cargo test reports` (`ac274_…`: moved once, its task DONE and linked, a question's task stays)

@@ -406,7 +406,10 @@ red and first, the count of unread in its head. WAIT FOR HUMAN keeps only what n
 - **Delete** hides it at once with Undo; the clock button in the Inbox's head shows the deleted
   ones, restorable for 30 days, then they go with their files.
 - **Alerts**: none, but for a critical report: a red line as a waiting task's, until you read it
-  or close the line. A Supervisor incident's report alerts through the incident alone.
+  or close the line. With the project's Supervisor on, a critical report opens (or joins) its
+  task's incident instead, which alerts once and links it; reading the report acknowledges the
+  incident, and acknowledging or snoozing the incident reads its reports. A Supervisor incident's
+  own report alerts through the incident alone.
 - **Reply** under a report made in a task's run: Send (⌘Enter) goes on in that task's
   conversation as Run with your words does; "Opus is answering" until its agent answers below the
   report (it is unread again) or in a new report that follows it. A report of a session terminum
