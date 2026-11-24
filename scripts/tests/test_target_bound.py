@@ -150,6 +150,14 @@ class Bound(unittest.TestCase):
         self.assertEqual(self.said[-2:], ["target: not excluded from Time Machine: denied", self.said[-1]])
         self.assertIn("nothing removed", self.said[-1], "a mark it cannot write stops nothing")
 
+    @unittest.skipUnless(sys.platform == "darwin", "Time Machine")
+    def test_an_exclusion_it_cannot_write_leaves_no_tag_so_the_next_bound_tries_again(self):  # AC-206
+        (self.target / "CACHEDIR.TAG").unlink()
+        refused = subprocess.CompletedProcess([], 1, "", "xattr: [Errno 1] Operation not permitted\n")
+        with mock.patch.object(cargo_profile.subprocess, "run", return_value=refused):
+            self.assertEqual(cargo_profile.mark_cache(self.target), "xattr: [Errno 1] Operation not permitted")
+        self.assertFalse((self.target / "CACHEDIR.TAG").exists())
+
     def test_make_build_keeps_the_bound_before_cargo_builds(self):  # AC-206
         make = (Path(__file__).resolve().parents[2] / "Makefile").read_text()
         self.assertLess(make.index("\tpython3 scripts/target_bound.py\n"), make.index("\tcd terminumd && cargo build --locked --release"))

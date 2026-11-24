@@ -36,10 +36,11 @@ def try_lock(folder):
 
 
 def mark_cache(target):
-    """Marks `target` as cargo marks a target folder it makes: its cache tag and, on macOS, Time Machine's exclusion
-    (written directly: tmutil takes seconds a call). None, or why it is not excluded."""
+    """Marks `target` as cargo marks a target folder it makes: on macOS Time Machine's exclusion (written directly:
+    tmutil takes seconds a call), then its cache tag, so a tag means marked. None, or why it is not excluded."""
+    if sys.platform == "darwin":
+        run = subprocess.run(["xattr", "-wx", BACKUP_EXCLUDE, BACKUP_EXCLUDED, str(target)], capture_output=True, text=True)
+        if run.returncode:
+            return run.stderr.strip() or f"xattr exited {run.returncode}"
     (target / "CACHEDIR.TAG").write_text(CACHE_TAG)
-    if sys.platform != "darwin":
-        return None
-    run = subprocess.run(["xattr", "-wx", BACKUP_EXCLUDE, BACKUP_EXCLUDED, str(target)], capture_output=True, text=True)
-    return run.returncode and (run.stderr.strip() or f"xattr exited {run.returncode}") or None
+    return None

@@ -1255,7 +1255,7 @@ Scenario: AC-206 happy path — a target cargo did not make is out of Time Machi
   Given a terminumd/target with no CACHEDIR.TAG: `scripts/worktree.py add` cloned the primary's dependencies' builds into it
   When the tree is made, or the bound is next kept there
   Then that folder holds cargo's CACHEDIR.TAG and `tmutil isexcluded` says "[Excluded]" for it on macOS
-  And where the exclusion cannot be written, the tree is still made and the build goes on, and the line says "not excluded from Time Machine: <the error>"
+  And where the exclusion cannot be written, the tree is still made and the build goes on, the line says "not excluded from Time Machine: <the error>", and no tag is written, so the next bound tries again
 
 Scenario: AC-206 failure — the bound cannot be kept
   When reading or removing in the target fails, or cargo clean does
