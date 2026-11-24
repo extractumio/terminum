@@ -134,7 +134,7 @@ fn ac213_a_wait_blocking_another_task_has_scope_even_below_the_impact_floor() {
     f.task("waiting", None, "P2", "IN PROGRESS", NOW - 100);
     f.transition("waiting", NOW - 60, "IN PROGRESS", "WAIT FOR HUMAN");
     f.task("dependent", None, "P2", "TODO", NOW - 100);
-    f.write("INSERT INTO task_links (task, other, kind) VALUES ('dependent', 'waiting', 'blocked_by')", []);
+    f.write("INSERT INTO task_links (task, other, kind, place) VALUES ('dependent', 'waiting', 'blocked_by', 0)", []);
     f.live(Rule::WaitHuman, NOW).record(&f.store).unwrap();
     let recorded = signals(&f.store, PROJECT).unwrap();
     let [signal] = recorded.as_slice() else { panic!("only blocked_tasks fires, the wait is below its age floor") };
