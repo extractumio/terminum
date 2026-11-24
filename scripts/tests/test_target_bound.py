@@ -18,6 +18,7 @@ from testrun import backup_exclusion as excluded, short_tmp  # noqa: E402
 
 UNIT = "terminumd-0123456789abcdef"
 KIB = 1024
+NO_REFILL = lambda tree, names: []   # noqa: E731
 
 
 class Target:
@@ -60,7 +61,7 @@ class Bound(Target, unittest.TestCase):
         fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         return fd
 
-    def bound(self, limit, refill=lambda tree, name: None):
+    def bound(self, limit, refill=NO_REFILL):
         names = {p.name for p in self.current}
         target_bound.bound(self.tree, limit, self.said.append, self.clean, lambda exe: names, refill)
 
@@ -70,6 +71,10 @@ class Bound(Target, unittest.TestCase):
 
     def size(self):
         return target_bound.disk_use(self.target)
+
+    def over_once_pruned(self):
+        """A bound the target is 64 KiB over once its old objects went."""
+        return self.size() - sum(p.stat().st_size for p in self.old) - 64 * KIB
 
     def test_under_the_bound_nothing_is_removed(self):  # AC-206
         before = self.size()
@@ -90,7 +95,7 @@ class Bound(Target, unittest.TestCase):
     def test_still_over_after_that_debug_is_emptied_and_release_and_the_cross_targets_kept(self):  # AC-206
         self.write(self.folder("release") / "deps" / "librelease.rlib", 64)
         self.write(self.folder("x86_64-unknown-linux-musl/release") / "deps" / "libcross.rlib", 64)
-        self.bound(self.size() - 4 * 256 * KIB - 64 * KIB)   # over by 64 KiB once the old objects went
+        self.bound(self.over_once_pruned())
         self.assertFalse(any(p.exists() for p in self.old))
         self.assertEqual(self.cleaned, ["debug"], "the folder that grows, and nothing once under")
         self.assertRegex(self.said[-1], r"; still over: debug emptied, \d+\.\d GiB left$")
@@ -117,10 +122,10 @@ class Bound(Target, unittest.TestCase):
         """Its clones count whole (du), though they share the primary's blocks: under once emptied is under."""
         release = self.write(self.folder("release") / "deps" / "librelease.rlib", 64)
 
-        def refill(tree, name):
-            self.write(self.target / name / "deps" / "libtokio.rlib", 1024)
-            return f"{name}: its dependencies' builds cloned from the primary checkout"
-        self.bound(self.size() - 4 * 256 * KIB - 64 * KIB, refill)
+        def refill(tree, names):
+            self.write(self.target / "debug" / "deps" / "libtokio.rlib", 1024)
+            return [f"{name}: its dependencies' builds cloned from the primary checkout" for name in names]
+        self.bound(self.over_once_pruned(), refill)
         self.assertEqual(self.cleaned, ["debug"])
         self.assertTrue(release.exists())
         self.assertRegex(self.said[-1], r"still over: debug emptied, \d+\.\d GiB left; debug: its dependencies' builds cloned from the primary checkout$")
@@ -133,9 +138,10 @@ class Bound(Target, unittest.TestCase):
             with cargo_profile.try_lock(folder) as held:
                 free.append(held)
 
-        def refill(tree, name):
-            with cargo_profile.try_lock(self.target / name) as held:
+        def refill(tree, names):
+            with cargo_profile.try_lock(self.target / names[0]) as held:
                 free.append(held)
+            return []
         target_bound.bound(self.tree, 1, self.said.append, clean, lambda exe: set(), refill)
         self.assertEqual(free, [False, False])
 
@@ -161,13 +167,13 @@ class Bound(Target, unittest.TestCase):
             with cargo_profile.try_lock(self.deps.parent) as held:
                 free.append(held)
             return {p.name for p in self.current}
-        target_bound.bound(self.tree, 1, self.said.append, self.clean, names, lambda tree, name: None)
+        target_bound.bound(self.tree, 1, self.said.append, self.clean, names, NO_REFILL)
         self.assertEqual(free, [False])
 
     def test_objects_kept_when_the_map_is_unknown_empty_or_the_unit_has_no_executable(self):  # AC-206
         orphan = self.write(self.deps / "launchd-fedcba9876543210.cgu0.s1.rcgu.o", 4)
         for unknown in (None, set()):
-            target_bound.bound(self.tree, 1, self.said.append, lambda folder: None, lambda exe: unknown, lambda tree, name: None)
+            target_bound.bound(self.tree, 1, self.said.append, lambda folder: None, lambda exe: unknown, NO_REFILL)
             self.assertTrue(all(p.exists() for p in self.old + self.current + [orphan]))
 
     def test_no_target_yet(self):  # AC-206
@@ -232,16 +238,16 @@ class Refill(Target, unittest.TestCase):
     def refill(self, primary):
         target_bound.empty(self.deps.parent)
         with mock.patch.object(target_bound.worktree, "primary_of", return_value=primary.resolve()):
-            return target_bound.refill(self.tree, "debug")
+            return target_bound.refill(self.tree, ["debug"])
 
     def test_the_locks_stay_and_the_rest_goes(self):  # AC-206
         for name in cargo_profile.LOCKS:
             (self.deps.parent / name).touch()
-        self.assertIsNone(self.refill(self.tree), "the primary checkout: nothing to clone from")
+        self.assertEqual(self.refill(self.tree), [], "the primary checkout: nothing to clone from")
         self.assertEqual(sorted(p.name for p in self.deps.parent.iterdir()), sorted(cargo_profile.LOCKS))
 
     def test_a_worktree_gets_the_primarys_dependencies_builds_back(self):  # AC-206
-        self.assertEqual(self.refill(self.primary), "debug: its dependencies' builds cloned from the primary checkout")
+        self.assertEqual(self.refill(self.primary), ["debug: its dependencies' builds cloned from the primary checkout"])
         self.assertTrue((self.deps / self.dep.name).exists())
         self.assertFalse((self.deps / f"{UNIT}.rlib").exists(), "terminumd's own build: the tree rebuilds it")
         self.assertTrue((self.deps.parent / ".fingerprint" / "tokio-0011223344556677" / "lib-tokio").exists())
@@ -249,12 +255,12 @@ class Refill(Target, unittest.TestCase):
     def test_the_primarys_busy_profile_is_not_cloned(self):  # AC-206
         with cargo_profile.try_lock(self.source) as held:
             self.assertTrue(held)
-            self.assertEqual(self.refill(self.primary), "debug: the primary's is busy, cargo builds it whole")
+            self.assertEqual(self.refill(self.primary), ["debug: the primary's is busy, cargo builds it whole"])
         self.assertFalse(self.deps.exists())
 
     def test_no_clone_on_this_disk(self):  # AC-206
         with mock.patch.object(target_bound.worktree, "clone_builds", return_value=False):
-            self.assertEqual(self.refill(self.primary), "debug: no clone on this disk, cargo builds it whole")
+            self.assertEqual(self.refill(self.primary), ["debug: no clone on this disk, cargo builds it whole"])
 
 
 @unittest.skipUnless(sys.platform == "darwin" and shutil.which("cc") and shutil.which("nm"), "macOS's debug map")

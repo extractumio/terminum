@@ -33,7 +33,13 @@ def gib(size):
 def disk_use(path):
     """Bytes on disk under `path`, as du counts them: each file once however many links it has. An APFS clone counts
     whole though it shares its blocks with the primary checkout's: the bound errs toward pruning early."""
-    return int(subprocess.run(["du", "-sk", str(path)], capture_output=True, text=True, check=True).stdout.split()[0]) * 1024
+    return disk_uses([path])[Path(path)]
+
+
+def disk_uses(paths):
+    """{path: bytes} of each of `paths` as disk_use counts them, in one du run."""
+    listed = subprocess.run(["du", "-sk", *map(str, paths)], capture_output=True, text=True, check=True).stdout
+    return {Path(path): int(size) * 1024 for size, path in (line.split("\t", 1) for line in listed.splitlines())}
 
 
 def build_folders(target):
@@ -73,38 +79,47 @@ def empty(folder):
     """Everything in a build folder whose locks this run holds but those locks, so a cargo waiting on them waits on
     the same files."""
     for entry in folder.iterdir():
-        if entry.name not in cargo_profile.LOCKS:
-            shutil.rmtree(entry) if entry.is_dir() and not entry.is_symlink() else entry.unlink()
+        if entry.name in cargo_profile.LOCKS:
+            continue
+        if entry.is_dir() and not entry.is_symlink():
+            shutil.rmtree(entry)
+        else:
+            entry.unlink()
 
 
-def refill(tree, name):
-    """In a worktree, the primary's idle `name` folder's dependencies' builds cloned into its emptied one, as a new
-    tree gets them; what it did, in words, or None in the primary checkout or with no such folder there."""
-    primary = worktree.primary_of(tree)
-    source = primary / "terminumd" / "target" / name
-    if Path(tree).resolve() == primary or not source.is_dir():
-        return None
-    return {"cloned": f"{name}: its dependencies' builds cloned from the primary checkout",
-            "busy": f"{name}: the primary's is busy, cargo builds it whole",
-            "no clone": f"{name}: no clone on this disk, cargo builds it whole"}[
-        worktree.clone_profile(source, Path(tree) / "terminumd" / "target" / name)]
+REFILLED = {"cloned": "{}: its dependencies' builds cloned from the primary checkout",
+            "busy": "{}: the primary's is busy, cargo builds it whole",
+            "no clone": "{}: no clone on this disk, cargo builds it whole"}
+
+
+def refill(tree, names):
+    """In a worktree, the primary's idle same folders' dependencies' builds cloned into its emptied ones `names`, as a
+    new tree gets them; what it did, in words, a line a folder (none in the primary checkout)."""
+    primary, target = worktree.primary_of(tree), Path(tree) / "terminumd" / "target"
+    if Path(tree).resolve() == primary:
+        return []
+    sources = [(name, primary / "terminumd" / "target" / name) for name in names]
+    return [REFILLED[worktree.clone_profile(source, target / name)].format(name)
+            for name, source in sources if source.is_dir()]
 
 
 def empty_until_under(target, folders, left, limit, clean):
     """Empties `folders` (their locks held) one at a time until `target` is under `limit`: the `debug` ones (they grow)
     first, then the rest, the largest first within each; one of the rest only while emptying it and those after it
     could get it under. The names emptied, the bytes left, and why it stopped over, if it did."""
-    sizes = {folder: disk_use(folder) for folder in folders}
+    sizes = disk_uses(folders)
     order = sorted(folders, key=lambda folder: (folder.name != "debug", -sizes[folder]))
-    emptied = []
+    emptied, stopped = [], None
     for at, folder in enumerate(order):
+        if left <= limit:
+            break
         if folder.name != "debug" and left - sum(sizes[rest] for rest in order[at:]) > limit:
-            return emptied, left, "the rest kept: emptying it would not get it under"
+            stopped = "the rest kept: emptying it would not get it under"
+            break
         clean(folder)
         emptied.append(folder.relative_to(target).as_posix())
-        if (left := disk_use(target)) <= limit:   # before any refill: its clones share the primary's blocks
-            break
-    return emptied, left, None
+        left -= sizes[folder]   # before any refill: its clones share the primary's blocks
+    return emptied, disk_use(target) if emptied else left, stopped
 
 
 def bound(tree, limit=BOUND_GIB * GIB, say=print, clean=empty, names_of=debug_map, refill=refill):
@@ -131,14 +146,12 @@ def bound(tree, limit=BOUND_GIB * GIB, say=print, clean=empty, names_of=debug_ma
         words = f"target: {gib(size)}, over its bound of {gib(limit)}: {gib(size - left)} of objects no build uses removed, {gib(left)} left"
         if busy:
             words += f"; a build runs in {', '.join(busy)}: left as it is"
-        if left > limit:
-            if busy:
-                words += "; still over: nothing emptied while a build runs"
-            else:
-                emptied, left, stopped = empty_until_under(target, free, left, limit, clean)
-                words += f"; still over: {', '.join(emptied) or 'nothing'} emptied, {gib(left)} left"
-                notes = [stopped] + [refill(tree, name) for name in emptied]   # under the emptied folders' locks
-                words += "".join(f"; {note}" for note in notes if note)
+        if left > limit and busy:
+            words += "; still over: nothing emptied while a build runs"
+        elif left > limit:
+            emptied, left, stopped = empty_until_under(target, free, left, limit, clean)
+            words += f"; still over: {', '.join(emptied) or 'nothing'} emptied, {gib(left)} left"
+            words += "".join(f"; {note}" for note in [stopped, *refill(tree, emptied)] if note)   # under the locks
     return say(words)
 
 
