@@ -41,7 +41,7 @@ fn task_name(tx: &Transaction, project: &str, id: &str) -> Result<String, String
         .optional().map_err(sql)?.unwrap_or_else(|| id.to_string()))
 }
 
-fn task_link(name: &str) -> String {
+pub(super) fn task_link(name: &str) -> String {
     format!("[{name}](/kanban/{})", utf8_percent_encode(name, ENCODED))
 }
 

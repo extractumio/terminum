@@ -202,8 +202,8 @@ pub(crate) fn complete(tx: &Transaction, task: &ops::Task, project: &str, by: &s
         let end = headings.get(index + 1).map_or(words.len(), |p| p.1);
         let body = match index {
             0 => {
-                let listed = super::review_data::decisions(tx, project, at)?;
-                decisions = super::review_data::linked_decisions(&listed);
+                let (listed, count) = super::review_data::waiting(tx, project, at)?;
+                decisions = count;
                 listed
             }
             3 => super::review_data::allocation(tx, project, at)?,
