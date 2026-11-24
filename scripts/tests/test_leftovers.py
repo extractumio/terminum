@@ -15,6 +15,9 @@ import unittest
 SPEC = importlib.util.spec_from_file_location("leftovers", Path(__file__).resolve().parents[1] / "leftovers.py")
 leftovers = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(leftovers)
+E2E_WS = importlib.util.spec_from_file_location("e2e_ws", Path(__file__).resolve().parents[1] / "e2e_ws.py")
+e2e_ws = importlib.util.module_from_spec(E2E_WS)
+E2E_WS.loader.exec_module(e2e_ws)
 
 BINARY = "/work/terminum/terminumd/target/debug/deps/terminumd-18e312ae2b0e93f4"
 HELPER = f"{BINARY} --exact cli::tests::fake_terminumd --nocapture"
@@ -71,18 +74,21 @@ class LostServers(unittest.TestCase):
     def test_only_an_old_test_server_with_no_parent_and_no_socket_is_ended(self):
         gone, there = "/tmp/tmc.gone-912/tmux-501/tm-test-live-33522", tempfile.mkdtemp(prefix="tm-lost-")
         self.addCleanup(os.rmdir, there)
-        bound = [(7, "tmux", gone), (8, "tmux", there), (9, "tmux", gone), (9, "tmux", there)]
+        bound = lambda: [(7, gone), (8, there), (9, gone), (9, there)]
         listed = "".join(f"{pid} 1 1-00:00:00 {self.SERVER}\n" for pid in (7, 8, 9, 10))
         self.assertEqual(leftovers.lost_servers(listed, bound), [(7, self.SERVER, True), (10, self.SERVER, False)],
                          "a socket still there (8, or one of 9's) keeps it; an unknown socket (10) is only named")
-        self.assertEqual(leftovers.lost_servers(listed, None), [(pid, self.SERVER, False) for pid in (7, 8, 9, 10)])
+        self.assertEqual(leftovers.lost_servers(listed, lambda: None), [(pid, self.SERVER, False) for pid in (7, 8, 9, 10)])
+
+    def test_sockets_are_asked_only_when_there_is_such_a_server(self):
+        self.assertEqual(leftovers.lost_servers(f"7 1 1-00:00:00 {HELPER}\n", lambda: self.fail("asked")), [])
 
     def test_a_server_whose_socket_went_from_outside_a_test_folder_is_only_named(self):
-        bound = [(7, "tmux", "/tmp/tmux-501/tm-mine")]   # a /tmp cleaner's doing: SIGUSR1 brings it back
+        bound = lambda: [(7, "/tmp/tmux-501/tm-mine")]   # a /tmp cleaner's doing: SIGUSR1 brings it back
         self.assertEqual(leftovers.lost_servers(f"7 1 1-00:00:00 {self.SERVER}\n", bound), [(7, self.SERVER, False)])
 
     def test_what_is_never_ended(self):
-        bound = [(7, "tmux", "/tmp/tmc.gone-912/tmux-501/x")]
+        bound = lambda: [(7, "/tmp/tmc.gone-912/tmux-501/x")]
         for line in [
             f"7 900 1-00:00:00 {self.SERVER}",                                  # a test run still owns it
             f"7 1 05:59:00 {self.SERVER}",                                      # young: another session's run
@@ -99,12 +105,11 @@ class LostServers(unittest.TestCase):
         subprocess.run(["tmux", "-f", "/dev/null", "-L", name, "new-session", "-d", "-s", "main", "-c", "/", "sleep 300"], env=env, check=True, timeout=10)
         pid = int(subprocess.run(["tmux", "-L", name, "display", "-p", "#{pid}"], env=env, capture_output=True, text=True, timeout=10).stdout)
         command = subprocess.run(["ps", "-o", "command=", "-p", str(pid)], capture_output=True, text=True).stdout.strip()
-        self.addCleanup(lambda: f"-L {name} " in subprocess.run(["ps", "-o", "command=", "-p", str(pid)], capture_output=True, text=True).stdout
-                        and os.kill(pid, 9))
+        self.addCleanup(e2e_ws.end_tmux, name)   # its socket gone: by its pid
         old = f"{pid} 1 1-00:00:00 {command}\n"
-        self.assertEqual(leftovers.lost_servers(old, leftovers.socket_paths()), [], "its socket is still there")
+        self.assertEqual(leftovers.lost_servers(old, leftovers.socket_paths), [], "its socket is still there")
         shutil.rmtree(folder)
-        self.assertEqual(leftovers.lost_servers(old, leftovers.socket_paths()), [(pid, command, True)])
+        self.assertEqual(leftovers.lost_servers(old, leftovers.socket_paths), [(pid, command, True)])
         self.assertTrue(leftovers.end(pid, command))
 
 

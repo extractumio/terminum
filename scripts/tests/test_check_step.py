@@ -295,8 +295,9 @@ class DaemonTmux(unittest.TestCase):
         self.assertTrue(gone(pid), f"tmux server {pid} outlived its guard")
         self.assertTrue(gone(pane), f"its pane's program {pane} outlived its guard")
         self.assertFalse(os.path.exists(folder))
-        left = subprocess.run(["ps", "-axo", "command="], capture_output=True, text=True).stdout
-        self.assertNotIn(f"-L {name} ", left)
+        from testrun import own_server_pids
+        left = subprocess.run(["ps", "-axo", "pid=,command="], capture_output=True, text=True).stdout
+        self.assertEqual(own_server_pids(left, {name}), [])
         return run.returncode
 
     def test_a_passing_step_fails_and_its_server_ends(self):

@@ -22,17 +22,27 @@ class Ownership(unittest.TestCase):
     def test_ps_never_requests_environments_on_either_platform(self):
         for platform in ("darwin", "linux"):
             with self.subTest(platform=platform), mock.patch.object(sys, "platform", platform), \
-                    mock.patch.object(check_step.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, "42 7 S sleep 60\n")) as run:
-                self.assertEqual(list(check_step.listing()), [(42, "7", "sleep 60")])
+                    mock.patch.object(check_step.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, "42 1 7 S sleep 60\n")) as run:
+                self.assertEqual(list(check_step.listing()), [(42, 1, "7", "sleep 60")])
                 args = run.call_args.args[0]
-                self.assertEqual(args, ["ps", "-axo", "pid=,pgid=,stat=,command="])
+                self.assertEqual(args, ["ps", "-axo", "pid=,ppid=,pgid=,stat=,command="])
 
     def test_ownership_uses_group_and_directory_not_command_mentions(self):
         with mock.patch.object(check_step, "listing", return_value=[
-                (42, "7", "sleep 60"), (43, "8", "program /tmp/private"), (44, "8", "detached")]), \
+                (42, 1, "7", "sleep 60"), (43, 1, "8", "program /tmp/private"), (44, 1, "8", "detached")]), \
                 mock.patch.object(check_step, "working_in", return_value={44: "detached"}, create=True), \
+                mock.patch.object(check_step, "bound_in", return_value=set()), \
                 mock.patch.object(check_step.owned_children, "active", return_value={}):
             self.assertEqual(dict(check_step.own_processes("/tmp/private", 7)), {42: "sleep 60", 44: "detached"})
+
+    def test_a_socket_in_the_folder_owns_its_process_and_its_descendants(self):  # AC-102, TERM-912
+        with mock.patch.object(check_step, "listing", return_value=[
+                (50, 1, "50", "tmux -L tm-test-live-7"), (51, 50, "51", "-bash"), (52, 51, "51", "sleep 300"),
+                (53, 1, "53", "tmux -L terminum"), (54, 53, "54", "-bash")]), \
+                mock.patch.object(check_step, "working_in", return_value={}), \
+                mock.patch.object(check_step, "bound_in", return_value={50}), \
+                mock.patch.object(check_step.owned_children, "active", return_value={}):
+            self.assertEqual([pid for pid, _ in check_step.own_processes("/tmp/private", 7)], [50, 51, 52])
 
     def test_a_failed_process_query_is_not_a_clean_run(self):
         with mock.patch.object(check_step.subprocess, "run", side_effect=subprocess.CalledProcessError(1, "ps")):
@@ -91,7 +101,7 @@ class Ownership(unittest.TestCase):
         with mock.patch.object(process_cwd.Path, "exists", return_value=False), \
                 mock.patch.object(process_cwd.shutil, "which", return_value="lsof"), \
                 mock.patch.object(process_cwd.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, output)) as run:
-            self.assertEqual(process_cwd.bound_in("/tmp/private"), {42: "tmux"})
+            self.assertEqual(process_cwd.bound_in("/tmp/private"), {42})
             self.assertEqual(run.call_args.args[0], ["lsof", "-a", "-u", str(os.getuid()), "-U", "-F", "pcn"])
 
     def test_linux_names_the_bound_path_of_each_socket_a_process_holds(self):  # AC-102, TERM-912
@@ -109,7 +119,8 @@ class Ownership(unittest.TestCase):
                 for fd, link in enumerate(links):
                     os.symlink(link, root / pid / "fd" / str(fd))
             (root / "self").mkdir()
-            self.assertEqual(process_cwd.linux_socket_paths(root), [(42, "tmux", "/tmp/tmc.x/tmux-1000/tm-test-live-7")])
+            self.assertEqual(process_cwd.linux_socket_paths(os.path.isabs, root), [(42, "/tmp/tmc.x/tmux-1000/tm-test-live-7")])
+            self.assertEqual(process_cwd.linux_socket_paths(lambda path: process_cwd.within(path, "/elsewhere"), root), [])
 
     def test_no_socket_at_all_is_an_empty_list_and_any_other_failure_is_unknown(self):
         for error, expect in ((subprocess.CalledProcessError(1, "lsof", output=""), []),
@@ -128,7 +139,7 @@ class Ownership(unittest.TestCase):
 
     def test_directory_failure_preserves_only_proven_group_and_registered_processes(self):
         with mock.patch.object(check_step, "listing", return_value=[
-                (42, "7", "group"), (43, "8", "unrelated /tmp/private"), (44, "8", "registered")]), \
+                (42, 1, "7", "group"), (43, 1, "8", "unrelated /tmp/private"), (44, 1, "8", "registered")]), \
                 mock.patch.object(check_step, "working_in", side_effect=process_cwd.InspectionError("query failed")), \
                 mock.patch.object(check_step.owned_children, "active", return_value={44}):
             with self.assertRaisesRegex(check_step.OwnershipError, "query failed") as error:
@@ -148,7 +159,7 @@ class Ownership(unittest.TestCase):
                     cancelled.receive(signal.SIGHUP, None)
                     raise process_cwd.InspectionError("query timed out")
                 # The first group member's PID is reused by an unrelated process during grace.
-                snapshots = [[(42, "7", "owned")], [(42, "8", "unrelated")]]
+                snapshots = [[(42, 1, "7", "owned")], [(42, 1, "8", "unrelated")]]
                 with mock.patch.object(check_step, "run", return_value=(mock.Mock(), 0, 7)), \
                         mock.patch.object(check_step, "working_in", side_effect=fail), \
                         mock.patch.object(check_step, "listing", side_effect=snapshots), \

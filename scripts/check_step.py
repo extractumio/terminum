@@ -45,13 +45,13 @@ class GuardCancellation(Cancellation):
 
 
 def listing():
-    """(pid, pgid, command) of each process but zombies and this one, without environments."""
-    listed = subprocess.run(["ps", "-axo", "pid=,pgid=,stat=,command="], capture_output=True, text=True, errors="replace", check=True,
+    """(pid, ppid, pgid, command) of each process but zombies and this one, without environments."""
+    listed = subprocess.run(["ps", "-axo", "pid=,ppid=,pgid=,stat=,command="], capture_output=True, text=True, errors="replace", check=True,
                             start_new_session=True).stdout
     for line in listed.splitlines():
-        fields = line.split(None, 3)
-        if len(fields) == 4 and fields[0].isdigit() and not fields[2].startswith("Z") and int(fields[0]) != os.getpid():
-            yield int(fields[0]), fields[1], fields[3]
+        fields = line.split(None, 4)
+        if len(fields) == 5 and fields[0].isdigit() and not fields[3].startswith("Z") and int(fields[0]) != os.getpid():
+            yield int(fields[0]), int(fields[1]), fields[2], fields[4]
 
 
 class OwnershipError(InspectionError):
@@ -65,27 +65,28 @@ def own_processes(folder, group):
     """(pid, command) of each process of our private group, working in our private folder or holding a
     socket bound in it: a tmux server outlives the folder it was found by only through that socket."""
     try:
-        bound = bound_in(folder)
-        inside = {**working_in(folder), **bound, **children_of(bound)}
+        inside = set(working_in(folder)) | bound_in(folder)
     except InspectionError as error:
         raise OwnershipError(error, selected_processes(folder, group)) from error
     return selected_processes(folder, group, inside)
 
 
-def children_of(parents):
-    """{pid: ""} of the children of `parents`: a tmux server's pane programs, one ignoring SIGHUP
-    outliving the server's end with no parent, its working directory anywhere."""
-    if not parents:
-        return {}
-    listed = subprocess.run(["ps", "-axo", "pid=,ppid="], capture_output=True, text=True, check=True).stdout
-    return {int(f[0]): "" for line in listed.splitlines() if len(f := line.split()) == 2 and int(f[1]) in parents}
-
-
 def selected_processes(folder, group, inside=()):
-    """Current group/registry members, plus any successfully inspected working-directory PIDs."""
+    """Current group/registry members, any successfully inspected working-directory or socket PIDs, and
+    their descendants: a tmux server's pane programs, one ignoring SIGHUP outliving the server's end."""
     registered = owned_children.active(owned_children.path(folder))
-    return [(pid, text[:120]) for pid, pgid, text in listing()
-            if pgid == str(group) or pid in inside or pid in registered]
+    rows = list(listing())
+    owned = {pid for pid, _, pgid, _ in rows if pgid == str(group) or pid in inside or pid in registered}
+    children = {}
+    for pid, ppid, _, _ in rows:
+        children.setdefault(ppid, []).append(pid)
+    reached = list(owned)
+    while reached:
+        for child in children.get(reached.pop(), []):
+            if child not in owned:
+                owned.add(child)
+                reached.append(child)
+    return [(pid, text[:120]) for pid, _, _, text in rows if pid in owned]
 
 
 def send(pid, number):

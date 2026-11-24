@@ -30,8 +30,9 @@ from process_cwd import InspectionError, socket_paths  # noqa: E402
 
 OLD_S = 6 * 3600
 TEST_HELPER = re.compile(r"/\S*/terminumd/target/(?:debug|release)/deps/terminumd-[0-9a-f]{16} --exact cli::tests::fake_terminumd( |$)")
-# a test's own socket name (testrun's `own`: tm-test-live-<pid>), never the user's `-L terminum`
-TEST_TMUX = re.compile(r"(?:\S*/)?tmux(?: \S+)*? -L tm-\S+(?: |$)")
+# a test's own socket name by -L (testrun's `own`: tm-test-live-<pid>), never the user's `-L terminum`;
+# the names are not known here, so not testrun.own_server_pids
+TEST_TMUX = re.compile(r"(?:\S*/)?tmux(?: \S+)*? -L tm-")
 BUILD_OUTPUT = re.compile(r"/\S*/terminumd/target/(?:debug|release)/(?:terminumd|deps/terminumd-[0-9a-f]{16})( |$)")
 # what tests name their folders; test_leftovers.py fails on a test's prefix missing here
 FOLDER_PREFIXES = ("tm-", "tma-", "tmb-", "tme-", "tmh-", "tmi-", "tml-", "tmln-", "tmlo-", "tmlp-", "tmlw-",
@@ -47,9 +48,14 @@ def age_s(etime):
     return seconds + int(days or 0) * 86400
 
 
+def test_folder_name(name):
+    """Whether `name` is named as tests name their folders (check_step.py's tmc.*, a test's tml-*)."""
+    return name.startswith(FOLDER_PREFIXES) and name not in FOLDER_PREFIXES
+
+
 def in_test_folder(path):
-    """Whether `path` lies in a folder named as tests name theirs (check_step.py's tmc.*, a test's tml-*)."""
-    return any(part.startswith(FOLDER_PREFIXES) and part not in FOLDER_PREFIXES for part in Path(path).parts[:-1])
+    """Whether `path` lies in a test's folder."""
+    return any(test_folder_name(part) for part in Path(path).parts[:-1])
 
 
 def orphans(ps_text):
@@ -73,18 +79,19 @@ def strays(ps_text):
 
 def lost_servers(ps_text, bound):
     """(pid, command, whether to end it) of each old test tmux server with no parent: ended only when
-    every socket it bound (`bound`: (pid, command, path) of this user's processes, or None when unknown)
+    every socket it bound (`bound()`: (pid, path) of this user's processes; None when unknown, asked only
+    when there is such a server)
     lay in a test's folder and is gone; one still reachable is a live socket's, said there."""
+    servers = [(pid, command) for pid, command in orphans(ps_text) if TEST_TMUX.match(command)]
     paths = {}
-    for pid, _, path in bound or []:
+    for pid, path in (bound() or []) if servers else []:
         paths.setdefault(pid, []).append(path)
     found = []
-    for pid, command in orphans(ps_text):
-        if TEST_TMUX.match(command):
-            if pid not in paths:
-                found.append((pid, command, False))
-            elif not any(os.path.lexists(path) for path in paths[pid]):
-                found.append((pid, command, all(in_test_folder(path) for path in paths[pid])))
+    for pid, command in servers:
+        if pid not in paths:
+            found.append((pid, command, False))
+        elif not any(os.path.lexists(path) for path in paths[pid]):
+            found.append((pid, command, all(in_test_folder(path) for path in paths[pid])))
     return found
 
 
@@ -161,7 +168,7 @@ def folders(roots, now, held):
         except OSError:
             continue
         for entry in entries:
-            if not entry.name.startswith(FOLDER_PREFIXES) or entry.name in FOLDER_PREFIXES:
+            if not test_folder_name(entry.name):
                 continue
             try:
                 info = entry.stat(follow_symlinks=False)
@@ -183,11 +190,12 @@ def main(argv):
     roots = sorted({Path(tempfile.gettempdir()).resolve(), Path("/tmp").resolve()})
     stuck = 0
     listed = processes()
-    try:
-        bound = socket_paths()
-    except InspectionError as error:
-        bound = None
-        print(f"{error}: no tmux server is ended")
+
+    def bound():
+        try:
+            return socket_paths()
+        except InspectionError as error:
+            print(f"{error}: no tmux server is ended")
     for pid, command, ours in strays(listed) + lost_servers(listed, bound):
         if ours and ending:
             gone = end(pid, command)
