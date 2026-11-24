@@ -180,7 +180,8 @@ fn ac240_two_drifting_sessions_open_a_retro_card() {
         assert!(text.contains("3 sessions exceeded") && text.contains("`claude/s4`"), "{text}");
         let cards: i64 = tx.query_row("SELECT count(*) FROM tasks WHERE title = 'Review repeated session drift'", [], |r| r.get(0)).map_err(sql)?;
         assert_eq!(cards, 1);
-        assert!(review_data::decisions(tx, PROJECT, NOW + 1)?.contains(&format!("- {card} · Review repeated session drift")));
+        assert!(review_data::decisions(tx, PROJECT, NOW + 1)?.contains(&format!("- [{card}](/kanban/{card}) · Review repeated session drift")), "linked: the question stays on its task (terminum-reports.md AC-279)");
+        assert!(review_data::waiting(tx, PROJECT, NOW + 1)?.1 >= 1, "the report's summary counts it");
         assert!(decisions::retro(tx, OTHER, NOW)?.is_none());
         Ok(())
     }).unwrap();

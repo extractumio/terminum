@@ -5,13 +5,20 @@ use rusqlite::Transaction;
 use serde_json::{Value, json};
 
 use crate::tasks::ops::{rows, sql};
+use super::problem_text::task_link;
 use super::{DAY, Rule, WEEK, Window, decisions as cards, flow, governor, measure_detector, people, register, scoreboard, settings, signals};
 
 pub(super) fn decisions(tx: &Transaction, project: &str, at: i64) -> Result<String, String> {
+    waiting(tx, project, at).map(|(listed, _)| listed)
+}
+
+/// The decisions waiting for the owner as the weekly review lists them, and how many there are: each a question
+/// on its task, linked, or a register problem's or a drift's (terminum-reports.md AC-279).
+pub(super) fn waiting(tx: &Transaction, project: &str, at: i64) -> Result<(String, usize), String> {
     decisions_with_spending(tx, project, at, &governor::spending(tx, project, at)?)
 }
 
-fn decisions_with_spending(tx: &Transaction, project: &str, at: i64, spending: &governor::Spending) -> Result<String, String> {
+fn decisions_with_spending(tx: &Transaction, project: &str, at: i64, spending: &governor::Spending) -> Result<(String, usize), String> {
     let pending = cards::pending(tx, project)?;
     let budget = rows(tx, "WITH cards AS (
         SELECT project, task FROM supervisor_budget_cards UNION ALL SELECT project, task FROM supervisor_charter_questions
@@ -28,11 +35,12 @@ fn decisions_with_spending(tx: &Transaction, project: &str, at: i64, spending: &
     {
         lines.push(format!("- {}", governor::JUDGMENT_NOTICE));
     }
+    let mut count = budget.len() + pending.len();
     for (task, title) in budget {
-        lines.push(format!("- {task} · {title}"));
+        lines.push(format!("- {} · {title}", task_link(&task)));
     }
     for card in &pending {
-        let title = card.task.as_ref().map_or_else(|| format!("Register problem {}", card.problem), Clone::clone);
+        let title = card.task.as_deref().map_or_else(|| format!("Register problem {}", card.problem), task_link);
         lines.push(item(&title, &card.question));
     }
     let added: i64 = tx.query_row("SELECT count(*) FROM supervisor_decisions d JOIN tasks t ON t.id = d.task
@@ -40,6 +48,7 @@ fn decisions_with_spending(tx: &Transaction, project: &str, at: i64, spending: &
     for question in rows(tx, "SELECT question FROM supervisor_drift_questions
         WHERE project = ?1 AND task IS NULL AND at > ?2 ORDER BY at", (project, at - WEEK), |r| r.get::<_, String>(0))? {
         lines.push(item("Session drift", &question));
+        count += 1;
     }
     if lines.is_empty() { lines.push("No decisions are waiting.".into()); }
     let (rules, removed) = standing_rules(tx, project, at)?;
@@ -53,7 +62,7 @@ fn decisions_with_spending(tx: &Transaction, project: &str, at: i64, spending: &
     let (old, recent) = question_repeats(tx, project, at)?;
     lines.push(format!("\n{added} decision cards opened this week. {weighed} Repeated questions: {recent}, compared with {old} the week before."));
     lines.extend(rules);
-    Ok(lines.join("\n"))
+    Ok((lines.join("\n"), count))
 }
 
 fn item(title: &str, body: &str) -> String {
@@ -155,7 +164,7 @@ pub(super) fn context(tx: &Transaction, project: &str, task: &str, at: i64) -> R
     let spending = governor::spending(tx, project, at)?;
     let scorecard = super::measures::read(tx, project, at, &spending)?;
     let owner_hours = people::owner_load(tx, project, at - WEEK + 1, at)?.hours;
-    Ok(json!({"task":task,"project":project,"decisions":decisions_with_spending(tx, project, at, &spending)?,"problems":problems,
+    Ok(json!({"task":task,"project":project,"decisions":decisions_with_spending(tx, project, at, &spending)?.0,"problems":problems,
         "top_problem_signals":top_evidence,"charter_data":saved.charter,"allocation":allocation,"agent_rates":rates,"indicators":indicators,
         "any_improved_without_regression":scoreboard::period_improved(&board),"weeks_measured":weeks.len(),
         "owner_hours":owner_hours,"owner_bottlenecks":bottlenecks(tx, project, at)?,"spending":spending,"scorecard":scorecard,

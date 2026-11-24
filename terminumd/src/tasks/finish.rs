@@ -26,6 +26,7 @@ pub(super) fn finish(tx: &Transaction, who: &Who, args: &Value, me: &str, at: i6
     let raw = arg(args, "result")?;
     let result = rules::clean(raw);
     let review = crate::supervisor::review::of_task(tx, &t.key)?;
+    let mut kept = None;
     if let Some((project, audit)) = &review {
         crate::supervisor::review::require(tx, &who.key, project, &t.id)?;
         if *audit {
@@ -33,8 +34,11 @@ pub(super) fn finish(tx: &Transaction, who: &Who, args: &Value, me: &str, at: i6
                 .ok_or("The quarterly audit is inactive.")?;
             crate::supervisor::audit::check_start(tx, &run)?;
             crate::supervisor::audit::complete(tx, project, &t, me, raw, at)?;
-        } else if !crate::supervisor::review::complete(tx, &t, project, me, &result, at)? {
-            return Ok(("Use the nine Supervisor review sections in the order shown in the task prompt.".into(), Vec::new()));
+        } else {
+            kept = crate::supervisor::review::complete(tx, &t, project, me, &result, at)?;
+            if kept.is_none() {
+                return Ok(("Use the nine Supervisor review sections in the order shown in the task prompt.".into(), Vec::new()));
+            }
         }
     } else {
         ops::comment(tx, me, id, &result, at)?;
@@ -50,7 +54,12 @@ pub(super) fn finish(tx: &Transaction, who: &Who, args: &Value, me: &str, at: i6
     }
     let changed = vec![id.to_string()];
     ops::move_to(tx, me, id, "DONE", at)?;
-    let mut said = vec![match crate::reports::sources::routine_result(tx, &t, &result, me, at)? {
+    // a weekly review's report is the review as kept, its decisions linked (terminum-reports.md AC-279)
+    let made = match &kept {
+        Some(review) => crate::reports::sources::weekly_review(tx, &t, &review.document, review.decisions, me, at)?,
+        None => crate::reports::sources::routine_result(tx, &t, &result, me, at)?,
+    };
+    let mut said = vec![match made {
         Some(report) => format!("{id} is DONE; its result went to the human's Inbox as {report}."),
         None => format!("{id} is DONE, with your result."),
     }];

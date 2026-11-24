@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-"""AC-242–244: Routines, verdicts, the exception digest and the incident thread in private tmux."""
+"""AC-242–244 and terminum-reports.md AC-279: Routines, verdicts, the exception digest and the incident thread in private tmux."""
 from contextlib import closing
 import json
 from pathlib import Path
@@ -94,6 +94,11 @@ def main():
               context["task"] == report["task"] == task and context["project"] == project
               and len(context["indicators"]) == 7 and min(order) == 3 and order == sorted(set(order))
               and result["refused"]["isError"] and not result["finished"]["isError"])
+        inbox = [r for r in call("/api/reports")["reports"] if r["source"]["task"] == task]
+        kept = call(f"/api/reports/{inbox[0]['id']}") if inbox else {}
+        check("AC-279 the weekly review reaches the owner as one report: the review as kept, its decisions counted",
+              len(inbox) == 1 and kept["body"] == report["result"]
+              and kept["summary"].endswith("waiting for you.") and call(f"/api/tasks/{task}")["status"] == "DONE", inbox)
         check("AC-242 the verdict batch is capped and unanswered items have no verdict",
               len(report["items"]) == 10 and all(x["verdict"] is None for x in report["items"])
               and sum(int(x["fingerprint"].split("-")[-1]) >= 10 for x in report["items"]) == 3)
