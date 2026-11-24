@@ -637,6 +637,12 @@ Scenario: AC-104 edge — an imported helper is not a standalone check
   And the real AC-102 runners, including e2e_attach.py, e2e_restore.py and the scripts' unit tests, remain selected
   And Python e2e runners declare a top-level if __name__ == "__main__" entry point; discovery parses their source without executing it
 
+Scenario: AC-104 edge — a runner's check modules are its own
+  Given scripts/e2e_roles.py imports scripts/role_supervisor_checks.py, which imports scripts/role_hold_checks.py, the only file citing AC-245's hold checks
+  When targeted checks select tests for a change touching AC-245, or for a change to scripts/role_hold_checks.py
+  Then they schedule python3 scripts/e2e_roles.py, and AC-245 counts as cited
+  And only scripts/*_checks.py modules count so, followed through one another; a helper shared by many runners, as scripts/e2e_ws.py, stays its own
+
 Scenario: AC-104 edge — uncommitted work
   Given the worktree holds an uncommitted file
   When make land runs
@@ -1439,7 +1445,7 @@ All cases are shipped; nothing is staged.
 - [x] AC-17 — `cargo test update::`; `web/test/e2e_tmux.mjs`
 - [x] AC-96 — `scripts/e2e_lastlines.py`; `cargo test lastlines` (a failed write tried again); `web/test/e2e_lastlines.mjs`
 - [x] AC-102 — `scripts/check_step.py` guards each step of `scripts/check_all.py` and `scripts/check_changed.py`; `scripts/tests/test_check_step.py`; `scripts/tests/test_check_cancel.py` (outer cancellation and guard recovery); `scripts/tests/test_child_status.py` (macOS non-reaping wait without the Python wrapper); `scripts/tests/test_process_ownership.py` (metadata only, directory boundaries and query failures on both platforms); `scripts/tests/test_leftovers.py`; `cargo test cli::tests::the_fake_terminumd_ends_when_its_home_goes`; `scripts/tests/test_testrun.py` (`WithItsFolder`)
-- [x] AC-104 — `scripts/tests/test_land.py`, `scripts/tests/test_land_install.py`, `scripts/tests/test_land_said.py`, `scripts/tests/test_heavy_slots.py`, `scripts/tests/test_test_scripts.py`, `scripts/tests/test_live_slots.py`, `scripts/tests/test_check_live_slots.py`, `scripts/tests/test_check_changed.py`, `scripts/tests/test_package.py`, `ui/test/build-sync.test.mjs`, `scripts/tests/test_release_turn.py`, `scripts/tests/test_release.py`, `scripts/tests/test_ci_mac.py`, `scripts/tests/test_ci_mac_node.py`, `scripts/tests/test_check_docker.py`, `scripts/tests/test_worktree_fresh.py`, `scripts/tests/test_worktree.py` (link skips a locked source profile)
+- [x] AC-104 — `scripts/tests/test_land.py`, `scripts/tests/test_land_install.py`, `scripts/tests/test_land_said.py`, `scripts/tests/test_heavy_slots.py`, `scripts/tests/test_test_scripts.py`, `scripts/tests/test_live_slots.py`, `scripts/tests/test_check_live_slots.py`, `scripts/tests/test_check_changed.py`, `scripts/tests/test_check_tests.py` (a runner's `*_checks.py` modules), `scripts/tests/test_package.py`, `ui/test/build-sync.test.mjs`, `scripts/tests/test_release_turn.py`, `scripts/tests/test_release.py`, `scripts/tests/test_ci_mac.py`, `scripts/tests/test_ci_mac_node.py`, `scripts/tests/test_check_docker.py`, `scripts/tests/test_worktree_fresh.py`, `scripts/tests/test_worktree.py` (link skips a locked source profile)
 - [x] AC-146 — `scripts/tests/test_load_gate.py`, `scripts/tests/test_release_turn.py`, `scripts/tests/test_check_changed.py`, `scripts/tests/test_check_live_slots.py`, `scripts/tests/test_access.py`, `scripts/e2e_access.py`
 - [ ] AC-200 — `scripts/tests/test_release_turn.py`, `scripts/tests/test_release_tree.py`, `scripts/tests/test_land_stages.py`, `scripts/tests/test_release.py`
 - [ ] AC-201 — `scripts/tests/test_check_all.py`, `scripts/tests/test_gate_retry.py`, `scripts/tests/test_gate_record.py`, `scripts/tests/test_e2e_ws.py`
