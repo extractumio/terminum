@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-// The board's folded cards and its rows on the columns' tracks against a real private terminumd
+// The board's folded cards and its responsive card rows against a real private terminumd
 // (terminum-kanban.md AC-159, terminum-dispatcher.md AC-138), and schedules (terminum-schedules.md AC-160 to
 // AC-164): `node web/test/e2e_live.mjs schedules chromium`.
 import { existsSync, readFileSync } from "node:fs";
@@ -12,7 +12,7 @@ export async function liveFolded(page, live) {
   const shot = (name) => live.shots && page.screenshot({ path: `${live.shots}${live.shots.endsWith("-") ? "" : "/"}${name}.png` });
   const made = async (title, severity = "P2") => (await j("/api/tasks", "POST", { title, severity, body: "**text** of it" })).id;
   const a = await made("Folded first task with a title long enough to be cut at the line's end", "P1"), b = await made("Folded second");
-  // five agents use the columns' tracks across the first row, followed by their add tile
+  // five agents fill responsive rows, followed by their add tile
   const ids = [];
   for (const n of ["Grid one", "Grid two", "Grid three", "Grid four", "Grid five"]) ids.push((await j("/api/task-agents", "POST", { project: "default", name: n, kind: "claude", command: "claude" })).id);
   await open("?project=default");                  // its tasks' project: one an earlier suite chose is remembered
@@ -50,28 +50,22 @@ export async function liveFolded(page, live) {
   await j(`/api/tasks/${a}`, "PATCH", { title: "Folded first, renamed again" });
   check("AC-159 shown whole stays so as the columns are read again", await until(async () => (await page.textContent(`${card(a)} .ctitle`)) === "Folded first, renamed again") && await shown(`${card(a)} .cfoot`));
 
-  // AC-138: from 1500 px of board an agent a track wide (six tracks), six a row, the add tile after the last; under it
-  // one row that scrolls, an agent 240 px wide (terminum-kanban.md AC-105's tracks); on a phone one a row in the
-  // sheet #poolline opens (terminum-kanban.md AC-105)
-  // the tracks start after Task Management's rail and its gap (terminum-kanban.md AC-203)
-  const phone = await page.isVisible("#poolline");   // a phone's layout: its line stands for the pool (boardphone.css)
+  // AC-138: agents fill wrapping rows; a phone keeps one card per row in its sheet.
+  const phone = await page.isVisible("#poolline");
   if (phone) await page.click("#poolline");
-  const { tracks, left } = await page.evaluate(() => { const b = document.getElementById("board"), cs = getComputedStyle(b), rail = document.getElementById("railboard").getBoundingClientRect();
-    const w = b.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight) - rail.width - 8;
-    return { tracks: b.clientWidth >= 1500 ? (w - 5 * 8) / 6 : 0, left: Math.round(rail.right + 8) }; });
-  const agents = await page.evaluate(() => [...document.querySelectorAll(".agents .agentcard")].map((c) => { const r = c.getBoundingClientRect(); return [Math.round(r.x), Math.round(r.width), Math.round(r.y)]; }));
-  const add = await box("#addagent");
-  if (tracks) {
-    const aligned = agents.slice(0, 5).every(([x, w, y], i) => Math.abs(x - (left + i * (tracks + 8))) <= 1 && Math.abs(w - tracks) <= 1 && y === agents[0][2]);
-    check("AC-138 five agents stand a track wide on the first row", aligned, JSON.stringify({ tracks, left, agents }));
-    check("AC-138 AC-203 the add tile stands right after the last agent", add.y === agents[4][2] && Math.abs(add.x - (agents[4][0] + agents[4][1] + 8)) <= 1, JSON.stringify({ add, agents }));
-  } else if (phone) {
-    const sheet = await box("#pool");
-    check("AC-138 on a phone the agents stand one a row in the pool's sheet", agents.length >= 5 && agents.every(([x, w, y], i) =>
-      Math.abs(x - agents[0][0]) <= 1 && Math.abs(w - agents[0][1]) <= 1 && x >= sheet.x && x + w <= sheet.x + sheet.w && (i === 0 || y > agents[i - 1][2])), JSON.stringify({ sheet, agents }));
+  const geometry = await page.$eval("#agentbar .trackitems", (list) => {
+    const box = (e) => { const r = e.getBoundingClientRect(); return { x: r.left, r: r.right, y: Math.round(r.top), w: r.width }; };
+    return { list: box(list), agents: [...list.querySelectorAll(".agentcard")].map(box), add: box(list.querySelector(".addtile")), overflow: list.scrollWidth > list.clientWidth + 1 };
+  });
+  const { agents, list, add } = geometry;
+  check("AC-138 cards stay within their section without horizontal scrolling", agents.length >= 5 && !geometry.overflow
+    && agents.every((c) => c.x >= list.x - 1 && c.r <= list.r + 1), JSON.stringify(geometry));
+  if (phone) {
+    check("AC-138 on a phone the agents stand one a row in the pool's sheet", agents.every((c, i) => Math.abs(c.w - list.w) <= 1
+      && (i === 0 || c.y > agents[i - 1].y)), JSON.stringify(geometry));
   } else {
-    check("AC-138 under 1500 px of board one row of agents that scrolls, each 240 px, from the board's edge",
-      agents.every(([, w, y]) => y === agents[0][2] && w === 240) && Math.abs(agents[0][0] - left) <= 1, JSON.stringify({ left, agents }));
+    const rows = [...new Set(agents.map((c) => c.y))];
+    check("AC-138 each responsive row fills the available width", rows.every((y) => Math.abs([...agents, add].filter((c) => c.y === y).at(-1).r - list.r) <= 1), JSON.stringify(geometry));
   }
   await shot("agents");
   if (phone) {
@@ -262,8 +256,8 @@ export async function liveSchedules(page, live) {
   check("AC-163 AC-203 Tab from the last routine reaches its add tile and rings it", r.focused && r.lit, JSON.stringify(r));
   await page.evaluate(() => document.activeElement?.blur());
   const w = await page.evaluate((s) => Math.round(document.querySelector(s).getBoundingClientRect().width), sched);
-  const agentW = await page.evaluate(() => Math.round(document.querySelector("#agentbar .agentcard").getBoundingClientRect().width));
-  if (!(await page.isVisible("#poolline"))) check("AC-163 a card as wide as an agent: a track, or 240 px under 1500 px of board", Math.abs(w - agentW) <= 1, `${w} ${agentW}`);
+  const sectionW = await page.$eval("#schedbar .trackitems", (e) => e.clientWidth);
+  check("AC-163 a routine fits its responsive section", w > 0 && w <= sectionW, `${w} ${sectionW}`);
   const owl = `#agentbar .agentcard[data-agent="${agent}"]`;
   check("AC-161 its agent shows the kept slot", await until(async () => (await page.$$(`${owl} .agkept`)).length === 1 && /1\/2/.test(await page.textContent(owl))), await page.textContent(owl));
   // more agents than a few rows: the bars scroll, the columns stay

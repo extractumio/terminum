@@ -113,7 +113,7 @@ Scenario: AC-105 happy path — TODO and the panel
   And the shown column's sort keys stand at the end of the tabs' row; its cards fill the panel as a grid, the cards of a row as tall as its tallest, their foot and session at its bottom
   When the user presses DONE's tab
   Then the panel shows DONE's cards, and this browser shows DONE first next time; when INTEGRATION's tab goes, the panel shows IN PROGRESS
-  And the board has tracks: six from 1500 px of board, TODO two of them, the panel's cards four columns, an agent a track (terminum-dispatcher.md AC-138); three from 1100 px, TODO one, the cards two; under 1100 px TODO stands over the panel, as tall as its cards up to 40% of the board, the cards two columns
+  And the board has tracks: six from 1500 px of board, TODO two of them, the panel's cards four columns; three from 1100 px, TODO one, the cards two; under 1100 px TODO stands over the panel, as tall as its cards up to 40% of the board, the cards two columns
   And TODO's head and the tabs' row stand on one line, their cards start on one line, and every left edge is the gutter's or a track's
 
 Scenario: AC-105 edge — a tablet
@@ -1309,8 +1309,8 @@ Scenario: AC-203 happy path — a rail folds its section
   And a folded pool takes no dropped task: the user folded it
 
 Scenario: AC-203 happy path — add tiles
-  Then each block's last item is a 44 px [+] tile as tall as its cards, right after the last one ("Add agent", "Add routine"); a full row of six puts it on the next row; no add key stands elsewhere
-  And the cards use every track across their section; a task selection's hint stands on its own full-width row under the pool, taking no room when no tasks are chosen
+  Then each block's last item is a 44 px [+] tile as tall as its cards, right after the last one ("Add agent", "Add routine"); when the row has no room for it, it wraps onto the next row; no add key stands elsewhere
+  And each row of cards fills its section, adjusting and wrapping with the browser (terminum-dispatcher.md AC-138, terminum-schedules.md AC-163); a task selection's hint stands on its own full-width row under the pool, taking no room when no tasks are chosen
 
 Scenario: AC-203 edge — a phone
   Given a phone (AC-105: the pool and the routines in the sheet behind one line)
