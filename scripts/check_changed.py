@@ -19,7 +19,6 @@ content, the target, so terminum tells a task that broke them from a red target 
   check_changed.py --rerun "<steps>" --of <commit>      those steps of <commit>'s plan, here; 1 naming the red ones
 Each step's output goes to .checks/changed.<step>.log, one line here, as scripts/check_all.py does."""
 import argparse
-import ast
 from contextlib import nullcontext
 import os
 from pathlib import Path
@@ -33,6 +32,7 @@ import time
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from check_docs import AC  # noqa: E402
+from check_tests import citing, is_rust_test, new_cases, page_checks, runnable_e2e, runners_of, uncited  # noqa: E402
 import heavy_slots  # noqa: E402
 import live_slots  # noqa: E402
 from check_logs import bounded_log, preserve_attempt, tail as log_tail
@@ -179,59 +179,6 @@ def module_of(path):
     return None if rel in ("main", "lib") else rel.replace("/", "::")
 
 
-def page_checks(root):
-    """{web/test file: the check of e2e_all.mjs that runs it}, a helper its check imports included."""
-    path = root / "web" / "test" / "e2e_all.mjs"
-    text = path.read_text() if path.is_file() else ""
-    found = {f"web/test/{file}": name for name, file in re.findall(r'import \{ (web\w+) \} from "\./([\w.]+)"', text)}
-    for file, name in list(found.items()):
-        if (root / file).is_file():
-            for helper in re.findall(r'from "\./(e2e_[\w.]+)"', (root / file).read_text(errors="replace")):
-                found.setdefault(f"web/test/{helper}", name)
-    return found
-
-
-def is_rust_test(path):
-    return "_tests" in Path(path).name or "/tests/" in path
-
-
-def runnable_e2e(path):
-    """Python e2e entry points have a top-level main guard; inspect source without importing it."""
-    if not path.is_file():
-        return False
-    guard = ast.dump(ast.parse('__name__ == "__main__"', mode="eval").body)
-    tree = ast.parse(path.read_text(), filename=str(path))
-    return any(isinstance(node, ast.If) and ast.dump(node.test) == guard for node in tree.body)
-
-
-def test_files(root):
-    """Files that hold tests: Rust test modules and Python e2e entry points, without their helpers."""
-    found = []
-    for pattern in ("web/test/*.mjs", "ui/test/*.mjs", "scripts/e2e_*.py", "scripts/tests/*.py", "terminumd/src/**/*.rs"):
-        found += [p for p in root.glob(pattern) if p.is_file() and (p.suffix != ".rs" or is_rust_test(str(p)))
-                  and (pattern != "scripts/e2e_*.py" or runnable_e2e(p))]
-    return found
-
-
-def citing(cases, root):
-    """Test files that cite one of the cases, relative to `root`."""
-    if not cases:
-        return []
-    wanted = re.compile(r"\bAC-(?:" + "|".join(sorted(cases)) + r")\b")
-    return sorted(str(p.relative_to(root)) for p in test_files(root) if wanted.search(p.read_text(errors="replace")))
-
-
-def new_cases(diff):
-    """Cases this change adds to a spec's scenarios: `+### AC-nn — …`."""
-    return set(re.findall(r"^\+### AC-(\d{2,3}) — ", diff, re.M))
-
-
-def uncited(cases, root):
-    """Those of `cases` no test cites: new behavior comes with tests from its acceptance cases."""
-    tests = "\n".join(p.read_text(errors="replace") for p in test_files(root))
-    return sorted(c for c in cases if not re.search(rf"\bAC-{c}\b", tests))
-
-
 def plan(files, cases, root=REPO, tests_of_cases=None):
     """[(step's name, shell command)] for these changed files and touched cases."""
     code = [f for f in files if not is_doc(f)]
@@ -242,7 +189,7 @@ def plan(files, cases, root=REPO, tests_of_cases=None):
     if not code:
         return steps
     cited = citing(cases, root) if tests_of_cases is None else tests_of_cases
-    tests = set(code) | set(cited)
+    tests = set(code) | set(cited) | set(runners_of(code, root))
     rust = [f for f in code if f.startswith("terminumd/")]
     modules = {module_of(f) for f in tests if f.startswith("terminumd/src/") and f.endswith(".rs")} - {None}
     web = [f for f in tests if f.startswith("web/")]
