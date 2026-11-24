@@ -103,13 +103,12 @@ def ac231_supervisor_tools_pane_and_token(t, call, typed, tool, tmux, page, proj
     out, rc = typed(boss, tool(review_context))
     check("AC-244 the project's own manager can read its Supervisor context", rc == "0" and project in out, out[:240])
 
-    # every level reports to the owner and keeps its project's reports (terminum-reports.md AC-266)
-    reports = {"create_report", "append_to_report", "attach_report_file", "get_report", "list_reports", "update_report", "delete_report"}
-    observer = {"list_tasks", "get_task", "get_case_file", "list_signals", "get_signal", "get_metric", "record_finding"} | reports
-    advisor = observer | {"add_comment", "ask_human", "open_problem", "update_problem", "propose_rank", "propose_decision",
+    # the report tools follow the level (terminum-reports.md AC-280)
+    observer = {"list_tasks", "get_task", "get_case_file", "list_signals", "get_signal", "get_metric", "record_finding", "get_report", "list_reports"}
+    advisor = observer | {"create_report", "append_to_report", "attach_report_file", "add_comment", "ask_human", "open_problem", "update_problem", "propose_rank", "propose_decision",
                           "post_incident_answer", "replay_config_change", "propose_config_change"}
     hold_tools = {"hold", "release_hold"}
-    operator = advisor | {"run_task", "promote_queued_task", "stop_task", "list_runs", "get_dashboard"} | hold_tools
+    operator = advisor | {"update_report", "delete_report", "run_task", "promote_queued_task", "stop_task", "list_runs", "get_dashboard"} | hold_tools
     view = call(settings)[1]
 
     for level, allowed in [("Observer", observer), ("Advisor", advisor), ("Operator", operator)]:
