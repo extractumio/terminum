@@ -5,7 +5,7 @@ use rusqlite::Transaction;
 use serde_json::{Value, json};
 
 use crate::tasks::ops::{rows, sql};
-use super::{Rule, WEEK, Window, decisions as cards, flow, governor, measure_detector, people, register, scoreboard, settings, signals};
+use super::{DAY, Rule, WEEK, Window, decisions as cards, flow, governor, measure_detector, people, register, scoreboard, settings, signals};
 
 pub(super) fn decisions(tx: &Transaction, project: &str, at: i64) -> Result<String, String> {
     decisions_with_spending(tx, project, at, &governor::spending(tx, project, at)?)
@@ -36,20 +36,56 @@ fn decisions_with_spending(tx: &Transaction, project: &str, at: i64, spending: &
         let question = card.question.lines().map(|line| format!("  {line}")).collect::<Vec<_>>().join("\n");
         lines.push(format!("- {title}\n{question}"));
     }
-    let reduced: i64 = tx.query_row("SELECT count(*) FROM supervisor_decisions d JOIN events e ON e.task = d.task
-        WHERE d.project = ?1 AND d.kind = 'standing_rule' AND e.at > ?2 AND e.author = 'human'
-        AND json_extract(e.data, '$.choice.option') = json_extract((
-            SELECT q.data FROM events q WHERE q.id = json_extract(e.data, '$.choice.question')), '$.question.recommended')",
-        (project, at - WEEK), |r| r.get(0)).map_err(sql)?;
     let added: i64 = tx.query_row("SELECT count(*) FROM supervisor_decisions d JOIN tasks t ON t.id = d.task
         WHERE d.project = ?1 AND t.created_at > ?2", (project, at - WEEK), |r| r.get(0)).map_err(sql)?;
-    lines.extend(rows(tx, "SELECT question FROM supervisor_drift_questions
-        WHERE project = ?1 AND task IS NULL AND at > ?2 ORDER BY at", (project, at - WEEK),
-        |r| r.get::<_, String>(0))?);
+    for question in rows(tx, "SELECT question FROM supervisor_drift_questions
+        WHERE project = ?1 AND task IS NULL AND at > ?2 ORDER BY at", (project, at - WEEK), |r| r.get::<_, String>(0))? {
+        let question = question.lines().map(|line| format!("  {line}")).collect::<Vec<_>>().join("\n");
+        lines.push(format!("- Session drift\n{question}"));
+    }
     if lines.is_empty() { lines.push("No decisions are waiting.".into()); }
+    let (rules, removed) = standing_rules(tx, project, at)?;
+    let weighed = match (rules.is_empty(), removed) {
+        (true, _) => "No standing rule was accepted in the last four weeks.".to_string(),
+        (false, n) if n >= 0 => format!("The standing rules below removed {n} askings of their recurring questions."),
+        (false, n) => format!("Their recurring questions were asked {} more times after the standing rules below.", -n),
+    };
     let (old, recent) = question_repeats(tx, project, at)?;
-    lines.push(format!("\n{added} decision cards opened this week. {reduced} standing rules accepted as recommended. Repeated questions: {recent}, compared with {old} the week before."));
+    lines.push(format!("\n{added} decision cards opened this week. {weighed} Repeated questions: {recent}, compared with {old} the week before."));
+    lines.extend(rules);
     Ok(lines.join("\n"))
+}
+
+/// AC-240: each standing rule the owner accepted as recommended in the last four weeks, weighed by its recurring
+/// question: askings in the span before the acceptance against the same span after it, a week at most. Returns the
+/// lines and the askings removed by the rules whose effect is known.
+fn standing_rules(tx: &Transaction, project: &str, at: i64) -> Result<(Vec<String>, i64), String> {
+    let accepted = rows(tx, "SELECT d.problem, t.slug, d.recurring, min(e.at) FROM supervisor_decisions d
+        JOIN tasks t ON t.id = d.task AND t.project = d.project JOIN events e ON e.task = d.task
+        WHERE d.project = ?1 AND d.kind = 'standing_rule' AND e.at > ?2 AND e.at <= ?3 AND e.author = 'human'
+        AND json_extract(e.data, '$.choice.option') = json_extract((
+            SELECT q.data FROM events q WHERE q.id = json_extract(e.data, '$.choice.question')), '$.question.recommended')
+        GROUP BY d.id ORDER BY min(e.at), d.id", (project, at - 4 * WEEK, at),
+        |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?, r.get::<_, Option<String>>(2)?, r.get::<_, i64>(3)?)))?;
+    let (mut lines, mut removed) = (Vec::new(), 0);
+    for (problem, task, recurring, accepted_at) in accepted {
+        let span = (at - accepted_at).min(WEEK);
+        let head = format!("- {task}: standing rule on register problem {problem}.");
+        let Some(question) = recurring.filter(|_| span >= DAY) else {
+            let reason = if span < DAY { "accepted less than a day ago" } else { "it names no recurring question" };
+            lines.push(format!("{head} Effect unknown: {reason}."));
+            continue;
+        };
+        let (before, after): (i64, i64) = tx.query_row(&format!("{} SELECT count(*) FILTER (WHERE at > ?4 - ?5 AND at <= ?4),
+            count(*) FILTER (WHERE at > ?4 AND at <= ?4 + ?5) FROM project_events
+            WHERE kind = 'comment' AND json_extract(data, '$.questions') IS NOT NULL AND text = ?3", flow::project_events()),
+            (project, at, &question, accepted_at, span), |r| Ok((r.get(0)?, r.get(1)?))).map_err(sql)?;
+        removed += before - after;
+        let change = if before >= after { format!("{} fewer", before - after) } else { format!("{} more", after - before) };
+        lines.push(format!("{head} Its recurring question was asked {before} times in the {:.1} days before you accepted it and {after} in the same span after: {change}.",
+            span as f64 / DAY as f64));
+    }
+    Ok((lines, removed))
 }
 
 pub(super) fn window(at: i64) -> Window { Window { before: at - 2 * WEEK + 1, start: at - WEEK + 1, end: at } }

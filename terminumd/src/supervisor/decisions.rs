@@ -8,7 +8,7 @@ use serde_json::{Value, json};
 use crate::roles::supervisor::author;
 use crate::tasks::{comments, ops::{self, NewTask, rows, sql}};
 
-use super::{register, signals};
+use super::{flow, register, signals};
 
 #[derive(Clone, Copy, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -25,6 +25,9 @@ pub(super) struct Proposal {
     cost: f64,
     recommended: String,
     options: Vec<OptionLabel>,
+    /// A standing rule's: the event ID of one asking of the recurring question it ends.
+    #[serde(default)]
+    recurring: Option<String>,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -89,7 +92,23 @@ pub(super) fn propose(tx: &Transaction, project: &str, run: Option<&str>, draft:
         evidence.push((s.fingerprint, s.evidence));
     }
     evidence.sort_by(|a, b| a.0.cmp(&b.0));
-    let encoded = serde_json::to_vec(&evidence).map_err(|e| e.to_string())?;
+    let recurring = match (matches!(draft.kind, Kind::StandingRule), draft.recurring) {
+        (true, Some(event)) => {
+            let asking = super::Evidence::Events(event.clone());
+            if !evidence.iter().any(|(_, ids)| ids.contains(&asking)) {
+                return Err("Name a question event from this problem's signal evidence.".into());
+            }
+            Some(recurring_question(tx, project, &event, at)?)
+        }
+        (true, None) => return Err("A standing rule names the recurring question it ends: give recurring, the event ID of one asking.".into()),
+        (false, Some(_)) => return Err("Only a standing rule names a recurring question.".into()),
+        (false, None) => None,
+    };
+    // The recurring question joins the hash only where named, so other kinds keep their recorded identities.
+    let encoded = match &recurring {
+        Some(question) => serde_json::to_vec(&(&evidence, question)),
+        None => serde_json::to_vec(&evidence),
+    }.map_err(|e| e.to_string())?;
     let hash = crate::auth::crypto::sha256_hex(&encoded);
     let previous: Option<(i64, Option<String>)> = tx.query_row("SELECT id,
         (SELECT slug FROM tasks WHERE id = d.task AND project = d.project)
@@ -108,12 +127,25 @@ pub(super) fn propose(tx: &Transaction, project: &str, run: Option<&str>, draft:
     let question = format!("Why you are needed:\n{}\n\nRecommended:\n1. {}. {} Other options: {others}.\n\nDetails:\nRegister problem {}. {}Evidence: {evidence_ids}. Cost of waiting: {}.",
         prose(&draft.why)?, prose(&recommended.label)?, prose(&draft.recommend_why)?, p.id,
         if newer { "New evidence is recorded for this decision. " } else { "" }, prose(&draft.waiting)?);
-    let id: i64 = tx.query_row("INSERT INTO supervisor_decisions (project, problem, kind, evidence, question, cost, source_run, choices)
-        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+    let id: i64 = tx.query_row("INSERT INTO supervisor_decisions (project, problem, kind, evidence, question, cost, source_run, choices, recurring)
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
         ON CONFLICT (problem, kind, evidence) DO UPDATE SET question = excluded.question,
             cost = excluded.cost, source_run = excluded.source_run, choices = excluded.choices RETURNING id",
-        (project, p.id, kind, &hash, &question, draft.cost, run, choice.to_string()), |r| r.get(0)).map_err(sql)?;
+        (project, p.id, kind, &hash, &question, draft.cost, run, choice.to_string(), recurring), |r| r.get(0)).map_err(sql)?;
     Ok(json!({"decision": id, "recorded": true, "awaiting_finding": true}))
+}
+
+/// The text of a question asked in this project more than once, by one asking's event ID.
+fn recurring_question(tx: &Transaction, project: &str, event: &str, at: i64) -> Result<String, String> {
+    let asked: Option<(String, i64)> = tx.query_row(&format!("{}, asked AS (SELECT id, text FROM project_events
+        WHERE kind = 'comment' AND json_extract(data, '$.questions') IS NOT NULL AND text IS NOT NULL)
+        SELECT a.text, (SELECT count(*) FROM asked b WHERE b.text = a.text) FROM asked a WHERE a.id = ?3",
+        flow::project_events()), (project, at, event), |r| Ok((r.get(0)?, r.get(1)?))).optional().map_err(sql)?;
+    match asked {
+        Some((text, n)) if n >= 2 => Ok(text),
+        Some(_) => Err("That question was asked once. A standing rule ends a recurring question.".into()),
+        None => Err("No question with that event ID in this project.".into()),
+    }
 }
 
 pub(super) fn advance(tx: &Transaction, project: &str, at: i64) -> Result<Vec<String>, String> {
@@ -180,29 +212,58 @@ pub(super) fn charter_due(tx: &Transaction, project: &str, at: i64) -> Result<()
 }
 
 /// Transcript mining requires an owner's action. Use the counter subjects and their figures only.
+/// Two or more sessions above their drift threshold open a card whatever their impact (hook counters size none);
+/// one is a lesser decision for the weekly list. A session whose counters carry no figure is named, never counted.
 pub(super) fn retro(tx: &Transaction, project: &str, at: i64) -> Result<Option<String>, String> {
     if !register::advisor_enabled(tx, project)? { return Ok(None); }
-    let active = rows(tx, "SELECT subject_id, max(json_extract(scores, '$.impact')),
-        max(json_extract(measure, '$.value')), max(json_extract(measure, '$.threshold'))
-        FROM supervisor_signals WHERE project = ?1 AND detector = 'drift.loop' AND subject_kind = 'session'
-        AND state IN ('new','raised','recurred') AND last_seen >= ?2 AND json_extract(scores, '$.impact') >= 1
-        GROUP BY subject_id ORDER BY subject_id LIMIT 12", (project, at - super::WEEK),
-        |r| Ok((r.get::<_, String>(0)?, r.get::<_, u8>(1)?, r.get::<_, f64>(2)?, r.get::<_, f64>(3)?)))?;
-    if active.len() < 2 { return Ok(None); }
-    let subjects = serde_json::to_string(&active.iter().map(|(s, _, _, _)| s).collect::<Vec<_>>()).map_err(|e| e.to_string())?;
+    let readings = rows(tx, "SELECT subject_id,
+        CASE WHEN json_type(measure, '$.value') IN ('integer', 'real') THEN json_extract(measure, '$.value') END,
+        CASE WHEN json_type(measure, '$.threshold') IN ('integer', 'real') THEN json_extract(measure, '$.threshold') END
+        FROM supervisor_signals WHERE project = ?1 AND detector IN ('drift.loop', 'drift.subagents') AND subject_kind = 'session'
+        AND state IN ('new','raised','recurred') AND last_seen >= ?2 ORDER BY subject_id LIMIT 48", (project, at - super::WEEK),
+        |r| Ok((r.get::<_, String>(0)?, r.get::<_, Option<f64>>(1)?, r.get::<_, Option<f64>>(2)?)))?;
+    let mut drifting = std::collections::BTreeMap::<String, (f64, f64)>::new();
+    let mut unknown = std::collections::BTreeSet::new();
+    for (session, value, threshold) in readings {
+        match (value, threshold) {
+            (Some(value), Some(threshold)) if value > threshold => {
+                let best = drifting.entry(session).or_insert((value, threshold));
+                if value - threshold > best.0 - best.1 { *best = (value, threshold); }
+            }
+            (Some(_), Some(_)) => {}
+            _ => { unknown.insert(session); }
+        }
+    }
+    unknown.retain(|session| !drifting.contains_key(session));
+    if drifting.is_empty() { return Ok(None); }
+    let subjects = serde_json::to_string(&drifting.keys().collect::<Vec<_>>()).map_err(|e| e.to_string())?;
     let existed: bool = tx.query_row("SELECT EXISTS (SELECT 1 FROM supervisor_drift_questions WHERE project = ?1 AND subjects = ?2)",
         (project, &subjects), |r| r.get(0)).map_err(sql)?;
     if existed { return Ok(None); }
-    let evidence = active.iter().map(|(session, _, value, threshold)| {
-        format!("- {} measured {value} against a drift threshold of {threshold}.", crate::plans::rules::clean_with(session, false))
-    }).collect::<Vec<_>>().join("\n");
-    let words = format!("Why you are needed:\nTwo or more sessions exceeded their drift threshold. Only you can choose to review their conversations.\n\nRecommended:\n1. Run `/retro` in the named sessions if the drift warrants a deeper look. Otherwise keep monitoring.\n\nDetails:\nIf this waits, the cause remains unexamined. The Supervisor used counters.\n{evidence}");
-    let task = if active.iter().any(|(_, impact, _, _)| *impact >= 2) {
+    let name = |session: &String| format!("`{}`", crate::plans::rules::clean_with(session, false));
+    let names = drifting.keys().map(name).collect::<Vec<_>>().join(", ");
+    let mut evidence = drifting.iter().map(|(session, (value, threshold))| {
+        format!("- {} measured {value} against a drift threshold of {threshold}.", name(session))
+    }).collect::<Vec<_>>();
+    if !unknown.is_empty() {
+        evidence.push(format!("- Not counted, their counters carry no figure: {}.", unknown.iter().map(name).collect::<Vec<_>>().join(", ")));
+    }
+    let card = drifting.len() >= 2;
+    let why = if card {
+        format!("{} sessions exceeded their drift threshold. Only you can choose to review their conversations.", drifting.len())
+    } else {
+        "One session exceeded its drift threshold. Only you can choose to review its conversation.".into()
+    };
+    let words = format!("Why you are needed:\n{why}\n\nRecommended:\n1. Run `/retro` on {names} to find the cause. Otherwise keep monitoring.\n\nDetails:\nIf this waits, the cause remains unexamined. The Supervisor read counters, no transcript.\n{}",
+        evidence.join("\n"));
+    let task = if card {
         let by = author(tx, project)?;
         let task = ops::create(tx, &by, NewTask { title: "Review repeated session drift".into(),
             text: words.clone(), project: Some(project.into()), severity: Some("P1".into()), ..NewTask::default() }, at)?;
         super::task_policy::mark_card(tx, &task)?;
-        let question = comments::wait_for_owner(tx, &by, &task, &words, &Value::Null, at)?;
+        let choices = json!({"kind": "operational", "recommended": "retro", "options": [
+            {"id": "retro", "label": "Run /retro on the named sessions"}, {"id": "monitor", "label": "Keep monitoring"}]});
+        let question = comments::wait_for_owner(tx, &by, &task, &words, &choices, at)?;
         super::outcomes::unattributed(tx, project, super::outcomes::Kind::Card, &question, &task.key, at)?;
         Some(task)
     } else { None };
