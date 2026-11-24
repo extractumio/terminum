@@ -185,6 +185,22 @@ fn ac276_a_report_alerts_once_whatever_happens_to_it_later() {
 }
 
 #[test]
+fn ac276_a_collector_pass_read_before_the_report_cannot_silence_it() {
+    let f = Fixture::new("report-race");
+    enabled(&f);
+    f.task("build", Some("Bug"), "P1", "IN PROGRESS", NOW - DAY);
+    let early = f.live(Rule::ReportCritical, NOW);        // the collector's snapshot, before the report is kept
+    let key = report(&f, Some("build"), true, NOW - 1);
+    let first = alert(&f, &key).0.unwrap();
+    early.record(&f.store).unwrap();
+    assert!(incident(&f, first).2.is_some(), "the stale pass resolved it, unacknowledged");
+    f.live(Rule::ReportCritical, NOW + 60).record(&f.store).unwrap();
+    let (by, line) = alert(&f, &key);
+    let again = by.expect("it alerts again");
+    assert!(again != first && incident(&f, again).2.is_none() && !line, "a new open incident alerts for the unread report");
+}
+
+#[test]
 fn ac276_a_report_made_critical_by_update_report_opens_its_incident() {
     let f = Fixture::new("report-update");
     enabled(&f);

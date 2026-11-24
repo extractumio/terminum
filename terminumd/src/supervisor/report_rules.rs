@@ -15,10 +15,12 @@ const READ_STATE: Source = Source::Unsized("A report's read state is in no weekl
 const METRIC: &str = "critical_reports";
 
 /// A critical report alerts once (AC-276): it counts while unread, not an incident's or a Supervisor round's own,
-/// not alerted by its own line, not answered by the owner's reply, and its incident, if any, still open.
+/// not alerted by its own line, not answered by the owner's reply, and not of an incident the owner acknowledged
+/// and that closed. An incident closed unacknowledged (a collector's pass read before the report was kept) lets
+/// it alert again: noisy, never lost.
 const ALERTING: &str = "critical AND incident IS NULL AND role <> 'supervisor' AND line = 0 AND replied_at IS NULL
     AND read_at IS NULL AND deleted_at IS NULL
-    AND (alerted_by IS NULL OR alerted_by IN (SELECT id FROM supervisor_incidents WHERE closed_at IS NULL))";
+    AND (alerted_by IS NULL OR alerted_by NOT IN (SELECT id FROM supervisor_incidents WHERE closed_at IS NOT NULL AND acknowledged_at IS NOT NULL))";
 
 /// The reports alerting, one reading per subject: the task they were made for, else the report itself; each lists
 /// every such report as evidence. Present only: reading or deleting them clears the signal, and with it the incident.

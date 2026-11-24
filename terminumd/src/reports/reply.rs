@@ -94,7 +94,9 @@ async fn reply(State(app): State<Shared>, Path(id): Path<String>, Json(body): Js
     let kept = store(&app, move |tx| {
         let at = ops::now();
         record::note(tx, &key, HUMAN, "reply", &record::check_note(&text)?, at)?;
-        tx.execute("UPDATE reports SET replied_at = ?1 WHERE id = ?2", (at, &key)).map(drop).map_err(sql)
+        tx.execute("UPDATE reports SET replied_at = ?1 WHERE id = ?2", (at, &key)).map_err(sql)?;
+        // answering it is seeing it: its incident is acknowledged as reading would (AC-276)
+        record::acknowledge_by_reading(tx, &key, at).map(drop)
     }).await;
     crate::tasks::api::told(&app, &task);
     super::changed(&app);
