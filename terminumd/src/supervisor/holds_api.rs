@@ -25,12 +25,21 @@ async fn list(State(app): State<Shared>, Path(project): Path<String>) -> Respons
 }
 
 pub(super) fn heard(app: &Shared, applied: Applied) {
+    nudged(app, &applied.nudges);
     if let Some(run) = applied.run {
         letgo::let_go_of(app, *run);
     } else if let Some(task) = applied.task {
         told(app, &task);
     }
     changed(app);
+}
+
+/// A hold's comments reach their tasks' linked agents as any comment does (AC-241, terminum-dispatcher.md AC-209).
+pub(crate) fn nudged(app: &Shared, nudges: &[(String, String)]) {
+    for (task, event) in nudges {
+        crate::tasks::notify::comment_added(app, task, event, None);
+        told(app, task);
+    }
 }
 
 /// An interim verification hold began or ended on this task (AC-233).

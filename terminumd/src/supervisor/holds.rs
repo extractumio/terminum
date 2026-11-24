@@ -44,7 +44,7 @@ impl Kind {
         }
     }
 
-    fn undo(self) -> &'static str {
+    pub(super) fn undo(self) -> &'static str {
         match self {
             Self::StopRun => "RUN", Self::PauseDispatch => "Turn on Auto-Dispatcher",
             Self::PauseIntegration => "Resume integration", Self::TakeOut => "Queue for integration",
@@ -159,6 +159,8 @@ pub(super) struct Applied {
     pub shadow: bool,
     pub run: Option<Box<Run>>,
     pub task: Option<String>,
+    /// Its comments, task and event, for their notices (AC-241).
+    pub nudges: Vec<(String, String)>,
 }
 
 pub(super) fn apply(tx: &Transaction, project: &str, request: Request, actor: &str, at: i64) -> Result<Disposition, String> {
@@ -208,7 +210,7 @@ fn apply_as(tx: &Transaction, project: &str, request: Request, actor: &str, at: 
     if shadow {
         let id = insert(tx, &signal, kind, target, (reason, actor, at), true, None)?;
         super::outcomes::record(tx, &signal, super::outcomes::Kind::Hold, &id.to_string(), target, "", at)?;
-        return Ok(Disposition::Applied(Applied { id, shadow, run: None, task: None }));
+        return Ok(Disposition::Applied(Applied { id, shadow, run: None, task: None, nudges: Vec::new() }));
     }
     let blocked: bool = tx.query_row("SELECT EXISTS (SELECT 1 FROM supervisor_holds
         WHERE fingerprint = ?1 AND kind = ?2 AND target = ?3 AND released_by = ?4 AND released_at > ?5)",
@@ -259,7 +261,8 @@ fn apply_as(tx: &Transaction, project: &str, request: Request, actor: &str, at: 
     if kind.project_wide() || signal.level == 3 {
         incidents::attach_hold(tx, &signal, id, kind.project_wide(), actor, at)?;
     }
-    Ok(Disposition::Applied(Applied { id, shadow, run, task: task.map(|t| t.id) }))
+    let nudges = super::nudges::held(tx, &signal, at)?;
+    Ok(Disposition::Applied(Applied { id, shadow, run, task: task.map(|t| t.id), nudges }))
 }
 
 fn stoppable(tx: &Transaction, task: &Task, at: i64) -> Result<Run, String> {

@@ -92,7 +92,7 @@ async fn admit(app: &Shared, project: &str, key: &str) -> Result<(), String> {
     let (agent, host, folder, server) = places::place(app, project, Some(desired)).await?;
     let like = Run::of(&agent, host, folder.clone(), project.to_owned(), None);
     let key = key.to_owned();
-    let (run, prompt, held) = store(app, move |tx| {
+    let (run, prompt, held, nudges) = store(app, move |tx| {
         let at = now();
         let candidate = rounds::candidate(tx, &like.project, &key)?;
         let (_, current_host, current_folder) = ops::project_place(tx, &like.project)?;
@@ -106,9 +106,10 @@ async fn admit(app: &Shared, project: &str, key: &str) -> Result<(), String> {
             return Err(full.words);
         }
         let id = runs::add(tx, &like, &[], runs::Started::of(runs::How::Supervisor), at)?;
-        let (prompt, held) = rounds::save(tx, &id, candidate, at, scale())?;
-        Ok((id, prompt, held))
+        let (prompt, held, nudges) = rounds::save(tx, &id, candidate, at, scale())?;
+        Ok((id, prompt, held, nudges))
     }).await?;
+    crate::supervisor::holds_api::nudged(app, &nudges);
     if let Some(task) = held { crate::supervisor::holds_api::interim_changed(app, &task); }
     let hold = Held::take(app, |d| &d.starting, &run).ok_or("Its start is already watched.")?;
     let (a, project) = (app.clone(), project.to_owned());
