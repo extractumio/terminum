@@ -167,9 +167,9 @@ def main():
         wait_for(lambda: signal("self.budget", "judgment_tokens"), lambda s: s[2] == "resolved", 20, every=0.2)
         task = call(f"/api/schedules/{schedule['id']}/run", "POST", {})["task"]
         review = wait_for(lambda: call(path + "/screen")["review"], lambda r: r and r["task"] == task, 30, every=0.2)
-        waiting = review["result"].split("## Top three register problems")[0] if review else ""
+        waiting = review["result"].split("Top three register problems")[0] if review else ""
         check("AC-237 once the owner raises the ceiling, the weekly review lists the budget card among decisions waiting",
-              f"{card[0][0]} · {CARD}" in waiting and NOTICE not in waiting, waiting)
+              f"[{card[0][0]}](/kanban/{card[0][0]}) · {CARD}" in waiting and NOTICE not in waiting, waiting)
     except Exception:
         print(t.log())
         raise
