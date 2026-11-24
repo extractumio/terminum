@@ -27,7 +27,8 @@ import time
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from check_cancel import run_guard  # noqa: E402
-from check_changed import changed_files, is_doc, red, runnable_e2e, tail, tree_id  # noqa: E402
+from check_changed import changed_files, is_doc, red, tail, tree_id  # noqa: E402
+from check_tests import runnable_e2e  # noqa: E402
 from check_logs import bounded_log, preserve_attempt  # noqa: E402
 from check_step import LEFT  # noqa: E402
 import gate_record  # noqa: E402

@@ -62,12 +62,13 @@ def uncited(cases, root):
 
 def imported_checks(path):
     """The `*_checks` module names a Python file imports, wherever it imports them."""
-    found = set()
+    names = []
     for node in ast.walk(ast.parse(path.read_text(), filename=str(path))):
-        names = [a.name for a in node.names] if isinstance(node, ast.Import) else \
-            [node.module] if isinstance(node, ast.ImportFrom) and node.level == 0 and node.module else []
-        found |= {n for n in names if n.endswith("_checks")}
-    return found
+        if isinstance(node, ast.Import):
+            names += [a.name for a in node.names]
+        elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+            names.append(node.module)
+    return {n for n in names if n.endswith("_checks")}
 
 
 def check_modules(path, root):
@@ -83,7 +84,7 @@ def check_modules(path, root):
 
 def source(path, root):
     """A test file's text; a Python runner's with its check modules'."""
-    runner = path.suffix == ".py" and path.parent == root / "scripts"
+    runner = path.parent == root / "scripts"
     modules = [root / "scripts" / f"{n}.py" for n in sorted(check_modules(path, root))] if runner else []
     return "\n".join(p.read_text(errors="replace") for p in [path, *modules] if p.is_file())
 
@@ -91,5 +92,7 @@ def source(path, root):
 def runners_of(files, root):
     """The Python runners that import one of these changed (or deleted) check modules, relative to `root`."""
     changed = {Path(f).stem for f in files if re.fullmatch(r"scripts/\w+_checks\.py", f)}
+    if not changed:
+        return []
     return sorted(str(p.relative_to(root)) for p in root.glob("scripts/e2e_*.py")
-                  if changed and runnable_e2e(p) and changed & check_modules(p, root))
+                  if runnable_e2e(p) and changed & check_modules(p, root))
