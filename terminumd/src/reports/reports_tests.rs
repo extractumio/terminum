@@ -266,7 +266,7 @@ fn ac265_a_deleted_project_s_reports_move_to_default_keeping_their_ids() {
     assert_eq!(one(&s, &id)["project"], json!(crate::tasks::store::DEFAULT_PROJECT), "{id} keeps its ID in Default");
 }
 
-/// terminum-reports.md AC-270: where a reply can go, its fixed words, and how its answer stands.
+/// terminum-reports.md AC-270: where a reply can go, its fixed words, and how its answer stands; AC-280: an incident's report is answered through Talk.
 #[test]
 fn ac270_a_reply_goes_to_its_task_s_run_else_says_where_to_answer() {
     let (s, dir) = fresh("reports-reply");
