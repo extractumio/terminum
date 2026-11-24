@@ -333,10 +333,14 @@ fn ac270_a_reply_s_run_makes_no_report_of_its_result() {
     }).unwrap();
     let said = call(&s, &dir, KEY, "finish_task", json!({"id": task, "result": ROUTINE})).unwrap();
     let id = said.split("Inbox as ").nth(1).unwrap().trim_end_matches('.').to_string();
-    // the human replies: its task goes on (as RUN moves it), the report marked replied
+    // the human replies: RUN takes it with a run of its own, the report marked replied, and the Dispatcher moves its
+    // task on later, past the gate
     s.with(|tx| {
-        ops::move_to(tx, DISPATCHER, &task, "IN PROGRESS", ops::now())?;
-        tx.execute("UPDATE reports SET replied_at = ?1 WHERE slug = ?2", (ops::now(), &id)).map_err(sql).map(drop)
+        let key = ops::key_of(tx, &task)?;
+        let r = runs::add(tx, &Run { agent_id: "a1".into(), agent_name: "Opus".into(), kind: "claude".into(), project: "api".into(), ..Default::default() }, std::slice::from_ref(&key), Default::default(), ops::now())?;
+        runs::change(tx, &r, |r| { r.state = Phase::Working; r.pane_key = Some(KEY.into()); })?;
+        tx.execute("UPDATE reports SET replied_at = ?1 WHERE slug = ?2", (ops::now(), &id)).map_err(sql)?;
+        ops::move_to(tx, DISPATCHER, &task, "IN PROGRESS", ops::now() + 5)
     }).unwrap();
     assert!(call(&s, &dir, KEY, "finish_task", json!({"id": task, "result": ROUTINE})).unwrap().starts_with(&format!("{task} is DONE, with your result.")), "no second report");
     assert_eq!(s.with(|tx| inbox::list(tx, &Filter::default())).unwrap()["reports"].as_array().unwrap().len(), 1);

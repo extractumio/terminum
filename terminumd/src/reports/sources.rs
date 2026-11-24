@@ -35,10 +35,14 @@ pub fn titled(title: &str) -> String {
 }
 
 /// Whether task `t`'s current run `run` made a report for it (by its run, else since its last move), or was started
-/// by a human's reply to one, whose answer goes below it or into its follow-up (AC-270).
+/// by a human's reply to one, whose answer goes below it or into its follow-up (AC-270). A reply is that run's when
+/// it came after the task was last DONE before the run: the reply is kept once RUN took it, and the Dispatcher can
+/// move the task to IN PROGRESS later, past the gate.
 fn run_reported(tx: &Transaction, t: &Task, run: Option<&str>) -> Result<bool, String> {
-    tx.query_row("WITH moved AS (SELECT coalesce(max(e.at), 0) AS at FROM events e WHERE e.task = ?1 AND e.kind = 'move' AND json_extract(e.data, '$.to') = 'IN PROGRESS')
-        SELECT EXISTS (SELECT 1 FROM reports r, moved WHERE r.task = ?1 AND (r.run = ?2 OR (?2 IS NULL AND r.created_at >= moved.at) OR r.replied_at >= moved.at))",
+    tx.query_row("WITH moves AS (SELECT e.rowid AS n, e.at, json_extract(e.data, '$.to') AS goes FROM events e WHERE e.task = ?1 AND e.kind = 'move'),
+        moved AS (SELECT coalesce(max(at), 0) AS at, coalesce(max(n), 0) AS n FROM moves WHERE goes = 'IN PROGRESS'),
+        done AS (SELECT coalesce(max(m.at), 0) AS at FROM moves m, moved WHERE m.goes = 'DONE' AND m.n < moved.n)
+        SELECT EXISTS (SELECT 1 FROM reports r, moved, done WHERE r.task = ?1 AND (r.run = ?2 OR (?2 IS NULL AND r.created_at >= moved.at) OR r.replied_at >= done.at))",
         (&t.key, run), |r| r.get(0)).map_err(sql)
 }
 
