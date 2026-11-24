@@ -59,6 +59,7 @@ catalog! {
     Returned, "flow.returned", "integration_returns", change(0.0), integration_rules::returned;
     VerifyRed, "drift.verify_red", "verify_failures", Absolute(0.0), integration_rules::verify;
     DiffOutlier, "drift.diff_outlier", "diff_outliers", baseline(95, 100.0), integration_rules::diffs;
+    MainRed, "flow.main_red", "target_red", Absolute(0.0), integration_rules::target_red;
     Misrouted, "drift.misrouted", "misrouted_tasks", Absolute(0.0), integration;
     Flaky, "flow.flaky", "gate_failures", Absolute(0.0), probe_rules::flaky;
     Hotspot, "arch.hotspot", "git_hotspots", baseline(95, 1000000.0), probe_rules::hotspots;
@@ -97,12 +98,13 @@ impl Rule {
     pub(super) fn checked_fact(self) -> Option<&'static str> {
         match self {
             Self::MigrationEdited => Some("An existing migration file is edited"),
+            Self::MainRed => Some("The target is red: steps a Verify failed fail on it too"),
             _ => None,
         }
     }
 
     pub(super) fn present_only(self) -> bool {
-        matches!(self, Self::Starved | Self::UserBugAge)
+        matches!(self, Self::Starved | Self::UserBugAge | Self::MainRed)
     }
 
     pub(super) fn needs_weekly_samples(self) -> bool {
@@ -147,7 +149,6 @@ fn line_health(_: &Query<'_, '_>) -> Result<Measurements, String> {
 }
 
 pub(super) const UNAVAILABLE: &[(&str, &str)] = &[
-    ("flow.main_red", "CI probe history is unavailable."),
     ("drift.rule_break", "Lint probe history is unavailable."),
     ("drift.scope", "Scope judgments require a recorded case."),
     ("arch.surface_touched", "Historical integration and git surface data are unavailable."),

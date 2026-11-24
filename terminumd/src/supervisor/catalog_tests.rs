@@ -20,7 +20,7 @@ fn ac212_store_detector_catalog() {
     f.run("clean", "early", "agent", NOW - 100);
     f.transition("clean", NOW - 5, "IN PROGRESS", "DONE");
     let detectors: Vec<_> = Rule::ALL.iter().map(|rule| Fixture::detector(rule.id())).collect();
-    assert_eq!(detectors.len(), 37);
+    assert_eq!(detectors.len(), 38);
     let result = evaluate(&f.store, PROJECT, NOW, &detectors).unwrap();
     for detector in &result.detectors {
         assert!(detector.findings.is_empty(), "{} unexpectedly fired", detector.rule.id());

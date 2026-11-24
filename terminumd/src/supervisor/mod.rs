@@ -92,6 +92,8 @@ mod engine_tests;
 #[cfg(test)]
 mod catalog_tests;
 #[cfg(test)]
+mod main_red_tests;
+#[cfg(test)]
 mod replay_tests;
 #[cfg(test)]
 mod impact_tests;
