@@ -4,7 +4,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::{Comparison, DAY, Evidence, Measurements, Query, Reading, Threshold, catalog, percentile, percentile_of_others,
-    impact::Source, probe_arch::Architecture, probe_gate::Gate, probe_git::Releases, probes};
+    impact::Source, probe_arch::{Architecture, source_file}, probe_gate::Gate, probe_git::Releases, probes};
 
 pub(super) const GIT_MISSING: &str = "Git release tags are unavailable.";
 pub(super) const ARCH_MISSING: &str = "Git architecture observations are unavailable.";
@@ -115,7 +115,7 @@ pub(super) fn dependencies(q: &Query<'_, '_>) -> Result<Measurements, String> {
 pub(super) fn hotspots(q: &Query<'_, '_>) -> Result<Measurements, String> {
     let Some((id, arch)) = architecture(q)? else { return Ok(Measurements::missing(ARCH_MISSING)); };
     let mut periods: [BTreeMap<&str, (f64, f64)>; 2] = Default::default();
-    for row in arch.changes.iter().filter(|c| c.at >= q.window.before) {
+    for row in arch.changes.iter().filter(|c| c.at >= q.window.before && source_file(&c.path)) {
         let totals = periods[usize::from(q.window.current(row.at))].entry(row.path.as_str()).or_default();
         totals.0 += row.churn as f64;
         totals.1 += f64::from(row.fix);
@@ -123,7 +123,7 @@ pub(super) fn hotspots(q: &Query<'_, '_>) -> Result<Measurements, String> {
     let score = |path: &str, (churn, fixes): (f64, f64)| {
         arch.sizes.get(path).map(|bytes| churn * *bytes as f64 * fixes).filter(|value| *value > 0.0)
     };
-    // AC-212, AC-221: each file is ranked against every other file a fix touched in either period,
+    // AC-212, AC-221: each source file is ranked against every other source file a fix touched in either period,
     // so a project whose fixes are known only inside the current window still fires on its top few percent.
     let mut scores = periods.iter().flatten().filter_map(|(path, stats)| score(path, *stats)).collect::<Vec<_>>();
     scores.sort_unstable_by(f64::total_cmp);
@@ -148,13 +148,13 @@ pub(super) fn hotspots(q: &Query<'_, '_>) -> Result<Measurements, String> {
     Ok(out)
 }
 
-/// `arch.bug_cluster`: per folder, the distinct commits of Bug tasks (or `fix:` commits) that changed it in the window,
+/// `arch.bug_cluster`: per folder, the distinct commits of Bug tasks (or `fix:` commits) that changed its source files in the window,
 /// ranked, as `hotspots` ranks files, against every folder's count in either period: an active project's every busy folder
 /// takes fixes, so only its top few percent are a cluster.
 pub(super) fn bug_clusters(q: &Query<'_, '_>) -> Result<Measurements, String> {
     let Some((id, arch)) = architecture(q)? else { return Ok(Measurements::missing(ARCH_MISSING)); };
     let mut periods: [BTreeMap<&str, BTreeSet<(&str, i64)>>; 2] = Default::default();
-    for row in arch.changes.iter().filter(|c| c.fix && c.at >= q.window.before) {
+    for row in arch.changes.iter().filter(|c| c.fix && c.at >= q.window.before && source_file(&c.path)) {
         periods[usize::from(q.window.current(row.at))].entry(row.path.rsplit_once('/').map_or(".", |(folder, _)| folder))
             .or_default().insert((&row.commit, row.at));
     }
