@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 
 use super::{Measurements, Query, Threshold, flow, integration_rules, outside_feedback, outside_indicators, people, probe_rules,
-    review_rules, samples, spend};
+    report_rules, review_rules, samples, spend};
 
 macro_rules! catalog {
     ($($name:ident, $id:literal, $query:literal, $threshold:expr, $run:path;)+) => {
@@ -82,6 +82,9 @@ catalog! {
     Subagents, "drift.subagents", "subagent_counts", baseline(90, 2.0), samples::counters;
     CollectorDead, "self.collector_dead", "collector_heartbeat", Absolute(2.0), heartbeat;
     LineDead, "self.line_dead", "line_health", Absolute(0.0), line_health;
+    ReportCritical, "reports.critical", "critical_reports", Absolute(0.0), report_rules::critical;
+    UnreadReports, "reports.unread_age", "unread_reports", Absolute(1440.0), report_rules::unread_age;
+    FollowUps, "reports.follow_up_age", "unanswered_replies", Absolute(1440.0), report_rules::follow_up_age;
 }
 
 impl Rule {
@@ -96,7 +99,17 @@ impl Rule {
     }
 
     pub(super) fn configurable(self) -> bool {
-        !matches!(self, Self::CollectorDead | Self::LineDead | Self::ProbeFailed)
+        !matches!(self, Self::CollectorDead | Self::LineDead | Self::ProbeFailed | Self::ReportCritical)
+    }
+
+    /// A rule whose finding its author declared, a critical report (terminum-reports.md AC-276): its level is
+    /// theirs, never sized by the project's weeks; its incident makes no report of its own and names its reports.
+    pub(super) fn authored(self) -> bool {
+        self == Self::ReportCritical
+    }
+
+    pub(super) fn fixed_impact(self) -> Option<u8> {
+        self.authored().then_some(3)
     }
 
     /// A detector whose firing is a counted fact, in the owner's words: only such a detector can break
@@ -115,6 +128,7 @@ impl Rule {
         match self {
             Self::Starved | Self::UserBugAge => Some("Historical slot or priority state is unavailable."),
             Self::MainRed => Some("Red-target history keeps only the open Bug task."),
+            Self::ReportCritical | Self::UnreadReports | Self::FollowUps => Some("A report's read state keeps no history."),
             _ => None,
         }
     }

@@ -296,6 +296,8 @@ async function screen(page, suffix, phone) {
   check("AC-225 an interim hold says by when it ends on the incident card and in the screen's hold list",
     (await incidentHold.textContent()).includes(`Hold ${HOLD.id} ends by `)
     && await integrationHold.getByText(/^Interim: ends by .+ with its verification/).isVisible());
+  check("AC-276 the incident card links the report it alerts for, to the board's reading pane",
+    await incidentHold.getByRole("link", { name: "R_API-8", exact: true }).getAttribute("href") === "/kanban/?report=R_API-8");
   if (phone) {
     for (const key of [undo, keep, release]) {
       check("AC-245 a hold key fits a finger and its card fits the phone",

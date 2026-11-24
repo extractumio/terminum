@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-"""AC-216–219 and AC-227–229 against private terminumd, signed-in board routes and tmux."""
+"""AC-216–219, AC-227–229 and terminum-reports.md AC-276 against private terminumd, signed-in board routes and tmux."""
 import json
 import os
 from pathlib import Path
@@ -11,6 +11,7 @@ from contextlib import closing
 
 from e2e_remote import api
 from e2e_ws import Terminumd, check, summary, unix_request, wait_for
+from supervisor_report_checks import ac276_a_critical_report_opens_an_incident
 from testrun import free_port, own
 
 PORT, SOCKET = free_port(), own("tm-test-supervisor")
@@ -115,6 +116,7 @@ def main():
         check("AC-218 accepted hooks keep numerical session counts and the detector uses them",
               got == {"compaction": 1, "repeat": 3, "tool": 4} and wait_for(
                   lambda: signals(api_id), lambda s: "drift.loop" in s, 30, every=0.25))
+        ac276_a_critical_report_opens_an_incident(t, SOCKET, pane, call, read)
 
         page.send({"t": "project", "action": "add", "id": pane_key, "project": web_id})
         wait_for(lambda: read("SELECT project FROM project_members WHERE pane_key = ?", (pane_key,)), lambda row: row == [(web_id,)], 10)

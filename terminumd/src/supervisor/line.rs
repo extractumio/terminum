@@ -315,11 +315,9 @@ fn clear_if_healthy(tx: &Transaction, at: i64) -> Result<(), String> {
 
 fn report_failure(tx: &Transaction, project: &str, at: i64, failures: Vec<Evidence>) -> Result<(), String> {
     let rule = Rule::LineDead;
-    let previous = tx.query_row("SELECT evaluated_at FROM supervisor_evaluations WHERE project = ?1 AND detector = ?2",
-        (project, rule.id()), |r| r.get::<_, i64>(0)).optional().map_err(sql)?;
-    let at = previous.map_or(at, |last| at.max(last + 1));
+    let at = signals::after_last(tx, project, rule, at)?;
     let reading = Reading::new("critical_line", project, "failed_deliveries", failures.len() as f64, failures, OWN_HEALTH);
-    let Some(evaluation) = Evaluation::critical(project, rule, reading, Window { before: at, start: at, end: at }) else {
+    let Some(evaluation) = Evaluation::critical(project, rule, vec![reading], None, Window { before: at, start: at, end: at }) else {
         return Ok(());
     };
     signals::prepare(&evaluation)?.write(tx, false)

@@ -101,16 +101,50 @@ pub fn create(tx: &Transaction, new: New, at: i64) -> Result<(String, String, St
     let (slug, number) = crate::tasks::slugs::take_report(tx, &new.project)?;
     let key = crate::auth::crypto::random_hex::<16>();
     let line = line_due(tx, &new, at)?;
+    // a critical report alerts once: by the incident it opens or joins, else by its own line (AC-276)
+    let supervised = new.critical && new.incident.is_none();
     tx.execute("INSERT INTO reports (id, project, number, slug, title, summary, body, critical, author, role, session_key, task, schedule, run,
             incident, follows, line, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?18)",
         rusqlite::params![key, new.project, number, slug, title, summary, body, new.critical, new.author, new.role, new.session, new.task,
-            new.schedule, new.run, new.incident, new.follows, line, at]).map_err(sql)?;
+            new.schedule, new.run, new.incident, new.follows, line && !supervised, at]).map_err(sql)?;
     // a line of its task's history, never a comment: the task's result stays its agent's last comment
     if let Some(task) = &new.task {
         ops::log(tx, task, &new.author, "report", &format!("Report {slug}: {title}"), Some(&serde_json::json!({"report": slug})), at)?;
     }
+    if supervised {
+        alert(tx, &key, at, line)?;
+    }
     bump(tx)?;
     Ok((key, slug, title))
+}
+
+/// Critical report `key`, its line down, alerts once (AC-276): by the incident its project's Supervisor opens or
+/// joins for it; with none to alert (the Supervisor off, its detector ruled wrong, a breaker open), by its own line
+/// when `line` says it is due.
+pub fn alert(tx: &Transaction, key: &str, at: i64, line: bool) -> Result<(), String> {
+    if crate::supervisor::report_rules::supervise(tx, key, at)?.is_none() && line {
+        tx.execute("UPDATE reports SET line = 1 WHERE id = ?1", [key]).map_err(sql)?;
+    }
+    Ok(())
+}
+
+/// Incident `id` was acknowledged: the reports it alerts for, and its own, are read (AC-276).
+pub fn read_of_incident(tx: &Transaction, id: i64, at: i64) -> Result<(), String> {
+    if tx.execute("UPDATE reports SET read_at = ?2 WHERE (alerted_by = ?1 OR incident = ?1) AND read_at IS NULL AND deleted_at IS NULL",
+        (id, at)).map_err(sql)? > 0
+    {
+        bump(tx)?;
+    }
+    Ok(())
+}
+
+/// The owner read report `key`: the incident alerting for it, or whose own report it is, is acknowledged by them;
+/// its other reports stay as they are (AC-276).
+pub fn acknowledge_by_reading(tx: &Transaction, key: &str, at: i64) -> Result<bool, String> {
+    use crate::supervisor::incidents::{Action, act};
+    let incident = tx.query_row("SELECT coalesce(alerted_by, incident) FROM reports WHERE id = ?1", [key],
+        |r| r.get::<_, Option<i64>>(0)).map_err(sql)?;
+    incident.map_or(Ok(false), |id| act(tx, id, Action::Acknowledge, at))
 }
 
 /// A report's key, from its ID; a deleted one too.
