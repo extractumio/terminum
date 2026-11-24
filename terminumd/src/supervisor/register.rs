@@ -371,7 +371,8 @@ fn retext_old_seeds(tx: &Transaction, project: &str, at: i64) -> Result<(), Stri
 /// AC-236: an accepted problem reopens on a repeat its signal's count took since the ruling (AC-211: a counted
 /// reading's new event, or a return after resolving) that brings a row the ruling did not see. A repeat of the
 /// evidence the ruling saw stays closed and joins the ruling's count; a retaken sample or a window's new input is no
-/// repeat, so its new rows reopen nothing.
+/// repeat, so its new rows reopen nothing. A level reading's return finds its rows already in the ruling, unless it had
+/// stayed clear for its window first (`signals.rs`).
 pub(super) fn advance(tx: &Transaction, project: &str, at: i64) -> Result<(), String> {
     retext_old_seeds(tx, project, at)?;
     seed(tx, project, at)?;

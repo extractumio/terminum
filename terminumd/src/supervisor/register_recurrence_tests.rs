@@ -7,6 +7,7 @@ use crate::tasks::ops::{rows, sql};
 
 use super::engine_tests::{Fixture, NOW, PROJECT};
 use super::register_tests::draft;
+use super::signals::State;
 use super::{DAY, Rule, Signal, evaluate, probe_arch::Architecture, probes, register, signals};
 
 fn signal(f: &Fixture, pick: impl Fn(&Signal) -> bool) -> Signal {
@@ -50,6 +51,54 @@ fn ac236_a_retaken_probe_sample_keeps_an_accepted_problem_accepted() {
         assert_eq!(now.count, 1, "the same edited migration is one occurrence");
         assert_eq!(swept(&f, id, at + 1), "accepted", "beat {n}");
     }
+}
+
+/// AC-236: a level reading (a file's share of the line limit, from the real Git probe's daily sample) that resolves and
+/// returns keeps the owner's Accept until it has stayed clear for the problem's observation window; its next return
+/// reopens the problem.
+#[test]
+fn ac236_a_hovering_level_reading_keeps_an_accepted_problem_until_its_window_clears() {
+    let f = Fixture::new("accept-hover");
+    super::breach::tests::attached(&f, serde_json::json!({}));
+    let sample = |at, share: f64| {
+        let arch = Architecture { since: NOW - 90 * DAY, near_cap: Some(vec![("src/big.rs".into(), share)]), ..Architecture::default() };
+        probes::tests::publish_sample(&f, probes::ARCH, at, serde_json::to_string(&arch).unwrap());
+    };
+    let evaluate = |at| f.live(Rule::Hotspot, at).record(&f.store).unwrap();
+    let state = |key: &str| signal(&f, |s| s.fingerprint == key).state;
+    sample(NOW, 0.95);
+    evaluate(NOW);
+    let ruled = signal(&f, |s| s.metric == "file_line_limit_share");
+    let id = accepted(&f, &ruled.fingerprint);
+    let mut at = NOW;
+    for n in 0..3 {
+        at += DAY;
+        sample(at, 0.5);
+        evaluate(at);
+        assert_eq!(state(&ruled.fingerprint), State::Resolved, "dip {n}");
+        assert_eq!(swept(&f, id, at + 1), "accepted", "dip {n}");
+        at += DAY;
+        sample(at, 0.95);
+        evaluate(at);
+        let now = signal(&f, |s| s.fingerprint == ruled.fingerprint);
+        assert_eq!((now.state, now.count), (State::Recurred, 2 + n), "return {n} is a counted repeat (AC-211)");
+        assert_ne!(now.evidence, ruled.evidence, "return {n} brought a sample the ruling did not see");
+        assert_eq!(swept(&f, id, at + 1), "accepted", "return {n} before a clear window");
+    }
+
+    // A clear window as the collector sees it: a new sample each day, an evaluation within the freshness limit.
+    f.write("UPDATE supervisor_problem_signals SET weeks = 1 WHERE problem = ?1", [id]);
+    at += DAY;
+    let clear_from = at;
+    while at < clear_from + super::WEEK + DAY {
+        if (at - clear_from) % DAY == 0 { sample(at, 0.5); }
+        evaluate(at);
+        at += 20 * 60;
+    }
+    assert_eq!(swept(&f, id, at), "accepted", "a clear window alone keeps the Accept");
+    sample(at, 0.95);
+    evaluate(at);
+    assert_eq!(swept(&f, id, at + 1), "recurred", "a return after the clear window reopens the problem");
 }
 
 #[test]
