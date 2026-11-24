@@ -105,6 +105,11 @@ Three things hold everywhere below:
   session of several tasks an agent-written task can still sway the others once read.
 - **Closing and ending**: it closes only such a pane, its agent idle, and at a task's time budget
   signals what runs under it by pid and start time, its shell spared, never by name or pattern.
+- **Give up** (`terminum-dispatcher.md` AC-138): your confirmation releases the run, then sends Esc
+  only to its marked pane with Claude Code or Codex in front, outside tmux modes. One fixed task-ID
+  instruction asks it to stop its background work and subagents and end its turn, through the gate
+  at an empty box. The conversation, shell, window and queued commits stay. Unreachable agents
+  receive no terminal input; the durable cancellation notice answers their next task-tool call.
 - **Auto-Dispatch** (AC-170), off until you turn it on for a project, starts tasks no human looked
   at, an agent's own too: **an agent that writes tasks can have them run by another, with that
   one's permissions, and those can write more.** What bounds it: its starts in 24 hours (as made:

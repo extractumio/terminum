@@ -92,6 +92,22 @@ pub fn read(kind: &str, raw: &[String]) -> Screen {
     }
 }
 
+pub(super) fn interrupt_ready(kind: &str, raw: &[String]) -> bool {
+    if read(kind, raw) != Screen::Empty {
+        return false;
+    }
+    let rows: Vec<String> = raw.iter().map(|raw| row_of(raw).text).collect();
+    let Some(prompt) = rows.iter().rposition(|row| row.trim_start().starts_with(['❯', '›'])) else { return false };
+    let boundary = rows[..prompt].iter().rposition(|row| is_rule(row)).unwrap_or(prompt);
+    let end = rows[..boundary].iter().rposition(|row| !row.trim().is_empty()).map_or(0, |index| index + 1);
+    let start = rows[..end].iter().rposition(|row| row.trim().is_empty()).map_or(0, |index| index + 1);
+    let before = rows[start..end].join(" ");
+    let status = before.trim_start().starts_with(|ch: char| matches!(ch, '✢'..='✽' | '⠀'..='⣿' | '*'))
+        || before.trim_start().trim_start_matches(['•', '·']).trim_start().starts_with("Working (");
+    let text = format!("{} {}", if status { before } else { String::new() }, rows[prompt + 1..].join(" "));
+    !text.split_whitespace().collect::<Vec<_>>().join(" ").to_lowercase().contains("esc to interrupt")
+}
+
 /// Whether `screen` shows `text` was pasted: its first words, or the agent's fold of a long paste.
 pub fn shows(screen: &Screen, text: &str) -> bool {
     let Screen::Holds(held) = screen else { return false };
