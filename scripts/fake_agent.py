@@ -36,7 +36,7 @@ def main():
     cli = args[0]
     opt = lambda name, default: args[args.index(name) + 1] if name in args else default
     kind, start, session = opt("--kind", "claude"), opt("--start", ""), opt("--resume", f"fake-{os.getpid()}")
-    typed, pasting, pastes, late = "", False, 0, start == "slow"
+    typed, pasting, pastes, late, held = "", False, 0, start == "slow", ""
 
     def hook(event, **more):
         # AC-131: hold Stop until the live test has stopped terminumd, then acknowledge the attempt.
@@ -214,9 +214,14 @@ def main():
                 got += more
             return                    # its session opened, but it never took the task (an update's restart)
         while True:
-            data = os.read(fd, 65536).decode("utf8", "replace")
-            if not data:
+            more = os.read(fd, 65536).decode("utf8", "replace")
+            if not more:
                 return
+            # a paste's marker split between two reads waits for its rest, as a terminal's parser does
+            data, held = held + more, ""
+            cut = data.rfind("\x1b")
+            if cut >= 0 and any(m.startswith(data[cut:]) and m != data[cut:] for m in ("\x1b[200~", "\x1b[201~")):
+                data, held = data[:cut], data[cut:]
             # what is pasted (between the markers) is text, line ends too; a bare CR is Enter; a long
             # paste comes in several reads, so being inside one carries over to the next read
             ends = False
