@@ -330,7 +330,8 @@ async fn ac260_standard_architecture_and_gate_detectors() {
 }
 
 // AC-212, AC-221: fixes known only inside the current window still give a rare baseline: the top few
-// percent of the files a fix touched fire, files changed without a fix do not lower it, and the floor holds.
+// percent of the source files a fix touched fire, files changed without a fix do not lower it, the floor holds,
+// and a spec or guide every fix updates by rule is neither ranked nor fired on.
 #[test]
 fn ac212_ac221_hotspot_baseline_ranks_the_projects_fixed_files() {
     use super::probe_arch::{Architecture, Changed};
@@ -357,7 +358,9 @@ fn ac212_ac221_hotspot_baseline_ranks_the_projects_fixed_files() {
     let files = |prefix: &str, n: usize, size, churn, fixes| (0..n).map(|i| (format!("src/{prefix}{i}.rs"), size, churn, fixes)).collect::<Vec<_>>();
     let mut ranked = [files("plain", 1000, 10_000, 100, 0), files("fixed", 38, 10_000, 200, 1)].concat();
     ranked.extend([("src/hot.rs".into(), 50_000, 2_000, 5), ("src/hotter.rs".into(), 80_000, 3_000, 9)]);
-    assert_eq!(fired("ranked", ranked), ["src/hot.rs", "src/hotter.rs"], "the floor alone would flag all 40 fixed files");
+    assert_eq!(fired("ranked", ranked.clone()), ["src/hot.rs", "src/hotter.rs"], "the floor alone would flag all 40 fixed files");
+    ranked.extend([("docs/specs/core.md".into(), 900_000, 9_000, 30), ("docs/USAGE.md".into(), 900_000, 9_000, 30)]);
+    assert_eq!(fired("with docs", ranked), ["src/hot.rs", "src/hotter.rs"], "docs fixed with every Bug neither fire nor push code out");
     let small = [files("small", 39, 100, 100, 1), files("top", 1, 1_000, 100, 5)].concat();
     assert!(fired("under floor", small).is_empty(), "a top score under the floor never fires");
 }

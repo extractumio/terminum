@@ -103,10 +103,22 @@ fn ac212_bug_cluster_counts_distinct_fix_commits_per_folder() {
         change(NOW - 30 * DAY, "src/ui/a.js", true), change(NOW - DAY, "src/ui/a.js", true),
         Changed { commit: "same-second".into(), ..change(NOW - DAY, "src/store/d.rs", true) },
         change(NOW - 2 * DAY, "src/ui/b.js", false), change(NOW - 3 * DAY, "src/ui/c.js", false),
+        change(NOW - DAY + 1, "docs/specs/a.md", true), change(NOW - DAY + 2, "docs/specs/b.md", true),
+        change(NOW - DAY + 3, "docs/specs/a.md", true), change(NOW - DAY + 4, "docs/specs/c.md", true),
+        change(NOW - DAY + 5, "docs/specs/a.md", true),
     ], ..Architecture::default() };
     probes::tests::publish_sample(&f, probes::ARCH, NOW - 10, serde_json::to_string(&arch).unwrap());
     let (fired, unavailable) = run(&f, "arch.bug_cluster");
     assert!(unavailable.is_empty(), "{unavailable:?}");
     assert_eq!(fired, [("src/store".into(), 4.0)],
-        "a commit's files count once, another commit in its second counts; feature commits and older fixes do not count");
+        "a commit's files count once, another commit in its second counts; feature commits, older fixes and specs do not count");
+}
+
+// AC-212: the hotspot and Bug-cluster rankings take the line cap's source list by its file endings, so a page
+// is no header, a script with no ending is no source, and a spec or guide is never ranked.
+#[test]
+fn ac212_source_files_are_the_line_caps_list() {
+    use super::probe_arch::source_file;
+    for path in ["a.rs", "web/a.html", "inc/a.h", "x.sh", "web/test/e2e.mjs", "ui/a.d.ts"] { assert!(source_file(path), "{path}"); }
+    for path in ["docs/specs/a.md", "docs/USAGE.md", "Makefile", "Cargo.lock", "a.rs.orig", "A.RS"] { assert!(!source_file(path), "{path}"); }
 }
