@@ -499,9 +499,7 @@ sequenceDiagram
 
 ## 7. Current behavior and gaps
 
-| Case | Gap |
-|---|---|
-| AC-279 | The weekly review is a report only as a routine's result; its decisions are not linked from it. |
+No known gaps.
 
 ## 8. Recommendation and ownership
 
@@ -552,15 +550,13 @@ The list's answer carries the unread counts by project, by schedule and by sessi
 | `reports.unread_age` (`unread_reports`) | the project's oldest unread report, one reading per project | older than 1440 minutes |
 | `reports.follow_up_age` (`unanswered_replies`) | a reply no agent answered (no agent comment, no follow-up since it, as AC-270's "is answering") | older than 1440 minutes |
 
-A critical report made, or changed to critical, is kept with `line` 0 and measured at once in its own transaction, as the collector would, limited to its subject (so no other subject's signal resolves) and one second past the detector's last evaluation; with no incident to alert, `line` becomes what AC-271 makes it. Every transition of a `reports.critical` signal, the collector's too, sets `alerted_by` on the reports of its evidence, a newer incident taking them over; a changed evidence that did not grow, its incident open, updates that incident rather than opening one. Such an incident makes no report of its own (AC-272) and starts no postmortem. The owner's Acknowledge sets `read_at` on the incident's reports (`alerted_by` or `incident` it), a snooze not; `POST …/read` acknowledges the report's incident as the owner, reading no other report. A round reads a `reports` evidence row as its ID, critical, read and deleted, never its text.
+A critical report made, or changed to critical, is kept with `line` 0 and measured at once in its own transaction, as the collector would, limited to its subject (so no other subject's signal resolves) and one second past the detector's last evaluation; with no incident to alert, `line` becomes what AC-271 makes it. Every transition of a `reports.critical` signal, the collector's too, sets `alerted_by` on the reports of its evidence, a newer incident taking them over; a changed evidence that did not grow, its incident open, updates that incident rather than opening one. Such an incident makes no report of its own (AC-272) and starts no postmortem. The owner's Acknowledge sets `read_at` on the incident's reports (`alerted_by` or `incident` it), a snooze not; `POST …/read` acknowledges the report's incident as the owner, reading no other report. A round reads a `reports` evidence row as its ID, critical, read and deleted, never its text. The weekly review's report (`terminum-supervisor.md` AC-242) is the review as kept, not its agent's words: Terminum's own sections, its "Decisions waiting for you" linking each decision's task (`/kanban/<ID>`, where the question stays), its summary counting them.
 
 **Limits.** Title 200 characters, summary 500, body 1 MiB, comment 256 KiB, 50 files of 100 MB each; the Inbox reads 100 rows a page; deleted reports kept 30 days.
 
 ## 10. Delivery stages
 
-| Stage | Cases | Exit |
-|---|---|---|
-| 3b | AC-279's weekly review: after the Supervisor's open work on its weekly review (TERM-682's pieces) | landed green |
+All stages are built.
 
 ## 11. Checklist with Definition of Done
 
@@ -576,6 +572,6 @@ A critical report made, or changed to critical, is kept with `line` 0 and measur
 - [x] AC-276 — `cargo test supervisor::report_rules` (`ac276_…`: an incident at level 3, one alert, two reports joined, another task's apart and open, acknowledging reads and a snooze not, reading one acknowledges and reads no other, clearing on read, a newer incident taking the subject's reports, alerting once (a line before the Supervisor, one of two deleted, unread after closing, a round's report), no postmortem, update_report both ways, the Supervisor off and an incident's own report), `scripts/e2e_supervisor.py` (a worker's critical report through `terminum tool`, its incident, the Inbox's read acknowledging it), `web/test/e2e_all.mjs` (`webSupervisor`: the card links its report)
 - [x] AC-277 — `cargo test supervisor::report_rules` (`ac277_…`: unread age and unanswered replies firing and quiet, owner waits ignoring reports), `cargo test supervisor::catalog` (`ac212_store_detector_catalog`: quiet on a clean store)
 - [x] AC-278 — `cargo test reports` (`ac278_…`: reading in a window)
-- [ ] AC-279 — `cargo test reports` (`ac279_…`: the audit's report unedited); the weekly review as a report: stage 3b
+- [x] AC-279 — `cargo test reports` (`ac279_…`: the audit's report unedited), `cargo test supervisor::communications` (`ac240_…`: a decision linked to its task in the review's list), `scripts/e2e_supervisor_comms.py` (the weekly review as one report, the review as kept, its decisions counted), `scripts/e2e_supervisor_reflection.py` (the audit's report in the Inbox, its task DONE)
 - [x] AC-280 — `cargo test roles` (`ac231_…`: the report tools by level), `scripts/e2e_roles.py` (the matrix by level), `cargo test reports` (`ac270_…`: Talk for an incident's report)
 - [x] AC-274 — `cargo test reports` (`ac274_…`: moved once, its task DONE and linked, a question's task stays)

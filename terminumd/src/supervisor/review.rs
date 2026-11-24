@@ -182,22 +182,30 @@ fn heading(line: &str) -> Option<usize> {
     FORM.iter().position(|(name, _)| crate::tasks::closeout::matches_heading(line, name))
 }
 
-pub(crate) fn complete(tx: &Transaction, task: &ops::Task, project: &str, by: &str, words: &str, at: i64) -> Result<bool, String> {
+/// A weekly review as kept: its document, and the decisions waiting for the owner that it links.
+pub(crate) struct Kept { pub document: String, pub decisions: usize }
+
+pub(crate) fn complete(tx: &Transaction, task: &ops::Task, project: &str, by: &str, words: &str, at: i64) -> Result<Option<Kept>, String> {
     let headings: Vec<_> = words.split_inclusive('\n').scan(0, |offset, line| {
         let start = *offset;
         *offset += line.len();
         Some(heading(line.trim_end()).map(|index| (index, start)))
     }).flatten().collect();
     if !headings.iter().map(|entry| entry.0).eq(0..FORM.len()) || headings.first().is_none_or(|p| !words[..p.1].trim().is_empty()) {
-        return Ok(false);
+        return Ok(None);
     }
 
     super::decisions::charter_due(tx, project, at)?;
     let mut document = String::new();
+    let mut decisions = 0;
     for (index, (_, start)) in headings.iter().enumerate() {
         let end = headings.get(index + 1).map_or(words.len(), |p| p.1);
         let body = match index {
-            0 => super::review_data::decisions(tx, project, at)?,
+            0 => {
+                let listed = super::review_data::decisions(tx, project, at)?;
+                decisions = super::review_data::linked_decisions(&listed);
+                listed
+            }
             3 => super::review_data::allocation(tx, project, at)?,
             5 => super::review_data::bottlenecks(tx, project, at)?,
             7 => {
@@ -211,12 +219,13 @@ pub(crate) fn complete(tx: &Transaction, task: &ops::Task, project: &str, by: &s
         };
         document.push_str(&format!("## {}\n\n{body}\n\n", FORM[index].0));
     }
-    let event = ops::comment(tx, by, &task.id, document.trim_end(), at)?;
+    let document = document.trim_end().to_owned();
+    let event = ops::comment(tx, by, &task.id, &document, at)?;
     tx.execute("INSERT INTO supervisor_review_reports VALUES (?1, ?2, ?3, ?4)
         ON CONFLICT (task) DO UPDATE SET result_event = excluded.result_event",
         (&task.key, project, at, event)).map_err(sql)?;
     build_batch(tx, &task.key, project, at)?;
-    Ok(true)
+    Ok(Some(Kept { document, decisions }))
 }
 
 fn build_batch(tx: &Transaction, task: &str, project: &str, at: i64) -> Result<(), String> {

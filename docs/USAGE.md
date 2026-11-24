@@ -654,7 +654,8 @@ signal and task. The linked agent hears about the comment at its next usual hook
 Choose a **Strong** tier agent on an enabled project to create its weekly review
 in **Routines**. Its initial cadence is Monday at 09:00 in the scheduler's local
 time, with a 30-minute budget. Edit its timing and prompt in Routines. The usual
-report task and the Supervisor screen show the review with decisions first.
+report task, the Supervisor screen and your Inbox show the review with decisions first;
+in the Inbox it is one report, each waiting decision a link to its task, where you answer.
 **Useful**, **Not useful** and **Wrong** record a verdict on a sampled item. A
 review offers at most ten items, and leaving one alone records no verdict.
 

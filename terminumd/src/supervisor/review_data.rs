@@ -29,10 +29,10 @@ fn decisions_with_spending(tx: &Transaction, project: &str, at: i64, spending: &
         lines.push(format!("- {}", governor::JUDGMENT_NOTICE));
     }
     for (task, title) in budget {
-        lines.push(format!("- {task} · {title}"));
+        lines.push(format!("- {} · {title}", task_link(&task)));
     }
     for card in &pending {
-        let title = card.task.as_ref().map_or_else(|| format!("Register problem {}", card.problem), Clone::clone);
+        let title = card.task.as_deref().map_or_else(|| format!("Register problem {}", card.problem), task_link);
         lines.push(item(&title, &card.question));
     }
     let added: i64 = tx.query_row("SELECT count(*) FROM supervisor_decisions d JOIN tasks t ON t.id = d.task
@@ -54,6 +54,17 @@ fn decisions_with_spending(tx: &Transaction, project: &str, at: i64, spending: &
     lines.push(format!("\n{added} decision cards opened this week. {weighed} Repeated questions: {recent}, compared with {old} the week before."));
     lines.extend(rules);
     Ok(lines.join("\n"))
+}
+
+/// A decision's task, a link in the review's report and comment: the question stays on that task
+/// (terminum-reports.md AC-279).
+pub(super) fn task_link(slug: &str) -> String {
+    format!("[{slug}](/kanban/{slug})")
+}
+
+/// How many decisions waiting for the owner a "Decisions waiting for you" section links.
+pub(super) fn linked_decisions(section: &str) -> usize {
+    section.lines().filter(|line| line.starts_with("- [")).count()
 }
 
 fn item(title: &str, body: &str) -> String {

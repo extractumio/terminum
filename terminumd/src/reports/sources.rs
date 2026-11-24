@@ -31,12 +31,27 @@ fn run_reported(tx: &Transaction, t: &Task, run: Option<&str>) -> Result<bool, S
 /// A routine's task finished with `result` by `author`: its report, made from the result, unless its run made one
 /// itself (AC-272). The report's ID.
 pub fn routine_result(tx: &Transaction, t: &Task, result: &str, author: &str, at: i64) -> Result<Option<String>, String> {
+    routine_report(tx, t, result, summary_of(result), author, at)
+}
+
+/// The Supervisor's weekly review finished: its report is the review as kept, whose decisions stay questions on
+/// their tasks, each linked from it (AC-279). The report's ID.
+pub fn weekly_review(tx: &Transaction, t: &Task, document: &str, decisions: usize, author: &str, at: i64) -> Result<Option<String>, String> {
+    let summary = match decisions {
+        0 => "No decision is waiting for you.".to_string(),
+        1 => "1 decision is waiting for you.".to_string(),
+        n => format!("{n} decisions are waiting for you."),
+    };
+    routine_report(tx, t, document, summary, author, at)
+}
+
+fn routine_report(tx: &Transaction, t: &Task, body: &str, summary: String, author: &str, at: i64) -> Result<Option<String>, String> {
     let Some(s) = crate::tasks::schedules::of_task(tx, &t.key)? else { return Ok(None) };
     let run = crate::dispatcher::runs::last_of(tx, &t.key)?.map(|r| r.id);
     if run_reported(tx, t, run.as_deref())? {
         return Ok(None);
     }
-    let new = New { project: t.project.clone(), title: titled(&t.title), summary: summary_of(result), body: result.to_string(), author: author.to_string(),
+    let new = New { project: t.project.clone(), title: titled(&t.title), summary, body: body.to_string(), author: author.to_string(),
         role: role::TERMINUM, session: t.session.clone(), task: Some(t.key.clone()), schedule: Some(s.id), run, ..New::default() };
     Ok(Some(record::create(tx, new, at)?.1))
 }
