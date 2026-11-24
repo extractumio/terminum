@@ -264,10 +264,14 @@ fn apply_as(tx: &Transaction, project: &str, request: Request, actor: &str, at: 
     Ok(Disposition::Applied(Applied { id, shadow, run, task: task.map(|t| t.id), nudges }))
 }
 
+/// The task's marked run while it works: what a run hold stops and what a runaway raise names (AC-245, AC-213).
+fn marked_run(tx: &Transaction, task: &Task) -> Result<Option<Run>, String> {
+    Ok(runs::holding(tx, &task.key)?.filter(|r| r.project == task.project
+        && r.pane_key.is_some() && r.holds_slot() && r.state != Phase::Ending && !r.is_starting() && r.open.contains(&task.id)))
+}
+
 fn stoppable(tx: &Transaction, task: &Task, at: i64) -> Result<Run, String> {
-    let run = runs::holding(tx, &task.key)?.filter(|r| r.project == task.project
-        && r.pane_key.is_some() && r.holds_slot() && r.state != Phase::Ending && !r.is_starting() && r.open.contains(&task.id))
-        .ok_or("The task has no marked run to stop.")?;
+    let run = marked_run(tx, task)?.ok_or("The task has no marked run to stop.")?;
     for id in &run.open {
         let affected = scoped_task(tx, &task.project, id)?;
         super::task_policy::check(tx, &affected, at)?;
@@ -287,21 +291,29 @@ fn insert(tx: &Transaction, s: &Signal, kind: Kind, target: &str, audit: (&str, 
         audit.0, audit.1, audit.2, shadow, undo], |r| r.get(0)).map_err(sql)
 }
 
-/// Cost outliers can stop only the marked task run named in the actual retained usage evidence.
+/// The marked run of task `key` while it works, if it is an active task of `project`.
+pub(super) fn marked_run_of(tx: &Transaction, project: &str, key: &str) -> Result<Option<(Task, Run)>, String> {
+    let slug = tx.query_row("SELECT coalesce(slug, CAST(number AS TEXT)) FROM tasks WHERE id = ?1 AND project = ?2",
+        (key, project), |r| r.get::<_, String>(0)).optional().map_err(sql)?;
+    let Some(task) = slug.and_then(|slug| scoped_task(tx, project, &slug).ok()) else { return Ok(None) };
+    Ok(marked_run(tx, &task)?.map(|run| (task, run)))
+}
+
+/// Code stops only the marked run a cost outlier's runaway raise names (AC-213), with its retained usage evidence.
 pub(super) fn automatic(tx: &Transaction, project: &str, fingerprint: &str, at: i64) -> Result<Option<Disposition>, String> {
     let signal = signals::get(tx, project, fingerprint)?;
+    let Some(raised) = signal.raised.as_ref().filter(|r| r.rule == super::runaway::RULE) else { return Ok(None) };
     if signal.detector != Rule::CostOutlier.id() || signal.level != 3 || signal.scores.confidence < super::STRONG
         || signal.subject_kind != "task" || signal.metric != "task_dollars"
     {
         return Ok(None);
     }
     let Ok(eligibility) = state(tx, &signal, at) else { return Ok(None) };
-    let slug = tx.query_row("SELECT coalesce(slug, CAST(number AS TEXT)) FROM tasks WHERE id = ?1 AND project = ?2",
-        (&signal.subject_id, project), |r| r.get::<_, String>(0)).optional().map_err(sql)?;
-    let Some(slug) = slug else { return Ok(None) };
-    let Ok(task) = scoped_task(tx, project, &slug) else { return Ok(None) };
+    let Some((task, _)) = marked_run_of(tx, project, &signal.subject_id)? else { return Ok(None) };
     let Ok(run) = stoppable(tx, &task, at) else { return Ok(None) };
-    if !signal.evidence.iter().any(|e| matches!(e, Evidence::Runs(id) if id == &run.id)) { return Ok(None); }
+    if run.id != raised.run || !signal.evidence.iter().any(|e| matches!(e, Evidence::Runs(id) if id == &run.id)) {
+        return Ok(None);
+    }
     let seen: bool = tx.query_row("SELECT EXISTS (SELECT 1 FROM supervisor_holds
         WHERE project = ?1 AND kind = 'stop_run' AND target = ?2 AND
         ((shadow = 0 AND (released_at IS NULL OR fingerprint = ?3)) OR (shadow = 1 AND fingerprint = ?3 AND ?4)))",

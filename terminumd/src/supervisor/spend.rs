@@ -7,13 +7,15 @@ use crate::tasks::ops::rows;
 
 use super::flow::{LAUNCH, events, failed_runs, project_events, returned_runs};
 use super::impact::{Source, Unit};
-use super::{Comparison, Evidence, Measurements, Query, Reading};
+use super::{Comparison, Evidence, Measurements, Query, Reading, runaway};
 
 /// Read only the numeric reports and stable row IDs. No usage report's text enters the signal.
 #[derive(Default)]
 struct Spend {
     dollars: f64,
     complete: bool,
+    /// The run's last usage report.
+    last: i64,
     evidence: Vec<Evidence>,
 }
 
@@ -41,6 +43,7 @@ fn usage_rows(q: &Query<'_, '_>) -> Result<BTreeMap<String, Spend>, String> {
     let mut out = BTreeMap::new();
     for row in usage_reports(q.tx, q.project, q.window.before, q.window.end)? {
         let spend = out.entry(row.run).or_insert_with(|| Spend { complete: true, ..Spend::default() });
+        spend.last = spend.last.max(row.at);
         if let Some(dollars) = row.dollars {
             spend.dollars += dollars;
         } else {
@@ -137,8 +140,17 @@ pub(super) fn outliers(q: &Query<'_, '_>) -> Result<Measurements, String> {
         };
         current.evidence.extend(old.iter().flat_map(|sample| sample.evidence.iter().cloned()));
         current.evidence.push(Evidence::Tasks(task.into()));
-        out.readings.push(Reading::new("task", task, "task_dollars", current.value, current.evidence, Source::RunUsage)
-            .history(old.iter().map(|sample| sample.value).collect()).attributed_runs(current.runs));
+        let mut reading = Reading::new("task", task, "task_dollars", current.value, current.evidence, Source::RunUsage)
+            .history(old.iter().map(|sample| sample.value).collect()).attributed_runs(current.runs);
+        if !q.historical && let Some((_, limit)) = reading.exceeds(q.detector.threshold) {
+            let spends: Vec<_> = reading.attributed_runs.iter().filter_map(|run| usage.get(run)
+                .map(|s| runaway::RunSpend { run, dollars: s.dollars, last: s.last })).collect();
+            match runaway::judge(q.tx, q.project, q.window.end, task, &spends, limit, old.len())? {
+                Ok(raised) => reading.raised = raised,
+                Err(why) => out.unavailable.push(why),
+            }
+        }
+        out.readings.push(reading);
     }
     let [before, now] = failure_spend;
     if !now.evidence.is_empty() {

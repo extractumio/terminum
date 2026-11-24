@@ -37,6 +37,9 @@ mod interim_tests;
 mod escalations_tests;
 mod impact;
 mod escalations;
+mod runaway;
+#[cfg(test)]
+mod runaway_tests;
 pub(crate) mod holds;
 pub(crate) mod holds_api;
 #[cfg(test)]
@@ -127,6 +130,7 @@ pub(crate) use replay::replay;
 #[cfg(test)]
 pub(crate) use evaluation::evaluate;
 use evaluation::{evaluate_snapshot, measure_detector, collect_findings};
+use impact::{percentile, percentile_of_others};
 
 pub(crate) fn task_created(tx: &rusqlite::Transaction, author: &str, task: &crate::tasks::ops::Task,
     words: &str, at: i64) -> Result<(), String>
@@ -286,6 +290,8 @@ pub(crate) struct Finding {
     charter_never: Option<String>,
     assessment: impact::Assessment,
     scores: Scores,
+    /// The measured escalate rule that raised a score, and what it named (AC-213).
+    raised: Option<runaway::Raised>,
 }
 
 impl Finding {
@@ -350,6 +356,7 @@ struct Reading {
     fixed: Option<Threshold>,
     attributed_runs: BTreeSet<String>,
     source: impact::Source,
+    raised: Option<runaway::Raised>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -357,7 +364,7 @@ enum Comparison { Above, AtLeast, Below, Deviation(f64) }
 
 impl Reading {
     fn new(kind: &'static str, subject: impl Into<String>, metric: &'static str, value: f64, evidence: Vec<Evidence>, source: impact::Source) -> Self {
-        Self { subject_kind: kind, subject_id: subject.into(), metric, value, history: vec![], evidence, comparison: Comparison::Above, fixed: None, attributed_runs: BTreeSet::new(), source }
+        Self { subject_kind: kind, subject_id: subject.into(), metric, value, history: vec![], evidence, comparison: Comparison::Above, fixed: None, attributed_runs: BTreeSet::new(), source, raised: None }
     }
 
     fn attributed_runs(mut self, runs: BTreeSet<String>) -> Self {
@@ -416,26 +423,13 @@ impl Reading {
         self.evidence.dedup();
         Some(Finding {
             subject_kind: self.subject_kind, subject_id: self.subject_id, metric: self.metric,
-            evidence: self.evidence, attributed_runs: self.attributed_runs, source: self.source, charter_never: None,
+            evidence: self.evidence, attributed_runs: self.attributed_runs, source: self.source, charter_never: None, raised: self.raised,
             assessment: Default::default(), scores: Scores::default(), measure: Measure {
                 value: self.value, baseline, threshold: limit,
                 window_start: window.start, window_end: window.end,
             },
         })
     }
-}
-
-fn percentile(values: &mut [f64], p: u8) -> Option<f64> {
-    values.sort_unstable_by(f64::total_cmp);
-    values.get((values.len() * usize::from(p)).div_ceil(100).saturating_sub(1)).copied()
-}
-
-/// AC-212: `percentile` of sorted `values` with one `own` value left out, so a subject is ranked
-/// against the project's other subjects; none left gives `None`, and the floor decides.
-fn percentile_of_others(values: &[f64], own: f64, p: u8) -> Option<f64> {
-    let own_at = values.partition_point(|v| v.total_cmp(&own).is_le()).checked_sub(1)?;
-    let at = ((values.len() - 1) * usize::from(p)).div_ceil(100).checked_sub(1)?;
-    values.get(if at < own_at { at } else { at + 1 }).copied()
 }
 
 #[derive(Clone, Copy)]
