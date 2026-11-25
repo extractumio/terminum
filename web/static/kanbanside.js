@@ -9,7 +9,7 @@ import { colored, el, markedSessions, read, write } from "./listparts.js";
 import { findItem, renderNav, row, setTaskMarks } from "./nav.js";
 import { arranged, bindReorder, listOrderer, ordered } from "./reorder.js";
 import { rowMenus, saveOrder } from "./rowmenu.js";
-import { boardUrl, sessionUrl } from "./tasklink.js";
+import { sessionUrl } from "./tasklink.js";
 import { copyText } from "./touchcopy.js";
 import { icon } from "./icons.js";
 import { navSession } from "./navsession.js";
@@ -60,7 +60,7 @@ export function boardSessions({ chosen, openTask, send, narrow, newSession, proj
       onGroupNew: (g, last) => (last ? clone(last) : send({ t: "new", group: g.wid })), onProjectMenu: menus.headMenu, onProjectRename: menus.rename,
       onGroupMenu: menus.groupMenu, onReconnect: tools.reconnect, onTask: openTask, empty: "No sessions here.",
       show: (project) => !picked.length || picked.includes(project ? project.id : DEFAULT),
-      board: (p) => (picked.length === 1 && picked[0] === p.id ? null : boardUrl(p.id)) });   // the board shown already: no key
+      boardShown: picked.length === 1 ? picked[0] : null });   // the project the board shows alone: no key to it
     adhoc.hidden = picked.length !== 1;
     list.append(adhoc);
   }

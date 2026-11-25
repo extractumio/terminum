@@ -5,7 +5,7 @@
 // (AC-93), the row's program at the right of its second line, ⌘Z and ⌘⇧Z (AC-03), and the
 // search's magnifier out of sight while its field is open.
 
-import { check, runningIn } from "./check.mjs";
+import { check, runningIn, until } from "./check.mjs";
 import { drawn, group, item, openPage, pause, PHONE, WIDE } from "./fake.mjs";
 
 const ID = (n) => `tmux:local:terminum:%${n}`;
@@ -57,7 +57,7 @@ export async function webProjects(browser, name) {
   await page.waitForSelector("#confirmbox[open]", { timeout: 3000 }).catch(() => {});
   const gasks = await page.evaluate(() => document.getElementById("confirmtitle").textContent);
   await page.click("#confirmok");
-  await pause(page, 100);
+  await until(() => sent.filter((m) => m.t === "kill").length > gkills, 3000);   // a loaded machine takes longer than a fixed pause
   const gkilled = sent.filter((m) => m.t === "kill").slice(gkills).map((m) => m.id);
   check("AC-07 a session group's menu (a right click on its header, or its ⋯): New Window, Rename, moves among the groups, Close Group (asked first)",
     JSON.stringify(gmenu) === JSON.stringify(["New Window", "Rename…", "Move to the Top-", "Move Up-", "Move Down", "Move to the Bottom", "Close Group…"]) && downed === "local/notes,local/main"
