@@ -7,7 +7,7 @@ use crate::dispatcher::{pool::Slots, waits};
 use crate::tasks::{agents, ops::{CURRENT_PROJECT_HISTORY, rows, sql}, store::DEFAULT_PROJECT};
 
 use super::impact::{Source, Unit};
-use super::{Comparison, Evidence, Measurements, Query, Reading, Threshold, WEEK, percentile};
+use super::{Comparison, Evidence, Measurements, Query, Reading, Threshold, WEEK, percentile, waiting};
 
 // Event IDs survive maintenance; rowid orders transitions within a second. Prior-project history
 // cannot be recovered reliably because the old move did not record its project as structured data.
@@ -242,29 +242,28 @@ pub(super) fn starved(q: &Query<'_, '_>) -> Result<Measurements, String> {
     }
     let slots = Slots::read(q.tx)?;
     let tasks = rows(q.tx, &format!("{events_sql}
-        SELECT t.id, coalesce(m.at, t.created_at), m.id, t.agent FROM tasks t LEFT JOIN project_events m
+        SELECT t.id, coalesce(m.at, t.created_at), m.id, t.agent, t.severity = 'P0' FROM tasks t LEFT JOIN project_events m
         ON m.seq = (SELECT max(e.seq) FROM project_events e WHERE e.task = t.id AND e.kind = 'move'
             AND json_extract(e.data, '$.to') = 'TODO')
         WHERE t.project = ?1 AND t.status = 'TODO' AND t.severity IN ('P0','P1') AND t.archived_at IS NULL
         AND NOT EXISTS (SELECT 1 FROM task_links l JOIN tasks b ON b.id = l.other
             WHERE l.task = t.id AND l.kind = 'blocked_by' AND (b.status <> 'DONE' OR b.archived_at IS NOT NULL))"),
-        (q.project, q.window.end), |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?, r.get::<_, Option<String>>(2)?, r.get::<_, Option<String>>(3)?)))?;
+        (q.project, q.window.end), |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?, r.get::<_, Option<String>>(2)?,
+            r.get::<_, Option<String>>(3)?, r.get::<_, bool>(4)?)))?;
     let mut out = Measurements::default();
-    for (id, entered, event, assigned) in tasks {
+    for (id, entered, event, assigned, p0) in tasks {
         if entered <= 0 || entered > q.window.end || (event.is_none() && moved_project(q, &id)?) {
             out.unavailable = vec!["Some TODO age history is unavailable."];
             continue;
         }
-        let mut free = false;
-        for agent in agents.iter().filter(|a| assigned.as_ref().is_none_or(|id| a.id == *id)) {
-            if slots.check_for(q.tx, agent, q.project, Some(&id), None)?.is_none() {
-                free = true;
-                break;
-            }
-        }
-        if free {
+        if waiting::free_slot(q.tx, &slots, &agents, q.project, &id, assigned.as_deref())? {
             let evidence = std::iter::once(task(&id)).chain(event.map(events)).collect();
-            out.readings.push(Reading::new("task", id, "todo_minutes", (q.window.end - entered) as f64 / 60.0, evidence, Source::AgeSince(entered)));
+            let mut reading = Reading::new("task", id, "todo_minutes", (q.window.end - entered) as f64 / 60.0, evidence, Source::AgeSince(entered));
+            if p0 {
+                // A starved task has no open blocker and a free slot: only Auto-Dispatch can have held it.
+                waiting::judge(q, &mut reading, || waiting::held(q.tx, q.project, q.window.end, None, true))?;
+            }
+            out.readings.push(reading);
         }
     }
     Ok(out)
@@ -276,11 +275,22 @@ fn moved_project(q: &Query<'_, '_>, id: &str) -> Result<bool, String> {
 }
 
 pub(super) fn bugs(q: &Query<'_, '_>) -> Result<Measurements, String> {
-    let bugs = rows(q.tx, "SELECT id, created_at FROM tasks WHERE project = ?1 AND archived_at IS NULL
-        AND type = 'Bug' AND severity IN ('P0','P1') AND status NOT IN ('DONE','FAILED') AND created_at BETWEEN 1 AND ?2",
-        (q.project, q.window.end), |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))?;
-    Ok(Measurements { readings: bugs.into_iter().map(|(id, at)| Reading::new(
-        "task", &id, "open_bug_minutes", (q.window.end - at) as f64 / 60.0, vec![task(&id)], Source::AgeSince(at))).collect(), ..Measurements::default() })
+    let bugs = rows(q.tx, "SELECT id, created_at, severity = 'P0' AND status = 'TODO', agent FROM tasks WHERE project = ?1
+        AND archived_at IS NULL AND type = 'Bug' AND severity IN ('P0','P1') AND status NOT IN ('DONE','FAILED') AND created_at BETWEEN 1 AND ?2",
+        (q.project, q.window.end), |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?, r.get::<_, bool>(2)?, r.get::<_, Option<String>>(3)?)))?;
+    let mut out = Measurements::default();
+    for (id, at, waiting_p0, named) in bugs {
+        let mut reading = Reading::new("task", &id, "open_bug_minutes", (q.window.end - at) as f64 / 60.0, vec![task(&id)], Source::AgeSince(at));
+        if waiting_p0 {
+            waiting::judge(q, &mut reading, || {
+                let (slots, agents) = (Slots::read(q.tx)?, agents::of_project(q.tx, q.project)?);
+                let free = waiting::free_slot(q.tx, &slots, &agents, q.project, &id, named.as_deref())?;
+                waiting::held(q.tx, q.project, q.window.end, waiting::blocker(q.tx, &id)?, free)
+            })?;
+        }
+        out.readings.push(reading);
+    }
+    Ok(out)
 }
 
 pub(super) fn lead_time(q: &Query<'_, '_>) -> Result<Measurements, String> {
