@@ -120,6 +120,23 @@ impl Theirs {
         self.app.tmux.local.key(&self.pane)
     }
 
+    /// The pane's agent says by its hooks that it runs conversation `session`.
+    fn hooked(&self, kind: &str, session: &str) {
+        self.app.hooks.apply(&self.key(), &json!({"agent": kind, "event": "SessionStart", "session": session}), std::time::Instant::now());
+    }
+
+    /// A task linked to this pane, asked there by conversation "conv-1", which its hooks say runs there now.
+    fn asked_here(&self, kind: &str, extra: Value) -> (Task, String) {
+        let (task, question) = asked(&self.app.tasks, &self.root, &self.key(), extra);
+        self.app.tasks.with(|tx| choices::mark_asked_in(tx, &task.id, "conv-1")).unwrap();
+        self.hooked(kind, "conv-1");
+        (task, question)
+    }
+
+    fn typed_nothing(&self) -> bool {
+        std::fs::read_to_string(&self.log).unwrap_or_default().lines().all(|l| !l.starts_with("PROMPT:"))
+    }
+
     async fn press(&self, id: &str, body: Value) -> (StatusCode, Value) {
         let api = crate::dispatcher::api::routes().with_state(self.app.clone());
         let response = api.oneshot(Request::post(format!("/api/tasks/{id}/answer"))
@@ -152,12 +169,12 @@ impl Drop for Theirs {
 async fn ac285_answer_into_a_live_session_the_human_opened_types_fixed_words_only() {
     for kind in ["claude", "codex"] {
         let stage = Theirs::new(&format!("answer-typed-{kind}"), kind, "").await;
-        let (task, question) = asked(&stage.app.tasks, &stage.root, &stage.key(), json!({}));
-        let (status, said) = stage.press(&task.id, json!({"choice": "answer", "question": question, "text": "Use v2, keep v1 a month"})).await;
+        let (task, question) = stage.asked_here(kind, json!({}));
+        let (status, said) = stage.press(&task.id.to_lowercase(), json!({"choice": "answer", "question": question, "text": "Use v2, keep v1 a month"})).await;
         assert_eq!(status, StatusCode::OK, "{kind}: {said}");
         assert_eq!(said["typed"], json!(stage.key()));
         let prompts = stage.prompts(1).await;
-        assert_eq!(prompts, vec![Choice::Answer.typed(&task.id)], "{kind}: only the fixed words with the task's ID");
+        assert_eq!(prompts, vec![Choice::Answer.typed(&task.id)], "{kind}: only the fixed words with the task's own ID");
         assert!(!prompts[0].contains("Use v2"), "the human's text is never typed");
         let h = history(&stage.app.tasks, &task.id);
         assert!(h.iter().any(|e| e["kind"] == "comment" && e["text"] == "Use v2, keep v1 a month"), "the answer the agent reads by get_task");
@@ -174,7 +191,7 @@ async fn ac285_answer_into_a_live_session_the_human_opened_types_fixed_words_onl
 async fn ac285_recommended_into_a_live_session_records_the_recommended_option() {
     let stage = Theirs::new("answer-recommended", "claude", "").await;
     let options = json!({"kind": "operational", "options": [{"id": "v1", "label": "v1"}, {"id": "v2", "label": "v2"}], "recommended": "v2"});
-    let (task, question) = asked(&stage.app.tasks, &stage.root, &stage.key(), options);
+    let (task, question) = stage.asked_here("claude", options);
     let (status, said) = stage.press(&task.id, json!({"choice": "recommended", "question": question, "text": "a draft that stays unsent"})).await;
     assert_eq!(status, StatusCode::OK, "{said}");
     assert_eq!(stage.prompts(1).await, vec![Choice::Recommended.typed(&task.id)]);
@@ -187,19 +204,65 @@ async fn ac285_recommended_into_a_live_session_records_the_recommended_option() 
 #[tokio::test]
 async fn ac285_a_session_that_cannot_take_it_now_keeps_nothing() {
     let stage = Theirs::new("answer-draft", "claude", "my own draft").await;
-    let (task, question) = asked(&stage.app.tasks, &stage.root, &stage.key(), json!({}));
+    let (task, question) = stage.asked_here("claude", json!({}));
     let before = history(&stage.app.tasks, &task.id).len();
     let (status, said) = stage.press(&task.id, json!({"choice": "answer", "question": question, "text": "v2"})).await;
     assert_eq!(said["error"].as_str(), Some("The session is not at an empty input box: answer there first"), "{status} {said}");
     assert_eq!(history(&stage.app.tasks, &task.id).len(), before, "nothing kept of a press that did not go");
     assert_eq!(stage.app.tasks.with(|tx| ops::get(tx, &task.id)).unwrap().status, "WAIT FOR HUMAN");
-    assert!(std::fs::read_to_string(&stage.log).unwrap_or_default().lines().all(|l| !l.starts_with("PROMPT:")), "nothing typed");
-    // a Dispatcher's mark on the pane: not the human's session, nothing typed there by this path
-    stage.tm.read(&["set-option", "-p", "-t", &stage.pane, "@terminum-run", "r1"]);
-    stage.tm.read(&["send-keys", "-t", &stage.pane, "C-u"]);
-    let server = &stage.app.tmux.local;
-    let miss = gate::deliver_theirs(&stage.app, server, &stage.pane, &task.id, "words", std::time::Instant::now()).await;
-    assert_eq!(miss.unwrap_err().to_string(), "its pane is Dispatcher's");
+    assert!(stage.typed_nothing(), "nothing typed");
+}
+
+#[tokio::test]
+async fn ac285_another_conversation_in_the_pane_gets_nothing() {
+    // a pane number tmux gave again after a restart: another agent, its own conversation
+    let stage = Theirs::new("answer-other", "claude", "").await;
+    let (task, question) = stage.asked_here("claude", json!({}));
+    stage.hooked("claude", "conv-2");
+    let (_, said) = stage.press(&task.id, json!({"choice": "answer", "question": question, "text": "v2"})).await;
+    assert_eq!(said["error"].as_str(), Some(NOT_THE_ASKER), "{said}");
+    // a question whose asker no hook said: refused too
+    stage.app.tasks.with(|tx| tx.execute("UPDATE events SET data = json_remove(data, '$.asked_in') WHERE id = ?1", [&question]).map(drop).map_err(ops::sql)).unwrap();
+    stage.hooked("claude", "conv-1");
+    let (_, said) = stage.press(&task.id, json!({"choice": "recommended", "question": question})).await;
+    assert_eq!(said["error"].as_str(), Some(NOT_THE_ASKER), "{said}");
+    assert!(stage.typed_nothing());
+    assert!(!history(&stage.app.tasks, &task.id).iter().any(|e| e["kind"] == "answer" || e["text"] == "v2"));
+}
+
+#[tokio::test]
+async fn ac285_the_gate_types_only_into_an_idle_agent_of_a_pane_no_run_marked() {
+    let stage = Theirs::new("answer-gate", "claude", "").await;
+    let (server, pane, key) = (&stage.app.tmux.local, stage.pane.as_str(), stage.key());
+    let typed = |since| gate::deliver_theirs(&stage.app, server, pane, "API-1", "API-1: words", since);
+    let why = |r: Result<(), gate::Undelivered>| r.err().map(|u| (u.miss.to_string(), u.pasted));
+    // words that are not plain
+    assert_eq!(why(gate::deliver_theirs(&stage.app, server, pane, "API-1", "API-1\r: words", std::time::Instant::now()).await),
+        Some(("the words have control or invisible characters".into(), false)));
+    // a human typed in it since the press
+    let since = std::time::Instant::now();
+    stage.app.inputs.human(&key);
+    assert_eq!(why(typed(since).await), Some(("a human typed in its pane".into(), false)));
+    // the agent at work
+    stage.app.hooks.apply(&key, &json!({"agent": "claude", "event": "UserPromptSubmit", "session": "conv-1", "prompt": "work"}), std::time::Instant::now());
+    assert_eq!(why(typed(std::time::Instant::now()).await), Some(("the agent is working".into(), false)));
+    stage.app.hooks.apply(&key, &json!({"agent": "claude", "event": "Stop", "session": "conv-1"}), std::time::Instant::now());
+    // a tmux mode
+    stage.tm.read(&["copy-mode", "-t", pane]);
+    assert_eq!(why(typed(std::time::Instant::now()).await), Some(("the pane is in a tmux mode".into(), false)));
+    stage.tm.read(&["send-keys", "-t", pane, "-X", "cancel"]);
+    // a run's mark: Dispatcher's pane, never typed by this path
+    stage.tm.read(&["set-option", "-p", "-t", pane, "@terminum-run", "r1"]);
+    assert_eq!(why(typed(std::time::Instant::now()).await), Some(("its pane is Dispatcher's".into(), false)));
+    stage.tm.read(&["set-option", "-p", "-u", "-t", pane, "@terminum-run"]);
+    // a shell in front
+    let shell = stage.tm.read(&["new-window", "-d", "-P", "-F", "#{pane_id}", "/bin/sh"]).trim().to_string();
+    let missed = gate::deliver_theirs(&stage.app, server, &shell, "API-1", "API-1: words", std::time::Instant::now()).await;
+    assert_eq!(why(missed), Some(("no coding agent runs in front".into(), false)));
+    assert!(stage.typed_nothing());
+    // all clear: it goes
+    typed(std::time::Instant::now()).await.map_err(|u| u.miss.to_string()).unwrap();
+    assert_eq!(stage.prompts(1).await, vec!["API-1: words".to_string()]);
 }
 
 #[tokio::test]
@@ -218,4 +281,20 @@ async fn ac285_elsewhere_the_answer_goes_on_as_run() {
         .body(Body::from(json!({"comment": "v2", "answer": {"choice": "answer", "question": "gone"}}).to_string())).unwrap()).await.unwrap();
     assert_ne!(response.status(), StatusCode::OK);
     assert!(!history(&stage.app.tasks, &task.id).iter().any(|e| e["kind"] == "answer" || e["text"] == "v2"));
+}
+
+#[tokio::test]
+async fn ac285_ask_human_through_the_agent_socket_records_the_conversation_that_asks() {
+    let stage = Theirs::new("answer-asks", "claude", "").await;
+    stage.hooked("claude", "conv-7");
+    let task = stage.app.tasks.with(|tx| ops::create(tx, HUMAN, NewTask { title: "Choose".into(), session: Some(stage.key()), ..Default::default() }, 1)).unwrap();
+    let server = stage.app.tmux.local.clone();
+    let said = crate::agentapi::agent_on(stage.app.clone(), Some(server), json!({"pane": stage.pane, "tool": "ask_human",
+        "args": {"id": task.id, "questions": ASKED}}), None).await;
+    assert_eq!(said.0["error"], json!(false), "{}", said.0);
+    let question = stage.app.tasks.with(|tx| Ok(choices::waiting(tx, &ops::get(tx, &task.id)?)?.unwrap())).unwrap();
+    assert_eq!(stage.app.tasks.with(|tx| choices::asked_in(tx, &question)).unwrap().as_deref(), Some("conv-7"));
+    let (status, said) = stage.press(&task.id, json!({"choice": "answer", "question": question, "text": "v2"})).await;
+    assert_eq!(status, StatusCode::OK, "{said}");
+    assert_eq!(stage.prompts(1).await, vec![Choice::Answer.typed(&task.id)]);
 }

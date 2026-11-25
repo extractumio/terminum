@@ -129,7 +129,14 @@ async fn task_tool(app: &Shared, caller: &Caller, tool: String, args: Value) -> 
         dir: if host.is_none() { dir } else { None },
         supervisor: false,
     };
-    said(task_tool_of(app, who, host, caller.other, tool, args).await)
+    // the conversation that asks: an answer is typed only where it still runs (terminum-dispatcher.md AC-285)
+    let asking = (tool == "ask_human" && !caller.other).then(|| caller.session.clone().zip(args["id"].as_str().map(str::to_string))).flatten();
+    let done = task_tool_of(app, who, host, caller.other, tool, args).await;
+    if done.is_ok() && let Some((session, id)) = asking {
+        let kept = crate::tasks::api::store(app, move |tx| crate::tasks::choices::mark_asked_in(tx, &id, &session)).await;
+        if let Err(e) = kept { tracing::warn!(event = "tasks.asked_in", error = %e); }
+    }
+    said(done)
 }
 
 /// A task tool for `who`: a pane's session, or a token's caller (`host`: the pane's, when it is on one).

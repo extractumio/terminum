@@ -78,6 +78,11 @@ impl Who {
         Who { sender: MANAGER, component, agent: some(name), ..Default::default() }
     }
 
+    /// The human's press that terminumd typed for, on `task` (terminum-dispatcher.md AC-285).
+    pub fn press(component: &'static str, task: &str) -> Who {
+        Who { sender: crate::tasks::store::HUMAN, component, tasks: some(task), ..Default::default() }
+    }
+
     /// Dispatcher, from `component`, for run `run` of `tasks` and its agent.
     pub fn dispatcher(component: &'static str, run: &str, tasks: &[String], agent: &str) -> Who {
         Who { sender: crate::tasks::store::DISPATCHER, component, run: some(run), tasks: some(&tasks.join(",")), agent: some(agent), ..Default::default() }

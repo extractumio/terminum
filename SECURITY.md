@@ -106,8 +106,9 @@ Three things hold everywhere below:
   report by their IDs with your text (`terminum-reports.md` AC-270): an agent's report text is never typed, and any
   other report (a session you opened, a manager's, the Supervisor's, an incident's, a digest) gets no reply field.
   One exception to "a pane it started": your Answer or Continue with Recommended on a task whose agent asked
-  from a session you opened, while that session lives, types once fixed words with the task's ID into that pane,
-  with Claude Code or Codex idle at an empty box in front, outside tmux modes; your text is never typed: the
+  from a session you opened types once fixed words with the task's own ID into that pane, only while it holds
+  the agent conversation that asked (a pane number tmux gives again after a restart gets nothing), no run's mark
+  on it, Claude Code or Codex idle at an empty box in front, outside tmux modes; your text is never typed: the
   agent reads it as a comment by `get_task` (`terminum-dispatcher.md` AC-285). A task's words never reach the shell an agent leaves. **Left**: in one
   session of several tasks an agent-written task can still sway the others once read.
 - **Closing and ending**: it closes only such a pane, its agent idle, and at a task's time budget

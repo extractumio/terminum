@@ -110,6 +110,19 @@ pub(crate) fn still_waits(tx: &Transaction, t: &Task, question: &str) -> Result<
     if waiting(tx, t)?.as_deref() == Some(question) { Ok(()) } else { Err(STALE.into()) }
 }
 
+/// The agent conversation that asked task `id`'s last questions, as its hooks said it (AC-285): kept on the question,
+/// so an answer is typed only into the pane that still holds that conversation.
+pub(crate) fn mark_asked_in(tx: &Transaction, id: &str, session: &str) -> Result<(), String> {
+    let Some(row) = comments::last_question(tx, &ops::key_of(tx, id)?)? else { return Ok(()) };
+    tx.execute("UPDATE events SET data = json_set(coalesce(data, '{}'), '$.asked_in', ?2) WHERE rowid = ?1", (row, session)).map(drop).map_err(sql)
+}
+
+/// The conversation that asked `question`, when its hooks said it.
+pub(crate) fn asked_in(tx: &Transaction, question: &str) -> Result<Option<String>, String> {
+    tx.query_row("SELECT json_extract(data, '$.asked_in') FROM events WHERE id = ?1", [question], |r| r.get(0))
+        .optional().map(Option::flatten).map_err(sql)
+}
+
 /// Its recommended option, when `question` recorded options (AC-230).
 pub(crate) fn recommended(tx: &Transaction, question: &str) -> Result<Option<String>, String> {
     tx.query_row("SELECT json_extract(data, '$.question.recommended') FROM events WHERE id = ?1", [question], |r| r.get(0))

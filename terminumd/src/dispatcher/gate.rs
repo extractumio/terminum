@@ -191,34 +191,45 @@ async fn empty_box(server: &Server, pane: &str, kind: &str) -> Result<(), Miss> 
     }
 }
 
+/// What AC-285's typing missed, and whether tmux took the paste before it.
+pub(super) struct Undelivered {
+    pub miss: Miss,
+    pub pasted: bool,
+}
+
 /// Pastes AC-285's fixed `text` for `task` into `pane`, a live session the human opened, and sends it (CLAUDE.md §2):
 /// no run's mark, Claude Code or Codex in front and idle at an empty box, no tmux mode, no human typing since
 /// `since`; tmux judges the mark, the program and the mode again in the commands that type.
-pub(super) async fn deliver_theirs(app: &Shared, server: &Server, pane: &str, task: &str, text: &str, since: std::time::Instant) -> Result<(), Miss> {
+pub(super) async fn deliver_theirs(app: &Shared, server: &Server, pane: &str, task: &str, text: &str, since: std::time::Instant) -> Result<(), Undelivered> {
+    let before = |miss| Undelivered { miss, pasted: false };
+    if has_stray(text) {
+        return Err(before(other("the words have control or invisible characters")));
+    }
     let _held = server.typing(pane).lock_owned().await;
     let key = server.key(pane);
-    let said = server.run(format!("display -p -t {pane} '#{{@terminum-run}}\t#{{pane_in_mode}}\t#{{pane_current_command}}'")).await.map_err(|e| other(format!("tmux does not answer: {e}")))?;
+    let said = server.run(format!("display -p -t {pane} '#{{@terminum-run}}\t#{{pane_in_mode}}\t#{{pane_current_command}}'")).await.map_err(|e| before(other(format!("tmux does not answer: {e}"))))?;
     let fields: Vec<&str> = said.first().map_or(Vec::new(), |l| l.split('\t').collect());
     let field = |i: usize| fields.get(i).copied().unwrap_or("");
     if !field(0).is_empty() {
-        return Err(other("its pane is Dispatcher's"));
+        return Err(before(other("its pane is Dispatcher's")));
     }
     if field(1) != "0" {
-        return Err(other("the pane is in a tmux mode"));
+        return Err(before(other("the pane is in a tmux mode")));
     }
     let command = field(2);
-    let kind = crate::tmux::titles::agent_of(command).ok_or_else(|| other("no coding agent runs in front"))?;
+    let kind = crate::tmux::titles::agent_of(command).ok_or_else(|| before(other("no coding agent runs in front")))?;
     let busy = |at| if app.hooks.working(&key) { Err(other("the agent is working")) }
         else if app.inputs.human_since(&key, at) { Err(other("a human typed in its pane")) } else { Ok(()) };
-    busy(since)?;
-    empty_box(server, pane, kind).await?;
-    let client = server.client(pane).ok_or_else(|| other("tmux does not answer"))?;
-    let buffer = crate::page::typing::load_buffer(app, &client, server, text).await.map_err(other)?;
+    busy(since).map_err(before)?;
+    empty_box(server, pane, kind).await.map_err(before)?;
+    let client = server.client(pane).ok_or_else(|| before(other("tmux does not answer")))?;
+    let buffer = crate::page::typing::load_buffer(app, &client, server, text).await.map_err(|e| before(other(e)))?;
     let pasted = match busy(since) {
         Ok(()) => guarded_front(&client, None, pane, &format!("paste-buffer -p -b {buffer} -t {pane}"), false, Some(command)).await
             .map_err(|error| other(format!("tmux did not take the paste: {error}"))),
         Err(miss) => Err(miss),
     };
+    let took = pasted.is_ok();
     let shown = match pasted {
         Ok(()) => shown(server, pane, kind, text, false).await,
         Err(miss) => Err(miss),
@@ -233,10 +244,9 @@ pub(super) async fn deliver_theirs(app: &Shared, server: &Server, pane: &str, ta
     };
     if let Some((server, _)) = app.tmux.resolve(&key) {
         let words = if entered.is_ok() { format!("{text}<Enter>") } else { text.to_string() };
-        let who = crate::inputs::Who::dispatcher("dispatcher.answer", "", &[task.to_string()], "");
-        crate::inputs::wrote(app, who, "prompt", &server, pane, &words, entered.as_ref().err().map(Miss::to_string), None);
+        crate::inputs::wrote(app, crate::inputs::Who::press("dispatcher.answer", task), "prompt", &server, pane, &words, entered.as_ref().err().map(Miss::to_string), None);
     }
-    entered
+    entered.map_err(|miss| Undelivered { miss, pasted: took })
 }
 
 async fn deliver_locked(app: &Shared, run: &Run, server: &Server, pane: &str, text: &str, delivery: Delivery<'_>) -> Result<(), Miss> {
