@@ -335,6 +335,7 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
     if (commentId !== t.id) {
       commentSave = button("fromright", "Save");
       commentRun = button(null, "Run");
+      commentRun.dataset.key = "Enter";          // ⌘⇧↩: the comment written goes with it, and the window closes (AC-282)
       for (const key of [commentSave, commentRun]) key.addEventListener("click", flushKeys); // before its action handler
       commentId = t.id;
     }
@@ -347,7 +348,8 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
     n.wait = () => {
       const waiting = n.uploads > 0 || Boolean(box.dataset.busy);
       save.disabled = waiting || !n.area.value.trim();
-      run.title = on ? `Run it on ${on}, with this comment` : "Run it with this comment";
+      const said = n.area.value.trim() ? "send this comment and run it" : "run it";
+      run.title = `${on ? `On ${on}: ${said}` : said[0].toUpperCase() + said.slice(1)}; the window closes`;
       guardQueuedRun(run, t.waits);
       run.disabled ||= waiting;
     };
@@ -359,8 +361,10 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
     // a RUN waiting for its agent's room is called off by this; the task stays where it is (AC-158)
     const stopWaiting = waitWords(t) ? button(null, "Stop waiting", () => api(`/api/tasks/${t.wait_task ?? t.id}/leave-queue`, { method: "POST" }).then(() => refresh(), (e) => say(e.message))) : null;
     if (stopWaiting) stopWaiting.title = `${waitWords(t)}: call it off, ${t.waits_for ? "Dispatcher will not go on with it" : "nothing starts"}`;
-    // a task nobody needs leaves the board by this (AC-118); it stands where it stood when it comes back
-    const shelve = button(null, t.archived_at ? "Bring back" : "Archive", () => api(`/api/tasks/${t.id}/archive`, { method: "POST", body: { on: !t.archived_at } }).then(() => refresh(), (e) => say(e.message)));
+    // a task nobody needs leaves the board by this (AC-118), and its window closes: nothing is left to do there
+    // (AC-282); refused, it stays and says why. It stands where it stood when it comes back, its window open.
+    const shelve = button(null, t.archived_at ? "Bring back" : "Archive", () => api(`/api/tasks/${t.id}/archive`, { method: "POST", body: { on: !t.archived_at } })
+      .then(() => (t.archived_at || shown?.id !== t.id ? refresh() : tryClose()), (e) => say(e.message)));
     run.classList.toggle("primary", !busy);
     // its keys at the window's foot, in sight while the task scrolls above them
     const acts = $("taskacts"), paint = () => {
