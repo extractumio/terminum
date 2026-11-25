@@ -72,8 +72,9 @@ to you.
   runaway runs and pause dispatching by itself.
 - **Routines** (1-3, from what the project has): a nightly run of its test command on the main branch that files a
   Bug per failure; a weekly backlog triage; a weekly dependency check when it has a lockfile. Each with a budget.
-- **Setup**: `prefix` 2-5 capital letters from the name; `agents_at_once` the pool's size, at most 4; memory limits
-  only when the user asks.
+- **Setup**: what the project has stays. `agents_at_once`: the pool's size, at most 4, only when it is unset. Never
+  change the ID letters (every task's ID changes with them), the language, the template or the memory limits unless
+  the user asks.
 
 ## 4. Ask once
 
@@ -90,15 +91,19 @@ answers as given; for anything left unanswered, use your recommendation and say 
 
 ## 5. Apply
 
-In this order, reading each answer; a refusal quotes terminumd's words: fix the input and try once more, or report it.
+Change only what is missing (a gap, an unset value, an absent agent) or what the user asked for; keep everything
+the project already has. In this order, reading each answer; a refusal quotes terminumd's words: fix the input and
+try once more, or report it.
 
 1. Pool: `list_agents`, then `create_agent {name, kind, command, at_once, week_limit}` for each missing agent.
-2. Setup: `update_project_setup {prefix, agents_at_once}` (and `language` or `template` only if the user asked).
+2. Setup: `update_project_setup` with only the fields to change, for example `{agents_at_once}` when it was
+   unset; skip the call when nothing is.
 3. Routines: `create_schedule {title, text, agent, cron, budget_minutes, paused}`; the text is the whole assignment,
    standing on its own.
-4. Charter: `set_supervisor_charter {revision, charter}`, `revision` from `get_project_setup`'s
-   `supervisor.revision`, `charter` a JSON object as text. When the Supervisor is on it is refused: show the user
-   the draft instead, to paste in the Supervisor tab's charter fields.
+4. Charter, only when `gaps` names it empty: `set_supervisor_charter {revision, charter}`, `revision` from
+   `get_project_setup`'s `supervisor.revision`, `charter` a JSON object as text. It is the owner's to review: the
+   Supervisor tab marks it as your draft until the owner saves. Refused while the Supervisor is on or once the
+   owner has a charter: show the user the draft instead, to paste in the Supervisor tab's charter fields.
 5. Call `get_project_setup` again and keep its `gaps`.
 
 ## 6. Report
@@ -109,7 +114,7 @@ Short, in the user's language:
   mission and never lines).
 - **Where**: the board at `/kanban/`, the project window's tabs (Agents, Auto-Dispatch, Supervisor, Memory limits),
   the Supervisor screen from the Supervisor tab.
-- **Your presses**: each remaining gap of the human's with its exact values, for example "Supervisor tab: Small =
+- **Your presses**: review the drafted charter in the Supervisor tab and Save it; each remaining gap of the human's with its exact values, for example "Supervisor tab: Small =
   Claude Sonnet, Medium = Claude Opus, Strong = Claude Opus, Independent = Codex, Level = Advisor, then Enabled";
   "Auto-Dispatch tab: on, P0 and P1", if the user wanted it.
 - **Defaults used** without the user's answer, and what you could not find.

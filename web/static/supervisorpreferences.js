@@ -144,11 +144,16 @@ function charter(edit, saved, inputs, checks) {
   });
   const date = (label, key) => edit.field(label, text(dateValue(saved.charter[key], "date"), "date"),
     (v, out) => { out.charter[key] = v; }, timeOf);
-  return section("Charter and allocation", ...fields, ...neverChecks(edit, saved, checks, inputs.get("never")),
+  // AC-284: a manager's draft stays marked until the owner's Save
+  const drafted = Boolean(saved.charter.drafted_by_manager);
+  const node = section("Charter and allocation",
+    ...(drafted ? [hint("The project's manager drafted this charter from its repository. Review it, then Save to make it yours.")] : []), ...fields, ...neverChecks(edit, saved, checks, inputs.get("never")),
     date("Review priorities on", "priority_review_at"),
     el("h3", null, "Allocation target"),
     hint("Set the intended share of work by task type. Leave all shares empty to measure allocation without a target."),
     allocation(edit, saved), date("Review allocation on", "allocation_review_at"));
+  node.open = drafted;
+  return node;
 }
 
 function templatePicker(templates, fill) {
