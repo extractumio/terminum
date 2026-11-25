@@ -31,9 +31,9 @@
 :is(.textkey[aria-expanded="true"], .pick[open] > .textkey) { background-color: var(--key-fill-hover); box-shadow: var(--m-well); }
 .pick.on > .textkey, .textkey[aria-pressed="true"] { --kf: color-mix(in srgb, var(--accent) 22%, var(--chrome-2)); }
 .textkey[aria-pressed="true"] { --kc: var(--t-fg); box-shadow: var(--m-well); }   /* a toggle that is on stays sunk, as the header's */
-/* disabled: faded, flat, never pressed */
-:where(button):disabled { opacity: var(--key-disabled); cursor: default; filter: none; }
-:where(button):disabled:active { box-shadow: var(--m-edge-ctl); }
+/* disabled: faded, flat, never pressed; an inert key at work (aria-busy) says so in its words, not faded */
+:where(button):is(:disabled, [aria-disabled="true"]:not([aria-busy="true"])) { opacity: var(--key-disabled); cursor: default; filter: none; }
+:where(button):is(:disabled, [aria-disabled="true"]):active { box-shadow: var(--m-edge-ctl); }
 
 /* ---- icon keys: every icon-only button is a key of its own, square ---- */
 :is(.icon, .grp h2 :is(.attach, .import, .new, .hostbtn, .clone), .grp li > .clone, #rename, .mkdel, .mkmake, #asks .x, .banner .x, .stepper button) {

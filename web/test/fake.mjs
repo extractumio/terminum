@@ -126,14 +126,14 @@ export async function openPage(browser, { device = WIDE, secret = null, stored =
 }
 
 /** The board at /kanban/ against this fake (terminum-kanban.md): its page and its reads, `meta()` the projects and agents,
- *  `tasks(status)` a column's cards, `counts` every column's. */
-export async function fakeBoard(page, { meta, tasks, counts, schedules = [] }) {
+ *  `tasks(status)` a column's cards, `counts` every column's, `subscriptions()` the readings their answer carries. */
+export async function fakeBoard(page, { meta, tasks, counts, schedules = [], subscriptions = () => undefined }) {
   const json = (r, data) => r.fulfill({ contentType: "application/json", body: JSON.stringify(data) });
   await page.route(`${ORIGIN}/kanban/**`, (r) => r.fulfill({ contentType: "text/html", body: fs.readFileSync(path.join(STATIC, "kanban.html"), "utf8").replace("__BUILD__", "test") }));
   await page.route("**/api/tasks/meta", (r) => json(r, meta()));
   await page.route("**/api/schedules", (r) => json(r, { schedules }));
   await page.route("**/api/integration/**", (r) => json(r, { batches: [], projects: [] }));
-  await page.route("**/api/tasks?*", (r) => json(r, { tasks: tasks(new URL(r.request().url()).searchParams.get("status")), counts, slots: { agents: {}, full: [], full_projects: [] } }));
+  await page.route("**/api/tasks?*", (r) => json(r, { tasks: tasks(new URL(r.request().url()).searchParams.get("status")), counts, slots: { agents: {}, full: [], full_projects: [] }, subscriptions: subscriptions() }));
 }
 
 /** Presses a floating button; on a phone a folded one once ⟨…⟩ unfolds the column (fold.js, AC-18). */

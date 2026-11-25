@@ -91,11 +91,11 @@ export function agentsSection({ getMeta, chosen, reload, refreshQueue, slots: co
     const b = row(a);
     b.append(iconButton("agedit", "pencil", `Edit ${a.name}`, `Edit ${a.name}`, () => open(a)));
     // + Session with a prompt (AC-204): its own key, never a run of the chosen tasks
-    const sess = button("agsess", "+ Session", (e) => { e.stopPropagation(); composer.open(a); });
+    const sess = button("agsess", "", (e) => { e.stopPropagation(); composer.open(a); });   // its words: composer.mark
     sess.title = `Start a session on ${a.name} with a prompt`;
     sess.dataset.agent = a.id;
     sess.setAttribute("aria-controls", "sesscompose");
-    sess.setAttribute("aria-expanded", String(composer.shownFor() === a.id));
+    composer.mark(sess);
     b.querySelector(".agdots").append(sess);      // the card's last row, at its right
     b.addEventListener("click", (e) => {
       const tasks = given(), key = e.target.closest?.(".agdot")?.dataset.key;
