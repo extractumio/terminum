@@ -13,7 +13,8 @@ from worktree import common_dir, Refused  # noqa: E402
 
 DUE_DAYS = 14
 PRINTED = ("INDEX.md", "state.md", "handoff.md")
-LINES = {"INDEX.md": 40, "state.md": 40, "handoff.md": 40, "RULES.md": 70, "log.md": 100}
+# Caps of the files RULES.md's Files table does not list; that table sets the rest.
+LINES = {"INDEX.md": 40, "RULES.md": 70}
 OTHER_LINES = 150
 # A row of RULES.md's Files table: | `name.md` | ... | 150 |, or `none` for a file kept verbatim.
 ROW = re.compile(r"^\|\s*`([^`/]+\.md)`\s*\|.*\|\s*(\d+|none)\s*\|\s*$", re.M | re.I)
