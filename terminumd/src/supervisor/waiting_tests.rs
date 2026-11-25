@@ -51,6 +51,11 @@ fn ac213_a_waiting_p0_task_reaches_the_owner_and_resolves_when_it_leaves_todo() 
         "SELECT body FROM reports WHERE incident IS NOT NULL", [], |r| r.get(0))).unwrap();
     let [report] = reports.as_slice() else { panic!("one incident report: {reports:?}") };
     assert!(report.contains(OFF), "the incident names what held the task: {report}");
+    let events = || f.store.with(|tx| tx.query_row("SELECT count(*) FROM supervisor_incident_events", [], |r| r.get::<_, i64>(0))
+        .map_err(crate::tasks::ops::sql)).unwrap();
+    let opened = events();
+    f.live(Rule::Starved, later + 30).record(&f.store).unwrap();
+    assert_eq!(events(), opened, "an age that only grew adds no timeline event");
 
     f.transition("p0", later + 60, "TODO", "IN PROGRESS");
     let (impact, raises) = scored(&f, Rule::UserBugAge, later + 120, "p0");

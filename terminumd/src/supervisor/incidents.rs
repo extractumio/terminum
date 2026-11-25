@@ -54,8 +54,11 @@ pub(super) fn observe(tx: &Transaction, seen: Observation<'_>) -> Result<(), Str
     let (value, threshold) = (finding.measure.value, finding.measure.threshold);
     let evidence_hash = Sha256::digest(evidence);
     let same_evidence = prior.as_ref().is_some_and(|m| m.evidence_hash.as_slice() == &evidence_hash[..]);
-    if same_evidence && prior.as_ref().is_some_and(|m|
-        (m.level, m.value, m.threshold, m.urgent) == (level, value, threshold, urgent))
+    // An age that only grew with the clock (a P0 task still waiting, AC-213) is no new measurement: the age detectors
+    // run every 30 seconds, and each would add a timeline event.
+    let aged = matches!(finding.source, super::impact::Source::AgeSince(_));
+    if same_evidence && prior.as_ref().is_some_and(|m| (m.value == value || aged)
+        && (m.level, m.threshold, m.urgent) == (level, threshold, urgent))
     {
         return Ok(());
     }
