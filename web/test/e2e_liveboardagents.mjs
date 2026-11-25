@@ -226,7 +226,7 @@ async function projectWindowChecks(page, opts) {
   await pressCard(page, homeless);
   await page.waitForSelector("#taskbox[open]");
   await page.click('#taskacts button:has-text("Archive")');
-  await page.click("#taskclose");
+  await page.waitForSelector("#taskbox", { state: "hidden" });   // archived, its window closes (AC-282)
 
   const pencil = async (name) => {
     await page.click("#fproject summary");

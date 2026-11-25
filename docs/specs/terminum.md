@@ -107,6 +107,7 @@ Open questions:
 | AC-172 | [SHOULD / P1] | The Dashboard's Costs tab shows what the sessions Dispatcher started spent: dollars at list prices and tokens by agent, project and model, a task's cost, and each agent's use against its limits. |
 | AC-173 | [SHOULD / P1] | Every dialog has the size its use needs: one to type in or to read takes 80% of the width and height of the window it opens over (the dialog under it, the terminal, else the browser's window), its text field taking the rest; a question or a form stays as tall as its content; each kind between a floor and a ceiling; every dialog's buttons stay in sight at its foot while its content scrolls. |
 | AC-184 | [SHOULD / P1] | Every box to read or type in a text (a task's, a comment's, a schedule's, a prompt, a quoted screen or selection, Paste, Ask, a bookmark's note) has a key in its bottom-right corner that shows it over the whole window; the key or Esc gives it back, with what was typed, its window still open. |
+| AC-281 | [SHOULD / P1] | In the window on top (a dialog, a task's window, + Session, a report) each footer button presses with ⌘⇧ and a letter of its label (Ctrl+Shift off a Mac), its letter underlined; Run with ⌘⇧↩; Cancel with Esc; one rule gives the letters, never one a browser, the system or a text field keeps; ⌘/ (Ctrl+/) shows the keys; with no such window every key goes where it went. |
 | AC-175 | [SHOULD / P1] | What the user does in a page is counted by the clock minute and kept in the tasks' store's `user_interaction`, for the Dashboard's active time and engagement: presses, keys, the wheel's and a finger's scrolls, drags, the pointer's moves, the seconds a page was in front; how many and where (the page or frame, the id of a pressed control of the page), never which key, what text or what position. |
 | AC-176 | [SHOULD / P1] | The Dashboard's Tasks tab shows who does the work on tasks: the operations the human decided (a task made, edited, moved, commented on, put under another, run, archived) beside the agents' and Dispatcher's, over time, by operation, and each task's split. |
 | AC-195 | [MUST / P0] | The board, Dispatcher and tmux's handling wait for one another only where they share a resource, the tasks' store's turn or a tmux server's bulk client; the log names who waited for whom (`store.slow`, `tmux.slow`, `runtime.lag`), and `scripts/bench_busy.py` measures the board, a card's edit and a key's echo beside a build-like load. |
@@ -1124,6 +1125,44 @@ Scenario: AC-184 edge — a window over it, a phone, a board update
   And prose read so stands in a column at most 920 px wide in the middle; a text field and lines take the whole width
 ```
 
+### AC-281 — A window's buttons by the keyboard [SHOULD / P1]
+
+```gherkin
+Scenario: AC-281 happy path — a button by its letter
+  Given a window open on a computer: a dialog, a task's window, + Session's box, or a report in the Inbox with the focus in it
+  Then each button of its footer shows one letter of its label underlined, and Run shows ⌘⇧↩ after its label (Ctrl+Shift+Enter off a Mac), none of it in the button's name
+  When the user presses ⌘⇧ and that letter (Ctrl+Shift and the letter on Linux and Windows), in a text field of the window too
+  Then the button is pressed, as a click presses it
+  And + Session's Discard is ⌘⇧D and Start ⌘⇧S; a task's Save ⌘⇧S, Give up ⌘⇧G, Archive ⌘⇧A; Cancel is Esc and takes no letter
+  And a letter is matched as the layout types it (AZERTY's A is A), else by where it lies on the keyboard (a Russian layout)
+
+Scenario: AC-281 happy path — one rule for every window
+  Then the letters come from one rule, no list per window: the rightmost button chooses first (a window's main keys stand at its right), each its words' first letters before its others, the first free letter no other button took; a button may name its own (`data-key`), Run's is ↩
+  And a button appearing at the left of others changes none of their letters
+  And the letters given are A B D F G H L O S Y only: C E I J K M open developer tools, N P Q R T W are browser keys a page never gets or must not take (a reload loses what is typed), U is Linux's Unicode input, V X Z paste as plain text, turn a field's direction, redo; a label with no free letter has no key
+  And a window opened later gets its keys the same way
+
+Scenario: AC-281 happy path — the keys' help
+  When the user presses ⌘/ (Ctrl+/), or picks Keyboard shortcuts… in the session page's Settings menu, or the board's keyboard key
+  Then a window lists the keys of the window it opened over (each button with its key, or "no key"), every window's keys (Esc, ⌘↩ in a text field, ⌘⇧↩, ⌘⇧ and a letter, ⌘/), and the page's own keys, each with ⌘ on a Mac and Ctrl elsewhere
+  When the user presses Esc, Close, or ⌘/ again
+  Then it closes, the window under it still open
+
+Scenario: AC-281 edge — off, held, in the way
+  When the user presses the key of a disabled button, or of a window keeping something (AC-165)
+  Then nothing happens
+  When the user holds the key down
+  Then it presses once
+  When a question opens over a window (Discard what you typed?)
+  Then the keys are the question's: ⌘⇧D presses its Discard, nothing under it
+  And in a window ⌘⇧ and a free letter with no button is still the window's: nothing behind it (Quick's ⌘⇧D) acts on it; ⌘⇧Z stays redo in a field, and ⌘⇧T, ⌘⇧N, ⌘N, ⌘W, ⌘T stay the browser's
+
+Scenario: AC-281 edge — the terminal, a phone
+  Given no window open
+  Then every key goes where it went: the terminal gets ? and Ctrl+/ (^_) as typed, no help opens
+  And on a touch screen alone no letter is underlined and Run shows no key; a keyboard attached to it presses them the same way
+```
+
 ### AC-171 — The Dashboard's System tab [SHOULD / P1]
 
 ```gherkin
@@ -1612,6 +1651,7 @@ All cases are shipped. What AC-195's lines may call for, each only once the inst
 - [x] AC-172 — `cargo test dashboard::`, `web/test/e2e_livehistory.mjs`
 - [x] AC-173 — `web/test/e2e_dlgsize.mjs` (a form's buttons held at its foot on a short window), `web/test/e2e_taskwin.mjs` (a task's window's keys outside what scrolls), `web/test/e2e_dialogcenter.mjs`, `web/test/e2e_marks.mjs`, `web/test/e2e_ask.mjs`, `web/test/e2e_phonewin.mjs` (a phone's windows: 390 and 320 px, and the sheet a 700 px window keeps)
 - [x] AC-184 — `web/test/e2e_expand.mjs`, `web/test/e2e_taskwin.mjs`, `web/test/e2e_phonewin.mjs` (a phone's text field has no key), `web/test/e2e_sessbox.mjs` (+ Session's first prompt)
+- [x] AC-281 — `web/test/keyletters.test.mjs` (the rule, the free letters, the keys' names), `web/test/e2e_dlgkeys.mjs` (`node web/test/e2e_all.mjs webDlgKeys`: Chromium and WebKit, wide and phone, Ctrl+Shift off a Mac, the terminal's keys), `web/test/e2e_liveboardpool.mjs` (⌘⇧A on the real page); which browser keys a page may take is read from the browsers' reserved lists, not pressed in each browser by hand
 - [x] AC-175 — `cargo test interact::`, `cargo test dashboard::`, `web/test/e2e_livehistory.mjs`
 - [x] AC-176 — `cargo test dashboard::`, `web/test/e2e_livehistory.mjs`
 - [x] AC-195 — `cargo test tasks::store::tests::ac195`, `cargo test tmux::control::tests::ac195`, `cargo test slow::`; the bench by hand: `scripts/bench_busy.py`

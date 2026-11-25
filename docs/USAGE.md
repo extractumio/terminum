@@ -103,6 +103,19 @@ in any terminal shows the same sessions.
 
 ## The page
 
+### Keyboard shortcuts
+
+- **A window's buttons**: in a dialog, a task's window, + Session's box or a report in the Inbox,
+  press ⌘⇧ and a button's underlined letter (Ctrl+Shift on Linux and Windows), also while you type
+  in one of its fields. Run is ⌘⇧↩ (Ctrl+Shift+Enter), Cancel is Esc, and ⌘↩ in a text field keeps
+  it (Save, Send). Example: + Session's Discard is ⌘⇧D, Start ⌘⇧S.
+- **The letters**: one rule gives them, so the same label keeps its letter. Only A B D F G H L O S
+  Y are used: the other letters belong to the browser (⌘⇧T, ⌘⇧N, reload), its developer tools, the
+  system or text editing (⌘⇧Z redo). A button with none of these letters has no key.
+- **The list**: ⌘/ (Ctrl+/), Settings → Keyboard shortcuts… on the session page, or the keyboard
+  button at the top of the board. It shows the open window's keys and the page's.
+- With no window open, every key goes where it went: the terminal gets them all.
+
 ### Session list
 
 | Thing | What you can do |
@@ -265,8 +278,9 @@ PROGRESS, WAIT FOR HUMAN, FAILED or DONE.
   history as a conversation, the comment field last. What waits for you (a question, a result, a
   failure) comes first.
 - **Keys**: Save keeps your comment. When Run continues a task, it sends your saved comments since
-  the previous Run, followed by the comment in the field. Run from scratch is on the
-  Status line.
+  the previous Run, followed by the comment in the field, and the window closes: to answer a task
+  waiting for you, write the answer and press ⌘⇧↩. Archive also closes the window. Run from
+  scratch is on the Status line.
 - **Comment notices** reach the open session's agent through its hooks. The next prompt or tool
   call carries the task ID and who wrote the comment. The agent reads the comment in `get_task`.
   With older hooks, the notice waits for a tool call. Restart Claude Code or Codex to load updated

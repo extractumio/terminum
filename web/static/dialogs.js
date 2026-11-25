@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // The page's small questions, on the session page and the board: a yes or no, one of several, and a name.
 import { el } from "./listparts.js";
+import "./dlgkeys.js";
 
 const $ = (id) => document.getElementById(id);
 

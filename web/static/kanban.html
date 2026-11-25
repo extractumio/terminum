@@ -141,7 +141,7 @@
   <!-- The lines of #asks folded into two counters where the buttons float (terminum-kanban.md AC-117, askfold.js); a phone's Find key (AC-105). -->
   <div id="askcount" hidden><button class="askn failed" data-kind="failed" type="button" aria-expanded="false" aria-controls="asks" hidden></button><button class="askn waiting" data-kind="waiting" type="button" aria-expanded="false" aria-controls="asks" hidden></button></div>
   <button id="findkey" class="icon" type="button" aria-expanded="false" aria-controls="filters" title="Find and filters" aria-label="Find and filters"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:18px"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></svg></button>
-  <div id="boardacts"><span id="autokeys" role="group" aria-label="Auto-Dispatch"><button id="autoswitch" class="textkey" type="button" role="switch" aria-checked="false"><span class="word">Auto-Dispatch</span><span id="autostate">OFF</span><span class="track" aria-hidden="true"></span></button></span><button id="projectcog" class="icon" type="button" title="The project's settings" aria-label="The project's settings" aria-haspopup="dialog"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915"/><circle cx="12" cy="12" r="3"/></svg></button></div>
+  <div id="boardacts"><span id="autokeys" role="group" aria-label="Auto-Dispatch"><button id="autoswitch" class="textkey" type="button" role="switch" aria-checked="false"><span class="word">Auto-Dispatch</span><span id="autostate">OFF</span><span class="track" aria-hidden="true"></span></button></span><button id="keyhelpbtn" class="icon" type="button" title="Keyboard shortcuts (⌘/, Ctrl+/ elsewhere)" aria-label="Keyboard shortcuts"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/><path d="M10 8h.01"/><path d="M12 12h.01"/><path d="M14 8h.01"/><path d="M16 12h.01"/><path d="M18 8h.01"/><path d="M6 8h.01"/><path d="M7 16h10"/><path d="M8 12h.01"/></svg></button><button id="projectcog" class="icon" type="button" title="The project's settings" aria-label="The project's settings" aria-haspopup="dialog"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915"/><circle cx="12" cy="12" r="3"/></svg></button></div>
 </header>
 <div id="boardbanner" class="banner" role="status" hidden></div>
 <div id="asks" aria-live="polite" hidden></div>
@@ -149,12 +149,12 @@
      by theirs (kanbanrail.js), folded to one strip with their add key; Task Management's is a plain head. -->
 <div id="pool"><section id="agentbar" class="railed" aria-labelledby="railpool"><h2 class="rail"><button id="railpool" class="railkey" type="button" aria-expanded="true" aria-controls="agentgrid"><svg class="lu chev" viewBox="0 0 24 24" aria-hidden="true" style="--s:12px"><path d="m6 9 6 6 6-6"/></svg><span class="railword">Agent Pool</span><span class="railsum"></span></button><button class="railadd icon" type="button" aria-label="Add agent" title="Add an agent to a project's pool" hidden><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M5 12h14"/><path d="M12 5v14"/></svg></button></h2>
 <!-- + Session on an agent's card with a first prompt (terminum-dispatcher.md AC-204; kanbansessbox.js): a dock under the pool, not a dialog, so task cards can be dragged onto it -->
-<form id="sesscompose" class="sessdock" aria-labelledby="sesshead" hidden>
+<form id="sesscompose" class="sessdock" data-keyscope aria-labelledby="sesshead" hidden>
   <div class="sesshead"><h3 id="sesshead">+ Session on <span id="sessagent"></span></h3><button id="sessclose" class="icon x" type="button" title="Close, keep the text (Esc)" aria-label="Close"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
   <div class="xbox"><textarea id="sesstext" class="field taskmd droparea" rows="3" aria-label="Its first prompt" placeholder="What should it do? Paste or drop files; drop tasks to name them."></textarea></div>
   <ul id="sessfiles" class="filelist"></ul>
   <p id="sesserror" class="error" role="alert" hidden></p>
-  <div class="sessfoot"><button id="sessadd" class="textkey" type="button">Add files…</button><input id="sessfile" type="file" multiple hidden>
+  <div class="sessfoot" data-keyrow><button id="sessadd" class="textkey" type="button">Add files…</button><input id="sessfile" type="file" multiple hidden>
     <span class="hint">Drop tasks or files here · ⌘Enter starts</span>
     <button id="sessdiscard" class="textkey danger" type="button" hidden>Discard</button><button id="sessstart" class="textkey primary" type="submit" title="Start the session; with no text nothing is typed">Start</button></div>
 </form></section>
@@ -224,7 +224,7 @@
       <button id="newadd" type="button">Add files…</button>
       <button id="newdiscard" type="button" class="danger">Discard</button>
       <button id="newcreate" type="button" class="fromright">Create</button>
-      <button id="newrun" type="button" class="primary" title="Create it and start it on the agent chosen">Run</button>
+      <button id="newrun" type="button" class="primary" data-key="Enter" title="Create it and start it on the agent chosen">Run</button>
     </div>
   </form>
 </dialog>
