@@ -63,8 +63,21 @@ export function accentColor(bg, cursor, fg) {
 /** A theme's link color (its `link`, else its ANSI 12, as View's), made to read on its bg; undefined without one. */
 export const themeLink = (theme) => { const l = theme.link || theme.ansi?.[12]; return l && readable(theme.bg, l); };
 
+/** `a` mixed into `b` by `share` (0…1), as CSS's color-mix in srgb; null when one is not a hex color. */
+export function mix(a, b, share) {
+  const [x, y] = [rgb(a), rgb(b)];
+  return x && y ? "#" + x.map((v, i) => Math.round((v * share + y[i] * (1 - share)) * 255).toString(16).padStart(2, "0")).join("") : null;
+}
+
+/** A label's words (a report's type, terminum-reports.md AC-267): the theme's text color, made to read (4.5:1) on each
+ *  of `hues` mixed into bg by `share` (0…1) as a label's fill is (tokens.css --label-share); fills on bg's side all, so
+ *  making it read on one never undoes another. */
+export function labelInk(bg, fg, hues, share) {
+  return hues.map((h) => mix(h, bg, share)).reduce((ink, fill) => readable(fill, ink), fg);
+}
+
 /** The page's colors from a theme: the terminal's, the accent (tokens.css: the focus ring, a
- *  primary key's fill), links, the selection and the browser's bar. */
+ *  primary key's fill), links, the selection, a label's words and the browser's bar. */
 export function pageColors(theme) {
   const r = document.documentElement.style;
   r.setProperty("--t-bg", theme.bg); r.setProperty("--t-fg", theme.fg);
@@ -72,6 +85,9 @@ export function pageColors(theme) {
   const link = themeLink(theme);                       // as View colors links (ui/src/theme.ts); else tokens.css's
   if (link) r.setProperty("--link", link); else r.removeProperty("--link");
   document.documentElement.classList.toggle("light", theme.dark === false);   // tokens.css: lighter shadows, darker folder hues
+  const css = getComputedStyle(document.documentElement), hues = ["--ok", "--waiting", "--danger"].map((n) => css.getPropertyValue(n).trim());   // tokens.css's fixed hues
+  const share = parseFloat(css.getPropertyValue("--label-share")) / 100;
+  r.setProperty("--label-ink", labelInk(theme.bg, theme.fg, [...hues, mix(theme.fg, theme.bg, 0.58)], share));   // the last: --muted
   if (theme.sel) r.setProperty("--sel", theme.sel);
   if (theme.selfg) r.setProperty("--selfg", theme.selfg);
   document.querySelector('meta[name="theme-color"]').content = theme.bg;

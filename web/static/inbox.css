@@ -1,8 +1,10 @@
 /* SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial */
 /* The Inbox above the Sessions (inbox.js, terminum-reports.md AC-267) and a report's pane over the board's right part
-   (reportpane.js, AC-268). Its head is a group's head; its rows read as the list's: unread bold, critical in the danger
-   hue, the project's color a dot as a row's; no new 1px border (docs/UI-GUIDELINES.md §2.1). */
-.inbox { flex: 0 0 auto; max-height: 45%; overflow-y: auto; overscroll-behavior: contain; padding: 0 8px; display: flex; flex-direction: column; }
+   (reportpane.js, AC-268). A panel of its own over the Sessions' panel, the board's gap between them as between its
+   panels; its head is a group's head; its rows read as the list's: unread bold, critical in the danger hue, an envelope
+   in the project's color, closed while unread; no new 1px border (docs/UI-GUIDELINES.md §2.1). */
+.inbox { flex: 0 0 auto; max-height: 45%; overflow-y: auto; overscroll-behavior: contain; padding: 0 8px var(--sp-2); display: flex; flex-direction: column;
+  border-block: var(--sp-2) solid var(--surface-0); }   /* the board's gap between its panels, above and below */
 .inboxhead { display: flex; align-items: center; gap: 6px; height: calc(var(--icon-key-list) + 2 * var(--row-inset)); font-size: 12.5px; font-weight: 600; position: sticky; top: 0; background: var(--chrome); z-index: 1; }
 .inboxfold { flex: 1; min-width: 0; height: 28px; display: flex; align-items: center; gap: 6px; padding: 0 6px; border-radius: var(--r-sm); text-align: left; font-weight: inherit; }
 @media (hover: hover) { .inboxfold:hover { background: var(--chrome-2); } }
@@ -11,8 +13,8 @@
 .inboxcount:not(:empty) { margin-left: auto; min-width: 18px; padding: 0 6px; border-radius: 9px; background: var(--accent); color: var(--t-bg); font-size: 11px; line-height: 18px; text-align: center; }
 .inboxrows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 1px; }
 .inboxrow { position: relative; display: flex; align-items: stretch; border-radius: var(--r-lg); }
-.inboxrow .report { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; padding: 6px 8px 6px 18px; border-radius: inherit; text-align: left; font-weight: 400; color: var(--t-fg); }
-.inboxrow .report::before { content: ""; position: absolute; left: 7px; top: 12px; width: 6px; height: 6px; border-radius: 50%; background: var(--proj, var(--muted)); }
+.inboxrow .report { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; padding: 6px 8px 6px 24px; border-radius: inherit; text-align: left; font-weight: 400; color: var(--t-fg); }
+.inboxrow .renv { position: absolute; left: 6px; top: 8px; color: var(--proj, var(--muted)); }
 @media (hover: hover) { .inboxrow .report:hover { background: var(--chrome-2); } }
 .inboxrow .rhead { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .inboxrow .rtitle { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 13px; }
@@ -21,13 +23,13 @@
 .inboxrow .rsource { overflow: hidden; text-overflow: ellipsis; }
 .inboxrow .rsum { display: flex; align-items: center; gap: 6px; min-width: 0; color: var(--muted-text); font-size: 12px; white-space: nowrap; }
 .inboxrow .rsumtext { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-/* a report's type (AC-265): its meaning's hue as a dot, its word muted (docs/UI-GUIDELINES.md §2.2: waiting never as text) */
-.rkind { flex: none; display: inline-flex; align-items: center; gap: 4px; color: var(--muted-text); font-size: 11.5px; font-weight: 500; }
-.rkind::before { content: ""; width: 6px; height: 6px; border-radius: var(--blob-a); background: var(--muted); }
-.rkind.k-ok::before { background: var(--ok); }
-.rkind.k-attention::before { background: var(--waiting); }
-.rkind:is(.k-failed, .k-incident)::before { background: var(--danger); }
-.rkind:is(.k-failed, .k-incident) { color: var(--danger-text); }
+/* a report's type (AC-265, AC-267): a tag filled with its meaning's hue over the theme's background (--label-share),
+   its word in the theme's text color made to read on every such fill (--label-ink, 4.5:1) */
+.rkind { --hue: var(--muted); flex: none; padding: 0 5px; border-radius: var(--r-xs); background: color-mix(in srgb, var(--hue) var(--label-share), var(--t-bg));
+  color: var(--label-ink, var(--t-fg)); font-size: 11px; font-weight: 600; line-height: 16px; }
+.rkind.k-ok { --hue: var(--ok); }
+.rkind.k-attention { --hue: var(--waiting); }
+.rkind:is(.k-failed, .k-incident) { --hue: var(--danger); }
 .rptitle .rkind { font-size: 12.5px; margin-left: 4px; }
 .inboxrow.unread .rsum { color: var(--t-fg); }
 .inboxrow.critical.unread .report { background: color-mix(in srgb, var(--danger) 14%, transparent); }

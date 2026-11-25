@@ -84,6 +84,23 @@ async function onBoard(browser, device, w) {
     && g.rows[0].critical && g.rows[1].unread && Number(g.rows[1].weight) > Number(g.rows[2].weight), JSON.stringify(g.rows));
   const row7 = await page.evaluate(() => { const r = document.querySelector('.inboxrow[data-id="R_API-7"]'); return { kind: r.querySelector(".rkind")?.textContent, sum: r.querySelector(".rsumtext")?.textContent, from: r.querySelector(".rsource").textContent }; });
   check(`AC-267 ${w}: a row shows its type, its summary and its sender`, row7.kind === "attention" && row7.sum === "Two outdated" && row7.from === "From Routine Nightly deps · Opus · R_API-7", JSON.stringify(row7));
+  // AC-267: a panel of its own, the board's gap between it and the Sessions' panel; an envelope in the project's color,
+  // closed while unread, open once read; each type a tag whose words read on its fill
+  const looks = await page.evaluate(() => {
+    const rgb = (c) => { const m = c.match(/[\d.]+/g).map(Number); return c.startsWith("color(") ? m.map((v) => v * 255) : m; };
+    const lum = (c) => rgb(c).slice(0, 3).map((v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }).reduce((s, v, i) => s + v * [0.2126, 0.7152, 0.0722][i], 0);
+    const ratio = (a, b) => { const [x, y] = [lum(a), lum(b)]; return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); };
+    const inbox = getComputedStyle(document.getElementById("inbox"));
+    const env = (id) => { const e = document.querySelector(`.inboxrow[data-id="${id}"] .renv`); return e && { open: e.innerHTML.includes("M21.2 8.4"), color: getComputedStyle(e).color }; };
+    const kinds = [...document.querySelectorAll(".inboxrow .rkind")].map((k) => { const c = getComputedStyle(k); return { fill: c.backgroundColor, ratio: ratio(c.color, c.backgroundColor) }; });
+    return { gap: parseFloat(inbox.borderBottomWidth), gapColor: inbox.borderBottomColor, board: getComputedStyle(document.body).backgroundColor,
+      unread: env("R_API-7"), read: env("R_API-6"), dot: getComputedStyle(document.querySelector(".inboxrow .report"), "::before").content, kinds };
+  });
+  check(`AC-267 ${w}: the Inbox a panel of its own, the board's gap above the Sessions' panel`, looks.gap >= 8 && looks.gapColor === looks.board, JSON.stringify(looks));
+  check(`AC-267 ${w}: an envelope in the project's color, closed while unread, open once read, no dot`, looks.unread && !looks.unread.open && looks.read?.open
+    && looks.unread.color === looks.read.color && looks.unread.color !== "rgb(0, 0, 0)" && looks.dot === "none", JSON.stringify(looks));
+  check(`AC-267 ${w}: each type a filled tag whose words read on it (4.5:1)`, looks.kinds.length === 3 && looks.kinds.every((k) => !/rgba\(0, 0, 0, 0\)|transparent/.test(k.fill) && k.ratio >= 4.5)
+    && new Set(looks.kinds.map((k) => k.fill)).size >= 2, JSON.stringify(looks.kinds));
   await shot(page, `inbox-${w}`);
   // a press: the pane over the board's right part; read after 2 seconds
   await page.click('.inboxrow[data-id="R_API-7"] .report');

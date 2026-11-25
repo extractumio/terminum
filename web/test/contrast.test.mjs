@@ -4,7 +4,7 @@
 // key's fill under words in the background's color).
 import assert from "node:assert/strict";
 import test from "node:test";
-import { accentColor, contrast, readable } from "../static/contrast.js";
+import { accentColor, contrast, labelInk, mix, readable } from "../static/contrast.js";
 
 test("contrast is WCAG's ratio, for #rgb and #rrggbb", () => {
   assert.equal(Math.round(contrast("#000", "#ffffff")), 21);
@@ -46,4 +46,14 @@ test("a link too dark for a dark theme is lightened, too light for a light one d
   const [r, , b] = [1, 3, 5].map((i) => parseInt(dark.slice(i, i + 2), 16));
   assert.ok(b > r, `${dark} stays blue`);
   assert.ok(contrast("#808080", readable("#808080", "#7f7f7f")) >= 4.5);   // a mid grey background: whichever way reads
+});
+
+test("AC-267: a report type's words read on every type's fill, Solarized's low contrast too", () => {
+  const hues = ["#5cc285", "#ffb020", "#ff6b5e"];      // tokens.css --ok, --waiting, --danger
+  for (const [bg, fg] of [["#1e1e1e", "#d4d4d4"], ["#002b36", "#839496"], ["#000000", "#ffffff"], ["#ffffff", "#202020"], ["#fdf6e3", "#657b83"], ["#eff1f5", "#4c4f69"]]) {
+    const ink = labelInk(bg, fg, [...hues, mix(fg, bg, 0.58)], 0.4);   // tokens.css --label-share
+    for (const h of [...hues, mix(fg, bg, 0.58)]) assert.ok(contrast(ink, mix(h, bg, 0.4)) >= 4.5, `${ink} on ${h} over ${bg}`);
+  }
+  assert.equal(labelInk("#000000", "#ffffff", hues, 0.4), "#ffffff");   // the theme's text color while it reads
+  assert.equal(labelInk("#000", "rebeccapurple", hues, 0.4), "rebeccapurple");   // not measurable: as the theme says
 });
