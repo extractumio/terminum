@@ -103,6 +103,9 @@ function rowOf(r) {
   b.type = "button";
   b.title = `${r.id} · ${r.project_name}${r.read ? "" : " · unread"}`;
   const head = el("span", "rhead");
+  const env = icon(r.read ? "mail-open" : "mail", 13);   // the project's color; closed while unread (AC-267)
+  env.classList.add("renv");
+  b.append(env);
   if (r.critical) head.append(icon("triangle-alert", 13));
   head.append(el("span", "rtitle", r.title), el("span", "rage", st.deleted ? `deleted ${age(r.deleted_at)}` : age(r.created_at)));
   const sum = el("span", "rsum");
@@ -120,7 +123,7 @@ function rowOf(r) {
   return li;
 }
 
-/** Report `r`'s type as a chip: a dot of its meaning's hue and its word (AC-265). Shared with the report's pane. */
+/** Report `r`'s type as a tag: its word on a fill of its meaning's hue (AC-265, AC-267). Shared with the report's pane. */
 export function kindChip(r) {
   const chip = el("span", `rkind k-${r.kind}`, r.kind);
   chip.title = `Type: ${r.kind}`;
