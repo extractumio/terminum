@@ -53,6 +53,11 @@ fn ac212_target_red_fires_once_its_re_run_confirms_it_and_while_its_bug_task_is_
         "the subject is the target, as AC-255's miss check names it");
     assert_eq!(found.evidence, [Evidence::Tasks("red-bug".into()), Evidence::Events(notice)]);
     assert!(!found.charter_breach() && found.scores.level() < 3, "an untied red target is an ordinary signal");
+    assert_eq!((found.scores.impact, found.scores.blast, found.scores.reversibility), (0, 2, 1),
+        "AC-213: without a share, a confirmed red target still reaches the target with hours of recovery");
+    evaluation.record(&f.store).unwrap();
+    let signal = signals(&f.store, PROJECT).unwrap().remove(0);
+    assert_eq!((signal.level, signal.response), (2, "R4"));
     f.transition("red-bug", NOW + 10, "TODO", "DONE");
     assert!(sweep(&f, NOW + 20).detectors[0].findings.is_empty(), "the Bug task's end clears it");
 

@@ -146,7 +146,7 @@ impl<'a> Attribution<'a> {
         if assessment.shares.is_empty() {
             assessment.no_share = Some(match found.source {
                 Source::Unsized(reason) => reason,
-                Source::Present => "A present state has no weekly quantity; it ranks, and only a round's evidence raises its level.",
+                Source::Present => "A present state has no weekly quantity; its detector's blast radius and reversibility set its level.",
                 _ if dropped => "A measured amount exceeded its week's project total, so no share was counted.",
                 _ => "No week of the last eight measured an amount above zero.",
             }.into());
