@@ -13,11 +13,11 @@ const MARKUP = `<form method="dialog">
 
 /** The page's own keys, as [keys, what], by the page shown. */
 function pageKeys(mac) {
-  const m = mac ? "⌘" : "Meta+";
+  const m = mac ? "⌘" : "Meta+", ms = mac ? "⌘⇧" : "Meta+Shift+";
   if (document.getElementById("term")) {
     return [[`${m}[ ${m}]`, "The session shown before, after"], [`${m}F`, "Find in the terminal's history"], [`${m}B`, "Files open or closed"],
-      [`${m}D`, "Quick terminal at the right"], [`${mac ? "⌘⇧" : "Meta+Shift+"}D`, "Quick terminal at the bottom"],
-      [`${m}Z ${mac ? "⌘⇧" : "Meta+Shift+"}Z`, "Undo, redo in the terminal's input"], ["/", "Find a session"]];
+      [`${m}D`, "Quick terminal at the right"], [`${ms}D`, "Quick terminal at the bottom"],
+      [`${m}Z ${ms}Z`, "Undo, redo in the terminal's input"], ["/", "Find a session"]];
   }
   if (location.pathname.startsWith("/kanban")) {
     return [["Enter", "Open the card in focus"], ["Esc", "Let go of the cards picked, else fold the cards opened"],
@@ -51,7 +51,7 @@ export function openHelp({ title, keys, mac }) {
     document.body.append(box);
   }
   const every = [["Esc", "Close the window, or Cancel"], [keyName("Enter", mac, false), "In a text field: its Save or Send"],
-    [keyName("Enter", mac), "Run (the comment written goes with it)"], [`${mac ? "⌘⇧" : "Ctrl+Shift+"}letter`, "The button whose letter is underlined"],
+    [keyName("Enter", mac), "Run (the comment written goes with it)"], [keyName("letter", mac), "The button whose letter is underlined"],
     [keyName("/", mac, false), "This list"]];
   const parts = [];
   if (title) parts.push(table(title, keys.length ? keys : [[null, "No button with a key"]]));

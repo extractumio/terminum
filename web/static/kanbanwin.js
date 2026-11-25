@@ -348,8 +348,8 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
     n.wait = () => {
       const waiting = n.uploads > 0 || Boolean(box.dataset.busy);
       save.disabled = waiting || !n.area.value.trim();
-      const said = n.area.value.trim() ? "send this comment and run it" : "run it";
-      run.title = `${on ? `On ${on}: ${said}` : said[0].toUpperCase() + said.slice(1)}; the window closes`;
+      const said = n.area.value.trim() ? "Send this comment and run it" : "Run it";
+      run.title = `${on ? `On ${on}: ` : ""}${said}; the window closes`;
       guardQueuedRun(run, t.waits);
       run.disabled ||= waiting;
     };
@@ -364,7 +364,7 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
     // a task nobody needs leaves the board by this (AC-118), and its window closes: nothing is left to do there
     // (AC-282); refused, it stays and says why. It stands where it stood when it comes back, its window open.
     const shelve = button(null, t.archived_at ? "Bring back" : "Archive", () => api(`/api/tasks/${t.id}/archive`, { method: "POST", body: { on: !t.archived_at } })
-      .then(() => (t.archived_at || shown?.id !== t.id ? refresh() : tryClose()), (e) => say(e.message)));
+      .then(async () => { if (t.archived_at || shown?.id !== t.id || !await tryClose()) refresh(); }, (e) => say(e.message)));
     run.classList.toggle("primary", !busy);
     // its keys at the window's foot, in sight while the task scrolls above them
     const acts = $("taskacts"), paint = () => {

@@ -9,17 +9,17 @@ export const FREE = "ABDFGHLOSY";
 /** Each label's letter as {letter, at} (`at`: its place in the label, to underline), or null: none left, or no
  *  label. The rightmost label chooses first (a window's main keys stand at the right), each taking its words'
  *  first letters before its other letters, the first free one no other took; `taken`: letters already given. */
+const isLetter = (ch) => /\p{L}/u.test(ch ?? "");
+
 export function letters(labels, taken = []) {
   const given = new Set(taken), out = labels.map(() => null);
-  const letter = (ch) => /\p{L}/u.test(ch ?? "");
   for (let i = labels.length - 1; i >= 0; i--) {
     const label = labels[i] ?? "", places = [...Array(label.length).keys()];
-    const starts = places.filter((at) => letter(label[at]) && !letter(label[at - 1]));
-    const at = [...starts, ...places.filter((p) => !starts.includes(p))]
-      .find((p) => FREE.includes(label[p].toUpperCase()) && !given.has(label[p].toUpperCase()));
+    const free = (p) => FREE.includes(label[p].toUpperCase()) && !given.has(label[p].toUpperCase());
+    const at = places.find((p) => isLetter(label[p]) && !isLetter(label[p - 1]) && free(p)) ?? places.find(free);
     if (at === undefined) continue;
-    given.add(label[at].toUpperCase());
     out[i] = { letter: label[at].toUpperCase(), at };
+    given.add(out[i].letter);
   }
   return out;
 }
