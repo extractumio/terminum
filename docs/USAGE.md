@@ -125,7 +125,7 @@ in any terminal shows the same sessions.
 | A row's menu (right click; touch: rest a finger, lift) | Clone, Add to Project, Mark as Unread or Read, Diagnostics…, Split Below, Right, Left, moves, Move to Session, Close. |
 | Diagnostics… | What terminumd and tmux see of the pane, for a bug report. It holds the pane's folder, host and title: check before sharing. |
 | A tmux session's group | Header buttons: copy, import, [+], ⋯. Menu: New Window, moves, Close Group. |
-| A project | A named, colored group of sessions, the same on every browser; [+] opens a window in its folder. Menu: New Window, Rename, moves, Delete Project (its sessions and tasks go to Default), Close Project (closes its sessions, keeps it); both ask. |
+| A project | A named, colored group of sessions, the same on every browser; [+] opens a window in its folder, the board key its tasks on the board. Menu: New Window, Rename, moves, Delete Project (its sessions and tasks go to Default), Close Project (closes its sessions, keeps it); both ask. |
 | Under the list | New session, Bookmarks / Reminders, Add host, Attach tmux sessions. |
 | The header's ⋯ | Settings. |
 | Tip of the day | At the list's foot on a computer: Next, × (until tomorrow), Turn off. Settings brings it back. |

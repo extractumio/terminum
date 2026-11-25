@@ -237,6 +237,14 @@ export async function webProjects(browser, name) {
   await page.click('#sessions section[data-pid="p1"] h2 .new');
   check("AC-92 a project's [+] asks for a window after its last session, in the project",
     JSON.stringify(last(sent, "clone")) === JSON.stringify({ t: "clone", id: ID(3), project: "p1" }), JSON.stringify(last(sent, "clone")));
+  const key = await page.evaluate(() => {
+    const h = document.querySelector('#sessions section[data-pid="p1"] > h2'), k = h.querySelector(".boardkey"), n = h.querySelector(".new");
+    const box = (e) => { const r = e.getBoundingClientRect(); return [Math.round(r.width), Math.round(r.height)].join(); };
+    return k && { href: k.getAttribute("href"), label: k.getAttribute("aria-label"), after: k.previousElementSibling === n, size: box(k) === box(n), icon: !!k.querySelector("svg"),
+      groups: document.querySelectorAll("#sessions section[data-wid] .boardkey").length };
+  });
+  check("AC-92 a project's header has a board key after its [+], as large, linking to its board; a tmux group's none",
+    key?.href === "/kanban/?project=p1" && key.label === "Board of Group 1" && key.after && key.size && key.icon && key.groups === 0, JSON.stringify(key));
   await page.hover('#sessions section[data-pid="p1"] h2 .label');   // its buttons show under the pointer
   await page.click('#sessions section[data-pid="p1"] h2 .hostbtn');
   await page.click('#rowmenu button[data-action="rename"]');
