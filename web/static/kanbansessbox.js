@@ -6,7 +6,8 @@
 // get_task. Start opens the session on that agent and terminumd types the prompt once; with no text nothing is
 // typed (AC-142). Close and Esc keep the draft (its text, in this browser); Discard clears it. Start folds the dock at once
 // and the agent's key says "Starting…" while terminumd starts it, every + Session key inert meanwhile (no other draft can
-// be typed then); a failure opens the dock again with the draft, its files and terminumd's words.
+// be typed then); a failure opens the dock again with the draft, its files and terminumd's words. A start that went in
+// keeps the board: a line under the pool says so, with a link to the session.
 import { askConfirm } from "./dialogs.js";
 import { el, read, write } from "./listparts.js";
 import { sessionUrl } from "./tasklink.js";
@@ -14,9 +15,10 @@ import { $, agentColor, api, fileChips, onFiles, onSend, showError, upload } fro
 
 const DRAFT = "tm.sessiondraft";
 
-/** `getMeta()`: projects and agents, `most` bytes a file may have among them; `dragging()`: the tasks of a drag. */
-export function sessionComposer({ getMeta, dragging }) {
-  const dock = $("sesscompose"), area = $("sesstext"), list = $("sessfiles"), error = $("sesserror"), start = $("sessstart"), discard = $("sessdiscard");
+/** `getMeta()`: projects and agents, `most` bytes a file may have among them; `dragging()`: the tasks of a drag;
+ *  `started()`: a session started, for the pool to read its slots again. */
+export function sessionComposer({ getMeta, dragging, started }) {
+  const dock = $("sesscompose"), area = $("sesstext"), list = $("sessfiles"), error = $("sesserror"), start = $("sessstart"), discard = $("sessdiscard"), done = $("sessdone");
   let agent = null, files = [], uploading = 0, busy = false, left = null;   // left: the key close() gave the focus to
   let missed = null;                               // the text of a prompt whose session started without it: Start again would open another
   area.value = read(DRAFT)?.text ?? "";
@@ -73,6 +75,7 @@ export function sessionComposer({ getMeta, dragging }) {
     $("sessagent").replaceChildren(el("span", "sessdot"), el("span", null, a.name));
     dock.style.setProperty("--ag", agentColor(a));
     dock.hidden = false;
+    done.hidden = true;
     lit();
     say("");
     state();
@@ -110,7 +113,15 @@ export function sessionComposer({ getMeta, dragging }) {
       area.value = "";
       files = [];
       keep();
-      location.href = sessionUrl(r.key);         // the key says "Starting…" until the session's page comes
+      showFiles();
+      busy = false;
+      lit();
+      state();
+      const link = Object.assign(el("a", null, "Open the session"), { href: sessionUrl(r.key) }), at = document.activeElement;
+      done.firstElementChild.replaceChildren(`Session started on ${agent.name} · `, link);
+      done.hidden = false;
+      if (at === document.body || at === left) link.focus({ preventScroll: true });   // the focus left where the user moved it meanwhile
+      started();
     } catch (e) { back(e.message); }
   }
 
@@ -128,11 +139,10 @@ export function sessionComposer({ getMeta, dragging }) {
     area.classList.remove("dropping");
     insertIds(tasks.map((t) => t.id));
   });
-  // the board back from the browser's Back cache after the session's page: that start went in, the keys are free again
-  addEventListener("pageshow", (e) => { if (e.persisted && busy) { busy = false; lit(); state(); } });
   dock.addEventListener("submit", (e) => { e.preventDefault(); go(); });
   dock.addEventListener("keydown", (e) => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); close(); } });
   $("sessclose").addEventListener("click", close);
+  done.querySelector(".x").addEventListener("click", () => { done.hidden = true; });
   $("sessadd").addEventListener("click", () => $("sessfile").click());
   $("sessfile").addEventListener("change", (e) => { const chosen = [...e.target.files]; e.target.value = ""; if (chosen.length) add(chosen); });
   discard.addEventListener("click", async () => {

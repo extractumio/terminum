@@ -265,7 +265,8 @@ PROGRESS, WAIT FOR HUMAN, FAILED or DONE.
   tile follows its last card.
 - **+ Session** on an agent's card opens a box under the pool: type a prompt, paste or add files,
   drop task cards to name their IDs; Start folds the box, opens that agent's session and types the
-  prompt once; a failure opens the box again with the draft and the reason.
+  prompt once; the board stays, a line under the pool links the new session; a failure opens the
+  box again with the draft and the reason.
   The list head's + Session starts one in the project in view, with nothing typed.
 - **New task**: + New task in TODO (drop or paste files in), a file dropped on the board, a
   session's menu, a terminal's selection (New task from selection), Convert to task on a bookmark.

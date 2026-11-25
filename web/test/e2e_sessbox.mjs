@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // terminum-dispatcher.md AC-204 against a fake terminumd (fake.mjs): + Session on an agent's card opens a dock under the
 // pool; text, a pasted image and an added file go in it, two task cards dropped on it put their IDs at the caret; Start
-// asks terminumd for that agent's session with the prompt and the files' ids, then shows the session; a miss keeps the
+// asks terminumd for that agent's session with the prompt and the files' ids, then keeps the board with a line under the
+// pool linking the session; a miss keeps the
 // draft and says so; Start folds the dock at once, the agent's key "Starting…", and a refusal or a miss opens it again
 // with the draft and the words; Esc keeps the draft, Discard asks and clears it; a remote project's composer takes no
 // file; its box has the key to the whole window (terminum.md AC-184).
@@ -41,7 +42,8 @@ const dock = (page) => page.evaluate(() => { const d = document.getElementById("
   return { open: !d.hidden && !!d.offsetWidth, agent: document.getElementById("sessagent").textContent, text: a.value, focus: document.activeElement?.id, files: [...document.querySelectorAll("#sessfiles li")].map((l) => l.textContent),
     error: document.getElementById("sesserror").hidden ? "" : document.getElementById("sesserror").textContent, start: document.getElementById("sessstart").disabled,
     keys: [...document.querySelectorAll("#agentbar .agsess")].map((k) => k.getAttribute("aria-expanded")),
-    marks: [...document.querySelectorAll("#agentbar .agsess")].map((k) => `${k.textContent}|${k.getAttribute("aria-busy")}|${k.getAttribute("aria-disabled")}`) }; });
+    marks: [...document.querySelectorAll("#agentbar .agsess")].map((k) => `${k.textContent}|${k.getAttribute("aria-busy")}|${k.getAttribute("aria-disabled")}`),
+    done: document.getElementById("sessdone").offsetWidth ? document.getElementById("sessdone").textContent : "", link: document.querySelector("#sessdone a")?.getAttribute("href") ?? "" }; });
 const free = (d) => d.marks.every((m) => m === "+ Session|null|null");
 
 /** Start pressed with the answer held: the dock folds at once, that agent's key says it is starting, every key inert. */
@@ -134,10 +136,9 @@ export async function webSessBox(browser, name) {
   await page.press("#sesstext", "Meta+Enter");
   await folds(f, at, 1, "⌘Enter");
   f.release();
-  check(`AC-204 ${at} ⌘Enter asks terminumd for that agent's session with the prompt and the file's id, then shows the session`,
-    await until(() => f.posts.length === 1) && f.posts[0].agent === "a2" && f.posts[0].prompt === "Fix what API-1 API-2" && f.posts[0].files.length === 1
-    && await until(() => page.url().includes("/sessions/")), JSON.stringify({ posts: f.posts, url: page.url() }));
-  check(`AC-204 ${at} the draft is cleared once it went in`, await page.evaluate(() => !localStorage.getItem("tm.sessiondraft")), "");
+  check(`AC-204 ${at} ⌘Enter asks terminumd for that agent's session with the prompt and the file's id`,
+    await until(() => f.posts.length === 1) && f.posts[0].agent === "a2" && f.posts[0].prompt === "Fix what API-1 API-2" && f.posts[0].files.length === 1, JSON.stringify(f.posts));
+  await startedLine(f, at, "Sonnet worker");
   check(`no page error ${at}`, f.errors.length === 0, f.errors.join("; "));
   await f.close();
 
@@ -183,9 +184,40 @@ export async function webSessBox(browser, name) {
     return { start: [Math.round(s.width), Math.round(s.height)], dock: Math.round(d.width), key: Math.round(k.height), font: getComputedStyle(document.getElementById("sesstext")).fontSize, fits: d.right <= innerWidth && document.documentElement.scrollWidth <= innerWidth }; });
   check(`AC-204 ${at} in the pool's sheet: the dock under the cards, Start full width and 44 px, the box 16 px (no zoom), nothing past the screen`,
     phone.start[1] >= 44 && phone.start[0] >= phone.dock - 2 * 16 - 1 && phone.font === "16px" && phone.fits, JSON.stringify(phone));
+  await page.fill("#sesstext", "Phone prompt");
+  await page.click("#sessstart");
+  check(`AC-204 ${at} Start asks for that agent's session with the prompt`, await until(() => f.posts.length === 1) && f.posts[0].prompt === "Phone prompt", JSON.stringify(f.posts));
+  await startedLine(f, at, "Opus reviewer", true);
   check(`no page error ${at}`, f.errors.length === 0, f.errors.join("; "));
   await f.close();
   await refused(browser, PHONE, at);
+}
+
+/** A start that went in: the board stays, a line under the pool says so with the session's link, the draft and files
+ *  cleared, the dock folded, the keys free; `follow`: its link opens the session, else its × hides the line and
+ *  + Session opens a clean dock. */
+async function startedLine(f, at, agent, follow = false) {
+  const { page } = f;
+  await until(async () => (await dock(page)).done);
+  let d = await dock(page);
+  const url = new URL(page.url());
+  check(`AC-204 ${at} a start that went in keeps the board: "Session started on ${agent}" under the pool with a link to the session; the draft and its files cleared, the dock folded, the keys free`,
+    url.pathname === "/kanban/" && d.done.startsWith(`Session started on ${agent} · Open the session`) && d.link === "/sessions/#/tmux:local:terminum:%259/" && d.focus === "" && await page.evaluate(() => document.activeElement === document.querySelector("#sessdone a"))
+    && !d.open && d.text === "" && d.files.length === 0 && free(d) && await page.evaluate(() => !localStorage.getItem("tm.sessiondraft")), JSON.stringify({ d, url: page.url() }));
+  const placed = await page.evaluate(() => { const c = document.querySelector("#agentbar .agentcard").getBoundingClientRect(), n = document.getElementById("sessdone").getBoundingClientRect();
+    return n.top >= c.bottom - 1 && n.right <= innerWidth && document.documentElement.scrollWidth <= innerWidth; });
+  check(`AC-204 ${at} the line stands under the pool's cards, nothing past the screen`, placed, "");
+  if (follow) {
+    await page.click("#sessdone a");
+    check(`AC-204 ${at} its link opens the session`, await until(() => page.url().includes("/sessions/")), page.url());
+    return;
+  }
+  await page.click("#sessdone .x");
+  check(`AC-204 ${at} its × hides the line`, !(await dock(page)).done, JSON.stringify(await dock(page)));
+  await page.click(`#agentbar .agentcard[data-agent="a1"] .agsess`);
+  d = await dock(page);
+  check(`AC-204 ${at} + Session after it opens an empty dock`, d.open && d.text === "" && d.files.length === 0 && !d.done, JSON.stringify(d));
+  await page.keyboard.press("Escape");
 }
 
 /** terminumd refuses the start: the dock opens again with the draft, its file and terminumd's words; Start takes a press again. */

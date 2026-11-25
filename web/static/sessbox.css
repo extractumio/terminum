@@ -9,13 +9,20 @@
 .agsess[aria-busy="true"] { cursor: progress; }   /* its session starting (AC-204) */
 @media (pointer: coarse) { .agsess { height: 32px; } }   /* with the card's own press round it: 44 px of finger room */
 #agentbar > .rail { grid-row: span 2; }
-#agentbar > .sessdock { grid-column: 2; }
+#agentbar > .sessdock, #agentbar > .sessdone { grid-column: 2; }
 /* open: the pool's cards keep at most 40 % of the section, the dock the rest, its box giving way to its head and keys */
 #agentbar:has(> .sessdock:not([hidden])) { grid-template-rows: fit-content(40%) minmax(0, 1fr); }
 .sessdock { display: flex; flex-direction: column; gap: var(--sp-2); max-width: 984px; margin-top: var(--sp-2); padding: var(--sp-2) var(--sp-3);
   border-radius: var(--r-lg); background: var(--surface-1); }
 .sessdock > .xbox { min-height: 3.5rem; }   /* the box's floor, three lines: a field sized by its text has its text's height as its own floor */
-.railed.folded > .sessdock { display: none; }
+.railed.folded > .sessdock, .railed.folded > .sessdone { display: none; }
+/* a start that went in: one line under the pool's cards, its link to the session, its × (the board stays) */
+.sessdone { display: flex; align-items: center; gap: var(--sp-2); max-width: 984px; margin: var(--sp-2) 0 0; color: var(--t-fg); font-size: var(--fs-small); }
+.sessdone[hidden] { display: none; }
+.sessdone > span { min-width: 0; overflow-wrap: anywhere; }
+/* its link and a miss's: the theme's link color, never the browser's blue; whole on one line, a finger's on touch */
+.sessdone a, #sesserror a { color: var(--link); white-space: nowrap; text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 2px; }
+@media (pointer: coarse) { .sessdone a { display: inline-flex; align-items: center; min-height: 44px; } }
 .sesshead { display: flex; align-items: center; gap: var(--sp-2); }
 .sesshead h3 { flex: 1; min-width: 0; margin: 0; font-size: var(--fs-label); font-weight: var(--fw-head); }
 #sessagent { display: inline-flex; align-items: center; gap: var(--sp-1); }
@@ -30,7 +37,7 @@
 @media (max-width: 900px) { .sessfoot .hint { display: none; } }
 /* a phone: in the pool's sheet, under the pool; no drag there (the sheet covers the board): IDs are typed */
 @media (max-width: 600px), (pointer: coarse) and (max-height: 500px) {
-  #pool #agentbar > .sessdock { grid-column: 1; }
+  #pool #agentbar > .sessdock, #pool #agentbar > .sessdone { grid-column: 1; }
   #pool #agentbar > .rail { grid-row: auto; }
   #sesstext { font-size: 16px; }
   .sessdock > .xbox { min-height: 7rem; }
