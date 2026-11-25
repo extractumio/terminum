@@ -24,7 +24,7 @@
   --chrome: var(--surface-1);
   --chrome-2: var(--surface-3);
   --line: color-mix(in srgb, var(--t-fg) 16%, var(--t-bg));        /* the few lines left: tree guides, rendered content */
-  --muted: color-mix(in srgb, var(--t-fg) 58%, var(--t-bg));       /* secondary text, idle icons, placeholders */
+  --muted: color-mix(in srgb, var(--t-fg) 58%, var(--t-bg));       /* secondary text, idle icons, placeholders; its 58% also in contrast.js pageColors */
   --muted-text: var(--muted);                                       /* small secondary text that must reach 4.5:1: fg 75% on a light theme (below) */
   --faint: color-mix(in srgb, var(--t-fg) 40%, var(--t-bg));       /* a quiet dot, a disabled glyph */
   --shadow-a: 40%;                                                  /* 18% on a light theme (below) */

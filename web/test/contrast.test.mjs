@@ -54,6 +54,8 @@ test("AC-267: a report type's words read on every type's fill, Solarized's low c
     const ink = labelInk(bg, fg, [...hues, mix(fg, bg, 0.58)], 0.4);   // tokens.css --label-share
     for (const h of [...hues, mix(fg, bg, 0.58)]) assert.ok(contrast(ink, mix(h, bg, 0.4)) >= 4.5, `${ink} on ${h} over ${bg}`);
   }
+  const grey = labelInk("#505050", "#e0e0e0", [...hues, mix("#e0e0e0", "#505050", 0.58)], 0.4);   // a mid-grey bg: no one color reads on all
+  assert.ok(contrast(grey, mix(hues[2], "#505050", 0.4)) >= 3.5, `${grey} still reads as large text on failed's fill`);
   assert.equal(labelInk("#000000", "#ffffff", hues, 0.4), "#ffffff");   // the theme's text color while it reads
   assert.equal(labelInk("#000", "rebeccapurple", hues, 0.4), "rebeccapurple");   // not measurable: as the theme says
 });

@@ -70,8 +70,9 @@ export function mix(a, b, share) {
 }
 
 /** A label's words (a report's type, terminum-reports.md AC-267): the theme's text color, made to read (4.5:1) on each
- *  of `hues` mixed into bg by `share` (0…1) as a label's fill is (tokens.css --label-share); fills on bg's side all, so
- *  making it read on one never undoes another. */
+ *  of `hues` mixed into bg by `share` (0…1) as a label's fill is (tokens.css --label-share). On a dark or a light bg the
+ *  fills stand on its side all, so making it read on one never undoes another; on a mid-grey bg (#505050) no one color
+ *  reads on every fill, and the last fill's wins. */
 export function labelInk(bg, fg, hues, share) {
   return hues.map((h) => mix(h, bg, share)).reduce((ink, fill) => readable(fill, ink), fg);
 }
