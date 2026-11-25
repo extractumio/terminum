@@ -90,6 +90,7 @@ Open questions: none. §9 defines the defaults.
 | AC-261 | [SHOULD / P1] | Tags and commits power release metrics, recorded question kinds split owner acts and the review shows effort allocation. |
 | AC-262 | [SHOULD / P1] | Outside indicators use probes; outside text passes only closed fields through a tool-free reader, with gated task eligibility. |
 | AC-263 | [SHOULD / P1] | Project-type templates bootstrap projects; one line orders the owner's incidents and only general definitions cross projects. |
+| AC-284 | [MUST / P0] | A project's manager writes its Supervisor's charter only while the Supervisor is off; the write keeps the level, tiers, budgets, detectors, mutes, probes and engine board, and gives no command authority. |
 
 ## 5. BDD scenarios
 
@@ -1458,6 +1459,30 @@ Scenario: AC-263 failure — cross-project request
   Then it refuses the request and shares no register, ledger, baselines or raw data
 ```
 
+### AC-284 — A manager drafts the charter [MUST / P0]
+
+```gherkin
+Scenario: AC-284 happy path — a charter from the project's rules
+  Given API's Supervisor is off at settings revision 2
+  When API's manager calls set_supervisor_charter {revision: "2", charter: {mission, users, risk_appetite, never, never_checks, priorities, allocation, indicator_targets, surfaces}}
+  Then the settings are at revision 3 with that charter, checked as the Supervisor tab's save checks it (AC-220, AC-222)
+  And the level, tiers, budgets, detectors with their modes and mutes, probes, guardrails, language and engine board are those of revision 2
+
+Scenario: AC-284 failure — the Supervisor is on
+  Given API's Supervisor is on
+  When its manager calls set_supervisor_charter
+  Then it answers "The Supervisor is on: only the owner changes its charter, in the Supervisor tab." and the settings stay at their revision
+
+Scenario: AC-284 failure — a stale or invalid charter
+  When the revision is not the current one, the charter is no JSON object, holds an unknown field, ties a never line to a detector that checks none, or makes the settings larger than 64 KiB
+  Then the answer says which, and nothing is kept
+
+Scenario: AC-284 edge — the owner's Enable
+  Given a charter the manager wrote
+  When the owner opens the Supervisor tab
+  Then the tab shows that charter for review before Enable, as any saved draft (AC-263), and only the owner's Enable starts the collector (AC-216)
+```
+
 ## 6. Flow and sequence diagrams
 
 ### Collection, triage and the owner's line (AC-211, AC-217, AC-224, AC-227, AC-233)
@@ -1863,3 +1888,4 @@ Enable none of the runtime cases by default. The stages below list the cases in 
 - [x] AC-261 — `ac261_git_release_metrics_and_owner_split` checks commit ancestry, tags, the owner split and allocation. `ac261_only_an_own_verify_records_its_outcome` distinguishes Verify from Prepare. `e2e_supervisor_probes.py` checks the live scoreboard with integration on and off.
 - [x] AC-262 — `ac262_outside_fields_and_deduplication` checks the closed reader projection, reference validation and duplicate suppression. `ac262_outside_indicator_uses_its_probe_and_guard` checks guard verdicts and probe replacement. `ac262_outside_task_needs_a_human_move_before_a_round` checks Auto-Dispatcher's round. `e2e_supervisor_probes.py` checks live collection and `webSupervisor` checks the settings and scoreboard in the browser.
 - [x] AC-263 — `e2e_supervisor_projects.py` checks all templates, two private attachments, different baselines, owner edits, shared quiet hours and notices ordered by level. `webSupervisor` and `liveSupervisor` cover the editable draft and saved targets. `ac247_ac263_alert_verdict_scopes_a_grouped_notice_and_orders_the_shared_line` covers a downgraded notice. `ac253_ac263_enable_runs_in_shadow_and_engine_requests_keep_their_class` checks the exact engine task and refuses project samples. `e2e_supervisor_rounds.py` and `e2e_supervisor_projects.py` refuse a cross-project case read and a state import.
+- [ ] AC-284 — `cargo test supervisor::charter`, `cargo test roles::setup`
