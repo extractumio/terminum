@@ -1233,7 +1233,8 @@ Scenario: AC-204 happy path — the composer
   Then "TERM-12 TERM-15 " stands at the caret (the box's end without focus), a space before when it follows a word; neither task runs or moves; the agent reads each by get_task
   When the user presses Start or ⌘Enter
   Then the dock folds at once, its draft and files kept, and that agent's key says "Starting…", busy; every + Session key is inert until the start ends, so no other draft is typed meanwhile
-  And a session of that agent opens in the project's place as AC-142's, terminumd types the prompt once (the human's words, then a line per file: its name, its kind and the path it is kept at), and the page shows the session; the draft is cleared
+  And a session of that agent opens in the project's place as AC-142's, terminumd types the prompt once (the human's words, then a line per file: its name, its kind and the path it is kept at); the draft and its files are cleared
+  And the page stays on the board: the dock stays folded, the keys say "+ Session" again and take presses, and a line under the pool's cards says "Session started on Opus reviewer" with an "Open the session" link and a × that hides it; the focus, unless the user moved it meanwhile, is on that link; the agent's card shows the new session as for any start; + Session opened again hides the line
   When terminumd refuses the start or the request fails
   Then the dock opens again for that agent with its draft and files, terminumd's message in it, and the keys take presses again
 
@@ -2428,7 +2429,7 @@ Depends on `terminum-kanban.md`'s Stage 1. All three stages belong to terminum's
 - [x] AC-140 — `cargo test tasks::agents`, `cargo test tasks::store`, `web/test/e2e_liveboardagents.mjs`, `web/test/e2e_livedispatcher.mjs`, `scripts/e2e_remote_tasks.py`
 - [x] AC-141 — `cargo test dispatcher::pool`, `cargo test dispatcher::plan`, `cargo test tasks::limits`, `web/test/e2e_liveboardpool.mjs` (an empty-box offer, a draft typed before its press, refusal preserving the pane/draft/unqueued task, then an empty-box close)
 - [x] AC-142 — `cargo test dispatcher::runs`, `cargo test dispatcher::plan`, `cargo test tasks::tools`, `web/test/e2e_liveboardagents.mjs` (the tiles: `web/test/e2e_liveboardpool.mjs`), `web/test/e2e_navsession.mjs` (the list's head key)
-- [x] AC-204 — `cargo test dispatcher::firstprompt` (the words and files checked), `web/test/e2e_liveboardpool.mjs` (typed once through the gate, a refused control character), `web/test/e2e_sessbox.mjs` (`node web/test/e2e_all.mjs webSessBox`: the dock, files, dropped tasks, the draft, the fold at Start, a refusal, a miss)
+- [x] AC-204 — `cargo test dispatcher::firstprompt` (the words and files checked), `web/test/e2e_liveboardpool.mjs` (typed once through the gate, a refused control character), `web/test/e2e_sessbox.mjs` (`node web/test/e2e_all.mjs webSessBox`: the dock, files, dropped tasks, the draft, the fold at Start, the board kept with its line and link, a refusal, a miss)
 - [x] AC-143 — `cargo test dispatcher::usage`, `cargo test tasks::agents`, `web/test/e2e_liveboardagents.mjs`
 - [x] AC-168 — `cargo test subscriptions`, `cargo test usageask`, `cargo test usageread`, `cargo test settings::tests::ac168`, `cargo test cli::statusline`, `cargo test cli::hooktokens`, `scripts/e2e_hooks.py`, `web/test/e2e_liveboardsubs.mjs` (a stripe under 40% green, over 90% red)
 - [ ] AC-156 — `cargo test tasks::agents`, `cargo test dispatcher::press`, `web/test/e2e_liveboardagents.mjs`, `web/test/e2e_livedispatcher.mjs` (the inline words), `SECURITY.md` carries the operator's command

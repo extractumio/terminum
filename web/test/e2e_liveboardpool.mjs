@@ -301,7 +301,8 @@ export async function agentPool(page, opts, pressAt) {
   check("AC-204 the card's + Session opens the dock under the pool, its box in focus", await until(() => page.isVisible("#sesscompose")) && await page.evaluate(() => document.activeElement?.id === "sesstext"));
   await page.fill("#sesstext", "AC204 first prompt, typed once");
   await page.click("#sessstart");
-  check("AC-204 Start opens the session", await until(() => /\/sessions\//.test(page.url()), 30000), page.url());
+  check("AC-204 a start that went in keeps the board, a line under the pool linking the session",
+    await until(() => page.isVisible('#sessdone a[href^="/sessions/"]'), 30000) && /\/kanban\//.test(page.url()), page.url());
   const typed = async () => ((await j("/api/messages?q=AC204")).items ?? []).filter((i) => i.text.includes("AC204 first prompt, typed once")).length;
   check("AC-204 its prompt went in once, and only once", await until(async () => (await typed()) === 1, 20000) && (await nap(3000), (await typed()) === 1), String(await typed()));
   let prompted;
