@@ -246,8 +246,7 @@ pub(super) fn starved(q: &Query<'_, '_>) -> Result<Measurements, String> {
         ON m.seq = (SELECT max(e.seq) FROM project_events e WHERE e.task = t.id AND e.kind = 'move'
             AND json_extract(e.data, '$.to') = 'TODO')
         WHERE t.project = ?1 AND t.status = 'TODO' AND t.severity IN ('P0','P1') AND t.archived_at IS NULL
-        AND NOT EXISTS (SELECT 1 FROM task_links l JOIN tasks b ON b.id = l.other
-            WHERE l.task = t.id AND l.kind = 'blocked_by' AND (b.status <> 'DONE' OR b.archived_at IS NOT NULL))"),
+        AND NOT EXISTS (SELECT 1 FROM {} AND l.task = t.id)", waiting::OPEN_BLOCKERS),
         (q.project, q.window.end), |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?, r.get::<_, Option<String>>(2)?,
             r.get::<_, Option<String>>(3)?, r.get::<_, bool>(4)?)))?;
     let mut out = Measurements::default();
@@ -258,12 +257,8 @@ pub(super) fn starved(q: &Query<'_, '_>) -> Result<Measurements, String> {
         }
         if waiting::free_slot(q.tx, &slots, &agents, q.project, &id, assigned.as_deref())? {
             let evidence = std::iter::once(task(&id)).chain(event.map(events)).collect();
-            let mut reading = Reading::new("task", id, "todo_minutes", (q.window.end - entered) as f64 / 60.0, evidence, Source::AgeSince(entered));
-            if p0 {
-                // A starved task has no open blocker and a free slot: only Auto-Dispatch can have held it.
-                waiting::judge(q, &mut reading, || waiting::held(q.tx, q.project, q.window.end, None, true))?;
-            }
-            out.readings.push(reading);
+            let reading = Reading::new("task", id, "todo_minutes", (q.window.end - entered) as f64 / 60.0, evidence, Source::AgeSince(entered));
+            out.readings.push(waiting::judge(q, reading, p0, assigned.as_deref())?);
         }
     }
     Ok(out)
@@ -278,19 +273,10 @@ pub(super) fn bugs(q: &Query<'_, '_>) -> Result<Measurements, String> {
     let bugs = rows(q.tx, "SELECT id, created_at, severity = 'P0' AND status = 'TODO', agent FROM tasks WHERE project = ?1
         AND archived_at IS NULL AND type = 'Bug' AND severity IN ('P0','P1') AND status NOT IN ('DONE','FAILED') AND created_at BETWEEN 1 AND ?2",
         (q.project, q.window.end), |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?, r.get::<_, bool>(2)?, r.get::<_, Option<String>>(3)?)))?;
-    let mut out = Measurements::default();
-    for (id, at, waiting_p0, named) in bugs {
-        let mut reading = Reading::new("task", &id, "open_bug_minutes", (q.window.end - at) as f64 / 60.0, vec![task(&id)], Source::AgeSince(at));
-        if waiting_p0 {
-            waiting::judge(q, &mut reading, || {
-                let (slots, agents) = (Slots::read(q.tx)?, agents::of_project(q.tx, q.project)?);
-                let free = waiting::free_slot(q.tx, &slots, &agents, q.project, &id, named.as_deref())?;
-                waiting::held(q.tx, q.project, q.window.end, waiting::blocker(q.tx, &id)?, free)
-            })?;
-        }
-        out.readings.push(reading);
-    }
-    Ok(out)
+    let readings = bugs.into_iter().map(|(id, at, waiting_p0, named)| waiting::judge(q, Reading::new(
+        "task", &id, "open_bug_minutes", (q.window.end - at) as f64 / 60.0, vec![task(&id)], Source::AgeSince(at)), waiting_p0, named.as_deref()))
+        .collect::<Result<_, _>>()?;
+    Ok(Measurements { readings, ..Measurements::default() })
 }
 
 pub(super) fn lead_time(q: &Query<'_, '_>) -> Result<Measurements, String> {

@@ -64,6 +64,8 @@ fn ac213_a_waiting_p0_task_reaches_the_owner_and_resolves_when_it_leaves_todo() 
 fn ac213_the_raise_names_what_held_a_waiting_p0_bug() {
     let f = project("waiting-held");
     f.task("p0", Some("Bug"), "P0", "TODO", NOW - 2 * DAY);
+    // Auto-Dispatch names tasks by slug, as the store gives every task one.
+    f.write("UPDATE tasks SET slug = 'API-7' WHERE id = 'p0'", []);
     let held = |f: &Fixture| scored(f, Rule::UserBugAge, NOW, "p0").1[0]["reason"].as_str().unwrap().to_owned();
     assert_eq!(held(&f), OFF);
 
@@ -79,6 +81,9 @@ fn ac213_the_raise_names_what_held_a_waiting_p0_bug() {
     assert_eq!(held(&f), "Auto-Dispatch takes no P0 tasks.");
 
     f.write("UPDATE projects SET auto_severities = '[\"P0\",\"P1\"]' WHERE id = ?1", [PROJECT]);
+    assert!(held(&f).starts_with("Auto-Dispatch passes over it: "), "no agent of the pool is named: {}", held(&f));
+
+    f.write("UPDATE projects SET auto_default = 'agent' WHERE id = ?1", [PROJECT]);
     assert_eq!(held(&f), "Auto-Dispatch is on and has not started it.");
 
     f.write("INSERT INTO auto_starts (task, round, project, at) VALUES ('open-0', NULL, ?1, ?2)", (PROJECT, NOW - 60));
@@ -88,6 +93,16 @@ fn ac213_the_raise_names_what_held_a_waiting_p0_bug() {
     f.run("open-1", "busy", "agent", NOW - 120);
     f.write("UPDATE runs SET state = 'working' WHERE id = 'busy'", []);
     assert_eq!(held(&f), "No agent that may run it has a free slot.");
+}
+
+#[test]
+fn ac213_a_waiting_p0_task_is_critical_from_a_full_day_past_its_limit() {
+    let f = project("waiting-day");
+    f.task("p0", None, "P0", "TODO", NOW - DAY);
+    let limit = NOW;
+    assert!(f.live(Rule::Starved, limit).detectors[0].findings.is_empty(), "at its limit it does not fire");
+    assert_eq!(scored(&f, Rule::Starved, limit + DAY - 60, "p0").0, 2, "a minute short of a day past it");
+    assert_eq!(scored(&f, Rule::Starved, limit + DAY, "p0").0, 3, "a full day past it");
 }
 
 #[test]

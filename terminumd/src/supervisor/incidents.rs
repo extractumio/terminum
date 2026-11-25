@@ -79,7 +79,8 @@ pub(super) fn observe(tx: &Transaction, seen: Observation<'_>) -> Result<(), Str
             let mut why = format!("{} on {}: {} against a threshold of {}", rule.id(), finding.metric, value, threshold);
             // What held a waiting P0 task (AC-213), so the owner knows what to fix.
             for reason in finding.score_raises.iter().filter_map(|r| r.reason.as_deref()) {
-                why = format!("{why}. {reason}");
+                why.push_str(". ");
+                why.push_str(reason);
             }
             crate::reports::sources::incident(tx, project, incident, &format!("{} {}", finding.subject_kind, finding.subject_id), &why, at)?;
         }

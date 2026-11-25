@@ -299,7 +299,7 @@ pub(crate) struct Finding {
     assessment: impact::Assessment,
     scores: Scores,
     score_raises: Vec<scoring::Raise>,
-    /// The measured escalate rule that raised a score, and what it named (AC-213).
+    /// `runaway_run`'s raise and the run it named; other measured raises are in `score_raises` (AC-213).
     raised: Option<runaway::Raised>,
 }
 
