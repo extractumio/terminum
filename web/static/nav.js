@@ -12,8 +12,8 @@ import { icon } from "./icons.js";
 import { glide } from "./listmove.js";
 import { planPct, planTrack } from "./planrow.js";
 import { arranged } from "./reorder.js";
-import { PROJECT_HUES, el, hueColor, iconButton, plural, projectColor, projectHue } from "./listparts.js";
-import { taskUrl } from "./tasklink.js";
+import { PROJECT_HUES, el, hueColor, iconButton, plural, pointerKey, projectColor, projectHue } from "./listparts.js";
+import { boardUrl, taskUrl } from "./tasklink.js";
 import { atWork } from "./cardstate.js";
 
 // A coding agent's state: waiting for the user, failed; working is its bar's pulse (folderBar), done nothing
@@ -312,7 +312,7 @@ export function listParts(groups, projects, order = []) {
 }
 
 export function renderNav(list, groups, current, query, onPick, collapsed, onToggle, marked = new Map(), onHost = null, onCopy = null, onImport = null,
-  { projects = [], order = [], onClone = null, onProjectNew = null, onGroupNew = null, onProjectMenu = null, onProjectRename = null, onGroupMenu = null, onReconnect = null, onTask = null, show = () => true, empty = "No tmux sessions." } = {}) {
+  { projects = [], order = [], onClone = null, onProjectNew = null, onGroupNew = null, onProjectMenu = null, onProjectRename = null, onGroupMenu = null, onReconnect = null, onTask = null, show = () => true, boardShown = null, empty = "No tmux sessions." } = {}) {
   const q = query.trim().toLowerCase();
   const frag = document.createDocumentFragment();
   // a session of the user's tmux on a host that is down waits for that host: the same state, the same look
@@ -353,6 +353,13 @@ export function renderNav(list, groups, current, query, onPick, collapsed, onTog
     const acts = el("span", "acts");               // a fixed column: the counts line up whatever buttons follow
     h.append(t, acts);
     if (onProjectNew) acts.append(newButton(p.name, p.dir || "its folder", () => onProjectNew(p, tops.at(-1))));
+    if (p.id !== boardShown) {                     // its tasks on the board: a link, so ⌘-click opens a tab (AC-92)
+      const a = pointerKey(el("a", "boardkey"));
+      Object.assign(a, { href: boardUrl(p.id), title: `${p.name}'s tasks on the board`, draggable: false });
+      a.setAttribute("aria-label", `Board of ${p.name}`);
+      a.append(icon("board", 14));
+      acts.append(a);
+    }
     if (onProjectMenu) {
       const m = iconButton("hostbtn", "ellipsis", `Project ${p.name}`, `${p.name}: new session, rename, move, delete, close`, (b) => onProjectMenu(p, b));
       m.setAttribute("aria-haspopup", "true");

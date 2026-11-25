@@ -59,7 +59,8 @@ export function boardSessions({ chosen, openTask, send, narrow, newSession, proj
       projects: st.projects, order: st.listOrder, onClone: clone, onProjectNew: (p, last) => menus.newInProject(p, last?.id),
       onGroupNew: (g, last) => (last ? clone(last) : send({ t: "new", group: g.wid })), onProjectMenu: menus.headMenu, onProjectRename: menus.rename,
       onGroupMenu: menus.groupMenu, onReconnect: tools.reconnect, onTask: openTask, empty: "No sessions here.",
-      show: (project) => !picked.length || picked.includes(project ? project.id : DEFAULT) });
+      show: (project) => !picked.length || picked.includes(project ? project.id : DEFAULT),
+      boardShown: picked.length === 1 ? picked[0] : null });   // the project the board shows alone: no key to it
     adhoc.hidden = picked.length !== 1;
     list.append(adhoc);
   }
