@@ -45,6 +45,18 @@ class Status(unittest.TestCase):
         self.assertIn("new.md is not in INDEX.md", said)
         self.assertIn("no valid", said)
 
+    def test_rules_set_a_file_s_cap_and_none_keeps_a_verbatim_file_uncapped(self):
+        (self.dir / "INDEX.md").write_text(INDEX + "| `owner-text.md` | |\n")
+        (self.dir / "RULES.md").write_text(
+            "| File | Holds | Lifetime | Lines |\n|---|---|---|---|\n"
+            "| `infra.md` | Machines | Until it changes | 20 |\n"
+            "| `owner-text.md` | The owner's text, verbatim | Until the owner changes it | none |\n")
+        (self.dir / "infra.md").write_text("x\n" * 21)
+        (self.dir / "owner-text.md").write_text("x\n" * 1200)
+        said = memory_status.report(self.dir, TODAY)
+        self.assertIn("infra.md has 21 lines, over 20", said)
+        self.assertNotIn("owner-text.md has", said)
+
     def test_a_link_is_not_followed(self):
         outside = self.dir / "outside.txt"
         outside.write_text("a secret\n")
