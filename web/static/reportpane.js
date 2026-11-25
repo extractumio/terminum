@@ -17,6 +17,7 @@ const pane = el("section", "reportpane");
 pane.id = "reportpane";
 pane.hidden = true;
 pane.tabIndex = -1;
+pane.dataset.keyscope = "";                      // its foot's keys by the keyboard while it holds the focus (dlgkeys.js, AC-281)
 pane.setAttribute("aria-label", "Report");
 let shown = null, drawn = "", timer = 0, asked = 0, rendered = { id: "", text: "", node: null };
 
@@ -187,6 +188,7 @@ async function draw(r) {
 const drafts = new Map();
 function foot(r) {
   const f = el("footer", "rpfoot");
+  f.dataset.keyrow = "";
   if (r.answering) f.append(el("p", "rpanswering", `${r.answering} is answering`));
   else if (r.no_answer) f.append(el("p", "rpnoanswer", r.no_answer));
   if (!r.replyable) {
