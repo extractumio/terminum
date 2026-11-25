@@ -17,6 +17,11 @@ fn enabled(tx: &Transaction, project: &str) -> Result<bool, String> {
     Ok(super::rounds::enabled(tx, project)?.is_some())
 }
 
+/// Whether a manager may write over `charter`: it is empty, or the manager's draft the owner has not saved.
+fn draftable(charter: &Charter) -> bool {
+    charter.drafted_by_manager || serde_json::to_value(charter).ok() == serde_json::to_value(Charter::default()).ok()
+}
+
 /// The Supervisor's part of a project's setup: its switch, level, tiers by agent name, revision, charter, the
 /// project-type templates and checkable never lines a draft starts from, and its gaps as (what, who closes it).
 pub(crate) fn setup(tx: &Transaction, project: &str, human: &str) -> Result<(Value, Vec<(String, String)>), String> {
@@ -29,9 +34,11 @@ pub(crate) fn setup(tx: &Transaction, project: &str, human: &str) -> Result<(Val
         tiers.insert(tier.into(), json!(id.map(|id| crate::tasks::agents::name_of(tx, id)).transpose()?));
     }
     let mut gaps = Vec::new();
-    if s.charter.mission.trim().is_empty() {
-        gaps.push(("the Supervisor's charter is empty".into(),
-            if on { format!("{human} Supervisor tab (it is on)") } else { "you: set_supervisor_charter".into() }));
+    if s.charter.drafted_by_manager {
+        gaps.push(("the Supervisor's charter is a manager's draft".into(), format!("{human} Supervisor tab: review it, then Save")));
+    } else if s.charter.mission.trim().is_empty() {
+        gaps.push(("the Supervisor's charter is empty".into(), if on { format!("{human} Supervisor tab (it is on)") }
+            else if draftable(&s.charter) { "you: set_supervisor_charter".into() } else { format!("{human} Supervisor tab (the owner's)") }));
     }
     if !unset.is_empty() {
         gaps.push((format!("Supervisor tiers unset: {}", unset.join(", ")), format!("{human} Supervisor tab, from the pool's agents")));
@@ -62,8 +69,7 @@ pub(crate) fn set_by_manager(tx: &Transaction, project: &str, revision: i64, tex
         return Err("charter: its review dates and outside indicators are the owner's; leave them out.".into());
     }
     let mut saved = settings::read(tx, project)?;
-    let was = &saved.settings.charter;
-    if !was.drafted_by_manager && serde_json::to_value(was).ok() != serde_json::to_value(Charter::default()).ok() {
+    if !draftable(&saved.settings.charter) {
         return Err(OWNERS.into());
     }
     saved.settings.charter = charter;

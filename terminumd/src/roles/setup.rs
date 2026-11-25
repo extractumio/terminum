@@ -74,10 +74,6 @@ pub async fn get(app: &Shared, boss: &Boss) -> Result<String, String> {
     Ok(format!("{DATA}\n{shown}"))
 }
 
-/// The fields `update` takes, as update_project_setup names them.
-const FIELDS: [&str; 6] = ["prefix", "language", "template", "agents_at_once", "memory_warn_gib", "memory_end_gib"];
-const NAME: &str = "Name a field: prefix, language, template, agents_at_once, memory_warn_gib with memory_end_gib.";
-
 /// A GiB figure an argument holds.
 fn gib(key: &str, text: &str) -> Result<f64, String> {
     text.parse::<f64>().ok().filter(|n| n.is_finite()).ok_or_else(|| format!("{key}: a number of GiB, 0 for off, or empty"))
@@ -85,9 +81,6 @@ fn gib(key: &str, text: &str) -> Result<f64, String> {
 
 /// Applies the fields `args` names, each by the project window's own rule, in one transaction: every one, or none.
 pub(crate) fn update(tx: &Transaction, project: &str, args: &Value) -> Result<Vec<&'static str>, String> {
-    if let Some(other) = args.as_object().and_then(|given| given.keys().find(|key| !FIELDS.contains(&key.as_str()))) {
-        return Err(format!("{other}: not a setup field; nothing changed. {NAME}"));
-    }
     let mut changed = Vec::new();
     if let Some(prefix) = args["prefix"].as_str() {
         slugs::set_prefix(tx, project, prefix)?;
@@ -116,7 +109,7 @@ pub(crate) fn update(tx: &Transaction, project: &str, args: &Value) -> Result<Ve
         _ => return Err("memory_warn_gib and memory_end_gib go together: both numbers, or both empty for the global ones".into()),
     }
     if changed.is_empty() {
-        return Err(NAME.into());
+        return Err("Name a field: prefix, language, template, agents_at_once, memory_warn_gib with memory_end_gib.".into());
     }
     Ok(changed)
 }

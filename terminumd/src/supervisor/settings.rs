@@ -389,15 +389,17 @@ pub(crate) const MOST: usize = 64 * 1024;
 
 /// Imports preserve the destination's agent choices and its switch. A copied pack can't select a pool.
 pub(super) fn write(
-    tx: &Transaction, project: &str, revision: i64, settings: Settings, imported: bool,
+    tx: &Transaction, project: &str, revision: i64, mut settings: Settings, imported: bool,
 ) -> Result<Saved, String> {
+    settings.charter.drafted_by_manager = false;
     let source = if imported { SaveSource::Import } else { SaveSource::Owner };
     save(tx, project, revision, settings, source, crate::tasks::ops::now())
 }
 
 /// A manager's charter draft (AC-284): saved as the owner's save would, marked until the owner saves.
-pub(super) fn write_draft(tx: &Transaction, project: &str, revision: i64, settings: Settings) -> Result<Saved, String> {
-    save(tx, project, revision, settings, SaveSource::Manager, crate::tasks::ops::now())
+pub(super) fn write_draft(tx: &Transaction, project: &str, revision: i64, mut settings: Settings) -> Result<Saved, String> {
+    settings.charter.drafted_by_manager = true;
+    save(tx, project, revision, settings, SaveSource::Owner, crate::tasks::ops::now())
 }
 
 pub(super) fn write_at(
@@ -407,7 +409,7 @@ pub(super) fn write_at(
 }
 
 #[derive(Clone, Copy, PartialEq)]
-enum SaveSource { Owner, Import, ConfigChange, Manager }
+enum SaveSource { Owner, Import, ConfigChange }
 
 fn save(
     tx: &Transaction, project: &str, revision: i64, mut settings: Settings, source: SaveSource, at: i64,
@@ -417,9 +419,6 @@ fn save(
         return Err("Supervisor settings changed. Reload them and try again.".into());
     }
     let imported = source == SaveSource::Import;
-    if source != SaveSource::ConfigChange {
-        settings.charter.drafted_by_manager = source == SaveSource::Manager;
-    }
     if imported {
         settings.tiers = previous.settings.tiers.clone();
         settings.level = previous.settings.level;

@@ -74,6 +74,8 @@ fn ac284_the_owner_s_charter_or_the_supervisor_on_refuses_the_draft() {
     pack_g.charter = serde_json::from_value(json!({"allocation": {"Feature": 0.5, "Bug": 0.5}})).unwrap();
     g.store.with(|tx| settings::write(tx, PROJECT, 1, pack_g, false).map(drop)).unwrap();
     assert_eq!(g.store.with(|tx| set_by_manager(tx, PROJECT, 2, &charter())).unwrap_err(), OWNERS, "any owner's field makes it the owner's");
+    let (_, gaps) = g.store.with(|tx| setup(tx, PROJECT, "the human, in the")).unwrap();
+    assert_eq!(gaps[0].1, "the human, in the Supervisor tab (the owner's)", "the gap and the write agree");
 }
 
 #[test]
@@ -96,8 +98,9 @@ fn ac284_setup_names_the_tiers_and_offers_the_templates() {
     assert_eq!(gaps[0], ("the Supervisor's charter is empty".to_string(), "you: set_supervisor_charter".to_string()));
     f.store.with(|tx| set_by_manager(tx, PROJECT, 1, &charter())).unwrap();
     let (shown, gaps) = f.store.with(|tx| setup(tx, PROJECT, "the human, in the")).unwrap();
-    assert_eq!(gaps, [("Supervisor tiers unset: medium, strong".to_string(), "the human, in the Supervisor tab, from the pool's agents".to_string()),
-        ("the Supervisor is off".to_string(), "the human, in the Supervisor tab: Level, then Enabled".to_string())], "its mission is set");
+    assert_eq!(gaps, [("the Supervisor's charter is a manager's draft".to_string(), "the human, in the Supervisor tab: review it, then Save".to_string()),
+        ("Supervisor tiers unset: medium, strong".to_string(), "the human, in the Supervisor tab, from the pool's agents".to_string()),
+        ("the Supervisor is off".to_string(), "the human, in the Supervisor tab: Level, then Enabled".to_string())], "its mission is drafted");
     assert_eq!(shown["enabled"], false);
     assert_eq!(shown["level"], "advisor");
     assert_eq!(shown["tiers"], json!({"small": "sonnet", "medium": null, "strong": null, "independent": "codex"}));

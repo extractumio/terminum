@@ -1486,7 +1486,7 @@ Scenario: AC-284 edge — the owner's Enable
   Given a charter the manager wrote
   When the owner opens the Supervisor tab
   Then the tab opens the charter's section with "The project's manager drafted this charter from its repository. Review it, then Save to make it yours."
-  And the manager may write its draft again until the owner's Save, which clears the mark; only the owner's Enable starts the collector (AC-216)
+  And get_project_setup's gaps name the draft for the owner's review, and the manager may write its draft again until the owner's Save, which clears the mark; only the owner's Enable starts the collector (AC-216)
 ```
 
 ## 6. Flow and sequence diagrams
