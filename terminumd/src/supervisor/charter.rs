@@ -46,23 +46,29 @@ pub(crate) fn setup(tx: &Transaction, project: &str, human: &str) -> Result<(Val
     Ok((shown, gaps))
 }
 
-/// Replaces the charter of revision `revision` with `text` (a charter's JSON), checked as the tab's save checks it;
-/// the review dates and outside indicators stay, as do every setting outside the charter. Answers the new revision.
+/// What a manager's write answers when the owner has a charter: a draft never replaces the owner's yardstick.
+pub(crate) const OWNERS: &str = "The charter is the owner's: only the owner changes it, in the Supervisor tab.";
+
+/// Writes `text` (a charter's JSON) as the charter of revision `revision`, checked as the tab's save checks it,
+/// while the Supervisor is off and its charter is empty or a manager's draft the owner has not saved; every
+/// setting outside the charter stays. The tab marks the draft until the owner's Save. Answers the new revision.
 pub(crate) fn set_by_manager(tx: &Transaction, project: &str, revision: i64, text: &str) -> Result<i64, String> {
     if enabled(tx, project)? {
         return Err(ON.into());
     }
-    let mut charter: Charter = serde_json::from_str(text)
+    let charter: Charter = serde_json::from_str(text)
         .map_err(|e| format!("charter: not a Supervisor charter ({e})."))?;
     if charter.priority_review_at.is_some() || charter.allocation_review_at.is_some() || !charter.outside_indicators.is_empty() {
         return Err("charter: its review dates and outside indicators are the owner's; leave them out.".into());
     }
     let mut saved = settings::read(tx, project)?;
-    let was = std::mem::take(&mut saved.settings.charter);
-    (charter.priority_review_at, charter.allocation_review_at, charter.outside_indicators) = (was.priority_review_at, was.allocation_review_at, was.outside_indicators);
+    let was = &saved.settings.charter;
+    if !was.drafted_by_manager && serde_json::to_value(was).ok() != serde_json::to_value(Charter::default()).ok() {
+        return Err(OWNERS.into());
+    }
     saved.settings.charter = charter;
     // the owner's save path: the detectors, their mutes and owners, the tiers and the level are the ones read here
-    Ok(settings::write(tx, project, revision, saved.settings, false)?.revision)
+    Ok(settings::write_draft(tx, project, revision, saved.settings)?.revision)
 }
 
 #[cfg(test)]

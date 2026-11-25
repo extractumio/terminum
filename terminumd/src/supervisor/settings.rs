@@ -133,6 +133,9 @@ pub(super) struct Charter {
     pub(super) indicator_targets: BTreeMap<Key, String>,
     pub(super) outside_indicators: BTreeMap<String, outside_indicators::Setting>,
     pub(super) surfaces: super::surfaces::Surfaces,
+    /// A project's manager wrote it (AC-284) and the owner has not saved since: the tab marks it for review.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub(super) drafted_by_manager: bool,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -392,6 +395,11 @@ pub(super) fn write(
     save(tx, project, revision, settings, source, crate::tasks::ops::now())
 }
 
+/// A manager's charter draft (AC-284): saved as the owner's save would, marked until the owner saves.
+pub(super) fn write_draft(tx: &Transaction, project: &str, revision: i64, settings: Settings) -> Result<Saved, String> {
+    save(tx, project, revision, settings, SaveSource::Manager, crate::tasks::ops::now())
+}
+
 pub(super) fn write_at(
     tx: &Transaction, project: &str, revision: i64, settings: Settings, at: i64,
 ) -> Result<Saved, String> {
@@ -399,7 +407,7 @@ pub(super) fn write_at(
 }
 
 #[derive(Clone, Copy, PartialEq)]
-enum SaveSource { Owner, Import, ConfigChange }
+enum SaveSource { Owner, Import, ConfigChange, Manager }
 
 fn save(
     tx: &Transaction, project: &str, revision: i64, mut settings: Settings, source: SaveSource, at: i64,
@@ -409,6 +417,9 @@ fn save(
         return Err("Supervisor settings changed. Reload them and try again.".into());
     }
     let imported = source == SaveSource::Import;
+    if source != SaveSource::ConfigChange {
+        settings.charter.drafted_by_manager = source == SaveSource::Manager;
+    }
     if imported {
         settings.tiers = previous.settings.tiers.clone();
         settings.level = previous.settings.level;

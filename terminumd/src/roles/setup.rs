@@ -9,7 +9,7 @@ use serde_json::{json, Value};
 use super::{arg, number, Boss, DATA};
 use crate::app::Shared;
 use crate::tasks::api::store;
-use crate::tasks::{agents, auto, closeout, integration, limits, ops, schedules, slugs, template};
+use crate::tasks::{agents, auto, closeout, integration, limits, ops, slugs, template};
 
 /// Where the human closes a gap: the project window's tab.
 const TAB: &str = "the human, in the project window's";
@@ -33,7 +33,8 @@ pub(crate) fn setup(tx: &Transaction, project: &str) -> Result<Value, String> {
     let prefix: Option<String> = tx.query_row("SELECT prefix FROM projects WHERE id = ?1", [project], |r| r.get(0)).map_err(ops::sql)?;
     let memory = limits::of_project(tx, project)?.map(|(warn, end)| json!({"warn_gib": warn, "end_gib": end}));
     let pool: Vec<String> = agents::of_project(tx, project)?.into_iter().map(|a| a.name).collect();
-    let routines = schedules::count(tx, project)?;
+    let routines: i64 = tx.query_row("SELECT count(*) FROM schedules WHERE project = ?1 AND deleted_at IS NULL", [project], |r| r.get(0))
+        .map_err(ops::sql)?;
     let auto = auto::setting(tx, project)?;
     let (supervisor, supervising) = crate::supervisor::charter::setup(tx, project, TAB)?;
     let mut gaps = Vec::new();
@@ -73,6 +74,10 @@ pub async fn get(app: &Shared, boss: &Boss) -> Result<String, String> {
     Ok(format!("{DATA}\n{shown}"))
 }
 
+/// The fields `update` takes, as update_project_setup names them.
+const FIELDS: [&str; 6] = ["prefix", "language", "template", "agents_at_once", "memory_warn_gib", "memory_end_gib"];
+const NAME: &str = "Name a field: prefix, language, template, agents_at_once, memory_warn_gib with memory_end_gib.";
+
 /// A GiB figure an argument holds.
 fn gib(key: &str, text: &str) -> Result<f64, String> {
     text.parse::<f64>().ok().filter(|n| n.is_finite()).ok_or_else(|| format!("{key}: a number of GiB, 0 for off, or empty"))
@@ -80,6 +85,9 @@ fn gib(key: &str, text: &str) -> Result<f64, String> {
 
 /// Applies the fields `args` names, each by the project window's own rule, in one transaction: every one, or none.
 pub(crate) fn update(tx: &Transaction, project: &str, args: &Value) -> Result<Vec<&'static str>, String> {
+    if let Some(other) = args.as_object().and_then(|given| given.keys().find(|key| !FIELDS.contains(&key.as_str()))) {
+        return Err(format!("{other}: not a setup field; nothing changed. {NAME}"));
+    }
     let mut changed = Vec::new();
     if let Some(prefix) = args["prefix"].as_str() {
         slugs::set_prefix(tx, project, prefix)?;
@@ -108,7 +116,7 @@ pub(crate) fn update(tx: &Transaction, project: &str, args: &Value) -> Result<Ve
         _ => return Err("memory_warn_gib and memory_end_gib go together: both numbers, or both empty for the global ones".into()),
     }
     if changed.is_empty() {
-        return Err("Name a field: prefix, language, template, agents_at_once, memory_warn_gib with memory_end_gib.".into());
+        return Err(NAME.into());
     }
     Ok(changed)
 }

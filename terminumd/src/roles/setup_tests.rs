@@ -79,7 +79,9 @@ fn ac283_the_setup_write_takes_the_window_s_rules_all_or_none() {
     assert_eq!(refused(json!({"prefix": "APX", "agents_at_once": "0"})), "agents_at_once: a whole number from 1 to 100");
     assert_eq!(refused(json!({"memory_warn_gib": "9", "memory_end_gib": "3"})), "The warning is above the end.");
     assert!(refused(json!({"memory_warn_gib": "9"})).starts_with("memory_warn_gib and memory_end_gib go together"));
-    assert!(refused(json!({"auto": {"on": true}, "folder": "/srv/x"})).starts_with("Name a field"), "the human's switches are no field");
+    assert!(refused(json!({"auto": {"on": true}, "folder": "/srv/x"})).contains("not a setup field"), "the human's switches are no field");
+    assert!(refused(json!({"prefix": "APX", "auto": "on"})).starts_with("auto: not a setup field"), "a mixed call drops nothing silently");
+    assert_eq!(refused(json!({})), "Name a field: prefix, language, template, agents_at_once, memory_warn_gib with memory_end_gib.");
     let shown = s.with(|tx| setup(tx, "p1")).unwrap();
     assert_eq!(shown["project"]["prefix"], "API", "a refused call keeps none of its fields");
     assert_eq!(shown["auto_dispatch"]["on"], false);

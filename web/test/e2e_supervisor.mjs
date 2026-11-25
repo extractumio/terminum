@@ -204,7 +204,9 @@ async function settingsTab(page, { calls, refuseSave }, suffix, phone) {
   await openGroup(page, "Surface map");
   await surfacePreview(page, panel, calls, suffix, phone);
   await outsideSettings(page, panel, suffix, phone);
-  await openGroup(page, "Charter and allocation");
+  const charterBox = panel.locator('[data-section="Charter and allocation"]');
+  check("AC-284 a manager's charter draft is marked and its section opens for review",
+    await charterBox.evaluate((box) => box.open) && await charterBox.getByText("The project's manager drafted this charter").isVisible());
   await templateDraft(page, panel, calls, suffix);
   const priorities = panel.getByLabel("Priorities, highest first, one per line");
   await priorities.fill("First project priority\nSecond project priority");
