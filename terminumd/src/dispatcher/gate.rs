@@ -223,30 +223,60 @@ pub(super) async fn deliver_theirs(app: &Shared, server: &Server, pane: &str, ta
     busy(since).map_err(before)?;
     empty_box(server, pane, kind).await.map_err(before)?;
     let client = server.client(pane).ok_or_else(|| before(other("tmux does not answer")))?;
-    let buffer = crate::page::typing::load_buffer(app, &client, server, text).await.map_err(|e| before(other(e)))?;
-    let pasted = match busy(since) {
-        Ok(()) => guarded_front(&client, None, pane, &format!("paste-buffer -p -b {buffer} -t {pane}"), false, Some(command)).await
+    let to = Target { pane, client: &client, mark: None, agent_live: false, command: Some(command), kind, first: false };
+    let busy = &busy;
+    let (entered, pasted) = paste_and_enter(app, server, text, to, crate::inputs::Who::press("dispatcher.answer", task),
+        move |_| async move { busy(since) }).await;
+    entered.map_err(|miss| Undelivered { miss, pasted })
+}
+
+/// Where the gate types: the pane and its server's client, the run's mark the pane must still hold (none: no run's),
+/// whether its agent's exit must still be unrecorded, the program that must stay in front, the agent's kind for its
+/// screen, a first prompt's longer wait for the echo.
+struct Target<'a> {
+    pane: &'a str,
+    client: &'a Control,
+    mark: Option<&'a str>,
+    agent_live: bool,
+    command: Option<&'a str>,
+    kind: &'a str,
+    first: bool,
+}
+
+/// Pastes `text` and sends it, `check(enter)` before the paste and before Enter, tmux judging `to` in each; the buffer
+/// goes either way, the input log keeps what went in as `who`'s (AC-147). Its miss, and whether tmux took the paste.
+async fn paste_and_enter<F, Fut>(app: &Shared, server: &Server, text: &str, to: Target<'_>, who: crate::inputs::Who, check: F) -> (Result<(), Miss>, bool)
+where F: Fn(bool) -> Fut, Fut: std::future::Future<Output = Result<(), Miss>> {
+    let (pane, client) = (to.pane, to.client);
+    let key = server.key(pane);
+    let buffer = match crate::page::typing::load_buffer(app, client, server, text).await {
+        Ok(buffer) => buffer,
+        Err(e) => return (Err(other(e)), false),
+    };
+    let pasted = match check(false).await {
+        Ok(()) => guarded_front(client, to.mark, pane, &format!("paste-buffer -p -b {buffer} -t {pane}"), to.agent_live, to.command).await
             .map_err(|error| other(format!("tmux did not take the paste: {error}"))),
         Err(miss) => Err(miss),
     };
     let took = pasted.is_ok();
     let shown = match pasted {
-        Ok(()) => shown(server, pane, kind, text, false).await,
+        Ok(()) => shown(server, pane, to.kind, text, to.first).await,
         Err(miss) => Err(miss),
     };
     let _ = client.run(format!("delete-buffer -b {buffer}")).await;
-    let entered = match shown.and_then(|()| busy(since)) {
-        Ok(()) => {
+    let entered = match shown {
+        Ok(()) => async {
+            check(true).await?;
             app.dispatcher.remember_typed(&key, text);
-            guarded_front(&client, None, pane, &format!("send-keys -t {pane} Enter"), false, Some(command)).await.map_err(|e| other(format!("tmux did not take Enter: {e}")))
-        }
+            guarded_front(client, to.mark, pane, &format!("send-keys -t {pane} Enter"), to.agent_live, to.command).await.map_err(|e| other(format!("tmux did not take Enter: {e}")))
+        }.await,
         Err(m) => Err(m),
     };
     if let Some((server, _)) = app.tmux.resolve(&key) {
         let words = if entered.is_ok() { format!("{text}<Enter>") } else { text.to_string() };
-        crate::inputs::wrote(app, crate::inputs::Who::press("dispatcher.answer", task), "prompt", &server, pane, &words, entered.as_ref().err().map(Miss::to_string), None);
+        crate::inputs::wrote(app, who, "prompt", &server, pane, &words, entered.as_ref().err().map(Miss::to_string), None);
     }
-    entered.map_err(|miss| Undelivered { miss, pasted: took })
+    (entered, took)
 }
 
 async fn deliver_locked(app: &Shared, run: &Run, server: &Server, pane: &str, text: &str, delivery: Delivery<'_>) -> Result<(), Miss> {
@@ -275,32 +305,11 @@ async fn deliver_locked(app: &Shared, run: &Run, server: &Server, pane: &str, te
     empty_box(server, pane, &run.kind).await?;
     delivery.check(app, run, &key).await?;
     let client = server.client(pane).ok_or_else(|| other("tmux does not answer"))?;
-    let buffer = crate::page::typing::load_buffer(app, &client, server, text).await.map_err(other)?;
-    let pasted = match delivery.check(app, run, &key).await {
-        Ok(()) => guarded_front(&client, Some(&run.id), pane, &format!("paste-buffer -p -b {buffer} -t {pane}"), true, command).await
-            .map_err(|error| other(format!("tmux did not take the paste: {error}"))),
-        Err(miss) => Err(miss),
-    };
-    let shown = match pasted {
-        Ok(()) => shown(server, pane, &run.kind, text, first).await,
-        Err(miss) => Err(miss),
-    };
-    let _ = client.run(format!("delete-buffer -b {buffer}")).await;
-    let entered = match shown {
-        Ok(()) => async {
-            if matches!(delivery, Delivery::Normal { .. }) {
-                delivery.check(app, run, &key).await?;
-            }
-            app.dispatcher.remember_typed(&key, text);
-            guarded_front(&client, Some(&run.id), pane, &format!("send-keys -t {pane} Enter"), true, command).await.map_err(|e| other(format!("tmux did not take Enter: {e}")))
-        }.await,
-        Err(m) => Err(m),
-    };
-    // what went in, and what tmux refused of it (AC-147)
-    if let Some((server, _)) = app.tmux.resolve(&key) {
-        let words = if entered.is_ok() { format!("{text}<Enter>") } else { text.to_string() };
-        let who = crate::inputs::Who::dispatcher("dispatcher.gate", &run.id, &run.ids, &run.agent_id);
-        crate::inputs::wrote(app, who, "prompt", &server, pane, &words, entered.as_ref().err().map(Miss::to_string), None);
-    }
-    entered
+    let to = Target { pane, client: &client, mark: Some(&run.id), agent_live: true, command, kind: &run.kind, first };
+    let who = crate::inputs::Who::dispatcher("dispatcher.gate", &run.id, &run.ids, &run.agent_id);
+    // Give up's Enter follows its own Esc: only a Normal delivery is checked again before it
+    let (delivery, key) = (&delivery, key.as_str());
+    paste_and_enter(app, server, text, to, who, move |enter| async move {
+        if enter && !matches!(delivery, Delivery::Normal { .. }) { Ok(()) } else { delivery.check(app, run, key).await }
+    }).await.0
 }

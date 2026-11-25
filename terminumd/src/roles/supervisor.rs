@@ -174,7 +174,7 @@ pub(crate) async fn run(app: &Shared, key: &str, other: bool, mark: Mark, tool: 
         return Err("Only the Supervisor's main agent changes the project.".into());
     }
     if matches!(mark.role, Role::Audit(_)) {
-        let who = Who { key: key.into(), project: Some(mark.project.clone()), title: "Quarterly audit".into(),
+        let who = Who { conversation: None, key: key.into(), project: Some(mark.project.clone()), title: "Quarterly audit".into(),
             agent: "supervisor_audit".into(), dir: None, supervisor: false };
         if tool == "finish_task" { return crate::agentapi::task_tool_of(app, who, None, other, tool, args).await; }
         let key = key.to_owned();
@@ -210,7 +210,7 @@ pub(crate) async fn run(app: &Shared, key: &str, other: bool, mark: Mark, tool: 
         if let Some(why) = blocked { return Err(why); }
     }
     if task_tool(&tool) {
-        let who = Who { key: key.into(), project: Some(mark.project), title: "Supervisor".into(),
+        let who = Who { conversation: None, key: key.into(), project: Some(mark.project), title: "Supervisor".into(),
             agent: "supervisor".into(), dir: None, supervisor: true };
         return crate::agentapi::task_tool_of(app, who, None, other, tool, args).await;
     }

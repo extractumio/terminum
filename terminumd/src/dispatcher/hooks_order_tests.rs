@@ -40,7 +40,7 @@ impl Fixture {
             runs::change(tx, &run, |r| r.state = Phase::Typed)?;
             Ok((run, tasks.into_iter().map(|t| t.id).collect()))
         }).unwrap();
-        let who = Who { key, agent: "claude".into(), title: "Fixer".into(), project: Some("default".into()), dir: None, supervisor: false };
+        let who = Who { conversation: None, key, agent: "claude".into(), title: "Fixer".into(), project: Some("default".into()), dir: None, supervisor: false };
         Self { root, app, who, run, ids }
     }
 

@@ -7,7 +7,7 @@
 import { askConfirm, choose, oneAtATime } from "./dialogs.js";
 import { batchPart } from "./kanbanbatch.js";
 import { el, iconButton, read, write } from "./listparts.js";
-import { $, SEVERITIES, agentChip, agentsOf, api, button, download, fillSelect, guardQueuedRun, knownAgent, onFiles, onSend, madeChanged, renderInto, row, say, sessionOptions, statusTag, upload, withFileLink, withoutFileLinks, goneFiles, goneSaid, FILE_GONE, writePreview } from "./kanbanutil.js";
+import { $, SEVERITIES, agentChip, agentsOf, api, button, download, fillSelect, guardQueuedRun, knownAgent, onFiles, onSend, madeChanged, renderInto, row, say, sessionOptions, statusTag, upload, withFileLink, withoutFileLinks, goneFiles, goneSaid, sayRefused, writePreview } from "./kanbanutil.js";
 import { taskBoxes } from "./taskboxes.js";
 import { activity, editor } from "./kanbanactivity.js";
 import { answerKeys } from "./kanbananswer.js";
@@ -289,7 +289,7 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
     if (!n.area.value.trim()) return;
     try {
       await api(`/api/tasks/${t.id}/comments`, { method: "POST", body: { text: n.area.value, files: n.dropped() } });
-    } catch (e) { if (e.message !== FILE_GONE || !await n.prune()) say(e.message); return; }   // a file let go meanwhile: named, the rest kept
+    } catch (e) { await sayRefused(e, n.prune); return; }   // a file let go meanwhile: named, the rest kept
     n.sent();
   }
 
@@ -315,7 +315,7 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
     return commentAction(n, async (current) => {
       try {
         if (await runs.open([t], { words: n.area.value, files: n.dropped(), current, scratch, prefer: t.runs_on, atOnce: !scratch }) !== true) return;
-      } catch (e) { if (e.message !== FILE_GONE || !await n.prune()) say(e.message); return; }
+      } catch (e) { await sayRefused(e, n.prune); return; }
       n.sent();
       if (current()) await tryClose();
     });
@@ -346,18 +346,18 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
     save.onclick = () => commentAction(n, () => keepComment(n, t));
     // its agent's question waits: Answer stands for Run, Continue with Recommended beside Archive (terminum-dispatcher.md AC-285)
     const asked = t.asked ? answerKeys(t, n, { act: commentAction, runs, tryClose, refresh }) : null;
-    run.textContent = asked ? "Answer" : "Run";
-    run.onclick = asked ? asked.answer : () => runTask(t);
+    run.textContent = "Run";
+    run.onclick = () => runTask(t);
+    asked?.bind(run);
     n.keys = [save, run];
     n.wait = () => {
       const waiting = n.uploads > 0 || Boolean(box.dataset.busy);
       save.disabled = waiting || !n.area.value.trim();
+      if (asked) return asked.wait(run, waiting);
       const said = n.area.value.trim() ? "Send this comment and run it" : "Run it";
-      run.title = asked ? "Send your answer to its agent; the window closes" : `${on ? `On ${on}: ` : ""}${said}; the window closes`;
-      if (asked) run.disabled = !n.area.value.trim();
-      else guardQueuedRun(run, t.waits);
+      run.title = `${on ? `On ${on}: ` : ""}${said}; the window closes`;
+      guardQueuedRun(run, t.waits);
       run.disabled ||= waiting;
-      if (asked) asked.recommended.disabled = waiting;
     };
     n.wait();
     save.title = "Keep the comment: nothing moves, the session hears nothing";

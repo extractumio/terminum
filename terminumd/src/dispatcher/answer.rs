@@ -16,9 +16,9 @@ use super::places::linked_panes;
 use super::{runs, store, waits};
 use crate::app::Shared;
 use crate::tasks::api::{answer, told};
-use crate::tasks::ops::{self, sql};
+use crate::tasks::ops;
 use crate::tasks::store::HUMAN;
-use crate::tasks::{choices, files};
+use crate::tasks::{choices, comments};
 use crate::tmux::PaneState;
 
 /// Continue with Recommended's comment, the human's answer as RUN carries it (AC-122).
@@ -37,14 +37,6 @@ pub(super) enum Choice {
 }
 
 impl Choice {
-    fn name(self) -> &'static str {
-        match self {
-            Choice::Answer => "answer",
-            Choice::Recommended => "recommended",
-            Choice::Archive => "archive",
-        }
-    }
-
     fn said(self, who: &str) -> String {
         match self {
             Choice::Answer => format!("{who} answered"),
@@ -96,23 +88,20 @@ async fn press(State(app): State<Shared>, Path(id): Path<String>, Json(body): Js
 /// The history's line of a press that went: its choice, the question, the column it left, how it went.
 fn keep(tx: &rusqlite::Transaction, id: &str, a: &Answered, way: &str) -> Result<(), String> {
     let key = ops::key_of(tx, id)?;
-    let data = json!({"choice": a.choice.name(), "question": a.question, "from": "WAIT FOR HUMAN", "way": way});
+    let data = json!({"choice": a.choice, "question": a.question, "from": "WAIT FOR HUMAN", "way": way});
     ops::log(tx, &key, HUMAN, "answer", &a.choice.said(&ops::user_name(tx, HUMAN)?), Some(&data), ops::now()).map(drop)
 }
 
-/// The human's comment with its files: its event.
-fn comment(tx: &rusqlite::Transaction, id: &str, text: &str, attached: &[String]) -> Result<String, String> {
-    let event = ops::comment(tx, HUMAN, id, text, ops::now())?;
-    files::attach(tx, attached, id, Some(&event))?;
-    Ok(event)
-}
-
-/// A RUN pressed for an answer (api.rs): refused on a question no longer waiting; once it went or waits for room,
-/// kept in the history.
+/// A RUN pressed for an answer (api.rs): refused on a question no longer waiting; Continue with Recommended's option
+/// recorded first, as RUN keeps its comment whatever follows (AC-122); once it went or waits for room, kept in the
+/// history.
 pub(super) async fn going(app: &Shared, id: &str, answered: Option<Answered>, run: impl Future<Output = Result<Value, String>>) -> Result<Value, String> {
     let Some(a) = answered else { return run.await };
-    let (wanted, q) = (id.to_string(), a.question.clone());
-    store(app, move |tx| choices::still_waits(tx, &ops::get(tx, &wanted)?, &q)).await?;
+    let (wanted, q, choice) = (id.to_string(), a.question.clone(), a.choice);
+    store(app, move |tx| {
+        choices::still_waits(tx, &ops::get(tx, &wanted)?, &q)?;
+        recommended_choice(tx, &wanted, &q, choice)
+    }).await?;
     let done = run.await?;
     if done["full"].is_null() {
         let wanted = id.to_string();
@@ -122,7 +111,7 @@ pub(super) async fn going(app: &Shared, id: &str, answered: Option<Answered>, ru
 }
 
 /// Where the answer goes: Archive here; a live session the human opened, typed; else the page goes on with RUN, its
-/// comment the answer (`{run, comment}`).
+/// comment the answer (`{run, comment}`), and RUN keeps what it went with (`going`).
 async fn pressed(app: &Shared, id: &str, body: Press) -> Result<Value, String> {
     let Press { answered: a, text, files } = body;
     let text = text.trim().to_string();
@@ -132,30 +121,32 @@ async fn pressed(app: &Shared, id: &str, body: Press) -> Result<Value, String> {
     if a.choice == Choice::Answer && text.is_empty() {
         return Err("Write the answer first.".to_string());
     }
-    let (wanted, q, choice) = (id.to_string(), a.question.clone(), a.choice);
-    if choice == Choice::Archive {
+    let (wanted, q) = (id.to_string(), a.question.clone());
+    if a.choice == Choice::Archive {
         return store(app, move |tx| archive(tx, &wanted, &a, &text, &files)).await;
     }
-    let theirs = store(app, move |tx| {
+    // a session linked to it that no run of its holds is one the human opened
+    let found = store(app, move |tx| {
         let t = ops::get(tx, &wanted)?;
         choices::still_waits(tx, &t, &q)?;
         let last = runs::last_of(tx, &t.key)?;
-        Ok(t.session.clone().filter(|s| last.is_none_or(|r| r.pane_key.as_ref() != Some(s))))
+        let Some(key) = t.session.clone().filter(|s| last.is_none_or(|r| r.pane_key.as_ref() != Some(s))) else { return Ok(None) };
+        Ok(Some(Theirs { asker: choices::asked_in(tx, &q)?, task: t, key }))
     }).await?;
-    let words = if choice == Choice::Recommended { RECOMMENDED.to_string() } else { text };
-    let state = match &theirs {
-        Some(key) => linked_panes(app, id, &[]).await(key),
-        None => PaneState::Closed,
-    };
-    match (theirs, state) {
-        (Some(key), PaneState::Open) => typed(app, id, &key, a, words, files).await,
-        (Some(_), PaneState::Unread | PaneState::Unwatched) => Err(NOT_READ.to_string()),
-        _ => {
-            let (wanted, q) = (id.to_string(), a.question);
-            store(app, move |tx| recommended_choice(tx, &wanted, &q, choice)).await?;
-            Ok(json!({"run": true, "comment": words}))
-        }
+    let words = if a.choice == Choice::Recommended { RECOMMENDED.to_string() } else { text };
+    let Some(theirs) = found else { return Ok(json!({"run": true, "comment": words})) };
+    match linked_panes(app, id, &[]).await(&theirs.key) {
+        PaneState::Open => typed(app, theirs, a, words, files).await,
+        PaneState::Unread | PaneState::Unwatched => Err(NOT_READ.to_string()),
+        PaneState::Closed => Ok(json!({"run": true, "comment": words})),
     }
+}
+
+/// A task linked to a session the human opened, and the conversation that asked it there.
+struct Theirs {
+    task: ops::Task,
+    key: String,
+    asker: Option<String>,
 }
 
 /// Continue with Recommended on a question with recorded options carries its recommended one as the human's choice
@@ -179,7 +170,7 @@ fn archive(tx: &rusqlite::Transaction, id: &str, a: &Answered, text: &str, attac
         waits::take_out(tx, id)?;
     }
     if !text.is_empty() {
-        comment(tx, id, text, attached)?;
+        comments::keep_human_comment(tx, id, text, attached, ops::now())?;
     }
     keep(tx, id, a, "archive")?;
     let now = ops::now();
@@ -191,45 +182,41 @@ fn archive(tx: &rusqlite::Transaction, id: &str, a: &Answered, text: &str, attac
 /// The answer into a live session the human opened (CLAUDE.md §2), only while it holds the conversation that asked:
 /// Answer's text is kept first, as the agent reads it by get_task once the fixed words go in; a press tmux took no
 /// paste of keeps nothing.
-async fn typed(app: &Shared, id: &str, key: &str, a: Answered, text: String, attached: Vec<String>) -> Result<Value, String> {
+async fn typed(app: &Shared, theirs: Theirs, a: Answered, text: String, attached: Vec<String>) -> Result<Value, String> {
     let since = std::time::Instant::now();
-    let (server, pane) = app.tmux.resolve(key).ok_or("Its session is gone.")?;
-    let (wanted, q) = (id.to_string(), a.question.clone());
-    let (task_key, asker) = store(app, move |tx| Ok((ops::key_of(tx, &wanted)?, choices::asked_in(tx, &q)?))).await?;
-    if asker.is_none() || app.hooks.session(key).map(|(_, s)| s) != asker {
+    let Theirs { task, key, asker } = theirs;
+    if asker.is_none() || app.hooks.session(&key).map(|(_, s)| s) != asker {
         return Err(NOT_THE_ASKER.to_string());
     }
-    let _held = super::Held::take(app, |d| &d.pressing, &format!("task:{task_key}")).ok_or("A Run is already being prepared.")?;
-    let (wanted, q, session, choice) = (id.to_string(), a.question.clone(), key.to_string(), a.choice);
+    let (server, pane) = app.tmux.resolve(&key).ok_or("Its session is gone.")?;
+    let _held = super::Held::take(app, |d| &d.pressing, &format!("task:{}", task.key)).ok_or("A Run is already being prepared.")?;
     // the task's own ID, never the route's spelling of it
-    let (task, kept) = store(app, move |tx| {
-        let t = ops::get(tx, &wanted)?;
-        choices::still_waits(tx, &t, &q)?;
-        ops::check_free(tx, &session, &t.key)?;
-        let kept = if choice == Choice::Answer { Some(comment(tx, &wanted, &text, &attached)?) } else { None };
-        Ok((t.id, kept))
+    let (id, q, session, choice) = (task.id.clone(), a.question.clone(), key.clone(), a.choice);
+    let kept = store(app, move |tx| {
+        choices::still_waits(tx, &ops::get(tx, &id)?, &q)?;
+        ops::check_free(tx, &session, &task.key)?;
+        if choice != Choice::Answer { return Ok(None) }
+        let (event, new) = comments::keep_human_comment(tx, &id, &text, &attached, ops::now())?;
+        Ok(Some((event, new)))
     }).await?;
-    if let Err(gate::Undelivered { miss, pasted }) = gate::deliver_theirs(app, &server, &pane, &task, &choice.typed(&task), since).await {
+    if let Err(gate::Undelivered { miss, pasted }) = gate::deliver_theirs(app, &server, &pane, &task.id, &choice.typed(&task.id), since).await {
         // pasted, it may still be sent: the agent then reads the answer it was told of
-        if let Some(event) = kept.clone().filter(|_| !pasted) {
-            store(app, move |tx| {
-                tx.execute("UPDATE files SET task = NULL, event = NULL WHERE event = ?1", [&event]).map_err(sql)?;
-                tx.execute("DELETE FROM events WHERE id = ?1", [&event]).map(drop).map_err(sql)
-            }).await?;
+        if let Some((event, true)) = kept.clone().filter(|_| !pasted) {
+            store(app, move |tx| comments::retract(tx, &event)).await?;
         }
         return Err(match miss {
             Miss::NotEmpty(_) => "The session is not at an empty input box: answer there first".to_string(),
             Miss::Other(why) => format!("Not delivered: {why}"),
         });
     }
-    let wanted = task.clone();
+    let id = task.id.clone();
     store(app, move |tx| {
-        recommended_choice(tx, &wanted, &a.question, a.choice)?;
-        keep(tx, &wanted, &a, "typed")?;
-        ops::move_marked(tx, HUMAN, &wanted, "IN PROGRESS", Some(("answered", "the human answered on the board")), ops::now())
+        recommended_choice(tx, &id, &a.question, a.choice)?;
+        keep(tx, &id, &a, "typed")?;
+        ops::move_marked(tx, HUMAN, &id, "IN PROGRESS", Some(("answered", "the human answered on the board")), ops::now())
     }).await?;
-    if let Some(event) = kept {
-        crate::tasks::notify::comment_added(app, &task, &event, None);
+    if let Some((event, true)) = kept {
+        crate::tasks::notify::comment_added(app, &task.id, &event, None);
     }
     Ok(json!({"typed": key}))
 }

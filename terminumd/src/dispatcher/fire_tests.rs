@@ -190,7 +190,7 @@ fn ac272_a_schedule_s_task_s_result_is_a_report_and_none_supersedes_another() {
             ops::link(tx, DISPATCHER, &id, Some(&key), due)?;
             Ok(id)
         }).unwrap();
-        let who = crate::tasks::tools::Who { key, agent: "claude".into(), title: "t".into(), project: None, dir: None, supervisor: false };
+        let who = crate::tasks::tools::Who { conversation: None, key, agent: "claude".into(), title: "t".into(), project: None, dir: None, supervisor: false };
         let result = json!({"id": id, "result": "Outcome: ok\nSummary: s\nDetails: d\nFor the human: nothing"});
         let said = crate::tasks::tools::run(&store, &dir, &who, "finish_task", &result).unwrap().0;
         assert!(said.starts_with(&format!("{id} is DONE; its result went to the human's Inbox as R_")), "{said}");

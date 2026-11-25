@@ -19,9 +19,9 @@ use crate::tasks::store::Store;
 use crate::tasks::tools::{self, Who};
 use crate::tmux::{args::quote, server::Link};
 
-/// A task linked to session `key`, its agent's questions asked there: the task and the question's event.
-fn asked(store: &Store, dir: &std::path::Path, key: &str, extra: Value) -> (Task, String) {
-    let who = Who { key: key.into(), agent: "claude".into(), title: "Agent".into(), project: None, dir: None, supervisor: false };
+/// A task linked to session `key`, its agent's questions asked there by `conversation`: the task and the question's event.
+fn asked_by(store: &Store, dir: &std::path::Path, key: &str, conversation: Option<&str>, extra: Value) -> (Task, String) {
+    let who = Who { conversation: conversation.map(str::to_string), key: key.into(), agent: "claude".into(), title: "Agent".into(), project: None, dir: None, supervisor: false };
     let task = store.with(|tx| ops::create(tx, HUMAN, NewTask { title: "Choose the API".into(), session: Some(key.into()), ..Default::default() }, 1)).unwrap();
     let mut args = json!({"id": task.id, "questions": ASKED});
     if let (Some(a), Some(more)) = (args.as_object_mut(), extra.as_object()) {
@@ -30,6 +30,10 @@ fn asked(store: &Store, dir: &std::path::Path, key: &str, extra: Value) -> (Task
     tools::run(store, dir, &who, "ask_human", &args).unwrap();
     let question = store.with(|tx| Ok(choices::waiting(tx, &ops::get(tx, &task.id)?)?.unwrap())).unwrap();
     (task, question)
+}
+
+fn asked(store: &Store, dir: &std::path::Path, key: &str, extra: Value) -> (Task, String) {
+    asked_by(store, dir, key, None, extra)
 }
 
 fn history(store: &Store, id: &str) -> Vec<Value> {
@@ -69,7 +73,7 @@ fn ac285_a_question_no_longer_waiting_is_refused() {
     let key = "tmux:local:terminum:%7";
     let (task, first) = asked(&store, &dir, key, json!({}));
     // the agent asks again: the first question is answered by nothing
-    let who = Who { key: key.into(), agent: "claude".into(), title: "Agent".into(), project: None, dir: None, supervisor: false };
+    let who = Who { conversation: None, key: key.into(), agent: "claude".into(), title: "Agent".into(), project: None, dir: None, supervisor: false };
     tools::run(&store, &dir, &who, "ask_human", &json!({"id": task.id, "questions": ASKED})).unwrap();
     store.with(|tx| {
         let t = ops::get(tx, &task.id)?;
@@ -127,8 +131,7 @@ impl Theirs {
 
     /// A task linked to this pane, asked there by conversation "conv-1", which its hooks say runs there now.
     fn asked_here(&self, kind: &str, extra: Value) -> (Task, String) {
-        let (task, question) = asked(&self.app.tasks, &self.root, &self.key(), extra);
-        self.app.tasks.with(|tx| choices::mark_asked_in(tx, &task.id, "conv-1")).unwrap();
+        let (task, question) = asked_by(&self.app.tasks, &self.root, &self.key(), Some("conv-1"), extra);
         self.hooked(kind, "conv-1");
         (task, question)
     }

@@ -82,39 +82,31 @@ pub(super) fn question(args: &Value) -> Result<Option<Question>, String> {
 }
 
 /// The question the task still waits on (terminum-dispatcher.md AC-157, AC-285): its agent's last questions, the
-/// task in WAIT FOR HUMAN since, neither moved nor answered by a key; with `options`, only one with recorded options.
-fn asked(tx: &Transaction, t: &Task, options: bool) -> Result<Option<String>, String> {
+/// task in WAIT FOR HUMAN since, neither moved nor answered by a key; its event, and whether it recorded options.
+pub(super) fn asked(tx: &Transaction, t: &Task) -> Result<Option<(String, bool)>, String> {
     if t.status != "WAIT FOR HUMAN" || t.archived_at.is_some() {
         return Ok(None);
     }
     let Some(row) = comments::last_question(tx, &t.key)? else { return Ok(None) };
-    tx.query_row("SELECT id FROM events
-        WHERE rowid = ?2 AND (NOT ?3 OR json_type(data, '$.question.options') = 'array')
-        AND NOT EXISTS (SELECT 1 FROM events WHERE task = ?1 AND rowid > ?2
+    tx.query_row("SELECT id, coalesce(json_type(data, '$.question.options') = 'array', 0) FROM events
+        WHERE rowid = ?2 AND NOT EXISTS (SELECT 1 FROM events WHERE task = ?1 AND rowid > ?2
             AND (kind IN ('project', 'answer') OR (kind = 'move' AND json_extract(data, '$.to') <> 'WAIT FOR HUMAN')))",
-        (&t.key, row, options), |r| r.get(0)).optional().map_err(sql)
+        (&t.key, row), |r| Ok((r.get(0)?, r.get(1)?))).optional().map_err(sql)
 }
 
 /// The current structured question, if the task is still waiting for that question.
-pub(super) fn current(tx: &Transaction, t: &Task) -> Result<Option<String>, String> {
-    asked(tx, t, true)
+fn current(tx: &Transaction, t: &Task) -> Result<Option<String>, String> {
+    Ok(asked(tx, t)?.filter(|(_, options)| *options).map(|(id, _)| id))
 }
 
 /// The question the task still waits on, with recorded options or not (terminum-dispatcher.md AC-285).
 pub(crate) fn waiting(tx: &Transaction, t: &Task) -> Result<Option<String>, String> {
-    asked(tx, t, false)
+    Ok(asked(tx, t)?.map(|(id, _)| id))
 }
 
 /// `question` still waits, else the refusal every answer to it says (AC-230, AC-285).
 pub(crate) fn still_waits(tx: &Transaction, t: &Task, question: &str) -> Result<(), String> {
     if waiting(tx, t)?.as_deref() == Some(question) { Ok(()) } else { Err(STALE.into()) }
-}
-
-/// The agent conversation that asked task `id`'s last questions, as its hooks said it (AC-285): kept on the question,
-/// so an answer is typed only into the pane that still holds that conversation.
-pub(crate) fn mark_asked_in(tx: &Transaction, id: &str, session: &str) -> Result<(), String> {
-    let Some(row) = comments::last_question(tx, &ops::key_of(tx, id)?)? else { return Ok(()) };
-    tx.execute("UPDATE events SET data = json_set(coalesce(data, '{}'), '$.asked_in', ?2) WHERE rowid = ?1", (row, session)).map(drop).map_err(sql)
 }
 
 /// The conversation that asked `question`, when its hooks said it.

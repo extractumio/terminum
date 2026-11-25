@@ -3,45 +3,45 @@
 // Recommended and Archive, whoever started its session and whether it lives. terminumd decides where an answer goes:
 // typed into a live session the human opened, else on as RUN, its window opening only for what is left to choose.
 import { askConfirm } from "./dialogs.js";
-import { api, button, say, FILE_GONE } from "./kanbanutil.js";
+import { api, button, sayRefused } from "./kanbanutil.js";
 
-/** The keys of `t` waiting on the question `t.asked`, for its comment field `n`: { archive, recommended, answer }.
- *  `act(n, work)` holds the window while work runs (kanbanwin.js commentAction); `runs`: RUN's window; `tryClose`:
- *  the window closes once the answer went or waits. */
+const ARCHIVE = (id) => `Archive ${id}? It fails as not wanted and leaves the board; tasks blocked by it ask a human.`;
+
+/** The keys of `t` waiting on the question `t.asked`, for its comment field `n`: Archive and Continue with
+ *  Recommended to stand at the left; `bind(run)` makes the window's Run key Answer, `wait(run, waiting)` sets the
+ *  keys off while the field is empty or the window busy. `act(n, work)` holds the window while work runs
+ *  (kanbanwin.js commentAction); `runs`: RUN's window; the window closes once the answer went or waits. */
 export function answerKeys(t, n, { act, runs, tryClose, refresh }) {
   const question = t.asked;
-  /** A refusal said where the press was; a file let go meanwhile is named and the rest kept. */
-  const refused = async (e) => { if (e.message !== FILE_GONE || !await n.prune()) say(e.message); };
-
-  const answer = (choice) => act(n, async (current) => {
-    const written = choice === "answer";
-    const files = written ? n.dropped() : [];
-    let got;
+  /** One press: Archive asks first; Answer and Archive send what is written, Recommended leaves it in the field. */
+  const press = (choice) => act(n, async (current) => {
+    if (choice === "archive" && !await askConfirm(ARCHIVE(t.id), "Archive")) return;
+    const sends = choice !== "recommended", files = sends ? n.dropped() : [];
     try {
-      got = await api(`/api/tasks/${t.id}/answer`, { method: "POST", body: { choice, question, text: written ? n.area.value : "", files } });
-    } catch (e) { return refused(e); }
-    if (got.run) {
-      try {
-        const went = await runs.open([t], { words: got.comment, files, current, prefer: t.runs_on, atOnce: true, answer: { choice, question } });
-        if (went !== true) return;
-      } catch (e) { return refused(e); }
+      const got = await api(`/api/tasks/${t.id}/answer`, { method: "POST", body: { choice, question, text: sends ? n.area.value : "", files } });
+      if (got.run && await runs.open([t], { words: got.comment, files, current, prefer: t.runs_on, atOnce: true, answer: { choice, question } }) !== true) return;
+    } catch (e) {
+      await sayRefused(e, n.prune);
+      return refresh();
     }
-    if (written) n.sent();                         // Recommended leaves what is written in the field
+    if (sends) n.sent();
     if (current()) await tryClose();
   });
 
-  const archive = () => act(n, async (current) => {
-    if (!await askConfirm(`Archive ${t.id}? It fails as not wanted and leaves the board; tasks blocked by it ask a human.`, "Archive")) return;
-    try {
-      await api(`/api/tasks/${t.id}/answer`, { method: "POST", body: { choice: "archive", question, text: n.area.value, files: n.dropped() } });
-    } catch (e) { await refused(e); return refresh(); }
-    n.sent();                                      // what was written went with it, as the human's comment
-    if (current()) await tryClose();
-  });
-
-  const recommended = button(null, "Continue with Recommended", () => answer("recommended"));
+  const archive = button(null, "Archive", () => press("archive"));
+  archive.title = "Not wanted: it fails and leaves the board, with what is written here as your comment";
+  const recommended = button(null, "Continue with Recommended", () => press("recommended"));
   recommended.title = "Go on with the answers the agent recommends; what is written here stays unsent";
-  const shelve = button(null, "Archive", archive);
-  shelve.title = "Not wanted: it fails and leaves the board, with what is written here as your comment";
-  return { archive: shelve, recommended, answer: () => answer("answer") };
+  return {
+    archive, recommended,
+    bind(run) {
+      run.textContent = "Answer";
+      run.title = "Send your answer to its agent; the window closes";
+      run.onclick = () => press("answer");
+    },
+    wait(run, waiting) {
+      run.disabled = waiting || !n.area.value.trim();
+      recommended.disabled = waiting;
+    },
+  };
 }

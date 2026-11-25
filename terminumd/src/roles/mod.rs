@@ -218,7 +218,7 @@ pub async fn by_token(app: &Shared, body: &Value) -> Result<String, String> {
     // its files are read and given in its project's folder, on this Mac
     let dir = app.projects.lock().by_id(&t.project).filter(|p| p.host.is_none()).map(|p| p.dir.clone());
     let project = Some(t.project.clone()).filter(|p| p != crate::tasks::store::DEFAULT_PROJECT);
-    let who = crate::tasks::tools::Who { key: t.key(), agent: "token".into(), title: t.name.clone(), project, dir, supervisor: false };
+    let who = crate::tasks::tools::Who { conversation: None, key: t.key(), agent: "token".into(), title: t.name.clone(), project, dir, supervisor: false };
     crate::agentapi::task_tool_of(app, who, None, false, tool, args).await
 }
 

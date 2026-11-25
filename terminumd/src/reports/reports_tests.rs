@@ -28,7 +28,7 @@ fn fresh(name: &str) -> (Store, std::path::PathBuf) {
 }
 
 fn who(key: &str) -> Who {
-    Who { key: key.into(), agent: "claude".into(), title: "api".into(), project: Some("api".into()), dir: None, supervisor: false }
+    Who { conversation: None, key: key.into(), agent: "claude".into(), title: "api".into(), project: Some("api".into()), dir: None, supervisor: false }
 }
 
 /// A task of API in a run of Dispatcher's in pane `key`, IN PROGRESS: its ID.

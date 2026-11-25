@@ -346,7 +346,7 @@ async fn ac138_give_up_preserves_a_draft_and_durable_notice_precedes_archive_err
     let alias = format!("\n {} \t", stage.tasks[0].id.to_lowercase());
     assert_eq!(reopened.with(|tx| check_tool(tx, &key, &alias)).unwrap_err(), notice);
     drop(reopened);
-    let who = crate::tasks::tools::Who { key: key.clone(), agent: "claude".into(), title: "Agent".into(), project: None, dir: None, supervisor: false };
+    let who = crate::tasks::tools::Who { conversation: None, key: key.clone(), agent: "claude".into(), title: "Agent".into(), project: None, dir: None, supervisor: false };
     let notice = crate::agentapi::task_tool_of(&stage.app, who, None, false, "finish_task".into(), json!({"id": stage.tasks[0].id, "result": "Done"})).await.unwrap_err();
     assert!(notice.contains("The human gave up on this task"));
     stage.app.tasks.with(|tx| {
