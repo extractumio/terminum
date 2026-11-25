@@ -15,6 +15,18 @@ DUE_DAYS = 14
 PRINTED = ("INDEX.md", "state.md", "handoff.md")
 LINES = {"INDEX.md": 40, "state.md": 40, "handoff.md": 40, "RULES.md": 70, "log.md": 100}
 OTHER_LINES = 150
+# A row of RULES.md's Files table: | `name.md` | ... | 150 |, or `none` for a file kept verbatim.
+ROW = re.compile(r"^\|\s*`([^`/]+\.md)`\s*\|.*\|\s*(\d+|none)\s*\|\s*$", re.M | re.I)
+
+
+def limits(memory):
+    """Each file's line cap: RULES.md's Files table over the defaults; None is no cap."""
+    caps = dict(LINES)
+    rules = memory / "RULES.md"
+    if regular(rules):
+        for name, cap in ROW.findall(rules.read_text(errors="replace")):
+            caps[name] = None if cap.lower() == "none" else int(cap)
+    return caps
 
 
 def folder():
@@ -42,13 +54,14 @@ def due(memory, today):
         reasons.append("INDEX.md has no valid 'Last consolidated: YYYY-MM-DD'")
     elif days > DUE_DAYS:
         reasons.append(f"last consolidated {stamp[1]}, over {DUE_DAYS} days ago")
+    caps = limits(memory)
     for path in sorted(memory.glob("*.md")):
         if not regular(path):
             reasons.append(f"{path.name} is not a regular file, not read")
             continue
-        limit = LINES.get(path.name, OTHER_LINES)
+        limit = caps.get(path.name, OTHER_LINES)
         count = len(path.read_text(errors="replace").splitlines())
-        if count > limit:
+        if limit is not None and count > limit:
             reasons.append(f"{path.name} has {count} lines, over {limit}")
         if path.name != "INDEX.md" and f"`{path.name}`" not in index:
             reasons.append(f"{path.name} is not in INDEX.md")
