@@ -4,8 +4,9 @@
    rounded box: docs/UI-GUIDELINES.md §1). After boardrail.css. */
 .agsess { flex: none; margin-left: auto; height: 22px; padding: 0 var(--sp-2); border: 0; border-radius: var(--r-xs);
   background: var(--surface-3); color: var(--t-fg); font: var(--fw-ctl) var(--fs-meta) var(--ui); white-space: nowrap; cursor: pointer; }
-@media (hover: hover) { .agsess:hover { background: color-mix(in srgb, var(--ag, var(--accent)) 30%, var(--surface-3)); } }
+@media (hover: hover) { .agsess:not([aria-disabled="true"]):hover { background: color-mix(in srgb, var(--ag, var(--accent)) 30%, var(--surface-3)); } }
 .agsess[aria-expanded="true"] { background: color-mix(in srgb, var(--ag, var(--accent)) 40%, var(--surface-3)); }
+.agsess[aria-busy="true"] { cursor: progress; }   /* its session starting (AC-204) */
 @media (pointer: coarse) { .agsess { height: 32px; } }   /* with the card's own press round it: 44 px of finger room */
 #agentbar > .rail { grid-row: span 2; }
 #agentbar > .sessdock { grid-column: 2; }
