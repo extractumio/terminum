@@ -16,14 +16,16 @@ mod agents;
 pub mod peer;
 mod schedules;
 mod sessions;
+mod setup;
 mod tasks;
 pub mod tokens;
 pub(crate) mod supervisor;
 pub(crate) use supervisor::Role;
 
 /// The manager's tools, in the catalog's order (cli/mcp_manager.rs).
-pub const MANAGER_TOOLS: [&str; 18] = ["list_runs", "run_task", "promote_queued_task", "stop_task", "list_agents", "create_agent", "update_agent", "delete_agent",
-    "list_schedules", "create_schedule", "update_schedule", "delete_schedule", "run_schedule", "list_sessions", "get_session", "send_to_session", "close_session", "get_dashboard"];
+pub const MANAGER_TOOLS: [&str; 21] = ["list_runs", "run_task", "promote_queued_task", "stop_task", "list_agents", "create_agent", "update_agent", "delete_agent",
+    "list_schedules", "create_schedule", "update_schedule", "delete_schedule", "run_schedule", "list_sessions", "get_session", "send_to_session", "close_session", "get_dashboard",
+    "get_project_setup", "update_project_setup", "set_supervisor_charter"];
 /// What a worker is told of a manager's tool: as of a name that is no tool.
 pub fn not_yours(tool: &str) -> String {
     format!("No tool is named {tool:?} for this session: it is a worker's. A project's manager, a session the human started in the project, has it.")
@@ -273,6 +275,9 @@ pub async fn run(app: &Shared, boss: &Boss, tool: &str, args: &Value) -> Result<
         "get_session" => sessions::get(app, boss, args).await,
         "send_to_session" => sessions::send(app, boss, args).await,
         "close_session" => sessions::close(app, boss, args).await,
+        "get_project_setup" => setup::get(app, boss).await,
+        "update_project_setup" => setup::change(app, boss, args).await,
+        "set_supervisor_charter" => setup::charter(app, boss, args).await,
         other => Err(format!("unknown tool {other}")),
     };
     tracing::info!(event = "manager.tool", tool, by = %boss.name, project = %boss.project, ok = done.is_ok());
