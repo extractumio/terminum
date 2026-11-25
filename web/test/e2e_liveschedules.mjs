@@ -64,8 +64,11 @@ export async function liveFolded(page, live) {
     check("AC-138 on a phone the agents stand one a row in the pool's sheet", agents.every((c, i) => Math.abs(c.w - list.w) <= 1
       && (i === 0 || c.y > agents[i - 1].y)), JSON.stringify(geometry));
   } else {
-    const rows = [...new Set(agents.map((c) => c.y))];
-    check("AC-138 each responsive row fills the available width", rows.every((y) => Math.abs([...agents, add].filter((c) => c.y === y).at(-1).r - list.r) <= 1), JSON.stringify(geometry));
+    // columns of one width: every row but the last reaches the section's edge, a short last row keeps that width
+    const rows = [...new Set(agents.map((c) => c.y))], last = agents.at(-1);
+    check("AC-138 cards stand in columns of one width, each full row filling the available width, the add tile after the last card",
+      agents.every((c) => Math.abs(c.w - agents[0].w) <= 1) && rows.slice(0, -1).every((y) => Math.abs(agents.filter((c) => c.y === y).at(-1).r - list.r) <= 1)
+      && (add.y > last.y || (add.y === last.y && add.x > last.r)), JSON.stringify(geometry));
   }
   await shot("agents");
   if (phone) {
