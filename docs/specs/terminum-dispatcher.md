@@ -1231,13 +1231,16 @@ Scenario: AC-204 happy path — the composer
   When the user drags TERM-12 and TERM-15 from the board onto the box
   Then "TERM-12 TERM-15 " stands at the caret (the box's end without focus), a space before when it follows a word; neither task runs or moves; the agent reads each by get_task
   When the user presses Start or ⌘Enter
-  Then a session of that agent opens in the project's place as AC-142's, terminumd types the prompt once (the human's words, then a line per file: its name, its kind and the path it is kept at), and the page shows the session; the draft is cleared
+  Then the dock folds at once, its draft and files kept, and that agent's key says "Starting…", busy; every + Session key is inert until the start ends, so no other draft is typed meanwhile
+  And a session of that agent opens in the project's place as AC-142's, terminumd types the prompt once (the human's words, then a line per file: its name, its kind and the path it is kept at), and the page shows the session; the draft is cleared
+  When terminumd refuses the start or does not answer
+  Then the dock opens again for that agent with its draft and files, terminumd's message in it, and the keys take presses again
 
 Scenario: AC-204 edge — how it is typed
   Then terminumd checks the words before anything starts: control or invisible characters other than line ends and tabs, or more than 20,000 characters, are refused with words and no session starts
   And it waits for that agent's empty input box (60 s), marks the run as at work first, so neither a restart nor its watch types it again, then pastes it through the §9 gate (AC-121) into the pane that request started and presses Enter: never on the agent's command line, never in another pane, never twice
   When the gate misses (no box in 60 s, a question first, the agent ended, the paste not shown)
-  Then the session stays open, the human's; the dock says "The session started, but its prompt was not typed: <why>. Paste it there yourself." with a link to it, and keeps the draft
+  Then the session stays open, the human's; the dock opens again and says "The session started, but its prompt was not typed: <why>. Paste it there yourself." with a link to it, keeps the draft, and Start waits for a change to it
   And Start with an empty box and no file is AC-142's: nothing is typed
 
 Scenario: AC-204 edge — files
@@ -2424,7 +2427,7 @@ Depends on `terminum-kanban.md`'s Stage 1. All three stages belong to terminum's
 - [x] AC-140 — `cargo test tasks::agents`, `cargo test tasks::store`, `web/test/e2e_liveboardagents.mjs`, `web/test/e2e_livedispatcher.mjs`, `scripts/e2e_remote_tasks.py`
 - [x] AC-141 — `cargo test dispatcher::pool`, `cargo test dispatcher::plan`, `cargo test tasks::limits`, `web/test/e2e_liveboardpool.mjs` (an empty-box offer, a draft typed before its press, refusal preserving the pane/draft/unqueued task, then an empty-box close)
 - [x] AC-142 — `cargo test dispatcher::runs`, `cargo test dispatcher::plan`, `cargo test tasks::tools`, `web/test/e2e_liveboardagents.mjs` (the tiles: `web/test/e2e_liveboardpool.mjs`), `web/test/e2e_navsession.mjs` (the list's head key)
-- [x] AC-204 — `cargo test dispatcher::firstprompt` (the words and files checked), `web/test/e2e_liveboardpool.mjs` (typed once through the gate, a refused control character), `web/test/e2e_sessbox.mjs` (`node web/test/e2e_all.mjs webSessBox`: the dock, files, dropped tasks, the draft, a miss)
+- [x] AC-204 — `cargo test dispatcher::firstprompt` (the words and files checked), `web/test/e2e_liveboardpool.mjs` (typed once through the gate, a refused control character), `web/test/e2e_sessbox.mjs` (`node web/test/e2e_all.mjs webSessBox`: the dock, files, dropped tasks, the draft, the fold at Start, a refusal, a miss)
 - [x] AC-143 — `cargo test dispatcher::usage`, `cargo test tasks::agents`, `web/test/e2e_liveboardagents.mjs`
 - [x] AC-168 — `cargo test subscriptions`, `cargo test usageask`, `cargo test usageread`, `cargo test settings::tests::ac168`, `cargo test cli::statusline`, `cargo test cli::hooktokens`, `scripts/e2e_hooks.py`, `web/test/e2e_liveboardsubs.mjs` (a stripe under 40% green, over 90% red)
 - [ ] AC-156 — `cargo test tasks::agents`, `cargo test dispatcher::press`, `web/test/e2e_liveboardagents.mjs`, `web/test/e2e_livedispatcher.mjs` (the inline words), `SECURITY.md` carries the operator's command

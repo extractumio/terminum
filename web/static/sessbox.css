@@ -6,6 +6,8 @@
   background: var(--surface-3); color: var(--t-fg); font: var(--fw-ctl) var(--fs-meta) var(--ui); white-space: nowrap; cursor: pointer; }
 @media (hover: hover) { .agsess:hover { background: color-mix(in srgb, var(--ag, var(--accent)) 30%, var(--surface-3)); } }
 .agsess[aria-expanded="true"] { background: color-mix(in srgb, var(--ag, var(--accent)) 40%, var(--surface-3)); }
+.agsess[aria-disabled="true"] { opacity: var(--key-disabled); cursor: default; }
+.agsess[aria-busy="true"] { opacity: 1; cursor: progress; }   /* its session starting (AC-204): said, not greyed */
 @media (pointer: coarse) { .agsess { height: 32px; } }   /* with the card's own press round it: 44 px of finger room */
 #agentbar > .rail { grid-row: span 2; }
 #agentbar > .sessdock { grid-column: 2; }

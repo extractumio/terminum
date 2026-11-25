@@ -4,7 +4,9 @@
 // browser's); a pasted image or a dropped or added file is kept by terminumd, a chip each, its path sent with the
 // prompt (this Mac's sessions only); a task card dropped on it puts its ID at the caret, for the agent to read by
 // get_task. Start opens the session on that agent and terminumd types the prompt once; with no text nothing is
-// typed (AC-142). Close and Esc keep the draft (its text, in this browser); Discard clears it.
+// typed (AC-142). Close and Esc keep the draft (its text, in this browser); Discard clears it. Start folds the dock at once
+// and the agent's key says "Starting…" while terminumd starts it, every + Session key inert meanwhile (no other draft can
+// be typed then); a failure opens the dock again with the draft, its files and terminumd's words.
 import { askConfirm } from "./dialogs.js";
 import { el, read, write } from "./listparts.js";
 import { sessionUrl } from "./tasklink.js";
@@ -32,9 +34,16 @@ export function sessionComposer({ getMeta, dragging }) {
     fileChips(list, files, (f) => { files = files.filter((o) => o !== f); showFiles(); });
     state();
   }
-  /** The agents' keys say which one it is open for (the pool draws them by `shownFor`). */
+  /** The agents' keys say which one it is open for and which one is starting (the pool draws each by `mark`). */
   const keys = () => document.querySelectorAll("#agentbar .agsess");
-  const lit = () => { for (const k of keys()) k.setAttribute("aria-expanded", String(!dock.hidden && k.dataset.agent === agent?.id)); };
+  function mark(k) {
+    const starting = busy && k.dataset.agent === agent?.id;
+    k.setAttribute("aria-expanded", String(!dock.hidden && k.dataset.agent === agent?.id));
+    if (busy) k.setAttribute("aria-disabled", "true"); else k.removeAttribute("aria-disabled");
+    k.setAttribute("aria-busy", String(starting));
+    k.textContent = starting ? "Starting…" : "+ Session";
+  }
+  const lit = () => { for (const k of keys()) mark(k); };
 
   async function add(chosen) {
     const p = getMeta().projects.find((x) => x.id === agent?.project);
@@ -58,6 +67,7 @@ export function sessionComposer({ getMeta, dragging }) {
   }
 
   function open(a) {
+    if (busy) return;                              // a start on its way: its draft comes back here if it fails
     agent = a;
     $("sessagent").replaceChildren(el("span", "sessdot"), el("span", null, a.name));
     dock.style.setProperty("--ag", agentColor(a));
@@ -73,25 +83,32 @@ export function sessionComposer({ getMeta, dragging }) {
     [...keys()].find((k) => k.dataset.agent === agent?.id)?.focus({ preventScroll: true });
   }
 
+  /** A start that did not go as asked: the dock again, its draft and files as they were, terminumd's words in it. */
+  function back(text) {
+    busy = false;
+    open(agent);
+    say(text);
+  }
   async function go() {
     if (start.disabled) return gone() && say("Its agent is gone: choose another's + Session.");
     busy = true;
     state();
     say("");
+    close();
     try {
       const text = area.value.trim();
       const r = await api(`/api/task-projects/${encodeURIComponent(agent.project)}/session`, { method: "POST", body: { agent: agent.id, ...(text ? { prompt: text } : {}), files: files.map((f) => f.id) } });
       if (r.typed === false) {                     // the session stands, the human's: the draft stays to paste there
         missed = area.value;                       // Start waits for a change: a second press would open a second session
-        say(`The session started, but its prompt was not typed: ${r.why}. Paste it there yourself.`);
+        back(`The session started, but its prompt was not typed: ${r.why}. Paste it there yourself.`);
         error.append(" ", Object.assign(el("a", null, "Open the session"), { href: sessionUrl(r.key) }));
         return;
       }
       area.value = "";
       files = [];
       keep();
-      location.href = sessionUrl(r.key);
-    } catch (e) { say(e.message); } finally { busy = false; state(); }
+      location.href = sessionUrl(r.key);         // the key says "Starting…" until the session's page comes
+    } catch (e) { back(e.message); } finally { if (!busy) state(); }
   }
 
   onFiles(area, area, add, (on) => area.classList.toggle("dropping", on));
@@ -125,7 +142,7 @@ export function sessionComposer({ getMeta, dragging }) {
 
   return {
     open,
-    /** The agent it is open for, if open: its key is drawn expanded. */
-    shownFor: () => (dock.hidden ? null : agent?.id),
+    /** An agent's + Session key as it should stand now: expanded, starting, inert. */
+    mark,
   };
 }
