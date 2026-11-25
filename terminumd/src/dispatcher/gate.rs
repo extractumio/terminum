@@ -55,11 +55,12 @@ const REFUSED: &str = "terminum-gate-refused";
 /// `line`, if at that moment the pane is still `run`'s with its agent's exit not recorded: tmux judges
 /// both in the command that types; the answer is `line`'s own (`Control::run_if`).
 pub(super) async fn guarded(client: &Control, run: &str, pane: &str, line: &str, agent_live: bool) -> Result<(), String> {
-    guarded_front(client, run, pane, line, agent_live, None).await
+    guarded_front(client, Some(run), pane, line, agent_live, None).await
 }
 
-async fn guarded_front(client: &Control, run: &str, pane: &str, line: &str, agent_live: bool, command: Option<&str>) -> Result<(), String> {
-    let marked = format!("#{{==:#{{@terminum-run}},{run}}}");
+/// `line` while the pane is still `run`'s; `None`: while it is still no run's (AC-285).
+async fn guarded_front(client: &Control, run: Option<&str>, pane: &str, line: &str, agent_live: bool, command: Option<&str>) -> Result<(), String> {
+    let marked = format!("#{{==:#{{@terminum-run}},{}}}", run.unwrap_or(""));
     let test = if agent_live { format!("#{{&&:{marked},#{{==:#{{@terminum-exit}},}}}}") } else { marked };
     let test = match command {
         Some(name) => {
@@ -137,7 +138,7 @@ pub(super) async fn interrupt_and_deliver(app: &Shared, run: &Run, server: &Serv
     if app.inputs.human_since(&server.key(pane), at) {
         return Err(other("a human typed in its pane"));
     }
-    let sent = guarded_front(&client, &run.id, pane, &format!("send-keys -t {pane} Escape"), true, Some(command)).await;
+    let sent = guarded_front(&client, Some(&run.id), pane, &format!("send-keys -t {pane} Escape"), true, Some(command)).await;
     let who = crate::inputs::Who::dispatcher("dispatcher.give_up", &run.id, &run.ids, &run.agent_id);
     if let Some((server, _)) = app.tmux.resolve(&server.key(pane)) {
         crate::inputs::wrote(app, who, "key", &server, pane, "<Esc>", sent.as_ref().err().cloned(), None);
@@ -163,6 +164,81 @@ pub(super) async fn interrupt_and_deliver(app: &Shared, run: &Run, server: &Serv
     deliver_locked(app, run, server, pane, text, Delivery::GiveUp { command, since: at }).await
 }
 
+/// Waits until what was pasted shows in `kind`'s box; else no Enter.
+async fn shown(server: &Server, pane: &str, kind: &str, text: &str, first: bool) -> Result<(), Miss> {
+    let until = tokio::time::Instant::now() + if first { SHOWN_FIRST } else { SHOWN };
+    loop {
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        if super::start::exit_of(server, pane).await.is_some() {
+            return Err(other("the agent ended before what was pasted showed: no Enter"));
+        }
+        if screen::shows(&read(server, pane, kind).await.map_err(other)?, text) {
+            return Ok(());
+        }
+        if tokio::time::Instant::now() >= until {
+            return Err(other("what was pasted did not show in its box: no Enter"));
+        }
+    }
+}
+
+/// An empty box on `kind`'s screen, else what stands in it.
+async fn empty_box(server: &Server, pane: &str, kind: &str) -> Result<(), Miss> {
+    match read(server, pane, kind).await.map_err(other)? {
+        Screen::Empty => Ok(()),
+        Screen::Holds(_) => Err(Miss::NotEmpty("its input box holds a draft")),
+        Screen::Asks => Err(Miss::NotEmpty("the agent asks a question")),
+        Screen::Unknown => Err(other(format!("screen not known ({kind})"))),
+    }
+}
+
+/// Pastes AC-285's fixed `text` for `task` into `pane`, a live session the human opened, and sends it (CLAUDE.md §2):
+/// no run's mark, Claude Code or Codex in front and idle at an empty box, no tmux mode, no human typing since
+/// `since`; tmux judges the mark, the program and the mode again in the commands that type.
+pub(super) async fn deliver_theirs(app: &Shared, server: &Server, pane: &str, task: &str, text: &str, since: std::time::Instant) -> Result<(), Miss> {
+    let _held = server.typing(pane).lock_owned().await;
+    let key = server.key(pane);
+    let said = server.run(format!("display -p -t {pane} '#{{@terminum-run}}\t#{{pane_in_mode}}\t#{{pane_current_command}}'")).await.map_err(|e| other(format!("tmux does not answer: {e}")))?;
+    let fields: Vec<&str> = said.first().map_or(Vec::new(), |l| l.split('\t').collect());
+    let field = |i: usize| fields.get(i).copied().unwrap_or("");
+    if !field(0).is_empty() {
+        return Err(other("its pane is Dispatcher's"));
+    }
+    if field(1) != "0" {
+        return Err(other("the pane is in a tmux mode"));
+    }
+    let command = field(2);
+    let kind = crate::tmux::titles::agent_of(command).ok_or_else(|| other("no coding agent runs in front"))?;
+    let busy = |at| if app.hooks.working(&key) { Err(other("the agent is working")) }
+        else if app.inputs.human_since(&key, at) { Err(other("a human typed in its pane")) } else { Ok(()) };
+    busy(since)?;
+    empty_box(server, pane, kind).await?;
+    let client = server.client(pane).ok_or_else(|| other("tmux does not answer"))?;
+    let buffer = crate::page::typing::load_buffer(app, &client, server, text).await.map_err(other)?;
+    let pasted = match busy(since) {
+        Ok(()) => guarded_front(&client, None, pane, &format!("paste-buffer -p -b {buffer} -t {pane}"), false, Some(command)).await
+            .map_err(|error| other(format!("tmux did not take the paste: {error}"))),
+        Err(miss) => Err(miss),
+    };
+    let shown = match pasted {
+        Ok(()) => shown(server, pane, kind, text, false).await,
+        Err(miss) => Err(miss),
+    };
+    let _ = client.run(format!("delete-buffer -b {buffer}")).await;
+    let entered = match shown.and_then(|()| busy(since)) {
+        Ok(()) => {
+            app.dispatcher.remember_typed(&key, text);
+            guarded_front(&client, None, pane, &format!("send-keys -t {pane} Enter"), false, Some(command)).await.map_err(|e| other(format!("tmux did not take Enter: {e}")))
+        }
+        Err(m) => Err(m),
+    };
+    if let Some((server, _)) = app.tmux.resolve(&key) {
+        let words = if entered.is_ok() { format!("{text}<Enter>") } else { text.to_string() };
+        let who = crate::inputs::Who::dispatcher("dispatcher.answer", "", &[task.to_string()], "");
+        crate::inputs::wrote(app, who, "prompt", &server, pane, &words, entered.as_ref().err().map(Miss::to_string), None);
+    }
+    entered
+}
+
 async fn deliver_locked(app: &Shared, run: &Run, server: &Server, pane: &str, text: &str, delivery: Delivery<'_>) -> Result<(), Miss> {
     let command = delivery.command();
     let first = matches!(delivery, Delivery::Normal { first: true, .. });
@@ -186,36 +262,19 @@ async fn deliver_locked(app: &Shared, run: &Run, server: &Server, pane: &str, te
     if !first && command.is_none() && (!run.turn_ended || app.hooks.working(&key)) {
         return Err(other("the agent is working"));
     }
-    match read(server, pane, &run.kind).await.map_err(other)? {
-        Screen::Empty => {}
-        Screen::Holds(_) => return Err(Miss::NotEmpty("its input box holds a draft")),
-        Screen::Asks => return Err(Miss::NotEmpty("the agent asks a question")),
-        Screen::Unknown => return Err(other(format!("screen not known ({})", run.kind))),
-    }
+    empty_box(server, pane, &run.kind).await?;
     delivery.check(app, run, &key).await?;
     let client = server.client(pane).ok_or_else(|| other("tmux does not answer"))?;
     let buffer = crate::page::typing::load_buffer(app, &client, server, text).await.map_err(other)?;
     let pasted = match delivery.check(app, run, &key).await {
-        Ok(()) => guarded_front(&client, &run.id, pane, &format!("paste-buffer -p -b {buffer} -t {pane}"), true, command).await
+        Ok(()) => guarded_front(&client, Some(&run.id), pane, &format!("paste-buffer -p -b {buffer} -t {pane}"), true, command).await
             .map_err(|error| other(format!("tmux did not take the paste: {error}"))),
         Err(miss) => Err(miss),
     };
-    let shown = async {
-        pasted?;
-        let until = tokio::time::Instant::now() + if first { SHOWN_FIRST } else { SHOWN };
-        loop {
-            tokio::time::sleep(Duration::from_millis(100)).await;
-            if super::start::exit_of(server, pane).await.is_some() {
-                return Err(other("the agent ended before what was pasted showed: no Enter"));
-            }
-            if screen::shows(&read(server, pane, &run.kind).await.map_err(other)?, text) {
-                return Ok(());
-            }
-            if tokio::time::Instant::now() >= until {
-                return Err(other("what was pasted did not show in its box: no Enter"));
-            }
-        }
-    }.await;
+    let shown = match pasted {
+        Ok(()) => shown(server, pane, &run.kind, text, first).await,
+        Err(miss) => Err(miss),
+    };
     let _ = client.run(format!("delete-buffer -b {buffer}")).await;
     let entered = match shown {
         Ok(()) => async {
@@ -223,7 +282,7 @@ async fn deliver_locked(app: &Shared, run: &Run, server: &Server, pane: &str, te
                 delivery.check(app, run, &key).await?;
             }
             app.dispatcher.remember_typed(&key, text);
-            guarded_front(&client, &run.id, pane, &format!("send-keys -t {pane} Enter"), true, command).await.map_err(|e| other(format!("tmux did not take Enter: {e}")))
+            guarded_front(&client, Some(&run.id), pane, &format!("send-keys -t {pane} Enter"), true, command).await.map_err(|e| other(format!("tmux did not take Enter: {e}")))
         }.await,
         Err(m) => Err(m),
     };

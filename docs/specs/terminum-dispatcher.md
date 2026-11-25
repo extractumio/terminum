@@ -87,6 +87,7 @@ Open questions:
 | AC-205 | [MUST / P0] | A run Dispatcher started whose task was IN PROGRESS when its tmux server ended resumes by itself once the server is back, as RUN would, with fixed words that say so; a window closed by hand, a task not in progress, a run with nothing to resume, and a server that ends again within an hour of such a resume do not. |
 | AC-156 | [MUST / P0] | A run starts its agent's command as the operator wrote it, its permissions and model included; Dispatcher adds only the inline TUI in the agent's own process with Codex's update menu off (§9), the effort and, going on, the resume of its conversation; going on starts the agent's command as the pool has it then. |
 | AC-157 | [MUST / P0] | An agent that needs a human asks by `ask_human`: its questions, written for a newcomer as why a person is needed (one sentence), the recommended answers with why and the other options, then the whole issue (one paragraph), stay on the task, the task waits for the human, and once the agent's turn is over its session closes; the task keeps its agent and conversation, and RUN resumes that conversation with the human's answers. Recorded options and choices: terminum-supervisor.md AC-230. |
+| AC-285 | [MUST / P0] | A task waiting on its agent's question offers Answer, Continue with Recommended and Archive, whoever ran it and whether its session lives: an answer goes on in the conversation as RUN does, or, in a live session the human opened, as fixed words with the task's ID typed once through the §9 gate; Archive fails and archives it; each press is refused on a question no longer waiting, and is kept in the task's history with the question, the choice and the move. |
 | AC-158 | [MUST / P0] | A RUN the human queued at an agent or project limit (AC-169), or a schedule's task with no room (terminum-schedules.md AC-161), waits for a slot, schedules first, then in queue order. A human can cancel it. Moving or archiving its primary task or deleting its agent also cancels it. While it waits, agents can read and comment on every task it carries, and requests to move or finish any member are refused. |
 | AC-210 | [MUST / P0] | An agent whose task cannot go on before other tasks of its project are DONE says so by `wait_for_task`, never by asking a human: they join its Blocked by with its reason, the task waits in TODO with no clock and no queue place, its session closes once the turn is over, and Dispatcher goes on with it in the same conversation, as who started the run, once every one is DONE; one of them FAILED, archived or deleted asks a human instead. |
 | AC-169 | [MUST / P0] | A RUN at a limit is offered its agent's queue and waits only once the human agrees; the agent's card shows a pale dot for each queued task, a ring for each free slot and a dashed ring for each kept one, and a key that opens its window at the queue, where tasks are dragged or moved by arrows into another order and taken out, on a Mac and on a phone. |
@@ -467,7 +468,7 @@ Scenario: AC-122 failure — not through the gate
 
 Scenario: AC-122 failure — not Dispatcher's
   Given a live session Dispatcher did not start
-  Then RUN is off, saying "Unlink the session to run it"; a comment reaches it as AC-209 says
+  Then RUN is off, saying "Unlink the session to run it"; a comment reaches it as AC-209 says; a question its agent asked is answered by AC-285's keys
 ```
 
 ### AC-209 — A new comment reaches the working agent [MUST / P0]
@@ -1519,11 +1520,71 @@ Scenario: AC-157 edge — the agent goes on
 Scenario: AC-157 failure — not Dispatcher's session
   Given a session the human started, API-12 linked to it
   When its agent calls ask_human
-  Then the questions are kept and API-12 waits, the answer says "Wait for the answer in this session.", and nothing closes
+  Then the questions are kept and API-12 waits, the answer says "End your turn now: the human answers on the board, and terminum types a notice with the task's ID into this session, or answers here.", and nothing closes
 
 Scenario: AC-157 failure — not its task
   When the agent calls ask_human on a task of another session
   Then it is refused: "API-13 belongs to session %8: only its agent asks on it. You can comment."; one with no session: "API-13 has no session: take_task first, or comment."
+```
+
+### AC-285 — Answering a waiting task [MUST / P0]
+
+The maintainer's decision: one way to answer every task its agent asked on, whoever started the session and whether it lives; terminum may type into a live session the human opened only AC-285's fixed words, never the human's text.
+
+```gherkin
+Scenario: AC-285 happy path — the keys
+  Given API-12 in WAIT FOR HUMAN with its agent's questions (AC-157), its window open
+  Then under the answer field stand Archive at the left, then Save, Continue with Recommended and Answer at the right; Answer is off while the field is empty and takes ⌘⇧↩ (terminum-kanban.md AC-282)
+  And a task in WAIT FOR HUMAN with no question (AC-124: the agent asks in its window) keeps RUN, Save and Archive as before
+
+Scenario: AC-285 happy path — Answer in a session Dispatcher started
+  When the user writes "v2, and keep v1 a month" and presses Answer
+  Then it goes as RUN with that comment (AC-122, AC-157): in the live session, from its shell, or resuming its conversation in a new window; at an agent's limit the queue is offered (AC-169) and the answer is kept first
+  And the window closes once it went or waits
+
+Scenario: AC-285 happy path — Answer in a live session the human opened
+  Given API-12 linked to session %8, opened by the human, Claude Code or Codex in front, idle at an empty box
+  When the user writes "v2" and presses Answer
+  Then "v2" is kept as the human's comment, and through the §9 gate, once, into %8: "API-12: the human answered your questions on the board. Read the answer by execute_tool("get_task", {id}) and go on with the task, taking it into account."
+  And API-12 is IN PROGRESS
+  And the human's text is never typed: the agent reads it as data by get_task
+
+Scenario: AC-285 failure — that live session cannot take it now
+  Given %8's agent is working, its box holds a draft or a question, the pane is in a tmux mode, another program is in front, or a human typed there since the press
+  When the user presses Answer
+  Then nothing is typed, nothing is kept, API-12 stays in WAIT FOR HUMAN, the answer stays in the field, and the window says why, as RUN does ("The session is not at an empty input box: answer there first")
+  When %8's tmux server is not read now, or is the user's own not attached
+  Then it is refused with "Its session's server is not read now: answer in its window, or once that server answers."
+
+Scenario: AC-285 edge — a session the human opened that closed
+  Given %8 closed (AC-121's check: its server's list read whole and fresh lacks it)
+  When the user presses Answer
+  Then it goes as RUN's first run on the project's agent, with the task's text and the human's comments, the answer among them (AC-209); the agent reads the questions by get_task
+  And the conversation of %8 is not resumed: a pool agent's command and permissions are not the ones the human chose for it
+
+Scenario: AC-285 happy path — Continue with Recommended
+  When the user presses Continue with Recommended
+  Then it goes as Answer with the comment "Go ahead with the recommended answer(s)."; a question with recorded options (terminum-supervisor.md AC-230) also records its recommended option as the choice
+  And in a live session the human opened the fixed words are "API-12: the human chose your recommended answers. Go on with the task with them."
+  And whatever is written in the field stays there, unsent
+
+Scenario: AC-285 happy path — Archive
+  When the user presses Archive and confirms "Archive API-12? It fails as not wanted and leaves the board; tasks blocked by it ask a human."
+  Then what is written in the field is kept as the human's comment, API-12 moves to FAILED ("archived: not wanted") and is archived (AC-118), and a RUN waiting for room is called off
+  When a run of Dispatcher's still holds it
+  Then it is refused with "Its run holds it: give up on the run first." and nothing moves
+
+Scenario: AC-285 failure — a question no longer waiting
+  Given the agent asked again, the task moved, or the question was answered in another browser or in the terminal
+  When the user presses any of the three for the question the window showed
+  Then it is refused with "That question is no longer waiting for an answer.", nothing moves, and the field keeps its text
+  And two presses at once: the first goes, the second is refused so
+
+Scenario: AC-285 happy path — what is kept
+  When any of the three goes
+  Then the task's history keeps a line "alex answered" / "alex chose Continue with Recommended" / "alex archived it: not wanted", its data the choice (answer, recommended, archive), the question's event ID, the status it left, and how it went (run, typed, archive)
+  And the moves it makes are kept as every move is: from, to, who
+  And a refused press keeps no line
 ```
 
 ### AC-158 — Waiting for room [MUST / P0]

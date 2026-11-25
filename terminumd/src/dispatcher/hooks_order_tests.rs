@@ -221,7 +221,7 @@ async fn ac157_a_taskless_session_is_not_accepted_by_a_task_tool() {
         tx.execute("UPDATE runs SET task = NULL, prompt = NULL WHERE id = ?1", [&f.run]).map(drop).map_err(ops::sql)
     }).unwrap();
     let (said, _) = f.tool("ask_human", json!({"id": f.ids[0], "questions": ASKED}));
-    assert!(said.ends_with("Wait for the answer in this session."));
+    assert!(said.ends_with("End your turn now: the human answers on the board, and terminum types a notice with the task's ID into this session, or answers here."));
     assert_eq!(f.read().state, Phase::Typed);
     assert!(!f.read().asked);
 }

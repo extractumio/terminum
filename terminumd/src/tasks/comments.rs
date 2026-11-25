@@ -208,7 +208,8 @@ pub fn history(tx: &Transaction, id: &str) -> Result<Value, String> {
     let out = rows(tx, "SELECT e.id, e.at, e.author, u.name, u.kind, e.kind, e.text, e.edited_at, json_extract(e.data, '$.questions') IS NOT NULL,
                         CASE WHEN e.kind = 'told' THEN json_extract(e.data, '$.comments') END, CASE WHEN e.kind = 'told' THEN json_extract(e.data, '$.not') END,
                         CASE WHEN e.kind = 'comment' THEN json_extract(e.data, '$.question') END,
-                        CASE WHEN e.kind = 'comment' THEN json_extract(e.data, '$.choice') END
+                        CASE WHEN e.kind = 'comment' THEN json_extract(e.data, '$.choice') END,
+                        CASE WHEN e.kind = 'answer' THEN e.data END
                         FROM events e JOIN users u ON u.id = e.author WHERE e.task = ?1 ORDER BY e.at, e.rowid", [&key], |r| {
         let event: String = r.get(0)?;
         let attached = files.remove(&event).unwrap_or_default();
@@ -223,7 +224,8 @@ pub fn history(tx: &Transaction, id: &str) -> Result<Value, String> {
             v["comments"] = ids;
             v["not"] = json!(r.get::<_, Option<bool>>(10)?.unwrap_or(false));
         }
-        for (column, field) in [(11, "question"), (12, "choice")] {
+        // a key's answer to a question: its choice, the question, how it went (terminum-dispatcher.md AC-285)
+        for (column, field) in [(11, "question"), (12, "choice"), (13, "answer")] {
             if let Some(data) = r.get::<_, Option<String>>(column)?.and_then(|s| serde_json::from_str::<Value>(&s).ok()) {
                 v[field] = data;
             }

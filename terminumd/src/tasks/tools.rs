@@ -137,7 +137,7 @@ fn asked(tx: &Transaction, who: &Who, waits: bool) -> Result<&'static str, Strin
         // several tasks: they wait together, and their next RUN may start anew (AC-185)
         (true, Some(true)) => " End your turn now, with no more tool calls: this session's tasks in progress wait with it, Dispatcher closes the session, and the human's RUN brings the answers.",
         (true, Some(false)) => " End your turn now, with no more tool calls: Dispatcher closes this session, and the human's RUN resumes this conversation with the answers.",
-        (true, None) => " Wait for the answer in this session.",
+        (true, None) => " End your turn now: the human answers on the board, and terminum types a notice with the task's ID into this session, or answers here.",
     })
 }
 

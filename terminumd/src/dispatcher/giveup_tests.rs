@@ -73,7 +73,8 @@ int main(int argc, char **argv) {
 }
 "#;
 
-fn native_agent() -> &'static PathBuf {
+/// A stand-in for Claude Code or Codex in front: it draws their box and logs each prompt and Esc (AC-138, AC-285).
+pub(crate) fn native_agent() -> &'static PathBuf {
     static BINARY: OnceLock<PathBuf> = OnceLock::new();
     BINARY.get_or_init(|| {
         let dir = crate::testutil::fresh_dir("giveup-native");
