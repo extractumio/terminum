@@ -49,7 +49,9 @@ export function scheduledSection({ getMeta, chosen, openTask }) {
     if (s.unread) last.append(el("span", "schedunread", `${s.unread} unread`));
     if (s.skipped) last.append(el("span", "schedskips", `skipped ${s.skipped}`));
     if (s.failed_why) last.append(el("span", "schedfailed", s.failed_why));   // its last run did not start: the next firing tries again
-    c.append(...[top, el("div", "ctitle", s.title), foot, last.children.length ? last : null].filter(Boolean));
+    const title = el("div", "ctitle", s.title);
+    title.title = s.title;
+    c.append(...[top, title, foot, last.children.length ? last : null].filter(Boolean));
     c.title = `${s.key} · set by ${s.author_name || "you"}`;
     const go = () => win.open(s);
     c.addEventListener("click", go);

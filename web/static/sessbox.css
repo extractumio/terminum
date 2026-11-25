@@ -10,8 +10,12 @@
 @media (pointer: coarse) { .agsess { height: 32px; } }   /* with the card's own press round it: 44 px of finger room */
 #agentbar > .rail { grid-row: span 2; }
 #agentbar > .sessdock { grid-column: 2; }
-.sessdock { display: flex; flex-direction: column; gap: var(--sp-2); max-width: 984px; margin-top: var(--sp-2); padding: var(--sp-2) var(--sp-3);
+/* open: the pool's cards keep at most 40 % of the section, the dock the rest, its box giving way to its head and keys */
+#agentbar:has(> .sessdock:not([hidden])) { grid-template-rows: fit-content(40%) minmax(0, 1fr); }
+.sessdock { display: flex; flex-direction: column; gap: var(--sp-2); max-width: 984px; min-height: 0; margin-top: var(--sp-2); padding: var(--sp-2) var(--sp-3);
   border-radius: var(--r-lg); background: var(--surface-1); }
+.sessdock > .xbox { min-height: 0; }
+.sessdock > :not(.xbox) { flex: none; }
 .railed.folded > .sessdock { display: none; }
 .sesshead { display: flex; align-items: center; gap: var(--sp-2); }
 .sesshead h3 { flex: 1; min-width: 0; margin: 0; font-size: var(--fs-label); font-weight: var(--fw-head); }
