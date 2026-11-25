@@ -231,7 +231,7 @@ button[data-keyhint]::after { content: attr(data-keyhint) / ""; margin-left: 6px
   button[data-keyhint]::after { display: none; }
 }
 /* the board's key to the help: a keyboard's, never in a phone's or a tablet's head (AC-105) */
-@media (max-width: 860px), (pointer: coarse) { #keyhelpbtn { display: none; } }
+@media (max-width: 860px), (pointer: coarse) { #boardacts > #keyhelpbtn { display: none; } }
 /* the keys' help (keyhelp.js) */
 table.keyhelp { width: 100%; border-collapse: collapse; margin: 0 0 14px; font-size: var(--fs-row); }
 table.keyhelp caption { text-align: left; font-weight: 600; padding: 4px 0 6px; }
