@@ -2,10 +2,9 @@
 // terminum-dispatcher.md AC-204 against a fake terminumd (fake.mjs): + Session on an agent's card opens a dock under the
 // pool; text, a pasted image and an added file go in it, two task cards dropped on it put their IDs at the caret; Start
 // asks terminumd for that agent's session with the prompt and the files' ids, then keeps the board with a line under the
-// pool linking the session; a miss keeps the
-// draft and says so; Start folds the dock at once, the agent's key "Starting…", and a refusal or a miss opens it again
-// with the draft and the words; Esc keeps the draft, Discard asks and clears it; a remote project's composer takes no
-// file; its box has the key to the whole window (terminum.md AC-184).
+// pool linking the session; a miss keeps the draft and says so; Start folds the dock at once, the agent's key
+// "Starting…", and a refusal or a miss opens it again with the draft and the words; Esc keeps the draft, Discard asks and
+// clears it; a remote project's composer takes no file; its box has the key to the whole window (terminum.md AC-184).
 import { check, coversWindow, runningIn, until } from "./check.mjs";
 import { fakeBoard, ORIGIN, openPage, PHONE, WIDE } from "./fake.mjs";
 
@@ -43,7 +42,8 @@ const dock = (page) => page.evaluate(() => { const d = document.getElementById("
     error: document.getElementById("sesserror").hidden ? "" : document.getElementById("sesserror").textContent, start: document.getElementById("sessstart").disabled,
     keys: [...document.querySelectorAll("#agentbar .agsess")].map((k) => k.getAttribute("aria-expanded")),
     marks: [...document.querySelectorAll("#agentbar .agsess")].map((k) => `${k.textContent}|${k.getAttribute("aria-busy")}|${k.getAttribute("aria-disabled")}`),
-    done: document.getElementById("sessdone").offsetWidth ? document.getElementById("sessdone").textContent : "", link: document.querySelector("#sessdone a")?.getAttribute("href") ?? "" }; });
+    done: document.getElementById("sessdone").offsetWidth ? document.getElementById("sessdone").textContent : "", link: document.querySelector("#sessdone a")?.getAttribute("href") ?? "",
+    onLink: !!document.activeElement?.matches("#sessdone a") }; });
 const free = (d) => d.marks.every((m) => m === "+ Session|null|null");
 
 /** Start pressed with the answer held: the dock folds at once, that agent's key says it is starting, every key inert. */
@@ -202,7 +202,7 @@ async function startedLine(f, at, agent, follow = false) {
   let d = await dock(page);
   const url = new URL(page.url());
   check(`AC-204 ${at} a start that went in keeps the board: "Session started on ${agent}" under the pool with a link to the session; the draft and its files cleared, the dock folded, the keys free`,
-    url.pathname === "/kanban/" && d.done.startsWith(`Session started on ${agent} · Open the session`) && d.link === "/sessions/#/tmux:local:terminum:%259/" && d.focus === "" && await page.evaluate(() => document.activeElement === document.querySelector("#sessdone a"))
+    url.pathname === "/kanban/" && d.done.startsWith(`Session started on ${agent} · Open the session`) && d.link === "/sessions/#/tmux:local:terminum:%259/" && d.onLink
     && !d.open && d.text === "" && d.files.length === 0 && free(d) && await page.evaluate(() => !localStorage.getItem("tm.sessiondraft")), JSON.stringify({ d, url: page.url() }));
   const placed = await page.evaluate(() => { const c = document.querySelector("#agentbar .agentcard").getBoundingClientRect(), n = document.getElementById("sessdone").getBoundingClientRect();
     return n.top >= c.bottom - 1 && n.right <= innerWidth && document.documentElement.scrollWidth <= innerWidth; });

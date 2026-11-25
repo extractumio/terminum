@@ -14,11 +14,13 @@ import { sessionUrl } from "./tasklink.js";
 import { $, agentColor, api, fileChips, onFiles, onSend, showError, upload } from "./kanbanutil.js";
 
 const DRAFT = "tm.sessiondraft";
+const sessionLink = (key) => Object.assign(el("a", "linklike", "Open the session"), { href: sessionUrl(key) });
 
 /** `getMeta()`: projects and agents, `most` bytes a file may have among them; `dragging()`: the tasks of a drag;
  *  `started()`: a session started, for the pool to read its slots again. */
 export function sessionComposer({ getMeta, dragging, started }) {
   const dock = $("sesscompose"), area = $("sesstext"), list = $("sessfiles"), error = $("sesserror"), start = $("sessstart"), discard = $("sessdiscard"), done = $("sessdone");
+  const [said, shut] = done.children;              // the line's words with its link, its ×
   let agent = null, files = [], uploading = 0, busy = false, left = null;   // left: the key close() gave the focus to
   let missed = null;                               // the text of a prompt whose session started without it: Start again would open another
   area.value = read(DRAFT)?.text ?? "";
@@ -107,18 +109,17 @@ export function sessionComposer({ getMeta, dragging, started }) {
       if (r.typed === false) {                     // the session stands, the human's: the draft stays to paste there
         missed = area.value;                       // Start waits for a change: a second press would open a second session
         back(`The session started, but its prompt was not typed: ${r.why}. Paste it there yourself.`);
-        error.append(" ", Object.assign(el("a", null, "Open the session"), { href: sessionUrl(r.key) }));
+        error.append(" ", sessionLink(r.key));
         return;
       }
       area.value = "";
       files = [];
+      busy = false;
       keep();
       showFiles();
-      busy = false;
       lit();
-      state();
-      const link = Object.assign(el("a", null, "Open the session"), { href: sessionUrl(r.key) }), at = document.activeElement;
-      done.firstElementChild.replaceChildren(`Session started on ${agent.name} · `, link);
+      const link = sessionLink(r.key), at = document.activeElement;
+      said.replaceChildren(`Session started on ${agent.name} · `, link);
       done.hidden = false;
       if (at === document.body || at === left) link.focus({ preventScroll: true });   // the focus left where the user moved it meanwhile
       started();
@@ -142,7 +143,7 @@ export function sessionComposer({ getMeta, dragging, started }) {
   dock.addEventListener("submit", (e) => { e.preventDefault(); go(); });
   dock.addEventListener("keydown", (e) => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); close(); } });
   $("sessclose").addEventListener("click", close);
-  done.querySelector(".x").addEventListener("click", () => { done.hidden = true; });
+  shut.addEventListener("click", () => { done.hidden = true; });
   $("sessadd").addEventListener("click", () => $("sessfile").click());
   $("sessfile").addEventListener("change", (e) => { const chosen = [...e.target.files]; e.target.value = ""; if (chosen.length) add(chosen); });
   discard.addEventListener("click", async () => {

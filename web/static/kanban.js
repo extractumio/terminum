@@ -272,7 +272,7 @@ const openSession = (key) => { location.href = sessionUrl(key); };
 const folds = foldedCards((id) => openTask(id));
 const side = boardSessions({ chosen: () => filters().project, openTask, send, narrow, newSession: (p) => p && newSession(projectOf(p.id) ?? p), project: projectOf });
 const runs = runWindow({ addAgent: (project) => agents.add(project), noFolder: askFolder, done: (waits) => { if (waits) say(waits); readSoon(); } });
-const composer = sessionComposer({ getMeta: () => meta, dragging: () => dragging, started: () => readSoon() });
+const composer = sessionComposer({ getMeta: () => meta, dragging: () => dragging, started: readSoon });
 const agents = agentsSection({ getMeta: () => meta, chosen: () => filters().project, reload: loadMeta, slots: () => slots, liveRow: (key) => liveRows.get(key), composer,
   refreshQueue: async (id) => { const got = await load(); return got ? (got.queue?.[id] ?? []) : undefined; },
   dragging: () => dragging, given: () => dragging ?? (picked.size ? pickedTasks() : null), run: runThem, openSession, readings: () => readings, openTask });

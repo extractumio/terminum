@@ -20,9 +20,9 @@
 .sessdone { display: flex; align-items: center; gap: var(--sp-2); max-width: 984px; margin: var(--sp-2) 0 0; color: var(--t-fg); font-size: var(--fs-small); }
 .sessdone[hidden] { display: none; }
 .sessdone > span { min-width: 0; overflow-wrap: anywhere; }
-/* its link and a miss's: the theme's link color, never the browser's blue; whole on one line, a finger's on touch */
-.sessdone a, #sesserror a { color: var(--link); white-space: nowrap; text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 2px; }
-@media (pointer: coarse) { .sessdone a { display: inline-flex; align-items: center; min-height: 44px; } }
+/* its link and a miss's (.linklike): whole on one line, a finger's on touch */
+.sessdone a, #sesserror a { white-space: nowrap; }
+@media (pointer: coarse) { .sessdone a { display: inline-flex; align-items: center; min-height: var(--h-touch, 44px); } }
 .sesshead { display: flex; align-items: center; gap: var(--sp-2); }
 .sesshead h3 { flex: 1; min-width: 0; margin: 0; font-size: var(--fs-label); font-weight: var(--fw-head); }
 #sessagent { display: inline-flex; align-items: center; gap: var(--sp-1); }
