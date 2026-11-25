@@ -66,7 +66,8 @@ export function sessionComposer({ getMeta, dragging }) {
     state();
   }
 
-  function open(a) {
+  /** `focus`: the box takes it (a failure coming back leaves it where the user moved it meanwhile). */
+  function open(a, focus = true) {
     if (busy) return;                              // a start on its way: its draft comes back here if it fails
     agent = a;
     $("sessagent").replaceChildren(el("span", "sessdot"), el("span", null, a.name));
@@ -75,7 +76,7 @@ export function sessionComposer({ getMeta, dragging }) {
     lit();
     say("");
     state();
-    area.focus();
+    if (focus) area.focus();
   }
   function close() {
     dock.hidden = true;
@@ -85,8 +86,9 @@ export function sessionComposer({ getMeta, dragging }) {
 
   /** A start that did not go as asked: the dock again, its draft and files as they were, terminumd's words in it. */
   function back(text) {
+    const at = document.activeElement;
     busy = false;
-    open(agent);
+    open(agent, at === document.body || !!at?.classList.contains("agsess"));
     say(text);
   }
   async function go() {
@@ -108,7 +110,7 @@ export function sessionComposer({ getMeta, dragging }) {
       files = [];
       keep();
       location.href = sessionUrl(r.key);         // the key says "Starting…" until the session's page comes
-    } catch (e) { back(e.message); } finally { if (!busy) state(); }
+    } catch (e) { back(e.message); }
   }
 
   onFiles(area, area, add, (on) => area.classList.toggle("dropping", on));
@@ -125,6 +127,8 @@ export function sessionComposer({ getMeta, dragging }) {
     area.classList.remove("dropping");
     insertIds(tasks.map((t) => t.id));
   });
+  // the board back from the browser's Back cache after the session's page: that start went in, the keys are free again
+  addEventListener("pageshow", (e) => { if (e.persisted && busy) { busy = false; lit(); state(); } });
   dock.addEventListener("submit", (e) => { e.preventDefault(); go(); });
   dock.addEventListener("keydown", (e) => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); close(); } });
   $("sessclose").addEventListener("click", close);

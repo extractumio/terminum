@@ -1233,7 +1233,7 @@ Scenario: AC-204 happy path — the composer
   When the user presses Start or ⌘Enter
   Then the dock folds at once, its draft and files kept, and that agent's key says "Starting…", busy; every + Session key is inert until the start ends, so no other draft is typed meanwhile
   And a session of that agent opens in the project's place as AC-142's, terminumd types the prompt once (the human's words, then a line per file: its name, its kind and the path it is kept at), and the page shows the session; the draft is cleared
-  When terminumd refuses the start or does not answer
+  When terminumd refuses the start or the request fails
   Then the dock opens again for that agent with its draft and files, terminumd's message in it, and the keys take presses again
 
 Scenario: AC-204 edge — how it is typed

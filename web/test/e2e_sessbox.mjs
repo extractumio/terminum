@@ -19,8 +19,13 @@ const PNG = Buffer.from("89504e470d0a1a0a0000000d49484452", "hex");
 /** `answer(body)`: the start's answer, `status` its HTTP status; `held`: a promise the answer waits for. */
 async function board(browser, device, { host = null, answer = (b) => ({ key: "tmux:local:terminum:%9", run: "r1", typed: true }), status = 200, held = null } = {}) {
   const f = await openPage(browser, { device, url: "/kanban/?project=api" });
-  const posts = [], uploads = [];
-  await fakeBoard(f.page, { meta: () => meta(host), tasks: (s) => (s === "TODO" ? [task(1), task(2), task(3)] : []), counts: { TODO: 3 } });
+  const posts = [], uploads = [], tasks = (s) => (s === "TODO" ? [task(1), task(2), task(3)] : []);
+  await fakeBoard(f.page, { meta: () => meta(host), tasks, counts: { TODO: 3 } });
+  // `f.redraw()`: the board's next read carries a new reading (of a kind no agent has), so the pool is drawn anew
+  let readings = null;
+  await f.page.route("**/api/tasks?*", (r) => (readings ? json(r, { tasks: tasks(new URL(r.request().url()).searchParams.get("status")), counts: { TODO: 3 },
+    slots: { agents: {}, full: [], full_projects: [] }, subscriptions: readings }) : r.fallback()));
+  f.redraw = () => { readings = { other: [{ at: Date.now() }] }; };
   await f.page.route("**/api/task-files?*", (r) => { const name = new URL(r.request().url()).searchParams.get("name"); uploads.push(name);
     return json(r, { id: `${uploads.length}`.padStart(32, "0"), name, bytes: 16, mime: name.endsWith(".png") ? "image/png" : "application/octet-stream" }); });
   await f.page.route("**/api/task-projects/*/session", async (r) => { const body = JSON.parse(r.request().postData() || "{}"); posts.push(body); await held; return json(r, answer(body), status); });
@@ -43,6 +48,11 @@ async function folds(page, f, at, agentAt, how) {
   want[agentAt] = "Starting…|true|true";
   check(`AC-204 ${at} ${how} folds the dock at once while terminumd starts it; its agent's key says "Starting…", every key inert`,
     !d.open && JSON.stringify(d.marks) === JSON.stringify(want), JSON.stringify(d));
+  // the board redrawn meanwhile (its columns and pool read again): the keys drawn anew say the same
+  f.redraw();
+  await page.evaluate(() => { for (const k of document.querySelectorAll("#agentbar .agsess")) k.dataset.old = "1"; document.dispatchEvent(new Event("visibilitychange")); });
+  const redrawn = await until(() => page.evaluate(() => !document.querySelector("#agentbar .agsess[data-old]")));
+  check(`AC-204 ${at} the pool redrawn while it starts keeps "Starting…" and the inert keys`, redrawn && JSON.stringify((await dock(page)).marks) === JSON.stringify(want), JSON.stringify(await dock(page)));
   await page.evaluate((id) => document.querySelector(`#agentbar .agentcard[data-agent="${id}"] .agsess`).click(), `a${2 - agentAt}`);   // inert: Playwright would not press it
   check(`AC-204 ${at} another agent's key opens nothing while one starts`, !(await dock(page)).open, JSON.stringify(await dock(page)));
 }
@@ -125,7 +135,7 @@ export async function webSessBox(browser, name) {
   await folds(page, f, at, 0, "Start");
   h.let_go();
   check(`AC-204 ${at} a prompt not typed: the dock opens again for that agent, said with the why and a link to the session, the draft kept, the keys free, the page stays`,
-    await until(async () => /not typed: its input box did not come in 60 s/.test((await dock(page)).error)) && (await dock(page)).open && (await dock(page)).agent === "Opus reviewer"
+    await until(async () => /not typed: its input box did not come in 60 s/.test((await dock(page)).error)) && (await dock(page)).open && (await dock(page)).agent === "Opus reviewer" && (await dock(page)).focus === "sesstext"
     && (await dock(page)).text === "Missed prompt" && free(await dock(page)) && !page.url().includes("/sessions/")
     && await page.isVisible('#sesserror a[href^="/sessions/"]'), JSON.stringify(await dock(page)));
   check(`AC-204 ${at} after a miss Start waits for a change: a second press would open a second session`, (await dock(page)).start, JSON.stringify(await dock(page)));
@@ -174,11 +184,13 @@ async function refused(browser, device, at) {
   await until(async () => (await dock(page)).files.length === 1);
   await page.click("#sessstart");
   await folds(page, f, at, 0, "Start");
+  const moved = device === WIDE;                   // wide: the user went on in Find tasks meanwhile; the phone: left it
+  if (moved) await page.focus("#find");
   h.let_go();
   const back = async () => { const d = await dock(page); return d.open && /could not start/.test(d.error) ? d : null; };
   const d = (await until(back)) ? await back() : await dock(page);
-  check(`AC-204 ${at} a refused start opens the dock again for that agent: its draft, its file and terminumd's words in focus, Start and the keys free`,
-    d.open && /could not start/.test(d.error) && d.agent === "Opus reviewer" && d.text === "Refused prompt" && d.files.length === 1 && d.focus === "sesstext" && !d.start && free(d)
+  check(`AC-204 ${at} a refused start opens the dock again for that agent: its draft, its file and terminumd's words, ${moved ? "the focus left in Find tasks" : "its box in focus"}, Start and the keys free`,
+    d.open && /could not start/.test(d.error) && d.agent === "Opus reviewer" && d.text === "Refused prompt" && d.files.length === 1 && d.focus === (moved ? "find" : "sesstext") && !d.start && free(d)
     && !page.url().includes("/sessions/") && await page.evaluate(() => JSON.parse(localStorage.getItem("tm.sessiondraft") || "{}").text === "Refused prompt"), JSON.stringify(d));
   check(`no page error ${at}`, f.errors.length === 0, f.errors.join("; "));
   await f.close();
