@@ -232,6 +232,29 @@ def main():
         st, said = call(f"/api/schedules/{scheds[0]['id']}/run", "POST", {})
         check("AC-182 Run now on its card does the same for a human", st == 200 and said.get("task", "").startswith("S_"), said)
         wait_for(lambda: call("/api/schedules")[1]["schedules"][0]["last"], lambda last: last and last["task"] == said.get("task") and last["status"] == "DONE", 150, 0.5)
+
+        # onboarding: the setup read and write and the charter, a manager's alone (AC-283, AC-284)
+        out, rc = typed(boss, tool("get_project_setup"))
+        check("AC-283 get_project_setup names the gaps and who closes them", rc == "0" and '"gaps"' in out and "you: set_supervisor_charter" in out
+              and "Supervisor tab: Level, then Enabled" in out, out)
+        out, rc = typed(plain, tool("get_project_setup"))
+        check("AC-283 a worker finds no setup tool", rc == "1" and 'No tool is named "get_project_setup"' in out, out)
+        # the letters stay: later checks find their tasks by ID (a rename is cargo test roles::setup's)
+        out, rc = typed(boss, tool("update_project_setup", agents_at_once="3"))
+        shown, _ = typed(boss, tool("get_project_setup"))
+        check("AC-283 update_project_setup sets agents at once as the window would", rc == "0" and "Changed: agents at once." in out
+              and '"agents_at_once":3' in shown, (out, shown))
+        out, rc = typed(boss, tool("update_project_setup", agents_at_once=""))
+        shown, _ = typed(boss, tool("get_project_setup"))
+        check("AC-283 an empty agents_at_once goes back to no limit", rc == "0" and '"agents_at_once":null' in shown, (out, shown))
+        out, rc = typed(boss, tool("update_project_setup", auto="on"))
+        check("AC-283 Auto-Dispatcher is no field of a manager's", rc == "1" and "Name a field" in out, out)
+        revision = call(f"/api/task-projects/{project}/supervisor/settings")[1]["revision"]
+        charter = json.dumps({"mission": "A managed fixture.", "users": ["Its tests"]})
+        out, rc = typed(boss, tool("set_supervisor_charter", revision=str(revision), charter=charter))
+        saved = call(f"/api/task-projects/{project}/supervisor/settings")[1]
+        check("AC-284 set_supervisor_charter saves the charter while the Supervisor is off", rc == "0" and saved["revision"] == revision + 1
+              and saved["settings"]["charter"]["mission"] == "A managed fixture.", (out, saved["settings"]["charter"]))
         supervisor_page = t.page(secret)
         try:
             ac231_supervisor_tools_pane_and_token(t, call, typed, tool, tmux, supervisor_page, project, work, boss, plain, cli, waiting, token)

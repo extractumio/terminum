@@ -77,8 +77,8 @@ def ac231_supervisor_tools_pane_and_token(t, call, typed, tool, tmux, page, proj
     catalog = names(manager)
     assert rc == "0" and {"get_task", "send_to_session", "integrate"} <= catalog, manager
     review_context = "get_supervisor_review"
-    check("AC-231 the authorization matrix covers all 50 published tools",
-          len(catalog) == 50 and review_context in catalog, sorted(catalog))
+    check("AC-231 the authorization matrix covers all 53 published tools",
+          len(catalog) == 53 and review_context in catalog, sorted(catalog))
 
     # The mark wins even though this pane was opened by the human in the project.
     found = wire("probe", {})

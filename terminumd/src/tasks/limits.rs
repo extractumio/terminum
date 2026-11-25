@@ -21,7 +21,7 @@ pub fn routes() -> Router<Shared> {
 }
 
 /// A project's memory limits, or none to go by the global ones (terminum-dispatcher.md AC-128); 0: off.
-fn keep_limits(tx: &Transaction, project: &str, limits: Option<(f64, f64)>) -> Result<(), String> {
+pub(crate) fn keep_limits(tx: &Transaction, project: &str, limits: Option<(f64, f64)>) -> Result<(), String> {
     check_project(tx, project)?;
     match limits {
         None => tx.execute("DELETE FROM project_limits WHERE project = ?1", [project]).map_err(sql)?,
@@ -56,12 +56,18 @@ async fn set_limits(State(app): State<Shared>, Path(project): Path<String>, Json
 }
 
 /// How many agents a project runs at once; none: no limit.
-fn keep_agent_limit(tx: &Transaction, project: &str, limit: Option<i64>) -> Result<(), String> {
+pub(crate) fn keep_agent_limit(tx: &Transaction, project: &str, limit: Option<i64>) -> Result<(), String> {
     check_project(tx, project)?;
     if limit.is_some_and(|n| !(1..=MOST_AT_ONCE).contains(&n)) {
         return Err(AGENTS_AT_ONCE.to_string());
     }
     tx.execute("UPDATE projects SET agent_limit = ?2 WHERE id = ?1", (project, limit)).map(drop).map_err(sql)
+}
+
+/// One project's memory limits (warn, end); none: the global ones.
+pub fn of_project(tx: &Transaction, project: &str) -> Result<Option<(f64, f64)>, String> {
+    use rusqlite::OptionalExtension;
+    tx.query_row("SELECT warn_gib, end_gib FROM project_limits WHERE project = ?1", [project], |r| Ok((r.get(0)?, r.get(1)?))).optional().map_err(sql)
 }
 
 /// One project's: how many agents it runs at once; none: no limit.
