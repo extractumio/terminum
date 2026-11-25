@@ -141,8 +141,14 @@ Three things hold everywhere below:
 The session + Session starts for a project, and a session you open in a project, is its manager
 (`terminum-agents.md` AC-174, AC-179, AC-180 and §9 Security). By its tools alone, with no window
 shown to you first, it starts tasks on the pool's agents, changes those agents and their commands,
-makes schedules, and pastes into and closes the project's other sessions.
+makes schedules, and pastes into and closes the project's other sessions. It also changes the
+project's ID letters, language, task template, agents at once and memory limits, and, while the
+Supervisor is off and its charter is empty or the manager's own unsaved draft, writes that charter
+(AC-283, `terminum-supervisor.md` AC-284); Auto-Dispatcher, integration, the folder, the
+Supervisor's switch, level and tiers stay yours.
 
+- **So** a charter drafted from the repository's files, which anyone with a commit may have written,
+  is marked in the Supervisor tab until you Save it: read it before Enabled.
 - **So** what a manager's agent reads (a task, a comment, a file, a web page, a session's screen)
   is one tool call from a command of its choosing, run with an agent's permissions, a bypassing
   one's too; its client asks about `execute_tool` once, not for each tool behind it. **Start a

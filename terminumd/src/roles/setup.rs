@@ -9,7 +9,7 @@ use serde_json::{json, Value};
 use super::{arg, number, Boss, DATA};
 use crate::app::Shared;
 use crate::tasks::api::store;
-use crate::tasks::{agents, auto, closeout, integration, limits, ops, schedules, slugs, template};
+use crate::tasks::{agents, auto, closeout, integration, limits, ops, slugs, template};
 
 /// Where the human closes a gap: the project window's tab.
 const TAB: &str = "the human, in the project window's";
@@ -33,7 +33,8 @@ pub(crate) fn setup(tx: &Transaction, project: &str) -> Result<Value, String> {
     let prefix: Option<String> = tx.query_row("SELECT prefix FROM projects WHERE id = ?1", [project], |r| r.get(0)).map_err(ops::sql)?;
     let memory = limits::of_project(tx, project)?.map(|(warn, end)| json!({"warn_gib": warn, "end_gib": end}));
     let pool: Vec<String> = agents::of_project(tx, project)?.into_iter().map(|a| a.name).collect();
-    let routines = schedules::count(tx, project)?;
+    let routines: i64 = tx.query_row("SELECT count(*) FROM schedules WHERE project = ?1 AND deleted_at IS NULL", [project], |r| r.get(0))
+        .map_err(ops::sql)?;
     let auto = auto::setting(tx, project)?;
     let (supervisor, supervising) = crate::supervisor::charter::setup(tx, project, TAB)?;
     let mut gaps = Vec::new();

@@ -8,7 +8,7 @@ export const LITERAL = "<img src=x onerror='window.fixtureRan=1'>" + "long-".rep
 export const SETTINGS = {
   level: "operator", tiers: { small: null, medium: null, strong: null, independent: null },
   budgets: { judgment_percent: 3, fixes_percent: 10, judgment_floor_tokens: 1_000_000, investigation_reserve_percent: 30 },
-  charter: { mission: "", users: [], risk_appetite: "", never: [], priorities: [], allocation: {}, surfaces: { t2: [], t3: [] },
+  charter: { drafted_by_manager: true, mission: "", users: [], risk_appetite: "", never: [], priorities: [], allocation: {}, surfaces: { t2: [], t3: [] },
     indicators: { involvement: true, stability: true, lead_time: true, releases: true, backlog: true, cognitive_load: true, operations: true },
     outside_indicators: {} },
   detectors: { [RULE]: { mute: null } }, probes: { git: true, gate_record: true, code_host: true },
