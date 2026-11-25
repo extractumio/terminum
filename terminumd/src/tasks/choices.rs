@@ -81,20 +81,48 @@ pub(super) fn question(args: &Value) -> Result<Option<Question>, String> {
     Ok((kind.is_some() || !checked.is_empty()).then_some(Question { kind, options: checked, recommended }))
 }
 
-/// The current structured question, if the task is still waiting for that question.
-pub(super) fn current(tx: &Transaction, t: &Task) -> Result<Option<String>, String> {
+/// The question the task still waits on (terminum-dispatcher.md AC-157, AC-285): its agent's last questions, the
+/// task in WAIT FOR HUMAN since, neither moved nor answered by a key; its event, and whether it recorded options.
+pub(super) fn asked(tx: &Transaction, t: &Task) -> Result<Option<(String, bool)>, String> {
     if t.status != "WAIT FOR HUMAN" || t.archived_at.is_some() {
         return Ok(None);
     }
     let Some(row) = comments::last_question(tx, &t.key)? else { return Ok(None) };
-    tx.query_row("SELECT id FROM events
-        WHERE rowid = ?2 AND json_type(data, '$.question.options') = 'array'
-        AND NOT EXISTS (SELECT 1 FROM events WHERE task = ?1 AND rowid > ?2
-            AND (kind = 'project' OR (kind = 'move' AND json_extract(data, '$.to') <> 'WAIT FOR HUMAN')))",
-        (&t.key, row), |r| r.get(0)).optional().map_err(sql)
+    tx.query_row("SELECT id, coalesce(json_type(data, '$.question.options') = 'array', 0) FROM events
+        WHERE rowid = ?2 AND NOT EXISTS (SELECT 1 FROM events WHERE task = ?1 AND rowid > ?2
+            AND (kind IN ('project', 'answer') OR (kind = 'move' AND json_extract(data, '$.to') <> 'WAIT FOR HUMAN')))",
+        (&t.key, row), |r| Ok((r.get(0)?, r.get(1)?))).optional().map_err(sql)
 }
 
-fn answer(tx: &Transaction, task: &str, question: &str, option: &str, at: i64) -> Result<(String, bool), String> {
+/// The current structured question, if the task is still waiting for that question.
+fn current(tx: &Transaction, t: &Task) -> Result<Option<String>, String> {
+    Ok(asked(tx, t)?.filter(|(_, options)| *options).map(|(id, _)| id))
+}
+
+/// The question the task still waits on, with recorded options or not (terminum-dispatcher.md AC-285).
+pub(crate) fn waiting(tx: &Transaction, t: &Task) -> Result<Option<String>, String> {
+    Ok(asked(tx, t)?.map(|(id, _)| id))
+}
+
+/// `question` still waits, else the refusal every answer to it says (AC-230, AC-285).
+pub(crate) fn still_waits(tx: &Transaction, t: &Task, question: &str) -> Result<(), String> {
+    if waiting(tx, t)?.as_deref() == Some(question) { Ok(()) } else { Err(STALE.into()) }
+}
+
+/// The conversation that asked `question`, when its hooks said it.
+pub(crate) fn asked_in(tx: &Transaction, question: &str) -> Result<Option<String>, String> {
+    tx.query_row("SELECT json_extract(data, '$.asked_in') FROM events WHERE id = ?1", [question], |r| r.get(0))
+        .optional().map(Option::flatten).map_err(sql)
+}
+
+/// Its recommended option, when `question` recorded options (AC-230).
+pub(crate) fn recommended(tx: &Transaction, question: &str) -> Result<Option<String>, String> {
+    tx.query_row("SELECT json_extract(data, '$.question.recommended') FROM events WHERE id = ?1", [question], |r| r.get(0))
+        .optional().map(Option::flatten).map_err(sql)
+}
+
+/// The human's option `option` on `question` of `task`, kept as their comment: its event, and whether it is new.
+pub(crate) fn answer(tx: &Transaction, task: &str, question: &str, option: &str, at: i64) -> Result<(String, bool), String> {
     let t = ops::get(tx, task)?;
     if current(tx, &t)?.as_deref() != Some(question) {
         return Err(STALE.into());

@@ -207,7 +207,7 @@ fn ac276_a_report_made_critical_by_update_report_opens_its_incident() {
     f.task("build", Some("Bug"), "P1", "IN PROGRESS", NOW - DAY);
     let key = report(&f, Some("build"), false, NOW);
     // the project's Supervisor at Operator may change its reports (AC-280)
-    let manager = crate::tasks::tools::Who { key: "tmux:local:terminum:%9".into(), agent: "supervisor".into(), title: "Supervisor".into(),
+    let manager = crate::tasks::tools::Who { conversation: None, key: "tmux:local:terminum:%9".into(), agent: "supervisor".into(), title: "Supervisor".into(),
         project: Some(PROJECT.into()), dir: None, supervisor: true };
     let id: String = f.store.with(|tx| tx.query_row("SELECT slug FROM reports WHERE id = ?1", [&key], |r| r.get(0)).map_err(sql)).unwrap();
     crate::reports::tools::run(&f.store, &f.path, &manager, "update_report", &serde_json::json!({"id": id, "critical": "yes"})).unwrap();

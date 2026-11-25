@@ -56,6 +56,8 @@ pub struct Who {
     /// the session's folder, on this Mac; none on a host
     pub dir: Option<String>,
     pub supervisor: bool,
+    /// the agent conversation its hooks name for the pane: kept on the questions it asks (terminum-dispatcher.md AC-285)
+    pub conversation: Option<String>,
 }
 
 pub(crate) fn arg<'a>(args: &'a Value, key: &str) -> Result<&'a str, String> {
@@ -137,7 +139,7 @@ fn asked(tx: &Transaction, who: &Who, waits: bool) -> Result<&'static str, Strin
         // several tasks: they wait together, and their next RUN may start anew (AC-185)
         (true, Some(true)) => " End your turn now, with no more tool calls: this session's tasks in progress wait with it, Dispatcher closes the session, and the human's RUN brings the answers.",
         (true, Some(false)) => " End your turn now, with no more tool calls: Dispatcher closes this session, and the human's RUN resumes this conversation with the answers.",
-        (true, None) => " Wait for the answer in this session.",
+        (true, None) => " End your turn now: the human answers on the board, and terminum types a notice with the task's ID into this session, or answers here.",
     })
 }
 
@@ -344,7 +346,7 @@ fn run_in(store: &Store, state_dir: &Path, who: &Who, tool: &str, args: &Value, 
                 }
                 let me = me()?;
                 let recorded = super::choices::question(args)?;
-                let event = super::comments::record_question(tx, &me, id, &questions, recorded.as_ref(), at)?;
+                let event = super::comments::record_question(tx, &me, id, &questions, recorded.as_ref(), who.conversation.as_deref(), at)?;
                 if who.supervisor { crate::supervisor::action_tasks::comment(tx, &t, &who.key, &event, true, at)?; }
                 ops::move_to(tx, &me, id, "WAIT FOR HUMAN", at)?;
                 let then = asked(tx, who, true)?;

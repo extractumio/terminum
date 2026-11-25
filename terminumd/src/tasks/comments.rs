@@ -73,7 +73,7 @@ pub fn carried(tx: &Transaction, id: &str, message: Option<&str>, answered: bool
 
 /// An agent's questions for a human (terminum-dispatcher.md AC-157): a comment the task's window shows as such.
 pub fn questions(tx: &Transaction, author: &str, id: &str, text: &str, at: i64) -> Result<String, String> {
-    record_question(tx, author, id, text, None, at)
+    record_question(tx, author, id, text, None, None, at)
 }
 
 pub(crate) fn normalized_question(args: &Value) -> Result<Value, String> {
@@ -89,13 +89,17 @@ pub(crate) fn wait_for_owner(tx: &Transaction, by: &str, task: &super::ops::Task
 
 pub(crate) fn structured_questions(tx: &Transaction, author: &str, id: &str, text: &str, args: &Value, at: i64) -> Result<String, String> {
     let question = super::choices::question(args)?;
-    record_question(tx, author, id, text, question.as_ref(), at)
+    record_question(tx, author, id, text, question.as_ref(), None, at)
 }
 
-pub(super) fn record_question(tx: &Transaction, author: &str, id: &str, text: &str, recorded: Option<&super::choices::Question>, at: i64) -> Result<String, String> {
+/// `asked_in`: the conversation that asks, an answer typed only where it still runs (terminum-dispatcher.md AC-285).
+pub(super) fn record_question(tx: &Transaction, author: &str, id: &str, text: &str, recorded: Option<&super::choices::Question>, asked_in: Option<&str>, at: i64) -> Result<String, String> {
     let mut data = json!({"questions": true});
     if let Some(question) = recorded {
         data["question"] = json!(question);
+    }
+    if let Some(session) = asked_in {
+        data["asked_in"] = json!(session);
     }
     comment_with(tx, author, id, text, Some(&data), at)
 }
@@ -149,6 +153,13 @@ pub fn keep_human_comment(tx: &Transaction, id: &str, text: &str, files: &[Strin
     let event = comment(tx, super::store::HUMAN, id, text, at)?;
     super::files::attach(tx, files, id, Some(&event))?;
     Ok((event, true))
+}
+
+/// A human's comment taken back, its files free again: a press that did not go keeps nothing (terminum-dispatcher.md
+/// AC-285).
+pub(crate) fn retract(tx: &Transaction, event: &str) -> Result<(), String> {
+    tx.execute("UPDATE files SET task = NULL, event = NULL WHERE event = ?1", [event]).map_err(sql)?;
+    tx.execute("DELETE FROM events WHERE id = ?1 AND kind = 'comment'", [event]).map(drop).map_err(sql)
 }
 
 /// Keep the field of a grouped human Run on another task, tied to its original event for retries.
@@ -208,7 +219,8 @@ pub fn history(tx: &Transaction, id: &str) -> Result<Value, String> {
     let out = rows(tx, "SELECT e.id, e.at, e.author, u.name, u.kind, e.kind, e.text, e.edited_at, json_extract(e.data, '$.questions') IS NOT NULL,
                         CASE WHEN e.kind = 'told' THEN json_extract(e.data, '$.comments') END, CASE WHEN e.kind = 'told' THEN json_extract(e.data, '$.not') END,
                         CASE WHEN e.kind = 'comment' THEN json_extract(e.data, '$.question') END,
-                        CASE WHEN e.kind = 'comment' THEN json_extract(e.data, '$.choice') END
+                        CASE WHEN e.kind = 'comment' THEN json_extract(e.data, '$.choice') END,
+                        CASE WHEN e.kind = 'answer' THEN e.data END
                         FROM events e JOIN users u ON u.id = e.author WHERE e.task = ?1 ORDER BY e.at, e.rowid", [&key], |r| {
         let event: String = r.get(0)?;
         let attached = files.remove(&event).unwrap_or_default();
@@ -223,7 +235,8 @@ pub fn history(tx: &Transaction, id: &str) -> Result<Value, String> {
             v["comments"] = ids;
             v["not"] = json!(r.get::<_, Option<bool>>(10)?.unwrap_or(false));
         }
-        for (column, field) in [(11, "question"), (12, "choice")] {
+        // a key's answer to a question: its choice, the question, how it went (terminum-dispatcher.md AC-285)
+        for (column, field) in [(11, "question"), (12, "choice"), (13, "answer")] {
             if let Some(data) = r.get::<_, Option<String>>(column)?.and_then(|s| serde_json::from_str::<Value>(&s).ok()) {
                 v[field] = data;
             }

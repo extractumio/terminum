@@ -153,7 +153,7 @@ fn ac169_a_queue_is_its_agents_waits_in_the_order_the_human_gave() {
 }
 
 fn other_agent() -> Who {
-    Who { key: "tmux:local:t:%5".into(), agent: "codex".into(), title: "other".into(), project: Some("api".into()), dir: None, supervisor: false }
+    Who { conversation: None, key: "tmux:local:t:%5".into(), agent: "codex".into(), title: "other".into(), project: Some("api".into()), dir: None, supervisor: false }
 }
 
 #[test]

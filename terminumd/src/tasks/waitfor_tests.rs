@@ -11,7 +11,7 @@ use crate::tasks::tools::{run, Who};
 const KEY: &str = "tmux:local:terminum:%7";
 
 fn who() -> Who {
-    Who { key: KEY.into(), agent: "codex".into(), title: "api".into(), project: Some("api".into()), dir: None, supervisor: false }
+    Who { conversation: None, key: KEY.into(), agent: "codex".into(), title: "api".into(), project: Some("api".into()), dir: None, supervisor: false }
 }
 
 fn fresh(name: &str) -> (Store, std::path::PathBuf) {

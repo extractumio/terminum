@@ -128,6 +128,8 @@ async fn task_tool(app: &Shared, caller: &Caller, tool: String, args: Value) -> 
         project: app.projects.lock().of(&caller.key).map(|p| p.id.clone()),
         dir: if host.is_none() { dir } else { None },
         supervisor: false,
+        // the pane's own conversation, never a subagent's (terminum-dispatcher.md AC-285)
+        conversation: caller.session.clone().filter(|_| !caller.other),
     };
     said(task_tool_of(app, who, host, caller.other, tool, args).await)
 }

@@ -858,6 +858,7 @@ Scenario: AC-282 happy path — answer and run in one
   When the user presses Run, or ⌘⇧↩ (Ctrl+Shift+Enter), with the focus still in the field
   Then the answer is sent with the run, as RUN sends a comment (terminum-dispatcher.md AC-122), and the window closes
   And ⌘↩ instead keeps the comment alone (Save), the window open
+  And for its agent's question Answer stands in Run's place and takes ⌘⇧↩ (terminum-dispatcher.md AC-285)
 
 Scenario: AC-282 happy path — Archive
   When the user presses Archive, or ⌘⇧A, in a task's window

@@ -59,7 +59,7 @@ pub(super) async fn interrupt(app: &Shared, run: &Run, decided: std::time::Insta
 
 #[cfg(test)]
 #[path = "giveup_tests.rs"]
-mod tests;
+pub(super) mod tests;
 
 #[cfg(test)]
 #[path = "giveup/order_tests.rs"]

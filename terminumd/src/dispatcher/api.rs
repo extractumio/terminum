@@ -38,6 +38,7 @@ pub fn routes() -> Router<Shared> {
     Router::new()
         .route("/api/tasks/{id}/run", get(offer::offer).post(press))
         .route("/api/tasks/{id}/give-up", post(super::letgo::give_up))
+        .merge(super::answer::routes())
         .route("/api/task-projects/{id}/session", post(ad_hoc))
         .route("/api/runs/{id}/let-go", post(super::letgo::let_go))
         .merge(super::queue::routes())
@@ -92,6 +93,9 @@ pub(super) struct Press {
     /// the IDs of the tasks its run waited for (AC-210), Dispatcher's own: kept with its wait, never taken from a page's request
     #[serde(default)]
     after: Vec<String>,
+    /// the question a human's Answer or Continue with Recommended goes on with as this RUN (AC-285)
+    #[serde(default)]
+    answer: Option<super::answer::Answered>,
 }
 
 impl Press {
@@ -230,7 +234,8 @@ async fn press(State(app): State<Shared>, Path(id): Path<String>, Json(mut body)
     body.after.clear();
     // a page presses for the human alone: it never starts a run as Dispatcher's own (AC-183)
     body.how = body.how.of_page();
-    answer(pressed(&app, &id, body).await)
+    let answered = body.answer.take();
+    answer(super::answer::going(&app, &id, answered, pressed(&app, &id, body)).await)
 }
 
 /// A human's reply to a report, by its route (terminum-reports.md AC-270): as a human's RUN of the report's task with

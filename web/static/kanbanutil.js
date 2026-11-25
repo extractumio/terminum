@@ -307,6 +307,10 @@ export async function goneFiles(ids) {
 /** terminumd's refusal of a draft's file the sweep took (tasks/files.rs FILE_GONE): only then is a refused draft
  *  asked of its files again. */
 export const FILE_GONE = "A file of this window is gone: add it again";
+/** Says refusal `e` by `tell`, unless it is FILE_GONE and `prune()` named the files let go: the rest stay. */
+export async function sayRefused(e, prune, tell = say) {
+  if (e.message !== FILE_GONE || !await prune()) tell(e.message);
+}
 /** What a window says of a draft's files that are gone. */
 export const goneSaid = (names) => `${names.join(", ")}: gone, this draft was not saved for 7 days. Drop ${names.length > 1 ? "them" : "it"} again to keep ${names.length > 1 ? "them" : "it"}.`;
 

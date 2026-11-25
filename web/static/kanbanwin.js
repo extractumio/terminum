@@ -7,9 +7,10 @@
 import { askConfirm, choose, oneAtATime } from "./dialogs.js";
 import { batchPart } from "./kanbanbatch.js";
 import { el, iconButton, read, write } from "./listparts.js";
-import { $, SEVERITIES, agentChip, agentsOf, api, button, download, fillSelect, guardQueuedRun, knownAgent, onFiles, onSend, madeChanged, renderInto, row, say, sessionOptions, statusTag, upload, withFileLink, withoutFileLinks, goneFiles, goneSaid, FILE_GONE, writePreview } from "./kanbanutil.js";
+import { $, SEVERITIES, agentChip, agentsOf, api, button, download, fillSelect, guardQueuedRun, knownAgent, onFiles, onSend, madeChanged, renderInto, row, say, sessionOptions, statusTag, upload, withFileLink, withoutFileLinks, goneFiles, goneSaid, sayRefused, writePreview } from "./kanbanutil.js";
 import { taskBoxes } from "./taskboxes.js";
 import { activity, editor } from "./kanbanactivity.js";
+import { answerKeys } from "./kanbananswer.js";
 import { family } from "./kanbansubs.js";
 import { expandable } from "./expand.js";
 import { waitWords } from "./cardstate.js";
@@ -288,7 +289,7 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
     if (!n.area.value.trim()) return;
     try {
       await api(`/api/tasks/${t.id}/comments`, { method: "POST", body: { text: n.area.value, files: n.dropped() } });
-    } catch (e) { if (e.message !== FILE_GONE || !await n.prune()) say(e.message); return; }   // a file let go meanwhile: named, the rest kept
+    } catch (e) { await sayRefused(e, n.prune); return; }   // a file let go meanwhile: named, the rest kept
     n.sent();
   }
 
@@ -314,7 +315,7 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
     return commentAction(n, async (current) => {
       try {
         if (await runs.open([t], { words: n.area.value, files: n.dropped(), current, scratch, prefer: t.runs_on, atOnce: !scratch }) !== true) return;
-      } catch (e) { if (e.message !== FILE_GONE || !await n.prune()) say(e.message); return; }
+      } catch (e) { await sayRefused(e, n.prune); return; }
       n.sent();
       if (current()) await tryClose();
     });
@@ -343,11 +344,16 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
     const busy = t.waits || (t.run_holds && t.status === "IN PROGRESS"), on = firstOn(t);
     save.classList.toggle("primary", Boolean(busy));
     save.onclick = () => commentAction(n, () => keepComment(n, t));
+    // its agent's question waits: Answer stands for Run, Continue with Recommended beside Archive (terminum-dispatcher.md AC-285)
+    const asked = t.asked ? answerKeys(t, n, { act: commentAction, runs, tryClose, refresh }) : null;
+    run.textContent = "Run";
     run.onclick = () => runTask(t);
+    asked?.bind(run);
     n.keys = [save, run];
     n.wait = () => {
       const waiting = n.uploads > 0 || Boolean(box.dataset.busy);
       save.disabled = waiting || !n.area.value.trim();
+      if (asked) return asked.wait(run, waiting);
       const said = n.area.value.trim() ? "Send this comment and run it" : "Run it";
       run.title = `${on ? `On ${on}: ` : ""}${said}; the window closes`;
       guardQueuedRun(run, t.waits);
@@ -363,14 +369,14 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
     if (stopWaiting) stopWaiting.title = `${waitWords(t)}: call it off, ${t.waits_for ? "Dispatcher will not go on with it" : "nothing starts"}`;
     // a task nobody needs leaves the board by this (AC-118), and its window closes: nothing is left to do there
     // (AC-282); refused, it stays and says why. It stands where it stood when it comes back, its window open.
-    const shelve = button(null, t.archived_at ? "Bring back" : "Archive", () => api(`/api/tasks/${t.id}/archive`, { method: "POST", body: { on: !t.archived_at } })
+    const shelve = asked?.archive ?? button(null, t.archived_at ? "Bring back" : "Archive", () => api(`/api/tasks/${t.id}/archive`, { method: "POST", body: { on: !t.archived_at } })
       .then(async () => { if (t.archived_at || shown?.id !== t.id || !await tryClose()) refresh(); }, (e) => say(e.message)));
     run.classList.toggle("primary", !busy);
     // its keys at the window's foot, in sight while the task scrolls above them
     const acts = $("taskacts"), paint = () => {
       for (const key of [...acts.children]) if (key !== save && key !== run) key.remove();
       if (save.parentNode !== acts) acts.append(save);
-      save.before(...[t.run_holds ? null : shelve, stopWaiting, giveUp].filter(Boolean));
+      save.before(...[t.run_holds ? null : shelve, asked?.recommended, stopWaiting, giveUp].filter(Boolean));
       if (save.nextElementSibling !== run) save.after(run);
     };
     // A pressed footer key keeps its place until the click or cancellation.

@@ -11,7 +11,7 @@ const KEY: &str = "tmux:local:terminum:%7";
 const OTHER: &str = "tmux:local:terminum:%8";
 
 fn who(project: Option<&str>) -> Who {
-    Who { key: KEY.into(), agent: "claude".into(), title: "api".into(), project: project.map(str::to_string), dir: None, supervisor: false }
+    Who { conversation: None, key: KEY.into(), agent: "claude".into(), title: "api".into(), project: project.map(str::to_string), dir: None, supervisor: false }
 }
 
 fn fresh(name: &str) -> (Store, std::path::PathBuf) {
@@ -356,7 +356,7 @@ fn ac157_an_agent_asks_on_its_own_task_and_a_dispatcher_session_is_told_to_end_i
     let id = task(&s, "api", Some(KEY));
     let other = task(&s, "api", Some(OTHER));
     let asked = closeout::ASKED;
-    assert_eq!(call(&s, &dir, &w, "ask_human", json!({"id": id, "questions": asked})).unwrap(), format!("{id} waits for the human, with your questions. Wait for the answer in this session."));
+    assert_eq!(call(&s, &dir, &w, "ask_human", json!({"id": id, "questions": asked})).unwrap(), format!("{id} waits for the human, with your questions. End your turn now: the human answers on the board, and terminum types a notice with the task's ID into this session, or answers here."));
     let (status, history) = s.with(|tx| Ok((ops::get(tx, &id)?.status, ops::history(tx, &id)?))).unwrap();
     assert_eq!(status, "WAIT FOR HUMAN");
     assert!(history.as_array().unwrap().iter().any(|e| e["kind"] == "comment" && e["text"] == asked && e["questions"] == true), "kept as questions: {history}");
