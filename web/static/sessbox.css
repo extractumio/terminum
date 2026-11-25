@@ -10,14 +10,17 @@
 @media (pointer: coarse) { .agsess { height: 32px; } }   /* with the card's own press round it: 44 px of finger room */
 #agentbar > .rail { grid-row: span 2; }
 #agentbar > .sessdock { grid-column: 2; }
+/* open: the pool's cards keep at most 40 % of the section, the dock the rest, its box giving way to its head and keys */
+#agentbar:has(> .sessdock:not([hidden])) { grid-template-rows: fit-content(40%) minmax(0, 1fr); }
 .sessdock { display: flex; flex-direction: column; gap: var(--sp-2); max-width: 984px; margin-top: var(--sp-2); padding: var(--sp-2) var(--sp-3);
   border-radius: var(--r-lg); background: var(--surface-1); }
+.sessdock > .xbox { min-height: 3.5rem; }   /* the box's floor, three lines: a field sized by its text has its text's height as its own floor */
 .railed.folded > .sessdock { display: none; }
 .sesshead { display: flex; align-items: center; gap: var(--sp-2); }
 .sesshead h3 { flex: 1; min-width: 0; margin: 0; font-size: var(--fs-label); font-weight: var(--fw-head); }
 #sessagent { display: inline-flex; align-items: center; gap: var(--sp-1); }
 .sessdot { flex: none; width: 8px; height: 8px; border-radius: 2px; background: var(--ag); }
-#sesstext { box-sizing: border-box; width: 100%; min-height: 5.5em; max-height: 30dvh; padding: var(--sp-2); resize: vertical; field-sizing: content; }
+#sesstext { box-sizing: border-box; width: 100%; min-height: 0; max-height: 30dvh; padding: var(--sp-2); resize: vertical; field-sizing: content; }
 #sesserror { margin: 0; color: var(--danger-text); }
 .sessfoot { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); }
 .sessfoot .hint { flex: 1 1 auto; min-width: 0; color: var(--muted-text); font-size: var(--fs-meta); }
@@ -29,6 +32,7 @@
 @media (max-width: 600px), (pointer: coarse) and (max-height: 500px) {
   #pool #agentbar > .sessdock { grid-column: 1; }
   #pool #agentbar > .rail { grid-row: auto; }
-  #sesstext { font-size: 16px; min-height: 7em; }
+  #sesstext { font-size: 16px; }
+  .sessdock > .xbox { min-height: 7rem; }
   .sessfoot #sessstart { flex: 1 1 100%; height: var(--h-touch, 44px); justify-content: center; }
 }

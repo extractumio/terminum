@@ -86,6 +86,19 @@ export async function webSessBox(browser, name) {
   const placed = await page.evaluate(() => { const c = document.querySelector("#agentbar .agentcard").getBoundingClientRect(), k = document.getElementById("sesscompose").getBoundingClientRect(); return k.top >= c.bottom; });
   check(`AC-204 ${at} a card's + Session opens the dock under the pool's cards, for that agent, its box in focus, its key expanded`,
     d.open && placed && d.agent === "Opus reviewer" && d.focus === "sesstext" && JSON.stringify(d.keys) === '["true","false"]' && !(await page.isVisible("#agentbox[open]")), JSON.stringify(d));
+  // a long draft in a short window: the box gives way, the dock's head and keys stay in the pool's view
+  for (const height of [900, 640]) {
+    await page.setViewportSize({ width: 1400, height });
+    await page.fill("#sesstext", Array.from({ length: 60 }, (_, i) => `Line ${i + 1} of a long first prompt.`).join("\n"));
+    const room = await page.evaluate(() => { const r = (id) => document.getElementById(id).getBoundingClientRect(), bar = r("agentbar"), box = r("sesstext");
+      const line = parseFloat(getComputedStyle(document.getElementById("sesstext")).lineHeight) || 16;
+      return { seen: ["sesshead", "sessstart", "sessadd"].every((id) => { const k = r(id); return k.top >= bar.top - 1 && k.bottom <= bar.bottom + 1; }),
+        lines: Math.floor(box.height / line), scrolled: document.getElementById("agentbar").scrollTop }; });
+    check(`AC-204 (${name} 1400×${height}) a 60-line draft: the dock's head, Add files… and Start stay in view, the box at least three lines, the pool unscrolled`,
+      room.seen && room.lines >= 3 && room.scrolled === 0, JSON.stringify(room));
+  }
+  await page.setViewportSize({ width: 1400, height: 900 });
+  await page.fill("#sesstext", "");
   await page.click('#agentbar .agentcard[data-agent="a2"] .agsess');
   await page.fill("#sesstext", "Fix what");
   d = await dock(page);

@@ -340,7 +340,8 @@ Scenario: AC-163 happy path — folded
   And the board's words say "routine" for a schedule: the section, its + ("Add routine"), its window ("New routine"), its empty line and errors, the phone's line; SCH-n, the API and this spec keep "schedule"
 
 Scenario: AC-163 happy path — its cards
-  Then its cards fill the available width and wrap as the browser shrinks or grows, with the same preferred 240 px minimum and phone layout as the pool (terminum-dispatcher.md AC-138), without horizontal scrolling
+  Then its cards fill the available width and wrap as the browser shrinks or grows, as the pool's do (terminum-dispatcher.md AC-138): columns of one width, the same phone layout, without horizontal scrolling
+  And a title longer than its card takes two lines, then is cut, whole in its tooltip
   And a card shows SCH-1, its severity, its title, its cadence in words ("Every day at 03:00"), its next run ("next Tue 03:00") or "paused" with why, its agent in its color, and its last task as a box of its ID in its status's color, "waits for you" when that one is WAIT FOR HUMAN, "skipped N" since it last made one, and why its last task did not start
   And beside it its last report's ID and age, a press opening it, and how many of its reports are unread (terminum-reports.md AC-272)
   And every card of the pool and of the section stands whole, however long the columns under them: the columns take the room that is left, at least 45% of the window's height, and only then do the pool and the section scroll

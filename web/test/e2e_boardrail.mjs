@@ -105,6 +105,23 @@ export async function webBoardRail(browser, name) {
   }
   await f.close();
 
+  // nine routines at 1400 px: four columns, a short last row keeping their width; a long title on two lines, whole in its tooltip
+  const LONG = "Reminder: decide on the Supervisor's tier agents before the weekly review and the quarterly audit, then tell the team";
+  const NINE = Array.from({ length: 9 }, (_, i) => ({ ...SCHED[0], id: `s${i + 1}`, key: `SCH-${i + 1}`, title: i === 6 ? LONG : `Routine ${i + 1}`, next: [2000000000 - i] }));
+  f = await board(browser, { viewport: { width: 1400, height: 1000 } }, NINE);
+  ({ page } = f);
+  await page.click("#railsched");
+  await until(async () => (await look(page)).folded[1].body);
+  const grid = await page.evaluate(() => { const cards = [...document.querySelectorAll("#schedbar .trackitems > .item")], long = cards[6].querySelector(".ctitle");
+    const lh = parseFloat(getComputedStyle(long).lineHeight), r = long.getBoundingClientRect();
+    return { widths: [...new Set(cards.map((c) => Math.round(c.getBoundingClientRect().width)))], rows: new Set(cards.map((c) => Math.round(c.getBoundingClientRect().top))).size,
+      lines: Math.round(r.height / lh), cut: long.scrollHeight > long.clientHeight, tip: long.title, inside: r.right <= cards[6].getBoundingClientRect().right }; });
+  check(`AC-138 AC-163 (${name} 1400×1000) nine routines wrap into rows of one card width, the short last row's too`,
+    grid.widths.length === 1 && grid.widths[0] >= 240 && grid.rows === 3, JSON.stringify(grid));
+  check(`AC-163 (${name} 1400×1000) a long title takes two lines inside its card, then is cut, whole in its tooltip`,
+    grid.lines === 2 && grid.cut && grid.tip === LONG && grid.inside, JSON.stringify(grid));
+  await f.close();
+
   at = `(${name} 390×844)`;
   runningIn(`${name} 390×844`);
   f = await board(browser, PHONE);
@@ -145,12 +162,13 @@ async function responsive(browser, name) {
             overflow: tracks.scrollWidth > tracks.clientWidth + 1, side: tracks.querySelector(".trackside")?.getBoundingClientRect().height ?? 0 };
         }));
         for (const g of sections) {
+          // every row starts at the left edge, every row but the last (the add tile's) ends at the right; every card one width
           const filled = g.rows.every((t) => {
             const row = [...g.cards, g.add].filter((c) => c.t === t);
-            return Math.abs(row[0].l - g.list.l) <= 1 && Math.abs(row.at(-1).r - g.list.r) <= 1;
+            return Math.abs(row[0].l - g.list.l) <= 1 && (t === Math.round(g.add.t) || Math.abs(row.at(-1).r - g.list.r) <= 1);
           });
-          check(`AC-138 AC-163 ${name} ${g.id}: ${n} cards at ${width}px fill rows without horizontal overflow`,
-            g.cards.length === n && filled && !g.overflow && !g.side && g.cards.every((c) => c.w >= 239 && c.r <= g.list.r + 1), JSON.stringify(g));
+          check(`AC-138 AC-163 ${name} ${g.id}: ${n} cards at ${width}px fill rows in columns of one width without horizontal overflow`,
+            g.cards.length === n && filled && !g.overflow && !g.side && g.cards.every((c) => c.w >= 239 && Math.abs(c.w - g.cards[0].w) <= 1 && c.r <= g.list.r + 1), JSON.stringify(g));
           const last = g.cards.at(-1);
           check(`AC-203 ${g.id}: fixed add tile follows the last card at ${width}px`, Math.round(g.add.w) === 44 && (g.add.t === last.t
             ? Math.abs(g.add.l - last.r - 8) <= 1 && Math.abs(g.add.h - last.h) <= 1

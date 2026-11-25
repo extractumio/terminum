@@ -916,7 +916,7 @@ Scenario: AC-130 failure — hooks missing there
 Scenario: AC-138 happy path — over the board
   Given a pool of Opus reviewer (Claude Code, high), Fast fixer (Claude Code) and Codex (Codex, low)
   Then three rectangles stand over the columns, each in its color, with its name, kind, effort, its subscription's two stripes (AC-168) and one dot per live session
-  And cards fill the available width, fitting as many as possible with a preferred minimum width of 240 px; shrinking the browser moves cards onto following rows and growing it brings them back, without horizontal scrolling; the add tile follows the last card (terminum-kanban.md AC-203); on a phone (600 px or narrower) they stand one a row in the sheet its line opens (terminum-kanban.md AC-105)
+  And cards fill the available width, fitting as many as possible in columns of one width, at least 240 px, a short last row keeping that width; shrinking the browser moves cards onto following rows and growing it brings them back, without horizontal scrolling; the add tile follows the last card (terminum-kanban.md AC-203); on a phone (600 px or narrower) they stand one a row in the sheet its line opens (terminum-kanban.md AC-105)
 
 Scenario: AC-138 happy path — its dots
   Given Opus reviewer with API-12's session working and API-14's waiting at its input box
@@ -1227,6 +1227,7 @@ Scenario: AC-204 happy path — the composer
   Then each agent's card has a "+ Session" key in its last row, its state said to assistive tech
   When the user presses it on Opus reviewer
   Then a dock opens under the pool's cards (not a dialog: the board's cards stay draggable onto it), headed "+ Session on" and the agent's dot and name, its text box in focus; another card's key moves it to that agent, the text kept
+  And the box grows with its text, then scrolls; it gives way before the dock's head and keys do: however long the text and however little room the columns leave, the dock shows its head, at least three lines of the box and its keys, the pool's cards keeping at most 40% of the pool's room meanwhile
   And the box takes typing, copy, cut, paste and undo as a text field does; a pasted image, a pasted or dropped file, and Add files… keep the file with terminumd, a chip each with its ×; Start waits while one is on its way
   When the user drags TERM-12 and TERM-15 from the board onto the box
   Then "TERM-12 TERM-15 " stands at the caret (the box's end without focus), a space before when it follows a word; neither task runs or moves; the agent reads each by get_task
