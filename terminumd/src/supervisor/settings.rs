@@ -133,6 +133,9 @@ pub(super) struct Charter {
     pub(super) indicator_targets: BTreeMap<Key, String>,
     pub(super) outside_indicators: BTreeMap<String, outside_indicators::Setting>,
     pub(super) surfaces: super::surfaces::Surfaces,
+    /// A project's manager wrote it (AC-284) and the owner has not saved since: the tab marks it for review.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub(super) drafted_by_manager: bool,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -386,10 +389,17 @@ pub(crate) const MOST: usize = 64 * 1024;
 
 /// Imports preserve the destination's agent choices and its switch. A copied pack can't select a pool.
 pub(super) fn write(
-    tx: &Transaction, project: &str, revision: i64, settings: Settings, imported: bool,
+    tx: &Transaction, project: &str, revision: i64, mut settings: Settings, imported: bool,
 ) -> Result<Saved, String> {
+    settings.charter.drafted_by_manager = false;
     let source = if imported { SaveSource::Import } else { SaveSource::Owner };
     save(tx, project, revision, settings, source, crate::tasks::ops::now())
+}
+
+/// A manager's charter draft (AC-284): saved as the owner's save would, marked until the owner saves.
+pub(super) fn write_draft(tx: &Transaction, project: &str, revision: i64, mut settings: Settings) -> Result<Saved, String> {
+    settings.charter.drafted_by_manager = true;
+    save(tx, project, revision, settings, SaveSource::Owner, crate::tasks::ops::now())
 }
 
 pub(super) fn write_at(

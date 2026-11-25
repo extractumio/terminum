@@ -99,7 +99,8 @@ export function supervisorWindow({ getMeta }) {
     probes.draw(state.view);
     state.line ??= criticalLine(state.request, on);
     body.replaceChildren(stack(fields.node, probes.node, state.line, portable));
-    for (const group of body.querySelectorAll("details")) group.open = opened.has(group.dataset.section);
+    // the sections open before stay open; one that opens itself (a manager's charter draft, AC-284) too
+    for (const group of body.querySelectorAll("details")) group.open ||= opened.has(group.dataset.section);
     state.read = fields.read;
     updateScan(state);
     controls();

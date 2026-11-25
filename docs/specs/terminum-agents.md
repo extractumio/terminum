@@ -556,7 +556,7 @@ Scenario: AC-283 happy path — the setup write
 
 Scenario: AC-283 failure — the human's switches
   When a manager's call to update_project_setup names auto, integration, folder, name or enabled
-  Then it answers that only the known fields are taken, and Auto-Dispatcher, integration, the folder and the Supervisor stay as they were (terminum-dispatcher.md AC-170, terminum-integration.md AC-186)
+  Then it answers which field is no setup field, nothing of that call is kept, and Auto-Dispatcher, integration, the folder and the Supervisor stay as they were (terminum-dispatcher.md AC-170, terminum-integration.md AC-186)
   When a worker or a manager token's caller looks for get_project_setup, update_project_setup or set_supervisor_charter
   Then a worker finds none of them, as of no tool; a manager token runs them in its project, as any manager tool (AC-181)
 
@@ -568,7 +568,7 @@ Scenario: AC-283 happy path — the skill
   Given terminum's hooks installed in Claude Code
   Then terminum's plugin carries `skills/terminum-onboard/SKILL.md`, refreshed with the plugin
   When the user types "onboard my project" in a session of project api
-  Then the agent reads the folder's rules, docs, build and git history, asks at most one round of questions with recommended answers, fills the pool, routines, setup and charter through the tools above, and ends with what it set, where to see it, and the human's presses still waiting with their values
+  Then the agent reads the folder's rules, docs, build and git history, asks at most one round of questions with recommended answers, fills what is missing through the tools above (absent agents and routines, agents at once when unset, the charter when empty), changes the ID letters, language, template or memory limits only when the user asks, and ends with what it set, where to see it, and the human's presses still waiting with their values
   When the session is in no project
   Then the skill asks the user for one press, "Add to Project" › "New project…" in the session's row menu, and goes on once get_project_setup answers
 ```

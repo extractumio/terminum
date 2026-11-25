@@ -54,8 +54,11 @@ pub(super) fn observe(tx: &Transaction, seen: Observation<'_>) -> Result<(), Str
     let (value, threshold) = (finding.measure.value, finding.measure.threshold);
     let evidence_hash = Sha256::digest(evidence);
     let same_evidence = prior.as_ref().is_some_and(|m| m.evidence_hash.as_slice() == &evidence_hash[..]);
-    if same_evidence && prior.as_ref().is_some_and(|m|
-        (m.level, m.value, m.threshold, m.urgent) == (level, value, threshold, urgent))
+    // An age that only grew with the clock (a P0 task still waiting, AC-213) is no new measurement: the age detectors
+    // run every 30 seconds, and each would add a timeline event.
+    let aged = matches!(finding.source, super::impact::Source::AgeSince(_));
+    if same_evidence && prior.as_ref().is_some_and(|m| (m.value == value || aged)
+        && (m.level, m.threshold, m.urgent) == (level, threshold, urgent))
     {
         return Ok(());
     }
@@ -76,7 +79,12 @@ pub(super) fn observe(tx: &Transaction, seen: Observation<'_>) -> Result<(), Str
         // its critical report in the Inbox, alerting through the incident alone (terminum-reports.md AC-271, AC-272);
         // an author's finding is a report already (AC-276)
         if !rule.authored() {
-            let why = format!("{} on {}: {} against a threshold of {}", rule.id(), finding.metric, value, threshold);
+            let mut why = format!("{} on {}: {} against a threshold of {}", rule.id(), finding.metric, value, threshold);
+            // What held a waiting P0 task (AC-213), so the owner knows what to fix.
+            for reason in finding.score_raises.iter().filter_map(|r| r.reason.as_deref()) {
+                why.push_str(". ");
+                why.push_str(reason);
+            }
             crate::reports::sources::incident(tx, project, incident, &format!("{} {}", finding.subject_kind, finding.subject_id), &why, at)?;
         }
     }

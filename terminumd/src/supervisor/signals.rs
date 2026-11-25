@@ -48,7 +48,7 @@ pub(crate) struct Signal {
     /// The score a checked round's critical escalation raised, while the evidence it judged stands (AC-213).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) escalated: Option<super::escalations::Score>,
-    /// The measured escalate rule that raised a score while its evidence stood (AC-213).
+    /// `runaway_run`'s raise while its evidence stood; other measured raises are in `score_raises` (AC-213).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) raised: Option<super::runaway::Raised>,
     pub level: u8,

@@ -248,7 +248,7 @@ def main():
         shown, _ = typed(boss, tool("get_project_setup"))
         check("AC-283 an empty agents_at_once goes back to no limit", rc == "0" and '"agents_at_once":null' in shown, (out, shown))
         out, rc = typed(boss, tool("update_project_setup", auto="on"))
-        check("AC-283 Auto-Dispatcher is no field of a manager's", rc == "1" and "Name a field" in out, out)
+        check("AC-283 Auto-Dispatcher is no field of a manager's", rc == "1" and "auto: not a setup field" in out, out)
         revision = call(f"/api/task-projects/{project}/supervisor/settings")[1]["revision"]
         charter = json.dumps({"mission": "A managed fixture.", "users": ["Its tests"]})
         out, rc = typed(boss, tool("set_supervisor_charter", revision=str(revision), charter=charter))

@@ -40,6 +40,7 @@ mod impact;
 mod scoring;
 mod escalations;
 mod runaway;
+mod waiting;
 #[cfg(test)]
 mod runaway_tests;
 pub(crate) mod holds;
@@ -299,7 +300,7 @@ pub(crate) struct Finding {
     assessment: impact::Assessment,
     scores: Scores,
     score_raises: Vec<scoring::Raise>,
-    /// The measured escalate rule that raised a score, and what it named (AC-213).
+    /// `runaway_run`'s raise and the run it named; other measured raises are in `score_raises` (AC-213).
     raised: Option<runaway::Raised>,
 }
 
@@ -366,6 +367,7 @@ struct Reading {
     attributed_runs: BTreeSet<String>,
     source: impact::Source,
     raised: Option<runaway::Raised>,
+    score_raises: Vec<scoring::Raise>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -373,7 +375,7 @@ enum Comparison { Above, AtLeast, Below, Deviation(f64) }
 
 impl Reading {
     fn new(kind: &'static str, subject: impl Into<String>, metric: &'static str, value: f64, evidence: Vec<Evidence>, source: impact::Source) -> Self {
-        Self { subject_kind: kind, subject_id: subject.into(), metric, value, history: vec![], evidence, comparison: Comparison::Above, fixed: None, attributed_runs: BTreeSet::new(), source, raised: None }
+        Self { subject_kind: kind, subject_id: subject.into(), metric, value, history: vec![], evidence, comparison: Comparison::Above, fixed: None, attributed_runs: BTreeSet::new(), source, raised: None, score_raises: Vec::new() }
     }
 
     fn attributed_runs(mut self, runs: BTreeSet<String>) -> Self {
@@ -433,7 +435,7 @@ impl Reading {
         Some(Finding {
             subject_kind: self.subject_kind, subject_id: self.subject_id, metric: self.metric,
             evidence: self.evidence, attributed_runs: self.attributed_runs, source: self.source, charter_never: None, raised: self.raised,
-            assessment: Default::default(), scores: Scores::default(), score_raises: Vec::new(), measure: Measure {
+            assessment: Default::default(), scores: Scores::default(), score_raises: self.score_raises, measure: Measure {
                 value: self.value, baseline, threshold: limit,
                 window_start: window.start, window_end: window.end,
             },
