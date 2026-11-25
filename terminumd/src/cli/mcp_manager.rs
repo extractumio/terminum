@@ -15,8 +15,6 @@ const SESSION: (&str, bool, usize) = ("session", true, 200);
 /// What a paste into a session holds at most.
 pub const SEND_MOST: usize = 20_000;
 const YES_NO: [&str; 2] = ["yes", "no"];
-/// A charter's JSON at most: the Supervisor's whole settings fit in 64 KiB.
-const CHARTER_MOST: usize = 64 << 10;
 
 /// An agent's fields but its name: the same on a new one and on a change.
 const AGENT_FIELDS: [(&str, bool, usize); 6] = [("kind", false, 10), ("command", false, 4000), ("effort", false, 10), ("at_once", false, 3), ("week_limit", false, 12), ("month_limit", false, 12)];
@@ -52,7 +50,7 @@ pub(super) const TOOLS: [Tool; 21] = [
     Tool { name: "update_project_setup", read_only: false, description: "Changes your project's setup as its window would: prefix (ID letters), language, template (the task template; empty: the default), agents_at_once (1-100, empty: no limit), memory_warn_gib with memory_end_gib (GiB, 0 off; both empty: the global ones). Only the fields given; all or none. Auto-Dispatcher, integration, the folder and the Supervisor's switch are the human's.",
         fields: &[("prefix", false, 12), ("language", false, crate::tasks::closeout::LANGUAGE_MOST), ("template", false, crate::tasks::template::TEMPLATE_MOST), ("agents_at_once", false, 3), ("memory_warn_gib", false, 12), ("memory_end_gib", false, 12)] },
     Tool { name: "set_supervisor_charter", read_only: false, description: "Saves your project's Supervisor charter while the Supervisor is off: charter, a JSON object (mission, users, risk_appetite, never, never_checks, priorities, allocation, indicators, indicator_targets, surfaces), and revision, the settings revision get_project_setup shows. Level, tiers, budgets, detectors and probes stay the owner's; the owner reviews the charter before turning the Supervisor on.",
-        fields: &[("revision", true, 12), ("charter", true, CHARTER_MOST)] },
+        fields: &[("revision", true, 12), ("charter", true, crate::supervisor::SETTINGS_MOST)] },
 ];
 
 /// A field's values, where they are few.

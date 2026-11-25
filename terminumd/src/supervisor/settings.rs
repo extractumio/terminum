@@ -117,7 +117,7 @@ impl Budgets {
 #[derive(Default, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub(super) struct Charter {
-    mission: String,
+    pub(super) mission: String,
     users: Vec<String>,
     risk_appetite: String,
     never: Vec<String>,
@@ -381,6 +381,9 @@ pub(super) fn read(tx: &Transaction, project: &str) -> Result<Saved, String> {
     Ok(Saved { revision, settings })
 }
 
+/// The most a project's saved settings hold, in bytes.
+pub(crate) const MOST: usize = 64 * 1024;
+
 /// Imports preserve the destination's agent choices and its switch. A copied pack can't select a pool.
 pub(super) fn write(
     tx: &Transaction, project: &str, revision: i64, settings: Settings, imported: bool,
@@ -457,7 +460,7 @@ fn save(
     super::attach::retire_live(tx, project, &suspended)?;
     let revision = revision + 1;
     let pack = serde_json::to_string(&settings).map_err(|_| "Could not encode Supervisor settings.")?;
-    if pack.len() > 64 * 1024 {
+    if pack.len() > MOST {
         return Err("Supervisor preferences must fit in 64 KiB.".into());
     }
     tx.execute("INSERT INTO supervisor_settings (project, revision, pack) VALUES (?1, ?2, ?3)

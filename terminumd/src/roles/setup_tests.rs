@@ -3,7 +3,7 @@
 
 use serde_json::json;
 
-use super::{setup, update};
+use super::{folder_gap, setup, update};
 use crate::roles::Role;
 use crate::supervisor::Level;
 use crate::tasks::ops::sql;
@@ -23,7 +23,8 @@ fn store(name: &str, dir: &std::path::Path) -> Store {
 }
 
 fn gaps(s: &Store) -> Vec<String> {
-    let shown = s.with(|tx| setup(tx, "p1")).unwrap();
+    let mut shown = s.with(|tx| setup(tx, "p1")).unwrap();
+    folder_gap(&mut shown);
     shown["gaps"].as_array().unwrap().iter().map(|g| format!("{} | {}", g["gap"].as_str().unwrap(), g["how"].as_str().unwrap())).collect()
 }
 
@@ -47,6 +48,9 @@ fn ac283_the_setup_read_names_each_gap_and_who_closes_it() {
     }
     assert!(!all.iter().any(|g| g.contains("linked git worktree")), "a plain folder");
 
+    // a submodule's `.git` file is no linked worktree
+    std::fs::write(dir.join(".git"), "gitdir: ../.git/modules/api\n").unwrap();
+    assert!(!gaps(&s).iter().any(|g| g.contains("linked git worktree")), "a submodule");
     // a linked worktree, an agent in the pool, the Supervisor on
     std::fs::write(dir.join(".git"), "gitdir: /Users/alex/api/.git/worktrees/x\n").unwrap();
     s.with(|tx| {

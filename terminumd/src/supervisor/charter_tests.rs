@@ -75,13 +75,16 @@ fn ac284_a_stale_or_invalid_charter_keeps_nothing() {
     assert!(refused(1, r#"{"level": "operator"}"#).starts_with("charter: not a Supervisor charter"), "the level is no charter field");
     assert!(refused(1, r#"{"never": ["x"], "never_checks": {"flow.starved": "x"}}"#).contains("cannot check a never rule"));
     assert!(refused(1, r#"{"allocation": {"Feature": 0.9}}"#).starts_with("Allocation shares"));
+    assert!(refused(1, r#"{"priority_review_at": 1}"#).contains("are the owner's"), "an owner's field is refused, not dropped");
     assert_eq!(pack(&f)["charter"]["mission"], "old");
 }
 
 #[test]
 fn ac284_setup_names_the_tiers_and_offers_the_templates() {
     let f = owned("charter-setup");
-    let shown = f.store.with(|tx| setup(tx, PROJECT)).unwrap();
+    let (shown, gaps) = f.store.with(|tx| setup(tx, PROJECT, "the human, in the")).unwrap();
+    assert_eq!(gaps, [("Supervisor tiers unset: medium, strong".to_string(), "the human, in the Supervisor tab, from the pool's agents".to_string()),
+        ("the Supervisor is off".to_string(), "the human, in the Supervisor tab: Level, then Enabled".to_string())], "its mission is set");
     assert_eq!(shown["enabled"], false);
     assert_eq!(shown["level"], "advisor");
     assert_eq!(shown["tiers"], json!({"small": "sonnet", "medium": null, "strong": null, "independent": "codex"}));

@@ -334,6 +334,11 @@ pub fn by_id(tx: &Transaction, id: &str) -> Result<Schedule, String> {
 }
 
 /// Every schedule not deleted, oldest first.
+/// How many schedules a project keeps.
+pub fn count(tx: &Transaction, project: &str) -> Result<i64, String> {
+    tx.query_row("SELECT count(*) FROM schedules WHERE project = ?1 AND deleted_at IS NULL", [project], |r| r.get(0)).map_err(sql)
+}
+
 pub fn all(tx: &Transaction) -> Result<Vec<Schedule>, String> {
     rows(tx, &format!("{SELECT} WHERE s.deleted_at IS NULL ORDER BY s.number"), [], of_row)
 }

@@ -133,7 +133,7 @@ mod register_archive_tests;
 
 pub(crate) use catalog::Rule;
 pub(crate) use signals::Signal;
-pub(crate) use settings::{Level, level};
+pub(crate) use settings::{Level, level, MOST as SETTINGS_MOST};
 pub(crate) use replay::replay;
 #[cfg(test)]
 pub(crate) use evaluation::evaluate;

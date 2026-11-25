@@ -240,8 +240,9 @@ def main():
         out, rc = typed(plain, tool("get_project_setup"))
         check("AC-283 a worker finds no setup tool", rc == "1" and 'No tool is named "get_project_setup"' in out, out)
         out, rc = typed(boss, tool("update_project_setup", prefix="MGD", agents_at_once="3"))
-        meta = call("/api/tasks/meta")[1]
-        check("AC-283 update_project_setup sets the letters and agents at once as the window would", rc == "0" and "Changed: ID letters, agents at once." in out, (out, meta.get("projects")))
+        shown, _ = typed(boss, tool("get_project_setup"))
+        check("AC-283 update_project_setup sets the letters and agents at once as the window would", rc == "0" and "Changed: ID letters, agents at once." in out
+              and '"prefix":"MGD"' in shown and '"agents_at_once":3' in shown, (out, shown))
         out, rc = typed(boss, tool("update_project_setup", auto="on"))
         check("AC-283 Auto-Dispatcher is no field of a manager's", rc == "1" and "Name a field" in out, out)
         revision = call(f"/api/task-projects/{project}/supervisor/settings")[1]["revision"]

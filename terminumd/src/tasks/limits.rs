@@ -64,6 +64,12 @@ pub(crate) fn keep_agent_limit(tx: &Transaction, project: &str, limit: Option<i6
     tx.execute("UPDATE projects SET agent_limit = ?2 WHERE id = ?1", (project, limit)).map(drop).map_err(sql)
 }
 
+/// One project's memory limits (warn, end); none: the global ones.
+pub fn of_project(tx: &Transaction, project: &str) -> Result<Option<(f64, f64)>, String> {
+    use rusqlite::OptionalExtension;
+    tx.query_row("SELECT warn_gib, end_gib FROM project_limits WHERE project = ?1", [project], |r| Ok((r.get(0)?, r.get(1)?))).optional().map_err(sql)
+}
+
 /// One project's: how many agents it runs at once; none: no limit.
 pub fn agent_limit(tx: &Transaction, project: &str) -> Result<Option<i64>, String> {
     tx.query_row("SELECT agent_limit FROM projects WHERE id = ?1", [project], |r| r.get(0)).map_err(sql)

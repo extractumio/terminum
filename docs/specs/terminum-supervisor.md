@@ -1474,7 +1474,7 @@ Scenario: AC-284 failure — the Supervisor is on
   Then it answers "The Supervisor is on: only the owner changes its charter, in the Supervisor tab." and the settings stay at their revision
 
 Scenario: AC-284 failure — a stale or invalid charter
-  When the revision is not the current one, the charter is no JSON object, holds an unknown field, ties a never line to a detector that checks none, or makes the settings larger than 64 KiB
+  When the revision is not the current one, the charter is no JSON object, holds an unknown field, sets the owner's review dates or outside indicators, ties a never line to a detector that checks none, or makes the settings larger than 64 KiB
   Then the answer says which, and nothing is kept
 
 Scenario: AC-284 edge — the owner's Enable
