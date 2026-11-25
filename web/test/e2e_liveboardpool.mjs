@@ -185,10 +185,10 @@ export async function agentPool(page, opts, pressAt) {
   await cardInSight(page, shelved, 5000);
   await pressCard(page, shelved);
   await page.waitForSelector("#taskbox[open]");
-  // by its key, the focus in the comment field: Archive is ⌘⇧A, and nothing is left to do in the window (AC-281, AC-282)
+  // by its key, the focus in the comment field: Archive is ⌘⇧A (Ctrl+Shift+A off a Mac), and nothing is left to do in the window (AC-281, AC-282)
   check("AC-281 live: Archive's letter underlined", await until(() => page.locator("#taskacts").getByRole("button", { name: "Archive", exact: true }).locator("u.dkey").textContent().then((t) => t === "A", () => false), 2000));
   await page.focus(".newcomment textarea");
-  await page.keyboard.press("Meta+Shift+KeyA");
+  await page.keyboard.press("ControlOrMeta+Shift+KeyA");
   check("AC-282 live: Archive archives and closes the task's window", await until(async () => !await page.isVisible("#taskbox") && !!(await j(`/api/tasks/${shelved}`)).archived_at, 3000));
   check("AC-118 an archived task leaves the board", await until(async () => !(await page.$(card(shelved)))));
   await page.click("#farchived");
