@@ -17,7 +17,7 @@ const DRAFT = "tm.sessiondraft";
 /** `getMeta()`: projects and agents, `most` bytes a file may have among them; `dragging()`: the tasks of a drag. */
 export function sessionComposer({ getMeta, dragging }) {
   const dock = $("sesscompose"), area = $("sesstext"), list = $("sessfiles"), error = $("sesserror"), start = $("sessstart"), discard = $("sessdiscard");
-  let agent = null, files = [], uploading = 0, busy = false;
+  let agent = null, files = [], uploading = 0, busy = false, left = null;   // left: the key close() gave the focus to
   let missed = null;                               // the text of a prompt whose session started without it: Start again would open another
   area.value = read(DRAFT)?.text ?? "";
 
@@ -40,7 +40,7 @@ export function sessionComposer({ getMeta, dragging }) {
     const starting = busy && k.dataset.agent === agent?.id;
     k.setAttribute("aria-expanded", String(!dock.hidden && k.dataset.agent === agent?.id));
     if (busy) k.setAttribute("aria-disabled", "true"); else k.removeAttribute("aria-disabled");
-    k.setAttribute("aria-busy", String(starting));
+    if (starting) k.setAttribute("aria-busy", "true"); else k.removeAttribute("aria-busy");
     k.textContent = starting ? "Starting…" : "+ Session";
   }
   const lit = () => { for (const k of keys()) mark(k); };
@@ -81,14 +81,15 @@ export function sessionComposer({ getMeta, dragging }) {
   function close() {
     dock.hidden = true;
     lit();
-    [...keys()].find((k) => k.dataset.agent === agent?.id)?.focus({ preventScroll: true });
+    left = [...keys()].find((k) => k.dataset.agent === agent?.id) ?? null;
+    left?.focus({ preventScroll: true });
   }
 
   /** A start that did not go as asked: the dock again, its draft and files as they were, terminumd's words in it. */
   function back(text) {
     const at = document.activeElement;
     busy = false;
-    open(agent, at === document.body || !!at?.classList.contains("agsess"));
+    open(agent, at === document.body || at === left);   // the pool redrawn meanwhile gives the body the focus
     say(text);
   }
   async function go() {

@@ -16,48 +16,52 @@ const meta = (host = null) => ({ projects: [{ id: "api", name: "API", color: 0, 
 const json = (r, data, status = 200) => r.fulfill({ status, contentType: "application/json", body: JSON.stringify(data) });
 const PNG = Buffer.from("89504e470d0a1a0a0000000d49484452", "hex");
 
-/** `answer(body)`: the start's answer, `status` its HTTP status; `held`: a promise the answer waits for. */
-async function board(browser, device, { host = null, answer = (b) => ({ key: "tmux:local:terminum:%9", run: "r1", typed: true }), status = 200, held = null } = {}) {
+/** `answer(body)`: the start's answer, `status` its HTTP status; `held`: the answer waits for `f.release()`.
+ *  `f.redraw()`: the board's next read carries a new reading (of a kind no agent has), so the pool is drawn anew;
+ *  `f.idle()`: none of the board's reads in flight. */
+async function board(browser, device, { host = null, answer = (b) => ({ key: "tmux:local:terminum:%9", run: "r1", typed: true }), status = 200, held = false } = {}) {
   const f = await openPage(browser, { device, url: "/kanban/?project=api" });
-  const posts = [], uploads = [], tasks = (s) => (s === "TODO" ? [task(1), task(2), task(3)] : []);
-  await fakeBoard(f.page, { meta: () => meta(host), tasks, counts: { TODO: 3 } });
-  // `f.redraw()`: the board's next read carries a new reading (of a kind no agent has), so the pool is drawn anew
-  let readings = null;
-  await f.page.route("**/api/tasks?*", (r) => (readings ? json(r, { tasks: tasks(new URL(r.request().url()).searchParams.get("status")), counts: { TODO: 3 },
-    slots: { agents: {}, full: [], full_projects: [] }, subscriptions: readings }) : r.fallback()));
-  f.redraw = () => { readings = { other: [{ at: Date.now() }] }; };
+  const posts = [], uploads = [], gate = Promise.withResolvers();
+  let readings;
+  if (!held) gate.resolve();
+  await fakeBoard(f.page, { meta: () => meta(host), tasks: (s) => (s === "TODO" ? [task(1), task(2), task(3)] : []), counts: { TODO: 3 }, subscriptions: () => readings });
   await f.page.route("**/api/task-files?*", (r) => { const name = new URL(r.request().url()).searchParams.get("name"); uploads.push(name);
     return json(r, { id: `${uploads.length}`.padStart(32, "0"), name, bytes: 16, mime: name.endsWith(".png") ? "image/png" : "application/octet-stream" }); });
-  await f.page.route("**/api/task-projects/*/session", async (r) => { const body = JSON.parse(r.request().postData() || "{}"); posts.push(body); await held; return json(r, answer(body), status); });
+  await f.page.route("**/api/task-projects/*/session", async (r) => { const body = JSON.parse(r.request().postData() || "{}"); posts.push(body); await gate.promise; return json(r, answer(body), status); });
+  // the board's reads in flight: a navigation cancels them, which WebKit reports as a page error
+  let reading = 0;
+  const ours = (r) => r.url().includes("/api/tasks");
+  f.page.on("request", (r) => { if (ours(r)) reading++; });
+  for (const end of ["requestfinished", "requestfailed"]) f.page.on(end, (r) => { if (ours(r)) reading--; });
   await f.page.goto(`${ORIGIN}/kanban/?project=api`);
   await f.page.waitForSelector('#agentbar .agentcard[data-agent="a1"]', { state: "attached" });
-  return { ...f, posts, uploads };
+  return { ...f, posts, uploads, release: gate.resolve, idle: () => reading === 0, redraw: () => { readings = { other: [{ at: Date.now() }] }; } };
 }
 const dock = (page) => page.evaluate(() => { const d = document.getElementById("sesscompose"), a = document.getElementById("sesstext");
   return { open: !d.hidden && !!d.offsetWidth, agent: document.getElementById("sessagent").textContent, text: a.value, focus: document.activeElement?.id, files: [...document.querySelectorAll("#sessfiles li")].map((l) => l.textContent),
     error: document.getElementById("sesserror").hidden ? "" : document.getElementById("sesserror").textContent, start: document.getElementById("sessstart").disabled,
     keys: [...document.querySelectorAll("#agentbar .agsess")].map((k) => k.getAttribute("aria-expanded")),
     marks: [...document.querySelectorAll("#agentbar .agsess")].map((k) => `${k.textContent}|${k.getAttribute("aria-busy")}|${k.getAttribute("aria-disabled")}`) }; });
-const free = (d) => d.marks.every((m) => m === "+ Session|false|null");
+const free = (d) => d.marks.every((m) => m === "+ Session|null|null");
 
 /** Start pressed with the answer held: the dock folds at once, that agent's key says it is starting, every key inert. */
-async function folds(page, f, at, agentAt, how) {
+async function folds(f, at, agentAt, how) {
+  const { page } = f;
   await until(() => f.posts.length > 0);
-  const d = await dock(page);
-  const want = ["+ Session|false|true", "+ Session|false|true"];
-  want[agentAt] = "Starting…|true|true";
-  check(`AC-204 ${at} ${how} folds the dock at once while terminumd starts it; its agent's key says "Starting…", every key inert`,
-    !d.open && JSON.stringify(d.marks) === JSON.stringify(want), JSON.stringify(d));
+  let d = await dock(page);
+  const want = JSON.stringify([0, 1].map((i) => (i === agentAt ? "Starting…|true|true" : "+ Session|null|true")));
+  check(`AC-204 ${at} ${how} folds the dock at once while terminumd starts it; its agent's key says "Starting…", every key inert`, !d.open && JSON.stringify(d.marks) === want, JSON.stringify(d));
   // the board redrawn meanwhile (its columns and pool read again): the keys drawn anew say the same
   f.redraw();
+  // the board's wake (kanban.js) alone: with playLook's focus pinned on, WebKit's board still had reads out at the navigation
   await page.evaluate(() => { for (const k of document.querySelectorAll("#agentbar .agsess")) k.dataset.old = "1"; document.dispatchEvent(new Event("visibilitychange")); });
-  const redrawn = await until(() => page.evaluate(() => !document.querySelector("#agentbar .agsess[data-old]")));
-  check(`AC-204 ${at} the pool redrawn while it starts keeps "Starting…" and the inert keys`, redrawn && JSON.stringify((await dock(page)).marks) === JSON.stringify(want), JSON.stringify(await dock(page)));
+  const redrawn = await until(() => page.evaluate(() => !document.querySelector("#agentbar .agsess[data-old]"))) && await until(f.idle);
+  d = await dock(page);
+  check(`AC-204 ${at} the pool redrawn while it starts keeps "Starting…" and the inert keys`, redrawn && JSON.stringify(d.marks) === want, JSON.stringify(d));
   await page.evaluate((id) => document.querySelector(`#agentbar .agentcard[data-agent="${id}"] .agsess`).click(), `a${2 - agentAt}`);   // inert: Playwright would not press it
-  check(`AC-204 ${at} another agent's key opens nothing while one starts`, !(await dock(page)).open, JSON.stringify(await dock(page)));
+  d = await dock(page);
+  check(`AC-204 ${at} another agent's key opens nothing while one starts`, !d.open, JSON.stringify(d));
 }
-/** An answer held until `let_go()`. */
-const hold = () => { let let_go; const held = new Promise((r) => { let_go = r; }); return { held, let_go }; };
 
 /** Two cards picked, dragged and dropped on the box, as a drag between them carries them (kanban.js). */
 async function dropTwo(page) {
@@ -75,8 +79,7 @@ async function dropTwo(page) {
 export async function webSessBox(browser, name) {
   let at = `(${name} 1400×900)`;
   runningIn(`${name} 1400×900`);
-  let h = hold();
-  let f = await board(browser, WIDE, { held: h.held });
+  let f = await board(browser, WIDE, { held: true });
   let { page } = f;
   await page.click('#agentbar .agentcard[data-agent="a1"] .agsess');
   let d = await dock(page);
@@ -116,8 +119,8 @@ export async function webSessBox(browser, name) {
   await page.setInputFiles("#sessfile", { name: "shot.png", mimeType: "image/png", buffer: PNG });
   await until(async () => (await dock(page)).files.length === 1);
   await page.press("#sesstext", "Meta+Enter");
-  await folds(page, f, at, 1, "⌘Enter");
-  h.let_go();
+  await folds(f, at, 1, "⌘Enter");
+  f.release();
   check(`AC-204 ${at} ⌘Enter asks terminumd for that agent's session with the prompt and the file's id, then shows the session`,
     await until(() => f.posts.length === 1) && f.posts[0].agent === "a2" && f.posts[0].prompt === "Fix what API-1 API-2" && f.posts[0].files.length === 1
     && await until(() => page.url().includes("/sessions/")), JSON.stringify({ posts: f.posts, url: page.url() }));
@@ -126,18 +129,18 @@ export async function webSessBox(browser, name) {
   await f.close();
 
   // a miss: the session stands, the dock says so with its link and keeps the draft
-  h = hold();
-  f = await board(browser, WIDE, { held: h.held, answer: () => ({ key: "tmux:local:terminum:%9", run: "r2", typed: false, why: "its input box did not come in 60 s" }) });
+  f = await board(browser, WIDE, { held: true, answer: () => ({ key: "tmux:local:terminum:%9", run: "r2", typed: false, why: "its input box did not come in 60 s" }) });
   ({ page } = f);
   await page.click('#agentbar .agentcard[data-agent="a1"] .agsess');
   await page.fill("#sesstext", "Missed prompt");
   await page.click("#sessstart");
-  await folds(page, f, at, 0, "Start");
-  h.let_go();
+  await folds(f, at, 0, "Start");
+  f.release();
+  await until(async () => /not typed/.test((await dock(page)).error));
+  d = await dock(page);
   check(`AC-204 ${at} a prompt not typed: the dock opens again for that agent, said with the why and a link to the session, the draft kept, the keys free, the page stays`,
-    await until(async () => /not typed: its input box did not come in 60 s/.test((await dock(page)).error)) && (await dock(page)).open && (await dock(page)).agent === "Opus reviewer" && (await dock(page)).focus === "sesstext"
-    && (await dock(page)).text === "Missed prompt" && free(await dock(page)) && !page.url().includes("/sessions/")
-    && await page.isVisible('#sesserror a[href^="/sessions/"]'), JSON.stringify(await dock(page)));
+    /not typed: its input box did not come in 60 s/.test(d.error) && d.open && d.agent === "Opus reviewer" && d.focus === "sesstext" && d.text === "Missed prompt" && free(d) && !page.url().includes("/sessions/")
+    && await page.isVisible('#sesserror a[href^="/sessions/"]'), JSON.stringify(d));
   check(`AC-204 ${at} after a miss Start waits for a change: a second press would open a second session`, (await dock(page)).start, JSON.stringify(await dock(page)));
   await page.click("#sessdiscard");
   await until(() => page.isVisible("#confirmbox[open]"));
@@ -174,8 +177,7 @@ export async function webSessBox(browser, name) {
 
 /** terminumd refuses the start: the dock opens again with the draft, its file and terminumd's words; Start takes a press again. */
 async function refused(browser, device, at) {
-  const h = hold();
-  const f = await board(browser, device, { held: h.held, status: 500, answer: () => ({ error: "the agent's command could not start" }) });
+  const f = await board(browser, device, { held: true, status: 500, answer: () => ({ error: "the agent's command could not start" }) });
   const { page } = f;
   if (device === PHONE) await page.click("#poolline");
   await page.click('#agentbar .agentcard[data-agent="a1"] .agsess');
@@ -183,12 +185,12 @@ async function refused(browser, device, at) {
   await page.setInputFiles("#sessfile", { name: "shot.png", mimeType: "image/png", buffer: PNG });
   await until(async () => (await dock(page)).files.length === 1);
   await page.click("#sessstart");
-  await folds(page, f, at, 0, "Start");
+  await folds(f, at, 0, "Start");
   const moved = device === WIDE;                   // wide: the user went on in Find tasks meanwhile; the phone: left it
   if (moved) await page.focus("#find");
-  h.let_go();
-  const back = async () => { const d = await dock(page); return d.open && /could not start/.test(d.error) ? d : null; };
-  const d = (await until(back)) ? await back() : await dock(page);
+  f.release();
+  await until(async () => (await dock(page)).open);
+  const d = await dock(page);
   check(`AC-204 ${at} a refused start opens the dock again for that agent: its draft, its file and terminumd's words, ${moved ? "the focus left in Find tasks" : "its box in focus"}, Start and the keys free`,
     d.open && /could not start/.test(d.error) && d.agent === "Opus reviewer" && d.text === "Refused prompt" && d.files.length === 1 && d.focus === (moved ? "find" : "sesstext") && !d.start && free(d)
     && !page.url().includes("/sessions/") && await page.evaluate(() => JSON.parse(localStorage.getItem("tm.sessiondraft") || "{}").text === "Refused prompt"), JSON.stringify(d));
