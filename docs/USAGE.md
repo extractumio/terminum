@@ -474,6 +474,24 @@ budget and prompt. The whole design: `docs/specs/terminum-integration.md`.
   once; `terminum tokens` lists them; `terminum tokens remove <name>` ends one.
 - Roles guide agents; they are no wall against a program of yours ([SECURITY.md](../SECURITY.md)).
 
+### Onboard a project
+
+Type **onboard my project** in a Claude Code session of the project (terminum's plugin carries the
+`terminum-onboard` skill once `terminum hooks install` ran). The agent reads the folder's rules,
+docs, build files and git history, asks you once (Auto-Dispatcher, a weekly limit, which routines,
+the Supervisor's level), then fills the pool, routines, ID letters, agents at once and the
+Supervisor's charter, and ends with what it set and the presses left to you.
+
+- **A folder in no project yet**: it asks you for one press, the session's row menu › Add to
+  Project › New project…; the session is then the project's manager.
+- **Yours alone, with their values in its summary**: the Supervisor's Enabled, Level and tiers
+  (Supervisor tab), Auto-Dispatcher (Auto-Dispatch tab), integration, the folder.
+- **The charter** is written only while the Supervisor is off; you review it in the Supervisor tab
+  before turning it on. While it is on, the agent shows its draft instead.
+- **Its tools** (a manager's): `get_project_setup` (the setup and what it lacks),
+  `update_project_setup` (ID letters, language, template, agents at once, memory limits),
+  `set_supervisor_charter`.
+
 ### Subscription limits on the board
 
 Each agent shows two stripes: the used share of its subscription's five-hour window and week, one

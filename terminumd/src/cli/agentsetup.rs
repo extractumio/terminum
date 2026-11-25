@@ -232,6 +232,11 @@ pub(super) fn install_claude(ctx: &Ctx, wait: std::time::Duration) -> Result<(),
     Ok(())
 }
 
+/// The skills terminum's plugin carries, each its path in the plugin and its text (terminum-agents.md AC-283).
+pub(super) const SKILLS: [(&str, &str); 1] = [
+    ("skills/terminum-onboard/SKILL.md", include_str!("../../assets/skills/terminum-onboard/SKILL.md")),
+];
+
 /// This build's plugin written into terminum's local marketplace; the marketplace's folder.
 pub(super) fn write_plugin(ctx: &Ctx) -> Result<PathBuf, String> {
     let market = ctx.root.join("hooks/claude");
@@ -242,6 +247,9 @@ pub(super) fn write_plugin(ctx: &Ctx) -> Result<PathBuf, String> {
         "description": "terminum: tells terminumd what this session does (terminum hooks)"}))?;
     write(&plugin.join("hooks/hooks.json"), &claude_hooks(&command(ctx, "claude")))?;
     write(&plugin.join(".mcp.json"), &json!({"mcpServers": {NAME: {"command": program(ctx), "args": ["mcp"]}}}))?;
+    for (path, text) in SKILLS {
+        write_text(&plugin.join(path), text)?;
+    }
     Ok(market)
 }
 

@@ -139,6 +139,7 @@ This takes the machine's tailnet name; to give terminum a name of its own, see
 - [The guide](docs/USAGE.md): every command, feature, remote host and setting.
 - [Architecture](docs/ARCHITECTURE.md): every part on one diagram.
 - [Set it up with a coding agent](skills/terminum-setup/SKILL.md): a skill that installs, checks and repairs terminum for you.
+- [Onboard a project](docs/USAGE.md#onboard-a-project): "onboard my project" in a session configures its agents, routines and Supervisor.
 - [SECURITY.md](SECURITY.md): the threat model.
 - [All the docs](docs/README.md): specs, contributing, releases.
 
