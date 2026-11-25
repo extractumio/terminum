@@ -72,6 +72,7 @@ Open questions: none.
 | AC-116 | [SHOULD / P1] | A bookmark or reminder becomes a TODO task in one small window (severity, project, session), its text linking its session, the board not opened; the record goes once the task is kept. |
 | AC-117 | [MUST / P0] | WAIT FOR HUMAN and FAILED raise the banner of waiting agents and counts of cards on the Kanban tab, yellow and red, the same in every browser: terminumd keeps which lines a human closed or saw; so does a task returned from integration with no live agent (`terminum-integration.md` AC-192), and a critical report until it is read (`terminum-reports.md` AC-271); a report not critical raises none. |
 | AC-118 | [SHOULD / P1] | Archive hides a task from the board and can return it; DONE archives itself after 2 days; each project has an Archived list. |
+| AC-282 | [SHOULD / P1] | A window whose last action is done closes: Run (the comment written goes with it, ⌘⇧↩) and Archive close a task's window; where the user goes on there, it stays. |
 | AC-119 | [MUST / P0] | One SQLite file holds tasks and projects; writes are atomic; authors and roles name users, so a central store can follow; an unreadable file is set aside and said, never overwritten. |
 | AC-136 | [MUST / P0] | A card says what became of its session's agent: working, waiting, failed with why, stopped with its task open, gone; the task's history says so once; nothing moves by it unless Dispatcher started the session. |
 | AC-133 | [MUST / P0] | The board's flow survives what people and machines do: the last drop stands, a move shows at once and a refused one goes back; a late answer never stands over a newer; what is typed is never lost by a slip, a refusal or a change by another. |
@@ -849,6 +850,30 @@ Scenario: AC-118 failure — not written
   Then the task stays on the board and a toast says terminumd's message
 ```
 
+### AC-282 — A window closes after its last action [SHOULD / P1]
+
+```gherkin
+Scenario: AC-282 happy path — answer and run in one
+  Given a task in WAIT FOR HUMAN, its window open, an answer written in its comment field
+  When the user presses Run, or ⌘⇧↩ (Ctrl+Shift+Enter), with the focus still in the field
+  Then the answer is sent with the run, as RUN sends a comment (terminum-dispatcher.md AC-122), and the window closes
+  And ⌘↩ instead keeps the comment alone (Save), the window open
+
+Scenario: AC-282 happy path — Archive
+  When the user presses Archive, or ⌘⇧A, in a task's window
+  Then the task is archived (AC-118) and its window closes
+  When the user presses Bring back in an archived task's window
+  Then it is back on the board and its window stays
+
+Scenario: AC-282 happy path — where the user goes on
+  Then these keep their window open: Save, a question's choice, Stop waiting, Give up (the human comments or runs it again next), a task's text saved, a report's reply (its agent's answer comes below it, terminum-reports.md AC-270), a report marked read
+  And these close it, as they did: RUN's Run, a new task's Create and Run, + Session's Start, a report's Delete
+
+Scenario: AC-282 failure — refused
+  When terminumd refuses the run or the archive
+  Then the window stays open with what was written, and says terminumd's words
+```
+
 ### AC-119 — The store [MUST / P0]
 
 ```gherkin
@@ -1463,6 +1488,7 @@ Depends on: nothing more.
 - [x] AC-116 — `web/test/e2e_livenotes.mjs` (Convert to task from the list and the bar, Cancel, a refusal, Create, pressed twice, two tabs at once, the link to its line; `node web/test/e2e_live.mjs notes`)
 - [x] AC-117 — `cargo test tasks::marks`, `web/test/e2e_livedispatcher.mjs`, `web/test/e2e_tasklines.mjs`, `web/test/e2e_bannerproj.mjs` (its project), `web/test/e2e_askfold.mjs` (the counters), `web/test/e2e_boardphone.mjs` (the board's counters, their pulse)
 - [x] AC-118 — `cargo test tasks::archiving`, `web/test/e2e_liveboardtasks.mjs`
+- [x] AC-282 — `web/test/e2e_dlgkeys.mjs` (⌘⇧↩ sends and runs, Archive closes, a refused one stays), `web/test/e2e_liveboardpool.mjs` (the real page: ⌘⇧A archives and closes the window, Bring back keeps it)
 - [x] AC-119 — `cargo test tasks::store`
 - [x] AC-136 — `cargo test tasks::tell` (fresh settlement with and without background work, a new prompt), `web/test/e2e_liveboardedge.mjs`, `web/test/e2e_livebackground.mjs` (monitor-only Stop, work ending, immediate failure), `web/test/cardstate.test.mjs` (its background work)
 - [x] AC-133 — `web/test/e2e_taskclose.mjs` (pending reads after ×, Esc and Back; a deliberate reopen; a Save press under a refresh), `web/test/e2e_liveclose.mjs` (a real subtask read held while its parent's window closes, a real change under a Save press, two quick field changes with the first answer held, a refused one going back, a text saved under a comment's edit; `node web/test/e2e_live.mjs boardtasks`), `web/test/e2e_liveboardedge.mjs`, `web/test/e2e_liveboard.mjs`, `web/test/e2e_liveboardbusy.mjs` (a file that lands late; alone: `node web/test/e2e_live.mjs boardpool`) (`node web/test/e2e_live.mjs board` also measures §9's budgets on AS-112's tasks: `liveBoardScale`)
