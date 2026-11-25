@@ -287,6 +287,10 @@ export async function liveSchedules(page, live) {
   // AC-163: a slow close must finish before the layout's reload, even after its line hides.
   const ask = (await j("/api/tasks", "POST", { title: "Layout fixture waiting line", project })).id;
   await j(`/api/tasks/${ask}`, "PATCH", { status: "FAILED" });
+  // A human's own move raises no line: model Dispatcher's move in this private store (AC-117).
+  intoStore(live.app, `UPDATE events SET author = 'dispatcher' WHERE kind = 'move'
+    AND task = (SELECT id FROM tasks WHERE slug = '${ask}');`);
+  await j(`/api/tasks/${ask}/comments`, "POST", { text: "Layout fixture: Dispatcher failed this task." });
   await page.waitForSelector(`#asks [data-task="${ask}"]`);
   const closing = await hold(page, `**/api/tasks/${ask}/seen`, "POST");
   let cleared = false;
