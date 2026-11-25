@@ -239,10 +239,14 @@ def main():
               and "Supervisor tab: Level, then Enabled" in out, out)
         out, rc = typed(plain, tool("get_project_setup"))
         check("AC-283 a worker finds no setup tool", rc == "1" and 'No tool is named "get_project_setup"' in out, out)
-        out, rc = typed(boss, tool("update_project_setup", prefix="MGD", agents_at_once="3"))
+        # the letters stay: later checks find their tasks by ID (a rename is cargo test roles::setup's)
+        out, rc = typed(boss, tool("update_project_setup", agents_at_once="3"))
         shown, _ = typed(boss, tool("get_project_setup"))
-        check("AC-283 update_project_setup sets the letters and agents at once as the window would", rc == "0" and "Changed: ID letters, agents at once." in out
-              and '"prefix":"MGD"' in shown and '"agents_at_once":3' in shown, (out, shown))
+        check("AC-283 update_project_setup sets agents at once as the window would", rc == "0" and "Changed: agents at once." in out
+              and '"agents_at_once":3' in shown, (out, shown))
+        out, rc = typed(boss, tool("update_project_setup", agents_at_once=""))
+        shown, _ = typed(boss, tool("get_project_setup"))
+        check("AC-283 an empty agents_at_once goes back to no limit", rc == "0" and '"agents_at_once":null' in shown, (out, shown))
         out, rc = typed(boss, tool("update_project_setup", auto="on"))
         check("AC-283 Auto-Dispatcher is no field of a manager's", rc == "1" and "Name a field" in out, out)
         revision = call(f"/api/task-projects/{project}/supervisor/settings")[1]["revision"]
