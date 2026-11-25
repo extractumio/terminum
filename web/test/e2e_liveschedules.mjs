@@ -249,7 +249,7 @@ export async function liveSchedules(page, live) {
   }
   const afterCancel = (await j("/api/schedules")).schedules.find((s) => s.id === saved.id);
   check("AC-182 Cancel runs nothing", !afterCancel.last, JSON.stringify({ schedule: saved.key, last: afterCancel.last }));
-  intoStore(live.app, `UPDATE schedules SET cron = '*/1 * * * *' WHERE id = '${saved.id}'`);
+  // Keep the routine quiet through geometry; each intended firing below enables it explicitly.
   await page.focus(run);
   await tabKey(page);
   r = await ring(page, "#newschedule");
@@ -276,8 +276,36 @@ export async function liveSchedules(page, live) {
   for (const a of (await j("/api/tasks/meta")).agents.filter((a) => a.project === project && a.id !== agent)) {
     removed.push([a.id, (await j(`/api/task-agents/${a.id}`, "DELETE")).code]);
   }
-  while (await page.locator("#asks .x").count()) await page.locator("#asks .x").first().click();
-  const bars = async () => {
+  const dismissAsks = async () => {
+    while (await page.locator("#asks .x").count()) {
+      // Closing hides optimistically: only its successful write makes a reload safe.
+      const seen = page.waitForResponse(r => /\/api\/(?:tasks|reports)\/[^/]+\/seen$/.test(r.url()) && r.request().method() === "POST");
+      await page.locator("#asks .x").first().click();
+      if (!(await seen).ok()) throw new Error("The fixture's waiting line was not marked seen");
+    }
+  };
+  // AC-163: a slow close must finish before the layout's reload, even after its line hides.
+  const ask = (await j("/api/tasks", "POST", { title: "Layout fixture waiting line", project })).id;
+  await j(`/api/tasks/${ask}`, "PATCH", { status: "FAILED" });
+  // A human's own move raises no line: model Dispatcher's move in this private store (AC-117).
+  intoStore(live.app, `UPDATE events SET author = 'dispatcher' WHERE kind = 'move'
+    AND task = (SELECT id FROM tasks WHERE slug = '${ask}');`);
+  await j(`/api/tasks/${ask}/comments`, "POST", { text: "Layout fixture: Dispatcher failed this task." });
+  await page.waitForSelector(`#asks [data-task="${ask}"]`);
+  const closing = await hold(page, `**/api/tasks/${ask}/seen`, "POST");
+  let cleared = false;
+  const clearing = dismissAsks().then(() => { cleared = true; }).catch(error => error);
+  try {
+    const sent = await until(() => closing.sent() > 0);
+    await nap(slack(1200));
+    check("AC-163 the fixture waits for the held close after its line hides", sent && !cleared && !(await page.locator(`#asks [data-task="${ask}"]`).count()));
+  } finally {
+    closing.release();
+    try { const error = await clearing; if (error) throw error; } finally { await closing.end(); }
+  }
+  await j(`/api/tasks/${ask}/archive`, "POST", { on: true });
+  let readings = 0;
+  const bars = async (tasks) => {
     await page.reload();
     await page.waitForSelector(sched);
     await page.waitForSelector(owl);
@@ -298,20 +326,33 @@ export async function liveSchedules(page, live) {
         overflow: column.scrollHeight > column.clientHeight + 1 };
     });
     let last = await read();
+    readings++;
     const stable = await until(async () => {
       await nap(150);   // the first poll must wait too: two immediate reads can precede an async redraw
       const now = await read(), same = JSON.stringify(now) === JSON.stringify(last);
       last = now;
-      return same;
+      return same && now.agents === 1 && now.schedules === 1 && now.asks === 0 && now.tasks === tasks;
     });
     check("AC-163 the layout fixture settles with whole cards and only its own agent", stable && last.whole && last.agents === 1
       && last.schedules === 1 && last.asks === 0 && removed.every(([, code]) => code === 200), JSON.stringify(last));
     return last;
   };
-  const over = await bars(), many = [];
+  const over = await bars(0), many = [];
   check("AC-163 the comparison starts over empty columns", over.tasks === 0 && !over.overflow, JSON.stringify(over));
   for (let i = 0; i < 40; i++) many.push((await j("/api/tasks", "POST", { title: `Long column ${i}`, project })).id);
-  const overLong = await bars();
+  // AC-163: repeated geometry while the long column is held is not a settled fixture.
+  const columns = await hold(page, /\/api\/tasks\?[^#]*status=TODO(?:&|$)/, "GET");
+  const before = readings;
+  let overLong;
+  const measuring = bars(many.length).then(value => { overLong = value; }).catch(error => error);
+  try {
+    const sent = await until(() => columns.sent() > 0 && readings > before);
+    await nap(slack(1200));
+    check("AC-163 the fixture waits for its held long column", sent && overLong === undefined);
+  } finally {
+    columns.release();
+    try { const error = await measuring; if (error) throw error; } finally { await columns.end(); }
+  }
   check("AC-163 the long column contains all 40 tasks and scrolls", overLong.tasks === many.length && overLong.overflow, JSON.stringify(overLong));
   check("AC-163 long columns take no room from the agents and the schedules over them", overLong.heights.every((h, i) => h >= over.heights[i] - 1)
     && overLong.heights[1] > 60, JSON.stringify({ over: over.heights, overLong: overLong.heights }));
@@ -332,7 +373,7 @@ export async function liveSchedules(page, live) {
       }, 45000), s.last.task);
     }
     intoStore(live.app, `UPDATE schedules SET cron = '*/1 * * * *', last_due = last_due - 3600 WHERE id = '${s.id}'`);
-    // A real minute may already have fired while the layout fixture ran: only a new task proves this firing.
+    // Only a new task proves this firing, rather than a preceding run already recorded.
     check("AC-162 due, it makes a task and runs it on its agent", await until(async () => {
       task = (await j("/api/schedules")).schedules.find((x) => x.id === s.id)?.last?.task;
       return task && task !== s.last?.task;
