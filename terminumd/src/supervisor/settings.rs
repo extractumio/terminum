@@ -52,7 +52,7 @@ impl Tiers {
         Ok(agent.id.clone())
     }
 
-    fn choices(&self) -> [Option<&str>; 4] {
+    pub(super) fn choices(&self) -> [Option<&str>; 4] {
         [self.small.as_deref(), self.medium.as_deref(), self.strong.as_deref(), self.independent.as_deref()]
     }
 

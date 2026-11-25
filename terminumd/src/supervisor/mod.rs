@@ -18,6 +18,7 @@ mod outcome_evidence;
 mod attribution;
 mod breach;
 mod catalog;
+pub(crate) mod charter;
 mod decisions;
 pub(crate) mod config_changes;
 mod config_replay;
