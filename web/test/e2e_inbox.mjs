@@ -111,14 +111,15 @@ async function onBoard(browser, device, w) {
   check(`AC-268 ${w}: the report's pane covers the board's right part, its address names it`, over && new URL(page.url()).searchParams.get("report") === "R_API-7" && g.docW <= g.win, JSON.stringify(g));
   // the board's bar stays usable: its project list opens over the pane, never under it
   const onTop = await page.evaluate(() => {
-    document.getElementById("fproject").open = true;   // a click on the bar would also close the pane
-    const list = document.querySelector("#fproject > .box").getBoundingClientRect(), pane = document.getElementById("reportpane").getBoundingClientRect();
+    const pick = document.getElementById("fproject");
+    pick.open = true;                                // a click on the bar would also close the pane
+    const list = pick.querySelector(".box").getBoundingClientRect(), pane = document.getElementById("reportpane").getBoundingClientRect();
     const t = Math.max(list.top, pane.top), b = Math.min(list.bottom, pane.bottom), l = Math.max(list.left, pane.left), r = Math.min(list.right, pane.right);
-    const hit = b > t && r > l ? document.elementFromPoint((l + r) / 2, (t + b) / 2) : null;
-    document.getElementById("fproject").open = false;
-    return { crosses: b > t && r > l, inList: !!hit?.closest("#fproject"), hit: hit?.className ?? null };
+    const crosses = b > t && r > l, hit = crosses ? document.elementFromPoint((l + r) / 2, (t + b) / 2) : null;
+    pick.open = false;
+    return { crosses, inList: !!hit?.closest("#fproject"), hit: hit?.className ?? null };
   });
-  check(`AC-268 ${w}: the board's project list opens over the report's pane`, onTop.crosses && onTop.inList, JSON.stringify(onTop));
+  check(`AC-268 ${w}: the board's project list opens over the report's pane`, onTop.inList, JSON.stringify(onTop));
   const sheetOpen = () => page.evaluate(() => document.getElementById("app").classList.contains("nav-open"));
   if (narrow) check(`AC-268 ${w}: the list's sheet closes when a report opens`, !await sheetOpen());
   check(`AC-268 ${w}: its body by the Markdown rules, its comments below`, g.body === "serde" && await page.isVisible(".rpnotes li"), JSON.stringify(g));
