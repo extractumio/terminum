@@ -34,11 +34,16 @@ macro_rules! markdown_shape {
 pub(crate) use markdown_shape;
 
 /// How a question for the human is written (terminum-dispatcher.md AC-157): QUESTIONS' parts in order, each said
-/// with what it holds, for a reader new to the task. A macro for the prompts' `concat!` and the tools' answers.
+/// with what it holds, for a reader new to the task: plain words, one decision a question, names explained. A macro for the prompts' `concat!` and the tools' answers.
 macro_rules! questions_shape {
-    () => { "in plain short words for a person who has not followed this task, in three parts in this order: \"Why you are needed:\" one sentence on why this task waits for a person; \"Recommended:\" each question numbered, the answer you recommend as its default and why in a few words, then its other options; \"Details:\" one paragraph on the whole issue: what the task is for, what was done, what holds it, what each option leads to; the three labels as written here, in English" };
+    () => { "in plain short words that a person who has not followed this task understands on one reading, each internal name, code, ID or hash with what it is beside it, or left out, in three parts in this order: \"Why you are needed:\" one sentence on why this task waits for a person; \"Recommended:\" each question numbered and one decision, the answer you recommend as its default and why in a few words, then its other options, each option saying what happens next if chosen; \"Details:\" one paragraph on the whole issue: what the task is for, what was done, what holds it, what each option leads to; the three labels as written here, in English" };
 }
 pub(crate) use questions_shape;
+
+/// The rules that make a question for the human read once (AC-157): plain words, names explained or left out, one
+/// decision a numbered question, each option's next step; questions_shape! and the tool's description both say them.
+#[cfg(test)]
+pub const PLAIN: [&str; 4] = ["understands on one reading", "each internal name, code, ID or hash with what it is", "numbered and one decision", "what happens next if chosen"];
 
 /// The parts of a question for the human (AC-157), in the order questions_shape! says them.
 pub const QUESTIONS: [&str; 3] = ["Why you are needed", "Recommended", "Details"];
