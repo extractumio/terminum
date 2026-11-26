@@ -29,10 +29,10 @@ export async function liveWaitingRun(page, opts) {
     await page.waitForSelector("#taskbox[open]");
     const waiting = await j(`/api/tasks/${id}`);
     // its agent asked: Answer stands in Run's place and goes as RUN does (AC-285)
-    const run = page.locator("#taskbox").getByRole("button", { name: "Answer", exact: true });
-    check("AC-122 AC-285 WAIT FOR HUMAN holds its open session and offers Answer in RUN's place", waiting.status === "WAIT FOR HUMAN" && !!waiting.run_holds && !waiting.session?.closed && await run.isVisible());
+    const answer = page.locator("#taskbox").getByRole("button", { name: "Answer", exact: true });
+    check("AC-122 AC-285 WAIT FOR HUMAN holds its open session and offers Answer in RUN's place", waiting.status === "WAIT FOR HUMAN" && !!waiting.run_holds && !waiting.session?.closed && await answer.isVisible());
     await page.fill(".newcomment textarea", "Use v2 and keep working WORKS");
-    await run.click();                             // at once: RUN's window has nothing to ask (AC-122)
+    await answer.click();                          // at once: RUN's window has nothing to ask (AC-122)
     await page.waitForSelector("#taskbox", { state: "hidden" });
     check("AC-122 AC-285 Answer in the task's window starts at once, RUN's window unopened", !(await page.isVisible("#runbox")));
     const took = await until(async () => (await j(`/api/tasks/${id}`)).status === "IN PROGRESS", 15000);
