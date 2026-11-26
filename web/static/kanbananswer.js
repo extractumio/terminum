@@ -35,7 +35,7 @@ export function answerKeys(t, n, { act, runs, tryClose, refresh }) {
   return {
     archive, recommended,
     bind(run) {
-      run.textContent = "Answer";
+      if (run.textContent !== "Answer") run.textContent = "Answer";   // as Run: a press across a redraw still clicks
       run.title = "Send your answer to its agent; the window closes";
       run.onclick = () => press("answer");
     },
