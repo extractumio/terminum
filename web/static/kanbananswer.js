@@ -8,7 +8,7 @@ import { api, button, sayRefused } from "./kanbanutil.js";
 const ARCHIVE = (id) => `Archive ${id}? It fails as not wanted and leaves the board; tasks blocked by it ask a human.`;
 
 /** The keys of `t` waiting on the question `t.asked`, for its comment field `n`: Archive and Continue with
- *  Recommended to stand at the left; `bind(run)` makes the window's Run key Answer, `wait(run, waiting)` sets the
+ *  Recommended to stand at the left; `bind(run)` makes the window's Run key, labelled Answer, answer, `wait(run, waiting)` sets the
  *  keys off while the field is empty or the window busy. `act(n, work)` holds the window while work runs
  *  (kanbanwin.js commentAction); `runs`: RUN's window; the window closes once the answer went or waits. */
 export function answerKeys(t, n, { act, runs, tryClose, refresh }) {
@@ -35,7 +35,6 @@ export function answerKeys(t, n, { act, runs, tryClose, refresh }) {
   return {
     archive, recommended,
     bind(run) {
-      run.textContent = "Answer";
       run.title = "Send your answer to its agent; the window closes";
       run.onclick = () => press("answer");
     },

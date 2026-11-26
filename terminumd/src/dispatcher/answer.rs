@@ -21,9 +21,13 @@ use crate::tasks::store::HUMAN;
 use crate::tasks::{choices, comments};
 use crate::tmux::PaneState;
 
+/// What a transaction that only tries a press's writes answers, so the store rolls them back.
+const TRIED: &str = "tried";
 /// Continue with Recommended's comment, the human's answer as RUN carries it (AC-122).
 pub(crate) const RECOMMENDED: &str = "Go ahead with the recommended answer(s).";
 const NOT_READ: &str = "Its session's server is not read now: answer in its window, or once that server answers.";
+/// Its session is a run of Dispatcher's other than a + Session's: another task's, or a Supervisor round's.
+const OTHER_RUN: &str = "Its session is Dispatcher's run of other work: answer in its window, or once that run ends.";
 /// Its pane holds another conversation than the one that asked, or none its hooks said: a pane number tmux gave
 /// again after a restart may hold another agent (CLAUDE.md §2).
 const NOT_THE_ASKER: &str = "Its session no longer holds the conversation that asked: answer in its window, or unlink the session and answer again.";
@@ -92,20 +96,15 @@ fn keep(tx: &rusqlite::Transaction, id: &str, a: &Answered, way: &str) -> Result
     ops::log(tx, &key, HUMAN, "answer", &a.choice.said(&ops::user_name(tx, HUMAN)?), Some(&data), ops::now()).map(drop)
 }
 
-/// A RUN pressed for an answer (api.rs): refused on a question no longer waiting; Continue with Recommended's option
-/// recorded first, as RUN keeps its comment whatever follows (AC-122); once it went or waits for room, kept in the
-/// history.
+/// A RUN pressed for an answer (api.rs): refused on a question no longer waiting; once it went or waits for room,
+/// kept in the history, with Continue with Recommended's option.
 pub(super) async fn going(app: &Shared, id: &str, answered: Option<Answered>, run: impl Future<Output = Result<Value, String>>) -> Result<Value, String> {
     let Some(a) = answered else { return run.await };
-    let (wanted, q, choice) = (id.to_string(), a.question.clone(), a.choice);
-    store(app, move |tx| {
-        choices::still_waits(tx, &ops::get(tx, &wanted)?, &q)?;
-        recommended_choice(tx, &wanted, &q, choice)
-    }).await?;
+    tried(app, id, &a).await?;
     let done = run.await?;
     if done["full"].is_null() {
-        let wanted = id.to_string();
-        store(app, move |tx| keep(tx, &wanted, &a, "run")).await?;
+        let chosen = went_anyway(app, id, a, "run").await?;
+        if let Some(event) = chosen { choices::announce(app, id, &event); }
     }
     Ok(done)
 }
@@ -131,7 +130,13 @@ async fn pressed(app: &Shared, id: &str, body: Press) -> Result<Value, String> {
         choices::still_waits(tx, &t, &q)?;
         let last = runs::last_of(tx, &t.key)?;
         let Some(key) = t.session.clone().filter(|s| last.is_none_or(|r| r.pane_key.as_ref() != Some(s))) else { return Ok(None) };
-        Ok(Some(Theirs { asker: choices::asked_in(tx, &q)?, task: t, key }))
+        // a + Session's pane is the human's, marked by its run with no task (AC-142, AC-204)
+        let mark = match runs::in_pane(tx, &key)? {
+            Some(r) if r.ad_hoc() && runs::started(tx, &r.id)?.0 == runs::How::Session => Some(r.id),
+            Some(_) => return Err(OTHER_RUN.to_string()),
+            None => None,
+        };
+        Ok(Some(Theirs { asker: choices::asked_in(tx, &q)?, task: t, key, mark }))
     }).await?;
     let words = if a.choice == Choice::Recommended { RECOMMENDED.to_string() } else { text };
     let Some(theirs) = found else { return Ok(json!({"run": true, "comment": words})) };
@@ -142,21 +147,59 @@ async fn pressed(app: &Shared, id: &str, body: Press) -> Result<Value, String> {
     }
 }
 
-/// A task linked to a session the human opened, and the conversation that asked it there.
+/// A task linked to a session the human opened, the conversation that asked it there, and the mark of its + Session's
+/// run, if one.
 struct Theirs {
     task: ops::Task,
     key: String,
     asker: Option<String>,
+    mark: Option<String>,
 }
 
-/// Continue with Recommended on a question with recorded options carries its recommended one as the human's choice
-/// (terminum-supervisor.md AC-230).
-fn recommended_choice(tx: &rusqlite::Transaction, id: &str, question: &str, choice: Choice) -> Result<(), String> {
-    if choice == Choice::Recommended && let Some(option) = choices::recommended(tx, question)? {
-        choices::answer(tx, id, question, &option, ops::now())?;
+/// A press that went: Continue with Recommended on a question with recorded options carries its recommended one as
+/// the human's choice (terminum-supervisor.md AC-230), kept with the press's history line; the choice's event when new.
+fn went(tx: &rusqlite::Transaction, id: &str, a: &Answered, way: &str) -> Result<Option<String>, String> {
+    let mut chosen = None;
+    if a.choice == Choice::Recommended && let Some(option) = choices::recommended(tx, &a.question)? {
+        let (event, new) = choices::record(tx, &ops::get(tx, id)?, &a.question, &option, ops::now())?;
+        chosen = new.then_some(event);
     }
-    Ok(())
+    keep(tx, id, a, way)?;
+    Ok(chosen)
 }
+
+/// The question still waits, and Continue with Recommended's option would be recorded: tried, then rolled back, so a
+/// choice refused refuses the press before anything goes.
+async fn tried(app: &Shared, id: &str, a: &Answered) -> Result<(), String> {
+    let (wanted, q, choice) = (id.to_string(), a.question.clone(), a.choice);
+    match store(app, move |tx| {
+        let t = ops::get(tx, &wanted)?;
+        choices::still_waits(tx, &t, &q)?;
+        if choice == Choice::Recommended && let Some(option) = choices::recommended(tx, &q)? {
+            choices::record(tx, &t, &q, &option, ops::now())?;
+        }
+        Err::<(), _>(TRIED.to_string())
+    }).await {
+        Err(e) if e == TRIED => Ok(()),
+        done => done,
+    }
+}
+
+/// `went` once the answer went: a choice refused meanwhile (tried before it went) keeps the press's line without it,
+/// the reason in terminumd's log, as the agent already goes on.
+async fn went_anyway(app: &Shared, id: &str, a: Answered, way: &'static str) -> Result<Option<String>, String> {
+    let (wanted, tried) = (id.to_string(), a.clone());
+    match store(app, move |tx| went(tx, &wanted, &tried, way)).await {
+        Ok(chosen) => Ok(chosen),
+        Err(why) => {
+            tracing::warn!(event = "answer.choice", task = %id, error = %why);
+            let wanted = id.to_string();
+            store(app, move |tx| keep(tx, &wanted, &a, way)).await.map(|()| None)
+        }
+    }
+}
+
+
 
 /// Archive: not wanted. What is written stays as the human's comment, the task fails and leaves the board, a RUN
 /// waiting for room is called off; refused while a run holds it.
@@ -184,12 +227,13 @@ fn archive(tx: &rusqlite::Transaction, id: &str, a: &Answered, text: &str, attac
 /// paste of keeps nothing.
 async fn typed(app: &Shared, theirs: Theirs, a: Answered, text: String, attached: Vec<String>) -> Result<Value, String> {
     let since = std::time::Instant::now();
-    let Theirs { task, key, asker } = theirs;
+    let Theirs { task, key, asker, mark } = theirs;
     if asker.is_none() || app.hooks.session(&key).map(|(_, s)| s) != asker {
         return Err(NOT_THE_ASKER.to_string());
     }
     let (server, pane) = app.tmux.resolve(&key).ok_or("Its session is gone.")?;
     let _held = super::Held::take(app, |d| &d.pressing, &format!("task:{}", task.key)).ok_or("A Run is already being prepared.")?;
+    tried(app, &task.id, &a).await?;
     // the task's own ID, never the route's spelling of it
     let (id, q, session, choice) = (task.id.clone(), a.question.clone(), key.clone(), a.choice);
     let kept = store(app, move |tx| {
@@ -199,7 +243,7 @@ async fn typed(app: &Shared, theirs: Theirs, a: Answered, text: String, attached
         let (event, new) = comments::keep_human_comment(tx, &id, &text, &attached, ops::now())?;
         Ok(Some((event, new)))
     }).await?;
-    if let Err(gate::Undelivered { miss, pasted }) = gate::deliver_theirs(app, &server, &pane, &task.id, &choice.typed(&task.id), since).await {
+    if let Err(gate::Undelivered { miss, pasted }) = gate::deliver_theirs(app, &server, &pane, mark.as_deref(), &task.id, &choice.typed(&task.id), since).await {
         // pasted, it may still be sent: the agent then reads the answer it was told of
         if let Some((event, true)) = kept.clone().filter(|_| !pasted) {
             store(app, move |tx| comments::retract(tx, &event)).await?;
@@ -209,15 +253,13 @@ async fn typed(app: &Shared, theirs: Theirs, a: Answered, text: String, attached
             Miss::Other(why) => format!("Not delivered: {why}"),
         });
     }
+    let chosen = went_anyway(app, &task.id, a, "typed").await?;
     let id = task.id.clone();
-    store(app, move |tx| {
-        recommended_choice(tx, &id, &a.question, a.choice)?;
-        keep(tx, &id, &a, "typed")?;
-        ops::move_marked(tx, HUMAN, &id, "IN PROGRESS", Some(("answered", "the human answered on the board")), ops::now())
-    }).await?;
+    store(app, move |tx| ops::move_marked(tx, HUMAN, &id, "IN PROGRESS", Some(("answered", "the human answered on the board")), ops::now())).await?;
     if let Some((event, true)) = kept {
         crate::tasks::notify::comment_added(app, &task.id, &event, None);
     }
+    if let Some(event) = chosen { choices::announce(app, &task.id, &event); }
     Ok(json!({"typed": key}))
 }
 
