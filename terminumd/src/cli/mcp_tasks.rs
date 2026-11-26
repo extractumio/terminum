@@ -256,9 +256,11 @@ mod tests {
 
     #[test]
     fn ac157_ask_human_and_the_prompts_ask_for_questions_read_once() {
+        // plain words, names explained or left out, one decision a numbered question, each option's next step
+        const PLAIN: [&str; 4] = ["understands on one reading", "each internal name, code, ID or hash with what it is", "numbered and one decision", "what happens next if chosen"];
         let d = TOOLS.iter().find(|t| t.name == "ask_human").unwrap().description;
         for words in [d, crate::tasks::closeout::questions_shape!()] {
-            let lacks: Vec<&str> = crate::tasks::closeout::PLAIN.into_iter().filter(|rule| !words.contains(rule)).collect();
+            let lacks: Vec<&str> = PLAIN.into_iter().filter(|rule| !words.contains(rule)).collect();
             assert!(lacks.is_empty(), "lacks {lacks:?}: {words}");
         }
     }

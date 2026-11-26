@@ -1496,8 +1496,8 @@ Scenario: AC-157 happy path — what a prompt says
   And terminum mcp's ask_human describes the same three parts, the same rules for plain words, names, one decision a question and each option's next step, and optional structured fields, with an example of both
 
 Scenario: AC-157 edge — questions the human reads once
-  Given an agent whose one numbered question asks whether to update a branch from main and push it again, how to compare candidates, and whether to confirm one change, in the words "refresh", "gate", "H07" and a commit hash
-  Then its prompt and ask_human's description have told it otherwise: three numbered questions, one decision each; "H07" as "the one idea the tests promoted (H07)", the hash left out; each option with what happens next, such as "push now: the results go to main today"
+  Given an agent with several decisions to ask for, in its work's internal names, codes and hashes
+  Then its prompt and ask_human's description tell it to number one question per decision, to write a name beside what it is, such as "the one idea the tests promoted (H07)", or leave it out, as a commit hash, and to say each option's next step, such as "push now: the results go to main today"
   And terminumd checks the three parts only: how plain the words are is the agent's to meet, never refused by terminumd
 
 Scenario: AC-157 failure — questions not in the three parts
