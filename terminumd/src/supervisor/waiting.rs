@@ -55,7 +55,7 @@ pub(super) const OPEN_BLOCKERS: &str = "task_links l JOIN tasks b ON b.id = l.ot
 pub(super) fn judge(q: &Query<'_, '_>, mut reading: Reading, waiting_p0: bool, named: Option<&str>) -> Result<Reading, String> {
     if !waiting_p0 { return Ok(reading) }
     let (second, third) = q.detector.p0_hours.minutes();
-    if reading.limits(q.detector.threshold).is_none_or(|(_, limit)| second < limit) {
+    if let Threshold::Absolute(limit) = q.detector.threshold && second < limit {
         reading = reading.fixed(Threshold::Absolute(second));
     }
     if reading.value <= second { return Ok(reading) }

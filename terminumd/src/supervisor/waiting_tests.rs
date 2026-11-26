@@ -151,10 +151,13 @@ fn ac213_the_projects_p0_waiting_hours_set_its_levels() {
 #[test]
 fn ac213_a_detector_limit_below_the_p0_hours_fires_with_the_measured_share() {
     let f = project("waiting-low-limit");
-    save(&f, json!({"detectors": {"flow.starved": {"threshold": {"absolute": 60.0}}}})).unwrap();
-    f.task("p0", None, "P0", "TODO", NOW - 2 * 3600);
-    assert_eq!(scored(&f, Rule::Starved, NOW, "p0"), (0, json!([])), "past the detector's hour, short of the P0 day");
-    assert_eq!(scored(&f, Rule::Starved, NOW + DAY, "p0").0, 2, "past the P0 day");
+    let limit = json!({"threshold": {"absolute": 60.0}});
+    save(&f, json!({"detectors": {"flow.starved": limit, "product.user_bug_age": limit}})).unwrap();
+    f.task("p0", Some("Bug"), "P0", "TODO", NOW - 2 * 3600);
+    for rule in [Rule::Starved, Rule::UserBugAge] {
+        assert_eq!(scored(&f, rule, NOW, "p0"), (0, json!([])), "{}: past the detector's hour, short of the P0 day", rule.id());
+        assert_eq!(scored(&f, rule, NOW + DAY, "p0").0, 2, "{}: past the P0 day", rule.id());
+    }
 }
 
 #[test]
