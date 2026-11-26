@@ -17,6 +17,14 @@ const QUEUE_AGE: &str = "queue_oldest_minutes";
 const QUEUE_BASELINE: &str = "queue_waits_p90";
 const LIMIT: &str = "subscription_used";
 const ETA: &str = "plan_eta";
+/// Whether anyone works on an IN PROGRESS task linked to a session (`flow.stuck`, AC-213): its values below.
+pub(super) const UNWORKED: &str = "task_unworked";
+/// Its agent works, waits for a human, runs background work or subagents, or its open manager session holds it.
+pub(super) const WORKED: f64 = 0.0;
+/// Its agent stopped, failed or ended in its open session.
+pub(super) const STOPPED: f64 = 1.0;
+/// Its session closed, or no agent runs there.
+pub(super) const GONE: f64 = 2.0;
 
 pub(super) struct Point {
     metric: &'static str,
@@ -70,7 +78,34 @@ pub(super) fn measure(
         }
     }
     samples.extend(etas.into_iter().map(|(session, (_, eta))| Point::new(ETA, session, eta as f64)));
+    samples.extend(unworked(tx, app, project)?);
     Ok(samples)
+}
+
+/// Each IN PROGRESS task of `project` linked to a session, by what its session's row in the list says, as the
+/// board's card reads it (terminum-kanban.md AC-136). A main task with subtasks, never run, linked to its project's
+/// manager session while that is open, is held there (terminum-dispatcher.md AC-185).
+fn unworked(tx: &Transaction, app: &Shared, project: &str) -> Result<Vec<Point>, String> {
+    let tasks = rows(tx, "SELECT t.id, t.session_key, EXISTS (SELECT 1 FROM tasks c WHERE c.parent = t.id)
+            AND NOT EXISTS (SELECT 1 FROM run_tasks m WHERE m.task = t.id)
+        FROM tasks t WHERE t.project = ?1 AND t.status = 'IN PROGRESS' AND t.archived_at IS NULL AND t.session_key IS NOT NULL",
+        [project], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, bool>(2)?)))?;
+    let found: Vec<_> = {
+        let layout = app.layout.read();
+        tasks.iter().map(|(_, key, _)| crate::page::marks::find_item(&layout, key).cloned()).collect()
+    };
+    let mut points = Vec::new();
+    for ((id, key, umbrella), row) in tasks.into_iter().zip(found) {
+        let value = match &row {
+            Some(it) if crate::page::turns::busy(it) || it["state"] == "waiting"
+                || (it["agent"].is_string() && it["background"] == true) => WORKED,
+            Some(_) if umbrella && crate::roles::manages(tx, &key)?.is_some_and(|(of, _)| of == project) => WORKED,
+            Some(it) if it["agent"].is_string() => STOPPED,
+            _ => GONE,
+        };
+        points.push(Point::new(UNWORKED, id, value));
+    }
+    Ok(points)
 }
 
 pub(super) fn write(tx: &Transaction, project: &str, at: i64, samples: &[Point]) -> Result<(), String> {
@@ -211,3 +246,7 @@ pub(super) fn counters(q: &Query<'_, '_>) -> Result<Measurements, String> {
     }
     Ok(out)
 }
+
+#[cfg(test)]
+#[path = "stuck_tests.rs"]
+mod stuck_tests;

@@ -279,6 +279,52 @@ pub(super) fn bugs(q: &Query<'_, '_>) -> Result<Measurements, String> {
     Ok(Measurements { readings, ..Measurements::default() })
 }
 
+/// AC-213: an IN PROGRESS task linked to a session nobody works on, by the collector's session samples
+/// (`samples::unworked`), aged from the later of its last event, the Supervisor's own left out, and the last sample
+/// that saw it worked on. A Dispatcher run of it in that session, or a queued press of it, keeps Dispatcher's rules.
+pub(super) fn stuck(q: &Query<'_, '_>) -> Result<Measurements, String> {
+    use super::samples::{CADENCE, GONE, UNWORKED, WORKED};
+    use super::scoring::{Raise, Score};
+    use rusqlite::OptionalExtension;
+    let tasks = rows(q.tx, &format!("SELECT t.id, t.severity IN ('P0','P1') FROM tasks t WHERE t.project = ?1
+        AND t.status = 'IN PROGRESS' AND t.archived_at IS NULL AND t.session_key IS NOT NULL
+        AND NOT EXISTS (SELECT 1 FROM run_tasks m JOIN runs r ON r.id = m.run WHERE m.task = t.id AND r.pane_key = t.session_key)
+        AND NOT ({})", waits::queued_task("t")), [q.project], |r| Ok((r.get::<_, String>(0)?, r.get::<_, bool>(1)?)))?;
+    let point = |id: &str, from: i64, worked: bool| q.tx.query_row(&format!("SELECT id, at, value FROM supervisor_points
+        WHERE project = ?1 AND metric = ?2 AND subject = ?3 AND at BETWEEN ?4 AND ?5 {} ORDER BY at DESC, id DESC LIMIT 1",
+        if worked { "AND value = 0" } else { "" }), (q.project, UNWORKED, id, from, q.window.end),
+        |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?, r.get::<_, f64>(2)?))).optional().map_err(sql);
+    let mut out = Measurements::default();
+    for (id, priority) in tasks {
+        let Some((sample, _, state)) = point(&id, q.window.end - 2 * CADENCE + 1, false)? else {
+            out.unavailable = vec!["Some IN PROGRESS tasks have no session sample in the last 30 minutes."];
+            continue;
+        };
+        if state == WORKED {
+            continue;
+        }
+        let Some((event, at)) = q.tx.query_row("SELECT id, at FROM events WHERE task = ?1 AND at <= ?2
+            AND author NOT LIKE 'supervisor:%' ORDER BY at DESC, rowid DESC LIMIT 1", (&id, q.window.end),
+            |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?))).optional().map_err(sql)? else { continue };
+        let mut evidence = vec![task(&id), events(event), Evidence::SupervisorPoints(sample)];
+        let mut since = at;
+        if let Some((worked, seen, _)) = point(&id, at, true)? {
+            evidence.push(Evidence::SupervisorPoints(worked));
+            since = seen;
+        }
+        let source = if priority { Source::AgeSince(since) } else {
+            Source::Unsized("A P2 or P3 task's days are in no weekly total of priority task-days; stuck_work sets its impact.")
+        };
+        let mut reading = Reading::new("task", &id, "unworked_minutes", (q.window.end - since) as f64 / 60.0, evidence, source);
+        if reading.exceeds(q.detector.threshold).is_some() {
+            let reason = if state == GONE { "Its session closed, or no agent runs in it." } else { "Its agent stopped with it open." };
+            reading.score_raises.push(Raise { score: Score::Impact, from: 0, to: 1, rule: "stuck_work".into(), reason: Some(reason.into()) });
+        }
+        out.readings.push(reading);
+    }
+    Ok(out)
+}
+
 pub(super) fn lead_time(q: &Query<'_, '_>) -> Result<Measurements, String> {
     let events_sql = project_events();
     let samples = rows(q.tx, &format!("{events_sql}, {FIRST_DONE}

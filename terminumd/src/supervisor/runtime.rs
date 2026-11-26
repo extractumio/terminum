@@ -245,7 +245,7 @@ fn read_batch(
     let age_due = at - previous >= AGE_EVERY;
     let rules = Rule::ALL.iter().copied().filter(|rule| match rule {
         Rule::CollectorDead | Rule::LineDead => false,
-        Rule::QueueGrowth | Rule::LimitNear | Rule::StalePlan => samples_ready || sampled || scan_due,
+        Rule::QueueGrowth | Rule::LimitNear | Rule::StalePlan | Rule::Stuck => samples_ready || sampled || scan_due,
         Rule::Loop | Rule::Subagents => hooks_ready || sampled || scan_due,
         Rule::WaitHuman | Rule::Starved | Rule::UserBugAge => age_due || changed,
         _ => changed,
