@@ -5,6 +5,7 @@ import { surfacePreview } from "./e2e_surface_preview.mjs";
 import { scorecardFixture, checkScorecard, outsideSettings, checkOutsideSave, SMALL_RATE, MISSING_RATE } from "./e2e_supervisor_scorecard.mjs";
 import { configFixture, checkConfiguration } from "./e2e_supervisor_config.mjs";
 import { SCORE, TEMPLATES, templateDraft } from "./e2e_supervisor_templates.mjs";
+import { waitingHours, checkWaitingSave } from "./e2e_supervisor_waiting.mjs";
 import { ROOT, RULE, DATE, COMMAND, LITERAL, SETTINGS, DEFAULTS, SIGNAL, INCIDENT, HOLD, PROBLEM, SPENDING } from "./e2e_supervisor_fixtures.mjs";
 const json = (route, obj, status = 200) => route.fulfill({ status, json: obj });
 async function fixture(page, theme) {
@@ -208,6 +209,7 @@ async function settingsTab(page, { calls, refuseSave }, suffix, phone) {
   check("AC-284 a manager's charter draft is marked and its section opens for review",
     await charterBox.evaluate((box) => box.open) && await charterBox.getByText("The project's manager drafted this charter").isVisible());
   await templateDraft(page, panel, calls, suffix);
+  await waitingHours(page, panel, calls, suffix);
   const priorities = panel.getByLabel("Priorities, highest first, one per line");
   await priorities.fill("First project priority\nSecond project priority");
   await panel.getByLabel("Review priorities on").fill("2027-01-15");
@@ -234,6 +236,7 @@ async function settingsTab(page, { calls, refuseSave }, suffix, phone) {
     && JSON.stringify(keep.settings.detectors) === JSON.stringify(SETTINGS.detectors));
   check("AC-263 Save keeps the edited target", JSON.stringify(keep.settings.charter.indicator_targets) === JSON.stringify({ stability: "Keep the demo ready for user trials." }));
   await checkOutsideSave(panel, keep.settings);
+  checkWaitingSave(keep.settings);
   await page.locator("#supervisoron").click();
   await until(() => page.getByText("Scan complete. Less than three weeks of history.").isVisible());
   await openGroup(page, "Detectors and mutes");
