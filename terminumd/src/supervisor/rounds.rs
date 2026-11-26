@@ -322,7 +322,7 @@ fn investigation_case(tx: &Transaction, signal: &mut Signal, memory: Option<Valu
         "charter_data": {"never": charter[0], "priorities": charter[1]},
         "task_data": task_data(tx, signal)?, "memory_data": memory.unwrap_or_else(|| json!({"unavailable": "The project's memory was not read."})), "evidence_rows": evidence, "evidence_count": evidence_count,
         "question": if verify { "Does the named measurement and its evidence confirm the signal?" }
-            else if stuck && tools.contains(&super::round_tools::HAND_TO_HUMAN) { STUCK_QUESTION }
+            else if tools.contains(&super::round_tools::HAND_TO_HUMAN) { STUCK_QUESTION }
             else { "What caused this signal, what would disprove the cause, and what would address it?" },
         "tools": tools,
     });

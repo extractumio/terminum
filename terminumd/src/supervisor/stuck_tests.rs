@@ -55,9 +55,16 @@ fn ac213_a_stopped_agent_or_a_closed_session_reaches_the_owner_and_resolves() {
     let all = signals(&f.store, PROJECT).unwrap();
     assert_eq!(all.iter().map(|s| (s.subject_id.as_str(), s.level)).collect::<Vec<_>>(), [("gone", 1), ("stopped", 1)]);
     let evidence = serde_json::to_value(&all[1]).unwrap()["evidence"].to_string();
-    assert!(evidence.contains("supervisor_points") && evidence.contains("events") && evidence.contains("tasks"), "{evidence}");
+    assert!(evidence.contains("events") && evidence.contains("tasks") && !evidence.contains("supervisor_points"),
+        "the task and its last event; its latest sample, new every 15 minutes, is no evidence: {evidence}");
+    let revision = || f.store.with(|tx| tx.query_row("SELECT revision FROM supervisor_signals WHERE subject_id = 'stopped'", [],
+        |r| r.get::<_, i64>(0)).map_err(crate::tasks::ops::sql)).unwrap();
+    let before = revision();
+    sample(&f, "stopped", NOW + 840, STOPPED);
+    f.live(Rule::Stuck, NOW + 900).record(&f.store).unwrap();
+    assert_eq!(revision(), before, "a new sample of the same stuck task keeps its signal's evidence and revision");
 
-    let later = NOW + 900;
+    let later = NOW + 1800;
     sample(&f, "stopped", later - 60, WORKED);
     f.transition("gone", later - 30, "IN PROGRESS", "DONE");
     assert!(stuck(&f, later).0.is_empty(), "its agent works again; the other task moved");

@@ -38,7 +38,8 @@ fn setup(tag: &str, detector: &str) -> Setup {
     let eligible = f.store.with(|tx| rounds::waiting(tx, at, None)).unwrap();
     assert_eq!(eligible.len(), usize::from(detector == "flow.stuck"), "a level 1 flow.stuck signal starts a round at once (AC-233)");
     f.write("INSERT INTO supervisor_rounds (id, run, project, generation, fingerprint, signal_revision, case_file, deadline)
-        VALUES ('case_round-run', 'round-run', ?1, 1, ?2, 0, '{}', ?3)", (PROJECT, &fingerprint, at + 900));
+        SELECT 'case_round-run', 'round-run', ?1, 1, ?2, revision, '{}', ?3 FROM supervisor_signals WHERE fingerprint = ?2",
+        (PROJECT, &fingerprint, at + 900));
     f.write("INSERT INTO supervisor_panes (pane_key, project, generation, round) VALUES (?1, ?2, 1, 'case_round-run')", (PANE, PROJECT));
     *app.layout.write() = json!([{"items": [{"id": KEY, "state": "done", "agent": "claude"}]}]);
     Setup { f, app }
@@ -62,7 +63,7 @@ async fn ac213_a_stuck_round_hands_its_task_to_the_human_with_its_question() {
         .map_err(crate::tasks::ops::sql)).unwrap();
     assert_eq!((author.as_str(), text.as_str()), ("supervisor:default", QUESTIONS), "the Supervisor asks, in its words");
     assert!(data.contains("\"questions\":true"), "{data}");
-    assert!(hand(&s, json!({"questions": QUESTIONS})).await.unwrap_err().contains("no longer IN PROGRESS"), "once");
+    assert!(hand(&s, json!({"questions": QUESTIONS})).await.unwrap_err().contains("it stays as it is"), "once");
 }
 
 #[tokio::test]
@@ -75,4 +76,29 @@ async fn ac231_only_its_own_stuck_signal_while_nobody_works_on_it() {
     *s.app.layout.write() = json!([{"items": [{"id": KEY, "state": "working", "agent": "claude"}]}]);
     assert_eq!(hand(&s, json!({"questions": QUESTIONS})).await.unwrap_err(), "Someone works on API-7 now: it stays as it is.");
     assert_eq!(status(&s), "IN PROGRESS");
+}
+
+#[tokio::test]
+async fn ac213_a_task_pressed_or_written_on_since_its_signal_stays_as_it_is() {
+    let s = setup("handoff-changed", "flow.stuck");
+    s.f.write("INSERT INTO run_waits (task, agent_id, project, status, body, at) VALUES ('stuck', 'small', ?1, 'IN PROGRESS', '{}', 1)", [PROJECT]);
+    let refused = "Its task moved, was pressed, run or written on since its signal: it stays as it is.";
+    assert_eq!(hand(&s, json!({"questions": QUESTIONS})).await.unwrap_err(), refused, "a human's RUN press waits for room");
+    s.f.write("DELETE FROM run_waits", []);
+    s.f.event("stuck", crate::tasks::ops::now(), "dispatcher", "told", "The agent stopped with this task open", None);
+    assert_eq!(hand(&s, json!({"questions": QUESTIONS})).await.unwrap_err(), refused, "an event since its signal");
+    assert_eq!(status(&s), "IN PROGRESS");
+}
+
+#[tokio::test]
+async fn ac233_a_stuck_signal_gets_one_round_while_its_task_stays_stuck() {
+    let s = setup("handoff-once", "flow.stuck");
+    let at = crate::tasks::ops::now();
+    s.f.write("UPDATE supervisor_rounds SET ended_at = ?1, failure = 'deadline' WHERE id = 'case_round-run'", [at]);
+    s.f.write("DELETE FROM supervisor_panes", []);
+    s.f.write("INSERT INTO supervisor_points (project, metric, subject, at, value) VALUES (?1, ?2, 'stuck', ?3, ?4)",
+        (PROJECT, UNWORKED, at + 840, STOPPED));
+    s.f.live(Rule::Stuck, at + 900).record(&s.f.store).unwrap();
+    assert!(s.f.store.with(|tx| rounds::waiting(tx, at + 900, None)).unwrap().is_empty(),
+        "a round that ended without a finding is not started again by the next sample");
 }

@@ -218,7 +218,7 @@ Scenario: AC-213 happy path — stuck work reaches the owner
   And a day has passed since the later of its last event and the last session sample that saw its agent at work
   When code scores its flow.stuck signal
   Then its impact is 1 whatever its share, its level is 1, and the signal records the rule `stuck_work` with "Its session closed, or no agent runs in it." or "Its agent stopped with it open."
-  And its evidence names the task, its last event and the session samples
+  And its evidence names the task, its last event and the last sample that saw its agent at work, if any: a new sample of the same stuck task changes neither, so its signal keeps its revision and one round
   When API-20 leaves IN PROGRESS, gains an event, or a sample sees its agent at work again
   Then the next evaluation resolves the flow.stuck signal
 
@@ -726,8 +726,8 @@ Scenario: AC-231 failure — forbidden authority and foreign state
   Then it refuses the action and writes no task, setting or pane input in the target
 
 Scenario: AC-231 failure — a hand-off that is not the round's
-  Given an Advisor round calls hand_to_human
-  When its signal is not flow.stuck or no longer current, it names a task, its task left IN PROGRESS, someone works on it now by its session's row, or a human or manager acted on it in 24 hours (AC-239)
+  Given an Advisor round or a Talk session calls hand_to_human
+  When it is a Talk, its signal is not flow.stuck or no longer current, it names a task, its task left IN PROGRESS or gained an event, a Dispatcher run or a queued press of it began since its signal, someone works on it now by its session's row, or a human or manager acted on it in 24 hours (AC-239)
   Then the call is refused with the reason, and the task, its history and its session stay as they were
 
 Scenario: AC-231 failure — words for a pane
@@ -1644,7 +1644,7 @@ The collector runs off the async workers through a read-only store connection. E
 | `flow.failed_no_reason`, `flow.failed_repeat`, `flow.rerun_after_done` | Reasonless failures above baseline, two or more failed runs on one task, and reruns after DONE. A failure belongs to the run its FAILED move names, the task's latest run then, when that run launched; else to the task's latest launch in an earlier second. A named run never launched, or a launch in the failure's own second with no named run, leaves its run unavailable. Store. |
 | `flow.returned` | Returned tasks above baseline and red rounds. Integration. |
 | `flow.starved` | P0 or P1 TODO age beyond its limit while slots are free. Store. |
-| `flow.stuck` | A task IN PROGRESS linked to a session that no Dispatcher run of it holds and no queued press of it waits for, nobody working on it (its pane closed, no agent there, or its agent stopped, failed or ended) past its limit, a day by default: the age since the later of its last event, the Supervisor's own left out, and the last session sample that saw its agent at work, waiting for a human, running background work or subagents. A main task with subtasks never run, linked to its project's manager session while that is open, is held, not stuck (`terminum-dispatcher.md` AC-185). The collector samples each such task's session from the session list every 15 minutes; a task without a sample in the last 30 minutes is unavailable input. Snapshots; present state only. |
+| `flow.stuck` | A task IN PROGRESS linked to a session that no Dispatcher run of it holds and no queued press of it waits for, nobody working on it (its pane closed, no agent there, or its agent stopped, failed or ended) past its limit, a day by default: the age since the later of its last event, the Supervisor's own left out, and the last session sample that saw its agent at work, waiting for a human, running background work or subagents. A main task with subtasks never run, linked to its project's manager session while that is open, is held, not stuck (`terminum-dispatcher.md` AC-185). A session whose agent ended reads as closed, as its card's "no agent" does, though a human may work there by hand: its round judges from the history. Its evidence is the task, its last event and the last sample that saw it worked on, never the latest sample, so a stuck task keeps one signal revision and gets one round; a later stuck spell of the same task keeps that signal's round. The collector samples each such task's session from the session list every 15 minutes; a task without a sample in the last 30 minutes is unavailable input. Snapshots; present state only. |
 | `flow.lead_time_shift`, `flow.backlog_growth` | Median or p90 lead time shift, and created tasks outnumbering closed tasks for the configured number of weeks. Store. |
 | `flow.cost_outlier`, `flow.schedule_health` | Dispatcher run spend above the type's p95 or failed-run spend above baseline, and skipped or failed firings or a routine failing twice. Store. |
 | `flow.queue_growth`, `flow.limit_near` | Increasing waits over configured samples and predicted subscription limit at current use. Snapshots. |

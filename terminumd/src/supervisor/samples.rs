@@ -83,7 +83,7 @@ pub(super) fn measure(
 }
 
 /// Task `t` is a main task with subtasks that no run ever carried.
-pub(super) const UMBRELLA: &str = "(EXISTS (SELECT 1 FROM tasks c WHERE c.parent = t.id)
+const UMBRELLA: &str = "(EXISTS (SELECT 1 FROM tasks c WHERE c.parent = t.id)
     AND NOT EXISTS (SELECT 1 FROM run_tasks m WHERE m.task = t.id))";
 
 /// Each IN PROGRESS task of `project` linked to a session, by what its session's row in the list says, as the
@@ -104,9 +104,17 @@ fn unworked(tx: &Transaction, app: &Shared, project: &str) -> Result<Vec<Point>,
     Ok(points)
 }
 
+/// Task `key`'s state in session `session` now, as the sampler reads it, and whether an agent runs there.
+pub(super) fn live(tx: &Transaction, app: &Shared, key: &str, session: &str, project: &str) -> Result<(f64, bool), String> {
+    let row = crate::page::marks::find_item(&app.layout.read(), session).cloned();
+    let umbrella = tx.query_row(&format!("SELECT {UMBRELLA} FROM tasks t WHERE t.id = ?1"), [key], |r| r.get(0)).map_err(sql)?;
+    let agent = row.as_ref().is_some_and(|it| it["agent"].is_string());
+    Ok((worked(tx, row.as_ref(), session, project, umbrella)?, agent))
+}
+
 /// WORKED, STOPPED or GONE: a task linked to session `key`, by its row in the list; `umbrella`: a main task with
 /// subtasks, never run, held while its project's manager session is open.
-pub(super) fn worked(tx: &Transaction, row: Option<&serde_json::Value>, key: &str, project: &str, umbrella: bool) -> Result<f64, String> {
+fn worked(tx: &Transaction, row: Option<&serde_json::Value>, key: &str, project: &str, umbrella: bool) -> Result<f64, String> {
     Ok(match row {
         Some(it) if crate::page::turns::busy(it) || it["state"] == "waiting"
             || (it["agent"].is_string() && it["background"] == true) => WORKED,

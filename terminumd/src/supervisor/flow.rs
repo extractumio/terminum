@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 
-use rusqlite::Transaction;
+use rusqlite::{OptionalExtension, Transaction};
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::dispatcher::{pool::Slots, waits};
@@ -285,30 +285,28 @@ pub(super) fn bugs(q: &Query<'_, '_>) -> Result<Measurements, String> {
 pub(super) fn stuck(q: &Query<'_, '_>) -> Result<Measurements, String> {
     use super::samples::{CADENCE, GONE, UNWORKED, WORKED};
     use super::scoring::{Raise, Score};
-    use rusqlite::OptionalExtension;
-    let tasks = rows(q.tx, &format!("SELECT t.id, t.severity IN ('P0','P1') FROM tasks t WHERE t.project = ?1
-        AND t.status = 'IN PROGRESS' AND t.archived_at IS NULL AND t.session_key IS NOT NULL
-        AND NOT EXISTS (SELECT 1 FROM run_tasks m JOIN runs r ON r.id = m.run WHERE m.task = t.id AND r.pane_key = t.session_key)
-        AND NOT ({})", waits::queued_task("t")), [q.project], |r| Ok((r.get::<_, String>(0)?, r.get::<_, bool>(1)?)))?;
-    let point = |id: &str, from: i64, worked: bool| q.tx.query_row(&format!("SELECT id, at, value FROM supervisor_points
-        WHERE project = ?1 AND metric = ?2 AND subject = ?3 AND at BETWEEN ?4 AND ?5 {} ORDER BY at DESC, id DESC LIMIT 1",
-        if worked { "AND value = 0" } else { "" }), (q.project, UNWORKED, id, from, q.window.end),
-        |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?, r.get::<_, f64>(2)?))).optional().map_err(sql);
+    let tasks = rows(q.tx, &format!("SELECT t.id, t.severity IN ('P0','P1') FROM tasks t WHERE t.project = ?1 AND {}", stuck_task()),
+        [q.project], |r| Ok((r.get::<_, String>(0)?, r.get::<_, bool>(1)?)))?;
+    let latest = |id: &str| q.tx.query_row("SELECT value FROM supervisor_points WHERE project = ?1 AND metric = ?2
+        AND subject = ?3 AND at BETWEEN ?4 AND ?5 ORDER BY at DESC, id DESC LIMIT 1",
+        (q.project, UNWORKED, id, q.window.end - 2 * CADENCE + 1, q.window.end), |r| r.get::<_, f64>(0)).optional().map_err(sql);
+    let last_worked = |id: &str, from: i64| q.tx.query_row("SELECT id, at FROM supervisor_points WHERE project = ?1 AND metric = ?2
+        AND subject = ?3 AND at BETWEEN ?4 AND ?5 AND value = 0 ORDER BY at DESC, id DESC LIMIT 1",
+        (q.project, UNWORKED, id, from, q.window.end), |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?))).optional().map_err(sql);
     let mut out = Measurements::default();
     for (id, priority) in tasks {
-        let Some((sample, _, state)) = point(&id, q.window.end - 2 * CADENCE + 1, false)? else {
+        let Some(state) = latest(&id)? else {
             out.unavailable = vec!["Some IN PROGRESS tasks have no session sample in the last 30 minutes."];
             continue;
         };
         if state == WORKED {
             continue;
         }
-        let Some((event, at)) = q.tx.query_row("SELECT id, at FROM events WHERE task = ?1 AND at <= ?2
-            AND author NOT LIKE 'supervisor:%' ORDER BY at DESC, rowid DESC LIMIT 1", (&id, q.window.end),
-            |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?))).optional().map_err(sql)? else { continue };
-        let mut evidence = vec![task(&id), events(event), Evidence::SupervisorPoints(sample)];
+        let Some((event, at)) = last_event(q.tx, &id, q.window.end)? else { continue };
+        // The evidence holds while the task stays stuck: its latest sample, new every 15 minutes, is no part of it.
+        let mut evidence = vec![task(&id), events(event)];
         let mut since = at;
-        if let Some((worked, seen, _)) = point(&id, at, true)? {
+        if let Some((worked, seen)) = last_worked(&id, at)? {
             evidence.push(Evidence::SupervisorPoints(worked));
             since = seen;
         }
@@ -323,6 +321,27 @@ pub(super) fn stuck(q: &Query<'_, '_>) -> Result<Measurements, String> {
         out.readings.push(reading);
     }
     Ok(out)
+}
+
+/// Task `t` IN PROGRESS in its linked session, no Dispatcher run of it there and no queued press of it (AC-213).
+fn stuck_task() -> String {
+    format!("t.status = 'IN PROGRESS' AND t.archived_at IS NULL AND t.session_key IS NOT NULL
+        AND NOT EXISTS (SELECT 1 FROM run_tasks m JOIN runs r ON r.id = m.run WHERE m.task = t.id AND r.pane_key = t.session_key)
+        AND NOT ({})", waits::queued_task("t"))
+}
+
+/// Task `key`'s latest event up to `end`, the Supervisor's own left out.
+fn last_event(tx: &Transaction, key: &str, end: i64) -> Result<Option<(String, i64)>, String> {
+    tx.query_row("SELECT id, at FROM events WHERE task = ?1 AND at <= ?2 AND author NOT LIKE 'supervisor:%'
+        ORDER BY at DESC, rowid DESC LIMIT 1", (key, end), |r| Ok((r.get(0)?, r.get(1)?))).optional().map_err(sql)
+}
+
+/// Whether task `key` of `project` is still as its flow.stuck signal found it: a candidate whose latest event is
+/// one of `evidence`'s, so a press, a run or any event since keeps a hand-off off it (AC-213).
+pub(super) fn still_stuck(tx: &Transaction, project: &str, key: &str, evidence: &[Evidence]) -> Result<bool, String> {
+    let candidate: bool = tx.query_row(&format!("SELECT EXISTS (SELECT 1 FROM tasks t WHERE t.id = ?1 AND t.project = ?2 AND {})",
+        stuck_task()), (key, project), |r| r.get(0)).map_err(sql)?;
+    Ok(candidate && last_event(tx, key, i64::MAX)?.is_some_and(|(id, _)| evidence.contains(&events(id))))
 }
 
 pub(super) fn lead_time(q: &Query<'_, '_>) -> Result<Measurements, String> {
