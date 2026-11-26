@@ -128,7 +128,7 @@ fn state(tx: &Transaction, signal: &Signal, at: i64) -> Result<HoldState, String
         return Err("Holds require an enabled Operator Supervisor.".into());
     }
     if signal.level < 2 || !matches!(signal.state, State::New | State::Shadow | State::Raised | State::Held | State::Recurred) {
-        return Err("A hold requires a current signal at level 2 or above.".into());
+        return Err("A hold requires a current signal at Card or Incident level.".into());
     }
     let rule = Rule::named(&signal.detector)?;
     let mode = pack.mode(rule);

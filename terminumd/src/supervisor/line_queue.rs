@@ -40,8 +40,8 @@ pub(super) struct Notice {
 
 impl Notice {
     pub fn render(&self, link_base: Option<&str>) -> String {
-        let Self { incident, signals, .. } = self;
-        let level = super::impact::level_word(self.level);
+        let Self { incident, level, signals, .. } = self;
+        let level = super::impact::level_word(*level);
         let mut text = match self.kind {
             Kind::Opened | Kind::Repeat => format!("Critical incident {incident} · {level} level. Active signals: {signals}. Acknowledge in Terminum.\n"),
             Kind::Updated => format!("Update on incident {incident} · {level} level. Active signals: {signals}.\n"),

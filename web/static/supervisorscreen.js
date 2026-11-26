@@ -96,7 +96,7 @@ function signal(record, enabled) {
       controls, feedback, error);
   });
   panel.id = `signal-${record.fingerprint}`;
-  panel.querySelector("summary").title = levelTip(record);
+  levelTip(panel.querySelector("summary"), record);
   if (location.hash === `#${panel.id}`) panel.open = true;
   return panel;
 }

@@ -101,7 +101,7 @@ async function checkLevelWords(page) {
   const shown = { signal: await summary.textContent(), signalTip: await summary.getAttribute("title"),
     incident: await incident.textContent(), incidentTip: await incident.getAttribute("title"),
     delay: await delay.locator("dt").textContent(), delayTip: await delay.getAttribute("title"),
-    bare: /\bLevel \d/.test(await page.locator("#sv-content").textContent()) };
+    bare: /\blevel \d/i.test(await page.locator("#sv-content").textContent()) };
   check("AC-213 the screen shows levels as words: a signal, an incident and the time to detect, the number only in a tooltip",
     shown.signal.startsWith("Digest level · ") && shown.signalTip.startsWith("Response level 1 of 0–3")
     && shown.incident.endsWith("Incident 42 · Incident level") && shown.incidentTip.startsWith("Response level 3 of 0–3")

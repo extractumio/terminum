@@ -54,7 +54,7 @@ export async function liveIncidents(page, opts) {
     stalled = true;
     await Promise.all([page, phone, files].map((p) => p.locator(BAR).getByText("Incident drill", { exact: false })
       .waitFor({ timeout: 60000 })));
-    check("AC-225 the live Level 3 bar reached both signed-in browsers and standalone Files within one minute",
+    check("AC-225 the live Incident level bar reached both signed-in browsers and standalone Files within one minute",
       Date.now() - start < 60000, `${Math.round((Date.now() - start) / 1000)} seconds · ${wideName} and ${phoneName}`);
 
     await page.locator('#colswitch button[data-status="WAIT FOR HUMAN"]').click();

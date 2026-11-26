@@ -21,11 +21,7 @@ function scoreDetails(s) {
   if (s.by_rule.length) sections.push(part("dl", "sv-readings", ...s.by_rule.map(d => reading(
     [d.kind, d.detector, d.response].filter(Boolean).join(" · "),
     `${rate({ count: d.right, rate: d.rate })} · ${d.pending} awaiting judgment`))));
-  const delays = s.delays.map(d => {
-    const row = reading(`Time to detect · ${levelText(d)}`, `${text(d.seconds / 60)} min average · n=${d.sample}`);
-    row.title = levelTip(d);
-    return row;
-  });
+  const delays = s.delays.map(d => levelTip(reading(`Time to detect · ${levelText(d)}`, `${text(d.seconds / 60)} min average · n=${d.sample}`), d));
   sections.push(part("dl", "sv-readings", ...(delays.length ? delays : [reading("Time to detect", "No dated evidence · n=0")])));
   if (s.calibration.length) sections.push(part("dl", "sv-readings", ...s.calibration.map(c =>
     reading(`Cause confidence · ${percent(c.confidence)}`,

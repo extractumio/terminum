@@ -56,7 +56,6 @@ fn ac227_templates_exclude_case_prose_and_use_only_a_validated_origin() {
     // AC-213: the line says a level's word, never its number alone
     let card = Notice { kind: Kind::Updated, level: 2, ..update.clone() };
     assert_eq!(card.render(None), format!("Update on incident {id} · Card level. Active signals: 1.\n"));
-    assert_eq!([0, 1, 2, 3].map(crate::supervisor::impact::level_word), ["Record", "Digest", "Card", "Incident"]);
     let base = origin("https://terminum.example:8443/").unwrap();
     let exhausted = Notice { budget: Some(crate::supervisor::governor::JUDGMENT_NOTICE),
         ..initial.clone() };

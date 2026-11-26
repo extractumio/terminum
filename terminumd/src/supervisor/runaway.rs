@@ -24,7 +24,7 @@ const FRESH_SECONDS: i64 = 15 * 60;
 
 /// Unpriced usage makes the week's priced total a lower bound, which would overstate the run's share.
 pub(super) const UNPRICED_WEEK: &str =
-    "A current run may be a runaway, but some of the week's usage reports have no price, so code does not raise it to level 3.";
+    "A current run may be a runaway, but some of the week's usage reports have no price, so code does not raise it to Incident level.";
 
 /// Which score the rule raised, from what, and the run it names with the numbers that decided it.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

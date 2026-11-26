@@ -154,7 +154,7 @@ fn ac256_supervisor_scorecard_denominators() {
         assert!(m["resolved"]["rate"]["interval_95"].is_array());
         assert_eq!(m["misses"]["count"], 1);
         assert_eq!(m["delays"][0]["seconds"], 60.0);
-        assert_eq!(m["delays"][0]["level_word"], crate::supervisor::impact::level_word(m["delays"][0]["level"].as_u64().unwrap() as u8), "AC-213");
+        assert_eq!((&m["delays"][0]["level"], &m["delays"][0]["level_word"]), (&json!(2), &json!("Card")), "AC-213");
         assert_eq!(m["overrides"]["count"], 1);
         assert_eq!(m["overrides"]["rate"]["sample"], 3);
         assert_eq!(m["refusals"], json!({"count":2,"sample":3}));

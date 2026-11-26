@@ -134,7 +134,7 @@ export function incidentCard(initial, surface) {
     i = next;
     const snoozed = i.snoozed_until > Date.now() / 1000;
     put(title, `${i.project_name} · Incident ${i.id} · ${levelText(i)}`);
-    title.title = levelTip(i);
+    levelTip(title, i);
     put(happened, i.happened);
     const holds = i.holds ?? [];
     // AC-225: an interim verification hold says by when it ends, in this device's time.

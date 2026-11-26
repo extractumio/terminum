@@ -247,3 +247,8 @@ fn ac213_wait_shares_task_days_of_wait() {
     f.transition("old-wait", NOW - 2 * DAY, "IN PROGRESS", "WAIT FOR HUMAN");
     assert_eq!(units(&f, "flow.wait_human_age"), [("wait_minutes", vec![Unit::TaskDaysOfWait])]);
 }
+
+#[test]
+fn ac213_a_level_reaches_a_human_as_its_word() {
+    assert_eq!([0, 1, 2, 3].map(super::impact::level_word), ["Record", "Digest", "Card", "Incident"]);
+}
