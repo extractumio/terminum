@@ -16,10 +16,10 @@ export const SETTINGS = {
 };
 export const DEFAULTS = { [RULE]: { mode: "live", window_days: 7, threshold: { baseline: { percentile: 90, floor: 1 } } } };
 export const SIGNAL = { fingerprint: "one", project: "api", detector: RULE, subject_id: LITERAL, subject_kind: "project",
-  metric: "Unexplained failures", level: 1, state: "raised", count: 2, response: "digest", last_seen: DATE,
+  metric: "Unexplained failures", level: 1, level_word: "Digest", state: "raised", count: 2, response: "digest", last_seen: DATE,
   measure: { value: 12, baseline: 4, threshold: 8, window_start: DATE - 1000, window_end: DATE },
   evidence: [{ table: "tasks", id: "API-2" }, { table: "events", id: LITERAL }, { table: "supervisor_line", id: { channel: 2, failure: "Exit status 17." } }] };
-export const INCIDENT = { id: 42, task: "API-40", project: "api", project_name: "API service", level: 3, revision: 1,
+export const INCIDENT = { id: 42, task: "API-40", project: "api", project_name: "API service", level: 3, level_word: "Incident", revision: 1,
   happened: "The collector missed successive heartbeats.", held: "No hold in effect.",
   needed: "Acknowledge when seen.", no_answer: "No automatic action without an answer.", reports: ["R_API-8"] };
 export const HOLD = { id: 5, kind: "pause_integration", label: "Integration queue paused", undo: "Resume integration",

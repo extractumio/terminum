@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 import { $, stamp } from "./kanbanutil.js";
 import { el } from "./listparts.js";
-import { part, stack } from "./supervisorfields.js";
+import { levelText, levelTip, part, stack } from "./supervisorfields.js";
 
 const decimal = new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 });
 const money = new Intl.NumberFormat(undefined, { style: "currency", currency: "USD" });
@@ -21,7 +21,11 @@ function scoreDetails(s) {
   if (s.by_rule.length) sections.push(part("dl", "sv-readings", ...s.by_rule.map(d => reading(
     [d.kind, d.detector, d.response].filter(Boolean).join(" · "),
     `${rate({ count: d.right, rate: d.rate })} · ${d.pending} awaiting judgment`))));
-  const delays = s.delays.map(d => reading(`Time to detect · Level ${d.level}`, `${text(d.seconds / 60)} min average · n=${d.sample}`));
+  const delays = s.delays.map(d => {
+    const row = reading(`Time to detect · ${levelText(d)}`, `${text(d.seconds / 60)} min average · n=${d.sample}`);
+    row.title = levelTip(d);
+    return row;
+  });
   sections.push(part("dl", "sv-readings", ...(delays.length ? delays : [reading("Time to detect", "No dated evidence · n=0")])));
   if (s.calibration.length) sections.push(part("dl", "sv-readings", ...s.calibration.map(c =>
     reading(`Cause confidence · ${percent(c.confidence)}`,

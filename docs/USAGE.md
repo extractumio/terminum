@@ -646,6 +646,10 @@ evidence. Use **More signals** to see older results and **Refresh** to see the
 latest investigation status. Press **Investigate now** on a signal or incident to
 request a round. Its configured tier agent needs a kept slot and room in the judgment budget.
 
+A signal's response level, from 0 to 3, shows as its word: Record, Digest, Card or Incident
+level, the number in a tooltip. Level 3 is the strongest response, the reverse of task severities,
+where P0 is the highest (`docs/specs/terminum-supervisor.md` §9).
+
 Code also requests a round for a level 2 or 3 signal, or a level 1 signal that fired
 in at least three of the past eight weeks and has no checked cause. One round can
 run per fingerprint. Unchanged repeats keep the earlier verdict. When several rounds

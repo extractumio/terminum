@@ -139,9 +139,9 @@ fn render(tx: &Transaction, result: &Evaluation, weeks: &[scoreboard::Week], fir
     writeln!(output, "\nRanked findings ({}, {inactive} past-window findings outside rank)", ranked.len()).unwrap();
     for (i, (rule, f)) in ranked.iter().enumerate() {
         let m = &f.measure;
-        writeln!(output, "{}. {rule} {} {}: {:.3} (baseline {:.3}, threshold {:.3}, window {}–{}); impact {}, level {}, response {}",
+        writeln!(output, "{}. {rule} {} {}: {:.3} (baseline {:.3}, threshold {:.3}, window {}–{}); impact {}, level {} ({}), response {}",
             i + 1, subject(tx, f)?, f.metric, m.value, m.baseline, m.threshold, m.window_start, m.window_end,
-            f.scores.impact, f.scores.level(), f.scores.response(false)).unwrap();
+            f.scores.impact, f.scores.level(), super::impact::level_word(f.scores.level()), f.scores.response(false)).unwrap();
         if f.assessment.shares.is_empty() {
             writeln!(output, "   No weekly project share: {}", f.assessment.no_share.as_deref().unwrap_or("not measured.")).unwrap();
         } else {

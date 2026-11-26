@@ -134,7 +134,7 @@ def main():
         report, out, rc = critical_report(t, SOCKET, pane)
         incident = wait_for(lambda: next((i for i in call("/api/supervisor/incidents")
                                           if report and report in i.get("reports", [])), None), bool, 15, every=0.2)
-        page_text = f"{NOTICE}\nCritical incident {incident['id']} · Level 3." if incident else "no incident"
+        page_text = f"{NOTICE}\nCritical incident {incident['id']} · Incident level." if incident else "no incident"
         check("AC-237 a critical incident still pages, and the owner's message starts with the budget notice",
               page_text in wait_for(sent, lambda text: page_text in text, 20, every=0.2, last=True), (out, rc, sent()))
 

@@ -8,6 +8,10 @@ export const hint = (text) => el("p", "colempty", text);
 export const grid = (...nodes) => part("div", "fieldgrid", ...nodes);
 export const stack = (...nodes) => part("div", "sv-stack", ...nodes);
 export const actions = (...nodes) => part("div", "sv-actions", ...nodes);
+// A response level as terminumd's word; its number only in a tooltip, since bare numbers read as P0–P3
+// severities, which run the other way (terminum-supervisor.md §9, AC-213).
+export const levelText = (item) => `${item.level_word} level`;
+export const levelTip = (item) => `Response level ${item.level} of 0–3; 3 is the strongest response`;
 
 export function section(title, ...nodes) {
   const summary = el("summary", "sv-touch", title);

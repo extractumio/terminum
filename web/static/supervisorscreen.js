@@ -12,7 +12,7 @@ import { drawAgentRates, drawReflections } from "./supervisorreflection.js";
 import { reportCards } from "./supervisorreports.js";
 import { incidentHistory } from "./supervisorincidents.js";
 import { onIncidents } from "./incidents.js";
-import { actions, part, stack, text } from "./supervisorfields.js";
+import { actions, levelText, levelTip, part, stack, text } from "./supervisorfields.js";
 
 const project = new URLSearchParams(location.search).get("project");
 const path = `/api/task-projects/${encodeURIComponent(project)}/supervisor`;
@@ -67,8 +67,8 @@ function evidence({ table, id }) {
 }
 
 function signal(record, enabled) {
-  const { detector, metric, subject_id, subject_kind, state, level, count, response, last_seen, measure } = record;
-  const panel = folding(`Level ${level} · ${metric} · ${state}`, () => {
+  const { detector, metric, subject_id, subject_kind, state, count, response, last_seen, measure } = record;
+  const panel = folding(`${levelText(record)} · ${metric} · ${state}`, () => {
     const feedback = note(record.investigation ?? "");
     feedback.setAttribute("role", "status");
     const error = el("p", "incident-error");
@@ -96,6 +96,7 @@ function signal(record, enabled) {
       controls, feedback, error);
   });
   panel.id = `signal-${record.fingerprint}`;
+  panel.querySelector("summary").title = levelTip(record);
   if (location.hash === `#${panel.id}`) panel.open = true;
   return panel;
 }
@@ -113,7 +114,7 @@ function spending({ judgment, fixes }, eligible) {
       note(`Per round: up to ${numbers.format(judgment.round_limit_tokens)} tokens`),
       note(judgment.investigation_left === 0 || judgment.round_limit_tokens === 0
         ? "Judgment limit reached. Code-only work continues."
-        : `${numbers.format(judgment.routine_left)} tokens left for routine work · ${numbers.format(judgment.investigation_left)} for level 2 and 3 investigations`))),
+        : `${numbers.format(judgment.routine_left)} tokens left for routine work · ${numbers.format(judgment.investigation_left)} for Card and Incident level investigations`))),
     folding("Fixes · last 7 days", () => shown(
       note(`${currency.format(fixes.dollars)} of ${currency.format(fixes.limit_dollars)} used · ${currency.format(fixes.held_dollars)} reserved`),
       note(`Estimated cost per run: ${currency.format(fixes.estimated_dollars_per_run)}`),

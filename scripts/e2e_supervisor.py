@@ -137,7 +137,7 @@ def main():
               fault["last_ok"] == last_ok and signals(api_id).get("self.collector_dead") == 1 and not signals(web_id))
         opened = wait_for(incident, lambda entry: entry is not None, 15)
         incident_id = opened["id"]
-        alert = (f"Critical incident {incident_id} · Level 3. Active signals: 1. Acknowledge in Terminum.\n"
+        alert = (f"Critical incident {incident_id} · Incident level. Active signals: 1. Acknowledge in Terminum.\n"
                  f"https://terminum.example/supervisor/?project={api_id}&incident={incident_id}#incident-{incident_id}\n")
         wait_for(notices, lambda text: alert in text, 20)
         health = wait_for(lambda: call("/api/supervisor/incidents"),

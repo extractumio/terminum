@@ -107,7 +107,7 @@ export async function liveIncidents(page, opts) {
     const screen = await page.context().newPage();
     await screen.goto(`${base}${await pinned.getByRole("link", { name: "Timeline" }).getAttribute("href")}`);
     const entry = screen.locator(`#incident-${id}`);
-    await entry.locator(".incident-events li").filter({ hasText: /Level 3.*missed \d+ heartbeats/ }).waitFor();
+    await entry.locator(".incident-events li").filter({ hasText: /Incident level.*missed \d+ heartbeats/ }).waitFor();
     check("AC-225 the Supervisor screen opens the same incident's timeline above the scoreboard",
       await entry.isVisible() && await screen.locator("#sv-content > section").first().getByRole("heading", { level: 2 }).textContent() === "Incidents");
 

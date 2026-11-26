@@ -33,7 +33,7 @@ fn ac213_migration_without_a_share_reaches_the_store_and_costly_recovery_level()
     assert!(!signal.charter_breach);
     let replay = super::replay(&f.path, PROJECT, Some(NOW)).unwrap();
     let line = replay.lines().find(|line| line.contains("existing_migration_edits:")).unwrap();
-    assert!(line.contains("impact 0, level 2, response R4"), "{line}");
+    assert!(line.contains("impact 0, level 2 (Card), response R4"), "{line}");
 }
 
 #[test]
@@ -79,7 +79,7 @@ fn ac213_nightly_red_raises_scope_but_retries_alone_do_not() {
     }
     let replay = super::replay(&f.path, PROJECT, Some(NOW)).unwrap();
     let line = replay.lines().find(|line| line.contains("nightly_reds:")).unwrap();
-    assert!(line.contains("impact 0, level 2, response R4"), "{line}");
+    assert!(line.contains("impact 0, level 2 (Card), response R4"), "{line}");
 
     let gate = super::probe_gate::Gate { events: vec![super::probe_gate::GateEvent {
         at: NOW + DAY - 60, retried: 1, nightly_red: false }], ..gate };

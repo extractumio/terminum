@@ -116,8 +116,11 @@ fn delays(tx: &Transaction, project: &str) -> Result<Vec<Value>, String> {
         UNION ALL SELECT 3, observed_at - first_evidence_at FROM supervisor_miss_checks
             WHERE project = ?1 AND source = 'watchdog' AND first_evidence_at <= observed_at
     ) SELECT level, count(*), avg(seconds) FROM supported GROUP BY level ORDER BY level",
-        [project], |r| Ok(json!({"level":r.get::<_, u8>(0)?,"sample":r.get::<_, i64>(1)?,
-            "seconds":r.get::<_, f64>(2)?})))
+        [project], |r| {
+            let level = r.get::<_, u8>(0)?;
+            Ok(json!({"level":level,"level_word":super::impact::level_word(level),"sample":r.get::<_, i64>(1)?,
+                "seconds":r.get::<_, f64>(2)?}))
+        })
 }
 
 fn owner_load(tx: &Transaction, project: &str, at: i64) -> Result<(i64, i64, i64, i64, f64), String> {
