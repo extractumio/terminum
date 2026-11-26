@@ -82,13 +82,16 @@ pub(super) fn measure(
     Ok(samples)
 }
 
+/// Task `t` is a main task with subtasks that no run ever carried.
+pub(super) const UMBRELLA: &str = "(EXISTS (SELECT 1 FROM tasks c WHERE c.parent = t.id)
+    AND NOT EXISTS (SELECT 1 FROM run_tasks m WHERE m.task = t.id))";
+
 /// Each IN PROGRESS task of `project` linked to a session, by what its session's row in the list says, as the
 /// board's card reads it (terminum-kanban.md AC-136). A main task with subtasks, never run, linked to its project's
 /// manager session while that is open, is held there (terminum-dispatcher.md AC-185).
 fn unworked(tx: &Transaction, app: &Shared, project: &str) -> Result<Vec<Point>, String> {
-    let tasks = rows(tx, "SELECT t.id, t.session_key, EXISTS (SELECT 1 FROM tasks c WHERE c.parent = t.id)
-            AND NOT EXISTS (SELECT 1 FROM run_tasks m WHERE m.task = t.id)
-        FROM tasks t WHERE t.project = ?1 AND t.status = 'IN PROGRESS' AND t.archived_at IS NULL AND t.session_key IS NOT NULL",
+    let tasks = rows(tx, &format!("SELECT t.id, t.session_key, {UMBRELLA}
+        FROM tasks t WHERE t.project = ?1 AND t.status = 'IN PROGRESS' AND t.archived_at IS NULL AND t.session_key IS NOT NULL"),
         [project], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, bool>(2)?)))?;
     let found: Vec<_> = {
         let layout = app.layout.read();
@@ -96,16 +99,21 @@ fn unworked(tx: &Transaction, app: &Shared, project: &str) -> Result<Vec<Point>,
     };
     let mut points = Vec::new();
     for ((id, key, umbrella), row) in tasks.into_iter().zip(found) {
-        let value = match &row {
-            Some(it) if crate::page::turns::busy(it) || it["state"] == "waiting"
-                || (it["agent"].is_string() && it["background"] == true) => WORKED,
-            Some(_) if umbrella && crate::roles::manages(tx, &key)?.is_some_and(|(of, _)| of == project) => WORKED,
-            Some(it) if it["agent"].is_string() => STOPPED,
-            _ => GONE,
-        };
-        points.push(Point::new(UNWORKED, id, value));
+        points.push(Point::new(UNWORKED, id, worked(tx, row.as_ref(), &key, project, umbrella)?));
     }
     Ok(points)
+}
+
+/// WORKED, STOPPED or GONE: a task linked to session `key`, by its row in the list; `umbrella`: a main task with
+/// subtasks, never run, held while its project's manager session is open.
+pub(super) fn worked(tx: &Transaction, row: Option<&serde_json::Value>, key: &str, project: &str, umbrella: bool) -> Result<f64, String> {
+    Ok(match row {
+        Some(it) if crate::page::turns::busy(it) || it["state"] == "waiting"
+            || (it["agent"].is_string() && it["background"] == true) => WORKED,
+        Some(_) if umbrella && crate::roles::manages(tx, key)?.is_some_and(|(of, _)| of == project) => WORKED,
+        Some(it) if it["agent"].is_string() => STOPPED,
+        _ => GONE,
+    })
 }
 
 pub(super) fn write(tx: &Transaction, project: &str, at: i64, samples: &[Point]) -> Result<(), String> {
