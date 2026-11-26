@@ -346,7 +346,9 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
     save.onclick = () => commentAction(n, () => keepComment(n, t));
     // its agent's question waits: Answer stands for Run, Continue with Recommended beside Archive (terminum-dispatcher.md AC-285)
     const asked = t.asked ? answerKeys(t, n, { act: commentAction, runs, tryClose, refresh }) : null;
-    run.textContent = "Run";
+    // its label written only when it changes: a redraw under a held key would lose WebKit's click (AC-122)
+    const label = asked ? "Answer" : "Run";
+    if (run.textContent !== label) run.textContent = label;
     run.onclick = () => runTask(t);
     asked?.bind(run);
     n.keys = [save, run];

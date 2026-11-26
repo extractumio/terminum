@@ -237,11 +237,14 @@ async fn ac285_another_conversation_in_the_pane_gets_nothing() {
 async fn ac285_the_gate_types_only_into_an_idle_agent_of_a_pane_no_run_marked() {
     let stage = Theirs::new("answer-gate", "claude", "").await;
     let (server, pane, key) = (&stage.app.tmux.local, stage.pane.as_str(), stage.key());
-    let typed = |since| gate::deliver_theirs(&stage.app, server, pane, "API-1", "API-1: words", since);
+    let typed = |since| gate::deliver_theirs(&stage.app, server, pane, None, "API-1", "API-1: words", since);
     let why = |r: Result<(), gate::Undelivered>| r.err().map(|u| (u.miss.to_string(), u.pasted));
     // words that are not plain
-    assert_eq!(why(gate::deliver_theirs(&stage.app, server, pane, "API-1", "API-1\r: words", std::time::Instant::now()).await),
+    assert_eq!(why(gate::deliver_theirs(&stage.app, server, pane, None, "API-1", "API-1\r: words", std::time::Instant::now()).await),
         Some(("the words have control or invisible characters".into(), false)));
+    // no hook record: its box reads empty, yet nothing says its turn ended
+    assert_eq!(why(typed(std::time::Instant::now()).await), Some(("the agent is working".into(), false)));
+    stage.hooked("claude", "conv-1");
     // a human typed in it since the press
     let since = std::time::Instant::now();
     stage.app.inputs.human(&key);
@@ -260,8 +263,9 @@ async fn ac285_the_gate_types_only_into_an_idle_agent_of_a_pane_no_run_marked() 
     stage.tm.read(&["set-option", "-p", "-u", "-t", pane, "@terminum-run"]);
     // a shell in front
     let shell = stage.tm.read(&["new-window", "-d", "-P", "-F", "#{pane_id}", "/bin/sh"]).trim().to_string();
-    let missed = gate::deliver_theirs(&stage.app, server, &shell, "API-1", "API-1: words", std::time::Instant::now()).await;
-    assert_eq!(why(missed), Some(("no coding agent runs in front".into(), false)));
+    stage.app.hooks.apply(&stage.app.tmux.local.key(&shell), &json!({"agent": "claude", "event": "SessionStart", "session": "conv-9"}), std::time::Instant::now());
+    let missed = gate::deliver_theirs(&stage.app, server, &shell, None, "API-1", "API-1: words", std::time::Instant::now()).await;
+    assert_eq!(why(missed), Some(("no coding agent runs in front: answer in its window".into(), false)));
     assert!(stage.typed_nothing());
     // all clear: it goes
     typed(std::time::Instant::now()).await.map_err(|u| u.miss.to_string()).unwrap();
@@ -300,4 +304,84 @@ async fn ac285_ask_human_through_the_agent_socket_records_the_conversation_that_
     let (status, said) = stage.press(&task.id, json!({"choice": "answer", "question": question, "text": "v2"})).await;
     assert_eq!(status, StatusCode::OK, "{said}");
     assert_eq!(stage.prompts(1).await, vec![Choice::Answer.typed(&task.id)]);
+}
+
+#[tokio::test]
+async fn ac285_a_session_the_human_started_by_plus_session_takes_the_words_under_its_own_mark() {
+    let stage = Theirs::new("answer-plus", "claude", "").await;
+    let (task, question) = stage.asked_here("claude", json!({}));
+    // + Session's run: no task, started as a session (AC-142, AC-204); its mark on the pane
+    let run = stage.app.tasks.with(|tx| runs::add(tx, &runs::Run { agent_id: "a".into(), project: task.project.clone(), ..Default::default() },
+        &[], runs::Started::of(runs::How::Session), 1)).unwrap();
+    stage.app.tasks.with(|tx| runs::change(tx, &run, |r| { r.state = runs::Phase::Working; r.pane_key = Some(stage.key()); }).map(drop)).unwrap();
+    stage.tm.read(&["set-option", "-p", "-t", &stage.pane, "@terminum-run", &run]);
+    let (status, said) = stage.press(&task.id, json!({"choice": "answer", "question": question, "text": "v2"})).await;
+    assert_eq!(status, StatusCode::OK, "{said}");
+    assert_eq!(stage.prompts(1).await, vec![Choice::Answer.typed(&task.id)]);
+}
+
+#[tokio::test]
+async fn ac285_a_supervisor_round_s_pane_gets_nothing() {
+    let stage = Theirs::new("answer-round", "claude", "").await;
+    let (task, question) = stage.asked_here("claude", json!({}));
+    let run = stage.app.tasks.with(|tx| runs::add(tx, &runs::Run { agent_id: "a".into(), project: task.project.clone(), ..Default::default() },
+        &[], runs::Started::of(runs::How::Supervisor), 1)).unwrap();
+    stage.app.tasks.with(|tx| runs::change(tx, &run, |r| { r.state = runs::Phase::Working; r.pane_key = Some(stage.key()); }).map(drop)).unwrap();
+    stage.tm.read(&["set-option", "-p", "-t", &stage.pane, "@terminum-run", &run]);
+    let (_, said) = stage.press(&task.id, json!({"choice": "answer", "question": question, "text": "v2"})).await;
+    assert_eq!(said["error"].as_str(), Some(OTHER_RUN), "{said}");
+    assert!(stage.typed_nothing());
+}
+
+#[tokio::test]
+async fn ac285_recommended_as_run_keeps_its_choice_only_once_the_run_went() {
+    let stage = Theirs::new("answer-going", "claude", "").await;
+    let options = json!({"kind": "operational", "options": [{"id": "v1", "label": "v1"}, {"id": "v2", "label": "v2"}], "recommended": "v2"});
+    let (task, question) = asked(&stage.app.tasks, &stage.root, &stage.app.tmux.local.key("%999"), options);
+    let mark = || Some(answered(Choice::Recommended, &question));
+    let chosen = |h: &[Value]| h.iter().any(|e| e["choice"] == json!({"question": question, "option": "v2"}));
+    // a RUN refused, or one that only found the queue full: nothing kept
+    assert!(going(&stage.app, &task.id, mark(), async { Err("refused".to_string()) }).await.is_err());
+    going(&stage.app, &task.id, mark(), async { Ok(json!({"full": {"words": "no room"}})) }).await.unwrap();
+    let h = history(&stage.app.tasks, &task.id);
+    assert!(!chosen(&h) && !h.iter().any(|e| e["kind"] == "answer"), "nothing kept before it went");
+    // it went: the option and the press's line, together
+    going(&stage.app, &task.id, mark(), async { Ok(json!({"ok": true})) }).await.unwrap();
+    let h = history(&stage.app.tasks, &task.id);
+    assert!(chosen(&h), "the recommended option is the choice");
+    assert_eq!(h.iter().find(|e| e["kind"] == "answer").unwrap()["answer"]["way"], "run");
+}
+
+#[tokio::test]
+async fn ac285_the_gate_types_only_once_the_hooks_recorded_the_turn_s_end() {
+    let stage = Theirs::new("answer-turn", "claude", "").await;
+    let (server, pane, key) = (&stage.app.tmux.local, stage.pane.as_str(), stage.key());
+    let typed = || gate::deliver_theirs(&stage.app, server, pane, None, "API-1", "API-1: words", std::time::Instant::now());
+    let hook = |ev: Value| stage.app.hooks.apply(&key, &ev, std::time::Instant::now());
+    hook(json!({"agent": "claude", "event": "SessionStart", "session": "conv-1"}));
+    hook(json!({"agent": "claude", "event": "UserPromptSubmit", "session": "conv-1", "prompt": "work"}));
+    // a permission asked, then granted in its window: the tool still runs, its box reads empty
+    hook(json!({"agent": "claude", "event": "PermissionRequest", "session": "conv-1", "tool": "Bash"}));
+    assert_eq!(typed().await.err().map(|u| u.miss.to_string()).as_deref(), Some("the agent is working"));
+    // its turn ended asking the user: it waits for an answer, and takes it
+    hook(json!({"agent": "claude", "event": "Stop", "session": "conv-1", "asks": true}));
+    typed().await.map_err(|u| u.miss.to_string()).unwrap();
+    assert_eq!(stage.prompts(1).await, vec!["API-1: words".to_string()]);
+}
+
+#[tokio::test]
+async fn ac285_a_choice_refused_refuses_the_press_before_the_run() {
+    let stage = Theirs::new("answer-refused", "claude", "").await;
+    let options = json!({"kind": "operational", "options": [{"id": "v1", "label": "v1"}, {"id": "v2", "label": "v2"}], "recommended": "v2"});
+    let (task, question) = asked(&stage.app.tasks, &stage.root, &stage.app.tmux.local.key("%999"), options);
+    // the human already chose the other option by its key (AC-230)
+    stage.app.tasks.with(|tx| choices::answer(tx, &task.id, &question, "v1", ops::now())).unwrap();
+    let ran = std::sync::atomic::AtomicBool::new(false);
+    let done = going(&stage.app, &task.id, Some(answered(Choice::Recommended, &question)), async {
+        ran.store(true, std::sync::atomic::Ordering::SeqCst);
+        Ok(json!({"ok": true}))
+    }).await;
+    assert_eq!(done.unwrap_err(), "An option was already chosen for this question.");
+    assert!(!ran.load(std::sync::atomic::Ordering::SeqCst), "the RUN never went");
+    assert!(!history(&stage.app.tasks, &task.id).iter().any(|e| e["kind"] == "answer"));
 }

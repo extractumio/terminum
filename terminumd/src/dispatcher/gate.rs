@@ -198,9 +198,10 @@ pub(super) struct Undelivered {
 }
 
 /// Pastes AC-285's fixed `text` for `task` into `pane`, a live session the human opened, and sends it (CLAUDE.md §2):
-/// no run's mark, Claude Code or Codex in front and idle at an empty box, no tmux mode, no human typing since
-/// `since`; tmux judges the mark, the program and the mode again in the commands that type.
-pub(super) async fn deliver_theirs(app: &Shared, server: &Server, pane: &str, task: &str, text: &str, since: std::time::Instant) -> Result<(), Undelivered> {
+/// no run's mark but its + Session's own (`mark`), Claude Code or Codex in front, its turn's end recorded by its hooks
+/// and its box empty, no tmux mode, no human typing since `since`; tmux judges the mark, the program and the
+/// mode again in the commands that type.
+pub(super) async fn deliver_theirs(app: &Shared, server: &Server, pane: &str, mark: Option<&str>, task: &str, text: &str, since: std::time::Instant) -> Result<(), Undelivered> {
     let before = |miss| Undelivered { miss, pasted: false };
     if has_stray(text) {
         return Err(before(other("the words have control or invisible characters")));
@@ -210,20 +211,21 @@ pub(super) async fn deliver_theirs(app: &Shared, server: &Server, pane: &str, ta
     let said = server.run(format!("display -p -t {pane} '#{{@terminum-run}}\t#{{pane_in_mode}}\t#{{pane_current_command}}'")).await.map_err(|e| before(other(format!("tmux does not answer: {e}"))))?;
     let fields: Vec<&str> = said.first().map_or(Vec::new(), |l| l.split('\t').collect());
     let field = |i: usize| fields.get(i).copied().unwrap_or("");
-    if !field(0).is_empty() {
+    if field(0) != mark.unwrap_or("") {
         return Err(before(other("its pane is Dispatcher's")));
     }
     if field(1) != "0" {
         return Err(before(other("the pane is in a tmux mode")));
     }
     let command = field(2);
-    let kind = crate::tmux::titles::agent_of(command).ok_or_else(|| before(other("no coding agent runs in front")))?;
-    let busy = |at| if app.hooks.working(&key) { Err(other("the agent is working")) }
+    let kind = crate::tmux::titles::agent_of(command).ok_or_else(|| before(other("no coding agent runs in front: answer in its window")))?;
+    // idle only on its hooks' word: Claude Code's box reads empty while it works
+    let busy = |at| if !app.hooks.turn_over(&key) { Err(other("the agent is working")) }
         else if app.inputs.human_since(&key, at) { Err(other("a human typed in its pane")) } else { Ok(()) };
     busy(since).map_err(before)?;
     empty_box(server, pane, kind).await.map_err(before)?;
     let client = server.client(pane).ok_or_else(|| before(other("tmux does not answer")))?;
-    let to = Target { pane, client: &client, mark: None, agent_live: false, command: Some(command), kind, first: false };
+    let to = Target { pane, client: &client, mark, agent_live: mark.is_some(), command: Some(command), kind, first: false };
     let busy = &busy;
     let (entered, pasted) = paste_and_enter(app, server, text, to, crate::inputs::Who::press("dispatcher.answer", task),
         move |_| async move { busy(since) }).await;
