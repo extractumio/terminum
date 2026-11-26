@@ -404,6 +404,16 @@ impl Hooks {
     }
 
     /// Whether pane `key`'s hooks say it works, while their lease holds: an interrupted turn fires no Stop.
+    /// Pane `key`'s agent ended its turn on its hooks' word (terminum-dispatcher.md AC-285): done, failed, or a turn
+    /// that ended asking the user; never work, a lapsed lease, or a permission still asked or granted mid-turn.
+    pub fn turn_over(&self, key: &str) -> bool {
+        self.recs.lock().get(key).is_some_and(|r| match r.state {
+            Some(State::Done | State::Failed) => true,
+            Some(State::Waiting) => r.waits,
+            _ => false,
+        })
+    }
+
     pub fn working(&self, key: &str) -> bool {
         self.recs.lock().get(key).is_some_and(|r| r.state == Some(State::Working) && r.at.elapsed() < r.working_lease())
     }

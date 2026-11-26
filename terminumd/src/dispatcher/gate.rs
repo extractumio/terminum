@@ -198,8 +198,8 @@ pub(super) struct Undelivered {
 }
 
 /// Pastes AC-285's fixed `text` for `task` into `pane`, a live session the human opened, and sends it (CLAUDE.md §2):
-/// no run's mark but its + Session's or Talk's own (`mark`), Claude Code or Codex in front, its turn's end recorded by
-/// its hooks and its box empty, no tmux mode, no human typing since `since`; tmux judges the mark, the program and the
+/// no run's mark but its + Session's own (`mark`), Claude Code or Codex in front, its turn's end recorded by its hooks
+/// and its box empty, no tmux mode, no human typing since `since`; tmux judges the mark, the program and the
 /// mode again in the commands that type.
 pub(super) async fn deliver_theirs(app: &Shared, server: &Server, pane: &str, mark: Option<&str>, task: &str, text: &str, since: std::time::Instant) -> Result<(), Undelivered> {
     let before = |miss| Undelivered { miss, pasted: false };
@@ -219,10 +219,8 @@ pub(super) async fn deliver_theirs(app: &Shared, server: &Server, pane: &str, ma
     }
     let command = field(2);
     let kind = crate::tmux::titles::agent_of(command).ok_or_else(|| before(other("no coding agent runs in front: answer in its window")))?;
-    // idle only on its hooks' word: a turn's end recorded, never working, a lapsed lease neither (Claude Code's box
-    // reads empty while it works)
-    let idle = || matches!(app.hooks.ended_as(&key), Some((state, _)) if state != crate::tmux::agentstate::State::Working);
-    let busy = |at| if !idle() { Err(other("the agent is working")) }
+    // idle only on its hooks' word: Claude Code's box reads empty while it works
+    let busy = |at| if !app.hooks.turn_over(&key) { Err(other("the agent is working")) }
         else if app.inputs.human_since(&key, at) { Err(other("a human typed in its pane")) } else { Ok(()) };
     busy(since).map_err(before)?;
     empty_box(server, pane, kind).await.map_err(before)?;

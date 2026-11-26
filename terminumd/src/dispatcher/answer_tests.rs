@@ -351,3 +351,37 @@ async fn ac285_recommended_as_run_keeps_its_choice_only_once_the_run_went() {
     assert!(chosen(&h), "the recommended option is the choice");
     assert_eq!(h.iter().find(|e| e["kind"] == "answer").unwrap()["answer"]["way"], "run");
 }
+
+#[tokio::test]
+async fn ac285_the_gate_types_only_once_the_hooks_recorded_the_turn_s_end() {
+    let stage = Theirs::new("answer-turn", "claude", "").await;
+    let (server, pane, key) = (&stage.app.tmux.local, stage.pane.as_str(), stage.key());
+    let typed = || gate::deliver_theirs(&stage.app, server, pane, None, "API-1", "API-1: words", std::time::Instant::now());
+    let hook = |ev: Value| stage.app.hooks.apply(&key, &ev, std::time::Instant::now());
+    hook(json!({"agent": "claude", "event": "SessionStart", "session": "conv-1"}));
+    hook(json!({"agent": "claude", "event": "UserPromptSubmit", "session": "conv-1", "prompt": "work"}));
+    // a permission asked, then granted in its window: the tool still runs, its box reads empty
+    hook(json!({"agent": "claude", "event": "PermissionRequest", "session": "conv-1", "tool": "Bash"}));
+    assert_eq!(typed().await.err().map(|u| u.miss.to_string()).as_deref(), Some("the agent is working"));
+    // its turn ended asking the user: it waits for an answer, and takes it
+    hook(json!({"agent": "claude", "event": "Stop", "session": "conv-1", "asks": true}));
+    typed().await.map_err(|u| u.miss.to_string()).unwrap();
+    assert_eq!(stage.prompts(1).await, vec!["API-1: words".to_string()]);
+}
+
+#[tokio::test]
+async fn ac285_a_choice_refused_refuses_the_press_before_the_run() {
+    let stage = Theirs::new("answer-refused", "claude", "").await;
+    let options = json!({"kind": "operational", "options": [{"id": "v1", "label": "v1"}, {"id": "v2", "label": "v2"}], "recommended": "v2"});
+    let (task, question) = asked(&stage.app.tasks, &stage.root, &stage.app.tmux.local.key("%999"), options);
+    // the human already chose the other option by its key (AC-230)
+    stage.app.tasks.with(|tx| choices::answer(tx, &task.id, &question, "v1", ops::now())).unwrap();
+    let ran = std::sync::atomic::AtomicBool::new(false);
+    let done = going(&stage.app, &task.id, Some(answered(Choice::Recommended, &question)), async {
+        ran.store(true, std::sync::atomic::Ordering::SeqCst);
+        Ok(json!({"ok": true}))
+    }).await;
+    assert_eq!(done.unwrap_err(), "An option was already chosen for this question.");
+    assert!(!ran.load(std::sync::atomic::Ordering::SeqCst), "the RUN never went");
+    assert!(!history(&stage.app.tasks, &task.id).iter().any(|e| e["kind"] == "answer"));
+}

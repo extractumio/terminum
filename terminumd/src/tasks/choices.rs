@@ -146,7 +146,7 @@ pub(crate) fn record(tx: &Transaction, t: &Task, question: &str, option: &str, a
         return if previous == option { Ok((event, false)) } else { Err("An option was already chosen for this question.".into()) };
     }
     // The ordinary RUN and comment notice paths can carry these words. Only the validated ID comes from the agent.
-    crate::supervisor::config_changes::owner_choice(tx, &t, question, option, at)?;
+    crate::supervisor::config_changes::owner_choice(tx, t, question, option, at)?;
     let text = format!("Selected option: {option}.");
     let data = json!({"choice": {"question": question, "option": option}});
     let event = comments::comment_with(tx, HUMAN, &t.id, &text, Some(&data), at)?;
@@ -159,13 +159,18 @@ struct Pick {
     option: String,
 }
 
+/// A choice newly recorded on task `id`: its session hears of it, every page, and the Supervisor reads it (AC-230).
+pub(crate) fn announce(app: &Shared, id: &str, event: &str) {
+    super::notify::comment_added(app, id, event, None);
+    api::told(app, id);
+    app.supervisor.wake();
+}
+
 async fn choose(State(app): State<Shared>, Path((id, question)): Path<(String, String)>, Json(body): Json<Pick>) -> Response {
     let task = id.clone();
     let done = api::store(&app, move |tx| answer(tx, &task, &question, &body.option, ops::now())).await;
     if let Ok((event, true)) = &done {
-        super::notify::comment_added(&app, &id, event, None);
-        api::told(&app, &id);
-        app.supervisor.wake();
+        announce(&app, &id, event);
     }
     api::answer(done.map(|(event, _)| json!({"event": event})))
 }
