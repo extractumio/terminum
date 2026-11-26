@@ -127,6 +127,12 @@ pub(crate) fn answer(tx: &Transaction, task: &str, question: &str, option: &str,
     if current(tx, &t)?.as_deref() != Some(question) {
         return Err(STALE.into());
     }
+    record(tx, &t, question, option, at)
+}
+
+/// `option` on `question` of `t`, kept as the human's comment, the question judged waiting by the caller: by `answer`,
+/// or by a press that went with it (terminum-dispatcher.md AC-285). Its event, and whether it is new.
+pub(crate) fn record(tx: &Transaction, t: &Task, question: &str, option: &str, at: i64) -> Result<(String, bool), String> {
     let listed: bool = tx.query_row("SELECT EXISTS (SELECT 1 FROM events,
         json_each(data, '$.question.options') o WHERE events.id = ?1 AND json_extract(o.value, '$.id') = ?2)",
         (question, option), |r| r.get(0)).map_err(sql)?;
@@ -143,7 +149,7 @@ pub(crate) fn answer(tx: &Transaction, task: &str, question: &str, option: &str,
     crate::supervisor::config_changes::owner_choice(tx, &t, question, option, at)?;
     let text = format!("Selected option: {option}.");
     let data = json!({"choice": {"question": question, "option": option}});
-    let event = comments::comment_with(tx, HUMAN, task, &text, Some(&data), at)?;
+    let event = comments::comment_with(tx, HUMAN, &t.id, &text, Some(&data), at)?;
     Ok((event, true))
 }
 
