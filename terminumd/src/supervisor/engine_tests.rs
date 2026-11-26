@@ -93,6 +93,11 @@ impl Fixture {
             (PROJECT, on));
     }
 
+    /// Saves `pack` as the project's first Supervisor settings, answering the save's result.
+    pub fn save_settings(&self, pack: serde_json::Value) -> Result<(), String> {
+        self.store.with(|tx| super::settings::write(tx, PROJECT, 0, serde_json::from_value(pack).unwrap(), false).map(drop))
+    }
+
     /// `rule` as the project's saved settings make it, live, evaluated at `at`.
     pub fn live(&self, rule: super::Rule, at: i64) -> super::Evaluation {
         let mut detector = self.store.with(|tx| Ok(super::settings::read(tx, PROJECT)?.settings.detector(rule))).unwrap();

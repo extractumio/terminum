@@ -125,17 +125,12 @@ fn ac213_a_waiting_p1_task_and_replay_keep_the_share_rule() {
     }
 }
 
-/// Saves `pack` as the project's Supervisor settings, answering the save's result.
-fn save(f: &Fixture, pack: serde_json::Value) -> Result<(), String> {
-    f.store.with(|tx| super::super::settings::write(tx, PROJECT, 0, serde_json::from_value(pack).unwrap(), false).map(drop))
-}
-
 #[test]
 fn ac213_the_projects_p0_waiting_hours_set_its_levels() {
     let f = project("waiting-hours");
     let defaults = serde_json::to_value(super::super::settings::Settings::default()).unwrap();
     assert_eq!(defaults["p0_waiting"], json!({"level2_hours": 24.0, "level3_hours": 24.0}), "unset, a day and a further day");
-    save(&f, json!({"p0_waiting": {"level2_hours": 1, "level3_hours": 4}})).unwrap();
+    f.save_settings(json!({"p0_waiting": {"level2_hours": 1, "level3_hours": 4}})).unwrap();
     f.task("p0", Some("Bug"), "P0", "TODO", NOW - 3600);
     f.task("p1", Some("Bug"), "P1", "TODO", NOW - 3600);
     for rule in [Rule::Starved, Rule::UserBugAge] {
@@ -152,7 +147,7 @@ fn ac213_the_projects_p0_waiting_hours_set_its_levels() {
 fn ac213_a_detector_limit_below_the_p0_hours_fires_with_the_measured_share() {
     let f = project("waiting-low-limit");
     let limit = json!({"threshold": {"absolute": 60.0}});
-    save(&f, json!({"detectors": {"flow.starved": limit, "product.user_bug_age": limit}})).unwrap();
+    f.save_settings(json!({"detectors": {"flow.starved": limit, "product.user_bug_age": limit}})).unwrap();
     f.task("p0", Some("Bug"), "P0", "TODO", NOW - 2 * 3600);
     for rule in [Rule::Starved, Rule::UserBugAge] {
         assert_eq!(scored(&f, rule, NOW, "p0"), (0, json!([])), "{}: past the detector's hour, short of the P0 day", rule.id());
@@ -164,10 +159,10 @@ fn ac213_a_detector_limit_below_the_p0_hours_fires_with_the_measured_share() {
 fn ac213_p0_waiting_hours_out_of_range_are_refused() {
     let f = project("waiting-invalid");
     for hours in [json!({"level2_hours": 0}), json!({"level3_hours": 721}), json!({"level2_hours": 1.5}), json!({"level3_hours": -2})] {
-        assert_eq!(save(&f, json!({"p0_waiting": hours})).unwrap_err(), "P0 waiting escalation: use whole hours from 1 to 720.", "{hours}");
+        assert_eq!(f.save_settings(json!({"p0_waiting": hours})).unwrap_err(), "P0 waiting escalation: use whole hours from 1 to 720.", "{hours}");
     }
     let saved = f.store.with(|tx| super::super::settings::read(tx, PROJECT)).unwrap();
     assert_eq!((saved.revision, serde_json::to_value(&saved.settings).unwrap()["p0_waiting"].clone()),
         (0, json!({"level2_hours": 24.0, "level3_hours": 24.0})), "the saved settings stay as they were");
-    save(&f, json!({"p0_waiting": {"level2_hours": 720, "level3_hours": 1}})).unwrap();
+    f.save_settings(json!({"p0_waiting": {"level2_hours": 720, "level3_hours": 1}})).unwrap();
 }

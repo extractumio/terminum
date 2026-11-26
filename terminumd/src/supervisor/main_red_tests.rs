@@ -4,7 +4,7 @@
 use serde_json::json;
 
 use super::engine_tests::{Fixture, NOW, PROJECT};
-use super::{DAY, Evaluation, Evidence, Rule, SCHEMA, incidents_api, settings, signals};
+use super::{DAY, Evaluation, Evidence, Rule, SCHEMA, incidents_api, signals};
 
 const NEVER: &str = "Leave the target red.";
 
@@ -12,7 +12,7 @@ fn integrated(f: &Fixture, on: bool, ties: serde_json::Value) {
     f.integration(on);
     f.write("INSERT INTO project_supervisor (project, enabled, generation, enabled_at) VALUES (?1, 1, 1, ?2)", (PROJECT, NOW - 2 * DAY));
     let pack = json!({"charter": {"never": [NEVER], "never_checks": ties}});
-    f.store.with(|tx| settings::write(tx, PROJECT, 0, serde_json::from_value(pack).unwrap(), false).map(drop)).unwrap();
+    f.save_settings(pack).unwrap();
 }
 
 /// The target red on a Verify's failed steps: Dispatcher's Bug task for it, and, `confirmed`, its re-run's red notice.

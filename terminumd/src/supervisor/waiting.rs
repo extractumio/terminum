@@ -58,7 +58,7 @@ pub(super) fn judge(q: &Query<'_, '_>, mut reading: Reading, waiting_p0: bool, n
     if let Threshold::Absolute(limit) = q.detector.threshold && second < limit {
         reading = reading.fixed(Threshold::Absolute(second));
     }
-    if reading.value <= second { return Ok(reading) }
+    if reading.exceeds(Threshold::Absolute(second)).is_none() { return Ok(reading) }
     let to = if reading.value >= third { 3 } else { 2 };
     let reason = Some(held(q, &reading.subject_id, named)?);
     reading.score_raises.push(Raise { score: Score::Impact, from: 0, to, rule: RULE.into(), reason });

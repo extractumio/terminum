@@ -15,7 +15,7 @@ pub(in crate::supervisor) fn attached(f: &Fixture, checks: serde_json::Value) {
     f.write("UPDATE projects SET dir = ?1 WHERE id = ?2", (f.path.parent().unwrap().to_str().unwrap(), PROJECT));
     f.write("INSERT INTO project_supervisor (project, enabled, generation, enabled_at) VALUES (?1, 1, 1, ?2)", (PROJECT, NOW - 2 * DAY));
     let pack = json!({"budgets":{"fixes_ceiling":0.0}, "charter":{"never":[NEVER, "Break a release."], "never_checks":checks}});
-    f.store.with(|tx| settings::write(tx, PROJECT, 0, serde_json::from_value(pack).unwrap(), false).map(drop)).unwrap();
+    f.save_settings(pack).unwrap();
 }
 
 fn edited_migration(f: &Fixture) {
@@ -111,7 +111,7 @@ fn ac213_a_tie_names_a_checkable_detector_and_a_saved_never_line() {
         (json!({"arch.migration_edited": "Lose user data"}), "arch.migration_edited is tied to a line that is not in the never list."),
     ] {
         let pack = json!({"charter":{"never":[NEVER], "never_checks":checks}});
-        let saved = f.store.with(|tx| settings::write(tx, PROJECT, 0, serde_json::from_value(pack).unwrap(), false).map(drop));
+        let saved = f.save_settings(pack);
         assert_eq!(saved.unwrap_err(), error);
     }
 }

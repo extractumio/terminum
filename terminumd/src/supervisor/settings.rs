@@ -292,7 +292,9 @@ impl Settings {
             detector.allocation = self.charter.allocation.clone();
         }
         detector.never = self.never_tied(rule).cloned();
-        detector.p0_hours = self.p0_waiting;
+        if matches!(rule, Rule::Starved | Rule::UserBugAge) {
+            detector.p0_hours = self.p0_waiting;
+        }
         detector
     }
 
