@@ -13,7 +13,7 @@ pub(crate) fn words(ids: &[String]) -> String {
 
 pub(super) fn record(tx: &Transaction, run: &Run) -> Result<(), String> {
     for id in &run.ids {
-        ops::log(tx, &ops::key_of(tx, id)?, DISPATCHER, "gave_up", "The human gave up on its run.", Some(&json!({"run": run.id})), ops::now())?;
+        ops::log(tx, &ops::key_of(tx, id)?, DISPATCHER, "gave_up", super::runs::HUMAN_GAVE_UP, Some(&json!({"run": run.id})), ops::now())?;
     }
     Ok(())
 }

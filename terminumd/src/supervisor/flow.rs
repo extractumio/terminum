@@ -170,7 +170,7 @@ pub(super) fn returned_runs() -> String {
 
 // A named run is the event's, if launched. Else events keep seconds and launches milliseconds: a latest
 // launch inside the event's own second may have come after it, so the event's run is unknown.
-fn run_events(name: &str, condition: &str) -> String {
+pub(super) fn run_events(name: &str, condition: &str) -> String {
     format!("{name} AS (
     SELECT e.id, e.task, e.at, (SELECT CASE WHEN json_extract(e.data, '$.run') IS NOT NULL OR i.at < e.at * 1000 THEN r.id END
         FROM run_tasks m JOIN runs r ON r.id = m.run JOIN inputs i ON i.run = r.id AND {LAUNCH}

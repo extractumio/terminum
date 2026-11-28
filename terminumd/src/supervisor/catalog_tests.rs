@@ -251,6 +251,97 @@ fn ac212_owner_questions_operations_and_priority_churn() {
     assert!(findings[0].evidence.iter().all(|r| matches!(r, Evidence::Events(_))));
 }
 
+#[test]
+fn ac212_priority_churn_requires_a_human_start_and_give_up_on_the_same_run() {
+    let f = Fixture::new("owner-churn");
+    f.agent("agent");
+    f.task("work", None, "P2", "IN PROGRESS", NOW - 6 * WEEK);
+    f.task("grouped", None, "P2", "IN PROGRESS", NOW - DAY);
+    f.task_in("other", "elsewhere", None, "P2", "IN PROGRESS", NOW - 6 * WEEK);
+    f.run("elsewhere", "other-base", "agent", NOW - 5 * WEEK);
+    for n in 0..12 {
+        f.run("work", &format!("ordinary-{n}"), "agent", NOW - 90);
+    }
+    for (run, by, how) in [("round", "human", "supervisor"), ("talk", "human", "session"),
+        ("manual-session", "human", "session"), ("review", "human", "run"), ("schedule", "dispatcher", "schedule")] {
+        f.run("work", run, "agent", NOW - 90);
+        f.write("UPDATE runs SET started_by = ?2, started_how = ?3 WHERE id = ?1", (run, by, how));
+    }
+    f.write("INSERT INTO supervisor_incidents (id,project,subject_kind,subject_id,opened_at,last_firing_at)
+        VALUES (1,?1,'project',?1,?2,?2)", (PROJECT, NOW - DAY));
+    f.write("INSERT INTO supervisor_talks VALUES ('talk',1,?1,1,'{}')", [PROJECT]);
+    f.write("INSERT INTO supervisor_review_runs (run, project, cap, generation) VALUES ('review',?1,10,1)", [PROJECT]);
+    let operations = f.store.with(|tx| Ok(super::people::owner_actions(tx, PROJECT, NOW - DAY, NOW)?
+        .into_iter().filter(|(kind, _, _)| matches!(kind, super::people::OwnerAction::Run))
+        .map(|(_, id, _)| id).collect::<Vec<_>>())).unwrap();
+    assert_eq!(operations.len(), 13);
+    assert!(operations.contains(&Evidence::Runs("manual-session".into())));
+    for excluded in ["round", "talk", "review", "schedule"] {
+        assert!(!operations.contains(&Evidence::Runs(excluded.into())));
+        f.event("work", NOW - 80, "dispatcher", "gave_up", "", Some(json!({"run": excluded})));
+    }
+    // A Supervisor hold writes Dispatcher's release reason, without a human Give up marker.
+    f.event("work", NOW - 60, "dispatcher", "why", crate::dispatcher::runs::GAVE_UP, None);
+    let check = || f.live(super::Rule::PriorityChurn, NOW).detectors.remove(0);
+    let missing = check();
+    assert!(missing.findings.is_empty());
+    assert!(missing.unavailable.iter().any(|why| why.contains("Owner stop baseline")));
+    f.run("work", "prior", "agent", NOW - 5 * WEEK);
+    f.write("UPDATE runs SET started_by = NULL, started_how = NULL WHERE id = 'prior'", []);
+    assert!(check().unavailable.iter().any(|why| why.contains("Owner stop baseline")));
+    f.write("UPDATE runs SET started_by = 'dispatcher', started_how = 'schedule' WHERE id = 'prior'", []);
+    let quiet = check();
+    assert!(quiet.unavailable.is_empty());
+    assert!(quiet.findings.is_empty());
+    f.write("INSERT INTO run_tasks (run,task) VALUES ('ordinary-1','grouped')", []);
+    for task in ["work", "grouped"] {
+        f.event(task, NOW - 50, "dispatcher", "gave_up", "", Some(json!({"run":"ordinary-1"})));
+    }
+    assert!(check().findings.is_empty(), "one grouped run reaches the floor once");
+    let event = f.event("work", NOW - 30, "dispatcher", "gave_up", "", Some(json!({"run":"ordinary-2"})));
+    let checked = check();
+    let [found] = checked.findings.as_slice() else { panic!("expected only the two stopped owner runs") };
+    assert_eq!((found.metric, found.measure.value, found.measure.baseline), ("owner_stops", 2., 0.));
+    assert!(found.evidence.contains(&Evidence::Events(event)));
+    assert!(found.evidence.contains(&Evidence::Runs("ordinary-1".into())));
+    f.run("work", "old-unknown", "agent", NOW - 9 * WEEK);
+    f.write("UPDATE runs SET started_by = NULL WHERE id = 'old-unknown'", []);
+    f.event("work", NOW - 20, "dispatcher", "gave_up", "", Some(json!({"run":"old-unknown"})));
+    assert!(check().unavailable.iter().any(|why| why.contains("stopped run")));
+    f.write("UPDATE runs SET started_by = 'human' WHERE id = 'old-unknown'", []);
+    f.event("work", NOW - 10, "dispatcher", "why", crate::dispatcher::runs::GAVE_UP, None);
+    f.event("work", NOW - 10, "human", "why", "The human gave up on its run.", None);
+    assert!(check().unavailable.iter().any(|why| why.contains("run link")));
+}
+
+#[test]
+fn ac212_retired_owner_start_signal_uses_stopped_runs_for_its_yardstick() {
+    let f = Fixture::new("owner-start-yardstick");
+    f.write("INSERT INTO supervisor_signals (fingerprint,project,detector,subject_kind,subject_id,metric,
+        evidence,measure,scores,first_seen,last_seen,count,state)
+        VALUES ('old',?1,'owner.priority_churn','project',?1,'owner_starts','[]','{}','{}',?2,?2,1,'shadow')",
+        (PROJECT, NOW - DAY));
+    f.write("INSERT INTO supervisor_problems (id,project,title,lens,hypothesis,disproof,options,confidence,effort,state,opened_at)
+        VALUES (1,?1,'Churn','owner','','','[]',1,1,'watching',?2)", (PROJECT, NOW - DAY));
+    f.write("INSERT INTO supervisor_problem_signals (problem,fingerprint,threshold,weeks) VALUES (1,'old',1,4)", []);
+    let sample = |at, limit| {
+        let mut detector = Fixture::detector("owner.priority_churn");
+        if let Some(limit) = limit { detector.threshold = super::Threshold::Absolute(limit); }
+        evaluate(&f.store, PROJECT, at, &[detector]).unwrap().record(&f.store).unwrap();
+        f.store.with(|tx| tx.query_row("SELECT s.state,y.clear_at FROM supervisor_problem_signals y
+            JOIN supervisor_signals s USING(fingerprint) WHERE s.fingerprint = 'old'", [],
+            |r| Ok((r.get::<_, String>(0)?, r.get::<_, Option<i64>>(1)?))).map_err(crate::tasks::ops::sql)).unwrap()
+    };
+    assert_eq!(sample(NOW, None), ("resolved".into(), None));
+    f.agent("agent");
+    f.task("work", None, "P2", "IN PROGRESS", NOW - 6 * WEEK);
+    f.run("work", "prior", "agent", NOW - 5 * WEEK);
+    assert_eq!(sample(NOW + 1, None).1, Some(NOW + 1));
+    f.run("work", "a", "agent", NOW + 2);
+    f.event("work", NOW + 3, "dispatcher", "gave_up", "", Some(json!({"run":"a"})));
+    assert_eq!(sample(NOW + 3, Some(0.)).1, None, "a firing interrupts the watch even within its stored limit");
+}
+
 // AC-212: a measured partial rule can later clear its signal and still report its other input missing.
 #[test]
 fn ac212_measured_metric_clears_while_other_input_is_missing() {

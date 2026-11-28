@@ -198,14 +198,18 @@ impl Prepared<'_> {
                 continue;
             }
             let complete = checked.unavailable.is_empty() && checked.measured.is_none();
-            let fired: std::collections::HashSet<_> = findings.iter().map(|f| f.key.as_str()).collect();
+            let fired: std::collections::HashSet<_> = findings.iter().map(|f| f.found.key()).collect();
             let known = rows(tx, "SELECT y.fingerprint, y.threshold, s.subject_kind, s.subject_id, s.metric, y.clear_at, y.clear_seen
                 FROM supervisor_problem_signals y JOIN supervisor_signals s USING (fingerprint)
                 WHERE s.project = ?1 AND s.detector = ?2", (&evaluation.project, rule),
                 |r| Ok((r.get::<_, String>(0)?, r.get::<_, f64>(1)?, (r.get::<_, String>(2)?, r.get::<_, String>(3)?,
                     r.get::<_, String>(4)?), r.get::<_, Option<i64>>(5)?, r.get::<_, Option<i64>>(6)?)))?;
-            for (key, threshold, subject, previous, sampled) in known {
-                let clear = checked.mode == Mode::Live && !fired.contains(key.as_str()) &&
+            for (key, threshold, mut subject, previous, sampled) in known {
+                // Keep the registered owner-start yardstick tied to actual start/stop pairs.
+                if checked.rule == Rule::PriorityChurn && subject.2 == "owner_starts" {
+                    subject.2 = "owner_stops".into();
+                }
+                let clear = checked.mode == Mode::Live && !fired.contains(&(subject.0.as_str(), subject.1.as_str(), subject.2.as_str())) &&
                     match checked.observations.get(&subject) {
                         Some(reading) => reading.is_some_and(|(value, compare)| !compare.fires(value, threshold)),
                         None => complete || checked.complete_metrics.iter().any(|m| *m == subject.2),
