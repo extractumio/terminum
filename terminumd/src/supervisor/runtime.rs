@@ -248,6 +248,8 @@ fn read_batch(
         Rule::QueueGrowth | Rule::LimitNear | Rule::StalePlan => samples_ready || sampled || scan_due,
         Rule::Loop | Rule::Subagents => hooks_ready || sampled || scan_due,
         Rule::WaitHuman | Rule::Starved | Rule::UserBugAge => age_due || changed,
+        // a task's event or move resolves it at once; its samples come every 15 minutes
+        Rule::Stuck => samples_ready || changed,
         _ => changed,
     }).collect::<Vec<_>>();
     let mut batch = Batch { at, cursor: project.cursor, evaluation: None, points, sampled, baseline,

@@ -17,6 +17,14 @@ const QUEUE_AGE: &str = "queue_oldest_minutes";
 const QUEUE_BASELINE: &str = "queue_waits_p90";
 const LIMIT: &str = "subscription_used";
 const ETA: &str = "plan_eta";
+/// Whether anyone works on an IN PROGRESS task linked to a session (`flow.stuck`, AC-213): its values below.
+pub(super) const UNWORKED: &str = "task_unworked";
+/// Its agent works, waits for a human, runs background work or subagents, or its open manager session holds it.
+pub(super) const WORKED: f64 = 0.0;
+/// Its agent stopped, failed or ended in its open session.
+pub(super) const STOPPED: f64 = 1.0;
+/// Its session closed, or no agent runs there.
+pub(super) const GONE: f64 = 2.0;
 
 pub(super) struct Point {
     metric: &'static str,
@@ -70,7 +78,50 @@ pub(super) fn measure(
         }
     }
     samples.extend(etas.into_iter().map(|(session, (_, eta))| Point::new(ETA, session, eta as f64)));
+    samples.extend(unworked(tx, app, project)?);
     Ok(samples)
+}
+
+/// Task `t` is a main task with subtasks that no run ever carried.
+const UMBRELLA: &str = "(EXISTS (SELECT 1 FROM tasks c WHERE c.parent = t.id)
+    AND NOT EXISTS (SELECT 1 FROM run_tasks m WHERE m.task = t.id))";
+
+/// Each IN PROGRESS task of `project` linked to a session, by what its session's row in the list says, as the
+/// board's card reads it (terminum-kanban.md AC-136). A main task with subtasks, never run, linked to its project's
+/// manager session while that is open, is held there (terminum-dispatcher.md AC-185).
+fn unworked(tx: &Transaction, app: &Shared, project: &str) -> Result<Vec<Point>, String> {
+    let tasks = rows(tx, &format!("SELECT t.id, t.session_key, {UMBRELLA}
+        FROM tasks t WHERE t.project = ?1 AND t.status = 'IN PROGRESS' AND t.archived_at IS NULL AND t.session_key IS NOT NULL"),
+        [project], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, bool>(2)?)))?;
+    let found: Vec<_> = {
+        let layout = app.layout.read();
+        tasks.iter().map(|(_, key, _)| crate::page::marks::find_item(&layout, key).cloned()).collect()
+    };
+    let mut points = Vec::new();
+    for ((id, key, umbrella), row) in tasks.into_iter().zip(found) {
+        points.push(Point::new(UNWORKED, id, worked(tx, row.as_ref(), &key, project, umbrella)?));
+    }
+    Ok(points)
+}
+
+/// Task `key`'s state in session `session` now, as the sampler reads it, and whether an agent runs there.
+pub(super) fn live(tx: &Transaction, app: &Shared, key: &str, session: &str, project: &str) -> Result<(f64, bool), String> {
+    let row = crate::page::marks::find_item(&app.layout.read(), session).cloned();
+    let umbrella = tx.query_row(&format!("SELECT {UMBRELLA} FROM tasks t WHERE t.id = ?1"), [key], |r| r.get(0)).map_err(sql)?;
+    let agent = row.as_ref().is_some_and(|it| it["agent"].is_string());
+    Ok((worked(tx, row.as_ref(), session, project, umbrella)?, agent))
+}
+
+/// WORKED, STOPPED or GONE: a task linked to session `key`, by its row in the list; `umbrella`: a main task with
+/// subtasks, never run, held while its project's manager session is open.
+fn worked(tx: &Transaction, row: Option<&serde_json::Value>, key: &str, project: &str, umbrella: bool) -> Result<f64, String> {
+    Ok(match row {
+        Some(it) if crate::page::turns::busy(it) || it["state"] == "waiting"
+            || (it["agent"].is_string() && it["background"] == true) => WORKED,
+        Some(_) if umbrella && crate::roles::manages(tx, key)?.is_some_and(|(of, _)| of == project) => WORKED,
+        Some(it) if it["agent"].is_string() => STOPPED,
+        _ => GONE,
+    })
 }
 
 pub(super) fn write(tx: &Transaction, project: &str, at: i64, samples: &[Point]) -> Result<(), String> {
@@ -211,3 +262,7 @@ pub(super) fn counters(q: &Query<'_, '_>) -> Result<Measurements, String> {
     }
     Ok(out)
 }
+
+#[cfg(test)]
+#[path = "stuck_tests.rs"]
+mod stuck_tests;

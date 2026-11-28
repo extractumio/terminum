@@ -11,7 +11,7 @@ impl Rule {
         use Rule::*;
         let (blast, reversibility) = match self {
             // One task, session or report; a reply, retry or plan correction takes minutes.
-            WaitHuman | RerunAfterDone | Starved | CostOutlier | UserBugAge | FeedbackAge | StalePlan
+            WaitHuman | RerunAfterDone | Starved | Stuck | CostOutlier | UserBugAge | FeedbackAge | StalePlan
                 | Loop | Subagents | ReportCritical | FollowUps => (0, 0),
             // One task, with hours of diagnosis or rework.
             FailedRepeat | VerifyRed | DiffOutlier => (0, 1),

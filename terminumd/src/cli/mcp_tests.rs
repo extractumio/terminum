@@ -64,7 +64,8 @@ fn the_instructions_stand_in_512_characters() {
     let first: String = INSTRUCTIONS.chars().take(512).collect();
     assert_eq!(first, INSTRUCTIONS, "whole within 512, so a client's cut loses nothing");
     for w in ["update_session_plan", "eta_minutes", "create_task", "finish_task", "every 10 minutes", "stop calling", "search_tools", "execute_tool",
-              "Only the main agent calls update_session_plan; subagents report to it.", "a Bug: never below P2"] {
+              "Only the main agent calls update_session_plan; subagents report to it.", "a Bug: never below P2",
+              "a human's step left: execute_tool(\"ask_human\", {id, questions})"] {
         assert!(first.contains(w), "{w}");
     }
     assert!(first.ends_with('.'));
