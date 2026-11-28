@@ -12,7 +12,7 @@ export const SETTINGS = {
     indicators: { involvement: true, stability: true, lead_time: true, releases: true, backlog: true, cognitive_load: true, operations: true },
     outside_indicators: {} },
   detectors: { [RULE]: { mute: null } }, probes: { git: true, gate_record: true, code_host: true },
-  guardrails: { threshold_percent: 54 }, language: "English",
+  guardrails: { threshold_percent: 54 }, language: "English", p0_waiting: { level2_hours: 24, level3_hours: 24 },
 };
 export const DEFAULTS = { [RULE]: { mode: "live", window_days: 7, threshold: { baseline: { percentile: 90, floor: 1 } } } };
 export const SIGNAL = { fingerprint: "one", project: "api", detector: RULE, subject_id: LITERAL, subject_kind: "project",
