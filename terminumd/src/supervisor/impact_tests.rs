@@ -80,7 +80,7 @@ fn ac213_priority_churn_sizes_reversals_and_stopped_runs() {
     let (reversals, _) = assessed(&f, "owner.priority_churn", "priority_reversals");
     assert_eq!(amount(&reversals, Unit::StrategicActs), 3.0);
     assert!(reversals.shares.iter().all(|s| s.amount <= s.total));
-    let (stops, _) = assessed(&f, "owner.priority_churn", "owner_stops");
+    let (stops, _) = assessed(&f, "owner.priority_churn", "owner_stopped_runs");
     assert_eq!(amount(&stops, Unit::RunEvents), 3.0);
 }
 
@@ -96,7 +96,7 @@ fn ac213_amount_beyond_its_week_total_is_said() {
         f.event("given-up", NOW - 30 + n, "dispatcher", "gave_up", "", Some(json!({"run": run})));
     }
     // Three Dispatcher stops, but no launch this week: the run-event total cannot hold them.
-    let (stops, impact) = assessed(&f, "owner.priority_churn", "owner_stops");
+    let (stops, impact) = assessed(&f, "owner.priority_churn", "owner_stopped_runs");
     assert!(stops.shares.is_empty());
     assert_eq!(impact, 0);
     assert!(stops.no_share.unwrap().contains("exceeded its week's project total"));

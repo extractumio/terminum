@@ -151,7 +151,7 @@ Scenario: AC-212 edge — ordinary launches do not indicate priority churn
   And ordinary launches count only toward operations, with Supervisor investigations, Talks and review runs excluded
   And missing launch attribution or an unlinked human stop makes the run comparison unavailable
   And the priority-reversal baseline requires task events in the preceding window
-  And the former owner-start signal clears while its yardstick follows confirmed stopped runs
+  And the former launch and release signals clear while their yardsticks follow confirmed stopped runs
 
 Scenario: AC-212 edge — a busy session is not a loop
   Given one session runs many different Bash commands and another runs the same command again and again

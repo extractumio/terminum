@@ -301,7 +301,7 @@ fn ac212_priority_churn_requires_a_human_start_and_give_up_on_the_same_run() {
     let event = f.event("work", NOW - 30, "dispatcher", "gave_up", "", Some(json!({"run":"ordinary-2"})));
     let checked = check();
     let [found] = checked.findings.as_slice() else { panic!("expected only the two stopped owner runs") };
-    assert_eq!((found.metric, found.measure.value, found.measure.baseline), ("owner_stops", 2., 0.));
+    assert_eq!((found.metric, found.measure.value, found.measure.baseline), ("owner_stopped_runs", 2., 0.));
     assert!(found.evidence.contains(&Evidence::Events(event)));
     assert!(found.evidence.contains(&Evidence::Runs("ordinary-1".into())));
     f.run("work", "old-unknown", "agent", NOW - 9 * WEEK);
@@ -321,6 +321,10 @@ fn ac212_retired_owner_start_signal_uses_stopped_runs_for_its_yardstick() {
         evidence,measure,scores,first_seen,last_seen,count,state)
         VALUES ('old',?1,'owner.priority_churn','project',?1,'owner_starts','[]','{}','{}',?2,?2,1,'shadow')",
         (PROJECT, NOW - DAY));
+    f.write("INSERT INTO supervisor_signals (fingerprint,project,detector,subject_kind,subject_id,metric,
+        evidence,measure,scores,first_seen,last_seen,count,state)
+        SELECT 'old-release',project,detector,subject_kind,subject_id,'owner_stops',evidence,measure,scores,first_seen,last_seen,count,state
+        FROM supervisor_signals WHERE fingerprint = 'old'", []);
     f.write("INSERT INTO supervisor_problems (id,project,title,lens,hypothesis,disproof,options,confidence,effort,state,opened_at)
         VALUES (1,?1,'Churn','owner','','','[]',1,1,'watching',?2)", (PROJECT, NOW - DAY));
     f.write("INSERT INTO supervisor_problem_signals (problem,fingerprint,threshold,weeks) VALUES (1,'old',1,4)", []);
@@ -333,6 +337,9 @@ fn ac212_retired_owner_start_signal_uses_stopped_runs_for_its_yardstick() {
             |r| Ok((r.get::<_, String>(0)?, r.get::<_, Option<i64>>(1)?))).map_err(crate::tasks::ops::sql)).unwrap()
     };
     assert_eq!(sample(NOW, None), ("resolved".into(), None));
+    let release_state: String = f.store.with(|tx| tx.query_row("SELECT state FROM supervisor_signals
+        WHERE fingerprint = 'old-release'", [], |r| r.get(0)).map_err(crate::tasks::ops::sql)).unwrap();
+    assert_eq!(release_state, "resolved");
     f.agent("agent");
     f.task("work", None, "P2", "IN PROGRESS", NOW - 6 * WEEK);
     f.run("work", "prior", "agent", NOW - 5 * WEEK);

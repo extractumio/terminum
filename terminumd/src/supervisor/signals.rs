@@ -205,9 +205,9 @@ impl Prepared<'_> {
                 |r| Ok((r.get::<_, String>(0)?, r.get::<_, f64>(1)?, (r.get::<_, String>(2)?, r.get::<_, String>(3)?,
                     r.get::<_, String>(4)?), r.get::<_, Option<i64>>(5)?, r.get::<_, Option<i64>>(6)?)))?;
             for (key, threshold, mut subject, previous, sampled) in known {
-                // Keep the registered owner-start yardstick tied to actual start/stop pairs.
-                if checked.rule == Rule::PriorityChurn && subject.2 == "owner_starts" {
-                    subject.2 = "owner_stops".into();
+                // Existing churn yardsticks follow actual start/stop pairs.
+                if checked.rule == Rule::PriorityChurn && matches!(subject.2.as_str(), "owner_starts" | "owner_stops") {
+                    subject.2 = "owner_stopped_runs".into();
                 }
                 let clear = checked.mode == Mode::Live && !fired.contains(&(subject.0.as_str(), subject.1.as_str(), subject.2.as_str())) &&
                     match checked.observations.get(&subject) {

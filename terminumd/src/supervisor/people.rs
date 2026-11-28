@@ -297,8 +297,8 @@ pub(super) fn churn(q: &Query<'_, '_>) -> Result<Measurements, String> {
     } else {
         out.unavailable.push("Priority reversal baseline needs task history in the preceding window.");
     }
-    // The retired launch-only finding can clear even when stop attribution is unavailable.
-    out.complete_metrics.push("owner_starts");
+    // The obsolete launch and generic release findings can clear independently of the new input.
+    out.complete_metrics.extend(["owner_starts", "owner_stops"]);
     stopped_runs(q, &mut out)?;
     Ok(out)
 }
@@ -356,9 +356,9 @@ fn stopped_runs(q: &Query<'_, '_>, out: &mut Measurements) -> Result<(), String>
     let previous = stops.iter().filter(|(_, _, at, _)| !w.current(*at)).count();
     let current = stops.len() - previous;
     let evidence = stops.into_iter().flat_map(|(run, event, _, _)| [Evidence::Runs(run), events(event)]).collect();
-    out.readings.push(Reading::new("project", q.project, "owner_stops", current as f64, evidence,
+    out.readings.push(Reading::new("project", q.project, "owner_stopped_runs", current as f64, evidence,
         Source::Count(Unit::RunEvents)).history(vec![previous as f64]));
-    out.complete_metrics.push("owner_stops");
+    out.complete_metrics.push("owner_stopped_runs");
     Ok(())
 }
 
