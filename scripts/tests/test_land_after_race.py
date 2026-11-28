@@ -5,6 +5,7 @@ Real private Git repositories and locks; build/install commands are stand-ins, n
 """
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+import os
 import subprocess
 import sys
 import threading
@@ -150,7 +151,9 @@ class AfterRace(test_land.Repos, unittest.TestCase):
         tree = self.tree("blocked")
         self.commit(tree, "blocked.rs", "x\n")
         before = self.on_origin()
-        with mock.patch.object(L, "primary_of", return_value=self.primary), \
+        # These are manual calls even when the test itself runs inside queue Verify.
+        with mock.patch.dict(os.environ, {"TM_INTEGRATION_TASK": "", "TM_INTEGRATION_BATCH": ""}), \
+                mock.patch.object(L, "primary_of", return_value=self.primary), \
                 mock.patch.object(stages, "integration_on", side_effect=stages.Stop(1, "integration not known: nothing pushed")), \
                 mock.patch.object(L, "land") as local, mock.patch.object(L, "publish") as publish, \
                 mock.patch.object(stages, "after") as after, mock.patch("sys.stderr"):
