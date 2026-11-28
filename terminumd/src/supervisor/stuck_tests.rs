@@ -93,12 +93,12 @@ fn ac213_stuck_work_ages_from_its_last_event_or_the_last_sample_that_saw_it_work
 }
 
 #[test]
-fn ac213_held_dispatched_queued_or_other_work_is_not_stuck() {
+fn ac213_held_dispatched_queued_or_other_work_is_not_stuck_and_an_ended_run_holds_nothing() {
     let f = project("stuck-quiet");
     f.agent("agent");
     stopped(&f, "run", "P2", 2 * DAY);
     f.run("run", "its-run", "agent", NOW - 3 * DAY);
-    f.write("UPDATE runs SET pane_key = ?1 WHERE id = 'its-run'", [KEY]);
+    f.write("UPDATE runs SET pane_key = ?1, state = 'typed' WHERE id = 'its-run'", [KEY]);
     sample(&f, "run", NOW - 60, STOPPED);
     stopped(&f, "queued", "P2", 2 * DAY);
     f.write("INSERT INTO run_waits (task, agent_id, project, status, body, at) VALUES ('queued', 'agent', ?1, 'IN PROGRESS', '{}', ?2)",
@@ -110,6 +110,8 @@ fn ac213_held_dispatched_queued_or_other_work_is_not_stuck() {
     f.task_in(OTHER, "elsewhere", None, "P2", "IN PROGRESS", NOW - 3 * DAY);
     f.write("UPDATE tasks SET session_key = ?1 WHERE id = 'elsewhere'", [KEY]);
     assert_eq!(stuck(&f, NOW), (vec![], vec![]));
+    f.write("UPDATE runs SET state = 'closed' WHERE id = 'its-run'", []);
+    assert_eq!(stuck(&f, NOW).0, [raised("run", STOPPED_WORDS)], "taken again in the pane its ended run left");
 }
 
 #[test]

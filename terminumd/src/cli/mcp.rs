@@ -23,11 +23,11 @@ const VERSIONS: [&str; 3] = ["2025-11-25", "2025-06-18", "2025-03-26"];
 const DEFAULT_VERSION: &str = "2025-06-18";
 
 /// A step left to a human goes to ask_human, never a stop with the task open (terminum-agents.md AC-155).
-pub const INSTRUCTIONS: &str = "The user sees your plan: keep it in your plan tool, else update_session_plan; send \
-doing, eta_minutes each step and every 10 minutes. Only the main agent calls update_session_plan; subagents report to \
-it. Other tools: search_tools, then execute_tool(name, arguments). Before stopping: execute_tool(\"finish_task\", {id, \
-result}); a human's step left: execute_tool(\"ask_human\", {id, questions}). Left to do: execute_tool(\"create_task\", \
-{title, severity, text}), a Bug: never below P2. Not in terminum: stop calling.";
+pub const INSTRUCTIONS: &str = "The user sees your plan: keep it in your plan tool, or update_session_plan; send \
+doing, eta_minutes per step, every 10 minutes. Only the main agent calls update_session_plan; subagents report to \
+it. Other tools: search_tools, execute_tool(name, arguments). Before stopping: execute_tool(\"finish_task\", {id, \
+result}); a human's step left: execute_tool(\"ask_human\", {id, questions}). Work left: execute_tool(\"create_task\", \
+{title, severity, text}), a Bug: never below P2. A tool says not in terminum: stop calling.";
 
 /// What a manager's session is told besides (AC-174): its tools are the way it acts on its project.
 pub const MANAGER_INSTRUCTIONS: &str = " You are this project's manager: search_tools also finds the tools to run its tasks on \
