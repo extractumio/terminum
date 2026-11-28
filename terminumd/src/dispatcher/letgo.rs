@@ -44,7 +44,7 @@ pub(crate) async fn gave_up(app: &Shared, id: &str) -> Result<Vec<String>, Strin
     gave_up_checked(app, id, Giver::Human, |_, _| Ok(()), |tx, ids| {
         for id in ids {
             let key = ops::key_of(tx, id)?;
-            ops::log(tx, &key, crate::tasks::store::HUMAN, "why", "The human gave up on its run.", None, ops::now())?;
+            ops::log(tx, &key, crate::tasks::store::HUMAN, "why", runs::HUMAN_GAVE_UP, None, ops::now())?;
         }
         Ok(())
     }).await
