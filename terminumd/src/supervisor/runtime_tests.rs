@@ -37,7 +37,7 @@ async fn ac216_project_off_is_inert_and_a_new_generation_rejects_old_work() {
 
     set_enabled(store, PROJECT, true, NOW).unwrap();
     let project = ready(store);
-    let batch = store.snapshot(SCHEMA, |tx| read_batch(tx, &app, &project, NOW)).unwrap();
+    let batch = store.snapshot(SCHEMA, |tx| read_batch(tx, &app, &project, NOW, &Default::default())).unwrap();
     let pending = app.supervisor.sensors.take(PROJECT, project.generation);
     write(store, "INSERT INTO supervisor_changes (project, source, source_id)
         VALUES (?1, 'tasks', 'pending-incident-card')", [PROJECT]);
@@ -282,6 +282,10 @@ async fn ac219_independent_watchdog_reports_three_misses_once_and_honors_recover
     let fault = supervisor::signals(s, PROJECT).unwrap().pop().unwrap();
     assert_eq!((&*fault.detector, fault.level, fault.count), ("self.collector_dead", 3, 1));
     assert_eq!(fault.evidence, [Evidence::SupervisorHeartbeat { project: PROJECT.into(), last_ok: Some(NOW) }]);
+    let raised: Option<i64> = s.with(|tx| tx.query_row("SELECT raised_at FROM supervisor_miss_checks
+        WHERE project = ?1 AND source = 'watchdog'", [PROJECT], |r| r.get(0)).map_err(sql)).unwrap();
+    assert_eq!(raised, Some(NOW + 3 * BEAT), "the delivering watchdog transaction counts as timely");
+
     assert!(supervisor::signals(s, OTHER).unwrap().is_empty());
     collect_project(&app, &ready(s), || NOW + 3 * BEAT).unwrap();
     report_dead(s, &live, NOW + 3 * BEAT).unwrap();
@@ -424,4 +428,34 @@ async fn ac221_integration_switch_rescans_the_attachment_and_a_quiet_beat_keeps_
     fixture.integration(true);
     collect_project(&app, &ready(store), || NOW + 40).unwrap();
     assert_eq!(scanned(), NOW + 40);
+}
+
+#[tokio::test]
+async fn ac218_the_collectors_first_overflowing_sweep_preserves_a_previous_signal() {
+    let (_, app) = crate::testutil::app_with_tasks("supervisor-overflow-sweep");
+    let store = &app.tasks;
+    set_enabled(store, PROJECT, true, NOW - 100).unwrap();
+    app.supervisor.read_scopes(store, NOW).unwrap();
+    write(store, "INSERT INTO project_members VALUES ('default', 'owned', 0)", []);
+    write(store, "INSERT INTO supervisor_hook_counts (project, agent, session, at, event, count)
+        VALUES (?1, 'claude', 'busy', ?2, 'subagent_start', 20)", (PROJECT, NOW - 5));
+    let detector = Fixture::detector(Rule::Subagents.id());
+    supervisor::evaluate(store, PROJECT, NOW - 3, &[detector]).unwrap().record(store).unwrap();
+    let previous = supervisor::signals(store, PROJECT).unwrap();
+    let subject = previous.iter().find(|s| s.detector == Rule::Subagents.id()).unwrap();
+    let state = || store.snapshot(SCHEMA, |tx| tx.query_row(
+        "SELECT state FROM supervisor_signals WHERE fingerprint = ?1", [&subject.fingerprint],
+        |r| r.get::<_, String>(0)).map_err(sql)).unwrap();
+    let before = state();
+    write(store, "DELETE FROM supervisor_hook_counts WHERE session = 'busy'", []);
+    for index in 0..=super::super::sensors::MAX_SESSIONS {
+        let event = json!({"agent":"claude","event":"SubagentStart","session":format!("s-{index}")});
+        app.supervisor.sensors.heard(PROJECT, "owned", &event, NOW);
+    }
+    collect_project(&app, &ready(store), || NOW).unwrap();
+    assert_eq!(state(), before, "the gap was still pending when the collector opened its snapshot");
+    assert_eq!(value(store, "SELECT sum(count) FROM supervisor_hook_overflow"), 1);
+    let stored = store.snapshot(SCHEMA, |tx| tx.query_row("SELECT attachment FROM project_supervisor WHERE project = ?1",
+        [PROJECT], |r| r.get::<_,String>(0)).map_err(sql)).unwrap();
+    assert!(stored.contains(super::super::sensors::INCOMPLETE));
 }

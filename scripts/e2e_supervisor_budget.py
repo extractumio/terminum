@@ -98,6 +98,10 @@ def main():
         spent = wait_for(lambda: db("SELECT coalesce(sum(input + output + cache_write + cache_read), 0) FROM usage WHERE run = ?",
                                     [run])[0][0], lambda n: n == CEILING, 15, every=0.2)
         stopped = wait_for(judgment, lambda j: j["investigation_left"] == 0, 15, every=0.2)
+        accounting = call(f"{path}/rounds/{case}")
+        check("AC-237 Claude usage is sampled before the finding and finalized at Stop",
+              accounting["first_usage_at"] is not None and accounting["final_usage_at"] is not None
+              and not accounting["delayed_usage"] and accounting["measured_tokens"] == CEILING, accounting)
         check("AC-237 a real round's reported usage reaches the judgment ceiling within its own cap",
               spent == CEILING and failure is None and finding is not None
               and call(f"{path}/rounds/{case}")["case"]["budget_tokens"] == CEILING

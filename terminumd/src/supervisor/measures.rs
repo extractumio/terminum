@@ -137,12 +137,13 @@ pub(super) fn read(tx: &Transaction, project: &str, at: i64, spending: &Spending
     let (judged, by_rule) = decisions(tx, project)?;
     let (stayed, landed, watching, recurred) = resolved(tx, project, at)?;
     let (overridden, actions) = overrides(tx, project)?;
-    let (misses, checked): (i64, i64) = tx.query_row("SELECT count(*) FILTER (WHERE raised_at IS NULL), count(*)
+    let (misses, absent, unverified, checked): (i64, i64, i64, i64) = tx.query_row("SELECT count(*) FILTER (WHERE raised_at IS NULL AND signal_state IS NOT 'unverified'),
+        count(*) FILTER (WHERE signal IS NULL), count(*) FILTER (WHERE signal_state = 'unverified'), count(*)
         FROM supervisor_miss_checks WHERE project = ?1 AND observed_at <= ?2", (project, at),
-        |r| Ok((r.get(0)?, r.get(1)?))).map_err(sql)?;
+        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))).map_err(sql)?;
     let recent_misses = rows(tx, "SELECT m.source, coalesce(t.slug, m.subject_id), m.observed_at, m.first_evidence_at, m.signal, m.signal_state
         FROM supervisor_miss_checks m LEFT JOIN tasks t ON m.subject_kind = 'task' AND t.id = m.subject_id AND t.project = m.project
-        WHERE m.project = ?1 AND m.observed_at <= ?2 AND m.raised_at IS NULL
+        WHERE m.project = ?1 AND m.observed_at <= ?2 AND m.raised_at IS NULL AND m.signal_state IS NOT 'unverified'
         ORDER BY m.observed_at DESC, m.source, m.subject_id, m.occurrence LIMIT 20", (project, at), |r|
         Ok(json!({"source":r.get::<_, String>(0)?,"subject":r.get::<_, String>(1)?,"observed_at":r.get::<_, i64>(2)?,
             "first_evidence_at":r.get::<_, i64>(3)?,"signal":r.get::<_, Option<String>>(4)?,
@@ -176,7 +177,7 @@ pub(super) fn read(tx: &Transaction, project: &str, at: i64, spending: &Spending
     Ok(json!({
         "decisions":judged,"by_rule":by_rule,
         "resolved":{"count":stayed,"watching":watching,"recurred":recurred,"rate":share(stayed, landed)},
-        "misses":{"count":misses,"sample":checked,"recent":recent_misses},
+        "misses":{"count":misses,"sample":checked,"absent":absent,"suppressed":misses-absent,"unverified":unverified,"timely":checked-misses-unverified,"recent":recent_misses},
         "delays":delays(tx, project)?,
         "overrides":{"count":overridden,"rate":share(overridden, actions)},
         "refusals":{"count":refused,"sample":findings},

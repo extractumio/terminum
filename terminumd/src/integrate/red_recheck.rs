@@ -112,7 +112,7 @@ pub(super) fn judge(tx: &Transaction, home: &Path, run: &Run, target: &str, code
         let how = if code == 1 { "fail there too" } else { "could not be told apart there" };
         let words = format!("{failed} {how} on {at}: {id} stays open; terminumd runs them again when the target moves. Its log: {}", log.display());
         return if code == 1 {
-            crate::supervisor::misses::target_red(tx, &run.project, &s.target, target, &run.task, now)?;
+            crate::supervisor::misses::target_red(tx, &run.project, &s.target, target, &run.task, None, now)?;
             ops::notice(tx, DISPATCHER, id, &words, serde_json::json!({"target_red": true, "target_recheck": true}), now).map(drop)
         } else { ops::comment(tx, DISPATCHER, id, &words, now).map(drop) };
     }

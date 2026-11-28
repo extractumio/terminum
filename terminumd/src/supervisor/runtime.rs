@@ -65,6 +65,7 @@ struct Status {
     enabled: bool,
     last_ok: Option<i64>,
     collector_dead: bool,
+    hook_overflow: i64,
     attachment: Option<serde_json::Value>,
     holds: Vec<super::holds::Hold>,
 }
@@ -93,6 +94,8 @@ async fn shown(State(app): State<Shared>, Path(id): Path<String>) -> Response {
             .optional().map_err(sql)?.unwrap_or_default();
         let active = status.enabled && current && status.last_ok.is_some();
         status.attachment = attach::read(tx, &id)?.map(|report| report.status(now(), active)).transpose()?;
+        status.hook_overflow = tx.query_row("SELECT coalesce(sum(count),0) FROM supervisor_hook_overflow WHERE project = ?1",
+            [&id], |r| r.get(0)).map_err(sql)?;
         status.holds = super::holds::list(tx, &id)?;
         Ok(status)
     })).await)
@@ -222,7 +225,7 @@ struct Batch {
 }
 
 fn read_batch(
-    tx: &Transaction, app: &Shared, project: &Project, at: i64,
+    tx: &Transaction, app: &Shared, project: &Project, at: i64, gaps: &super::sensors::Gaps,
 ) -> Result<Batch, String> {
     let cursor = tx.query_row("SELECT seq FROM supervisor_changes WHERE project = ?1 AND seq > ?2
         ORDER BY seq DESC LIMIT 1", (&project.id, project.cursor), |r| r.get(0))
@@ -267,7 +270,7 @@ fn read_batch(
     }).collect::<Vec<_>>();
     let bounds = scan_due.then(|| flow::history_bounds(tx, &project.id, at)).transpose()?;
     let inputs = EvaluationInputs { first: bounds.map(|(first, _)| first), current_state: true,
-        observe_thresholds: scan_due, ..EvaluationInputs::default() };
+        observe_thresholds: scan_due, hook_gaps: Some(gaps), ..EvaluationInputs::default() };
     let mut evaluation = evaluate_snapshot(tx, &project.id, at, &detectors, inputs)?;
     if let Some(bounds) = bounds {
         let report = attach::scan(tx, &mut evaluation, &saved.settings, &detectors, previous_attach.as_ref(), bounds)?;
@@ -280,6 +283,7 @@ fn read_batch(
 }
 
 fn collect_project(app: &Shared, project: &Project, clock: impl Fn() -> i64) -> Result<(), String> {
+    let pending = app.supervisor.sensors.take(&project.id, project.generation);
     let batch = app.tasks.snapshot(SCHEMA, |tx| {
         let current = tx.query_row("SELECT EXISTS (SELECT 1 FROM project_supervisor
             WHERE project = ?1 AND enabled = 1 AND generation = ?2)",
@@ -288,12 +292,11 @@ fn collect_project(app: &Shared, project: &Project, clock: impl Fn() -> i64) -> 
         // On a same-second re-enable the previous rule evaluation still owns
         // that timestamp. Leave the new scope due until it can record results.
         let due = project.last_ok.is_some() || project.last_evaluation.is_none_or(|last| at > last);
-        (current && due).then(|| read_batch(tx, app, project, at)).transpose()
+        (current && due).then(|| read_batch(tx, app, project, at, &pending.overflow)).transpose()
     })?;
     let Some(batch) = batch else { return Ok(()) };
     let evaluated = batch.evaluation.is_some().then_some(batch.at);
     let sunset_due = batch.baseline;
-    let pending = app.supervisor.sensors.take(&project.id, project.generation);
     let ((committed, incidents_changed, holds), cards) = commit(&app.tasks, project, batch, &pending, &clock)?;
     super::breakers::notify(app, cards);
     for hold in holds {
@@ -366,7 +369,7 @@ fn commit(store: &Store, project: &Project, batch: Batch, pending: &Pending<'_>,
             }
         }
         samples::write(tx, &project.id, at, &batch.points)?;
-        Pending::write(tx, &project.id, at, counts)?;
+        pending.write(tx, at, counts)?;
         tx.execute("DELETE FROM supervisor_changes WHERE seq IN (
             SELECT seq FROM supervisor_changes WHERE project = ?1 AND seq <= ?2 ORDER BY seq LIMIT 256)",
             (&project.id, batch.cursor)).map_err(sql)?;

@@ -120,7 +120,7 @@ pub(super) fn apply(tx: &rusqlite::Transaction, r: &mut Run, ev: &Value, typed: 
 
 /// Hooks' events waiting for their turn: what comes first is applied first.
 pub(super) struct Events {
-    pub(super) sender: UnboundedSender<(String, Value)>,
+    sender: UnboundedSender<(String, Value)>,
     waiting: Mutex<Option<UnboundedReceiver<(String, Value)>>>,
 }
 
@@ -131,15 +131,26 @@ impl Default for Events {
     }
 }
 
+pub(crate) fn queue(app: &Shared, key: String, event: Value) {
+    if app.dispatcher.events.sender.send((key, event)).is_err() {
+        super::acts::note(app, "Dispatcher could not queue an agent hook: its listener is closed.".into());
+        tracing::error!(event = "dispatcher.hook_queue_closed");
+    }
+}
+
 /// Pane `key`'s agent spoke: its run, if Dispatcher started it. A pane with none costs a lookup. Its subagents are
 /// counted from their own events; only the main agent's events of its current turn change the run (AC-127).
 pub fn heard(app: &Shared, key: &str, ev: &Value, whose: Whose) {
-    if !app.dispatcher.has_run(key) {
-        return;
-    }
+    let Some(run) = app.dispatcher.panes.lock().get(key).map(|p| p.run.clone()) else { return };
     app.dispatcher.heard_facts(key, ev);
     match whose {
-        Whose::Main => drop(app.dispatcher.events.sender.send((key.to_string(), ev.clone()))),
+        Whose::Main => {
+            let mut event = ev.clone();
+            event["received_run"] = run.into();
+            event["received_typed"] = (ev["event"] == "UserPromptSubmit" &&
+                ev["prompt"].as_str().is_some_and(|p| app.dispatcher.was_typed(key, p))).into();
+            queue(app, key.to_owned(), event);
+        }
         Whose::Sub => app.dispatcher.touched(key),     // activity, and no more
         Whose::Stale => {}
     }
@@ -147,32 +158,73 @@ pub fn heard(app: &Shared, key: &str, ev: &Value, whose: Whose) {
 
 /// What one of the main agent's events does to its run.
 async fn one_event(app: Shared, key: String, ev: Value) {
+    let typed = ev["received_typed"] == true;
+    let ev = std::sync::Arc::new(ev);
+    let mut attempt = 0_u32;
+    loop {
+        match commit_event(&app, key.clone(), ev.clone(), typed).await {
+            Ok(applied) => {
+                if attempt != 0 && !applied {
+                    tracing::warn!(event = "dispatcher.hook_obsolete", attempt);
+                    super::acts::note(&app, "Dispatcher resumed delivery. The queued hook no longer applied to its original run.".into());
+                } else if attempt != 0 {
+                    tracing::info!(event = "dispatcher.hook_recovered", attempts = attempt + 1);
+                    super::acts::note(&app, "Dispatcher recovered the queued hook and resumed event delivery.".into());
+                }
+                return;
+            }
+            Err(error) => {
+                attempt = attempt.saturating_add(1);
+                // Only a failed store transaction reaches here. All run and task writes rolled back.
+                if attempt == 1 || attempt.is_multiple_of(30) {
+                    tracing::warn!(event = "dispatcher.hook_retry", attempt, %error);
+                    super::acts::note(&app, format!("Dispatcher could not save an agent hook. Later hooks are waiting while it retries. {error}"));
+                }
+                // A permanently invalid event must not block every project's hooks forever.
+                if attempt >= 3 && !retryable_store(&error) {
+                    tracing::error!(event = "dispatcher.hook_dropped", attempt, %error);
+                    super::acts::note(&app, format!("Dispatcher could not apply the hook after {attempt} attempts. It skipped this event. {error}"));
+                    return;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis((100_u64 << attempt.min(6)).min(5_000))).await;
+            }
+        }
+    }
+}
+
+fn retryable_store(error: &str) -> bool {
+    ["locked", "busy", "disk I/O error", "unable to open database file", "database or disk is full"]
+        .iter().any(|reason| error.contains(reason))
+}
+
+async fn commit_event(app: &Shared, key: String, ev: std::sync::Arc<Value>, typed: bool) -> Result<bool, String> {
     if ev["event"] == "Tokens" {
-        let Some(models) = super::usage::by_model(&ev["tokens"]) else { return };
-        let session = ev["session"].as_str().filter(|s| !s.is_empty()).map(str::to_string);
         let a = app.clone();
-        let done = store(&app, move |tx| {
-            let Some(r) = runs::in_pane(tx, &key)? else { return Ok(()) };
+        let (applied, counted) = store(app, move |tx| {
+            if ev.get("round_reading").is_some() {
+                return Ok((super::round_usage::record(tx, &key, &ev, ops::now())?, None));
+            }
+            let Some(models) = super::usage::by_model(&ev["tokens"]) else { return Ok((false, None)) };
+            let Some(r) = runs::in_pane(tx, &key)? else { return Ok((false, None)) };
+            if ev["received_run"].as_str().is_some_and(|id| id != r.id) { return Ok((false, None)); }
+            let session = ev["session"].as_str().filter(|s| !s.is_empty());
             let counted = a.dispatcher.counted_in.lock().get(&r.id).cloned();
-            let same = session.as_ref().zip(counted).map(|(s, c)| *s == c);
+            let same = session.zip(counted.as_deref()).map(|(s, c)| s == c);
             let at = ops::now();
             super::usage::heard(tx, &r.id, &r.agent_id, &models, at, same)?;
             crate::supervisor::governor::judge_usage(tx, &r.id, at)?;
-            if let Some(s) = session {
-                a.dispatcher.counted_in.lock().insert(r.id, s);
-            }
-            Ok(())
-        }).await;
-        if let Err(e) = done {
-            tracing::warn!(event = "dispatcher.usage", error = %e);
+            Ok((true, session.map(|s| (r.id, s.to_owned()))))
+        }).await?;
+        if let Some((id, session)) = counted {
+            app.dispatcher.counted_in.lock().insert(id, session);
         }
-        return;
+        return Ok(applied);
     }
-    let typed = ev["event"] == "UserPromptSubmit" && ev["prompt"].as_str().is_some_and(|p| app.dispatcher.was_typed(&key, p));
     let ended = ev["event"] == "SessionEnd" && ev["reason"] != "clear";
     let k = key.clone();
-    let done = store(&app, move |tx| {
+    let done = store(app, move |tx| {
         let Some(mut r) = runs::in_pane(tx, &k)? else { return Ok(None) };
+        if ev["received_run"].as_str().is_some_and(|id| id != r.id) { return Ok(None); }
         let was = r.clone();
         let (moved, active) = apply(tx, &mut r, &ev, typed)?;
         if r != was {
@@ -180,23 +232,12 @@ async fn one_event(app: Shared, key: String, ev: Value) {
         }
         let changed = moved || r.agent_session != was.agent_session;
         Ok(Some((r, changed, active)))
-    }).await;
-    match done {
-        Ok(Some((r, moved, active))) => {
-            if active {
-                app.dispatcher.touched(&key);
-            }
-            if moved {
-                super::told_all(&app, &r);
-            }
-        }
-        Ok(None) => return,
-        Err(e) => tracing::warn!(event = "dispatcher.hook", error = %e),
-    }
-    // an end: the exit code decides, at a walk now (AS-127)
-    if ended {
-        app.dispatcher.soon.notify_one();
-    }
+    }).await?;
+    let Some((r, moved, active)) = done else { return Ok(false) };
+    if active { app.dispatcher.touched(&key); }
+    if moved { super::told_all(app, &r); }
+    if ended { app.dispatcher.soon.notify_one(); }
+    Ok(true)
 }
 
 /// Each item in its turn; one that panics goes to `panicked` and takes no other with it.

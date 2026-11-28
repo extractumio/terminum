@@ -48,7 +48,7 @@ export function scorecardFixture(DATE, LITERAL) {
     scorecard: {
       resolved: { count: 3, watching: 1, recurred: 0, rate: SMALL_RATE },
       decisions: { right: 3, pending: 1, rate: SMALL_RATE }, by_rule: [], delays: [{ level: 2, level_word: "Card", sample: 4, seconds: 600 }], calibration: [],
-      misses: { count: 1, sample: 2, recent: [{ source: "owner_bug", subject: "API-12",
+      misses: { count: 1, sample: 3, timely: 1, suppressed: 1, absent: 0, unverified: 1, recent: [{ source: "owner_bug", subject: "API-12",
         first_evidence_at: DATE, signal_state: "shadow" }] },
       overrides: { count: 0, rate: MISSING_RATE }, refusals: { count: 1, sample: 2 },
       usefulness: { count: 3, rate: SMALL_RATE }, judgment: { tokens: 600, sample: 3, per_resolution: 600 },
@@ -74,6 +74,8 @@ export async function checkScorecard(page, reports, suffix, LITERAL) {
     && await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
   await shot(page, `supervisor-audit-${suffix}`);
   const scorecard = page.locator("#sv-scorecard");
+  check("AC-255 the scorecard distinguishes delivery, suppression and missing proof",
+    await scorecard.getByText("1 timely · 1 suppressed · 0 without prior evidence · 1 with unverified prior evidence", { exact: false }).isVisible());
   await scorecard.getByText("Latest misses").click();
   check("AC-255 AC-256 the scorecard shows sample sizes, uncertainty, missing samples and earlier suppressed evidence",
     (await scorecard.textContent()).includes("95% interval")

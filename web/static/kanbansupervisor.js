@@ -34,6 +34,10 @@ export function supervisorWindow({ getMeta }) {
         : attached.limited_history ? "Scan complete. Less than three weeks of history."
         : "Scan complete."
       : "The Supervisor is off.";
+    if (status.hook_overflow > 0) {
+      const events = status.hook_overflow === 1 ? "hook event" : "hook events";
+      scan.textContent += ` Hook tracking missed data from ${status.hook_overflow} ${events} in the retained history.`;
+    }
     if (!status.enabled && status.holds?.length) {
       const labels = status.holds.map((h) => h.task ? `${h.label} · ${h.task}` : h.label);
       scan.textContent += ` Holds still in effect: ${labels.join(" · ")}.`;

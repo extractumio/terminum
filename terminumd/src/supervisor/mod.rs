@@ -138,7 +138,7 @@ pub(crate) use settings::{Level, level, MOST as SETTINGS_MOST};
 pub(crate) use replay::replay;
 #[cfg(test)]
 pub(crate) use evaluation::evaluate;
-use evaluation::{evaluate_snapshot, measure_detector, collect_findings};
+use evaluation::{EvaluationInputs, evaluate_snapshot, measure_detector, collect_findings};
 use impact::{percentile, percentile_of_others};
 
 pub(crate) fn task_created(tx: &rusqlite::Transaction, author: &str, task: &crate::tasks::ops::Task,
@@ -469,14 +469,6 @@ struct Query<'a, 'conn> {
     detector: &'a Detector,
     window: Window,
     historical: bool,
-}
-
-#[derive(Default)]
-struct EvaluationInputs<'a> {
-    first: Option<i64>,
-    weeks: Option<&'a [scoreboard::Week]>,
-    current_state: bool,
-    observe_thresholds: bool,
 }
 
 impl Evaluation {

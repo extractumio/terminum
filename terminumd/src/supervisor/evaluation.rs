@@ -1,8 +1,18 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
+//! AC-218: detector windows include the completeness of their hook inputs.
 
 use super::*;
 #[cfg(test)]
 use crate::tasks::ops::check_project;
+
+#[derive(Default)]
+pub(super) struct EvaluationInputs<'a> {
+    pub(super) first: Option<i64>,
+    pub(super) weeks: Option<&'a [scoreboard::Week]>,
+    pub(super) hook_gaps: Option<&'a sensors::Gaps>,
+    pub(super) current_state: bool,
+    pub(super) observe_thresholds: bool,
+}
 
 /// Validate every rule before opening the store. The catalog owns all SQL and all identifiers used in SQL.
 #[cfg(test)]
@@ -25,11 +35,16 @@ pub(crate) fn evaluate(store: &Store, project: &str, at: i64, detectors: &[Detec
 pub(super) fn evaluate_snapshot(
     tx: &Transaction, project: &str, at: i64, detectors: &[Detector], inputs: EvaluationInputs<'_>,
 ) -> Result<Evaluation, String> {
-    let EvaluationInputs { first, weeks, current_state, observe_thresholds } = inputs;
+    let EvaluationInputs { first, weeks, current_state, observe_thresholds, hook_gaps } = inputs;
     let mut checked = Vec::new();
     for detector in detectors {
         let window = Window::of(at, detector.window_days);
-        let mut data = measure_detector(tx, project, detector, window, current_state)?;
+        // The live snapshot precedes this pass's counter write. Its losses already affect its verdict.
+        let mut data = if detector.mode != Mode::Off && hook_gaps.is_some_and(|gaps| gaps.affects(detector.rule, window)) {
+            Measurements::missing(sensors::INCOMPLETE)
+        } else {
+            measure_detector(tx, project, detector, window, current_state)?
+        };
         let mut thresholds = BTreeMap::new();
         if observe_thresholds {
             for (metric, limit) in data.threshold_hint.into_iter().chain(data.readings.iter()

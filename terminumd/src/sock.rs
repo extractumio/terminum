@@ -119,6 +119,10 @@ async fn hook(State(app): State<Shared>, Json(ev): Json<Value>) -> Response {
 pub async fn hook_on(app: Shared, server: Option<std::sync::Arc<crate::tmux::server::Server>>, ev: Value) -> Response {
     let pane = ev["pane"].as_str().unwrap_or("");
     let Some(server) = server else { return StatusCode::NO_CONTENT.into_response() };
+    if ev["event"] == "Tokens" && ev["round_reading"].is_string() {
+        crate::dispatcher::queue(&app, server.key(pane), ev);
+        return StatusCode::NO_CONTENT.into_response();
+    }
     if server.session_of(pane).is_none() {
         return StatusCode::NO_CONTENT.into_response();  // a pane it does not list: nothing is made up
     }
@@ -134,7 +138,7 @@ pub async fn hook_on(app: Shared, server: Option<std::sync::Arc<crate::tmux::ser
         return StatusCode::NO_CONTENT.into_response();
     }
     if ev["event"] == "Tokens" {
-        app.dispatcher.heard_tokens(&key, &ev);   // terminum-dispatcher.md AC-129: asked for below
+        crate::dispatcher::heard_tokens(&app, &key, &ev);   // terminum-dispatcher.md AC-129: asked for below
         return StatusCode::NO_CONTENT.into_response();
     }
     if ev["event"] == "Argv" {
@@ -204,7 +208,7 @@ pub async fn hook_on(app: Shared, server: Option<std::sync::Arc<crate::tmux::ser
         (remind, None)
     };
     // a task's session: its hook sums the tokens, after this turn's end has gone (AC-129)
-    let tokens = matches!(ev["event"].as_str(), Some("Stop" | "SessionEnd")) && (app.dispatcher.has_run(&key) || app.task_marks.has_session(&key));
+    let (tokens, round_reading) = app.dispatcher.token_request(&key, &ev, whose, || app.task_marks.has_session(&key));
     // the agent's command line, read by its hook once a session, at its start or a prompt (AC-153)
     let argv = matches!(ev["event"].as_str(), Some("SessionStart" | "UserPromptSubmit")) && whose == crate::tmux::hookstate::Whose::Main
         && app.hooks.wants_argv(&key);
@@ -212,6 +216,7 @@ pub async fn hook_on(app: Shared, server: Option<std::sync::Arc<crate::tmux::ser
         (None, false, false) => StatusCode::NO_CONTENT.into_response(),
         (text, _, _) => {
             let mut answer = json!({"tokens": tokens});
+            if let Some(receipt) = round_reading { answer["round_reading"] = json!(receipt); }
             if argv {
                 answer["argv"] = json!(true);
             }

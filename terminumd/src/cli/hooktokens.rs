@@ -77,7 +77,8 @@ struct CacheCreation {
 fn claude(reader: impl BufRead, until: Instant) -> Option<Sum> {
     let mut by_message: HashMap<String, (String, Totals)> = HashMap::new();
     each_line(reader, until, &["\"usage\""], |at, line: ClaudeLine| {
-        if let Some(u) = line.message.usage {
+        if let Some(u) = line.message.usage.filter(|u| [u.input_tokens, u.output_tokens,
+            u.cache_read_input_tokens, u.cache_creation_input_tokens].iter().any(Option::is_some)) {
             let n = |v: Option<u64>| v.map_or(0, |n| n.min(i64::MAX as u64) as i64);
             let cache_write = n(u.cache_creation_input_tokens);
             let hour = n(u.cache_creation.and_then(|c| c.ephemeral_1h_input_tokens)).min(cache_write);
@@ -108,11 +109,11 @@ struct CodexRead {
 /// account's `rate_limits`; a `turn_context` names the turn's model. The last of each: the whole is priced at the last model.
 fn codex(reader: impl BufRead, until: Instant) -> Option<CodexRead> {
     let mut read = CodexRead::default();
-    each_line(reader, until, &[r#""type":"token_count""#, r#""type":"turn_context""#], |_, mut v: Value| {
+    each_line(reader, until, &[r#""token_count""#, r#""turn_context""#], |_, mut v: Value| {
         if v["type"] == "turn_context" && let Some(m) = v["payload"]["model"].as_str() {
             read.model = m.chars().take(MOST_MODEL).collect();
         } else if v["payload"]["type"] == "token_count" {
-            if let Some(u) = v.pointer("/payload/info/total_token_usage") {
+            if let Some(u) = v.pointer("/payload/info/total_token_usage").filter(|u| u["input_tokens"].is_u64() && u["output_tokens"].is_u64()) {
                 let cached = int(u, "cached_input_tokens");
                 read.total = Some(Totals { input: (int(u, "input_tokens") - cached).max(0), output: int(u, "output_tokens"), cache_read: cached, ..Totals::default() });
             }
@@ -137,53 +138,78 @@ fn opened(path: &str) -> Option<(std::fs::File, u64)> {
     Some((std::fs::File::open(path).ok()?, meta.len()))
 }
 
-/// Codex's account's windows as its log's tail last says them (AC-168): numbers alone; None when the tail has none.
-pub fn codex_windows(input: &Value) -> Option<Vec<Window>> {
-    let (mut file, len) = opened(transcript(input)?)?;
-    file.seek(SeekFrom::Start(len.saturating_sub(CODEX_TAIL))).ok()?;
-    subscriptions::of_codex(&codex(std::io::BufReader::new(&file), Instant::now() + MOST_TIME)?.limits)
+/// The last total, model and subscription windows, under one read deadline. Only a requested
+/// usage reading searches before the tail for a missing total or model.
+fn codex_read(mut file: std::fs::File, len: u64, until: Instant, usage: bool) -> Option<CodexRead> {
+    let start = len.saturating_sub(CODEX_TAIL);
+    file.seek(SeekFrom::Start(start)).ok()?;
+    let mut latest = codex(std::io::BufReader::new(&file), until)?;
+    if usage && start > 0 && (latest.total.is_none() || latest.model.is_empty()) {
+        file.seek(SeekFrom::Start(0)).ok()?;
+        if let Some(before) = codex(std::io::BufReader::new((&file).take(start)), until) {
+            latest.total = latest.total.or(before.total);
+            if latest.model.is_empty() { latest.model = before.model; }
+        }
+    }
+    Some(latest)
 }
 
-/// What goes with a turn's end: the whole and each model's numbers, or `null` when they are not known (a new
-/// agent version's format, a file gone, too long a read); nothing when the event names no transcript.
-pub fn of_event(agent: &str, input: &Value) -> Option<Value> {
-    let path = transcript(input)?;
-    let until = Instant::now() + MOST_TIME;
-    let read = || -> Option<Sum> {
-        let (mut file, len) = opened(path)?;
-        if agent == "codex" {
-            // the last total and model: the end of the file holds them, at no cost as a session grows; what it
-            // lacks is looked for before it, the tail's alone when that is past the time
-            let start = len.saturating_sub(CODEX_TAIL);
-            file.seek(SeekFrom::Start(start)).ok()?;
-            let CodexRead { mut total, mut model, .. } = codex(std::io::BufReader::new(&file), until).unwrap_or_default();
-            if start > 0 && (total.is_none() || model.is_empty()) {
-                file.seek(SeekFrom::Start(0)).ok()?;
-                if let Some(r) = codex(std::io::BufReader::new((&file).take(start)), until) {
-                    total = total.or(r.total);
-                    if model.is_empty() {
-                        model = r.model;
-                    }
-                }
-            }
-            return Some(Sum::from([(model, total?)]));
-        }
-        claude(std::io::BufReader::new(file), until)
-    };
-    Some(read().map_or(Value::Null, |s| {
-        let mut v = s.values().fold(Totals::default(), |a, t| a + *t).json();
-        v["models"] = s.iter().map(|(m, t)| {
-            let mut e = t.json();
-            e["model"] = json!((!m.is_empty()).then_some(m));
-            e
-        }).collect();
-        v
-    }))
+fn numbers(s: Sum) -> Value {
+    let mut v = s.values().fold(Totals::default(), |a, t| a + *t).json();
+    v["models"] = s.iter().map(|(m, t)| {
+        let mut e = t.json();
+        e["model"] = json!((!m.is_empty()).then_some(m));
+        e
+    }).collect();
+    v
 }
+
+/// Read at most once per hook. A named transcript without a known count yields null.
+pub(super) fn readings(agent: &str, input: &Value, usage: bool, limits: bool) -> (Option<Value>, Option<Vec<Window>>) {
+    if !usage && !limits { return (None, None); }
+    let Some(path) = transcript(input) else { return (None, None) };
+    let until = Instant::now() + MOST_TIME;
+    let mut windows = None;
+    let sum = opened(path).and_then(|(file, len)| {
+        if agent == "codex" {
+            let read = codex_read(file, len, until, usage)?;
+            if limits { windows = subscriptions::of_codex(&read.limits); }
+            Some(Sum::from([(read.model, read.total?)]))
+        } else {
+            claude(std::io::BufReader::new(file), until)
+        }
+    });
+    (usage.then(|| sum.map_or(Value::Null, numbers)), windows)
+}
+
+#[cfg(test)]
+fn of_event(agent: &str, input: &Value) -> Option<Value> { readings(agent, input, true, false).0 }
+
+#[cfg(test)]
+fn codex_windows(input: &Value) -> Option<Vec<Window>> { readings("codex", input, false, true).1 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ac237_codex_accepts_spaced_jsonl_and_an_unavailable_reading_never_becomes_zero() {
+        let path = written("codex-round-reading", concat!(
+            r#"{"type": "turn_context", "payload": {"model": "gpt-6-sol"}}"#, "\n",
+            r#"{"type": "event_msg", "payload": {"type": "token_count", "info": {"total_token_usage": {"input_tokens": 18, "cached_input_tokens": 3, "output_tokens": 2}}}}"#, "\n",
+            r#"{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":null}}}"#, "\n"));
+        let actual = of_event("codex", &json!({"transcript_path":path})).unwrap();
+        assert_eq!((actual["input"].as_i64(), actual["output"].as_i64(), actual["cache_read"].as_i64()), (Some(15),Some(2),Some(3)));
+        assert_eq!(actual["models"][0]["model"], "gpt-6-sol");
+    }
+
+    #[test]
+    fn ac237_claude_distinguishes_an_unavailable_reading_from_zero() {
+        let unknown = written("round-unknown", r#"{"message":{"usage":{}}}"#);
+        let zero = written("round-zero", r#"{"message":{"usage":{"input_tokens":0,"output_tokens":0}}}"#);
+        assert_eq!(of_event("claude", &json!({"transcript_path":unknown})), Some(Value::Null));
+        assert_eq!(of_event("claude", &json!({"transcript_path":zero})).unwrap()["input"], 0);
+    }
 
     fn written(name: &str, text: &str) -> String {
         let path = crate::testutil::fresh_dir(name).join("t.jsonl");

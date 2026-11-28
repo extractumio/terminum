@@ -225,3 +225,65 @@ async fn ac157_a_taskless_session_is_not_accepted_by_a_task_tool() {
     assert_eq!(f.read().state, Phase::Typed);
     assert!(!f.read().asked);
 }
+
+#[tokio::test]
+async fn ac131_failed_hook_transaction_is_reported_and_retried_before_stop() {
+    retry_prompt(false).await;
+}
+
+#[tokio::test]
+async fn ac131_a_run_closed_during_recovery_does_not_claim_the_hook() {
+    retry_prompt(true).await;
+}
+
+async fn retry_prompt(close: bool) {
+    let f = Fixture::new(&["TODO"]);
+    let (_page, mut messages) = f.app.pages.add(Default::default(), String::new(),
+        crate::page::trace::Recorder::new(f.root.clone())).unwrap();
+    f.app.tasks.with(|tx| tx.execute_batch("CREATE TRIGGER fail_hook BEFORE UPDATE OF state ON runs
+        WHEN new.state = 'working' BEGIN SELECT raise(ABORT,'fixture storage failure'); END").map_err(ops::sql)).unwrap();
+    f.queue("UserPromptSubmit", PROMPT);
+    f.queue("Stop", "");
+    let repair = async {
+        tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            while let Some(msg) = messages.recv().await {
+                if msg.contains("Later hooks are waiting") {
+                    assert_eq!(f.statuses(), ["TODO"], "the task move rolled back with the hook");
+                    f.app.tasks.with(|tx| tx.execute_batch("DROP TRIGGER fail_hook").map_err(ops::sql)).unwrap();
+                    if close {
+                        f.app.tasks.with(|tx| runs::change(tx, &f.run, |r| r.state = Phase::Closed)).unwrap();
+                    }
+                    return;
+                }
+            }
+            panic!("the page closed before Dispatcher reported the failure");
+        }).await.unwrap();
+    };
+    tokio::join!(repair, f.drain());
+    if close {
+        let notifications: Vec<_> = std::iter::from_fn(|| messages.try_recv().ok()).collect();
+        assert!(notifications.iter().any(|m| m.contains("no longer applied to its original run")));
+        assert_eq!(f.statuses(), ["TODO"]);
+        return;
+    }
+    assert_eq!(f.statuses(), ["IN PROGRESS"]);
+    assert!(f.read().turn_ended, "Stop followed the recovered prompt");
+    let moves: i64 = f.app.tasks.with(|tx| tx.query_row("SELECT count(*) FROM events
+        WHERE task = (SELECT id FROM tasks WHERE slug = ?1) AND kind = 'move'
+        AND json_extract(data,'$.to') = 'IN PROGRESS'", [&f.ids[0]], |r| r.get(0)).map_err(ops::sql)).unwrap();
+    assert_eq!(moves, 1);
+}
+
+#[tokio::test]
+async fn ac131_queued_prompts_keep_the_authorship_observed_at_receipt() {
+    let f = Fixture::new(&["DONE"]);
+    f.app.tasks.with(|tx| runs::change(tx, &f.run, |r| {
+        r.state = Phase::Working;
+        r.prompt = None;
+    })).unwrap();
+    f.app.dispatcher.remember_typed(&f.who.key, "automatic request");
+    f.queue("UserPromptSubmit", "automatic request");
+    assert!(!f.app.dispatcher.was_typed(&f.who.key, "automatic request"), "the queue already took the marker");
+    f.drain().await;
+    assert_eq!(f.statuses(), ["DONE"]);
+}

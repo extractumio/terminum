@@ -66,12 +66,23 @@ def main():
         else:
             draw(["  Claude Code", "", RULE, f"\x1b[39m❯ {held.replace(chr(10), ' ')}\x1b[7m \x1b[0m", RULE, background or "  ? for shortcuts"])
 
-    def stop_with_usage(usage):
-        """A turn's end whose transcript reports `usage`, as Claude Code's does."""
+    def usage_hook(usage, event="Stop"):
+        """A runtime's cumulative transcript as observed by its real hook command."""
         path = os.path.join(os.getcwd(), f"transcript-{os.getpid()}.jsonl")
+        if kind == "codex":
+            model = {"type": "turn_context", "payload": {"model": "gpt-6-sol"}}
+            totals = {"input_tokens": usage["input_tokens"], "output_tokens": usage.get("output_tokens", 0),
+                      "cached_input_tokens": usage.get("cache_read_input_tokens", 0)}
+            lines = [model, {"type": "event_msg", "payload": {"type": "token_count", "info": {"total_token_usage": totals}}}]
+        else:
+            lines = [{"type": "assistant", "message": {"id": "m1", "model": "claude-opus-5-5", "usage": usage}}]
         with open(path, "w", encoding="utf8") as f:
-            f.write(json.dumps({"type": "assistant", "message": {"id": "m1", "model": "claude-opus-5-5", "usage": usage}}) + "\n")
-        hook("Stop", last_assistant_message="done", transcript_path=path)
+            for line in lines:
+                f.write(json.dumps(line) + "\n")
+        if event == "Stop":
+            hook(event, last_assistant_message="done", transcript_path=path)
+        else:
+            hook(event, tool_name="get_case_file", transcript_path=path)
 
     def tool(name, arguments):
         rpc = lambda i, m, p=None: json.dumps({"jsonrpc": "2.0", **({} if i is None else {"id": i}), "method": m, **({"params": p} if p else {})})
@@ -266,9 +277,12 @@ def main():
                     typed = "draft during wait"
                     box()
             if opt("--round-log", "") and (case := re.fullmatch(r"Supervisor (?:reflection |design review )?case (case_[a-f0-9]+)\..*", prompt)):
+                tokens = opt("--round-tokens", "")
+                if tokens:
+                    usage_hook({"input_tokens": int(tokens) // 2}, "PreToolUse")
                 investigate(case[1])
-                if tokens := opt("--round-tokens", ""):
-                    stop_with_usage({"input_tokens": int(tokens)})
+                if tokens:
+                    usage_hook({"input_tokens": int(tokens)})
             elif opt("--round-log", "") and (case := re.fullmatch(r"Supervisor incident case (case_[a-f0-9]+)\..*", prompt)):
                 talk(case[1])
                 hook("Stop", last_assistant_message="An incident conversation is open.")
@@ -306,7 +320,7 @@ def main():
             elif "SUBAGENT" in prompt:
                 pass
             elif "TOKENS" in prompt:
-                stop_with_usage({"input_tokens": 1200, "output_tokens": 34, "cache_read_input_tokens": 5})
+                usage_hook({"input_tokens": 1200, "output_tokens": 34, "cache_read_input_tokens": 5})
                 hook("PreToolUse", tool_name="Bash", tool_input={"command": "sleep"})   # then at work: its session stays to be read
             elif "WORKS" in prompt or prompt.startswith("Auto-Dispatcher, which a human turned on"):
                 hook("PreToolUse", tool_name="Bash", tool_input={"command": "sleep"})   # a long tool: no Stop

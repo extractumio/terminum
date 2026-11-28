@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 //! Dispatcher (`docs/specs/terminum-dispatcher.md`): terminum's system user. It starts a task's
 //! session on a human's RUN, watches it by hooks' events and a walk on a fixed beat, moves the task
-//! as the session lives, and closes what it started. All its clocks and facts are in the store.
+//! as the session lives, and closes what it started. AC-131: its clocks and facts are in the store.
 
 #[cfg(test)]
 mod timing_tests;
@@ -27,6 +27,7 @@ mod hooks;
 pub mod plan;
 pub mod pool;
 pub mod usage;
+pub(crate) mod round_usage;
 pub mod usageask;
 mod usageread;
 pub mod procs;
@@ -53,7 +54,7 @@ use crate::tasks::ops;
 use crate::tasks::store::DISPATCHER;
 
 pub use hooks::{good_id, heard, hearing};
-pub(crate) use hooks::taking;
+pub(crate) use hooks::{queue, taking};
 /// A red batch's integration task pressed on its agent (terminum-integration.md AC-194).
 pub(crate) use api::press_integration;
 
@@ -119,6 +120,7 @@ pub struct Dispatcher {
 }
 
 struct LivePane {
+    round_receipt: Option<String>,
     run: String,
     project: String,
 }
@@ -203,7 +205,7 @@ impl Dispatcher {
     }
 
     fn track_pane(&self, key: &str, run: &str, project: &str) {
-        self.panes.lock().insert(key.to_owned(), LivePane { run: run.to_owned(), project: project.to_owned() });
+        self.panes.lock().insert(key.to_owned(), LivePane { run: run.to_owned(), project: project.to_owned(), round_receipt: None });
     }
 
     fn release_pane(&self, key: &str, run: &str) {
@@ -238,8 +240,9 @@ impl Dispatcher {
     /// The runs a walk goes by, and the panes they hold, in one transaction (AC-131).
     pub(crate) fn read_runs(&self, tx: &rusqlite::Transaction) -> Result<Vec<runs::Run>, String> {
         let all = runs::live(tx)?;
+        let mut receipts = round_usage::live_receipts(tx)?;
         *self.panes.lock() = all.iter().filter_map(|r| {
-            r.pane_key.clone().map(|key| (key, LivePane { run: r.id.clone(), project: r.project.clone() }))
+            r.pane_key.clone().map(|key| (key, LivePane { run: r.id.clone(), project: r.project.clone(), round_receipt: receipts.remove(&r.id) }))
         }).collect();
         self.hold_managers(crate::roles::managers(tx, &all)?);
         Ok(all)
@@ -286,17 +289,6 @@ impl Dispatcher {
         }
     }
 
-    /// A hook's four integers, or null when they are not (AC-129); its model goes on to the store only.
-    pub fn heard_tokens(&self, key: &str, ev: &serde_json::Value) {
-        let kept = usage::Totals::of(&ev["tokens"]).map_or(serde_json::Value::Null, |t| t.shown());
-        let known = !kept.is_null();
-        self.watch.lock().entry(key.to_string()).or_default().tokens = Some(kept);
-        // what grew goes to the store, in its turn with the run's other events (AC-129)
-        if known && self.has_run(key) {
-            let _ = self.events.sender.send((key.to_string(), ev.clone()));
-        }
-    }
-
     fn remember_typed(&self, key: &str, text: &str) {
         self.typed.remember(key, text);
     }
@@ -312,6 +304,26 @@ impl Dispatcher {
         self.typed.has(key, prompt, false)
     }
 }
+
+/// A hook's four integers, or null when they are not (AC-129); its model goes on to the store only.
+pub(crate) fn heard_tokens(app: &crate::app::Shared, key: &str, ev: &serde_json::Value) {
+    let kept = usage::Totals::of(&ev["tokens"]).map_or(serde_json::Value::Null, |t| t.shown());
+    let known = !kept.is_null();
+    app.dispatcher.watch.lock().entry(key.to_string()).or_default().tokens = Some(kept);
+    // what grew goes to the store, in its turn with the run's other events (AC-129)
+    if known && let Some(pane) = app.dispatcher.panes.lock().get(key) {
+        let mut event = ev.clone();
+        event["received_run"] = serde_json::json!(pane.run);
+        if let Some(receipt) = &pane.round_receipt {
+            // Older hooks return the end reading without the receipt they were offered.
+            if ev["sub"].is_string() { return; }
+            event["round_reading"] = serde_json::json!(receipt);
+            event["sample_event"] = serde_json::json!("Stop");
+        }
+        queue(app, key.to_owned(), event);
+    }
+}
+
 
 /// What terminum typed into panes and no hook has said yet as a prompt, each known for SECS seconds: (pane, text, when).
 #[derive(Default)]

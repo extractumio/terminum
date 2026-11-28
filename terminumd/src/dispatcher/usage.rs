@@ -119,8 +119,38 @@ pub(crate) fn totals_at(r: &rusqlite::Row, i: usize) -> rusqlite::Result<Totals>
 /// whether the report is of the agent's session the last one counted was (None: not known), and a fall
 /// within one session is an older read come late, which counts nothing (D17).
 pub fn heard(tx: &Transaction, run: &str, agent: &str, now: &Models, at: i64, same: Option<bool>) -> Result<(), String> {
-    let seen: Models = rows(tx, &format!("SELECT model, {TOTALS} FROM run_seen WHERE run = ?1"), [run], |r| Ok((r.get(0)?, totals_at(r, 1)?)))?.into_iter().collect();
-    let sum = |of: &Models| of.values().fold(Totals::default(), |a, t| a + *t);
+    let seen = seen_models(tx, run)?;
+    heard_from(tx, run, agent, now, at, same, seen)
+}
+
+fn seen_models(tx: &Transaction, run: &str) -> Result<Models, String> {
+    Ok(rows(tx, &format!("SELECT model, {TOTALS} FROM run_seen WHERE run = ?1"), [run],
+        |r| Ok((r.get(0)?, totals_at(r, 1)?)))?.into_iter().collect())
+}
+
+fn sum(of: &Models) -> Totals { of.values().fold(Totals::default(), |a, t| a + *t) }
+
+/// A round has one confirmed conversation. Return whether the reading grew; an older one is ignored.
+/// Codex names the current model beside a conversation-wide total, so a model change can attribute
+/// only the newly reported tokens to the new model. Claude reports separate totals per model.
+pub(super) fn heard_round(tx: &Transaction, run: &str, agent: &str, mut now: Models, at: i64, codex: bool) -> Result<Option<bool>, String> {
+    let seen = seen_models(tx, run)?;
+    let (before, after) = (sum(&seen), sum(&now));
+    if fell(before, after) { return Ok(None); }
+    if before == after { return Ok(Some(false)); }
+    if codex && now.len() == 1 {
+        let (model, _) = now.pop_first().expect("one model");
+        now.clone_from(&seen);
+        let assigned = now.entry(model).or_default();
+        *assigned = *assigned + grown(before, after);
+    } else if seen.iter().any(|(model, old)| fell(*old, now.get(model).copied().unwrap_or_default())) {
+        return Ok(None);
+    }
+    heard_from(tx, run, agent, &now, at, Some(true), seen)?;
+    Ok(Some(true))
+}
+
+fn heard_from(tx: &Transaction, run: &str, agent: &str, now: &Models, at: i64, same: Option<bool>, seen: Models) -> Result<(), String> {
     let anew = fell(sum(&seen), sum(now));
     if anew && same == Some(true) {
         return Ok(());

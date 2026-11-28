@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-//! Where `terminum hook` and `terminum mcp` post, on any machine: the local terminumd's private
+//! AC-129: where `terminum hook` and `terminum mcp` post, on any machine: the local terminumd's private
 //! socket first, then every Mac's link in `~/.terminum/run` (a host's `terminum-host`, whose
 //! Macs forward their hook socket there; runlink.rs checks the folder and the sockets).
 
@@ -47,6 +47,25 @@ pub fn post_all(sinks: &[PathBuf], path: &str, body: &Value, budget: Duration) -
         let calls: Vec<_> = sinks.iter().map(|p| s.spawn(move || sockhttp::call(p, "POST", path, Some(body), budget))).collect();
         calls.into_iter().map(|c| c.join().unwrap_or(Err(Down))).collect()
     })
+}
+
+/// The reading goes only to sinks that asked, each with its own round receipt, under one time limit.
+pub(super) fn usage(sinks: &[PathBuf], answers: &[Answer], ev: &Value, tokens: &Value, budget: Duration) {
+    std::thread::scope(|scope| {
+        for (sink, answer) in sinks.iter().zip(answers) {
+            let Ok((200, Some(reply))) = answer else { continue };
+            if reply["tokens"] != true { continue; }
+            scope.spawn(move || {
+                let mut said = serde_json::json!({"event":"Tokens", "socket":ev["socket"], "socket_path":ev["socket_path"],
+                    "pane":ev["pane"], "agent":ev["agent"], "session":ev["session"], "tokens":tokens});
+                if let Some(receipt) = reply["round_reading"].as_str() {
+                    said["round_reading"] = Value::from(receipt);
+                    said["sample_event"] = ev["event"].clone();
+                }
+                let _ = sockhttp::call(sink, "POST", "/hook", Some(&said), budget);
+            });
+        }
+    });
 }
 
 /// An answer that says the sink does not know the pane.

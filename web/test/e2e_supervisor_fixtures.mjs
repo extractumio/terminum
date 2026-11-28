@@ -31,6 +31,6 @@ export const PROBLEM = { id: 42, title: "Repeated failures", state: "confirmed",
   exception: true, breaches: [{ never: "Lose user data.", detector: "arch.migration_edited", fingerprint: "fixture-2" }] };
 export const SPENDING = {
   judgment: { tokens: 16000, held_tokens: 0, limit_tokens: 100000, day_tokens: 6000,
-    day_limit_tokens: 20000, round_limit_tokens: 4000, investigation_left: 14000, routine_left: 0 },
+    missing_rounds: 1, partial_rounds: 2, delayed_rounds: 3, day_limit_tokens: 20000, round_limit_tokens: 4000, investigation_left: 14000, routine_left: 0 },
   fixes: { dollars: 10.25, held_dollars: 8, limit_dollars: 20, estimated_dollars_per_run: 8, unpriced_runs: 1 },
 };

@@ -114,7 +114,7 @@ async function fixture(page, theme) {
       if (method === "PUT") enabled = body.enabled;
       const attachment = enabled ? { limited_history: true, detectors: { [RULE]: { can_run: true, mode: "shadow", unavailable: [],
         observed_thresholds: { failure_count: { min: 2, max: 3 } } } } } : null;
-      return json(route, { enabled, attachment, holds: activeHolds() });
+      return json(route, { enabled, attachment, hook_overflow: enabled ? 3 : 0, holds: activeHolds() });
     }
     if (suffix === "/line") {
       if (method === "PUT") line = { revision: line.revision + 1, settings: body.settings };
@@ -239,6 +239,8 @@ async function settingsTab(page, { calls, refuseSave }, suffix, phone) {
   checkWaitingSave(keep.settings);
   await page.locator("#supervisoron").click();
   await until(() => page.getByText("Scan complete. Less than three weeks of history.").isVisible());
+  check("AC-218 the project reports how many hooks exceeded tracking capacity",
+    await page.getByText("Hook tracking missed data from 3 hook events", { exact: false }).isVisible());
   await openGroup(page, "Detectors and mutes");
   await openGroup(page, RULE);
   const kind = panel.getByLabel("Threshold", { exact: true });
@@ -426,6 +428,8 @@ async function screen(page, suffix, phone) {
   await page.locator("#sv-spending summary").last().click();
   await panel.getByText("Failures stop without a change.").waitFor();
   await page.getByText("16,000 of 100,000 tokens used", { exact: false }).waitFor();
+  check("AC-237 incomplete and delayed usage appear beside the reservation",
+    await page.getByText("1 without a reading · 2 with partial usage", { exact: false }).isVisible());
   await page.getByText("$10.25 of $20.00 used", { exact: false }).waitFor();
   check("AC-213 AC-236 AC-237 AC-238 the screen shows the problem, its checked never rule, protected yardstick and both spends",
     await panel.getByText("Failures stop without a change.").isVisible()

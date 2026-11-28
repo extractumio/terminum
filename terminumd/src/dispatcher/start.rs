@@ -140,13 +140,15 @@ async fn open_pane(app: &Shared, o: Opening<'_>, launch: Launch) -> Result<Strin
     let project = o.project.map_or(crate::tasks::store::DEFAULT_PROJECT, |(id, _)| id);
     app.dispatcher.track_pane(&key, o.run, project);    // its agent's first hooks
     let on = if o.server.is_local() { "on this Mac".to_string() } else { format!("on {}", o.server.name) };
-    let (a, run, tasks, words, k) = (app.clone(), o.run.to_string(), o.tasks.to_vec(), format!("Session started: {} in window {place}, {on}.", o.program), key.clone());
+    let (a, run, tasks, words, k, round_project) = (app.clone(), o.run.to_string(), o.tasks.to_vec(), format!("Session started: {} in window {place}, {on}.", o.program), key.clone(), project.to_owned());
     let linked = store(app, move |tx| {
         for task in &tasks {
             ops::link(tx, DISPATCHER, task, Some(&k), ops::now())?;
         }
         if launch == Launch::Round {
             crate::supervisor::rounds::mark(tx, &run, &k)?;
+            a.dispatcher.track_pane(&k, &run, &round_project);
+            a.dispatcher.remember_round(tx, &k, &run)?;
             runs::change(tx, &run, |r| r.pane_key = Some(k.clone()))?;
             return Ok(false);
         }

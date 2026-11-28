@@ -22,7 +22,7 @@ pub(crate) fn replay(path: &Path, project: &str, as_of: Option<i64>) -> Result<S
         let weeks = scoreboard::read(tx, project, at, first)?;
         let settings = settings::read(tx, project)?.settings;
         let detectors = Rule::ALL.iter().map(|&rule| settings.detector(rule)).collect::<Vec<_>>();
-        let inputs = EvaluationInputs { first: Some(first), weeks: Some(&weeks), current_state, observe_thresholds: false };
+        let inputs = EvaluationInputs { first: Some(first), weeks: Some(&weeks), current_state, ..Default::default() };
         let evaluation = evaluate_snapshot(tx, project, at, &detectors, inputs)?;
         let mut historical = BTreeMap::new();
         let mut firings = Firings::new();
