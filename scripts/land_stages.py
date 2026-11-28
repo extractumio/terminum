@@ -50,28 +50,23 @@ def verify(tree, check=land.checks_of, say=print, env=os.environ):
     say("verify: passed")
 
 
-# what `terminum` says when terminumd does not run (cli/mcp.rs DOWN): the stages then run here, in order
-DOWN = "terminum is not running"
-
-
 def integration_on(tree, task=None, run=None):
     """Whether terminum queues the landings of task `task`'s project (else the calling session's): its
-    integration_status. None when terminum is not running or not installed: the stages run here, in order. Any
-    other answer it cannot read refuses: a landing never pushes from the tree when integration may be on."""
+    integration_status. Only an explicit boolean false permits local stages: an unavailable command or an
+    unreadable answer refuses, since integration may still be on."""
     ask = json.dumps({"id": task} if task else {})
     try:
         done = (run or subprocess.run)([terminum(), "tool", "integration_status", ask], cwd=tree, capture_output=True, text=True, timeout=30)
-    except FileNotFoundError:
-        return None
     except (OSError, subprocess.TimeoutExpired) as e:
         raise Stop(1, f"whether integration is on is not known ({e}): nothing pushed") from e
     said = f"{done.stdout or ''} {done.stderr or ''}"
-    if done.returncode and DOWN in said:
-        return None
     try:
         if done.returncode:
             raise ValueError(said.strip())
-        return bool(json.loads(done.stdout)["on"])
+        on = json.loads(done.stdout)["on"]
+        if type(on) is not bool:
+            raise ValueError("integration_status on must be a boolean")
+        return on
     except (ValueError, KeyError, TypeError) as e:
         raise Stop(1, f"whether integration is on is not known: {e}: nothing pushed; give TASK=<ID> from a session of terminum") from e
 
@@ -131,8 +126,8 @@ def after(primary, run=land.make, env=os.environ, say=print):
             say("after: this build is installed already")
             return
         land.install_mark(primary).write_text(land.head(primary))
-        land.install_now(primary, run=run, say=say)
-        if land.install_mark(primary).exists():
+        installed = land.install_now(primary, run=run, say=say)
+        if land.install_mark(primary).exists() and not installed:
             raise Stop(1, "after: the install did not run: see above")
 
 

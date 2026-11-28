@@ -128,18 +128,24 @@ class Stages(test_land.Repos, unittest.TestCase):
         self.assertEqual(stages.queue(tree, "API-12", "/r.md", on=lambda *_: True, run=run, **QUIET), 1, "the wait's exit: red")
         self.assertEqual(calls[0][1:], ["integration", "queue", "API-12", "--result-file", "/r.md", "--commit", L.head(tree), "--wait"])
 
-    def test_integration_on_reads_terminums_answer_none_when_it_does_not_run_else_refuses(self):  # AC-198
+    def test_integration_on_requires_an_explicit_boolean_answer(self):  # AC-198
         asked = []
         answer = lambda out, code=0, err="": (lambda argv, **_: asked.append(argv) or subprocess.CompletedProcess(argv, code, stdout=out, stderr=err))
         tree = self.tree("one")
         self.assertTrue(stages.integration_on(tree, "API-12", run=answer('{"on": true, "queue": []}')))
         self.assertEqual(asked[-1][-1], '{"id": "API-12"}', "the task's own project, not the caller's")
         self.assertFalse(stages.integration_on(tree, run=answer('{"on": false}')))
-        self.assertIsNone(stages.integration_on(tree, run=answer("", 1, "terminum is not running; go on without it.")))
-        for bad in [answer("not json"), answer("", 1, "terminum tool runs in a session of terminum, or with a token in TERMINUM_TOKEN")]:
+        for bad in [answer("not json"), answer("[]"), answer('{"on": null}'), answer('{"on": "false"}'),
+                    answer('{"on": 0}'), answer("", 1, "terminum is not running; go on without it."),
+                    answer("", 1, "terminum tool runs in a session of terminum, or with a token in TERMINUM_TOKEN")]:
             with self.assertRaises(stages.Stop) as stop:
                 stages.integration_on(tree, run=bad)
             self.assertIn("nothing pushed", str(stop.exception), "never pushed from the tree when it may be on")
+
+        for error in (FileNotFoundError("terminum"), OSError("unavailable"), subprocess.TimeoutExpired("terminum", 30)):
+            with self.subTest(error=type(error).__name__), self.assertRaises(stages.Stop) as stop:
+                stages.integration_on(tree, run=mock.Mock(side_effect=error))
+            self.assertIn("nothing pushed", str(stop.exception))
 
     def test_publish_and_after_by_hand_are_refused_while_integration_is_on_but_not_from_terminumd(self):  # AC-198
         tree = self.ready()
