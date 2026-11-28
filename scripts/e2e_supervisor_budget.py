@@ -128,7 +128,13 @@ def main():
             status, _ = unix_request(t.sock, "POST", "/hook", {"agent": "claude", "session": "budget-session", "event": event,
                                                               "socket": SOCKET, "pane": pane, "tool_call_hash": "abcdef1234567890"})
             assert status in (200, 204), status
-        loop = wait_for(lambda: signal("drift.loop"), bool, 30, every=0.2)
+        # The counts reach the store at a collector commit and drift.loop reads them at the next evaluation: two beats
+        # on a quiet machine, more under load. Wait for each fact in turn, then read the signal once.
+        counted = wait_for(lambda: db("SELECT max(at) FROM supervisor_hook_counts WHERE project = ? AND event = 'same_call'",
+                                      [project])[0][0], bool, 120, every=0.2)
+        wait_for(lambda: db("SELECT last_evaluation FROM project_supervisor WHERE project = ?", [project])[0][0],
+                 lambda at: at is not None and at > counted, 120, every=0.2)
+        loop = signal("drift.loop")
         check("AC-237 a new deterministic signal is still collected", loop is not None and loop[3] >= exhausted_at, loop)
 
         report, out, rc = critical_report(t, SOCKET, pane)
