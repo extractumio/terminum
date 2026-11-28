@@ -74,8 +74,15 @@ export function detectors(edit, draft, defaults) {
   });
   const unavailable = el("div", "sv-stack");
   unavailable.id = "supervisorunavailable";
+  const hours = [["level2_hours", "P0 waiting to level 2, hours"], ["level3_hours", "Then to level 3, further hours"]]
+    .map(([key, label]) => {
+      const input = number(draft.p0_waiting[key], { min: 1, max: 720, step: 1 });
+      input.required = true;
+      return edit.field(label, input, (v, out) => { out.p0_waiting[key] = v; }, (field) => field.valueAsNumber);
+    });
   return section("Detectors and mutes", hint("Shadow records findings for review. Live applies the detector’s response rules."),
-    ...rows, unavailable);
+    hint("A P0 task waiting in TODO is raised to level 2 after these hours, and to level 3 after the further hours."),
+    grid(...hours), ...rows, unavailable);
 }
 
 export function detectorStatus(root, scan) {

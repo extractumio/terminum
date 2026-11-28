@@ -197,6 +197,8 @@ pub(crate) struct Detector {
     pub scores: Scores,
     /// The charter's never line the owner tied to this detector (AC-213); only a checkable one has it.
     pub never: Option<String>,
+    /// The project's hours to a waiting P0 task's levels 2 and 3 (AC-213), read by `p0_waiting`.
+    pub p0_hours: waiting::Hours,
 }
 
 impl Detector {
@@ -207,7 +209,8 @@ impl Detector {
     fn for_rule(rule: Rule) -> Self {
         let threshold = rule.defaults();
         let window_days = if rule == Rule::FailedWithoutReason { 7 } else { 28 };
-        Self { rule, mode: Mode::Off, window_days, threshold, allocation: BTreeMap::new(), scores: rule.scores(), never: None }
+        Self { rule, mode: Mode::Off, window_days, threshold, allocation: BTreeMap::new(), scores: rule.scores(), never: None,
+            p0_hours: waiting::Hours::default() }
     }
 
     /// Initial attachment can set its mode in the pack. Enabling an additional rule always starts here.

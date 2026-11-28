@@ -552,6 +552,10 @@ verifies at least two-thirds of three or more past firings. A verified charter b
 that wait. A detector enabled after attach starts in shadow. Turning a live rule off
 retires its live-at-attach eligibility.
 
+In **Detectors and mutes**, **P0 waiting to level 2, hours** and **Then to level 3, further
+hours** set when a P0 task waiting in TODO reaches levels 2 and 3: 24 and 24 by default,
+whole hours from 1 to 720.
+
 An enabled project checks store changes every ten seconds. It keeps queue waits, available
 subscription readings and active plan ETAs every 15 minutes. Hook counts keep 30 days of
 numeric totals per session. Turning the Supervisor off stops collection and active
