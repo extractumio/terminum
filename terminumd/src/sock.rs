@@ -101,6 +101,7 @@ pub fn routes(app: Shared) -> Router {
         .route("/tmux/{action}", post(tmux_action))
         .route("/restore", post(restore))
         .route("/hook", post(hook))
+        .route("/integration/verify-review", post(crate::supervisor::verify_review::run))
         .route("/agent", post(crate::agentapi::agent))
         .route("/tokens", post(crate::roles::tokens::route))
         .route("/folders", post(folders))
@@ -159,6 +160,9 @@ pub async fn hook_on(app: Shared, server: Option<std::sync::Arc<crate::tmux::ser
     let Some((changed, whose)) = app.hooks.apply_event(&key, &ev, std::time::Instant::now()) else {
         return StatusCode::NO_CONTENT.into_response();
     };
+    if whose != crate::tmux::hookstate::Whose::Stale {
+        crate::supervisor::runtime::hook(&app, &key, &ev);
+    }
     if changed {
         server.list_changed();
     }

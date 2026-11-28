@@ -19,6 +19,9 @@ install commands: [README](../README.md). Exact behavior and limits: the specs
   decoded where it cannot play them).
 - MIDI plays with the bundled General MIDI SoundFont, or yours: `~/.terminum/soundfont.sf2` or
   `midi.soundfont` in settings.json.
+- Open folder (the header's folder-and-magnifier button): type a full path, `~/…` or a path
+  relative to the shown folder, Return: the tree shows it instead of the session's folder, also
+  after a `cd`, until Back (the arrow beside it).
 - Esc in View returns to the terminal; Esc in the tree hides it and keeps the keys there (Enter,
   Esc, ↓, Enter… walks the files).
 - Wide window: docked beside the terminal, open or closed per session, width by dragging its
@@ -100,6 +103,19 @@ in any terminal shows the same sessions.
 
 ## The page
 
+### Keyboard shortcuts
+
+- **A window's buttons**: in a dialog, a task's window, + Session's box or a report in the Inbox,
+  press ⌘⇧ and a button's underlined letter (Ctrl+Shift on Linux and Windows), also while you type
+  in one of its fields. Run is ⌘⇧↩ (Ctrl+Shift+Enter), Cancel is Esc, and ⌘↩ in a text field keeps
+  it (Save, Send). Example: + Session's Discard is ⌘⇧D, Start ⌘⇧S.
+- **The letters**: one rule gives them, so the same label keeps its letter. Only A B D F G H L O S
+  Y are used: the other letters belong to the browser (⌘⇧T, ⌘⇧N, reload), its developer tools, the
+  system or text editing (⌘⇧Z redo). A button with none of these letters has no key.
+- **The list**: ⌘/ (Ctrl+/), Settings → Keyboard shortcuts… on the session page, or the keyboard
+  button at the top of the board. It shows the open window's keys and the page's.
+- With no window open, every key goes where it went: the terminal gets them all.
+
 ### Session list
 
 | Thing | What you can do |
@@ -109,7 +125,7 @@ in any terminal shows the same sessions.
 | A row's menu (right click; touch: rest a finger, lift) | Clone, Add to Project, Mark as Unread or Read, Diagnostics…, Split Below, Right, Left, moves, Move to Session, Close. |
 | Diagnostics… | What terminumd and tmux see of the pane, for a bug report. It holds the pane's folder, host and title: check before sharing. |
 | A tmux session's group | Header buttons: copy, import, [+], ⋯. Menu: New Window, moves, Close Group. |
-| A project | A named, colored group of sessions, the same on every browser; [+] opens a window in its folder. Menu: New Window, Rename, moves, Delete Project (its sessions and tasks go to Default), Close Project (closes its sessions, keeps it); both ask. |
+| A project | A named, colored group of sessions, the same on every browser; [+] opens a window in its folder, the board key its tasks on the board. Menu: New Window, Rename, moves, Delete Project (its sessions and tasks go to Default), Close Project (closes its sessions, keeps it); both ask. |
 | Under the list | New session, Bookmarks / Reminders, Add host, Attach tmux sessions. |
 | The header's ⋯ | Settings. |
 | Tip of the day | At the list's foot on a computer: Next, × (until tomorrow), Turn off. Settings brings it back. |
@@ -153,6 +169,7 @@ settings.json (browsers that did not choose).
 | Option or ⌘ with ↑/↓ | Page up and down |
 | ⌘Z, ⌘⇧Z | The program's undo (Claude Code, zsh, bash, fish) and redo (fish) |
 | ⌘X; Backspace, Delete | Cut or delete the text selected in a coding agent's input |
+| Ctrl+Shift+V, Ctrl+Shift+C | Paste clipboard text and copy the terminal selection. On by default on Linux and Windows. Turn off the shortcut pair in Settings to send both keys to the program. |
 
 **On a phone**
 
@@ -247,7 +264,9 @@ PROGRESS, WAIT FOR HUMAN, FAILED or DONE.
   pool's and Routines' rails fold their section to one strip that keeps its +; each section's +
   tile follows its last card.
 - **+ Session** on an agent's card opens a box under the pool: type a prompt, paste or add files,
-  drop task cards to name their IDs; Start opens that agent's session and types the prompt once.
+  drop task cards to name their IDs; Start folds the box, opens that agent's session and types the
+  prompt once; the board stays, a line under the pool links the new session; a failure opens the
+  box again with the draft and the reason.
   The list head's + Session starts one in the project in view, with nothing typed.
 - **New task**: + New task in TODO (drop or paste files in), a file dropped on the board, a
   session's menu, a terminal's selection (New task from selection), Convert to task on a bookmark.
@@ -260,8 +279,10 @@ PROGRESS, WAIT FOR HUMAN, FAILED or DONE.
 - **Layout**: the task, its subtasks (+, Add existing, Make it a subtask, ×), then comments and
   history as a conversation, the comment field last. What waits for you (a question, a result, a
   failure) comes first.
-- **Keys**: Save keeps your comment; Run starts the agent with it; Run from scratch is on the
-  Status line.
+- **Keys**: Save keeps your comment. When Run continues a task, it sends your saved comments since
+  the previous Run, followed by the comment in the field, and the window closes: to answer a task
+  waiting for you, write the answer and press ⌘⇧↩. Archive also closes the window. Run from
+  scratch is on the Status line.
 - **Comment notices** reach the open session's agent through its hooks. The next prompt or tool
   call carries the task ID and who wrote the comment. The agent reads the comment in `get_task`.
   With older hooks, the notice waits for a tool call. Restart Claude Code or Codex to load updated
@@ -298,13 +319,17 @@ A task moves only by running.
 - **Memory**: a session over the project's limits is warned, then ended (4 and 8 GiB unless set:
   `dispatcher` in settings.json, or the project's Memory limits tab).
 - **A question** comes with `ask_human` (why you are needed, the recommended answers, the whole
-  issue): the task waits in WAIT FOR HUMAN and its session closes. Answer in a comment and press
-  Run: the same conversation goes on (on another agent of its kind, if dropped there).
+  issue). The task waits in WAIT FOR HUMAN and its session closes. Press an option in the task
+  window to save that answer, or write a comment in your own words. Press Run to resume the same
+  conversation with the saved answer and any comments.
+- **A report** for you to read (a review, an audit, an answer) goes to the **Inbox** by
+  `create_report`, and the task is DONE as any; a schedule's result becomes one by itself. See
+  "The Inbox" below.
 - **A wait for another task** comes with `wait_for_task` (a prerequisite whose change it needs;
   work that only overlaps another task's just integrates): the task joins that task's Blocked by,
   waits in TODO ("waits for TERM-9") and its session closes; once TERM-9 is DONE Dispatcher goes on
-  with it in the same conversation, no one asked. Only a task it waited for that ends FAILED or
-  archived comes to you.
+  with it in the same conversation, no one asked. Only a task it waited for that ends FAILED,
+  archived or deleted comes to you.
 - **The result** comes in fixed sections (Outcome, Done, Checked, Not done, Needs a human, New
   tasks, Tasks changed, Issues and discoveries, Further recommendations), in the project's
   "Language of agents' writing on the board" (empty: English), also used for its tasks and
@@ -368,8 +393,9 @@ Routines, the board's word for them, are a strip over the columns; its + opens o
   three runs are shown.
 - **A firing** makes a task S_TERM-8 (S_ and the project's next ID), IN PROGRESS, never in TODO, in
   the project's folder, and runs it on
-  the schedule's agent; its result has Outcome, Summary, Details and For the human, or it asks you
-  with `ask_human`. Its card says SCH-1.
+  the schedule's agent; its result has Outcome, Summary, Details and For the human, its task goes
+  to DONE and the result waits unread in your Inbox as a report (every one stays), or it asks you
+  with `ask_human`. Its card says SCH-1, its last report and how many are unread.
 - **No run**: a firing while a task of it still runs is skipped (counted on the card); one while
   a task of it waits for room replaces that wait, unless you ran that task yourself; one missed while the Mac slept is not run on wake; one that cannot start (no folder, no hooks,
   agent gone) fails its task and says why, and the next firing tries again.
@@ -380,6 +406,40 @@ Routines, the board's word for them, are a strip over the columns; its + opens o
 - You and a project's manager make schedules; a worker cannot.
 - `/scheduled/` (Scheduled beside History): every firing, newest first, with the prompt that went
   in and the result that came out, or why nothing ran.
+
+### The Inbox
+
+Reports, what agents, routines and the Supervisor give you to read, stand in the **Inbox** at the
+top of the board's session list and its phone's sheet (the session page has none): unread in bold,
+critical in red and first, the count of unread in its head. Each row says its type (ok, attention,
+failed, incident, digest, report) and who sent it ("From Routine Nightly deps · Opus"). WAIT FOR HUMAN keeps only what needs your answer.
+
+- **Read**: press a report; its pane covers the agents, routines and columns
+  (`/kanban/?report=R_TERM-7`, a link to share). Its body reads as the Files viewer shows a
+  document: code highlighted, Mermaid diagrams drawn, an HTML report in a frame without scripts.
+  Open 2 seconds, it is read. × or Esc gives the columns back.
+- **Keys** on a row: ↑ ↓, Enter opens, U marks read or unread, Backspace or Delete deletes. A
+  right click (a long press on a phone) and the row's buttons do the same, and Copy link, Open
+  source task, Open in new tab.
+- **Delete** hides it at once with Undo; the clock button in the Inbox's head shows the deleted
+  ones, restorable for 30 days, then they go with their files.
+- **Alerts**: none, but for a critical report: a red line as a waiting task's, until you read it
+  or close the line. With the project's Supervisor on, a critical report opens (or joins) its
+  task's incident instead, which alerts once and links it; reading the report acknowledges the
+  incident, and acknowledging the incident reads its reports (a snooze leaves them unread). A
+  report alerts once: unread again later, it raises nothing. A Supervisor incident's own report
+  alerts through the incident alone.
+- **Reply** under a report made in a task's run: Send (⌘Enter) goes on in that task's
+  conversation as Run with your words does; "Opus is answering" until its agent answers below the
+  report (it is unread again) or in a new report that follows it. A report of a session terminum
+  did not start, a digest or an incident's says where to answer instead (an incident: its Talk).
+- **Links**: a session's row wears an envelope with its unread reports, which opens the newest on
+  the board; a report's ID in a comment opens it.
+- **Find** on the board finds reports too; the Inbox follows the board's project.
+- Agents report by `create_report` (title, summary, a Markdown body or an HTML document, files by `attach_report_file`,
+  comments by `append_to_report`); a worker only on its own task, at most 10 an hour; a manager or
+  the Supervisor also changes or deletes reports of its project. A report's ID, R_TERM-7, is in
+  the project's count of task IDs.
 
 ### Integration
 
@@ -414,6 +474,26 @@ budget and prompt. The whole design: `docs/specs/terminum-integration.md`.
   --role manager|worker --project <project> [--days N]` (in a terminal outside terminum) prints it
   once; `terminum tokens` lists them; `terminum tokens remove <name>` ends one.
 - Roles guide agents; they are no wall against a program of yours ([SECURITY.md](../SECURITY.md)).
+
+### Onboard a project
+
+Type **onboard my project** in a Claude Code session of the project (terminum's plugin carries the
+`terminum-onboard` skill once `terminum hooks install` ran). The agent reads the folder's rules,
+docs, build files and git history, asks you once (Auto-Dispatcher, a weekly limit, which routines,
+the Supervisor's level), then fills only what is missing (pool agents, routines, agents at once, an empty Supervisor
+charter) and ends with what it set and the presses left to you. It changes the ID letters, language,
+task template or memory limits only when you ask.
+
+- **A folder in no project yet**: it asks you for one press, the session's row menu › Add to
+  Project › New project…; the session is then the project's manager.
+- **Yours alone, with their values in its summary**: the Supervisor's Enabled, Level and tiers
+  (Supervisor tab), Auto-Dispatcher (Auto-Dispatch tab), integration, the folder.
+- **The charter** is written only while the Supervisor is off and its charter is empty or still the
+  agent's draft; the Supervisor tab marks the draft until your Save. Otherwise the agent shows its
+  draft in the chat instead.
+- **Its tools** (a manager's): `get_project_setup` (the setup and what it lacks),
+  `update_project_setup` (ID letters, language, template, agents at once, memory limits),
+  `set_supervisor_charter`.
 
 ### Subscription limits on the board
 
@@ -452,6 +532,392 @@ reading for every agent of its kind. Its window says when each resets.
   Alone, `terminum statusline` prints "5h 34% · week 21%". It sends terminumd only percents, window
   lengths and reset times, only from a pane terminum lists; with an API key, Bedrock or Vertex
   nothing is sent.
+
+### Project Supervisor
+
+On Kanban, select a project, open its settings and choose **Supervisor**. Each project starts
+with the Supervisor off. To use a starter, open **Project template**, choose **Open-source tool**,
+**Commercial app**, **Prototype** or **Internal tool**, and press **Fill settings draft**.
+Review the never list, priorities, indicator targets, T2 and T3 paths, and standard probes before
+you press **Save**. The template fills those fields and grants no command authority.
+Use **Preview last month** in **Surface map** to see where the draft would have called for review.
+You can also start with the default settings and leave the template unused.
+
+Turn on the switch to scan the project's retained history. Use **Refresh scan** to see which
+detectors can run and their calibrated thresholds. With fewer than
+three weeks of history, ordinary findings have impact at most 1. The default Operator level
+uses code alone until you choose tier agents from the project's pool. Live-at-attach rules
+can raise findings immediately. Their holds stay in shadow until seven days pass or replay
+verifies at least two-thirds of three or more past firings. A verified charter breach bypasses
+that wait. A detector enabled after attach starts in shadow. Turning a live rule off
+retires its live-at-attach eligibility.
+
+In **Detectors and mutes**, **P0 waiting to Card level, hours** and **Then to Incident level,
+further hours** set when a P0 task waiting in TODO reaches Card and Incident level: 24 and 24 by default,
+whole hours from 1 to 720.
+
+An enabled project checks store changes every ten seconds. It keeps queue waits, available
+subscription readings and active plan ETAs every 15 minutes. Hook counts keep 30 days of
+numeric totals per session. Turning the Supervisor off stops collection and active
+investigations. It keeps settings, signals, measurements and earlier cases.
+
+In **Import and export**, export saved preferences or choose a file and import it. Import
+replaces the project preferences and keeps the switch, level, tier agents and approved probe
+commands. In **Probe commands**, use **View command** to read the full text and then
+**Approve command** to set it. Commands from an import start unset.
+
+Enabled projects sample the selected **Git** and **Gate records** sources and approved commands
+once a day, independently of the collector heartbeat. The Supervisor screen shows each
+source's last status. Git reads local stable `vMAJOR.MINOR.PATCH` tags and local history.
+Gate records come from `terminum-gate.jsonl` in Git's common directory. The optional
+**Git source file line limit** flags supported source files at 90% of the limit.
+The dependency check reads Cargo and npm lockfile additions. Git and gate probes
+use local data and do not fetch.
+
+Approved commands run in the project's local directory with `/usr/bin:/bin`,
+a fixed locale and timezone, and an empty inherited environment. They run as the
+server user. Approve only commands that read data and produce the same result for
+the same inputs. Each metric line must be a JSON object containing `metric`, finite
+numeric `value`, `unit`, and Unix seconds `at`. Optional `dims` maps short
+identifiers to short identifiers. A command has five seconds and 64 KiB of
+standard output. A failed, timed-out, or invalid probe raises a signal. A missing
+source leaves its measurements unavailable and other sources continue.
+
+The scoreboard reports the median task-days from creation to the earliest containing
+release, and lists known unreleased commits separately. Task-to-release time requires
+integration. Release cadence and quick patches only need tags. Cadence is normalized to
+an average calendar month. A patch counts as quick when it follows the preceding
+release within 72 hours. The time to DONE remains available from task history.
+The owner-work indicator uses the recorded question kind and reports older unclassified
+answers. The weekly review shows priced usage by task type and untyped spend, with
+target shares when configured.
+
+In **Indicators**, use **Add outside indicator** to name an approved custom probe,
+its metric and its guard metric. Set the favorable direction for each metric. The
+scoreboard shows the probe name and compares the latest reading from each week across
+two four-week periods. Supply undimensioned readings in consistent units. A worsening
+guard cancels a favorable move. The seven project indicators determine the project verdict.
+The `product.external` detector raises a signal when an indicator's metric moves against
+its favorable direction by more than its weekly noise; its threshold adds a margin in the
+metric's own units.
+
+In **Feedback probes**, add the ID of an approved custom probe and an HTTPS reference
+base ending in a slash, such as `https://example.com/issues/`. The command can emit
+feedback objects alongside metric lines. Each feedback object has `outside_text` and
+a positive integer `reference`, for example `{"outside_text":"The navigation is confusing.","reference":42}`.
+The local reader uses English keywords to assign a theme, kind and sentiment from fixed
+lists. Each new reference creates one **Review outside feedback** task with those fields,
+the report count and a link formed from the base and reference. The server discards the
+prose. Move the task between columns to let Auto-Dispatcher consider it under its usual
+settings. A probe may emit up to 32 feedback objects per sample and may output nothing
+when there is no new feedback.
+To watch replies, the same probe can also emit one list of the items still unanswered,
+by reference and the Unix seconds each was opened, for example
+`{"unanswered":[{"reference":42,"since":1800000000}]}`. It carries no prose and holds up
+to 256 distinct references. The `product.feedback_age` detector raises a signal for each
+item older than its threshold, three days (4320 minutes) by default, at the probe's latest
+sample. A probe that omits the list leaves the detector unavailable and says so.
+
+In **Surface map**, enter repository-relative patterns, one per line. Use `*` and `?`
+within a path segment and `**` as a whole segment for any depth. T1 identifies internal
+boundaries. T2 contracts require an architecture review. A change or deletion on a T3 path
+requires the T3 review. A new file on the same path requires a T2 review. Add a small set
+of T3 phrases to flag likely designs when their tasks are created. **Preview last month**
+counts the tasks the draft map would have gated by tier. It shows coverage for completed
+tasks and identifies how many lack a recorded diff. The map starts empty.
+
+For a design-first task, use `request_design_review` with the task ID, design note,
+migration, rollback plan and affected paths, one exact path per line for T3. Put those path patterns in **Paths with an existing review process**
+so the Supervisor can use the existing reviewers. Each reviewer uses `record_design_review`
+from their own session to leave their verdict, compatibility statement and rejected advice
+with reasons. T3 uses separate architecture and independent reviewers and an owner sign-off
+on its decision card. The review record follows the task's commits within the reviewed paths. Open a new task
+if the design expands to other gated paths.
+The strong and independent tier agents share the judgment budget for this work.
+If the round cannot start within the budget or finish within 20 minutes, its linked
+blocker is released and a decision card asks the owner to arrange the review.
+
+To enforce the saved map during integration, put `terminum integration verify-review`
+in the project's **Verify** command. Put it first and join further commands with `&&`.
+A missing record returns the task with the evidence and the review it needs. Record the
+review and queue the same commit again. The check is opt-in, uses the task's submitted
+diff, and works when the project runs at Advisor or Operator.
+
+**Open Supervisor screen** shows the project's incidents, scoreboard and signals. Open an indicator
+for its guard, any target you saved and missing inputs. The measured verdict uses the comparison and
+guard. Open a signal for the measurement, threshold and
+evidence. Use **More signals** to see older results and **Refresh** to see the
+latest investigation status. Press **Investigate now** on a signal or incident to
+request a round. Its configured tier agent needs a kept slot and room in the judgment budget.
+
+A signal's response level, from 0 to 3, shows as its word: Record, Digest, Card or Incident
+level, the number in a tooltip. Level 3 is the strongest response, the reverse of task severities,
+where P0 is the highest (`docs/specs/terminum-supervisor.md` §9).
+
+Code also requests a round for a Card or Incident level signal, or a Digest level signal that fired
+in at least three of the past eight weeks and has no checked cause. One round can
+run per fingerprint. Unchanged repeats keep the earlier verdict. When several rounds
+wait for the same slot, higher-impact signals go first.
+
+Investigations use the small, medium and strong tiers for Digest, Card and Incident levels.
+A manually requested Record level investigation uses the small tier. Choose local
+pool agents in **Tiers**. Dispatcher starts the agent with fixed words and a case
+ID and ends it when it returns a checked finding or reaches 15 minutes. Card
+or Incident level signals below 0.7 confidence use the time to verify the signal. Critical
+alerts go out independently. Task and comment excerpts appear in capped data fields
+in the retained case. So does the project's matching memory: keep `project-memory/INDEX.md`
+in the project's folder, really there rather than linked from elsewhere, a table whose rows
+each name a Markdown file of that folder in backticks (which rows match: terminum-supervisor.md §9, "Caller, rounds and case files").
+Terminum verifies evidence references and reruns each named query before keeping the finding.
+
+The **Problem register** ranks measured problems and keeps their signal fingerprints,
+hypothesis, disproof, fix options and linked tasks. Open a problem to see the detectors'
+thresholds and observation windows. **Accept as is** records your reason. A materially
+new evidence row can reopen the problem, while a repeated reading alone leaves the ruling
+in force. Advisor and Operator rounds can use `open_problem`, `update_problem` and
+`propose_rank`. Their proposed fixes wait for a checked finding. The round can lengthen
+the observation window.
+
+**Budgets** shows judgment tokens and fix dollars used and reserved in the last seven
+days. Judgment has a daily and per-round token cap and reserves room for Card and Incident
+level investigations. Token caps act when the agent reports usage. When a limit stops new
+rounds, code keeps collecting signals and sending incident notices.
+
+The Supervisor funds the highest-impact eligible fixes first. At the fixes ceiling,
+one card in **WAIT FOR HUMAN** lists the unfunded problems. Choose to let them wait
+a week, or raise the ceiling in the project's Supervisor settings. A verified charter
+breach is exempt. Tasks made by the Supervisor carry a **Supervisor** mark. The project's
+**Auto-Dispatch** tab controls whether they can start automatically. The picker's
+round can read advisory ranks. A human or manager action on a task takes precedence
+over Supervisor actions for 24 hours.
+
+#### Decisions, weekly review and incident conversations
+
+**Decisions and reports** on the Supervisor screen links the decision cards.
+A checked, high-impact choice that belongs to you opens a **WAIT FOR HUMAN** card
+with options, evidence and the cost of waiting. Lesser decisions appear together
+in the weekly review. A drift notice, known problem or hold adds one comment per
+signal and task. The linked agent hears about the comment at its next usual hook.
+
+Choose a **Strong** tier agent on an enabled project to create its weekly review
+in **Routines**. Its initial cadence is Monday at 09:00 in the scheduler's local
+time, with a 30-minute budget. Edit its timing and prompt in Routines. The usual
+report task, the Supervisor screen and your Inbox show the review with decisions first;
+in the Inbox it is one report, each waiting decision a link to its task, where you answer.
+**Useful**, **Not useful** and **Wrong** record a verdict on a sampled item. A
+review offers at most ten items, and leaving one alone records no verdict.
+
+The **Exception digest** on the same screen appears only with new live or
+digest-mode signals at Digest level or higher. It shows at most five measurements,
+actions and links, followed by the collector's last successful run. It needs no
+review agent.
+
+Open an incident's **Thread** to comment on its task. A live investigation hears
+the ordinary comment notice and can answer in the thread. Use **Talk** on the
+incident to open the strong-tier agent on this Mac with the incident's case ID.
+**Record owner ruling** saves your reason in the thread and suppresses the same
+evidence. New evidence can raise the signal again.
+
+A critical live signal, failed collector or failed delivery command opens an incident. Related signals within
+15 minutes share a timeline. Signed-in pages show a red bar until you acknowledge it.
+The project board pins the incident at the top of **WAIT FOR HUMAN**, and **Timeline**
+opens the Supervisor screen with its updates and all-clear. An acknowledged incident
+stays on the board while its cause is active.
+
+Use **Acknowledge** on the Mac or phone to dismiss the bar across signed-in pages.
+**Snooze 1 hour** defers repeats while keeping the bar visible. The timeline records
+when you pressed each key. The local bar, card and timeline are available without an
+agent or a delivery command.
+
+In **Critical line**, enter an absolute path to each executable, in delivery order. Use
+a wrapper script if your notifier needs arguments. **Save line settings** authorizes the
+commands to send fixed incident messages. These settings apply to every project and
+stay out of project imports and exports. Leave the channel list empty for local alerts
+only. The optional HTTPS origin adds a link to the signed-in timeline. Messages carry
+incident IDs, levels and counts. Task and comment text stay in Terminum.
+
+The first channel sends new incidents and updates. When several notices are ready across projects,
+the line sends the highest level first. The default ladder repeats after 10
+and 30 minutes, then hourly. The second channel joins at the second repeat. A failed
+command falls through to the next one. Quiet hours use the server’s clock and default
+to 23:00–08:00. A charter-never breach or reversibility 3 bypasses quiet hours. An
+acknowledgment stops repeats. Snooze delays them for an hour.
+
+A waiting notice always carries its incident's latest state, so quiet hours end without a
+burst: an incident that opened and cleared overnight sends only its all-clear. Turning a
+project's Supervisor off drops its waiting notices; turning it back on sends each open,
+unacknowledged incident once. The line sends at most one message a second.
+
+Use **Send a test alert** to run a saved channel and check that the message arrives.
+The command receives the fixed message on standard input. For the weekly health check,
+it receives a fixed health-check message and the argument `--check`. In that mode the
+wrapper should check its route silently and exit nonzero on failure. Line failures
+appear on the incident bar and Supervisor screen while working channels and local
+incident actions remain available.
+
+#### Holds
+
+An Operator can stop a marked run, pause Auto-Dispatcher, pause integration, or take
+a waiting task out of integration. Each hold needs current evidence at Card or
+Incident level. A detector in shadow records its proposal without changing the board.
+
+The Supervisor screen shows each active hold, its signal, its reason and its undo.
+Use **RUN** for a stopped run and the corresponding switch or queue key for the
+other holds. Requeuing from the Supervisor screen restores the commit and result
+the task originally queued. Use the board's **Integrate** key when you intend to
+queue the task's current work.
+
+Pausing Auto-Dispatcher or integration opens an incident with **Keep the hold**
+and **Release the hold**. Turning Supervisor off leaves work held and lists the
+remaining holds in its project tab. The owner can release them while it is off.
+
+#### Rule outcomes and breakers
+
+**Rule outcomes** shows one count per decision for each detector and response.
+Terminum checks the store after a day, a week and four weeks. Pending decisions
+are waiting for their first check. Undecided means the store lacks conclusive
+evidence. A rule with mostly undecided outcomes raises `self.unjudged`.
+
+Use **This is wrong** beside the relevant alert on the incident's Supervisor
+screen. That verdict opens the alert's rule breaker immediately. Two distinct
+wrong decisions also open a breaker. One example is releasing two holds whose
+targets have stayed the same. The rule's later holds, task runs and alerts
+become decisions for you. Other rules keep acting at the project's selected level.
+
+To restore a rule, change its measurement settings while it is Live and unmuted.
+Open the breaker in **Rule outcomes**, choose **Review rule change** and compare
+the replay before and after. **Restore autonomy** applies to that review and
+settings revision. Rules without measurable retained replay stay paused.
+
+#### Independent reflections and pool agent scorecards
+
+Choose an **Independent** agent in the project's Supervisor settings. It must
+differ from the other tier agents. Choose a different model family if the pool
+has one available. A breaker, owner override, recurrence after a fix, recorded
+miss, wrong alert, budget overrun, decision-rate excursion or closed Incident level
+incident can request an independent round. A reflection waits for its slot and
+judgment budget. The case keeps the timeline built from the store. **Independent
+reflections** shows the latest requests, results and suggested changes. The
+proposals identify the settings revision they reviewed. Open **Case timeline** to
+read the numbered events cited by a proposal.
+
+**Pool agent scorecards** shows the last seven days for each agent by task
+type. Failed and returned runs use runs, questions use distinct tasks and
+cost uses priced runs. An interval and a sample size accompany each measured
+rate. Fewer than 30 observations are advisory only. Return data is unavailable
+when integration is off. A routing proposal opens a decision card for the owner.
+
+#### Supervisor scorecard and quarterly audit
+
+**Supervisor scorecard** shows decisions judged right, fixes that stayed resolved,
+misses, detection times, overrides, refused findings and owner usefulness verdicts.
+Each number shows its sample. Shares include a 95% interval and samples below 30
+are advisory. A fix counts as stayed resolved once the signals meet the recorded
+yardsticks for the full window after landing. The score tracks recurrence after
+landing. Its incomplete count includes fixes whose observation window is still open.
+
+Terminum checks owner-created P0 and P1 Bugs, verified red target commits and
+Incident level collector watchdog pages for earlier signals on the same subject. For a
+Bug, a parent or follow-up link can identify the existing work it reports. The
+scorecard keeps the earliest supported time and whether the evidence was already
+raised, in shadow or muted. Observations start when this version receives those
+events. Judgment and fix spend, cards, delivered pages and verdict activity cover
+the last seven days. Verdict minutes count time with the review open in a visible
+tab, up to 30 minutes per press, and show how many presses supplied timing.
+
+The chosen **Independent** agent runs the project's **Supervisor quarterly audit**
+on the first day of January, April, July and October at 09:00 in the Mac’s local time.
+It uses routine judgment budget. Its tools page through the project’s ledger,
+signals, misses and register. The signed-in Supervisor screen and the scheduled
+task show the auditor’s full report. The screen shows the reason when a firing
+cannot run. The audit sees no earlier reflections. Only the owner can change
+the Supervisor's authority and protected settings. Code owns the score formulas,
+existing yardsticks and historical ledger.
+
+#### Supervisor configuration changes
+
+Advisor, Operator and independent reflection rounds can call
+`replay_config_change` with a detector ID and a typed action. Pass the returned
+replay unchanged to `propose_config_change`. Terminum reruns it before accepting
+the change. The replay shows firing counts over retained inputs and identifies
+the weeks with labels. It gives a quality count only for exact replay matches
+with a retained judgment. Snapshot and counter history starts with the first
+retained sample for that detector.
+
+Open **Decisions and reports → Configuration changes** for the diff, replay and
+**Revert change**. A tune within its band applies automatically unless the replay
+shows a drop over 30% since the detector's prior or pre-tuning configuration.
+Changes to protected detectors, open breakers and larger coverage reductions wait
+for an owner decision. Use **Apply this change** on a detector decision card.
+Paging, charter and surface-map requests direct you to the owner controls. A newly
+enabled detector records shadow findings. Once three distinct findings from the
+trial have verdicts in the weekly review, use **Promote to Live**. An engine
+request goes to the **Engine project** selected in Supervisor settings. With no
+destination selected, the request waits for the owner in the source project.
+
+A mute records its owner, reason and expiration. Temporary shadow and weekly-only
+delivery use the same mute rules. A full pause, protected detector, mute over
+two weeks or recent renewal needs owner approval. When the mute expires, the
+detector resumes its prior delivery. A live detector with no acted-on findings
+for eight weeks appears only in the weekly review. After sixteen weeks the review
+proposes removal for the owner to consider. T3 and Incident level detectors are exempt.
+
+#### Signed-in Supervisor API
+
+All routes below are relative to `/api/task-projects/<ID>/supervisor`.
+`POST /config/<change>/revert` and `POST /config/<change>/promote` take an empty
+JSON object and use the versioned change shown on the Supervisor screen.
+
+| Request | Result |
+|---|---|
+| GET the base route | Switch, last successful beat in Unix seconds, collector health, the attachment report when ready and active holds. |
+| PUT the base route with `{"enabled": true}` or `{"enabled": false}` | Change the switch for this project and return its active holds. |
+| GET or PUT `/line` | Read or save the owner-wide channel paths, HTTPS origin, quiet hours and ladder. PUT requires the current revision. |
+| POST `/line/test` | Run the saved channel at the zero-based `channel` index with the current `revision`. |
+| GET `/screen` | Active holds, decisions, review, digest, scoreboard indicators, pool agent scorecards, the Supervisor scorecard, quarterly audit status and report, the newest reflections and the newest page of signals. |
+| GET `/holds` | This project's active holds and their undo keys. |
+| POST `/holds/<id>/release` | Use the held action's undo as the owner. |
+| POST `/verdicts` | Record `verdict` on the `fingerprint` in the weekly review `task`. Values are `useful`, `not_useful` and `wrong`. The optional `active_seconds` records visible review time up to 1800 seconds. |
+| GET `/signals?after=<cursor>` | The next page of signals for the same project. |
+| POST `/signals/<fingerprint>/investigate` | Request an investigation of the signal. |
+| GET `/rounds/<case>` | Read the retained case, result or failure, refusal count and end time. |
+| GET `/incidents?before=<cursor>` | The project's newest incidents, or the next page with a cursor. |
+| GET `/settings` | Pack, revision, project templates, detector defaults and confirmed and unset probe IDs. |
+| PUT `/settings` with `revision` and `settings` | Replace the project's preferences. Use the latest revision. |
+| POST `/export` with `{}` | Download a versioned JSON text file. Select `include_commands` and `include_secrets` independently. |
+| POST `/import` with `revision` and the text `file` | Copy preferences and stage proposed probe commands as unset. Keep the destination switch, level, tier agents and approved commands. The owner-wide critical line stays outside the file. |
+| POST `/probe-candidates/<probe>` with `command` | Stage a new probe command for approval. |
+| POST `/probe-candidates/<probe>/preview` with `{}` | Read the full proposed command and obtain its approval value. |
+| POST `/probe-candidates/<probe>/confirm` with `approval` | Set that command after a separate owner confirmation. Restaging or reimporting invalidates old approvals. |
+| DELETE `/probe-candidates/<probe>` or `/probe-commands/<probe>` | Discard a proposed command or clear a confirmed one. |
+
+Use `POST /api/supervisor/incidents/<id>/investigate` to request an
+investigation of the incident's highest-level retained signal.
+`POST /api/supervisor/incidents/<id>/talk` opens its conversation.
+`POST /api/supervisor/incidents/<id>/ruling` records the owner's `reason`.
+To act on a hold on that incident, send `action` as `keep_hold` or `release_hold`
+and its numeric `hold` ID to `POST /api/supervisor/incidents/<id>`.
+
+The export selection for secrets controls redaction of recognized secret formats in free text.
+When commands are selected without secrets, a command that would need redaction is omitted.
+Review the file before sharing it. The attachment report gives the configured threshold
+and, for measured inputs, the range of effective thresholds per metric.
+
+### Supervisor replay
+
+Run `terminum supervisor replay --project <ID>` to inspect a project's retained history.
+Use the project ID (`default` for the default project). The command shows ranked findings,
+the evidence and weekly amounts behind them, historical firings at weekly cutoffs, unavailable detector inputs, and the seven
+improvement indicators with their guards.
+Its last section measures the Supervisor's judgment only in weeks with labels: judged
+decisions, hold verdicts, report verdicts, miss checks and confirmed fixes. It says
+"insufficient labels" where there are none; historical firings alone are not a quality measure.
+
+Replay anchors the report to the newest retained observation for that project. Use
+`--at <unix-seconds>` to choose an earlier UTC cutoff. Historical results omit checks
+that depend on present-day slots, links or priorities. Replay opens the tasks store
+read-only, even before the Supervisor is enabled, and starts no agent. The report contains
+private project data.
 
 ## History and dashboard
 

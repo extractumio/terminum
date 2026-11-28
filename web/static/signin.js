@@ -74,8 +74,11 @@ export function onRefused(fn) { refused = fn; }
  *  request's, which a restart may have dropped meanwhile): [answer, that proof]. */
 async function signed(input, init) {
   const mine = proving(), p = await mine;
-  if (p.state === "unknown") refused(true);
-  if (p.state !== "ok") throw new TypeError(p.state === "unknown" ? "Signed out: sign in again" : p.state === "down" ? "terminum's server is not running" : "terminum's server could not prove itself");
+  if (p.state === "unknown") {
+    refused(true);
+    throw Object.assign(new TypeError("Signed out: sign in again"), { status: 401 });
+  }
+  if (p.state !== "ok") throw new TypeError(p.state === "down" ? "terminum's server is not running" : "terminum's server could not prove itself");
   const headers = new Headers(init.headers ?? (input instanceof Request ? input.headers : undefined));
   if (p.cred) headers.set("X-TM-Session", p.cred);
   try { return [await reached(() => realFetch(input, { ...init, headers })), mine]; }

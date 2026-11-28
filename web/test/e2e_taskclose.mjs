@@ -165,7 +165,7 @@ export async function webTaskClose(browser, name) {
       await page.mouse.move(2, 2);
       await page.mouse.up();
       check("AC-133 releasing outside Save cancels the click and applies the pending footer",
-        await until(async () => await page.locator('#taskbox .actions button:text-is("Give up")').count() === 1, 1000)
+        await until(async () => await windowKey(page, "#taskbox", "Give up").count() === 1, 1000)
         && await page.locator('#taskbox .actions button:text-is("Run")').count() === 1 && await opened(page) && posts.length === from && await draft(page) === "Not sent");
       const keys = await page.$$eval("#taskacts button, #taskbox .barkeys button", (all) => all.map((b) => ({ word: b.textContent, left: Math.round(b.getBoundingClientRect().left), top: Math.round(b.getBoundingClientRect().top), color: getComputedStyle(b).color })));
       const giveUp = keys.find((k) => k.word === "Give up"), save = keys.find((k) => k.word === "Save");

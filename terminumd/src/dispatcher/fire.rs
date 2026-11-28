@@ -40,6 +40,10 @@ impl Initiator {
 /// What a schedule's agent is told: who set the schedule, who started this run, and the schedule's own words
 /// as its task holds them (AC-162, AC-182). `again`: a RUN of a task the schedule made after its first run.
 pub fn prompt(s: &Schedule, task: &str, title: &str, body: &str, again: bool, by: Initiator) -> String {
+    if s.supervisor_audit {
+        return format!("Task {task}: Supervisor quarterly audit.\n\n{}\n\n{}",
+            crate::supervisor::audit::DIRECTIONS, budget_words(s.budget_seconds));
+    }
     let words = s.words();
     let cadence = words.chars().next().map_or(String::new(), |c| c.to_lowercase().chain(words.chars().skip(1)).collect());
     let set_by = if s.by_manager { boss(true) } else { "a human" };
@@ -56,8 +60,11 @@ pub fn prompt(s: &Schedule, task: &str, title: &str, body: &str, again: bool, by
         parts.push(body.to_string());
     }
     parts.push(budget_words(s.budget_seconds));
-    let form = crate::tasks::closeout::short_form();
-    parts.push(format!("This is a scheduled run: its result is read later on the board. When it is done, call {FINISH} with the result in this form, each on its own line:{form}"));
+    let form = if s.supervisor_review {
+        parts.push(crate::supervisor::review::DIRECTIONS.into());
+        crate::supervisor::review::FORM
+    } else { &crate::tasks::closeout::SCHEDULED };
+    parts.push(format!("This is a scheduled run: its result waits on the board for a human to read. When it is done, call {FINISH} with the result {}", crate::tasks::closeout::in_form(form)));
     parts.push(ASK.to_string());
     parts.join("\n\n")
 }
@@ -107,6 +114,12 @@ fn decide(tx: &rusqlite::Transaction, s: &Schedule, now: i64, closed: bool) -> R
     if !closed && let Some(r) = own_idle(tx, s)? {
         return Ok(Next::Close(r.id));
     }
+    if s.supervisor_review && let Err(why) = crate::supervisor::review::can_run_schedule(tx, s, now) {
+        if !s.supervisor_audit && why == crate::supervisor::governor::JUDGMENT_NOTICE {
+            crate::supervisor::review::budget_card(tx, &s.project, now)?;
+        }
+        return skip(tx, why);
+    }
     advance(tx)?;
     // a start that fails at each firing leaves one card, the last: the one before it never ran
     if let Some((old, _)) = schedules::never_started(tx, s)? {
@@ -124,7 +137,7 @@ fn decide(tx: &rusqlite::Transaction, s: &Schedule, now: i64, closed: bool) -> R
 pub(super) fn own_idle(tx: &rusqlite::Transaction, s: &Schedule) -> Result<Option<runs::Run>, String> {
     let Some(a) = agents::in_project(tx, &s.agent, &s.project)? else { return Ok(None) };   // its press says why it cannot start
     let slots = pool::Slots::read(tx)?;
-    let slot = s.active().then_some(pool::Slot::Schedule);
+    let slot = if s.supervisor_review { Some(pool::Slot::Supervisor) } else { s.active().then_some(pool::Slot::Schedule) };
     if slots.check_in(tx, &a, &s.project, slot, None)?.is_none() {
         return Ok(None);
     }
@@ -183,6 +196,7 @@ pub async fn now(app: &Shared, id: &str, who: &str, manager: Option<&str>) -> Re
                 return Ok(Err((r.id, s.key)));
             }
             let now = ops::now();
+            if s.supervisor_review { crate::supervisor::review::can_run_schedule(tx, &s, now)?; }
             let (task, fire, place) = made(tx, &s, (now, 0), &format!("{by} ran schedule {} now.", s.key), Some(&requester), now)?;
             Ok(Ok((s, task, fire, place)))
         }).await?;

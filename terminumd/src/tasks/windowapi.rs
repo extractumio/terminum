@@ -21,10 +21,19 @@ pub(super) async fn window(State(app): State<Shared>, Path(id): Path<String>) ->
         let from = super::schedules::of_task(tx, &t.key)?.map(|s| json!({"key": s.key, "title": s.title}));
         let runs_on = super::auto::agent_of(tx, &t.key)?;
         let lists = super::attrs::lists_of(tx, &t.key)?;
-        Ok((ops::text_of(tx, &id)?, ops::history(tx, &id)?, files::of_task(tx, &id)?, (held, waits, from, runs_on, lists), agent, kids, t))
+        let active_question = super::choices::asked(tx, &t)?;
+        let reports = crate::reports::inbox::of_task(tx, &t.key)?;
+        Ok((ops::text_of(tx, &id)?, ops::history(tx, &id)?, files::of_task(tx, &id)?, (held, waits, from, runs_on, lists), agent, kids, (t, reports, active_question)))
     }).await;
-    answer(done.map(|(body, history, attached, (held, waits, from, runs_on, lists), agent, kids, t)| {
+    answer(done.map(|(body, history, attached, (held, waits, from, runs_on, lists), agent, kids, (t, reports, active_question))| {
         let mut v = card(&app, &t);
+        v["reports"] = json!(reports);                // its reports, each opening in the Inbox's pane (terminum-reports.md AC-273)
+        if let Some((question, options)) = active_question {
+            v["asked"] = json!(question);         // what its keys answer (terminum-dispatcher.md AC-285)
+            if options {
+                v["active_question"] = json!(question);
+            }
+        }
         v["lists"] = lists;
         v["children"] = json!(kids);
         v["text_rev"] = json!(text_rev(&body));

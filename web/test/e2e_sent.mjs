@@ -5,12 +5,9 @@
 // fuchsia button stand, its count filled, until it is pressed, its pane shows it as Markdown with Resolve; the
 // dialog makes a reminder; the session list's strip is fuchsia for a session with one.
 
-import fs from "node:fs";
-import path from "node:path";
 import { check, runningIn } from "./check.mjs";
-import { drawn, group, item, line, openPage, pause, SIZES, pressFab, pressFoot } from "./fake.mjs";
+import { drawn, group, item, line, openPage, pause, SIZES, pressFab, pressFoot, serveRenderers } from "./fake.mjs";
 
-const DIST = path.join(import.meta.dirname, "../../ui/dist");   // the renderers, as terminumd serves them at /fb/
 const SID = "tmux:local:terminum:%1";
 const API = "/Users/alex/work/api";
 const LAYOUT = [group("main", [item(SID, "api", { shell: true, sub: ["zsh", "~/work/api"], dir: API }), item("tmux:local:terminum:%2", "docs", { index: "2", dir: "/Users/alex/work/docs" }),
@@ -29,10 +26,7 @@ export async function webSent(browser, name) {
       if (m.t === "sentmarks") say({ t: "sentmarks", sid: SID, items: [{ n: 0, text: "gone from here", prompt: true }, { n: 0, text: "out 1", prompt: true }], ends: [{ n: 2, text: "alex@mac api % git status" }] });
     } });
     const { page, sent } = f;
-    await page.route("**/fb/**", (route) => {
-      const file = path.join(DIST, path.normalize(new URL(route.request().url()).pathname.slice(4)));
-      return file.startsWith(DIST) && fs.existsSync(file) ? route.fulfill({ contentType: "text/javascript", body: fs.readFileSync(file) }) : route.fulfill({ status: 404, body: "" });
-    });
+    await serveRenderers(page);
     await drawn(page);
     await pause(page, 300);
 

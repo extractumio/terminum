@@ -85,11 +85,14 @@ export async function openPage(browser, { device = WIDE, secret = null, stored =
     // a request with a credential of another boot is refused, as terminumd does (401)
     const sign = req.headers()["x-tm-session"];
     if (sign && !knows(sign)) return route.fulfill({ status: 401, contentType: "application/json", body: JSON.stringify({ error: "bad_session" }) });
+    if (p === "/api/supervisor/incidents") {
+      return route.fulfill({ contentType: "application/json", body: "[]" });
+    }
     if (p === "/custom.css") return route.fulfill({ contentType: "text/css", body: typeof css === "function" ? css() : css });
     if (p.startsWith("/fb/")) return route.fulfill({ status: 404, body: "" });
     // the tasks made in the session shown (terminum-kanban.md AC-150): none here
     if (p === "/api/tasks" && u.searchParams.has("made_in")) return route.fulfill({ contentType: "application/json", body: JSON.stringify({ tasks: [] }) });
-    const f = path.join(STATIC, p === "/" || p === "/sessions/" ? "index.html" : path.normalize(p));   // the session page's address, as terminumd serves it
+    const f = path.join(STATIC, p === "/" || p === "/sessions/" ? "index.html" : p === "/supervisor/" ? "supervisor.html" : path.normalize(p));   // the session page's address, as terminumd serves it
     if (!f.startsWith(STATIC) || !fs.existsSync(f)) return route.fulfill({ status: 404, body: "" });
     let body = fs.readFileSync(f);
     if (f.endsWith(".html")) body = body.toString().replace("__BUILD__", "test");   // the build it names: no page reloads for another
@@ -116,19 +119,21 @@ export async function openPage(browser, { device = WIDE, secret = null, stored =
     if (settings) say({ t: "settings", ...settings });
     say({ t: "layout", groups: layout });
   });
+  // Browser fixtures have no incident feed unless the test supplies one.
+  await page.routeWebSocket(`${ORIGIN.replace("http", "ws")}/api/supervisor/incidents/watch`, () => {});
   await page.goto(ORIGIN + url);
   return { page, context, sent, requests, sockets, errors, credential: () => credentialOf(secret, boot), restart: () => { boot = crypto.randomBytes(32).toString("hex"); }, say: (m) => say(m), close: () => context.close() };
 }
 
 /** The board at /kanban/ against this fake (terminum-kanban.md): its page and its reads, `meta()` the projects and agents,
- *  `tasks(status)` a column's cards, `counts` every column's. */
-export async function fakeBoard(page, { meta, tasks, counts, schedules = [] }) {
+ *  `tasks(status)` a column's cards, `counts` every column's, `subscriptions()` the readings their answer carries. */
+export async function fakeBoard(page, { meta, tasks, counts, schedules = [], subscriptions = () => undefined }) {
   const json = (r, data) => r.fulfill({ contentType: "application/json", body: JSON.stringify(data) });
   await page.route(`${ORIGIN}/kanban/**`, (r) => r.fulfill({ contentType: "text/html", body: fs.readFileSync(path.join(STATIC, "kanban.html"), "utf8").replace("__BUILD__", "test") }));
   await page.route("**/api/tasks/meta", (r) => json(r, meta()));
   await page.route("**/api/schedules", (r) => json(r, { schedules }));
   await page.route("**/api/integration/**", (r) => json(r, { batches: [], projects: [] }));
-  await page.route("**/api/tasks?*", (r) => json(r, { tasks: tasks(new URL(r.request().url()).searchParams.get("status")), counts, slots: { agents: {}, full: [], full_projects: [] } }));
+  await page.route("**/api/tasks?*", (r) => json(r, { tasks: tasks(new URL(r.request().url()).searchParams.get("status")), counts, slots: { agents: {}, full: [], full_projects: [] }, subscriptions: subscriptions() }));
 }
 
 /** Presses a floating button; on a phone a folded one once ⟨…⟩ unfolds the column (fold.js, AC-18). */
@@ -170,6 +175,12 @@ export async function foldFoot(page) {
 }
 
 /** Waits until the page drew the shown pane's screen. */
+/** Serves ui/dist's renderers at /fb/, as terminumd does (the page's own route answers 404 without it). */
+export const serveRenderers = (page) => page.route("**/fb/**", (route) => {
+  const dist = path.join(import.meta.dirname, "../../ui/dist");
+  const file = path.join(dist, path.normalize(new URL(route.request().url()).pathname.slice(4)));
+  return file.startsWith(dist) && fs.existsSync(file) ? route.fulfill({ contentType: file.endsWith(".css") ? "text/css" : "text/javascript", body: fs.readFileSync(file) }) : route.fulfill({ status: 404, body: "" });
+});
 export const drawn = (page) => page.waitForFunction(() => document.querySelectorAll("#screen .ln").length > 0, null, { timeout: 10000 });
 export const pause = (page, ms = 150) => page.waitForTimeout(ms);
 /** What the page puts on the clipboard from now on, in `window.copied`: by the clipboard API or

@@ -4,6 +4,8 @@
 //! in a new window, with fixed words and its open tasks' IDs; once an hour per server at most, so a server its own
 //! work ends is not started again and again.
 
+use std::sync::Arc;
+
 use rusqlite::OptionalExtension;
 
 use super::api::Press;
@@ -47,6 +49,13 @@ fn meta_key(r: &Run) -> String {
 
 /// Run `r`, cut off by its server's end and back as `identity`, resumes, or is FAILED with why it does not.
 pub(super) async fn after_restart(app: &Shared, r: Run, identity: String) {
+    // A refused resume releases its old run's slot before the next recovery checks this pool.
+    let turn = {
+        let mut projects = app.dispatcher.restart_recovery.lock();
+        projects.retain(|_, turn| Arc::strong_count(turn) > 1);
+        projects.entry(r.project.clone()).or_default().clone()
+    };
+    let mut turn = Some(turn.lock_owned().await);
     let (run, now) = (r.clone(), ops::now());
     let ready = store(app, move |tx| {
         let key = meta_key(&run);
@@ -83,13 +92,19 @@ pub(super) async fn after_restart(app: &Shared, r: Run, identity: String) {
             // who started it and how stay its own (AC-183): the server's end was no one's press
             let press = Press::resumed(how, &by);
             // no room is no queue: no human agreed to wait (AC-169); the limit's words say why
-            let missed = match super::goes_on::resume(app, r.clone(), &tasks, words(&ids), press).await {
+            let missed = match super::goes_on::resume_with_slot(app, &r, &tasks, words(&ids).into(), press, || drop(turn.take())).await {
                 Ok(v) => v["full"]["words"].as_str().map(str::to_string),
                 Err(why) => Some(why),
             };
             let Some(why) = missed else { return super::told_all(app, &r) };   // its resume closed the old run
             let (run, words) = (r.clone(), not_resumed(&why));
-            let _ = store(app, move |tx| fail(tx, &run, &words)).await;
+            let _ = store(app, move |tx| {
+                let current = runs::by_id(tx, &run.id)?;
+                if current.is_over() {
+                    return Ok(());
+                }
+                fail(tx, &current, &words)
+            }).await;
         }
         Ok(None) => {}
         Err(e) => return tracing::warn!(event = "dispatcher.resume", run = %r.id, error = %e),

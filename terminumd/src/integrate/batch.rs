@@ -64,7 +64,7 @@ fn under(repo: &Path, a: &str, b: &str) -> Result<bool, String> {
 
 /// A merge commit of `tree` on `parent` and `commit`, named by the task's ID alone (§9: no title reaches history).
 fn commit_tree(repo: &Path, tree: &str, parent: &str, commit: &str, id: &str) -> Result<String, String> {
-    let o = git(repo, &["commit-tree", tree, "-p", parent, "-p", commit, "-m", &format!("Integrate {id}")])?;
+    let o = git(repo, &["commit-tree", tree, "-p", parent, "-p", commit, "-m", &format!("{MERGE_SUBJECT}{id}")])?;
     if !o.status.success() {
         return Err(format!("git commit-tree: {}", String::from_utf8_lossy(&o.stderr).trim()));
     }
@@ -131,3 +131,6 @@ pub fn choose(repo: &Path, base: &str, queue: &[Queued], size: usize) -> Result<
 #[cfg(test)]
 #[path = "batch_tests.rs"]
 mod tests;
+
+/// The subject of a queue-owned merge, with the task's public ID appended.
+pub(crate) const MERGE_SUBJECT: &str = "Integrate ";

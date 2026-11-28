@@ -3,7 +3,8 @@
 """A coding agent as Dispatcher sees it, for web/test/e2e_livedispatcher.mjs: the measured input box of
 Claude Code or Codex (terminum-dispatcher.md AS-125), hooks by `terminum hook`, finish_task by `terminum
 mcp`; no model. What it does with a prompt is in the prompt's words:
-FINISHES, WORKS, SUBAGENT, TOKENS, ASKS, QUESTIONS (ask_human, then its turn ends), LIMIT, DIES, CLEAN, SILENT, STUCK (of a main
+FINISHES, WORKS, SUBAGENT (can accompany a wait), TOKENS, ASKS, QUESTIONS (ask_human),
+DEPENDENCY (wait_for_task on --wait-on), LIMIT, DIES, CLEAN, SILENT, STUCK (of a main
 task with its subtasks, terminum-dispatcher.md AC-185: the last subtask and the main task fail, the rest is finished); Auto-Dispatcher's
 round (terminum-dispatcher.md AC-170) starts its first candidates, one for each free slot, and finishes; a task a round started
 is worked on; any other stops at once. `--stubborn`: SIGTERM is ignored. `--start trust`: a question before its box; `--start
@@ -11,7 +12,8 @@ quits`: ends after receiving its first paste, without echoing or taking it; `--s
 none`: never a box; `--start fast`: exits at once with 7; `--start slow`: its first paste shows 3 s late, as a busy
 machine's does, and a prompt pasted twice is not worked on. `--title`: an idle OSC title after Stop to
 identify the stand-in after terminumd restarts; `--prompts <file>`: each prompt it takes, a line; `--stop-after <file>`: hold Stop until the file exists and write
-<file>.sent after attempting the hook, so the test can place it during downtime."""
+<file>.sent after attempting the hook, so the test can place it during downtime. `--round-tokens <n>`: a Supervisor
+case round ends its turn with a transcript of n input tokens, the round's spend."""
 import json
 import os
 import re
@@ -34,7 +36,7 @@ def main():
     cli = args[0]
     opt = lambda name, default: args[args.index(name) + 1] if name in args else default
     kind, start, session = opt("--kind", "claude"), opt("--start", ""), opt("--resume", f"fake-{os.getpid()}")
-    typed, pasting, pastes, late = "", False, 0, start == "slow"
+    typed, pasting, pastes, late, held = "", False, 0, start == "slow", ""
 
     def hook(event, **more):
         # AC-131: hold Stop until the live test has stopped terminumd, then acknowledge the attempt.
@@ -42,13 +44,14 @@ def main():
         if barrier:
             while not os.path.exists(barrier):
                 time.sleep(0.05)
-        subprocess.run([cli, "hook", kind], input=json.dumps({"session_id": session, "cwd": os.getcwd(), "hook_event_name": event, **more}), text=True, capture_output=True, timeout=8)
+        checked = subprocess.run([cli, "hook", kind], input=json.dumps({"session_id": session, "cwd": os.getcwd(), "hook_event_name": event, **more}), text=True, capture_output=True, timeout=8)
         if event == "Stop" and (title := opt("--title", "")):
             sys.stdout.write(f"\x1b]0;{title}\x07")
             sys.stdout.flush()
         if barrier:
             with open(barrier + ".sent", "w", encoding="utf8"):
                 pass
+        return checked.stdout
 
     def draw(body):
         sys.stdout.write("\x1b[2J\x1b[H" + "\r\n".join(body) + "\r\n")
@@ -63,11 +66,116 @@ def main():
         else:
             draw(["  Claude Code", "", RULE, f"\x1b[39m❯ {held.replace(chr(10), ' ')}\x1b[7m \x1b[0m", RULE, background or "  ? for shortcuts"])
 
+    def stop_with_usage(usage):
+        """A turn's end whose transcript reports `usage`, as Claude Code's does."""
+        path = os.path.join(os.getcwd(), f"transcript-{os.getpid()}.jsonl")
+        with open(path, "w", encoding="utf8") as f:
+            f.write(json.dumps({"type": "assistant", "message": {"id": "m1", "model": "claude-opus-5-5", "usage": usage}}) + "\n")
+        hook("Stop", last_assistant_message="done", transcript_path=path)
+
     def tool(name, arguments):
         rpc = lambda i, m, p=None: json.dumps({"jsonrpc": "2.0", **({} if i is None else {"id": i}), "method": m, **({"params": p} if p else {})})
         lines = [rpc(1, "initialize", {"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "fake", "version": "1"}}), rpc(None, "notifications/initialized"),
                  rpc(2, "tools/call", {"name": name, "arguments": arguments})]
-        subprocess.run([cli, "mcp"], input="\n".join(lines) + "\n", text=True, capture_output=True, timeout=8)
+        done = subprocess.run([cli, "mcp"], input="\n".join(lines) + "\n", text=True, capture_output=True, timeout=8)
+        for reply in map(json.loads, done.stdout.splitlines()):
+            if reply.get("id") == 2:
+                return reply.get("result", reply.get("error", {}))
+        return {}
+
+    def investigate(case_id):
+        def call(name, **arguments):
+            result = tool("execute_tool", {"name": name, "arguments": arguments})
+            with open(opt("--round-log", ""), "a", encoding="utf8") as log:
+                log.write(json.dumps({"case": case_id, "tool": name, **result}) + "\n")
+            return result
+
+        def decoded(result):
+            return json.loads(result["content"][0]["text"])
+
+        call("get_case_file", id="case_foreign")
+        case = decoded(call("get_case_file", id=case_id))
+        if case["kind"] == "design_review":
+            call("record_design_review", id=case["task"], role=case["role"], verdict="approved",
+                 compatibility="Existing clients still work.", rejected_advice="Remove the route | Clients still use it.")
+            return
+        if case["kind"] == "reflection":
+            call("hold", signal="fixture", kind="pause_dispatch", reason="Reflection fixture.")
+            call("run_task", id="TERM-1", agent="Fixture")
+            change = {"detector": "flow.failed_repeat", "action": {"operation": "owner_review", "target": "charter"}}
+            if case["subject_id"] == "config-tune":
+                change["action"] = {"operation": "tune", "threshold": {"absolute": 2.5}}
+            preview = decoded(call("replay_config_change", **change))
+            adopted = decoded(call("propose_config_change", change=change, replay=preview["replay"]))
+            report = dict(missed="No earlier evidence was recorded.", noise="One repeated rule fired.",
+                          wrong="The timeline shows the recorded trigger.",
+                          proposals=[{"change_id": adopted["change"], "evidence": [1]}])
+            call("record_reflection", **{**report, "proposals": [{**report["proposals"][0], "evidence": [9999]}]})
+            if "alert_wrong" in case["triggers"]:
+                measured = next(row for row in case["agent_rates"] if row["task_type"] == "Bug")
+                report["routing"] = {"agent": measured["agent"], "task_type": "Bug",
+                                     "change": "Review the Bug default agent.", "why": "The sample is incomplete."}
+            call("record_reflection", **report)
+            return
+        if opt("--round-mode", "") == "thread":
+            barrier = opt("--thread-barrier", "")
+            deadline = time.monotonic() + 12
+            while not os.path.exists(barrier) and time.monotonic() < deadline:
+                time.sleep(.05)
+            until = time.monotonic() + 5
+            while time.monotonic() < until:
+                notice = hook("PostToolBatch", tool_name="Read")
+                if "new comment" in notice:
+                    with open(opt("--round-log", ""), "a", encoding="utf8") as log:
+                        log.write(json.dumps({"notice": notice}) + "\n")
+                    break
+                time.sleep(.15)
+            call("post_incident_answer", text="The checked fixture explains the incident.")
+            return
+        if opt("--round-mode", "") != "finding":
+            return
+        sig = case["signal"]
+        query, fingerprint = sig["detector"], sig["fingerprint"]
+        call("list_signals")
+        call("get_signal", id=fingerprint)
+        value = decoded(call("get_metric", query=query, signal=fingerprint))["measure"]["value"]
+        refs = sig["evidence"]
+        finding = dict(cause="A blocked dependency holds the queue.", confidence=0.85,
+                       disproof="The wait continues after the dependency clears.",
+                       fix_proposal="Resolve the dependency.", evidence=refs,
+                       measurements=[dict(query=query, signal=fingerprint, value=value)])
+        wrong = [dict(query=query, signal=fingerprint, value=value + 5)]
+        call("record_finding", **{**finding, "measurements": wrong})
+        call("record_finding", **{**finding, "evidence": [{"table": "events", "id": "missing"}]})
+        if foreign := opt("--foreign-evidence", ""):
+            call("record_finding", **{**finding, "evidence": [{"table": "tasks", "id": foreign}]})
+        call("record_finding", **finding)
+
+    def review(task):
+        call = lambda name, args: tool("execute_tool", {"name": name, "arguments": args})
+        context = call("get_supervisor_review", {})
+        refused = call("add_comment", {"id": task, "text": "Review fixture cannot post."})
+        sections = ["Decisions waiting for you", "Top three register problems", "Resolved and recurred",
+                    "Effort allocation", "Agent performance", "Owner bottlenecks", "Indicator verdicts",
+                    "Supervisor outcomes and budgets", "Verdict batch"]
+        result = call("finish_task", {"id": task, "result": "\n".join(f"{s}: Measured review fixture." for s in sections)})
+        with open(opt("--round-log", ""), "a", encoding="utf8") as log:
+            log.write(json.dumps({"review": context, "refused": refused, "finished": result}) + "\n")
+
+    def audit(task):
+        call = lambda name, args: tool("execute_tool", {"name": name, "arguments": args})
+        pages = {name: call("get_supervisor_audit", {"section": name})
+                 for name in ("ledger", "signals", "misses", "register")}
+        denied = call("get_supervisor_review", {})
+        report = "  Missed issues\n\n  Noise and unsupported conclusions.\n"
+        result = call("finish_task", {"id": task, "result": report})
+        with open(opt("--round-log", ""), "a", encoding="utf8") as log:
+            log.write(json.dumps({"audit": pages, "denied": denied, "finished": result, "report": report}) + "\n")
+
+    def talk(case_id):
+        response = tool("execute_tool", {"name": "get_case_file", "arguments": {"id": case_id}})
+        with open(opt("--round-log", ""), "a", encoding="utf8") as log:
+            log.write(json.dumps({"talk": case_id, **response}) + "\n")
 
     # a result is kept only in its sections (AC-123): the close-out's and a schedule's, both there, as
     # terminumd/src/tasks/closeout.rs names them (SECTIONS, SCHEDULED)
@@ -94,6 +202,10 @@ def main():
             draw([" Accessing workspace:", "", " Quick safety check", "", " ❯ No, exit", "   Yes, I trust this folder", "", " Enter to confirm · Esc to cancel"])
             os.read(fd, 16)
         box()
+        if log := opt("--round-log", ""):
+            probe = subprocess.run([cli, "tools"], text=True, capture_output=True, timeout=8)
+            with open(log, "a", encoding="utf8") as f:
+                f.write(json.dumps({"probe": probe.stdout, "rc": probe.returncode}) + "\n")
         if kind == "claude":
             hook("SessionStart", source="resume" if "--resume" in args else "startup")
         if start == "quits":
@@ -102,9 +214,14 @@ def main():
                 got += more
             return                    # its session opened, but it never took the task (an update's restart)
         while True:
-            data = os.read(fd, 65536).decode("utf8", "replace")
-            if not data:
+            more = os.read(fd, 65536).decode("utf8", "replace")
+            if not more:
                 return
+            # a paste's marker split between two reads waits for its rest, as a terminal's parser does
+            data, held = held + more, ""
+            cut = data.rfind("\x1b")
+            if cut >= 0 and any(m.startswith(data[cut:]) and m != data[cut:] for m in ("\x1b[200~", "\x1b[201~")):
+                data, held = data[:cut], data[cut:]
             # what is pasted (between the markers) is text, line ends too; a bare CR is Enter; a long
             # paste comes in several reads, so being inside one carries over to the next read
             ends = False
@@ -143,7 +260,25 @@ def main():
             if main:
                 tasks = re.findall(TASK_ID, main[2]) + [main[1]]
             round_of = re.search(rf"^\[terminum Auto-Dispatcher\] Task ({TASK_ID}):.*Free agent slots: (\d+)\. Candidates, this project's TODO tasks: ((?:{TASK_ID}(?:, )?)+)", prompt, re.S)
-            if round_of:
+            if "SUBAGENT" in prompt:
+                hook("SubagentStart", agent_id="sub-1", agent_type="reviewer")
+                if "QUESTIONS" in prompt or "DEPENDENCY" in prompt:
+                    typed = "draft during wait"
+                    box()
+            if opt("--round-log", "") and (case := re.fullmatch(r"Supervisor (?:reflection |design review )?case (case_[a-f0-9]+)\..*", prompt)):
+                investigate(case[1])
+                if tokens := opt("--round-tokens", ""):
+                    stop_with_usage({"input_tokens": int(tokens)})
+            elif opt("--round-log", "") and (case := re.fullmatch(r"Supervisor incident case (case_[a-f0-9]+)\..*", prompt)):
+                talk(case[1])
+                hook("Stop", last_assistant_message="An incident conversation is open.")
+            elif opt("--round-log", "") and "Call get_supervisor_audit" in prompt:
+                audit(tasks[0])
+                hook("Stop", last_assistant_message="The audit is ready.")
+            elif opt("--round-log", "") and "Call get_supervisor_review" in prompt:
+                review(tasks[0])
+                hook("Stop", last_assistant_message="The review is ready.")
+            elif round_of:
                 for task in re.findall(TASK_ID, round_of[3])[:int(round_of[2])]:
                     tool("dispatch_task", {"id": task, "why": "RICE 3×2×1÷1 = 6: the first in line"})
                 finish(round_of[1])
@@ -156,17 +291,22 @@ def main():
                 hook("SessionEnd", reason="other")
                 sys.exit(0)
             elif "QUESTIONS" in prompt:
-                tool("ask_human", {"id": tasks[0], "questions": "Why you are needed: only you know which API the clients may use.\nRecommended:\n1. v2: v1 goes away in May. Other options: v1.\nDetails: the task moves the clients to one API; v1 and v2 both work today."})
+                ask = {"id": tasks[0], "questions": "Why you are needed: only you know which API the clients may use.\nRecommended:\n1. v2: v1 goes away in May. Other options: v1.\nDetails: the task moves the clients to one API; v1 and v2 both work today."}
+                if "CHOICES" in prompt:
+                    ask.update(kind="operational", recommended="v2", options=[{"id": "v1", "label": "v1"}, {"id": "v2", "label": "<b>v2</b>"}])
+                    tool("execute_tool", {"name": "ask_human", "arguments": ask})
+                else:
+                    tool("ask_human", ask)
                 hook("Stop", last_assistant_message="I asked.")
             elif "ASKS" in prompt:
                 hook("Notification", notification_type="permission_prompt", message="Approve Bash")
+            elif "DEPENDENCY" in prompt:
+                tool("wait_for_task", {"id": tasks[0], "on": opt("--wait-on", ""), "why": "The client needs the API."})
+                hook("Stop", last_assistant_message="I am waiting for the API.")
             elif "SUBAGENT" in prompt:
-                hook("SubagentStart", agent_id="sub-1", agent_type="reviewer")
+                pass
             elif "TOKENS" in prompt:
-                path = os.path.join(os.getcwd(), f"transcript-{os.getpid()}.jsonl")
-                with open(path, "w", encoding="utf8") as f:
-                    f.write(json.dumps({"type": "assistant", "message": {"id": "m1", "model": "claude-opus-5-5", "usage": {"input_tokens": 1200, "output_tokens": 34, "cache_read_input_tokens": 5}}}) + "\n")
-                hook("Stop", last_assistant_message="done", transcript_path=path)
+                stop_with_usage({"input_tokens": 1200, "output_tokens": 34, "cache_read_input_tokens": 5})
                 hook("PreToolUse", tool_name="Bash", tool_input={"command": "sleep"})   # then at work: its session stays to be read
             elif "WORKS" in prompt or prompt.startswith("Auto-Dispatcher, which a human turned on"):
                 hook("PreToolUse", tool_name="Bash", tool_input={"command": "sleep"})   # a long tool: no Stop

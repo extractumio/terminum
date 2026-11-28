@@ -65,13 +65,13 @@ Open questions:
 | ID | Priority | Case |
 |---|---|---|
 | AC-121 | [MUST / P0] | RUN opens a window at its project's place (AC-140), starts the chosen agent there by its command, pastes the task through the gate and starts the work: IN PROGRESS once the agent takes it, FAILED with the reason if not. |
-| AC-122 | [MUST / P0] | RUN again takes the human's comment on: in the live session, in that pane when only its shell remains, else in a new window continuing the agent's conversation; a human's new prompt in the session returns the task to IN PROGRESS. |
+| AC-122 | [MUST / P0] | RUN again carries saved human comments since the previous run and the current message: in the live session, in that pane when only its shell remains, else in a new window continuing the agent's conversation; a human's new prompt in the session returns the task to IN PROGRESS. |
 | AC-209 | [MUST / P0] | A comment added to a task, or a human's comment whose text changed, reaches the agent of its linked open session on its next prompt or tool call, through its hook, as a notice in fixed words with the task's ID and who wrote it, never typed and never the comment's words; each comment says whether its session was told; a fresh start carries the humans' and the project's manager's comments in words and counts the agents'. |
 | AC-123 | [MUST / P0] | Dispatcher finds the end: `finish_task` with a result in its sections is DONE, one without them, or whose Outcome says partly done or not done, stays a comment; a turn with no result gets a request at each quiet stop, 3 a run at most, to finish it, ask a human or say what still runs, then an hour with no result is FAILED; an hour with no activity while IN PROGRESS is FAILED; a session that ends with no result, a dead agent or a turn's failure is FAILED; no clock makes a task DONE. |
 | AC-124 | [MUST / P0] | An agent that waits for a human for 2 minutes puts its task in WAIT FOR HUMAN, and it returns once the agent goes on. |
 | AC-125 | [MUST / P0] | Dispatcher closes a session it started 5 minutes after DONE or FAILED, only with the agent idle, keeps the screen's last rows when there is no result, writes each session's start and end on the task, and acts only on sessions it started and marked. |
 | AC-126 | [MUST / P0] | A task's optional time budget counts only IN PROGRESS; the agent hears it at the start and 3% before its end, at least 2 minutes; at the limit Dispatcher ends the agent and what it can reach of its subagents and the task is FAILED. |
-| AC-127 | [SHOULD / P1] | A subagent silent and idle for 10 minutes gets the main agent one request to deal with it; at 20 minutes Dispatcher ends it where it can; where it cannot, the task is FAILED and RUN goes on in its session. |
+| AC-127 | [SHOULD / P1] | A subagent silent and idle for 10 minutes gets the main agent one request to deal with it; at 20 minutes Dispatcher ends it where it can; where it cannot, the task is FAILED and RUN goes on in its session. Both clocks pause while the run waits for a human or a prerequisite task. |
 | AC-128 | [SHOULD / P1] | A card shows the session's CPU, memory and running time; memory over 4 GiB warns the agent, over 8 GiB ends the session as FAILED, set globally and per project, and the window that sets them says what is measured and that nothing stops a process between two readings. |
 | AC-129 | [SHOULD / P1] | A card shows the tokens its session used; what a task's session spent stays on the task when it ends, in tokens and, where the price is known, an estimate in dollars. |
 | AC-130 | [SHOULD / P1] | All of the above hold for sessions on remote hosts; a host out of reach is said, and a lost link adds nothing to any clock. |
@@ -86,8 +86,9 @@ Open questions:
 | AC-144 | [MUST / P0] | Task, project, agent, a run's process and its tmux pane each live their own life: each outlives the others' restart or deletion as the table says, and what is lost is said. |
 | AC-205 | [MUST / P0] | A run Dispatcher started whose task was IN PROGRESS when its tmux server ended resumes by itself once the server is back, as RUN would, with fixed words that say so; a window closed by hand, a task not in progress, a run with nothing to resume, and a server that ends again within an hour of such a resume do not. |
 | AC-156 | [MUST / P0] | A run starts its agent's command as the operator wrote it, its permissions and model included; Dispatcher adds only the inline TUI in the agent's own process with Codex's update menu off (§9), the effort and, going on, the resume of its conversation; going on starts the agent's command as the pool has it then. |
-| AC-157 | [MUST / P0] | An agent that needs a human asks by `ask_human`: its questions, written for a newcomer as why a person is needed (one sentence), the recommended answers with why and the other options, then the whole issue (one paragraph), stay on the task, the task waits for the human, and once the agent's turn is over its session closes; the task keeps its agent and conversation, and RUN resumes that conversation with the human's answers. |
-| AC-158 | [MUST / P0] | A RUN at its agent's or project's limit that the human added to the queue (AC-169), or a schedule's task with no room (terminum-schedules.md AC-161), waits for room, schedules' tasks ahead of every other wait, else in the queue's order, and starts once there is room; it is called off by the human, or by the task moving, archived or its agent deleted. |
+| AC-157 | [MUST / P0] | An agent that needs a human asks by `ask_human`: its questions, written for a newcomer to understand on one reading (plain words, every internal name, code, ID or hash with what it is or left out) as why a person is needed (one sentence), the recommended answers with why and the other options (one decision a numbered question, each option saying what happens next), then the whole issue (one paragraph), stay on the task, the task waits for the human, and once the agent's turn is over its session closes; the task keeps its agent and conversation, and RUN resumes that conversation with the human's answers. Recorded options and choices: terminum-supervisor.md AC-230. |
+| AC-285 | [MUST / P0] | A task waiting on its agent's question offers Answer, Continue with Recommended and Archive, whoever ran it and whether its session lives: an answer goes on in the conversation as RUN does, or, in a live session the human opened, as fixed words with the task's ID typed once through the §9 gate; Archive fails and archives it; each press is refused on a question no longer waiting, and is kept in the task's history with the question, the choice and the move. |
+| AC-158 | [MUST / P0] | A RUN the human queued at an agent or project limit (AC-169), or a schedule's task with no room (terminum-schedules.md AC-161), waits for a slot, schedules first, then in queue order. A human can cancel it. Moving or archiving its primary task or deleting its agent also cancels it. While it waits, agents can read and comment on every task it carries, and requests to move or finish any member are refused. |
 | AC-210 | [MUST / P0] | An agent whose task cannot go on before other tasks of its project are DONE says so by `wait_for_task`, never by asking a human: they join its Blocked by with its reason, the task waits in TODO with no clock and no queue place, its session closes once the turn is over, and Dispatcher goes on with it in the same conversation, as who started the run, once every one is DONE; one of them FAILED, archived or deleted asks a human instead. |
 | AC-169 | [MUST / P0] | A RUN at a limit is offered its agent's queue and waits only once the human agrees; the agent's card shows a pale dot for each queued task, a ring for each free slot and a dashed ring for each kept one, and a key that opens its window at the queue, where tasks are dragged or moved by arrows into another order and taken out, on a Mac and on a phone. |
 | AC-170 | [SHOULD / P1] | Auto-Dispatcher, off until a human turns it on for a project with the switch in the board's bar: it takes TODO tasks of the severities chosen that stand for the wait set; with free slots and such tasks Dispatcher starts a round, one more session of the chosen agent that takes no slot; that agent scores the candidates by RICE and starts the best, one a free slot, each on the agent named in the task or the setting's default, told only its ID; or, set to priority and saved order, terminumd starts them itself top down with no agent; a failing round or two failing tasks turn it off, said on the board. |
@@ -365,9 +366,35 @@ Scenario: AC-122 happy path — a live agent
   Given API-12 is DONE, FAILED or WAIT FOR HUMAN and the agent of a session Dispatcher started lives
   When the user writes "Use the v2 API" under Comment and presses RUN
   Then the comment is kept; through the gate the prompt "API-12: a new comment by alex follows. Go on with the task, taking it into account." and that comment's text go in; API-12 is IN PROGRESS once it is taken
-  When its agent had asked (AC-157)
-  Then the words are AC-157's: the humans' answers since its questions
   And the time budget starts anew (AC-126), and the wait for closing ends (AC-125)
+  When its agent had asked (AC-157)
+  Then the words include AC-157's answers since its questions, with any earlier saved human comments since the run started
+
+Scenario: AC-122 happy path — Save, Save, Run
+  Given API-12's agent finished a turn without asking a question
+  When a human saves "Use the v2 API" and then saves "Keep the old route"
+  And presses RUN with an empty Comment field
+  Then its agent receives "Use the v2 API" and "Keep the old route" once each, in that order
+  And comments by agents, including the project's manager, and Dispatcher are excluded
+  When its agent finishes the turn and the human presses RUN again with an empty field
+  Then neither saved comment goes again
+
+Scenario: AC-122 edge — a draft, a refused paste, and a later save
+  Given API-12 has a saved human comment since its last run started
+  When a human presses RUN with a draft and the live input box holds text
+  Then nothing is submitted and both comments stay on the task
+  When a human clears the input box and presses RUN again
+  Then the saved comment and the kept draft go through the gate in that order
+  And comments saved after those words were prepared are available to the following RUN
+
+Scenario: AC-122 error — saved words cannot go through the gate
+  Given a saved human comment has a control or invisible character
+  When the human presses RUN to continue the conversation
+  Then RUN says "A saved comment has control or invisible characters. Edit it before running again."
+  And the saved comments and any draft are kept
+  When the saved comments would exceed the 1 MiB paste limit
+  Then RUN says "Saved comments make this prompt larger than 1 MiB. Shorten them before running again."
+  And nothing is typed
 
 Scenario: AC-122 happy path — only the shell remains
   Given the agent is gone and the pane stands at its shell, nothing typed there since
@@ -390,6 +417,19 @@ Scenario: AC-122 happy path — the session is closed
   When the user presses RUN with a comment
   Then a new window runs the resume in the run's first folder and takes the prompt as above; the comment says "Session resumed in window api:7"
 
+Scenario: AC-122 edge — Codex opens without taking a turn
+  Given API-12's RUN resumes a known Codex conversation
+  When Codex reports a different ID at SessionStart, asks for hook review, and exits or its window closes without UserPromptSubmit
+  Then the next RUN resumes the known conversation
+  When a main UserPromptSubmit reports the new ID
+  Then later RUNs resume that ID
+
+Scenario: AC-122 failure — Codex cannot find a conversation
+  Given API-12's RUN starts Codex with a known conversation ID
+  When Codex exits before accepting the prompt and reports "No saved session found with ID" for that ID
+  Then Dispatcher tells the task "Codex could not find saved conversation <id>. Restore it and press RUN to try again, or choose Run from scratch."
+  And its tasks in TODO or IN PROGRESS move to WAIT FOR HUMAN, the conversation ID and saved comments available for another RUN
+
 Scenario: AC-122 happy path — a human's new work
   Given API-12 is DONE and the user types a prompt into its live session
   When the hook says a prompt was taken that terminum did not type (§9)
@@ -409,7 +449,7 @@ Scenario: AC-122 edge — a turn the agent scheduled itself
 
 Scenario: AC-122 edge — SAVE
   When the user presses SAVE instead
-  Then the comment is kept and nothing moves; a working agent of its linked open session hears of it at its next tool call, by the notice of AC-209, and nothing is typed
+  Then the comment is kept and nothing moves; a working agent of its linked open session is told of it by AC-209's notice, and nothing is typed
 
 Scenario: AC-122 edge — archived
   Given an archived task whose live session Dispatcher started, DONE or already IN PROGRESS
@@ -418,7 +458,7 @@ Scenario: AC-122 edge — archived
   And a prompt terminum typed or the agent wrote itself leaves it archived
 
 Scenario: AC-122 failure — cannot go on
-  When the agent refuses that session ID, none is known, the ID is not of §9's shape, or the first folder is gone
+  When the agent refuses that session ID for another reason, none is known, the ID is not of §9's shape, or the first folder is gone
   Then API-12 is FAILED, its comment says "Conversation <id> could not be continued: <reason>", and Run from scratch in its window starts a new one with the task's text and its comments as AC-209 says: the humans' and the project's manager's in words, the agents' counted, theirs to read by get_task
 
 Scenario: AC-122 failure — not through the gate
@@ -428,7 +468,7 @@ Scenario: AC-122 failure — not through the gate
 
 Scenario: AC-122 failure — not Dispatcher's
   Given a live session Dispatcher did not start
-  Then RUN is off, saying "Unlink the session to run it"; a comment reaches it as AC-209 says
+  Then RUN is off, saying "Unlink the session to run it"; a comment reaches it as AC-209 says; a question its agent asked is answered by AC-285's keys
 ```
 
 ### AC-209 — A new comment reaches the working agent [MUST / P0]
@@ -533,7 +573,7 @@ Scenario: AC-209 happy path — a fresh start carries the comments
 ```gherkin
 Scenario: AC-123 happy path — the agent says so
   When the agent calls finish_task {id: "API-12", result}, the result holding every section of its form
-  Then API-12 is DONE with the result as a comment, whatever the Unread flag says (terminum-agents.md AC-93)
+  Then API-12 is DONE with the result as a comment, whatever the Unread flag says (terminum-agents.md AC-93); a report for a person to read goes to their Inbox by create_report, the task DONE as any (terminum-reports.md AC-266, AC-272)
   And the form is AC-166's sections, or for a schedule's task the form its firing's prompt names (terminum-schedules.md AC-162)
   And a section is a line that starts, past Markdown's marks ("#", "*", "_", "-", "+", ">", a number with "." or ")") and spaces, with its name in any case, then the line's end, ":", "*" or "_"
 
@@ -759,6 +799,12 @@ Scenario: AC-127 edge — busy and silent
   Given a subagent in a long build, above the threshold
   Then neither clock runs
 
+Scenario: AC-127 edge — the run waits
+  Given a run with a silent subagent whose open tasks wait for a human (AC-157) or for prerequisite tasks (AC-210)
+  When 20 minutes pass while its session is still open
+  Then its tasks stay in WAIT FOR HUMAN or in TODO with the kept press, respectively
+  And Dispatcher neither advances the silence clock nor sends a request about that subagent
+
 Scenario: AC-127 failure — cannot be ended alone
   When a subagent runs inside the agent's process (OQ-122)
   Then API-12 is FAILED with "Subagent <id> has been silent for 20 minutes and cannot be ended alone: it runs inside the agent. RUN goes on in this session."
@@ -871,7 +917,7 @@ Scenario: AC-130 failure — hooks missing there
 Scenario: AC-138 happy path — over the board
   Given a pool of Opus reviewer (Claude Code, high), Fast fixer (Claude Code) and Codex (Codex, low)
   Then three rectangles stand over the columns, each in its color, with its name, kind, effort, its subscription's two stripes (AC-168) and one dot per live session
-  And each is a track wide, on the board's six tracks (terminum-kanban.md AC-105): four to a row, the fifth track holding + Agent; a fifth agent starts the next row; a board under 1500 px keeps one row that scrolls, each 240 px wide; on a phone (600 px or narrower) they stand one a row in the sheet its line opens (terminum-kanban.md AC-105)
+  And cards fill the available width, fitting as many as possible in columns of one width, at least 240 px, a short last row keeping that width; shrinking the browser moves cards onto following rows and growing it brings them back, without horizontal scrolling; the add tile follows the last card (terminum-kanban.md AC-203); on a phone (600 px or narrower) they stand one a row in the sheet its line opens (terminum-kanban.md AC-105)
 
 Scenario: AC-138 happy path — its dots
   Given Opus reviewer with API-12's session working and API-14's waiting at its input box
@@ -956,6 +1002,74 @@ Scenario: AC-138 edge — giving up
   Given API-12's run on a host out of reach, or no longer wanted
   When the user presses Give up in API-12's window and confirms
   Then its open tasks are FAILED "The human gave up on it." but one whose commit is queued, which stays queued (`terminum-integration.md` AC-187), its slot is free, and Dispatcher lets go of the window, which stays
+
+Scenario Outline: AC-138 happy path — giving up interrupts the linked agent
+  Given API-12's run has <agent> running in front in the pane it started and marked
+  When the human confirms Give up while its agent is working
+  Then Dispatcher sends Esc only to that marked pane outside a tmux mode
+  And once its empty input box is ready, Dispatcher sends one fixed line through the §9 gate
+  And the line is "[terminum Dispatcher] API-12: The human gave up on this task. Stop your background work and subagents, start nothing new, and end your turn."
+  And no task title, text or comment enters the line
+  And its conversation, shell and window stay open; Dispatcher sends no exit command or process signal
+  Examples:
+    | agent       |
+    | Claude Code |
+    | Codex       |
+
+Scenario: AC-138 edge — the agent already idle
+  Given API-12's linked agent is idle with an empty input box
+  When the human confirms Give up
+  Then the same guarded Esc and fixed line reach that agent once
+  And an input box holding a draft is preserved and no line is pasted
+
+Scenario: AC-138 edge — an ordinary prompt is already being delivered
+  Given API-12's marked pane's typing queue holds a prompt already accepted before Give up
+  When the human confirms Give up
+  Then that delivery ends before Give up commits its task and run changes under the same typing queue
+  And Dispatcher then interrupts and sends the stop instruction, while any later ordinary prompt is refused
+
+Scenario: AC-138 failure — a delivery holds the queue too long
+  Given API-12's typing queue stays occupied for 5 seconds
+  When the human confirms Give up
+  Then the request fails "A prompt is being delivered in this session. Give up again once it finishes."
+  And its task, slot and run stay unchanged and no stop keys are sent
+
+Scenario: AC-138 edge — the human takes over while Give up waits
+  Given Give up waits for API-12's typing queue and the human queues a new turn in the pane
+  When cancellation releases that queue and the human's turn goes in before the stop attempt
+  Then the old run is released and its open tasks are FAILED
+  And Dispatcher sends no Esc or stop prompt that could interrupt the human's new turn
+  And human input before Esc or stop-paste acceptance wins; after accepted stop paste, its Enter precedes the human's keys
+
+Scenario: AC-138 failure — its pane changes before cancellation
+  Given Give up read API-12's run before that run acquired its pane
+  When the pane is published before the Give up transaction
+  Then the request fails "Its run changed while Give up waited. Read the task and try again."
+  And the task and run stay unchanged and no stop keys are sent
+
+Scenario Outline: AC-138 edge — giving up cannot type into another program
+  Given API-12's linked pane <condition>
+  When the human confirms Give up
+  Then its tasks and slot are released as above, with no Esc, paste or Enter in that pane
+  And the task says why the stop instruction could not be delivered
+  Examples:
+    | condition                                  |
+    | has recorded its agent's exit               |
+    | runs a shell or another program in front    |
+    | is in a tmux mode                           |
+    | no longer bears this run's mark             |
+
+Scenario: AC-138 failure — interruption cannot reach an empty box
+  Given API-12's marked agent takes Esc but shows a draft, question or unknown screen, or remains working for 5 seconds
+  When Dispatcher tries to deliver the stop instruction
+  Then it types no line and records "Give up stop instruction not delivered: <reason>."
+  And it never retries typing after Give up
+
+Scenario: AC-138 edge — the next task tool call after Give up
+  Given the human gave up API-12 in this session, then archived it or ran it in another session
+  When the old agent calls a terminum task tool on API-12
+  Then the call changes nothing and answers the same fixed Give up line
+  And this notice survives a terminumd restart and does not block the new session's calls
 
 Scenario: AC-138 edge — an agent deleted
   Given API-12 DONE on Opus reviewer
@@ -1114,17 +1228,22 @@ Scenario: AC-204 happy path — the composer
   Then each agent's card has a "+ Session" key in its last row, its state said to assistive tech
   When the user presses it on Opus reviewer
   Then a dock opens under the pool's cards (not a dialog: the board's cards stay draggable onto it), headed "+ Session on" and the agent's dot and name, its text box in focus; another card's key moves it to that agent, the text kept
+  And the box grows with its text, then scrolls; it gives way before the dock's head and keys do: however long the text and however little room the columns leave, the dock shows its head, at least three lines of the box and its keys, the pool's cards keeping at most 40% of the pool's room meanwhile
   And the box takes typing, copy, cut, paste and undo as a text field does; a pasted image, a pasted or dropped file, and Add files… keep the file with terminumd, a chip each with its ×; Start waits while one is on its way
   When the user drags TERM-12 and TERM-15 from the board onto the box
   Then "TERM-12 TERM-15 " stands at the caret (the box's end without focus), a space before when it follows a word; neither task runs or moves; the agent reads each by get_task
   When the user presses Start or ⌘Enter
-  Then a session of that agent opens in the project's place as AC-142's, terminumd types the prompt once (the human's words, then a line per file: its name, its kind and the path it is kept at), and the page shows the session; the draft is cleared
+  Then the dock folds at once, its draft and files kept, and that agent's key says "Starting…", busy; every + Session key is inert until the start ends, so no other draft is typed meanwhile
+  And a session of that agent opens in the project's place as AC-142's, terminumd types the prompt once (the human's words, then a line per file: its name, its kind and the path it is kept at); the draft and its files are cleared
+  And the page stays on the board: the dock stays folded, the keys say "+ Session" again and take presses, and a line under the pool's cards says "Session started on Opus reviewer" with an "Open the session" link and a × that hides it; the focus, unless the user moved it meanwhile, is on that link; the agent's card shows the new session as for any start; + Session opened again hides the line
+  When terminumd refuses the start or the request fails
+  Then the dock opens again for that agent with its draft and files, terminumd's message in it, and the keys take presses again
 
 Scenario: AC-204 edge — how it is typed
   Then terminumd checks the words before anything starts: control or invisible characters other than line ends and tabs, or more than 20,000 characters, are refused with words and no session starts
   And it waits for that agent's empty input box (60 s), marks the run as at work first, so neither a restart nor its watch types it again, then pastes it through the §9 gate (AC-121) into the pane that request started and presses Enter: never on the agent's command line, never in another pane, never twice
   When the gate misses (no box in 60 s, a question first, the agent ended, the paste not shown)
-  Then the session stays open, the human's; the dock says "The session started, but its prompt was not typed: <why>. Paste it there yourself." with a link to it, and keeps the draft
+  Then the session stays open, the human's; the dock opens again and says "The session started, but its prompt was not typed: <why>. Paste it there yourself." with a link to it, keeps the draft, and Start waits for a change to it
   And Start with an empty box and no file is AC-142's: nothing is typed
 
 Scenario: AC-204 edge — files
@@ -1360,13 +1479,30 @@ Scenario: AC-157 happy path — the human answers
   When that agent is at its limit
   Then AC-158 holds; dropped on another agent, AC-138's edge "its conversation on another agent"
 
+Scenario: AC-157 happy path — a recorded option resumes the same run
+  Given API-12 asked a question with recorded options under terminum-supervisor.md AC-230
+  When the human chooses an option in the task's window and presses RUN
+  Then the choice is a saved human answer and RUN carries it to the same conversation as above
+  And the RUN prompt carries the selected option ID, while the task window displays its label as plain text
+  And free-text answers and questions without recorded options use the same resume path
+
+Scenario: AC-157 edge — a resume stops at Codex hook review
+  Given API-12 waits for a human after ask_human
+  When a RUN with the human's answers reports a new ID at SessionStart and stops at hook review before Dispatcher can paste
+  Then the next RUN resumes the question's conversation and carries the saved answers as AC-122 says
+
 Scenario: AC-157 happy path — what a prompt says
-  Then RUN's prompt ends with "If you need a human's decision, call execute_tool("ask_human", {id, questions}), then end your turn: the session closes, and the human's RUN brings the answers back into this conversation. Do not wait for an answer in this window. Write the questions in plain short words for a person who has not followed this task, in three parts in this order: "Why you are needed:" one sentence on why this task waits for a person; "Recommended:" each question numbered, the answer you recommend as its default and why in a few words, then its other options; "Details:" one paragraph on the whole issue: what the task is for, what was done, what holds it, what each option leads to; the three labels as written here, in English. If the task cannot be finished now for a cause that can be removed (another task or a prerequisite not done, a check that fails for another task's reason or cannot run here, missing access), ask the same way: Details say what is done and committed and what holds it, Recommended what unblocks it (such as "grant access to the staging database"): it waits for a human; give it no result by execute_tool("finish_task", {id, result}). If what holds it is another task that must be DONE first, call execute_tool("wait_for_task", {id, on, why}) instead, then end your turn: Dispatcher goes on with it in this conversation once that task is DONE, and no human is asked. FAILED is only for a task that cannot be done at all, with a comment saying why."
-  And terminum mcp's ask_human says the same three parts in its description, and its example is written in them
+  Then RUN's prompt ends with "If you need a human's decision, call execute_tool("ask_human", {id, questions}), then end your turn: the session closes, and the human's RUN brings the answers back into this conversation. Do not wait for an answer in this window. Write the questions in plain short words that a person who has not followed this task understands on one reading, each internal name, code, ID or hash with what it is beside it, or left out, in three parts in this order: "Why you are needed:" one sentence on why this task waits for a person; "Recommended:" each question numbered and one decision, the answer you recommend as its default and why in a few words, then its other options, each option saying what happens next if chosen; "Details:" one paragraph on the whole issue: what the task is for, what was done, what holds it, what each option leads to; the three labels as written here, in English. Set kind to operational for how to proceed or strategic for direction and policy. For a decision with a fixed set of answers, give options as [{id, label}] and recommended as one of those IDs. Use short lowercase IDs and plain, single-line labels. The human can still answer in their own words. If the task cannot be finished now for a cause that can be removed (another task or a prerequisite not done, a check that fails for another task's reason or cannot run here, missing access), ask the same way: Details say what is done and committed and what holds it, Recommended what unblocks it (such as "grant access to the staging database"): it waits for a human; give it no result by execute_tool("finish_task", {id, result}). If what holds it is another task that must be DONE first, call execute_tool("wait_for_task", {id, on, why}) instead, then end your turn: Dispatcher goes on with it in this conversation once that task is DONE, and no human is asked. FAILED is only for a task that cannot be done at all, with a comment saying why."
+  And terminum mcp's ask_human describes the same three parts, the same rules for plain words, names, one decision a question and each option's next step, and optional structured fields, with an example of both
+
+Scenario: AC-157 edge — questions the human reads once
+  Given an agent with several decisions to ask for, in its work's internal names, codes and hashes
+  Then its prompt and ask_human's description tell it to number one question per decision, to write a name beside what it is, such as "the one idea the tests promoted (H07)", or leave it out, as a commit hash, and to say each option's next step, such as "push now: the results go to main today"
+  And terminumd checks the three parts only: how plain the words are is the agent's to meet, never refused by terminumd
 
 Scenario: AC-157 failure — questions not in the three parts
   When the agent calls ask_human {id: "API-12", questions: "1. v1 or v2? Options: v1, v2. Recommended: v2."}
-  Then it is refused: "Not asked: the questions lack Why you are needed, Recommended, Details. API-12 stays where it was. Write them in plain short words for a person who has not followed this task, in three parts in this order: …, each part a line "Name:" or a heading, then call it again."
+  Then it is refused: "Not asked: the questions lack Why you are needed, Recommended, Details. API-12 stays where it was. Write them in plain short words that a person who has not followed this task understands on one reading, …, each part a line "Name:" or a heading, then call it again."
   And API-12 stays where it was, no comment is kept, and the agent's turn goes on to ask again
   When each part is a line "Name:" or a Markdown heading, a bold label or a list mark before it, its name in any case
   Then the questions are kept and API-12 waits, as above
@@ -1390,11 +1526,78 @@ Scenario: AC-157 edge — the agent goes on
 Scenario: AC-157 failure — not Dispatcher's session
   Given a session the human started, API-12 linked to it
   When its agent calls ask_human
-  Then the questions are kept and API-12 waits, the answer says "Wait for the answer in this session.", and nothing closes
+  Then the questions are kept and API-12 waits, the answer says "End your turn now: the human answers on the board, and terminum types a notice with the task's ID into this session, or answers here.", and nothing closes
 
 Scenario: AC-157 failure — not its task
   When the agent calls ask_human on a task of another session
   Then it is refused: "API-13 belongs to session %8: only its agent asks on it. You can comment."; one with no session: "API-13 has no session: take_task first, or comment."
+```
+
+### AC-285 — Answering a waiting task [MUST / P0]
+
+The maintainer's decision: one way to answer every task its agent asked on, whoever started the session and whether it lives; terminum may type into a live session the human opened only AC-285's fixed words, never the human's text.
+
+```gherkin
+Scenario: AC-285 happy path — the keys
+  Given API-12 in WAIT FOR HUMAN with its agent's questions (AC-157), its window open
+  Then under the answer field stand Archive and Continue with Recommended at the left, Save and Answer at the right, Answer in Run's place: off while the field is empty, it takes ⌘⇧↩ (terminum-kanban.md AC-282)
+  And on a phone Save and Answer stand in the bar at the window's top, Archive and Continue with Recommended in the row under the field
+  And a task in WAIT FOR HUMAN with no question (AC-124: the agent asks in its window) keeps RUN, Save and Archive as before
+
+Scenario: AC-285 happy path — Answer in a session Dispatcher started
+  When the user writes "v2, and keep v1 a month" and presses Answer
+  Then it goes as RUN with that comment (AC-122, AC-157): in the live session, from its shell, or resuming its conversation in a new window; at an agent's limit the queue is offered (AC-169) and the answer is kept first
+  And the window closes once it went or waits
+
+Scenario: AC-285 happy path — Answer in a live session the human opened
+  Given API-12 linked to session %8, opened by the human, its agent asked there: ask_human keeps the conversation its hooks name for %8
+  And %8 still holds that conversation, Claude Code or Codex in front, its hooks having recorded its turn's end, its box empty, no run's mark on it but its + Session's own (AC-142, AC-204)
+  When the user writes "v2" and presses Answer
+  Then "v2" is kept as the human's comment, and by AC-285's gate (§9), once, into %8: "API-12: the human answered your questions on the board. Read the answer by execute_tool("get_task", {id}) and go on with the task, taking it into account."
+  And API-12 is IN PROGRESS
+  And the human's text is never typed: the agent reads it as data by get_task
+
+Scenario: AC-285 failure — that live session cannot take it now
+  Given %8's agent is working, or its hooks recorded no end of its turn, its box holds a draft or a question, the pane is in a tmux mode, another program is in front, or a human typed there since the press
+  When the user presses Answer
+  Then nothing is typed, nothing is kept, API-12 stays in WAIT FOR HUMAN, the answer stays in the field, and the window says why, as RUN does ("The session is not at an empty input box: answer there first")
+  And once tmux took the paste, a miss after it (no echo, no Enter) keeps the answer: the words may still be sent, and the agent reads what it was told of
+  When %8 holds another conversation than the one that asked, or its hooks name none (a pane number tmux gave again after a restart)
+  Then nothing is typed or kept: "Its session no longer holds the conversation that asked: answer in its window, or unlink the session and answer again."
+  When %8 is Dispatcher's pane of other work (another task's run, a Supervisor round)
+  Then it is refused with "Its session is Dispatcher's run of other work: answer in its window, or once that run ends."
+  When %8's tmux server is not read now, or is the user's own not attached
+  Then it is refused with "Its session's server is not read now: answer in its window, or once that server answers."
+
+Scenario: AC-285 edge — a session the human opened that closed
+  Given %8 closed (AC-121's check: its server's list read whole and fresh lacks it)
+  When the user presses Answer
+  Then it goes as RUN's first run on the project's agent, with the task's text and the human's comments, the answer among them (AC-209); the agent reads the questions by get_task
+  And the conversation of %8 is not resumed: a pool agent's command and permissions are not the ones the human chose for it
+
+Scenario: AC-285 happy path — Continue with Recommended
+  When the user presses Continue with Recommended
+  Then it goes as Answer with the comment "Go ahead with the recommended answer(s)."; a question with recorded options (terminum-supervisor.md AC-230) also records its recommended option as the choice, once the answer went or waits for room, with the press's line, its session told and the Supervisor reading it as the choice's own key does
+  And in a live session the human opened the fixed words are "API-12: the human chose your recommended answers. Go on with the task with them."
+  And whatever is written in the field stays there, unsent
+
+Scenario: AC-285 happy path — Archive
+  When the user presses Archive and confirms "Archive API-12? It fails as not wanted and leaves the board; tasks blocked by it ask a human."
+  Then what is written in the field is kept as the human's comment, API-12 moves to FAILED ("archived: not wanted") and is archived (AC-118), and a RUN waiting for room is called off
+  When a run of Dispatcher's still holds it
+  Then it is refused with "Its run holds it: give up on the run first." and nothing moves
+
+Scenario: AC-285 failure — a question no longer waiting
+  Given the agent asked again, the task moved, or the question was answered in another browser or in the terminal
+  When the user presses any of the three for the question the window showed
+  Then it is refused with "That question is no longer waiting for an answer.", nothing moves, and the field keeps its text
+  And two presses at once: the first goes, the second is refused so
+
+Scenario: AC-285 happy path — what is kept
+  When any of the three goes
+  Then the task's history keeps a line "alex answered" / "alex chose Continue with Recommended" / "alex archived it: not wanted", its data the choice (answer, recommended, archive), the question's event ID, the status it left, and how it went (run, typed, archive)
+  And the moves it makes are kept as every move is: from, to, who
+  And a refused press keeps no line
 ```
 
 ### AC-158 — Waiting for room [MUST / P0]
@@ -1408,6 +1611,7 @@ Scenario: AC-158 happy path — a press at a limit
   And while it waits, an agent's move_task or finish_task on it is refused, "API-13 waits in Opus reviewer's queue: it starts when there is room. You can read it and comment.": no other session calls off a human's or a manager's press; a human's move still does
   When API-12's session closes, its agent goes or it is given up
   Then within a walk API-13's press goes again as RUN would go now: every check of a press read anew, the folder, hooks, the host's link, the text the human saw
+  And once it starts, the run's permissions apply to every task it carries (terminum-kanban.md AC-115)
 
 Scenario: AC-158 edge — in turn
   Given API-13 waiting for Opus reviewer, and API-15 pressed on it after
@@ -1415,6 +1619,13 @@ Scenario: AC-158 edge — in turn
   Then API-13 takes it: the first of the queue as the human ordered it (AC-169); a press while a wait before it has room goes behind it
   And a wait held by its project's limit holds no other agent's or project's wait
   But a wait of a schedule's task, a firing's, a Run now's or a RUN's of it, stands ahead of every other wait of its agent and of its project, in the order such waits came (terminum-schedules.md AC-161)
+
+Scenario: AC-158 error — an agent moves or finishes a queued member
+  Given the queued press for API-13 also carries API-14 and API-14's unfinished subtask API-15 (AC-169)
+  When an agent of the project calls move_task or finish_task on API-14 or API-15
+  Then each call is refused with "<task ID> waits in Opus reviewer's queue: it starts when there is room. You can read it and comment."
+  And no status or result is saved, and the press still waits
+  And get_task and add_comment still work
 
 Scenario: AC-158 edge — pressed again
   When the user presses Run on API-13 again, on Opus reviewer or on another agent, or Run from scratch
@@ -1425,6 +1636,7 @@ Scenario: AC-158 edge — pressed again
 Scenario: AC-158 edge — called off
   When the user presses Stop waiting in API-13's window
   Then the wait goes, "The human called off its wait for Opus reviewer." is on API-13, and it stays where it stood
+  And the task tools' ordinary permissions apply again to every task the press carried (terminum-kanban.md AC-115)
   When API-13 moves, is archived, or Opus reviewer is deleted
   Then the wait goes at the next walk, saying why on API-13
 
@@ -1472,8 +1684,9 @@ Scenario: AC-210 failure — refused
   Then it is refused and nothing changes, in words that say which and what to do: "API-9 is DONE already: bring in its work (merge the project's branch where it landed) and go on with API-12.", "API-9 is FAILED: it will not be DONE. If API-12 cannot go on without it, ask a human by execute_tool("ask_human", {id, questions}).", "This session also holds API-13, not finished: go on with them first; API-12 can wait once it is the last open task of this session, or ask a human by execute_tool("ask_human", {id, questions}).", "API-12 is not held by a run Dispatcher started, so nothing would go on with it by itself: link the tasks by execute_tool("link_task", {id, list: "blocked_by", task}) and say so in your answer."
 
 Scenario: AC-210 edge — a human or a restart
-  When the human presses Stop waiting, moves, runs or archives API-12
+  When the human presses Stop waiting, moves, runs or archives API-12, or the project's manager stops it (terminum-agents.md AC-179)
   Then the wait goes as AC-158's: "The human called off its wait for the tasks it waited for.", and a RUN starts as any RUN
+  And Dispatcher lets go of the session it kept for that wait, "Dispatcher let go of its session: the wait it was kept for is gone. The window stays.": a later close of its window, or its server's end, moves nothing
   When terminumd restarts while API-12 waits
   Then the wait is in the store and the walk after it goes on judging it
 
@@ -1620,8 +1833,16 @@ Scenario: AC-169 edge — another agent's waits
   And where a project's limit holds them all, the one line decides: a task moved up in Opus reviewer's queue may start before API-20
 
 Scenario: AC-169 edge — a press for several tasks
-  Given API-13 and API-14 run together on Opus reviewer at its limit, added to the queue
-  Then they are one row and one dot, "API-13, API-14", and take out calls off the press for both
+  Given a RUN of API-13 also names API-14, which has an unfinished subtask API-15, and waits for Opus reviewer
+  Then API-13 and API-14 have one queue row and one dot, "API-13, API-14"
+  And all three task cards share the same place and primary task, with the same agent permissions (AC-158)
+  And taking out the press clears the wait for every member
+
+Scenario: AC-169 edge — a scheduled task's subtask
+  Given a schedule's task with an unfinished subtask
+  When the schedule's task waits for room
+  Then the subtask is outside that press, as the schedule's task runs alone (AC-185)
+  And the task tools' ordinary permissions apply to the subtask
 ```
 
 ### AC-170 — Auto-Dispatcher [SHOULD / P1]
@@ -1666,6 +1887,20 @@ Scenario: AC-170 happy path — priority and saved order, no agent
   And the tasks that walk took and had not pressed yet give their slots of the day back
   When it is set to priority and saved order while a round is open
   Then that round's dispatch_task is refused: "Auto-Dispatch was set to priority and saved order for this project meanwhile: start no more, and finish API-20.", and nothing starts by order until it ended
+
+Scenario: AC-170 edge — turning off priority and saved order during a walk
+  Given Auto-Dispatch is on for api by priority and saved order, with a free slot and API-11 already running
+  And a walk has listed api for picking
+  When the human turns Auto-Dispatch off for api and then adds eligible TODO task API-12
+  And that walk resumes
+  Then API-12 stays in TODO with no run and takes none of the day's cap
+  And API-11 keeps running
+
+Scenario: AC-170 edge — turning off after an order pick
+  Given a walk reserved a slot of the day for API-12 but has yet to record its run
+  When the human turns Auto-Dispatch off for api before the run transaction
+  Then API-12 stays in TODO with no run and gives back its slot of the day
+  And the switch stays off with no failure reason from that pick
 
 Scenario: AC-170 edge — a task back in TODO
   Given a task Auto-Dispatcher started, in either way of picking
@@ -1855,7 +2090,7 @@ Scenario: AC-166 happy path — the close-out in RUN's prompt
   Then RUN's prompt holds, before "When it is done, call execute_tool("finish_task", {id, result}) with the result.", the close-out: "Before you call execute_tool("finish_task", {id, result}), close the task out; short of time, write the result (step 3) first. The session closes minutes after the result: work left that is in no task is lost then." and three steps
   And step 1: what the agent noticed and did not do that a human would plan work for (what is left of the task's own work, a bug or gap outside its scope, a follow-up, a decision to take) gets a task, after list_tasks finds no open one on it, else a comment on that one; smaller things go into the result's Issues and discoveries
   And step 2: the agent reviews the tasks it made in this run (renamed, re-prioritized, regrouped where its work changed them); it archives one only when its work resolved it, or it made it in this run and it is no longer needed, naming the commit or task in the reason; another task that looks stale gets a comment, never a change
-  And step 3: the result "in the language named "Русский"" (the name quoted as data), plain words a newcomer reads without the session, every heading there, its name as written ("None" when empty), in this order: Outcome ("Done", first and in English: work not done takes no result, a human is asked or it is FAILED (AC-123, AC-157); merged or on a branch), Done (each change, why, where; each choice the task left open), Checked (how, on what, with what result; what was not verified), Not done (what is left names its task's ID), Needs a human, New tasks (ID and one sentence each, only tasks that exist), Tasks changed (ID and why), Issues and discoveries, Further recommendations (each one a human would plan names its task's ID)
+  And step 3: the result "in the language named "Русский"" (the name quoted as data), plain words a newcomer reads without the session, every heading there, its name as written ("None" when empty), as a Markdown document (each section a "## " heading with its text below, "### " within a section, no "# " heading), in this order: Outcome ("Done", first and in English: work not done takes no result, a human is asked or it is FAILED (AC-123, AC-157); merged or on a branch), Done (each change, why, where; each choice the task left open), Checked (how, on what, with what result; what was not verified), Not done (what is left names its task's ID), Needs a human, New tasks (ID and one sentence each, only tasks that exist), Tasks changed (ID and why), Issues and discoveries, Further recommendations (each one a human would plan names its task's ID)
   And the titles after their type's word (Bug:, Feat:, Debt:, Story:, terminum-kanban.md AC-199), the texts and the comments the agent puts on the board are in Русский too; the template's headings stay as it writes them
   And the budget's words ask to leave time for the close-out (AC-126)
   And finish_task's description names the same sections, for an agent that took a task without RUN
@@ -2048,7 +2283,6 @@ New task and Run is two presses; a drop and Run one drag and one press. What to 
 | AC-156 | A real Codex task run end to end, while a Codex app's shared app-server runs, is not run: only the started line's process tree and screen are checked. | `terminumd/src/tasks/agents.rs` |
 | AC-168 | One reading per kind: two accounts of one kind (another `CLAUDE_CONFIG_DIR` or `CODEX_HOME` in an agent's command) show whichever read last; the usage command reads the account of this Mac's user. A model's own week (Claude Code's `weekly_scoped`, e.g. Fable's) is not shown: the stripes are the account's. The usage command runs on this Mac only, not on an agent's remote host. | `terminumd/src/dispatcher/subscriptions.rs` |
 | AC-129 | A Codex session is priced as a whole at its last turn's model, and a request over 272K input tokens at the lower price. | `terminumd/src/cli/hooktokens.rs`, `terminumd/src/dispatcher/usage.rs` |
-| AC-209 | A RUN that goes on in the same conversation carries its own comment only, not those kept by SAVE while no agent ran (TERM-196). | `terminumd/src/tasks/notify.rs`, `terminumd/src/dispatcher/press.rs` |
 | AC-185 | Whether a real agent keeps the order, fails what depends on a failed task and asks as the prompt says is its own: terminumd holds only the main task's end (finish_task) and what AC-123 does with a task left in progress. A main task's next RUN starts a new session: the earlier conversation goes on only by a RUN of one subtask (AC-157). | `terminumd/src/dispatcher/press.rs` |
 
 ## 8. Recommendation and ownership
@@ -2111,7 +2345,7 @@ CREATE TABLE auto_rounds (task TEXT PRIMARY KEY REFERENCES tasks, project TEXT N
 CREATE TABLE auto_starts (task TEXT NOT NULL REFERENCES tasks, round TEXT REFERENCES tasks, project TEXT NOT NULL, at INTEGER NOT NULL);  -- round NULL: by priority and saved order
 ```
 
-`PUT /api/task-projects/<id>/auto` takes any of `"on"`, `"agent": "<id>" or null`, `"default": "<id>" or null`, `"severities": ["P0", …]`, `"wait_minutes"`, `"day_most"`, `"mode": "agent" or "order"`, a field left out staying as it is (the switch sends `"on"` alone), and `"off_why": <what the page showed>`; `PUT /api/tasks/<id>/agent {"agent": "<id>" or null}`, and `"agent"` in `POST /api/tasks`; `GET /api/tasks/meta` gives each project `"auto": {"on", "agent", "default", "severities", "wait_minutes", "day_most", "mode", "started_day", "off_why"}`, a task's window `"runs_on"`, and a slot's session `"round": true`. Each walk, after the waits, for each project, in one transaction: its ended rounds are archived; on, its breaker is read, the candidates and slots are worked out, and a round is made unless one is open. A task's wait is counted from its last `made`, `move` or `edit` event; what a round was given is its `candidates`, read back to pass over what it left. A round is a task, so the gate, the budget, FAILED and closing are RUN's own; `pool`'s counting leaves its run out and the board still shows it. `dispatch_task` reaches terminumd as any tool and is a press of RUN's route with no queue; the round's pane is known by its run.
+`PUT /api/task-projects/<id>/auto` takes any of `"on"`, `"agent": "<id>" or null`, `"default": "<id>" or null`, `"severities": ["P0", …]`, `"wait_minutes"`, `"day_most"`, `"mode": "agent" or "order"`, a field left out staying as it is (the switch sends `"on"` alone), and `"off_why": <what the page showed>`; `PUT /api/tasks/<id>/agent {"agent": "<id>" or null}`, and `"agent"` in `POST /api/tasks`; `GET /api/tasks/meta` gives each project `"auto": {"on", "agent", "default", "severities", "wait_minutes", "day_most", "mode", "started_day", "off_why"}`, a task's window `"runs_on"`, and a slot's session `"round": true`. Each walk after the waits lists project IDs, then reads each current setting in that project’s decision transaction. Ended rounds are archived even when the setting is off. When on, the transaction checks the breaker, candidates and slots, then makes a round or reserves candidates in order. Each order press checks the selected project and its setting again in the transaction that records the run. A task's wait is counted from its last `made`, `move` or `edit` event; what a round was given is its `candidates`, read back to pass over what it left. A round is a task, so the gate, the budget, FAILED and closing are RUN's own; `pool`'s counting leaves its run out and the board still shows it. `dispatch_task` reaches terminumd as any tool and is a press of RUN's route with no queue; the round's pane is known by its run.
 
 `state`: `starting`, `asking` (its own question before the box), `typed` (the prompt is in, not yet taken), `working`, `ending` (a limit's end decided, not yet done: done again after a restart, called off by new work or Give up), `gone` (only the shell remains), `left` (a human's program runs there, or it was given up), `closed`; another label in the store is an error, not a run in a state of its own. Its clocks are seconds seen to pass, added walk by walk, so a gap adds nothing (AC-131). A restart reads them, and every other fact here, from the store. The pane option `@terminum-run <run id>` is read back just before every type, signal and close: a mismatch does nothing, drops the link and says so; a restarted server's pane has none. A run keeps the command it started with, so an agent's later change holds for its next run.
 
@@ -2175,16 +2409,22 @@ Exit -1 is the folder's: no process exits with it. The target names the pane: `t
 
 **Resume.** The run's own command (another agent's of its kind when dropped on it, AC-138) then `--resume <id>` (Claude Code) or `resume <id>` (Codex), in the run's first folder; `<id>` must match `[A-Za-z0-9][A-Za-z0-9-]{0,99}`, so it is no flag and no shell word: a hook's field can be posted by any process of the user or a broken host.
 
+Codex's main UserPromptSubmit confirms its conversation ID. A SessionStart or an exit before the prompt keeps the ID a resume started with.
+
+**Run's saved comments (AC-122).** A human's continuation takes the human comments on its tasks in event order since the previous fresh start or human Run, with the field last. A queued human Run reads the saved comments when it starts. The cutoff stays at the words prepared for the paste, so a later Save waits for the next Run. A refused paste keeps the previous cutoff. A store without the cutoff takes, for each task with a run, its last Dispatcher start or Run marker in its history.
+
 **The typing gate.** All in order, on the pane's typing queue so a human's keys cannot interleave; any miss types nothing, or no Enter, and the task says "Not delivered: <which>", but a miss of the request for a result says nothing: a later walk asks again (AC-123):
 
 1. The pane's `@terminum-run` is this run's.
-2. The hooks say the turn ended (for the first prompt: Claude Code's SessionStart, or a box empty for 2 s should its hook have gone unheard: the prompt's own hook proves them); no exit is recorded and `pane_current_command` is no shell; the pane is in no tmux mode. The run's kind says whose screen it is: `pane_current_command` is a version number for Claude Code.
+2. The hooks say the turn ended (for the first prompt: Claude Code's SessionStart, or a box empty for 2 s should its hook have gone unheard: the prompt's own hook proves them); no exit is recorded and `pane_current_command` is no shell; the pane is in no tmux mode. The run's kind says whose screen it is: `pane_current_command` is a version number for Claude Code. Give up (AC-138) first sends Esc under this queue, guarded by the run mark, no exit, no mode, a known input box and a foreground program of the run's kind (`claude`, its version number, or `codex`); it waits up to 5 seconds for an empty box without the current turn's "esc to interrupt" indicator. This stop instruction alone bypasses the released run's stale turn-ended flag and hooks' working lease: an interrupted turn may fire no Stop, and background subagents still need its instruction. The same foreground command, mark, exit and mode are checked by tmux at Esc, paste and Enter. Human input queued before the stop paste is accepted cancels delivery; drafts and questions receive no paste. A miss is recorded on its tasks; no retry types later, including after restart. Ordinary prompts recheck the durable Give up fact before paste and Enter.
 3. The screen reads as a known, empty input box of that kind (AS-125). Anything else, a new version's changed screen included, is not empty.
 4. Paste with `paste-buffer -p`, no Enter; tmux itself reads the mark and the exit in the same command (`if-shell -F` with both branches, the other one printing a refusal: tmux answers it twice, and the control client gives the branch's answer to the gate and the next command its own), so an agent ending just before leaves nothing on its shell's line.
 5. Read the screen again until the text or Claude's fold marker stands in the box, with no dialog, within its time below (a first prompt's longer: an agent still starting shows it late).
 6. Enter.
 
-Only the following pass: a task's ID with fixed words, never a title or a comment, Auto-Dispatcher's two prompts among them (AC-170: a round's with its candidates' IDs, a started task's with its own and its subtasks', AC-185), and the integration queue's two return notices and its round's words (`terminum-integration.md` AC-192, AC-194); the prompt of a batch's integration task: its project's saved Prompt with terminumd's facts filled in (`terminum-integration.md` §9); the prompt of a human's RUN: for one task its title and text, for several, a main task with its subtasks among them (AC-185), their numbers, the human's message, the humans' answers, and the humans' and the project's manager's comments a fresh start carries, each said to be whose, with the agents' counted in fixed words (AC-138, AC-209); the prompt of a schedule's firing: the schedule's own title and text, as a human saved them or its project's manager made them, with fixed words that name who set it, a human or the project's manager (`terminum-schedules.md` AC-162); the message of a project's manager's run_task, said to be the manager's, with the task's title and text, the humans' answers and the comments a fresh start carries (`terminum-agents.md` AC-179, AC-209); the resume after a tmux server's end in fixed words with the open tasks' IDs (AC-205); the going on of a task that waited for other tasks, in fixed words with its and their IDs (AC-210); the close-out of AC-166 in fixed words with the project's language, a name of letters, spaces, hyphens and brackets that a human set; the first prompt of a human's + Session, its words and its files' lines, once, into the pane that request started, the request holding the run's start until it went in or missed (AC-204). terminumd keeps what it typed for 5 minutes and matches it to the hook's `prompt`, on that field's first 20,000 characters: such a prompt is not new work (AC-122) and is no activity (AC-123). Each paste and the window's command are rows of the input log, as Dispatcher's (terminum.md AC-147).
+Give up (AC-138) also passes one fixed stop instruction with the run's task IDs, never stored text. Its state transition takes the same pane typing queue as ordinary delivery: an accepted delivery precedes cancellation; a later one sees its durable fact. The queue wait is bounded to 5 seconds and a timeout refuses Give up without changes; the transaction rechecks the run ID and pane/queue target after waiting, and the human-input decision timestamp carries across both queue acquisitions. After acceptance, its separate stop attempt also waits at most 5 seconds for the queue. tmux commands retain the control client's answer timeout, and the gate cleans up its paste buffer on delivery failure. A stop-delivery failure keeps the run released and is recorded on all its tasks, including FAILED ones. Human input queued before the stop paste is accepted cancels it; after acceptance, the stop paste and Enter finish together before the human's keys. A `gave_up` event with the run ID preserves the next task-tool response for that run's original pane, including after archive or a new run in another pane. A later run in the same pane replaces that caller identity.
+
+Only the following pass: a task's ID with fixed words, never a title or a comment, Auto-Dispatcher's two prompts among them (AC-170: a round's with its candidates' IDs, a started task's with its own and its subtasks', AC-185), and the integration queue's two return notices and its round's words (`terminum-integration.md` AC-192, AC-194); the prompt of a batch's integration task: its project's saved Prompt with terminumd's facts filled in (`terminum-integration.md` §9); the prompt of a human's RUN: for one task its title and text, for several, a main task with its subtasks among them (AC-185), their numbers, the human's message, the humans' answers, the human comments saved since the previous run on a continuation (AC-122), and the humans' and the project's manager's comments a fresh start carries, each said to be whose, with the agents' counted in fixed words (AC-138, AC-209); the prompt of a schedule's firing: the schedule's own title and text, as a human saved them or its project's manager made them, with fixed words that name who set it, a human or the project's manager (`terminum-schedules.md` AC-162); the message of a project's manager's run_task, said to be the manager's, with the task's title and text, the humans' answers and the comments a fresh start carries (`terminum-agents.md` AC-179, AC-209); the resume after a tmux server's end in fixed words with the open tasks' IDs (AC-205); the going on of a task that waited for other tasks, in fixed words with its and their IDs (AC-210); the close-out of AC-166 in fixed words with the project's language, a name of letters, spaces, hyphens and brackets that a human set; the first prompt of a human's + Session, its words and its files' lines, once, into the pane that request started, the request holding the run's start until it went in or missed (AC-204); a Supervisor round's first prompt, fixed words with its case file's ID, once, into its marked round pane (terminum-supervisor.md AC-234); a human's Talk press's first prompt, fixed words with the incident's case file ID, once, into the pane that press started, as AC-204 (terminum-supervisor.md AC-244); a human's reply to a report, as the RUN of the task whose run made the report, in that run's conversation, never a fresh or grouped start, with the reply as its message: fixed words with the task's and the report's IDs and the human's text, never the report's text (terminum-reports.md AC-270); a human's Answer or Continue with Recommended on a task linked to a live session the human opened: fixed words with the task's own ID, once, never the human's text, by AC-285's gate: the checks above with the pane holding no run's mark, or its + Session's own, instead of the run's, its turn's end recorded by its hooks, its program in front read once and judged again by tmux in the paste and the Enter, and only while the pane holds the agent conversation that asked (AC-285). terminumd keeps what it typed for 5 minutes and matches it to the hook's `prompt`, on that field's first 20,000 characters: such a prompt is not new work (AC-122) and is no activity (AC-123). Each paste and the window's command are rows of the input log, as Dispatcher's (terminum.md AC-147).
 
 **Comment notices (AC-209).** Waiting notices live in terminumd's memory. The card keeps the comments and the recorded delivery outcomes. A restart drops the pending notices because the queued notices belong to the live hook session, and the stored comment alone cannot establish whether a notice was queued or heard.
 
@@ -2218,7 +2458,7 @@ Only the following pass: a task's ID with fixed words, never a title or a commen
 - A hook's fields are data: only a shape-checked session ID reaches a shell. What a hook sends for the board is integers and percents only (AC-168): a made-up one changes the board's stripes, nothing else. `terminum statusline` runs the user's own status line command, as Claude Code would, with the input it gave.
 - `ps` reads no command lines beyond a program's name: arguments can hold secrets.
 - Transcripts are read only by `terminum hook` on their own machine, a regular file, only for a task's session and after its turn's end has gone; three integers leave it, and terminumd keeps only integers.
-- An agent runs with the permissions its command gives (AC-156): an operator's bypassing command (`claude --dangerously-skip-permissions`, `codex --dangerously-bypass-approvals-and-sandbox`) makes whatever it reads (a task an agent wrote, a comment, a file, a web page) one step from running, as the user's own bypassed session; Codex then has no sandbox and no hook that refuses, so a repository's hooks that guard its checkout do not hold for it. What reaches it as a prompt is a human's RUN: the task's text shown in RUN's window, an agent's part marked, and after its questions only the humans' comments (AC-157); or its project's manager's run_task, with no window, its message said to be the manager's (terminum-agents.md AC-179); or a schedule's own text at its firing (`terminum-schedules.md` §9).
+- An agent runs with the permissions its command gives (AC-156): an operator's bypassing command (`claude --dangerously-skip-permissions`, `codex --dangerously-bypass-approvals-and-sandbox`) makes whatever it reads (a task an agent wrote, a comment, a file, a web page) one step from running, as the user's own bypassed session; Codex then has no sandbox and no hook that refuses, so a repository's hooks that guard its checkout do not hold for it. What reaches it as a prompt is a human's RUN: the task's text shown in RUN's window, an agent's part marked, and after its questions only the humans' comments (AC-157); or its project's manager's run_task, with no window, its message said to be the manager's (terminum-agents.md AC-179); or a schedule's own text at its firing (`terminum-schedules.md` §9); or a Supervisor round's or Talk's fixed words with a case file's ID (terminum-supervisor.md AC-234, AC-244).
 - A project agent's command is the human's own words, run as they would type them: the board is the only way terminum offers to change it (anyone signed in, which is no more than typing in a terminal there, and a project's manager by its tools; a worker's `terminum mcp` has no tool for it), no boundary against a process of the user's, which can change the store: RUN's dialog shows it in full. It is kept and shown as written, so a secret belongs in the shell's environment, never in the command.
 
 **What a card shows.** Every walk's `taskusage {items: {"API-12": {"cpu": 12, "gib": 1.2, "minutes": 14, "tokens": {"input": 1200, "output": 34, "cache_write": 0, "cache_read": 5, "counted": 1234}, "idle_subs": [{"id": "sub-1", "kind": "reviewer"}]}}}` to every page, when it changed; `"tokens": null`: not known; `"not_measured": "Host out of reach"`. `budget_used` goes with it. A host's `ps` and `kill` go over one ssh command each with its recipe, 12 s at most, and only where a wanted pane stands: a host with no run is read one beat in four with a page open. tmux's control link was tried for them: `run-shell`'s output comes outside its command's block.
@@ -2246,15 +2486,15 @@ Depends on `terminum-kanban.md`'s Stage 1. All three stages belong to terminum's
 ## 11. Checklist with Definition of Done
 
 - [x] AC-121 — `web/test/e2e_taskrun.mjs` (Run in the task's window: at once, or the dialog for an agent's words, subtasks, no agent, no room, a refusal), `cargo test dispatcher::press` (a linked session holds RUN only while open; its server not read now is said), `cargo test lists::` (a pane open, then closed, on a real tmux), `cargo test dispatcher::screen`, `cargo test tmux::control` (the gate's guarded paste and Enter get their own answers), `web/test/e2e_livedispatcher.mjs` on `scripts/fake_agent.py`; on the real programs, outside every gate as it spends model calls: `TM_TEST_REAL_AGENTS=1 TM_TEST_CLOCK_SCALE=1 node web/test/e2e_live.mjs board` (`TM_TEST_REAL_CODEX=1` too); `SECURITY.md` carries Dispatcher's typing
-- [x] AC-138 — `cargo test dispatcher::runs`, `cargo test dispatcher::press`, `cargo test tasks::agents`, `web/test/e2e_liveboardagents.mjs`, `web/test/e2e_liveschedules.mjs` (`node web/test/e2e_live.mjs folded`: wide then phone, RUN's close controls and keyboard Run through a held board refresh), `web/test/cardstate.test.mjs` (a dot at work)
+- [x] AC-138 — `cargo test dispatcher::giveup` (guarded Esc and fixed stop prompt, native Claude/Codex stand-ins, refusal paths and durable tool notice), `cargo test dispatcher::runs`, `cargo test dispatcher::press`, `cargo test tasks::agents`, `web/test/e2e_liveboardagents.mjs`, `web/test/e2e_liveschedules.mjs` (`node web/test/e2e_live.mjs folded`: wide then phone, RUN's close controls and keyboard Run through a held board refresh), `web/test/cardstate.test.mjs` (a dot at work)
 - [x] AC-137 — `cargo test tasks::agents`, `cargo test tasks::store` (`ac137_one_pool_s_agents_each_go_to_a_project`), `cargo test tasks::auto` (`ac137_a_task_names_an_agent_of_its_own_project_alone`), `cargo test roles`, `cargo test cli::mcp`, `cargo test auth::checks`, `web/test/e2e_liveboardagents.mjs`, `web/test/astyped.test.mjs`, `SECURITY.md` carries a project agent's command
-- [x] AC-122 — `cargo test dispatcher::hooks`, `cargo test dispatcher::acts` (RUN cancels a waiting close already decided), `web/test/e2e_taskrun.mjs` (all columns, held sessions, queue and refusals; one press in the task's window, Run from scratch), `web/test/e2e_livewaiting.mjs` (answer before closing, `e2e_live.mjs waiting`), `web/test/e2e_livedispatcher.mjs` (answer after closing), `web/test/e2e_livearchived.mjs` (a human's prompt restores archived DONE and IN PROGRESS cards), `cargo test messages::own` (a turn it scheduled itself), `cargo test cli::hook` (its scheduled prompt and source), its real run as AC-121's
+- [x] AC-122 — `cargo test dispatcher::hooks`, `cargo test dispatcher::acts` (RUN cancels a waiting close already decided), `cargo test ac122_save_twice` (Save, Save, Run through the real task routes and private tmux, then no replay), `cargo test codex_run_` (RUN after hook review and the missing-session diagnostic, through the task routes and private tmux), `web/test/e2e_taskrun.mjs` (all columns, held sessions, queue and refusals; one press in the task's window, Run from scratch), `web/test/e2e_livewaiting.mjs` (answer before closing and Save, Save, Run, `e2e_live.mjs waiting`), `web/test/e2e_livedispatcher.mjs` (answer after closing), `web/test/e2e_livearchived.mjs` (a human's prompt restores archived DONE and IN PROGRESS cards), `cargo test messages::own` (a turn it scheduled itself), `cargo test cli::hook` (its scheduled prompt and source), its real run as AC-121's
 - [x] AC-209 — `cargo test tasks::notify` (the words, plain names, who hears, several and edited comments, an ended session, the marks, a comment's way end to end), `cargo test tasks::tell` (lines not heard go again), `cargo test dispatcher::carry`, `cargo test dispatcher::press` (`ac209_a_fresh_start_carries_the_humans_and_the_manager_s_comments_and_counts_the_agents`, the press's message once, an answer once), `web/test/e2e_taskwin.mjs` (`node web/test/e2e_all.mjs webTaskWin`: each comment's mark), `scripts/e2e_comment_notice.py` (real terminum hook commands with synthetic events for both agents: tool context, idle prompt context, older hooks' fallback and Heard on the task, a pane closed without SessionEnd, and a restart with a notice waiting)
-- [x] AC-123 — `cargo test dispatcher::plan` (idle time stopped in INTEGRATION), `cargo test dispatcher::hooks` (a request's turn and its Stop), `cargo test dispatcher::walk` (every footer kind; a red Verify after two hours, its return and fresh request and hour after a store reload), `cargo test dispatcher::start`, `cargo test tasks::tools`, `web/test/e2e_livedispatcher.mjs` with the test clock, `web/test/e2e_livebackground.mjs` (a monitor-only run past the idle hour; `node web/test/e2e_live.mjs background`), `scripts/e2e_remote_tasks.py`
+- [x] AC-123 — `cargo test dispatcher::plan` (idle time stopped in INTEGRATION), `cargo test dispatcher::hooks` (a request's turn and its Stop), `cargo test dispatcher::walk` (every footer kind; a red Verify after two hours, its return and fresh request and hour after a store reload), `cargo test dispatcher::start`, `cargo test tasks::tools`, `web/test/e2e_livedispatcher.mjs` with the test clock (receipt after Enter, checked in landing smoke too, then FAILED an hour later), `web/test/e2e_livebackground.mjs` (a monitor-only run past the idle hour; `node web/test/e2e_live.mjs background`), `scripts/e2e_remote_tasks.py`
 - [x] AC-124 — `cargo test dispatcher::plan`, `web/test/e2e_livedispatcher.mjs`
 - [x] AC-125 — `cargo test dispatcher::plan`, `cargo test dispatcher::acts` (a close decided before a human's input; a draft in the box), `web/test/e2e_livedispatcher.mjs` (a draft typed by tmux)
 - [x] AC-126 — `cargo test dispatcher::plan`, `cargo test tasks::tell` (words not heard go again), `cargo test dispatcher::acts` (an end decided before a human's input), `web/test/e2e_livedispatcher.mjs`, `SECURITY.md` carries Dispatcher's signals
-- [x] AC-127 — `cargo test dispatcher::plan`, `cargo test dispatcher::hooks`, `cargo test tmux::hookstate`, `web/test/e2e_livedispatcher.mjs`
+- [x] AC-127 — `cargo test dispatcher::plan`, `cargo test dispatcher::hooks`, `cargo test tmux::hookstate`, `cargo test ac127` (clock pause and mixed run), `web/test/e2e_livedispatcher.mjs` (active run), `web/test/e2e_livesubagents.mjs` (human and prerequisite waits)
 - [x] AC-128 — `cargo test dispatcher`, `cargo test tasks::agents`, `web/test/e2e_livedispatcher.mjs`, its window's words and global placeholders in `web/test/e2e_liveboardagents.mjs`
 - [x] AC-129 — `cargo test cli::hooktokens` with fixtures of both agents' files, `cargo test dispatcher::usage` (a late read counts nothing), `web/test/e2e_livedispatcher.mjs`
 - [x] AC-130 — `scripts/e2e_remote_tasks.py`
@@ -2262,14 +2502,15 @@ Depends on `terminum-kanban.md`'s Stage 1. All three stages belong to terminum's
 - [x] AC-140 — `cargo test tasks::agents`, `cargo test tasks::store`, `web/test/e2e_liveboardagents.mjs`, `web/test/e2e_livedispatcher.mjs`, `scripts/e2e_remote_tasks.py`
 - [x] AC-141 — `cargo test dispatcher::pool`, `cargo test dispatcher::plan`, `cargo test tasks::limits`, `web/test/e2e_liveboardpool.mjs` (an empty-box offer, a draft typed before its press, refusal preserving the pane/draft/unqueued task, then an empty-box close)
 - [x] AC-142 — `cargo test dispatcher::runs`, `cargo test dispatcher::plan`, `cargo test tasks::tools`, `web/test/e2e_liveboardagents.mjs` (the tiles: `web/test/e2e_liveboardpool.mjs`), `web/test/e2e_navsession.mjs` (the list's head key)
-- [x] AC-204 — `cargo test dispatcher::firstprompt` (the words and files checked), `web/test/e2e_liveboardpool.mjs` (typed once through the gate, a refused control character), `web/test/e2e_sessbox.mjs` (`node web/test/e2e_all.mjs webSessBox`: the dock, files, dropped tasks, the draft, a miss)
+- [x] AC-204 — `cargo test dispatcher::firstprompt` (the words and files checked), `web/test/e2e_liveboardpool.mjs` (typed once through the gate, a refused control character), `web/test/e2e_sessbox.mjs` (`node web/test/e2e_all.mjs webSessBox`: the dock, files, dropped tasks, the draft, the fold at Start, the board kept with its line and link, a refusal, a miss)
 - [x] AC-143 — `cargo test dispatcher::usage`, `cargo test tasks::agents`, `web/test/e2e_liveboardagents.mjs`
 - [x] AC-168 — `cargo test subscriptions`, `cargo test usageask`, `cargo test usageread`, `cargo test settings::tests::ac168`, `cargo test cli::statusline`, `cargo test cli::hooktokens`, `scripts/e2e_hooks.py`, `web/test/e2e_liveboardsubs.mjs` (a stripe under 40% green, over 90% red)
 - [ ] AC-156 — `cargo test tasks::agents`, `cargo test dispatcher::press`, `web/test/e2e_liveboardagents.mjs`, `web/test/e2e_livedispatcher.mjs` (the inline words), `SECURITY.md` carries the operator's command
-- [ ] AC-157 — `cargo test dispatcher::plan`, `cargo test dispatcher::press`, `cargo test dispatcher::hooks` (held initial event, early tools and mixed outcomes), `cargo test dispatcher::start` (stale start watcher), `cargo test tasks::tools`, `cargo test tasks::integration_queue` (early integration), `cargo test cli::mcp`, `web/test/e2e_livedispatcher.mjs`
-- [ ] AC-158 — `cargo test dispatcher::waits`, `web/test/e2e_liveboardagents.mjs`
+- [x] AC-285 — `cargo test dispatcher::answer` (typed fixed words into a native Claude Code and Codex stand-in in a private tmux, the asking conversation required, each refusal of its gate, Archive, a stale question, RUN's way), `node web/test/e2e_all.mjs webAnswerKeys` (the keys, wide and phone, Chromium and WebKit); `SECURITY.md` and `CLAUDE.md` §2 carry the exception
+- [ ] AC-157 — `cargo test dispatcher::plan`, `cargo test dispatcher::press`, `cargo test dispatcher::hooks` (held initial event, early tools and mixed outcomes), `cargo test dispatcher::start` (stale start watcher), `cargo test ac122_ac157_codex_run` (a second RUN carries the answer with the saved Codex ID), `cargo test tasks::tools`, `cargo test tasks::integration_queue` (early integration), `cargo test cli::mcp`, `node web/test/e2e_all.mjs webQuestionChoices`, `web/test/e2e_livedispatcher.mjs`
+- [ ] AC-158 — `cargo test dispatcher::waits` (move and result refusals for all queued members, reading, commenting, cancellation, and handoff to the live run), `web/test/e2e_liveboardagents.mjs`
 - [x] AC-169 — `cargo test dispatcher::pool` (four integration waits free agent and project room while every retained session stays visible, startup reservations, a live return above the limit, mixed tasks and restart), `cargo test dispatcher::waits`, `cargo test roles::tests::queue_tests` (manager promotion, saved press, grouped positions, persistence and refusals), `scripts/e2e_roles.py` (P2/P2/P0 promotion and the same agent conversation), `cargo test ac169` (filtered counts, queued members and unanswered subtasks), `web/test/e2e_integrationslots.mjs` (retained dots and Open session in both themes and sizes), `node web/test/e2e_live.mjs chromium webkit integration-slots` (a queued blocker starts; retained sessions open; a return blocks later starts), `web/test/e2e_livequeue.mjs`, `web/test/e2e_livequeuewait.mjs` (a wide and a phone size: answered WAIT FOR HUMAN, positions, counts, reordering, cancellation), `web/test/e2e_liveboardagents.mjs`
-- [x] AC-170 — `cargo test dispatcher::auto`, `cargo test tasks::auto`, `cargo test tasks::tools` (a round's pane), `web/test/e2e_liveauto.mjs` on `scripts/fake_agent.py` (its tab in the project's window, the cog, several projects shown); no test of its own: two dispatch_task calls at once through the socket, a new place among the cards leaving the wait as it was, a candidate with an earlier conversation started anew; not run on a real model: whether a real agent follows the round's words
+- [x] AC-170 — `cargo test dispatcher::auto`, `cargo test ac170_order_press_rechecks_the_selected_project_at_run_admission`, `cargo test tasks::auto`, `cargo test tasks::tools` (a round's pane), `web/test/e2e_liveauto.mjs` on `scripts/fake_agent.py` (its tab in the project's window, the cog, several projects shown); no test of its own: two dispatch_task calls at once through the socket, a new place among the cards leaving the wait as it was, a candidate with an earlier conversation started anew; not run on a real model: whether a real agent follows the round's words
 - [x] AC-185 — `cargo test ac185` (dispatcher::press, tasks::tools), `cargo test dispatcher::auto` (a main task as a candidate, its agent's words), `web/test/e2e_livemain.mjs` on `scripts/fake_agent.py` (a human's RUN, a subtask failed, run again); no test of its own: Auto-Dispatcher's start of a main task through the page, the ask and its answers through the page, a manager's run_task; not run on a real model: whether a real agent follows the words
 - [x] AC-183 — `cargo test dispatcher::runs`, `cargo test dashboard::`, `web/test/e2e_liveboardagents.mjs` (a drop, a page's press, the new-task window, + Session), `web/test/e2e_liveschedules.mjs` (a firing), `web/test/e2e_liveauto.mjs` (Auto-Dispatcher's start); no test of its own: a wait's press started later
 - [x] AC-166 — `cargo test tasks::closeout`, `cargo test tasks::tools`, `cargo test dispatcher::press`, `cargo test cli::mcp`, `web/test/e2e_livedispatcher.mjs`, `web/test/e2e_liveboardids.mjs`

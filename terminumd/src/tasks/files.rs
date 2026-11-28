@@ -3,7 +3,7 @@
 //! folder, a row in the store. A file dropped in a window not yet saved has no task; such a file
 //! goes after 7 days. Nothing here runs or is opened on the page's origin.
 
-use std::io::{Read, Write};
+use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 
 use rusqlite::{OptionalExtension, Row, Transaction};
@@ -132,7 +132,7 @@ pub const FILE_GONE: &str = "A file of this window is gone: add it again";
 pub fn attach(tx: &Transaction, ids: &[String], task: &str, event: Option<&str>) -> Result<(), String> {
     let key = ops::key_of(tx, task)?;
     for id in ids {
-        let done = tx.execute("UPDATE files SET task = ?1, event = ?2 WHERE id = ?3 AND task IS NULL", (&key, event, id)).map_err(sql)?;
+        let done = tx.execute("UPDATE files SET task = ?1, event = ?2 WHERE id = ?3 AND task IS NULL AND report IS NULL", (&key, event, id)).map_err(sql)?;
         if done == 0 {
             return Err(FILE_GONE.into());
         }
@@ -143,8 +143,53 @@ pub fn attach(tx: &Transaction, ids: &[String], task: &str, event: Option<&str>)
 /// A file kept for no task yet (a window's or + Session's upload): its row and where its bytes are.
 pub fn unattached(tx: &Transaction, dir: &Path, id: &str) -> Result<(File, PathBuf), String> {
     let path = path_of(dir, id)?;
-    let file = tx.query_row("SELECT id, name, bytes, mime FROM files WHERE id = ?1 AND task IS NULL", [id], |r| File::of_row(r, 0)).optional().map_err(sql)?;
+    let file = tx.query_row("SELECT id, name, bytes, mime FROM files WHERE id = ?1 AND task IS NULL AND report IS NULL", [id], |r| File::of_row(r, 0)).optional().map_err(sql)?;
     file.map(|f| (f, path)).ok_or_else(|| "No such file".into())
+}
+
+/// A file an agent hands in: on this Mac a path inside its session's folder, judged on resolved
+/// paths; from a host its text alone.
+pub(crate) fn handed_in(who: &super::tools::Who, args: &serde_json::Value) -> Result<(String, Box<dyn std::io::Read>), String> {
+    if let (Some(name), Some(text)) = (args["name"].as_str(), args["text"].as_str()) {
+        if text.len() > super::tools::TEXT_FILE_MOST {
+            return Err(format!("A file given as text holds at most {} bytes.", super::tools::TEXT_FILE_MOST));
+        }
+        return Ok((crate::plans::rules::clean(name), Box::new(std::io::Cursor::new(crate::plans::rules::clean(text).into_bytes()))));
+    }
+    let Some(dir) = &who.dir else {
+        return Err("From a host give {task, name, text}.".into());
+    };
+    let path = super::tools::arg(args, "path")?;
+    // a relative path is the session's, never terminumd's own folder
+    let (resolved, folder) = (std::fs::canonicalize(Path::new(dir).join(path)).map_err(|e| format!("{path}: {e}"))?, std::fs::canonicalize(dir).map_err(|e| format!("{dir}: {e}"))?);
+    if !resolved.starts_with(&folder) {
+        return Err(format!("{path} is outside this session's folder."));
+    }
+    let (opened, meta) = crate::files::open_regular(&resolved).map_err(|e| format!("{path}: {}", e.message()))?;
+    let name = resolved.file_name().and_then(|n| n.to_str()).unwrap_or("file").to_string();
+    if meta.len() as usize > MOST_BYTES {
+        return Err(format!("{name} is over 100 MB"));
+    }
+    Ok((name, Box::new(opened)))
+}
+
+/// Files a report's purge took from the store: their bytes go now; what stays the sweep takes as bytes with no row.
+pub(crate) fn drop_bytes(dir: &Path, ids: &[String]) {
+    for id in ids {
+        if let Ok(path) = path_of(dir, id) {
+            let _ = std::fs::remove_file(path);
+        }
+    }
+}
+
+/// A file kept for no task or report yet joins report `key` (terminum-reports.md AC-266).
+pub(crate) fn attach_to_report(tx: &Transaction, id: &str, key: &str) -> Result<(), String> {
+    let done = tx.execute("UPDATE files SET report = ?1 WHERE id = ?2 AND task IS NULL AND report IS NULL", (key, id)).map_err(sql)?;
+    if done == 0 { Err(FILE_GONE.into()) } else { Ok(()) }
+}
+
+pub(crate) fn of_report(tx: &Transaction, key: &str) -> Result<Vec<File>, String> {
+    rows(tx, "SELECT id, name, bytes, mime FROM files WHERE report = ?1 ORDER BY at, rowid", [key], |r| File::of_row(r, 0))
 }
 
 pub fn of_task(tx: &Transaction, task: &str) -> Result<Vec<File>, String> {
@@ -152,18 +197,26 @@ pub fn of_task(tx: &Transaction, task: &str) -> Result<Vec<File>, String> {
     rows(tx, "SELECT id, name, bytes, mime FROM files WHERE task = ?1 ORDER BY at, rowid", [&key], |r| File::of_row(r, 0))
 }
 
-/// A file's row, its bytes opened, and how it may show inline: by its first bytes alone.
-pub fn open(store: &Store, dir: &Path, id: &str) -> Result<(File, std::fs::File, Option<&'static str>), String> {
+pub(super) struct Opened {
+    pub name: String,
+    pub bytes: std::fs::File,
+    pub inline: Option<&'static str>,
+    pub len: u64,
+}
+
+/// A file's name, its open bytes and their length, and how it may show inline: by its first bytes alone.
+pub(super) fn open(store: &Store, dir: &Path, id: &str) -> io::Result<Opened> {
     use std::os::unix::fs::FileExt;
-    let path = path_of(dir, id)?;
-    let file = store.with(|tx| {
-        tx.query_row("SELECT id, name, bytes, mime FROM files WHERE id = ?1", [id], |r| File::of_row(r, 0))
-            .optional().map_err(sql)?.ok_or_else(|| "No such file".to_string())
-    })?;
-    let bytes = std::fs::File::open(&path).map_err(|e| format!("{}: {e}", file.name))?;
-    let mut head = [0u8; 12];
-    let got = bytes.read_at(&mut head, 0).map_err(|e| format!("{}: {e}", file.name))?;
-    Ok((file, bytes, raster_mime(&head[..got])))
+    let path = path_of(dir, id).map_err(|message| io::Error::new(io::ErrorKind::NotFound, message))?;
+    let name: String = store.with(|tx| {
+        tx.query_row("SELECT name FROM files WHERE id = ?1", [id], |r| r.get(0)).optional().map_err(sql)
+    }).map_err(io::Error::other)?.ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "No such file"))?;
+    let with_name = |e: io::Error| io::Error::new(e.kind(), format!("{name}: {e}"));
+    let bytes = std::fs::File::open(&path).map_err(with_name)?;
+    let mut head = [0u8; MIME_HEAD as usize];
+    let got = bytes.read_at(&mut head, 0).map_err(with_name)?;
+    let len = bytes.metadata().map_err(with_name)?.len();
+    Ok(Opened { name, bytes, inline: raster_mime(&head[..got]), len })
 }
 
 /// A human's purge (AC-109): the bytes go for good; the history keeps who did it and the name.
@@ -206,11 +259,11 @@ pub fn delete(store: &Store, dir: &Path, id: &str, author: &str, at: i64) -> Res
     done
 }
 
-/// Files of windows never saved, older than 7 days, go; how many.
+/// Files of windows never saved, older than 7 days, go, a report's never (terminum-reports.md AC-265); how many.
 pub fn sweep(store: &Store, dir: &Path, at: i64) -> Result<usize, String> {
     let gone: Vec<String> = store.with(|tx| {
-        let ids: Vec<String> = rows(tx, "SELECT id FROM files WHERE task IS NULL AND at < ?1", [at - UNUSED_SECONDS], |r| r.get(0))?;
-        tx.execute("DELETE FROM files WHERE task IS NULL AND at < ?1", [at - UNUSED_SECONDS]).map_err(sql)?;
+        let ids: Vec<String> = rows(tx, "SELECT id FROM files WHERE task IS NULL AND report IS NULL AND at < ?1", [at - UNUSED_SECONDS], |r| r.get(0))?;
+        tx.execute("DELETE FROM files WHERE task IS NULL AND report IS NULL AND at < ?1", [at - UNUSED_SECONDS]).map_err(sql)?;
         Ok(ids)
     })?;
     for id in &gone {
@@ -272,7 +325,7 @@ mod tests {
         s.with(|tx| attach(tx, std::slice::from_ref(&f.id), &id, None)).unwrap();
         assert_eq!(s.with(|tx| of_task(tx, &id)).unwrap(), vec![f.clone()]);
         assert_eq!(std::fs::read(&path).unwrap(), b"\x89PNG\r\n\x1a\nrest");
-        assert_eq!(open(&s, &dir, &f.id).unwrap().2, Some("image/png"), "as its first bytes say");
+        assert_eq!(open(&s, &dir, &f.id).unwrap().inline, Some("image/png"), "as its first bytes say");
         assert!(s.with(|tx| attach(tx, std::slice::from_ref(&f.id), &id, None)).is_err(), "attached once");
     }
 
@@ -337,7 +390,7 @@ mod tests {
         let f = keep(&s, &dir, "notes.txt", b"kept", 1).unwrap();
         s.with(|tx| attach(tx, std::slice::from_ref(&f.id), &id, None)).unwrap();
         assert!(delete(&s, &dir, &f.id, "nobody", 2).is_err(), "no such user: the purge fails");
-        let (_, mut bytes, _) = open(&s, &dir, &f.id).expect("row and bytes stay");
+        let mut bytes = open(&s, &dir, &f.id).expect("row and bytes stay").bytes;
         let mut text = String::new();
         std::io::Read::read_to_string(&mut bytes, &mut text).unwrap();
         assert_eq!(text, "kept");

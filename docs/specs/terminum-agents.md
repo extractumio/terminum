@@ -67,10 +67,11 @@ Open questions: none.
 | AC-97 | [SHOULD / P1] | A coding agent's plan (its own plan tool through the hooks, or terminum's MCP tools) shows as a percent and a track on its session's row and in the header, and in a Plan pane with the items, the current step and the agent's ETA; a plan not updated for a while is asked for through the hooks. |
 | AC-98 | [SHOULD / P1] | Agents make no bookmarks or reminders; the records they kept stay for the user to read, close, delete or make into tasks. |
 | AC-155 | [SHOULD / P1] | `terminum mcp` lists search_tools, get_tool_info, execute_tool and update_session_plan; an agent finds any other tool of the catalog by the action it needs, synonyms counted, and runs it through execute_tool, as terminum's own words write each call. |
-| AC-174 | [MUST / P0] | A tool's caller is a worker or a manager, decided by terminumd from its own records at each call: the session a human's + Session started, and a session the human opened in a project, are its project's managers; every other session is a worker, with today's tools. A worker neither finds nor runs a manager's tool. |
+| AC-174 | [MUST / P0] | A tool's caller is a worker, manager or Supervisor, decided by terminumd from its own records at each call: the session a human's + Session started, and a session the human opened in a project, are its project's managers; a Supervisor round's or Talk's session is its project's Supervisor caller (terminum-supervisor.md AC-231); every other session is a worker, with every tool but a manager's and the Supervisor's. A worker neither finds nor runs a manager's tool. |
 | AC-178 | [SHOULD / P1] | A manager's call is run only when it comes from under the pane it names, and what writes only from that pane's main agent. |
 | AC-179 | [MUST / P0] | A manager starts its project's tasks on the pool's agents through Dispatcher, answers and goes on with them, stops them, reads what runs and the project's numbers, and lists, reads, types into and closes its project's other sessions, never another manager's; its words reach an agent as the manager's, never as a human's. |
 | AC-180 | [MUST / P0] | A manager adds, changes and removes its project's pool's agents and its project's schedules by the board's own rules, in force at once, each under its name. |
+| AC-283 | [MUST / P0] | A manager reads its project's setup and what it still lacks, and sets its ID letters, language, task template, agents at once and memory limits; the `terminum-onboard` skill in terminum's Claude Code plugin onboards a project from its folder with these tools, asking the user only what the folder cannot tell, and names each switch that stays the human's. |
 | AC-181 | [MUST / P0] | Every tool of `terminum mcp` runs from a shell by `terminum tool`, as the session of the pane it runs in or, outside a pane, as a token's role and project; a token is made and removed only outside terminum's panes and kept as its hash. |
 | AC-207 | [MUST / P0] | Under a shared Codex app-server terminum takes no pane from the environment, so no session reports into another's pane or gets its role; `terminum mcp` there offers one tool saying why and how to start Codex instead, and `terminum hooks` says when such a server runs. |
 | AC-208 | [SHOULD / P1] | A run of Claude Code or Codex in a pane that terminum serves less well (a Codex under a shared app-server, an agent in its full-screen TUI) gets a window saying what is lost and how to start it otherwise, once per run on the first page that shows it; "Do not show again" turns that kind off for every browser, and Settings turns them back on. |
@@ -331,6 +332,7 @@ Scenario: AC-155 happy path — listed, found, run
   When the agent lists the tools
   Then it gets search_tools, get_tool_info, execute_tool and update_session_plan (the plan, sent at every step with a schema the client checks), nothing else
   And wherever terminum's instructions, reminder or Dispatcher's fixed prompts name another tool, they write its call: `execute_tool("finish_task", {id, result})`, `execute_tool("get_task", {id})`, `execute_tool("get_file", {task, name})`, `execute_tool("create_task", {title, severity, text})`, `execute_tool("ask_human", {id, questions})`, each argument the tool's own and every required one there; the instructions say that any other tool is found with search_tools and run with execute_tool(name, arguments)
+  And they say to call finish_task before stopping, and ask_human when the step left is a human's, so its task waits in WAIT FOR HUMAN rather than staying IN PROGRESS with its agent stopped (terminum-supervisor.md AC-213 `flow.stuck`)
   When the agent calls search_tools {query: "change a task's priority"}
   Then it answers "Tools for "change a task's priority", best first (? optional):", then at most 5 numbered lines, the first "1. update_task(archive?: yes, id, parent?, reason?, severity?: P0|P1|P2|P3, text?, title?) [tasks]: Changes a task of your project: …", each a tool's signature (enums inline), its area and its description's first sentence; then how to run one
   When the agent calls get_tool_info {names: ["update_task"]}
@@ -397,6 +399,10 @@ Scenario: AC-174 happy path — who is a worker
   Then it is a worker: its tools, instructions and search are those of AC-155 and terminum-kanban.md AC-115, and name no manager's tool or area
   And it stays a worker when its task ends
 
+Scenario: AC-174 edge — a Supervisor round or Talk
+  Given Dispatcher started a session for Billing's Supervisor round, or for a human's Talk press on Billing's incident
+  Then that session is neither worker nor manager: it is Billing's Supervisor caller, with its level's tools alone (terminum-supervisor.md AC-231)
+
 Scenario: AC-174 failure — a worker calls a manager's tool
   When a worker calls search_tools for "start a task on an agent", get_tool_info or execute_tool with run_task, or a tools/call of run_task
   Then search finds none, and each of the others answers as for a name that is no tool ("No tool is named "run_task" …", "Unknown tool …")
@@ -450,9 +456,28 @@ Scenario: AC-179 happy path — a task started, followed, answered
   When the manager calls promote_queued_task {id: "BILL-12"} on a waiting task of its project
   Then its whole press moves to the front of its agent's queue under terminum-dispatcher.md AC-169; list_runs lists waits in that order
 
+Scenario: AC-179 failure — a stale manager read cannot reopen a DONE task
+  Given BILL-12 is DONE after another manager's work integrated at acc9e390 at 19:50
+  When the manager calls run_task {id: "BILL-12"} without reopen "yes", including with fresh "yes" or queue "yes"
+  Then it is refused: "BILL-12 is DONE (Integrated into origin/main at acc9e390 in batch 2.; 19:50). To run it again on purpose, call run_task with reopen \"yes\"."
+  And the refusal names the latest result's Outcome line or landing line and its local time when one exists; without either it says "BILL-12 is DONE. To run it again on purpose, call run_task with reopen \"yes\"."
+  And nothing starts, queues, saves a comment or changes on the card
+  And its DONE status is checked again when a prepared press takes its slot or continues a live conversation
+  When the manager calls run_task {id: "BILL-12", reopen: "yes"}
+  Then the task reopens and runs as before
+  And a human's RUN of a DONE task needs no reopen argument (terminum-dispatcher.md AC-122)
+  And a manager's run_task on FAILED or any other column is unchanged
+
 Scenario: AC-179 happy path — stopped, read
-  When the manager calls stop_task {id: "BILL-12"}
-  Then its run is given up as a human's Give up (terminum-dispatcher.md AC-138), or its wait called off, and the task's history says "Opus · manager stopped it."
+  Given BILL-12 IN PROGRESS in a worker's run, or waiting for a slot or for other tasks (terminum-dispatcher.md AC-158, AC-210)
+  When the manager calls stop_task {id: "BILL-12", why: "Postponed: the owner moved it to a later epic."}
+  Then a stop is a postponement, never a failure: its run's open tasks go back to TODO, "The project's manager stopped its run: it waits in TODO to run again." on each, but one whose commit is queued, which stays queued (terminum-integration.md AC-187); or its wait is called off and it stays where it stood
+  And Dispatcher lets go of the window, which stays, and frees its slot; nothing is typed into it, and a later close of that window fails nothing
+  And the why is the manager's comment on each, and the history says "Opus · manager stopped it.", never that a human gave up, so the Supervisor's owner stops and Auto-Dispatcher's failures count none of it
+  And it answers "Stopped: BILL-12. It waits in TODO; its slot is free. Its window stays, and an agent still working there goes on: close_session ends it."
+  When the why is missing or over 1000 characters
+  Then it is refused, "why is required" or "why: at most 1000 characters.", and nothing changes
+  And failing a task stays the human's Give up (terminum-dispatcher.md AC-138); a manager drops work by archiving it (update_task)
   When it calls list_runs
   Then it reads its project's runs (tasks, agent, state, session, whether its agent asked a human) and the tasks waiting for a slot
   When it calls get_dashboard {tab: "costs", period: "month"}
@@ -509,6 +534,44 @@ Scenario: AC-180 failure — the board's own refusals
   Then the answer is the board's own words and nothing is kept
   When a schedule named is another project's
   Then it answers "Your project has no schedule "SCH-2": list_schedules shows them."
+```
+
+### AC-283 — Onboarding a project [MUST / P0]
+
+```gherkin
+Scenario: AC-283 happy path — the setup read
+  Given project api, its pool empty, its Supervisor off with an empty charter, Auto-Dispatcher off, integration off
+  When api's manager calls get_project_setup
+  Then it answers api's name, folder, ID letters, language, task template, agents at once, memory limits, Auto-Dispatcher's and integration's switches, the pool's and schedules' counts, the Supervisor's switch, level, tiers, settings revision, charter and project-type templates
+  And a readiness list names each gap and who closes it: "pool is empty" (you: create_agent), "charter is empty" (you: set_supervisor_charter), "tiers are unset", "Supervisor is off" (the human, in the project window's Supervisor tab)
+
+Scenario: AC-283 edge — a linked worktree as the folder
+  Given api's folder is a linked git worktree, its `.git` a file naming another checkout
+  When its manager calls get_project_setup
+  Then the readiness list says the folder is a linked worktree, so the Supervisor's git readings follow that branch alone
+
+Scenario: AC-283 happy path — the setup write
+  When the manager calls update_project_setup {prefix: "API", language: "English", agents_at_once: "4", memory_warn_gib: "8", memory_end_gib: "12"}
+  Then each takes effect as the project window's own fields would (terminum-kanban.md AC-139, terminum-dispatcher.md AC-128, AC-141), only the fields given change, and an empty agents_at_once or both memory limits empty go back to none
+  And the answer lists what changed
+
+Scenario: AC-283 failure — the human's switches
+  When a manager's call to update_project_setup names auto, integration, folder, name or enabled
+  Then it answers which field is no setup field, nothing of that call is kept, and Auto-Dispatcher, integration, the folder and the Supervisor stay as they were (terminum-dispatcher.md AC-170, terminum-integration.md AC-186)
+  When a worker or a manager token's caller looks for get_project_setup, update_project_setup or set_supervisor_charter
+  Then a worker finds none of them, as of no tool; a manager token runs them in its project, as any manager tool (AC-181)
+
+Scenario: AC-283 failure — the board's own refusals
+  When prefix is taken by another project, language holds a digit, agents_at_once is 0, or the memory warning is above its end
+  Then the answer is the board's own words and nothing of that call is kept
+
+Scenario: AC-283 happy path — the skill
+  Given terminum's hooks installed in Claude Code
+  Then terminum's plugin carries `skills/terminum-onboard/SKILL.md`, refreshed with the plugin
+  When the user types "onboard my project" in a session of project api
+  Then the agent reads the folder's rules, docs, build and git history, asks at most one round of questions with recommended answers, fills what is missing through the tools above (absent agents and routines, agents at once when unset, the charter when empty), changes the ID letters, language, template or memory limits only when the user asks, and ends with what it set, where to see it, and the human's presses still waiting with their values
+  When the session is in no project
+  Then the skill asks the user for one press, "Add to Project" › "New project…" in the session's row menu, and goes on once get_project_setup answers
 ```
 
 ### AC-181 — The tools from a shell, and tokens [MUST / P0]
@@ -783,7 +846,7 @@ MCP tools:
 
 The catalog (every tool above but the first three, with the task tools of `terminum-kanban.md` §9) and each tool's card: `terminumd/src/cli/mcp_catalog.rs`; the index: `mcp_search.rs`.
 
-A manager's tools (AC-174), every argument a string: `list_runs`; `run_task` `id`, `agent`, `comment`, `fresh` yes|no, `queue` yes|no; `promote_queued_task` `id`; `stop_task` `id`; `list_agents`; `create_agent` `name`, `kind` claude|codex, `command`, `effort`, `at_once`, `week_limit`, `month_limit`; `update_agent` `agent` and the same; `delete_agent` `agent`; `list_schedules`; `create_schedule` `title`, `text`, `agent`, `cron` or `once_at` (unix seconds), `budget_minutes`, `severity`, `paused` yes|no; `update_schedule` `schedule` and the same; `delete_schedule`, `run_schedule` `schedule`; `list_sessions`; `get_session` `session`, `lines`; `send_to_session` `session`, `text` (≤ 20,000 bytes), `enter` yes|no; `close_session` `session`; `get_dashboard` `tab` you|system|costs, `period` day|2w|month|quarter|year. Definitions and cards: `terminumd/src/cli/mcp_manager.rs`; what each does: `terminumd/src/roles/`.
+A manager's tools (AC-174), every argument a string: `list_runs`; `run_task` `id`, `agent`, `comment`, `fresh` yes|no, `queue` yes|no, `reopen` yes|no; `promote_queued_task` `id`; `stop_task` `id`, `why` (≤ 1000 characters); `list_agents`; `create_agent` `name`, `kind` claude|codex, `command`, `effort`, `at_once`, `week_limit`, `month_limit`; `update_agent` `agent` and the same; `delete_agent` `agent`; `list_schedules`; `create_schedule` `title`, `text`, `agent`, `cron` or `once_at` (unix seconds), `budget_minutes`, `severity`, `paused` yes|no; `update_schedule` `schedule` and the same; `delete_schedule`, `run_schedule` `schedule`; `list_sessions`; `get_session` `session`, `lines`; `send_to_session` `session`, `text` (≤ 20,000 bytes), `enter` yes|no; `close_session` `session`; `get_dashboard` `tab` you|system|costs, `period` day|2w|month|quarter|year; `get_project_setup`; `update_project_setup` `prefix`, `language`, `template` (≤ 8 KiB), `agents_at_once` (1–100, empty: none), `memory_warn_gib` and `memory_end_gib` (GiB, 0 off, both empty: the global ones) (AC-283); `set_supervisor_charter` `revision`, `charter` (JSON, ≤ 64 KiB; `terminum-supervisor.md` AC-284). Definitions and cards: `terminumd/src/cli/mcp_manager.rs`; what each does: `terminumd/src/roles/`.
 
 Commands (AC-181): `terminum tools [search <words> | info <name>…]`, `terminum tool <name> ['<json>' | -]`, `terminum tokens [add <name> --role manager|worker --project <project> [--days N] | remove <name>]`. The private socket: `POST /agent` takes `{token, tool, args}` in place of a pane; `POST /tokens {action: list|add|remove, name, role, project, days}`. A probe answers `role`. Store: table `tokens` (`tasks/schema21.sql`).
 
@@ -794,7 +857,7 @@ Commands (AC-181): `terminum tools [search <words> | info <name>…]`, `terminum
 | `state/plans.json` | 0600, `{version: 1, current, archived, servers}`; `servers` each tmux server's identity by its keys' start |
 | `state/unread.json` | `{unread: [keys], servers}`; a file that cannot be read is set aside |
 | `web-bookmarks.json` | format in `terminum-terminal.md` §9 |
-| `~/.terminum/hooks/claude/` | the local marketplace `terminum-local`: `.claude-plugin/marketplace.json`, `plugins/terminum/{.claude-plugin/plugin.json, hooks/hooks.json, .mcp.json}` |
+| `~/.terminum/hooks/claude/` | the local marketplace `terminum-local`: `.claude-plugin/marketplace.json`, `plugins/terminum/{.claude-plugin/plugin.json, hooks/hooks.json, .mcp.json, skills/terminum-onboard/SKILL.md}` (the skill's source: `terminumd/assets/skills/`, AC-283) |
 | `~/.terminum/hooks/claude.installed` | the build that installed the plugin |
 | `$CODEX_HOME/hooks.json`, `config.toml` | terminum's entries and block; each one's backup is `<file>.terminum-<time>` |
 
@@ -858,9 +921,10 @@ All cases are shipped; nothing is staged.
 - [x] AC-155 — `cargo test cli::mcp` (`terminumd/src/cli/mcp_meta_tests.rs`, `mcp_search.rs`, `mcp_tests.rs`, `mcp_tasks.rs`), `cargo test tasks::tools` (`ac145_an_agent_s_text_follows_its_project_s_template`), `web/test/e2e_liveplans.mjs`
 - [x] AC-174 — `cargo test roles`, `cargo test tasks::ops` (a run's pane across a restore), `cargo test cli::mcp` (`mcp_tests.rs`, `mcp_manager.rs`), `scripts/e2e_roles.py`
 - [x] AC-178 — `cargo test roles`, `scripts/e2e_roles.py` (a pane naming the manager's)
-- [x] AC-179 — `cargo test roles`, `cargo test dispatcher::press`, `scripts/e2e_roles.py`
+- [x] AC-179 — `cargo test roles`, `cargo test dispatcher::press`, `cargo test ac179_`, `scripts/e2e_roles.py`
 - [x] AC-180 — `cargo test roles`, `scripts/e2e_roles.py`
 - [x] AC-181 — `cargo test roles`, `cargo test cli::tool`, `scripts/e2e_roles.py`
+- [ ] AC-283 — `cargo test roles::setup`, `cargo test cli::` (`hooks_tests.rs`: the skill in the plugin; `mcp_manager.rs`), `scripts/e2e_roles.py`
 - [x] AC-207 — `cargo test codexdaemon` (a shell with a shared server's words starts the real binary's checks, a pane in its environment), `cargo test cli::`
 - [x] AC-208 — `cargo test agentnotice`, `cargo test process::tests`, `web/test/e2e_notices.mjs`, `web/test/e2e_liveprogs.mjs` (real Claude Code in both TUIs, real Codex `--no-daemon` on and off the alternate screen, vim)
 - [x] AC-153 — `cargo test idle_exit` (keys and the summary on a private tmux with a stand-in agent), `cargo test idle_summary`, `cargo test hookargv`, `cargo test hookopts`, `cargo test tmux::hookstate`, `cargo test settings`, `web/test/e2e_header.mjs`

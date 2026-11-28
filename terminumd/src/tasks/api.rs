@@ -30,6 +30,7 @@ pub fn routes() -> Router<Shared> {
         .merge(super::agents::routes())
         .merge(super::limits::routes())
         .merge(super::integration::routes())
+        .merge(crate::supervisor::runtime::routes())
         .merge(crate::integrate::keys::routes())
         .merge(crate::integrate::column::routes())
         .merge(super::auto::routes())
@@ -43,6 +44,7 @@ pub fn routes() -> Router<Shared> {
         .route("/api/tasks/{id}/archive", post(archive))
         .route("/api/tasks/{id}/seen", post(seen))
         .merge(super::fileapi::routes())
+        .merge(super::choices::routes())
 }
 
 /// Runs `f` in one transaction off the async workers.
@@ -69,7 +71,7 @@ pub(super) fn told_projects<T: Serialize>(app: &Shared, done: Result<T, String>)
 }
 
 /// `done`'s answer; every page hears when it changed task `id`.
-fn told_answer<T: Serialize>(app: &Shared, id: &str, done: Result<T, String>) -> Response {
+pub(super) fn told_answer<T: Serialize>(app: &Shared, id: &str, done: Result<T, String>) -> Response {
     if done.is_ok() {
         told(app, id);
     }
@@ -383,6 +385,7 @@ async fn change(State(app): State<Shared>, Path(id): Path<String>, Json(body): J
         }
         if reorder {
             ops::reorder(tx, &id, before.as_deref(), at)?;
+            ops::log(tx, &was.key, HUMAN, "reorder", "The human reordered it.", None, at)?;
         }
         Ok(Ok((ops::get(tx, &id)?, follow)))
     }).await;

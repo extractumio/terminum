@@ -1,0 +1,40 @@
+/* SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial */
+/* The tab and screen use the same keys, fields and material as the board and Dashboard. */
+.supervisor { min-width: 0; overflow-wrap: anywhere; }
+.supervisor :is(h1, h2, h3, p, dl, dd) { margin: 0; }
+.supervisor h1 { font-size: var(--fs-display); font-weight: var(--fw-head); }
+.supervisor h2 { font-size: var(--fs-title); font-weight: var(--fw-head); }
+.supervisor h3 { font-size: var(--fs-body); font-weight: var(--fw-head); }
+.sv-stack { display: grid; gap: var(--sp-2); min-width: 0; }
+.sv-actions, .sv-checks { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
+.sv-actions > :is(.checkrow, .colempty) { flex: 1 1 auto; }
+.supervisor .fieldrow.checkrow { align-self: center; justify-content: flex-start; }
+.sv-tick { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-label); }
+.sv-checks { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)); }
+:is(.sv-section, .sv-panel) { padding: var(--sp-2) var(--sp-3); background: var(--surface-1); border-radius: var(--r-lg); box-shadow: var(--m-edge); min-width: 0; }
+.sv-section > summary.sv-touch { color: var(--t-fg); font-weight: var(--fw-head); }
+.supervisor .field { min-width: 0; max-width: 100%; }
+.supervisor .field[type="file"] { width: 100%; }
+.supervisor .field[type="time"] { color-scheme: dark; }
+:root.light .supervisor .field[type="time"] { color-scheme: light; }
+.sv-field-error { grid-column: 1 / -1; }
+.supervisor .field[aria-invalid="true"] { box-shadow: var(--field-focus-edge); }
+.sv-command { margin: 0; padding: var(--sp-2); white-space: pre-wrap; font-family: var(--term-font, monospace); }
+.sv-screen { width: 100%; max-width: calc(900px + 2 * var(--gutter)); padding: var(--sp-4) var(--gutter) var(--sp-6); display: grid; gap: var(--sp-4); box-sizing: border-box; }
+.sv-screen-head { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: var(--sp-2); }
+.sv-content { display: grid; gap: var(--sp-6); min-width: 0; }
+.sv-score { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); align-items: start; gap: var(--sp-2); }
+.sv-panel > summary { cursor: pointer; font-size: var(--fs-row); font-weight: var(--fw-head); }
+.sv-panel[open] > summary { margin-bottom: var(--sp-2); }
+.sv-readings, .sv-evidence { display: grid; gap: var(--sp-1); }
+.sv-reading { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--sp-2); font-size: var(--fs-small); }
+.sv-reading dd { color: var(--muted-text); font-variant-numeric: tabular-nums; }
+.sv-evidence { margin: 0; padding-inline-start: var(--sp-4); font-size: var(--fs-small); }
+.sv-touch:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; border-radius: var(--key-r); }
+@media (max-width: 860px), (pointer: coarse) {
+  .supervisor .sv-touch, .supervisor .textkey { min-height: var(--key-h-touch); min-width: var(--key-h-touch); }
+
+  .supervisor summary.sv-touch { padding-block: var(--sp-2); box-sizing: border-box; }
+  .supervisor .field[type="file"]::file-selector-button { min-height: var(--key-h-touch); }
+  .projtabs > button { min-height: var(--key-h-touch); min-width: var(--key-h-touch); }
+}

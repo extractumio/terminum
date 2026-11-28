@@ -1,7 +1,7 @@
 // The web app's key encoder (AC-52): bytes as iTerm2 sends them.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { clipboardInsert, encodeKey } from "../static/keys.js";
+import { clipboardInsert, clipboardShift, encodeKey } from "../static/keys.js";
 
 const key = (k, mods = {}, code = "") => ({ key: k, code, shiftKey: false, altKey: false, ctrlKey: false, metaKey: false, ...mods });
 
@@ -34,6 +34,16 @@ test("Shift+Insert and Ctrl+Insert are the clipboard's; other Inserts go to the 
   assert.equal(clipboardInsert(key("Insert", { shiftKey: true, altKey: true })), false);
   assert.equal(encodeKey(key("Insert", { shiftKey: true }), false), "\x1b[2;2~", "the switch off: the program gets it");
   assert.equal(encodeKey(key("Insert", { ctrlKey: true }), false), "\x1b[2;5~");
+});
+
+test("AC-03 clipboard chords use the typed letter and exactly Ctrl+Shift", () => {
+  const mods = { ctrlKey: true, shiftKey: true };
+  assert.equal(clipboardShift(key("C", mods, "KeyJ")), "c");
+  assert.equal(clipboardShift(key("v", mods)), "v");
+  assert.equal(clipboardShift(key("X", mods)), null);
+  for (const extra of [{ altKey: true }, { metaKey: true }, { isComposing: true }, { ctrlKey: false }, { shiftKey: false }]) {
+    assert.equal(clipboardShift(key("V", { ...mods, ...extra })), null);
+  }
 });
 
 test("a pasted image's path is one shell word", async () => {

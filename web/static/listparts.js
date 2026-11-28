@@ -17,6 +17,12 @@ export function el(tag, cls, text) {
   return e;
 }
 
+export function part(tag, cls, ...nodes) {
+  const node = el(tag, cls);
+  node.append(...nodes);
+  return node;
+}
+
 /** A pointer's press leaves the key unfocused: no later key (Esc in Chrome) or closing window lights its ring, and a
  *  menu it opens gives the focus back to what had it (the terminal's keys); Tab still reaches it, ringed
  *  (docs/UI-GUIDELINES.md "Focus"). */

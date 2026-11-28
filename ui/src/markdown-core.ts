@@ -7,15 +7,18 @@ import MarkdownIt from "markdown-it";
 import taskLists from "markdown-it-task-lists";
 import footnote from "markdown-it-footnote";
 import { decodePath, hasScheme, resolvePath } from "./paths";
+import { saidLabels } from "./said";
 
 /** env: the folder relative links and images resolve against, and the URL of a local image
  *  ("" when it is not loaded: its alt text shows instead). */
 /** imagePath(path): the path a local image is filled from (api.ts hydrateRaw), "" for none. */
-export type MdEnv = { dir: string; imagePath: (path: string) => string };
+/** said: a task's comment, its label lines set apart (said.ts). */
+export type MdEnv = { dir: string; imagePath: (path: string) => string; said?: boolean };
 
 const md = new MarkdownIt({ html: false, linkify: true, typographer: true, breaks: false })
   .use(taskLists, { enabled: false, label: true })
-  .use(footnote);
+  .use(footnote)
+  .use(saidLabels);
 
 // Only these link schemes survive; everything else (javascript:, file:, data: for links) is dropped.
 md.validateLink = (url) => /^(https?:|mailto:|#|\.{0,2}\/|[^:]*$)/i.test(url.trim());
@@ -42,3 +45,6 @@ md.renderer.rules.heading_open = (tokens, idx, opts, _env, self) => {
 };
 
 export const renderMd = (text: string, env: MdEnv): string => md.render(text, env);
+
+/** The path a task's or report's local picture is read from: its own file's, else none (an `imagePath`). */
+export const ownFile = (path: string) => (path.startsWith("/api/task-files/") ? path : "");

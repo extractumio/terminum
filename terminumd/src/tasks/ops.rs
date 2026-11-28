@@ -21,13 +21,17 @@ pub fn sql(e: rusqlite::Error) -> String {
     super::store::message(&e)
 }
 
+/// For event alias `e` and task alias `t`: ignore history before the task joined its current project.
+pub(crate) const CURRENT_PROJECT_HISTORY: &str = "AND e.rowid > coalesce(
+    (SELECT max(m.rowid) FROM events m WHERE m.task = t.id AND m.kind = 'project'), 0)";
+
 /// Every row `query` finds.
 pub(crate) fn rows<T>(tx: &Transaction, query: &str, params: impl Params, f: impl FnMut(&Row) -> rusqlite::Result<T>) -> Result<Vec<T>, String> {
     tx.prepare_cached(query).map_err(sql)?.query_map(params, f).map_err(sql)?.collect::<Result<_, _>>().map_err(sql)
 }
 
 pub use super::users::{agent_named, agent_user, pool_user, pool_user_id};
-pub use super::columns::move_to;
+pub use super::columns::{move_marked, move_to};
 pub(crate) use super::columns::{check_free, place};
 pub use super::comments::{answers, carried, change_comment, comment, comment_as, history, how_left, keep_human_comment, left_queue, newest_by, notice, noticed, questions, Carried};
 pub(crate) use super::users::user_name;
@@ -58,6 +62,7 @@ pub struct Task {
     pub owner_name: String,
     pub owner_kind: String,
     pub by_agent: bool,
+    pub supervisor_marked: bool,
     pub session: Option<String>,
     pub files: i64,
     pub subtasks_done: i64,
@@ -82,7 +87,8 @@ pub(super) const TASK: &str = "SELECT t.slug, t.project, (SELECT p.slug FROM tas
     (SELECT count(*) FROM files f WHERE f.task = t.id),
     (SELECT count(*) FROM tasks s WHERE s.parent = t.id AND s.status = 'DONE' AND s.archived_at IS NULL),
     (SELECT count(*) FROM tasks s WHERE s.parent = t.id AND s.archived_at IS NULL), t.id, t.rank, t.budget_seconds, t.archived_at, t.created_at, t.updated_at,
-    t.title, t.type, t.external_link, t.target
+    t.title, t.type, t.external_link, t.target,
+    EXISTS (SELECT 1 FROM supervisor_task_marks m WHERE m.task = t.id)
     FROM tasks t JOIN users u ON u.id = t.owner";
 
 pub(super) fn task_of(r: &Row) -> rusqlite::Result<Task> {
@@ -101,6 +107,7 @@ pub(super) fn task_of(r: &Row) -> rusqlite::Result<Task> {
         owner_name: r.get(7)?,
         owner_kind: r.get(8)?,
         by_agent: r.get::<_, i64>(9)? != 0,
+        supervisor_marked: r.get(24)?,
         session: r.get(10)?,
         files: r.get(11)?,
         subtasks_done: r.get(12)?,
@@ -116,12 +123,11 @@ pub(super) fn task_of(r: &Row) -> rusqlite::Result<Task> {
 
 /// A task's number, the store's order, from its ID, one it had or its key's start (AC-148).
 pub fn number_of(tx: &Transaction, id: &str) -> Result<i64, String> {
-    super::slugs::resolve(tx, id)?.ok_or_else(|| format!("No task {id}"))
+    super::slugs::resolve(tx, id)?.ok_or_else(|| super::slugs::not_found(id))
 }
 
-/// What `query` reads of task `id`.
 fn of_task<T>(tx: &Transaction, id: &str, query: &str, f: impl FnOnce(&Row) -> rusqlite::Result<T>) -> Result<T, String> {
-    tx.query_row(query, [number_of(tx, id)?], f).optional().map_err(sql)?.ok_or_else(|| format!("No task {id}"))
+    tx.query_row(query, [number_of(tx, id)?], f).optional().map_err(sql)?.ok_or_else(|| super::slugs::not_found(id))
 }
 
 /// The row's key of task `id`.
@@ -156,7 +162,7 @@ pub(super) fn top_rank(tx: &Transaction, status: &str, severity: &str) -> Result
 }
 
 /// A title as kept: nothing that hides or reorders it, whoever writes it.
-pub(super) fn check_title(title: &str) -> Result<String, String> {
+pub(crate) fn check_title(title: &str) -> Result<String, String> {
     let cleaned = crate::termtext::clean(title, false);
     let t = cleaned.trim();
     if t.is_empty() || t.chars().count() > TITLE_MOST {
@@ -169,7 +175,7 @@ pub(super) fn check_text(text: &str) -> Result<(), String> {
     if text.len() > TEXT_MOST { Err("Text: at most 1 MiB".into()) } else { Ok(()) }
 }
 
-pub(super) fn check_comment(text: &str) -> Result<(), String> {
+pub(crate) fn check_comment(text: &str) -> Result<(), String> {
     if text.len() > COMMENT_MOST { Err("Comment: at most 256 KiB".into()) } else { Ok(()) }
 }
 
@@ -252,15 +258,14 @@ pub fn create(tx: &Transaction, author: &str, new: NewTask, at: i64) -> Result<T
         }
         None => None,
     };
-    // a subtask stands in its parent's project, whatever was asked
     let project = match parent.as_ref() {
         Some((_, p)) => p.clone(),
         None => chosen_project(new.project.as_deref(), TASK_NEEDS_PROJECT)?,
     };
     check_project(tx, &project)?;
     if let Some(most) = new.by_agent {
-        // counted up to the limit only: a project may hold many more
-        let open: i64 = tx.query_row("SELECT count(*) FROM (SELECT 1 FROM tasks WHERE project = ?1 AND by_agent = 1 AND archived_at IS NULL AND status <> 'DONE' LIMIT ?2)", rusqlite::params![project, most], |r| r.get(0)).map_err(sql)?;
+        let open: i64 = tx.query_row("SELECT count(*) FROM (SELECT 1 FROM tasks WHERE project = ?1 AND by_agent = 1 AND archived_at IS NULL AND status <> 'DONE'
+            AND id NOT IN (SELECT task FROM supervisor_task_marks) LIMIT ?2)", rusqlite::params![project, most], |r| r.get(0)).map_err(sql)?;
         if open >= most {
             return Err(format!("This project holds {most} open tasks by agents, the most settings.json's \"agentOpenTasks\" allows. Ask the user to close some, or to raise that limit."));
         }
@@ -272,18 +277,19 @@ pub fn create(tx: &Transaction, author: &str, new: NewTask, at: i64) -> Result<T
     let key = crate::auth::crypto::random_hex::<16>();
     tx.execute("INSERT INTO tasks (id, number, project, parent, title, body, status, severity, rank, owner, by_agent, session_key, made_in, updated_at, created_at, type)
                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?14, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?13, ?15)",
-               rusqlite::params![key, number, project, parent.as_ref().map(|(k, _)| k), title, new.text, severity, rank, owner, new.by_agent.is_some() as i64, new.session, new.made_in, at, status, kind.flatten()]).map_err(sql)?;
+               rusqlite::params![key, number, project, parent.as_ref().map(|(k, _)| k), title, new.text, severity, rank, owner,
+                   new.by_agent.is_some() || author.strip_prefix("supervisor:") == Some(project.as_str()), new.session, new.made_in, at, status, kind.flatten()]).map_err(sql)?;
     let slug = super::slugs::assign(tx, &key, &project, if new.scheduled { "S_" } else if new.integration { "I_" } else { "" })?;
     log(tx, &key, author, "made", &format!("{} made it", user_name(tx, author)?), None, at)?;
     super::attrs::apply(tx, author, &key, &new.attrs, at)?;
-    get(tx, &slug)
+    let task = get(tx, &slug)?;
+    crate::supervisor::task_created(tx, author, &task, &new.text, at)?;
+    Ok(task)
 }
 
-/// A session in a refusal: its pane; the page says its title elsewhere.
 pub(super) fn pane_of(key: &str) -> &str {
     key.rsplit(':').next().unwrap_or(key)
 }
-
 /// A card dragged within its column: above `before`, last with none. A card dropped among another
 /// severity's stays its severity, on top of its own (AC-105).
 pub fn reorder(tx: &Transaction, id: &str, before: Option<&str>, at: i64) -> Result<(), String> {

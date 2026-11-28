@@ -176,13 +176,43 @@ fn ac162_once_pauses_itself_after_it_fires() {
     }).unwrap();
 }
 
+/// terminum-reports.md AC-272: a schedule's task's result is a report, its task DONE; none supersedes another.
+#[test]
+fn ac272_a_schedule_s_task_s_result_is_a_report_and_none_supersedes_another() {
+    let dir = crate::testutil::fresh_dir("fire-report");
+    let store = Store::open(dir.join("kanban.sqlite"));
+    let s = store.with(|tx| Ok(schedule(tx, 2, every_15()))).unwrap();
+    // each firing's task made, linked to its pane and finished: DONE, its result a report in the Inbox (terminum-reports.md AC-272)
+    let fire = |due: i64, pane: &str| {
+        let key = format!("tmux:local:t:{pane}");
+        let id = store.with(|tx| {
+            let (id, _) = made(decide(tx, &s, due, false)?);
+            ops::link(tx, DISPATCHER, &id, Some(&key), due)?;
+            Ok(id)
+        }).unwrap();
+        let who = crate::tasks::tools::Who { conversation: None, key, agent: "claude".into(), title: "t".into(), project: None, dir: None, supervisor: false };
+        let result = json!({"id": id, "result": "Outcome: ok\nSummary: s\nDetails: d\nFor the human: nothing"});
+        let said = crate::tasks::tools::run(&store, &dir, &who, "finish_task", &result).unwrap().0;
+        assert!(said.starts_with(&format!("{id} is DONE; its result went to the human's Inbox as R_")), "{said}");
+        id
+    };
+    let older = fire(NOW + 10 * 60 + 14, "%7");
+    let newer = fire(NOW + 25 * 60 + 14, "%8");
+    store.with(|tx| {
+        assert_eq!((ops::get(tx, &older)?.status, ops::get(tx, &newer)?.status), ("DONE".to_string(), "DONE".to_string()));
+        assert_eq!(crate::reports::inbox::by_schedule(tx)?.get(&s.id).map(|r| r.2), Some(2), "every report stays, none superseded");
+        Ok(())
+    }).unwrap();
+}
+
 #[test]
 fn ac162_the_prompt_says_a_scheduled_run_and_the_result_s_form() {
     open("fire-prompt").with(|tx| {
         let s = schedule(tx, 1, json!({"title": "Nightly deps check", "body": "Check them.", "agent": "a", "cron": "0 3 * * *", "budget_minutes": 30}));
         let p = prompt(&s, "TERM-41", "Nightly deps check", "Check them.", false, Initiator::Due);
         assert!(p.starts_with("Task TERM-41: Nightly deps check. A scheduled run of terminum's schedule SCH-1 \"Nightly deps check\" (every day at 03:00), set by a human; no human started this run or watches it now.\n\nCheck them.\n\nYou have 30 minutes"), "{p}");
-        assert!(p.contains("call execute_tool(\"finish_task\", {id, result}) with the result in this form, each on its own line:\nOutcome: ok, attention or failed\nSummary: one or two sentences\nDetails: what was checked or done\nFor the human: what they should do, or nothing"), "{p}");
+        assert!(p.contains("call execute_tool(\"finish_task\", {id, result}) with the result as a Markdown document: a \"## \" heading for each section"), "{p}");
+        assert!(p.contains("in this form:\n## Outcome\nok, attention or failed\n## Summary\none or two sentences\n## Details\nwhat was checked or done\n## For the human\nwhat they should do, or nothing"), "{p}");
         assert!(p.ends_with(ASK), "the words on asking a human");
         let due = s.when()?.next_after(NOW).unwrap();
         let (id, _) = made(decide(tx, &s, due, false)?);

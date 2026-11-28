@@ -7,6 +7,7 @@ import { toast } from "./toast.js";
 import { askConfirm } from "./dialogs.js";
 import { dropLit } from "./droplit.js";
 import { cardState } from "./cardstate.js";
+import { openReport } from "./reportlink.js";
 
 export const COLUMNS = ["TODO", "IN PROGRESS", "WAIT FOR HUMAN", "INTEGRATION", "FAILED", "DONE"];
 export const SEVERITIES = ["P0", "P1", "P2", "P3"];
@@ -60,9 +61,10 @@ export function signInElsewhere() {
 /** A JSON route (a write always has a body: terminumd asks its type); a refusal throws terminumd's
  *  message, with its status. An empty answer is {}; one that cannot be read (cut off, as a navigation
  *  leaves a read in WebKit) throws, never stands for an empty one. */
-export async function api(path, { method = "GET", body } = {}) {
+export async function api(path, { method = "GET", body, asText = false, signal } = {}) {
   const sent = method === "GET" ? undefined : JSON.stringify(body ?? {});
-  const r = await fetch(path, { method, headers: sent ? { "Content-Type": "application/json" } : undefined, body: sent });
+  const r = await fetch(path, { method, headers: sent ? { "Content-Type": "application/json" } : undefined, body: sent, signal });
+  if (asText && r.ok) return r.text();
   let m = {}, unread;
   try {
     const text = await r.text();
@@ -236,6 +238,14 @@ export const sessionOptions = (meta) => [["", "None"], ...meta.sessions.map((s) 
 /** A dialog's line of error: `text`, or hidden with none. */
 export const showError = (box, text) => { box.textContent = text ?? ""; box.hidden = !text; };
 
+/** An empty, hidden line of error that screen readers announce once showError fills it. */
+export const alertLine = () => {
+  const box = el("p", "merr");
+  box.setAttribute("role", "alert");
+  box.hidden = true;
+  return box;
+};
+
 /** Whether what is dragged is files. */
 export const hasFiles = (e) => e.dataTransfer?.types.includes("Files");
 
@@ -297,6 +307,10 @@ export async function goneFiles(ids) {
 /** terminumd's refusal of a draft's file the sweep took (tasks/files.rs FILE_GONE): only then is a refused draft
  *  asked of its files again. */
 export const FILE_GONE = "A file of this window is gone: add it again";
+/** Says refusal `e` by `tell`, unless it is FILE_GONE and `prune()` named the files let go: the rest stay. */
+export async function sayRefused(e, prune, tell = say) {
+  if (e.message !== FILE_GONE || !await prune()) tell(e.message);
+}
 /** What a window says of a draft's files that are gone. */
 export const goneSaid = (names) => `${names.join(", ")}: gone, this draft was not saved for 7 days. Drop ${names.length > 1 ? "them" : "it"} again to keep ${names.length > 1 ? "them" : "it"}.`;
 
@@ -304,7 +318,11 @@ export const goneSaid = (names) => `${names.join(", ")}: gone, this draft was no
 export async function download(id, name) {
   const r = await fetch(fileUrl(id));
   if (!r.ok) throw new Error(`${name}: terminumd answered ${r.status}`);
-  const url = URL.createObjectURL(await r.blob());
+  downloadBlob(await r.blob(), name);
+}
+
+export function downloadBlob(blob, name) {
+  const url = URL.createObjectURL(blob);
   const a = el("a");
   a.href = url;
   a.download = name;
@@ -314,12 +332,47 @@ export async function download(id, name) {
 
 /** Markdown by the Panel's rules (raw HTML off, javascript: links dropped, remote images not
  *  loaded); a task's own pictures are fetched with the sign-in, its files download. */
-export async function renderInto(box, text) {
+export async function renderInto(box, text, { comment = false } = {}) {
+  box.textContent = text;
+  try { box.innerHTML = (await renderers()).taskMarkdownHtml(text, comment); } catch { return; }
+  wireRendered(box);
+}
+
+/** A report's body as the Files viewer shows a document (terminum-reports.md AC-268): its code highlighted, its
+ *  Mermaid fences drawn, an HTML document in a frame without scripts; in the viewer's look (/fb/renderers.css), loaded
+ *  with the first report shown. */
+export async function renderReportInto(box, text) {
   box.textContent = text;
   try {
-    box.innerHTML = (await renderers()).taskMarkdownHtml(text);
-  } catch { return; }
-  for (const img of box.querySelectorAll("img[data-raw]")) {
+    const [lib] = await Promise.all([renderers(), docLook()]);
+    if (lib.reportInto(box, text) === "html") { wireFrame(box.querySelector("iframe")); return; }
+  } catch { box.textContent = text; return; }
+  wireRendered(box);
+}
+
+let looked = null;
+const docLook = () => (looked ??= new Promise((done) => {
+  const link = Object.assign(document.createElement("link"), { rel: "stylesheet", href: "/fb/renderers.css" });
+  link.onload = link.onerror = done;              // unstyled rather than never: the body shows either way
+  document.head.append(link);
+}));
+
+/** Rendered words wired: their own pictures fetched, report IDs and links made keys. */
+function wireRendered(box) {
+  ownPictures(box);
+  linkReports(box);
+  for (const a of box.querySelectorAll("a")) wireLink(a, box);
+}
+
+/** `#anchor` scrolled to in `scope`, by its id or name, as the Files viewer does (ui/src/docview.ts scrollToAnchor). */
+function scrollToAnchor(scope, href) {
+  const id = CSS.escape(decodeURIComponent(href.slice(1)));
+  scope.querySelector(`[id="${id}"], [name="${id}"]`)?.scrollIntoView({ block: "start" });
+}
+
+/** The pictures of a task's or report's own files (data-raw), fetched with the sign-in. */
+function ownPictures(root) {
+  for (const img of root.querySelectorAll("img[data-raw]")) {
     signin.blobUrl(img.dataset.raw).then((got) => {
       if (!got.url) return;
       const done = () => URL.revokeObjectURL(got.url);   // a picture decoded needs its address no more
@@ -328,10 +381,46 @@ export async function renderInto(box, text) {
       img.src = got.url;
     });
   }
-  for (const a of box.querySelectorAll("a")) {
-    const id = /^\/api\/task-files\/([0-9a-f]{32})$/.exec(a.getAttribute("href") ?? "")?.[1];
-    if (id) a.addEventListener("click", (e) => { e.preventDefault(); download(id, a.textContent).catch((err) => say(err.message)); });
-    else { a.target = "_blank"; a.rel = "noopener noreferrer"; }
+}
+
+/** A link: its own file downloads, an anchor scrolls in `scope`, any other opens in a new tab. */
+function wireLink(a, scope) {
+  const href = a.getAttribute("href") ?? "";
+  const id = /^\/api\/task-files\/([0-9a-f]{32})$/.exec(href)?.[1];
+  if (id) a.addEventListener("click", (e) => { e.preventDefault(); download(id, a.textContent).catch((err) => say(err.message)); });
+  else if (href.startsWith("#")) a.addEventListener("click", (e) => { e.preventDefault(); scrollToAnchor(scope, href); });
+  else { a.target = "_blank"; a.rel = "noopener noreferrer"; }
+}
+
+/** A report's HTML document in its frame: its own pictures, its links as the page's, as tall as it is. */
+function wireFrame(frame) {
+  const fit = () => { const d = frame.contentDocument; if (d?.documentElement) frame.style.height = `${d.documentElement.scrollHeight}px`; };
+  frame.addEventListener("load", () => {
+    const doc = frame.contentDocument;
+    if (!doc) return;
+    ownPictures(doc);
+    for (const img of doc.images) img.addEventListener("load", fit);
+    doc.addEventListener("click", (e) => {
+      const a = e.target.closest?.("a[href]");
+      if (!a) return;
+      e.preventDefault();
+      const href = a.getAttribute("href");
+      if (href.startsWith("#")) scrollToAnchor(doc, href);
+      else if (/^(https?:|mailto:)/i.test(href)) window.open(href, "_blank", "noopener,noreferrer");
+    });
+    fit();
+  });
+}
+
+/** A report's ID in rendered words, outside code and links, a key that opens it (terminum-reports.md AC-273). */
+const REPORT_ID = /\bR_[A-Z][A-Z0-9]{0,7}-\d+\b/;
+function linkReports(box) {
+  const walk = document.createTreeWalker(box, NodeFilter.SHOW_TEXT, { acceptNode: (n) => (n.parentElement?.closest("a, code, pre, button") ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT) });
+  const found = [];
+  for (let n = walk.nextNode(); n; n = walk.nextNode()) if (REPORT_ID.test(n.data)) found.push(n);
+  for (const n of found) {
+    const parts = n.data.split(/(R_[A-Z][A-Z0-9]{0,7}-\d+)/);
+    n.replaceWith(...parts.map((p, i) => (i % 2 ? button("linklike", p, () => openReport(p)) : p)));
   }
 }
 

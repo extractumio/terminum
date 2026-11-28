@@ -5,6 +5,7 @@ use super::*;
 use crate::dispatcher::runs::{self, Phase, Run};
 use crate::tasks::ops::{NewTask, Task};
 use crate::tasks::store::{Store, HUMAN};
+use crate::tasks::tools::{self, Who};
 use serde_json::json;
 
 fn store(name: &str) -> Store {
@@ -58,6 +59,11 @@ fn ac169_cards_share_the_press_and_full_agent_queue_position() {
             assert_eq!((w.agent.as_str(), w.position, w.task.as_str()), ("Smith", 2, second.id.as_str()), "filtered first card still takes a place; several tasks share one press");
         }
         assert_eq!(shown[&other.key].position, 1, "each agent's own line");
+        add(tx, &member, "b", "api", &json!({}), 13)?;
+        assert_eq!(protecting(tx, &member.key)?.unwrap().task, member.key);
+        assert_eq!(on_cards(tx, &[&member.key])?[&member.key].task, member.id, "its own wait comes first");
+        take_out(tx, &member.id)?;
+        assert_eq!(protecting(tx, &member.key)?.unwrap().task, second.key, "the group still protects it");
         reorder(tx, "a", &[second.id.clone(), first.id.clone()])?;
         assert_eq!(on_cards(tx, &[&member.key])?[&member.key].position, 1);
         take_out(tx, &second.id)?;
@@ -146,18 +152,77 @@ fn ac169_a_queue_is_its_agents_waits_in_the_order_the_human_gave() {
     }).unwrap();
 }
 
+fn other_agent() -> Who {
+    Who { conversation: None, key: "tmux:local:t:%5".into(), agent: "codex".into(), title: "other".into(), project: Some("api".into()), dir: None, supervisor: false }
+}
+
 #[test]
-fn ac158_a_task_in_a_queue_is_moved_or_finished_by_no_agent() {
-    let (s, dir) = (store("waits-held"), crate::testutil::fresh_dir("waits-held-dir"));
-    let t = s.with(|tx| Ok(task(tx, "api"))).unwrap();
-    s.with(|tx| add(tx, &t, "a", "api", &json!({}), 2)).unwrap();
-    let who = crate::tasks::tools::Who { key: "tmux:local:t:%5".into(), agent: "codex".into(), title: "other".into(), project: Some("api".into()), dir: None };
-    let said = format!("{} waits in Smith's queue: it starts when there is room. You can read it and comment.", t.id);
-    for (tool, args) in [("move_task", json!({"id": t.id, "to": "FAILED"})), ("finish_task", json!({"id": t.id, "result": "x"}))] {
-        assert_eq!(crate::tasks::tools::run(&s, &dir, &who, tool, &args).unwrap_err(), said, "{tool}: another session's agent never calls off a human's press");
+fn ac158_ac169_a_queued_press_protects_each_member_until_it_is_cancelled_or_starts() {
+    let (s, dir) = (store("waits-group-held"), crate::testutil::fresh_dir("waits-group-dir"));
+    let (main, explicit, child) = s.with(|tx| {
+        let (main, explicit, child) = (task(tx, "api"), task(tx, "api"), task(tx, "api"));
+        crate::tasks::family::set_parent(tx, HUMAN, &child.id, Some(&explicit.id), 1)?;
+        Ok((main, explicit, child))
+    }).unwrap();
+    let body = json!({"also": [explicit.id]});
+    let queue = || s.with(|tx| add(tx, &main, "a", "api", &body, 2)).unwrap();
+    queue();
+    let who = other_agent();
+    let call = |tool, args| tools::run(&s, &dir, &who, tool, &args).map(|(text, _)| text);
+    let change = |t: &Task| [("move_task", json!({"id": t.id, "to": "IN PROGRESS"})), ("finish_task", json!({"id": t.id, "result": "A result."}))];
+    for t in [&explicit, &child, &main] {
+        let before = s.with(|tx| ops::history(tx, &t.id)).unwrap();
+        for (tool, args) in change(t) {
+            let got = call(tool, args);
+            assert_eq!(got, Err(format!("{} waits in Smith's queue: it starts when there is room. You can read it and comment.", t.id)), "{tool}");
+        }
+        s.with(|tx| {
+            assert_eq!(ops::get(tx, &t.id)?.status, "TODO");
+            assert_eq!(ops::history(tx, &t.id)?, before, "refusals save no result or status change");
+            assert_eq!(on_cards(tx, &[&t.key])?[&t.key].task, main.id);
+            assert!(of_task(tx, &main.key)?.is_some());
+            Ok(())
+        }).unwrap();
+        assert!(call("get_task", json!({"id": t.id})).is_ok());
+        assert!(call("add_comment", json!({"id": t.id, "text": "A comment."})).is_ok());
     }
-    assert!(crate::tasks::tools::run(&s, &dir, &who, "add_comment", &json!({"id": t.id, "text": "blocked by TERM-9"})).is_ok(), "it can comment");
-    s.with(|tx| { assert!(of_task(tx, &t.key)?.is_some(), "the press still waits"); assert_eq!(ops::get(tx, &t.id)?.status, "TODO"); Ok(()) }).unwrap();
+    s.with(|tx| take_out(tx, &main.id)).unwrap();
+    for t in [&explicit, &child] {
+        assert!(call("move_task", json!({"id": t.id, "to": "IN PROGRESS"})).is_ok());
+    }
+
+    queue();
+    let pane = "tmux:local:t:%6";
+    s.with(|tx| {
+        remove(tx, &main.key)?;
+        let run = runs::add(tx, &Run { agent_id: "a".into(), project: "api".into(), ..Default::default() },
+            &[main.key.clone(), explicit.key.clone(), child.key.clone()], Default::default(), 3)?;
+        runs::change(tx, &run, |r| { r.state = Phase::Working; r.pane_key = Some(pane.into()); }).map(drop)
+    }).unwrap();
+    for t in [&explicit, &child] {
+        for (tool, args) in change(t) {
+            assert_eq!(call(tool, args), Err(format!("{} runs in session %6 at a human's RUN. You can read it and comment.", t.id)), "{tool}");
+        }
+    }
+    let own = Who { key: pane.into(), ..who };
+    assert!(tools::run(&s, &dir, &own, "move_task", &json!({"id": child.id, "to": "FAILED"})).is_ok());
+}
+
+#[test]
+fn ac158_ac169_saved_ids_use_the_same_members_as_run() {
+    store("waits-also-ids").with(|tx| {
+        let (main, explicit) = (task(tx, "api"), task(tx, "api"));
+        crate::tasks::slugs::set_prefix(tx, "api", "NEW")?;
+        let current = ops::get(tx, &explicit.key)?.id;
+        for name in [&current, &format!("\u{2003}{}\t", explicit.id.to_ascii_lowercase()),
+            &explicit.key[..8].to_ascii_uppercase(), &explicit.key] {
+            assert_eq!(ops::get(tx, name)?.key, explicit.key);
+            add(tx, &main, "a", "api", &json!({"also": [name]}), 2)?;
+            assert_eq!(protecting(tx, &explicit.key)?.unwrap().task, main.key);
+            assert_eq!(on_cards(tx, &[&explicit.key])?[&explicit.key].task, ops::get(tx, &main.key)?.id);
+        }
+        Ok(())
+    }).unwrap();
 }
 
 /// Task `t` made a schedule's: a firing of a schedule on agent `agent` names it (terminum-schedules.md AC-162).
@@ -166,6 +231,21 @@ fn scheduled(tx: &Transaction, t: &Task, agent: &str) {
     let (id, _) = crate::tasks::schedules::add(tx, HUMAN, &crate::tasks::schedules::Given::of(tx, &v, 1).unwrap(), 1).unwrap();
     let s = crate::tasks::schedules::by_id(tx, &id).unwrap();
     crate::tasks::schedules::fired(tx, &s, (1, 0), Some(&t.key), "started", None, 1).unwrap();
+}
+
+#[test]
+fn ac169_a_scheduled_wait_leaves_its_subtask_free() {
+    let (s, dir) = (store("waits-scheduled-subtask"), crate::testutil::fresh_dir("waits-scheduled-dir"));
+    let child = s.with(|tx| {
+        let (main, child) = (task(tx, "api"), task(tx, "api"));
+        crate::tasks::family::set_parent(tx, HUMAN, &child.id, Some(&main.id), 1)?;
+        scheduled(tx, &main, "a");
+        add(tx, &main, "a", "api", &json!({}), 2)?;
+        assert_eq!(protecting(tx, &main.key)?.unwrap().task, main.key);
+        assert!(on_cards(tx, &[&child.key])?.is_empty());
+        Ok(child)
+    }).unwrap();
+    assert!(tools::run(&s, &dir, &other_agent(), "move_task", &json!({"id": child.id, "to": "IN PROGRESS"})).is_ok());
 }
 
 #[test]
@@ -262,6 +342,7 @@ fn ac161_a_schedule_s_waiting_task_closes_its_own_idle_session() {
 fn ac210_a_wait_for_other_tasks_goes_on_once_they_are_done_and_holds_no_place_meanwhile() {
     store("waits-after").with(|tx| {
         let (waiter, blocker, later) = (task(tx, "api"), task(tx, "api"), task(tx, "api"));
+        crate::tasks::family::set_parent(tx, HUMAN, &blocker.id, Some(&waiter.id), 1)?;
         ops::move_to(tx, HUMAN, &blocker.id, "IN PROGRESS", 1)?;
         add_after(tx, &waiter, "a", "api", &json!({"after": [blocker.id]}), std::slice::from_ref(&blocker.key), 2)?;
         add(tx, &later, "a", "api", &json!({}), 3)?;
@@ -270,6 +351,9 @@ fn ac210_a_wait_for_other_tasks_goes_on_once_they_are_done_and_holds_no_place_me
         assert_eq!(ahead(tx, "a", "api", &later.key)?, None, "a wait for other tasks holds no place before a later press");
         assert_eq!(queues(tx)?["a"].iter().map(|v| v["id"].as_str().unwrap()).collect::<Vec<_>>(), [later.id.as_str()], "nor in the agent's queue");
         assert_eq!(on_cards(tx, &[&later.key])?[&later.key].position, 1, "nor a queue place");
+        assert!(protecting(tx, &waiter.key)?.unwrap().for_tasks(), "the primary still waits for its dependencies");
+        assert!(protecting(tx, &blocker.key)?.is_none(), "the blocker can be finished");
+        assert!(on_cards(tx, &[&blocker.key])?.is_empty(), "the blocker is not a member");
         ops::move_to(tx, HUMAN, &blocker.id, "DONE", 4)?;
         assert!(matches!(due(tx, &w)?, Due::Press(id, body) if id == waiter.id && body["after"] == json!([blocker.id])), "DONE: pressed with its words' IDs");
         assert!(of_task(tx, &waiter.key)?.unwrap().after.is_empty(), "from then on a wait for room alone, in its place in the line");
@@ -314,6 +398,29 @@ fn ac210_a_human_s_move_calls_off_a_wait_for_other_tasks() {
         assert!(matches!(due(tx, &w)?, Due::Off(id, words) if id == waiter.id && words.contains("moved to IN PROGRESS")));
         add(tx, &waiter, "a", "api", &json!({}), 4)?;
         assert!(of_task(tx, &waiter.key)?.unwrap().after.is_empty(), "a human's RUN that waits for room replaces it");
+        Ok(())
+    }).unwrap();
+}
+
+#[test]
+fn ac210_a_wait_for_other_tasks_called_off_lets_go_of_its_run_and_the_task_stays_in_todo() {
+    store("waits-after-off").with(|tx| {
+        let (waiter, blocker) = (task(tx, "api"), task(tx, "api"));
+        let id = runs::add(tx, &Run { agent_id: "a".into(), kind: "claude".into(), command: "claude".into(), folder: "/srv".into(), project: "api".into(), ..Default::default() }, std::slice::from_ref(&waiter.key), Default::default(), 1)?;
+        runs::change(tx, &id, |r| { r.state = Phase::Working; r.pane_key = Some("tmux:local:t:%9".into()); r.asked = true; })?;
+        add_after(tx, &waiter, "a", "api", &json!({}), std::slice::from_ref(&blocker.key), 2)?;
+        // the manager's stop or the human's Stop waiting: the wait goes, and its run with it, the window left alone
+        call_off(tx, &waiter.key, "The project's manager called off its wait for Smith.")?;
+        assert!(of_task(tx, &waiter.key)?.is_none());
+        assert!(runs::by_id(tx, &id)?.is_over(), "no walk judges its window again: a close later fails nothing");
+        assert_eq!(ops::get(tx, &waiter.id)?.status, "TODO", "it stays where it stood (AC-158)");
+        assert!(ops::history(tx, &waiter.id)?.to_string().contains("Dispatcher let go of its session"));
+        // a wait for room alone is no run's: calling it off touches none
+        let (queued, other) = (task(tx, "api"), holding(tx, "b", "api"));
+        add(tx, &queued, "a", "api", &json!({}), 3)?;
+        tx.execute("INSERT INTO run_tasks (run, task) VALUES (?1, ?2)", (&other, &queued.key)).map_err(sql)?;
+        call_off(tx, &queued.key, "The human called off its wait for Smith.")?;
+        assert!(!runs::by_id(tx, &other)?.is_over(), "a slot's wait leaves every run as it was");
         Ok(())
     }).unwrap();
 }

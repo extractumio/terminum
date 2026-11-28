@@ -5,7 +5,7 @@ use std::collections::HashMap;
 
 use rusqlite::{OptionalExtension, Row, Transaction};
 
-use crate::tasks::ops::{rows, sql};
+use crate::tasks::ops::{self, rows, sql};
 
 /// Where a run stands (terminum-dispatcher.md §9), kept as its label: a label the store holds that is none of these is an
 /// error, not a run in some state of its own.
@@ -78,9 +78,11 @@ pub enum How {
     Auto,
     /// a red batch's integration task, on its project's integration agent (terminum-integration.md AC-194)
     Integration,
+    /// An investigation of a Supervisor signal (terminum-supervisor.md AC-233).
+    Supervisor,
 }
 
-const HOWS: [(How, &str); 7] = [(How::Run, "run"), (How::Drop, "drop"), (How::New, "new"), (How::Session, "session"), (How::Schedule, "schedule"), (How::Auto, "auto"), (How::Integration, "integration")];
+const HOWS: [(How, &str); 8] = [(How::Run, "run"), (How::Drop, "drop"), (How::New, "new"), (How::Session, "session"), (How::Schedule, "schedule"), (How::Auto, "auto"), (How::Integration, "integration"), (How::Supervisor, "supervisor")];
 
 impl How {
     pub fn word(self) -> &'static str {
@@ -282,7 +284,7 @@ impl Run {
 const SELECT: &str = "SELECT r.id, COALESCE(r.task, ''),
     (SELECT group_concat(x.slug, ',' ORDER BY x.number) FROM run_tasks m JOIN tasks x ON x.id = m.task WHERE m.run = r.id),
     (SELECT group_concat(x.slug, ',' ORDER BY x.number) FROM run_tasks m JOIN tasks x ON x.id = m.task WHERE m.run = r.id AND x.status NOT IN ('DONE', 'FAILED')),
-    COALESCE((SELECT x.status FROM run_tasks m JOIN tasks x ON x.id = m.task WHERE m.run = r.id ORDER BY CASE x.status WHEN 'IN PROGRESS' THEN 0 WHEN 'WAIT FOR HUMAN' THEN 1 WHEN 'TODO' THEN 2 WHEN 'INTEGRATION' THEN 3 WHEN 'FAILED' THEN 4 ELSE 5 END LIMIT 1), ''),
+    COALESCE((SELECT s FROM (SELECT x.status AS s FROM run_tasks m JOIN tasks x ON x.id = m.task WHERE m.run = r.id) ORDER BY CASE s WHEN 'IN PROGRESS' THEN 0 WHEN 'WAIT FOR HUMAN' THEN 1 WHEN 'TODO' THEN 2 WHEN 'INTEGRATION' THEN 3 WHEN 'FAILED' THEN 4 ELSE 5 END LIMIT 1), ''),
     r.project,
     (SELECT sum(x.budget_seconds) FROM run_tasks m JOIN tasks x ON x.id = m.task WHERE m.run = r.id),
     r.agent_id, r.agent_name, r.agent_color, r.kind, r.command, r.host, r.folder, r.pane_key, r.agent_session, r.state, r.prompt,
@@ -316,6 +318,11 @@ pub fn live(tx: &Transaction) -> Result<Vec<Run>, String> {
     rows(tx, &format!("{SELECT} WHERE {STILL} ORDER BY r.rowid"), [], of_row)
 }
 
+/// Members of a mixed run that can be moved by the silent-subagent watchdog (AC-127).
+pub(super) fn in_progress(tx: &Transaction, run: &str) -> Result<Vec<String>, String> {
+    rows(tx, "SELECT t.slug FROM run_tasks m JOIN tasks t ON t.id = m.task WHERE m.run = ?1 AND t.status = 'IN PROGRESS' ORDER BY t.number", [run], |r| r.get(0))
+}
+
 /// The run in pane `key`, if any.
 pub fn in_pane(tx: &Transaction, key: &str) -> Result<Option<Run>, String> {
     one(tx, &format!("r.pane_key = ?1 AND {STILL} ORDER BY r.rowid DESC LIMIT 1"), key).optional().map_err(sql)
@@ -333,11 +340,11 @@ pub fn holding_agent(tx: &Transaction, agent: &str) -> Result<Option<Run>, Strin
 
 /// Whether session `key` holds an open task other than `lead`'s: one taken there, no run's.
 pub fn others_open(tx: &Transaction, key: &str, lead: &str) -> Result<bool, String> {
-    tx.query_row("SELECT EXISTS (SELECT 1 FROM tasks WHERE session_key = ?1 AND id != ?2 AND status NOT IN ('DONE', 'FAILED') AND archived_at IS NULL)", (key, lead), |x| x.get(0)).map_err(sql)
+    tx.query_row("SELECT EXISTS (SELECT 1 FROM tasks t WHERE t.session_key = ?1 AND t.id != ?2 AND t.status NOT IN ('DONE', 'FAILED') AND t.archived_at IS NULL)", (key, lead), |x| x.get(0)).map_err(sql)
 }
 
 
-pub(super) fn by_id(tx: &Transaction, id: &str) -> Result<Run, String> {
+pub(crate) fn by_id(tx: &Transaction, id: &str) -> Result<Run, String> {
     one(tx, "r.id = ?1", id).map_err(sql)
 }
 
@@ -359,9 +366,9 @@ pub fn change(tx: &Transaction, id: &str, f: impl FnOnce(&mut Run)) -> Result<Ru
 /// but its id and clocks; `started`: who asked for it and how, kept with it (AC-183). Its id.
 pub fn add(tx: &Transaction, like: &Run, tasks: &[String], started: Started, at: i64) -> Result<String, String> {
     let id = crate::auth::crypto::random_hex::<8>();
-    tx.execute("INSERT INTO runs (id, task, project, agent_id, agent_name, agent_color, kind, command, host, folder, agent_session, state, prompt, last_walk, started_by, started_how)
-                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, 'starting', ?12, ?13, ?14, ?15)",
-               rusqlite::params![id, tasks.first(), like.project, like.agent_id, like.agent_name, like.agent_color, like.kind, like.command, like.host, like.folder, like.agent_session, like.prompt, at, started.by, started.how]).map_err(sql)?;
+    tx.execute("INSERT INTO runs (id, task, project, agent_id, agent_name, agent_color, kind, command, host, folder, agent_session, state, prompt, last_walk, started_by, started_how, asked)
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, 'starting', ?12, ?13, ?14, ?15, ?16)",
+               rusqlite::params![id, tasks.first(), like.project, like.agent_id, like.agent_name, like.agent_color, like.kind, like.command, like.host, like.folder, like.agent_session, like.prompt, at, started.by, started.how, like.asked]).map_err(sql)?;
     for task in tasks {
         tx.execute("INSERT INTO run_tasks (run, task) VALUES (?1, ?2)", (&id, task)).map_err(sql)?;
     }
@@ -432,8 +439,13 @@ pub const GAVE_UP: &str = "The human gave up on it.";
 
 /// The human gives up on `task`'s run (AC-138): its open tasks fail, Dispatcher lets go of the window, which stays.
 pub fn give_up(tx: &Transaction, task: &str) -> Result<Run, String> {
-    let run = last_of(tx, task)?.filter(|r| !r.is_over()).ok_or("It has no run to give up.")?;
+    let run = still_open(tx, task)?.ok_or("It has no run to give up.")?;
     let_go(tx, &run.id)
+}
+
+/// The last run of store key `task` while Dispatcher still holds it.
+fn still_open(tx: &Transaction, task: &str) -> Result<Option<Run>, String> {
+    Ok(last_of(tx, task)?.filter(|r| !r.is_over()))
 }
 
 /// The same by the run: a + Session's too, its host out of reach (AC-142).
@@ -442,8 +454,37 @@ pub fn let_go(tx: &Transaction, id: &str) -> Result<Run, String> {
     if run.is_over() {
         return Err("Dispatcher holds that session no more.".into());
     }
-    super::move_task(tx, &run, "FAILED", GAVE_UP)?;
-    change(tx, &run.id, |r| r.state = Phase::Left)
+    if run.ad_hoc() && started(tx, id)?.0 == How::Supervisor {
+        return Err("Dispatcher keeps this investigation until its case ends. Turn off the project's Supervisor to stop its rounds.".into());
+    }
+    release(tx, run, "FAILED", GAVE_UP)
+}
+
+/// What a task stopped by its project's manager says: postponed, never failed (`terminum-agents.md` AC-179).
+pub const STOPPED: &str = "The project's manager stopped its run: it waits in TODO to run again.";
+
+/// The project's manager stops task `task`'s run (`terminum-agents.md` AC-179): its open tasks go back to TODO, a
+/// postponement and no failure, and Dispatcher lets go of the window, which stays.
+pub fn stop(tx: &Transaction, task: &str) -> Result<Run, String> {
+    let run = still_open(tx, task)?.ok_or("It has no run to stop.")?;
+    release(tx, run, "TODO", STOPPED)
+}
+
+fn release(tx: &Transaction, mut run: Run, to: &str, words: &str) -> Result<Run, String> {
+    super::move_task(tx, &run, to, words)?;
+    run.state = Phase::Left;
+    save(tx, &run)?;
+    Ok(run)
+}
+
+/// The wait of store key `task` for other tasks was called off (AC-210, AC-158): the run that held it while it waited
+/// holds it no more, so neither its window's end nor its quiet close says anything of a wait that is gone; the task
+/// stays where it stood, and the window stays.
+pub fn let_go_waiting(tx: &Transaction, task: &str) -> Result<(), String> {
+    let Some(mut run) = still_open(tx, task)? else { return Ok(()) };
+    run.state = Phase::Left;
+    save(tx, &run)?;
+    ops::log(tx, task, crate::tasks::store::DISPATCHER, "told", "Dispatcher let go of its session: the wait it was kept for is gone. The window stays.", None, ops::now()).map(drop)
 }
 
 /// A run that still holds `task` open: its session stays until it ends, or the human gives up (AC-138).

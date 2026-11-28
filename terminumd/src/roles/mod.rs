@@ -16,12 +16,16 @@ mod agents;
 pub mod peer;
 mod schedules;
 mod sessions;
+mod setup;
 mod tasks;
 pub mod tokens;
+pub(crate) mod supervisor;
+pub(crate) use supervisor::Role;
 
 /// The manager's tools, in the catalog's order (cli/mcp_manager.rs).
-pub const MANAGER_TOOLS: [&str; 18] = ["list_runs", "run_task", "promote_queued_task", "stop_task", "list_agents", "create_agent", "update_agent", "delete_agent",
-    "list_schedules", "create_schedule", "update_schedule", "delete_schedule", "run_schedule", "list_sessions", "get_session", "send_to_session", "close_session", "get_dashboard"];
+pub const MANAGER_TOOLS: [&str; 21] = ["list_runs", "run_task", "promote_queued_task", "stop_task", "list_agents", "create_agent", "update_agent", "delete_agent",
+    "list_schedules", "create_schedule", "update_schedule", "delete_schedule", "run_schedule", "list_sessions", "get_session", "send_to_session", "close_session", "get_dashboard",
+    "get_project_setup", "update_project_setup", "set_supervisor_charter"];
 /// What a worker is told of a manager's tool: as of a name that is no tool.
 pub fn not_yours(tool: &str) -> String {
     format!("No tool is named {tool:?} for this session: it is a worker's. A project's manager, a session the human started in the project, has it.")
@@ -50,6 +54,9 @@ const OPENED: &str = "SELECT m.pane_key, m.project FROM project_members m
 pub fn managers(tx: &Transaction, live: &[runs::Run]) -> Result<std::collections::HashSet<String>, String> {
     let mut all: std::collections::HashSet<String> = live.iter().filter(|r| r.manages()).filter_map(|r| r.pane_key.clone()).collect();
     all.extend(crate::tasks::ops::rows(tx, OPENED, [], |r| r.get::<_, String>(0))?);
+    for key in supervisor::marked_panes(tx)? {
+        all.remove(&key);
+    }
     Ok(all)
 }
 
@@ -57,6 +64,13 @@ pub fn managers(tx: &Transaction, live: &[runs::Run]) -> Result<std::collections
 /// while Dispatcher holds it, or a session the human opened in that project. A run with a task makes a worker,
 /// whoever started it, and so does a pane in no project.
 pub fn manages(tx: &Transaction, key: &str) -> Result<Option<(String, Option<runs::Run>)>, String> {
+    if supervisor::marked(tx, key)?.is_some() {
+        return Ok(None);
+    }
+    ordinary_manager(tx, key)
+}
+
+pub(super) fn ordinary_manager(tx: &Transaction, key: &str) -> Result<Option<(String, Option<runs::Run>)>, String> {
     if let Some(r) = runs::in_pane(tx, key)? {
         return Ok(r.manages().then(|| (r.project.clone(), Some(r))));
     }
@@ -73,6 +87,25 @@ pub fn boss(tx: &Transaction, key: &str) -> Result<Option<Boss>, String> {
         None => (format!("manager:{project}:session"), format!("{} · manager", crate::tasks::ops::project_place(tx, &project)?.0)),
     };
     Ok(Some(Boss { key: key.to_string(), user: agent_named(tx, id, &name)?, project, name }))
+}
+
+/// Record manager authority separately from the author shown in task history.
+pub(crate) fn task_write_start(tx: &Transaction, key: &str) -> Result<Option<i64>, String> {
+    let manager = if let Some(id) = key.strip_prefix("token:") {
+        tx.query_row("SELECT EXISTS (SELECT 1 FROM tokens WHERE id = ?1 AND role = 'manager'
+            AND (expires_at IS NULL OR expires_at > ?2))", (id, crate::tasks::ops::now()), |r| r.get(0)).map_err(crate::tasks::ops::sql)?
+    } else { manages(tx, key)?.is_some() };
+    manager.then(|| tx.query_row("SELECT coalesce(max(rowid), 0) FROM events", [], |r| r.get(0))
+        .map_err(crate::tasks::ops::sql)).transpose()
+}
+
+pub(crate) fn task_write_end(tx: &Transaction, start: Option<i64>) -> Result<(), String> {
+    if let Some(start) = start {
+        tx.execute("UPDATE events SET data = json_set(coalesce(data, '{}'), '$.by', 'manager')
+            WHERE rowid > ?1 AND author IN (SELECT id FROM users WHERE kind = 'agent')",
+            [start]).map_err(crate::tasks::ops::sql)?;
+    }
+    Ok(())
 }
 
 /// A manager token's caller (AC-181).
@@ -93,14 +126,53 @@ pub fn mark(app: &Shared, groups: &mut [Value]) {
     }
 }
 
-/// A role's name, as a probe says it.
-pub fn name(manager: bool) -> &'static str {
-    if manager { "manager" } else { "worker" }
+/// Whether a tool only reads.
+pub(super) fn reads(tool: &str) -> bool {
+    tool.starts_with("list_") || tool.starts_with("get_") || tool == crate::supervisor::config_changes::PREVIEW
 }
 
-/// Whether a tool only reads.
-fn reads(tool: &str) -> bool {
-    tool.starts_with("list_") || tool.starts_with("get_")
+/// Resolve the recorded role for this pane. Peer ancestry binds local Supervisor calls in both directions.
+pub(crate) async fn pane_caller(
+    app: &Shared, server: &crate::tmux::Server, pane: &str, peer: Option<peer::Peer>, probe: bool,
+) -> Result<(Role, Option<supervisor::Mark>), String> {
+    let key = server.key(pane);
+    let local = peer.is_some_and(|peer| peer.0.is_some());
+    let (role, mark, marks) = crate::tasks::api::store(app, move |tx| {
+        if let Some(mark) = supervisor::marked(tx, &key)? {
+            return Ok((mark.role, Some(mark), Vec::new()));
+        }
+        let manager = probe && ordinary_manager(tx, &key)?.is_some();
+        let marks = if peer.is_some() { supervisor::marked_panes(tx)? } else { Vec::new() };
+        Ok((Role::from(manager), None, marks))
+    }).await?;
+    if supervisor::unjudged(peer, &marks) {
+        // a process under a Supervisor's pane could name a worker's pane: unknown, it is refused (AC-231)
+        tracing::warn!(event = "supervisor.peer_unknown", pane);
+        return Err(supervisor::PEER_UNKNOWN.into());
+    }
+    if let Some(mark) = &mark {
+        let from_pane = match peer {
+            Some(peer) if local && server.is_local() => match &mark.run {
+                Some(run) => peer::in_run(peer, server, pane, run).await,
+                None => peer::in_pane(peer, server, pane).await,
+            },
+            _ => false,
+        };
+        if !from_pane {
+            return Err("This call does not come from the Supervisor's own pane.".into());
+        }
+    } else if let Some(peer) = peer && peer::in_marked_pane(app, peer, &marks).await {
+        return Err("The Supervisor must call from its own pane.".into());
+    }
+    Ok((role, mark))
+}
+
+pub(crate) async fn check_token_peer(app: &Shared, peer: peer::Peer) -> Result<(), String> {
+    if peer.0.is_none() {
+        let marked = crate::tasks::api::store(app, |tx| Ok(!supervisor::marked_panes(tx)?.is_empty())).await?;
+        if marked { return Err(supervisor::PEER_UNKNOWN.into()); }
+    }
+    Ok(())
 }
 
 /// A manager's tool called from pane `key` (AC-174, AC-178): run only when the pane's session is its project's
@@ -132,19 +204,21 @@ pub async fn by_token(app: &Shared, body: &Value) -> Result<String, String> {
         Ok((t, boss))
     }).await?;
     if tool == "probe" {
-        return Ok(name(t.manager).to_string());
+        return Ok(Role::from(t.manager).name().to_string());
     }
     if MANAGER_TOOLS.contains(&tool.as_str()) {
         let Some(boss) = boss else { return Err(not_yours(&tool)) };
         return run(app, &boss, &tool, &args).await;
     }
-    if !crate::tasks::tools::NAMES.contains(&tool.as_str()) || NEEDS_A_SESSION.contains(&tool.as_str()) {
+    if !crate::tasks::tools::NAMES.contains(&tool.as_str()) || NEEDS_A_SESSION.contains(&tool.as_str())
+        || !(Role::Token { manager: t.manager }).allows(&tool)
+    {
         return Err(format!("{tool} is a session's own: a token has no session."));
     }
     // its files are read and given in its project's folder, on this Mac
     let dir = app.projects.lock().by_id(&t.project).filter(|p| p.host.is_none()).map(|p| p.dir.clone());
     let project = Some(t.project.clone()).filter(|p| p != crate::tasks::store::DEFAULT_PROJECT);
-    let who = crate::tasks::tools::Who { key: t.key(), agent: "token".into(), title: t.name.clone(), project, dir };
+    let who = crate::tasks::tools::Who { conversation: None, key: t.key(), agent: "token".into(), title: t.name.clone(), project, dir, supervisor: false };
     crate::agentapi::task_tool_of(app, who, None, false, tool, args).await
 }
 
@@ -201,6 +275,9 @@ pub async fn run(app: &Shared, boss: &Boss, tool: &str, args: &Value) -> Result<
         "get_session" => sessions::get(app, boss, args).await,
         "send_to_session" => sessions::send(app, boss, args).await,
         "close_session" => sessions::close(app, boss, args).await,
+        "get_project_setup" => setup::get(app, boss).await,
+        "update_project_setup" => setup::change(app, boss, args).await,
+        "set_supervisor_charter" => setup::charter(app, boss, args).await,
         other => Err(format!("unknown tool {other}")),
     };
     tracing::info!(event = "manager.tool", tool, by = %boss.name, project = %boss.project, ok = done.is_ok());

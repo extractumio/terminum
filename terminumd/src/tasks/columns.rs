@@ -22,6 +22,14 @@ pub(crate) fn check_free(tx: &Transaction, session: &str, but: &str) -> Result<(
 
 /// Moves a task to a column, on top of its severity's cards; its history says who did it.
 pub fn move_to(tx: &Transaction, author: &str, id: &str, status: &str, at: i64) -> Result<(), String> {
+    move_marked(tx, author, id, status, None, at)
+}
+
+/// What a move's history says it was for, its field kept on the move: (field, words).
+pub type Mark<'a> = Option<(&'a str, &'a str)>;
+
+/// `move_to`, its history saying why by `mark`.
+pub fn move_marked(tx: &Transaction, author: &str, id: &str, status: &str, mark: Mark, at: i64) -> Result<(), String> {
     if !COLUMNS.contains(&status) {
         return Err(format!("Status: one of {}", COLUMNS.join(", ")));
     }
@@ -47,12 +55,16 @@ pub fn move_to(tx: &Transaction, author: &str, id: &str, status: &str, at: i64) 
         && let Some(session) = &task.session {
             check_free(tx, session, &task.key)?;
         }
-    place(tx, author, &task, status, at)
+    place_marked(tx, author, &task, status, mark, at)
 }
 
 /// `task` in `status`, its history saying who moved it; a task that leaves INTEGRATION leaves the queue, whoever
 /// moved it (terminum-integration.md AC-187).
 pub(crate) fn place(tx: &Transaction, author: &str, task: &Task, status: &str, at: i64) -> Result<(), String> {
+    place_marked(tx, author, task, status, None, at)
+}
+
+fn place_marked(tx: &Transaction, author: &str, task: &Task, status: &str, mark: Mark, at: i64) -> Result<(), String> {
     if task.status == INTEGRATION {
         super::integration_queue::leave(tx, task, status, at)?;
         // A return is activity (AC-123, AC-198), even if no walk saw the wait; keep the budget already used.
@@ -67,7 +79,17 @@ pub(crate) fn place(tx: &Transaction, author: &str, task: &Task, status: &str, a
     let rank = top_rank(tx, status, &task.severity)?;
     tx.execute("UPDATE tasks SET status = ?1, rank = ?2, updated_at = ?3 WHERE id = ?4", (status, rank, at, &task.key)).map_err(sql)?;
     let who = user_name(tx, author)?;
-    log(tx, &task.key, author, "move", &format!("{who} moved it from {} to {status}", task.status), Some(&json!({"from": task.status, "to": status})), at)?;
+    let mut data = json!({"from": task.status, "to": status});
+    // the run it failed in, its latest, ended or not: a launch later in its second is not that run (terminum-supervisor.md §9)
+    if status == "FAILED" && let Some(run) = crate::dispatcher::runs::last_of(tx, &task.key)? {
+        data["run"] = json!(run.id);
+    }
+    let mut words = format!("{who} moved it from {} to {status}", task.status);
+    if let Some((field, why)) = mark {
+        data[field] = json!(true);
+        words = format!("{words}: {why}");
+    }
+    log(tx, &task.key, author, "move", &words, Some(&data), at)?;
     // however it ended, what its session made stays named on it (terminum-dispatcher.md AC-166)
     if matches!(status, "DONE" | "FAILED") && let Some(line) = super::closeout::made_line(tx, task)? {
         log(tx, &task.key, super::store::DISPATCHER, "told", &line, None, at)?;

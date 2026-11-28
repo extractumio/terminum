@@ -8,6 +8,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { boardKit, cardInSight, intoStore, lastRunOf, nap, paneAlive, pressRun } from "./boardkit.mjs";
 import { check, slack, until } from "./check.mjs";
+import { subagentWaits } from "./e2e_livesubagents.mjs";
 
 const FAKE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../scripts/fake_agent.py");
 
@@ -22,18 +23,32 @@ const taskKit = (j) => {
 };
 
 export async function liveDispatcher(page, opts) {
-  const { base, tmux, work, shots, stop, start } = opts;
+  const { base, tmux, work, app, shots, stop, start, requestOnly } = opts;
   const { j, keyOf, card, open, backToSessions, cli } = boardKit(page, opts);
   const project = (await j("/api/task-projects", "POST", { name: "Runs", dir: work })).id;
   const fake = (kind, more = "") => `python3 -I ${FAKE} ${cli} --kind ${kind} ${more}`;
   const agent = async (name, more = "", kind = "claude") => (await j("/api/task-agents", "POST", { project, name, kind, command: fake(kind, more) })).id;
-  const plain = await agent("Plain");
   const task = async (title, text = "") => (await j("/api/tasks", "POST", { title, text, project })).id;
   // an agent takes more only when free (AC-138): a run here has its own, so one left open stands in no other's way
   let runs = 0;
   const run = async (id, body) => j(`/api/tasks/${id}/run`, "POST", body ?? { agent: await agent(`Run ${++runs}`) });
   const { status, history, paneOf, hasStatus } = taskKit(j);
   const said = (id, words, ms = 8000) => until(async () => (await history(id)).includes(words), ms);
+
+  // AC-123: observe what reached Enter. The agent folds long pastes in the box and clears it after Enter.
+  const noResult = async () => {
+    const stops = await task("stops midway");
+    const prompts = path.join(fs.mkdtempSync(path.join(app, "result-request-")), "prompts");
+    await run(stops, { agent: await agent("Stops", `--prompts ${prompts}`) });
+    const request = `[terminum Dispatcher] ${stops} is still open and your turn ended; no human watches this run now.`;
+    const received = await until(() => fs.existsSync(prompts) &&
+      fs.readFileSync(prompts, "utf8").split("\n").some((line) => line.startsWith(request)), 15000);
+    check("AC-123 a turn with no result gets a request", received, received ? "" : await history(stops));
+    if (requestOnly) return;
+    check("AC-123 no result an hour after the request: FAILED", await hasStatus(stops, "FAILED", 30000) && await said(stops, "No result from the agent within an hour of Dispatcher's request."), await history(stops));
+  };
+  if (requestOnly) return noResult();
+  const plain = await agent("Plain");
 
   // AC-121 happy path, through the page: its play key asks which agent, the last chosen picked, one press
   const first = await task("Fix the retry loop FINISHES", "Its text.");
@@ -50,7 +65,7 @@ export async function liveDispatcher(page, opts) {
   check("AC-156 with the inline TUI Dispatcher adds", line.includes(`--settings '{"tui":"default"`), line);
   check("AC-121 and the server and the folder", await page.textContent("#runserver") === "This Mac" && await page.textContent("#runfolder") === work, await page.textContent("#runfolder"));
   const prompt = await page.textContent("#runprompt");
-  check("AC-121 and the text that will be sent, in its order", /^The human ran task [A-Z][A-Z0-9]*-\d+: Fix the retry loop FINISHES\n\nIts text\.\n\nBefore you call execute_tool\("finish_task", \{id, result\}\), close the task out[\s\S]*\nOutcome: [\s\S]*\n\nWhen it is done, call execute_tool\("finish_task", \{id, result\}\)/.test(prompt), prompt);
+  check("AC-121 and the text that will be sent, in its order", /^The human ran task [A-Z][A-Z0-9]*-\d+: Fix the retry loop FINISHES\n\nIts text\.\n\nBefore you call execute_tool\("finish_task", \{id, result\}\), close the task out[\s\S]*\n## Outcome\n[\s\S]*\n\nWhen it is done, call execute_tool\("finish_task", \{id, result\}\)/.test(prompt), prompt);
   check("AC-166 the close-out is in English while the project sets no language", /The result, in the language named "English":/.test(prompt), prompt);
   if (shots) await page.screenshot({ path: path.join(shots, "run-window.png") });
   await page.click("#rungo");
@@ -109,11 +124,7 @@ export async function liveDispatcher(page, opts) {
   tmux("send-keys", "-t", pane, "Down");
   check("AC-121 once answered the prompt goes in and it ends", await hasStatus(asks, "DONE", 15000), await history(asks));
 
-  // AC-123 a turn with no result: one request through the gate, then FAILED an hour later, never DONE
-  const stops = await task("stops midway");
-  await run(stops);
-  check("AC-123 a turn with no result gets a request", await until(async () => /still open and your turn ended; no human watches this run now\./.test(tmux("capture-pane", "-p", "-S", "-30", "-t", await paneOf(stops))) || await status(stops) === "FAILED", 15000));
-  check("AC-123 no result an hour after the request: FAILED", await hasStatus(stops, "FAILED", 30000) && await said(stops, "No result from the agent within an hour of Dispatcher's request."), await history(stops));
+  await noResult();
 
   // AC-123 the gate never types on a draft
   const drafted = await task("a draft stands");
@@ -144,19 +155,27 @@ export async function liveDispatcher(page, opts) {
   if (shots) await page.screenshot({ path: path.join(shots, "needs-line.png") });
 
   // AC-157 the agent asks by ask_human: its session closes, RUN resumes the same conversation with the answers
-  const asking = await task("needs a decision QUESTIONS");
-  await run(asking);
+  const asking = await task("needs a decision CHOICES QUESTIONS"), choicePrompts = path.join(app, "choice-prompts");
+  await run(asking, { agent: await agent("Asks with choices", `--prompts ${choicePrompts}`) });
   check("AC-157 its questions wait for the human", await hasStatus(asking, "WAIT FOR HUMAN", 15000), await history(asking));
   const asked = await j(`/api/tasks/${asking}`);
   check("AC-157 kept as questions on the task", asked.history.some((e) => e.questions && /^Why you are needed: .*\nRecommended:\n1\. v2/.test(e.text)), JSON.stringify(asked.history.at(-1)));
   check("AC-157 its session closes once its turn is over", await until(async () => (await j(`/api/tasks/${asking}`)).session?.closed || /waits for the human's answers/.test(await history(asking)), 20000), await history(asking));
   const conversation = (await j(`/api/tasks/${asking}`)).agent?.conversation;
   check("AC-157 the task keeps its agent and conversation", /^fake-\d+$/.test(conversation ?? ""), JSON.stringify((await j(`/api/tasks/${asking}`)).agent));
+  await page.goto(`${base}/kanban/${asking}`);
+  await page.getByRole("button", { name: "<b>v2</b> (Recommended)", exact: true }).click();
+  await page.getByText("Saved answer: <b>v2</b>", { exact: true }).waitFor();
+  const picked = await j(`/api/tasks/${asking}`);
+  check("AC-230 one press saves the chosen option and still waits", picked.status === "WAIT FOR HUMAN" && picked.history.some((e) =>
+    e.author_kind === "human" && e.choice?.question === asked.active_question && e.choice?.option === "v2"));
   const answered = await run(asking, { comment: "v2, and FINISHES" });
   check("AC-157 RUN resumes it", !!answered.run, JSON.stringify(answered));
   check("AC-157 in the same conversation, with the human's answers", await until(async () => { const p = await paneOf(asking); return !!p && /answered your questions/.test(tmux("capture-pane", "-p", "-S", "-40", "-t", p)); }, 15000) || await status(asking) === "DONE");
   check("AC-157 and it goes on to the end", await hasStatus(asking, "DONE", 20000), await history(asking));
   check("AC-157 its conversation is the one it asked in", (await j(`/api/tasks/${asking}`)).agent?.conversation === conversation, JSON.stringify((await j(`/api/tasks/${asking}`)).agent));
+
+  check("AC-230 and AC-157 RUN carries the saved option ID and free text to the same agent", (/Selected option: v2\.\s+---\s+v2, and FINISHES/).test(fs.readFileSync(choicePrompts, "utf8")));
 
   // AC-122 running again: a live agent, a shell, a closed session
   const again = await task("again STOPS");
@@ -283,6 +302,8 @@ export async function liveDispatcher(page, opts) {
   check("AC-127 one that runs inside the agent cannot be ended alone: said, and the task FAILED, its session kept (OQ-122)", await said(silentSub, "Subagent sub-1 has been silent for 20 minutes and cannot be ended alone", 15000)
     && await hasStatus(silentSub, "FAILED", 15000) && tmux("display", "-p", "-t", await paneOf(silentSub), "#{pane_dead}").trim() === "0", await history(silentSub));
   check("AC-127 the card shows its kind and ID, as idle", await idleShown, await page.textContent(card(silentSub)));
+
+  await subagentWaits({ task, agent, run, history, paneOf, status, said, tmux });
 
   // AC-128 what it consumes: shown on its card; limits by project; a limit of 0 is off
   const badLimits = await j(`/api/task-projects/${project}/limits`, "PUT", { warn: 9, end: 3 });

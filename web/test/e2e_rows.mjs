@@ -5,7 +5,8 @@
 // them), the counts in one column whatever buttons follow; a terminal's icon white on a dark gray
 // tile; the shown session's row see-through (a project's tint under it); no hourglass; every
 // group tinted, a hue apart from its neighbor's; a session done with a shell of its still running
-// marked quietly in the state's place, in the list and the header (AC-39).
+// marked quietly in the state's place, in the list and the header (AC-39); its marks a 2×2 grid on its text's lines, the
+// percent ending where the program ends (AC-01).
 // Alone: node web/test/e2e_all.mjs webRows.
 
 import { check, runningIn } from "./check.mjs";
@@ -14,9 +15,9 @@ import { drawn, group, item, openPage, SIZES } from "./fake.mjs";
 const ID = (n) => `tmux:local:terminum:%${n}`, OWN = (n) => `tmux:local:default:%${n}`;
 const DIR = "/Users/alex/work/api";
 const LAYOUT = [group("local", [
-  item(ID(1), "api", { index: "0", agent: "claude", shell: false, sub: ["2.1", "~/work/api"], dir: DIR, state: "done", background: true, manager: true }),
+  item(ID(1), "api", { index: "0", agent: "claude", shell: false, sub: ["2.1", "~/work/api"], dir: DIR, state: "done", background: true, manager: true, plan: { pct: 40, done: 2, total: 5 } }),
   item(ID(2), "web", { index: "2", agent: "codex", shell: false, sub: ["node", "~/work/web"], dir: "/Users/alex/work/web", state: "done" }),
-  item(ID(5), "quick", { index: "4", sub: ["quick shell", "bash", "~/work/web"], quickOf: ID(2), dir: "/Users/alex/work/web" }),
+  item(ID(5), "quick", { index: "4", sub: ["quick shell", "bash", "~/work/web"], quickOf: ID(2), dir: "/Users/alex/work/web", state: "failed" }),
   item(ID(6), "slicer", { index: "11", agent: "claude", shell: false, sub: ["2.1", "~/work/slicer"], dir: "/Users/alex/work/slicer", state: "working", subagents: 3, background: true }),
   item(ID(7), "notes", { index: "13", sub: ["bash", "~/notes"], dir: "/Users/alex/notes" })]),
   group("main", [item(OWN(1), "mr", { index: "1", sub: ["zsh", "~/work/mr"], dir: "/Users/alex/work/mr" })],
@@ -70,6 +71,27 @@ export async function webRows(browser, name) {
     if (process.env.TM_TEST_SHOTS) await page.screenshot({ path: `${process.env.TM_TEST_SHOTS}/rows-${page.viewportSize().width}.png` });
     check("AC-174 a manager's row has a small crown at its right, said on hover; no other row has one",
       crown && crown.size === 12 && crown.inside && crown.right < 80 && crown.others === 1 && crown.label === "Manager" && crown.title.startsWith("Manager: it runs its project"), JSON.stringify(crown));
+    // the marks' column a 2×2 grid on the text's lines: crown and state on the title's, bot and count on the meta line
+    const { rows: grid, kid } = await page.evaluate(() => {
+      const box = (e) => e && e.getBoundingClientRect(), mid = (r) => r && [Math.round(r.left + r.width / 2), Math.round(r.top + r.height / 2)];
+      const rows = [...document.querySelectorAll("#sessions li > .item:not(.child)")].map((b) => ({
+        t: mid(box(b.querySelector(".t"))), s: mid(box(b.querySelector(".s"))), st: Math.round(box(b.querySelector(".st")).right),
+        crown: mid(box(b.querySelector(".st .mgr svg"))), state: mid(box(b.querySelector(".st .state svg"))),
+        bot: mid(box(b.querySelector(".st .subs svg"))), subsRight: box(b.querySelector(".st .subs"))?.right,
+        pct: box(b.querySelector(".plpct"))?.right, progs: box(b.querySelector(".s .progs"))?.right }));
+      const kid = document.querySelector("#sessions .item.child"), mark = kid && mid(box(kid.querySelector(".st .state svg")));
+      return { rows, kid: kid && { t: mid(box(kid.querySelector(".t"))), mark } };
+    });
+    const near = (a, b) => Math.abs(a - b) <= 1.5;
+    check("AC-01 a pane's row under its window (a child row, taller on a phone than its lines) has its state on its title's line",
+      kid?.mark && near(kid.mark[1], kid.t[1]), JSON.stringify(kid));
+    const by = (k) => grid.filter((r) => r[k]);
+    const [mgr] = by("crown"), [sub] = by("bot");
+    check("AC-01 a row's marks stand in a 2×2 grid: crown and state on the title's line, the crown left of the state; the bot on the meta line under the crown, its count inside the column",
+      mgr && sub && near(mgr.crown[1], mgr.t[1]) && near(mgr.state[1], mgr.t[1]) && mgr.crown[0] < mgr.state[0] && near(sub.bot[1], sub.s[1]) && near(sub.bot[0], mgr.crown[0])
+        && sub.subsRight <= sub.st + 0.5 && new Set(grid.map((r) => r.st)).size === 1, JSON.stringify(grid));
+    const withPct = by("pct");
+    check("AC-01 the plan's percent ends where the row's program ends, one column of words", withPct.length === 1 && near(withPct[0].pct, withPct[0].progs), JSON.stringify(withPct));
     const m = got.marks, said = "Done; a shell, a monitor or a task it started still runs";
     check("AC-39 done with a shell of its still running: a quiet terminal mark in the state's place, in the row and the header; none when only done or while working",
       m.row?.title === said && m.head?.title === said && m.row.svg === 14 && m.head.svg === 14 && m.others === 1, JSON.stringify(m));

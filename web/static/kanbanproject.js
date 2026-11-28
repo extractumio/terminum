@@ -7,6 +7,7 @@
 import { oneAtATime } from "./dialogs.js";
 import { folderPicker } from "./kanbanfolder.js";
 import { integrationWindow } from "./kanbanintegration.js";
+import { supervisorWindow } from "./kanbansupervisor.js";
 import { $, DEFAULT, api, fillSelect, hostOptions, oneProject, say as toast } from "./kanbanutil.js";
 
 /** `agents`: the agents' section; `archived`: its Archived list (AC-118); `auto`: Auto-Dispatch's tab (kanbanauto.js);
@@ -14,6 +15,7 @@ import { $, DEFAULT, api, fillSelect, hostOptions, oneProject, say as toast } fr
  *  `shownProjects()`: the projects the board shows. */
 export function projectWindow({ getMeta, reload, agents, archived, auto, deleteProject, chosen, shownProjects }) {
   const box = $("projectbox"), picker = folderPicker(), integration = integrationWindow({ getMeta });
+  const supervisor = supervisorWindow({ getMeta });
   let shown = null;
 
   const say = (text) => { $("projecterror").textContent = text; $("projecterror").hidden = !text; };
@@ -43,7 +45,7 @@ export function projectWindow({ getMeta, reload, agents, archived, auto, deleteP
     $("limitsglobal").onclick = () => kept({ warn: null, end: null });
   }
 
-  /** The window's tabs (General, Agents, Auto-Dispatch, Integration, Memory limits, Archived): one shown, each filled as it is
+  /** The window's tabs (General, Agents, Auto-Dispatch, Integration, Supervisor, Memory limits, Archived): one shown, each filled as it is
    *  chosen; a new project has General alone. Done and Delete are General's. */
   const tabs = [...$("projecttabs").querySelectorAll("[role=tab]")], panels = [...box.querySelectorAll(".projpanel")];
   function show(tab) {
@@ -59,6 +61,8 @@ export function projectWindow({ getMeta, reload, agents, archived, auto, deleteP
     if (tab === "auto") auto.fill(shown);
     if (tab === "limits") openLimits(shown.id);
     if (tab === "integration") integration.open(shown.id);
+    if (tab === "supervisor") supervisor.open(shown.id);
+    else supervisor.hide();
     if (tab === "archived") archived.open(shown);
     if (tab === "agents") drawAgents();
   }
@@ -138,6 +142,7 @@ export function projectWindow({ getMeta, reload, agents, archived, auto, deleteP
     } catch (e) { say(e.message); }
   });
 
+  box.addEventListener("close", supervisor.reset);
   $("projectok").addEventListener("click", keep);
   $("autook").addEventListener("click", oneAtATime(box, async () => { if (await auto.save()) box.close(); }));
   /** The bar's cog: the window of the one project shown; several: which one is the human's to say. */
@@ -146,7 +151,10 @@ export function projectWindow({ getMeta, reload, agents, archived, auto, deleteP
     if (p) open(p);
   });
   box.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" && !e.isComposing && e.target.matches("input, #projectdir")) { e.preventDefault(); keep(); }   // a folder is one line; the template has many
+    if (e.key !== "Enter" || e.isComposing || !e.target.matches("input, #projectdir")) return;
+    const tab = e.target.closest(".projpanel")?.dataset.tab;
+    if (tab === "general") { e.preventDefault(); keep(); }   // a folder is one line; the template has many
+    if (tab === "supervisor") e.preventDefault();            // do not implicitly press Cancel while editing
   });
   $("projectpick").addEventListener("click", () => picker.open($("projecthost").value, $("projectdir").value, (path) => { $("projectdir").value = path; fit(); }));
   $("projectaddagent").addEventListener("click", () => agents.add(shown.id));

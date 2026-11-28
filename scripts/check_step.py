@@ -3,7 +3,8 @@
 """Runs one check with its own short TMPDIR and TMUX_TMPDIR and fails if it leaves anything there
 (spec AC-102): check_all.py's guard, so a test's leftover fails the run with no false alarm from
 another session's. A leftover is a file in the folder, or a process of the check's process group
-or working in that folder. Process environments are never queried.
+or working in that folder, or holding a socket bound in it (a tmux server's daemon has left both
+the group and the folder). Process environments are never queried.
 Whatever is left is named, and goes: by its pid, the folder on every exit.
 
   python3 scripts/check_step.py <command…>"""
@@ -17,7 +18,7 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from worktree import working_in  # noqa: E402
-from process_cwd import InspectionError  # noqa: E402
+from process_cwd import InspectionError, bound_in  # noqa: E402
 import owned_children  # noqa: E402
 from check_cancel import Cancellation, unreaped_status  # noqa: E402
 
@@ -44,13 +45,13 @@ class GuardCancellation(Cancellation):
 
 
 def listing():
-    """(pid, pgid, command) of each process but zombies and this one, without environments."""
-    listed = subprocess.run(["ps", "-axo", "pid=,pgid=,stat=,command="], capture_output=True, text=True, errors="replace", check=True,
+    """(pid, ppid, pgid, command) of each process but zombies and this one, without environments."""
+    listed = subprocess.run(["ps", "-axo", "pid=,ppid=,pgid=,stat=,command="], capture_output=True, text=True, errors="replace", check=True,
                             start_new_session=True).stdout
     for line in listed.splitlines():
-        fields = line.split(None, 3)
-        if len(fields) == 4 and fields[0].isdigit() and not fields[2].startswith("Z") and int(fields[0]) != os.getpid():
-            yield int(fields[0]), fields[1], fields[3]
+        fields = line.split(None, 4)
+        if len(fields) == 5 and fields[0].isdigit() and not fields[3].startswith("Z") and int(fields[0]) != os.getpid():
+            yield int(fields[0]), int(fields[1]), fields[2], fields[4]
 
 
 class OwnershipError(InspectionError):
@@ -61,19 +62,31 @@ class OwnershipError(InspectionError):
 
 
 def own_processes(folder, group):
-    """(pid, command) of each process of our private group or working in our private folder."""
+    """(pid, command) of each process of our private group, working in our private folder or holding a
+    socket bound in it: a tmux server outlives the folder it was found by only through that socket."""
     try:
-        inside = working_in(folder)
+        inside = set(working_in(folder)) | bound_in(folder)
     except InspectionError as error:
         raise OwnershipError(error, selected_processes(folder, group)) from error
     return selected_processes(folder, group, inside)
 
 
 def selected_processes(folder, group, inside=()):
-    """Current group/registry members, plus any successfully inspected working-directory PIDs."""
+    """Current group/registry members, any successfully inspected working-directory or socket PIDs, and
+    their descendants: a tmux server's pane programs, one ignoring SIGHUP outliving the server's end."""
     registered = owned_children.active(owned_children.path(folder))
-    return [(pid, text[:120]) for pid, pgid, text in listing()
-            if pgid == str(group) or pid in inside or pid in registered]
+    rows = list(listing())
+    owned = {pid for pid, _, pgid, _ in rows if pgid == str(group) or pid in inside or pid in registered}
+    children = {}
+    for pid, ppid, _, _ in rows:
+        children.setdefault(ppid, []).append(pid)
+    reached = list(owned)
+    while reached:
+        for child in children.get(reached.pop(), []):
+            if child not in owned:
+                owned.add(child)
+                reached.append(child)
+    return [(pid, text[:120]) for pid, _, _, text in rows if pid in owned]
 
 
 def send(pid, number):
@@ -152,8 +165,6 @@ def main(command, folder=None):
 def check(command, folder, cancelled):
     private_group = folder is not None
     folder = folder or os.path.realpath(tempfile.mkdtemp(prefix="tmc.", dir="/tmp"))
-    inspected = False
-    cleaned = False
     try:
         child, status, group = run(command, folder, cancelled, private_group)
         end = time.monotonic() + SETTLE_S
@@ -166,7 +177,7 @@ def check(command, folder, cancelled):
             except OwnershipError as error:
                 inspected = False
                 processes = error.processes
-                print(f"ownership inspection failed: {error}; private root retained: {folder}", file=sys.stderr)
+                print(f"ownership inspection failed: {error}", file=sys.stderr)
                 status = status or 1
                 if cancelled.forward(group):
                     end = time.monotonic() + SETTLE_S
@@ -189,11 +200,18 @@ def check(command, folder, cancelled):
         for name in files_in(folder)[:50]:
             left += 1
             print(f"LEFT {name}", file=sys.stderr)
-        cleaned = inspected
-        return status or (LEFT if left else 0)
+        status = status or (LEFT if left else 0)
+        if inspected and not private_group:
+            try:
+                shutil.rmtree(folder)
+            except OSError as error:
+                if os.path.lexists(folder):
+                    print(f"could not remove private root: {error}", file=sys.stderr)
+                    status = status or 1
+        return status
     finally:
-        if not private_group and cleaned:
-            shutil.rmtree(folder, ignore_errors=True)
+        if not private_group and os.path.lexists(folder):
+            print(f"private root retained: {folder}", file=sys.stderr)
 
 
 if __name__ == "__main__":

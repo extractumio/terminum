@@ -5,6 +5,7 @@ import importlib.util
 import os
 from pathlib import Path
 import re
+import shutil
 import socket
 import subprocess
 import tempfile
@@ -14,6 +15,9 @@ import unittest
 SPEC = importlib.util.spec_from_file_location("leftovers", Path(__file__).resolve().parents[1] / "leftovers.py")
 leftovers = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(leftovers)
+E2E_WS = importlib.util.spec_from_file_location("e2e_ws", Path(__file__).resolve().parents[1] / "e2e_ws.py")
+e2e_ws = importlib.util.module_from_spec(E2E_WS)
+E2E_WS.loader.exec_module(e2e_ws)
 
 BINARY = "/work/terminum/terminumd/target/debug/deps/terminumd-18e312ae2b0e93f4"
 HELPER = f"{BINARY} --exact cli::tests::fake_terminumd --nocapture"
@@ -61,6 +65,52 @@ class Processes(unittest.TestCase):
         finally:
             child.kill()
             child.wait()
+
+
+class LostServers(unittest.TestCase):
+    """A test's tmux server whose socket went with its run's folder (TERM-912): ended by its pid."""
+    SERVER = "tmux -L tm-test-live-33522 -f /tmp/tmc.indcv8il/tml-T9fNjm/h/tmux.conf new-session -d -s main"
+
+    def test_only_an_old_test_server_with_no_parent_and_no_socket_is_ended(self):
+        gone, there = "/tmp/tmc.gone-912/tmux-501/tm-test-live-33522", tempfile.mkdtemp(prefix="tm-lost-")
+        self.addCleanup(os.rmdir, there)
+        bound = lambda: [(7, gone), (8, there), (9, gone), (9, there)]
+        listed = "".join(f"{pid} 1 1-00:00:00 {self.SERVER}\n" for pid in (7, 8, 9, 10))
+        self.assertEqual(leftovers.lost_servers(listed, bound), [(7, self.SERVER, True), (10, self.SERVER, False)],
+                         "a socket still there (8, or one of 9's) keeps it; an unknown socket (10) is only named")
+        self.assertEqual(leftovers.lost_servers(listed, lambda: None), [(pid, self.SERVER, False) for pid in (7, 8, 9, 10)])
+
+    def test_sockets_are_asked_only_when_there_is_such_a_server(self):
+        self.assertEqual(leftovers.lost_servers(f"7 1 1-00:00:00 {HELPER}\n", lambda: self.fail("asked")), [])
+
+    def test_a_server_whose_socket_went_from_outside_a_test_folder_is_only_named(self):
+        bound = lambda: [(7, "/tmp/tmux-501/tm-mine")]   # a /tmp cleaner's doing: SIGUSR1 brings it back
+        self.assertEqual(leftovers.lost_servers(f"7 1 1-00:00:00 {self.SERVER}\n", bound), [(7, self.SERVER, False)])
+
+    def test_what_is_never_ended(self):
+        bound = lambda: [(7, "/tmp/tmc.gone-912/tmux-501/x")]
+        for line in [
+            f"7 900 1-00:00:00 {self.SERVER}",                                  # a test run still owns it
+            f"7 1 05:59:00 {self.SERVER}",                                      # young: another session's run
+            "7 1 1-00:00:00 tmux -L terminum new-session -d -s main",           # the user's own server
+            "7 1 1-00:00:00 /usr/bin/ssh devbox.example tmux -L tm-test-live-1 attach",
+        ]:
+            with self.subTest(line=line):
+                self.assertEqual(leftovers.lost_servers(line + "\n", bound), [])
+
+    def test_a_real_server_whose_folder_went_is_found_and_ended(self):
+        folder = tempfile.mkdtemp(prefix="tm-lost-")
+        env = {**os.environ, "TMUX_TMPDIR": folder}
+        name = f"tm-test-lost-{os.getpid()}"
+        subprocess.run(["tmux", "-f", "/dev/null", "-L", name, "new-session", "-d", "-s", "main", "-c", "/", "sleep 300"], env=env, check=True, timeout=10)
+        pid = int(subprocess.run(["tmux", "-L", name, "display", "-p", "#{pid}"], env=env, capture_output=True, text=True, timeout=10).stdout)
+        command = subprocess.run(["ps", "-o", "command=", "-p", str(pid)], capture_output=True, text=True).stdout.strip()
+        self.addCleanup(e2e_ws.end_tmux, name)   # its socket gone: by its pid
+        old = f"{pid} 1 1-00:00:00 {command}\n"
+        self.assertEqual(leftovers.lost_servers(old, leftovers.socket_paths), [], "its socket is still there")
+        shutil.rmtree(folder)
+        self.assertEqual(leftovers.lost_servers(old, leftovers.socket_paths), [(pid, command, True)])
+        self.assertTrue(leftovers.end(pid, command))
 
 
 class Sockets(unittest.TestCase):

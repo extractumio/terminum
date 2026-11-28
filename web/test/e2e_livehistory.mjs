@@ -121,7 +121,11 @@ export async function liveHistory(page, opts) {
   await page.fill("#q", "");
   await until(async () => (await rows(page)).length >= 5, 6000);
   await page.click(railRow("kind", "Codex"));
-  check("AC-151 Type: one agent's prompts", await until(async () => JSON.stringify(await rows(page)) === JSON.stringify(["say where its task stands"]), 6000) && new URL(page.url()).searchParams.get("kind") === "codex", JSON.stringify(await rows(page)));
+  // Earlier suites can leave Codex prompts too. Check the filter against every visible row.
+  const onlyCodex = () => page.$$eval("#results .msg", (messages) =>
+    messages.some((m) => m.querySelector(".mtext").textContent === "say where its task stands")
+    && messages.every((m) => m.querySelector(".mto").textContent === "Codex"));
+  check("AC-151 Type: one agent's prompts", await until(onlyCodex, 6000) && new URL(page.url()).searchParams.get("kind") === "codex");
   await page.click(railRow("kind", "Codex"));
   check("AC-151 a chosen row pressed again lets its filter go", await until(async () => (await rows(page)).length >= 5, 6000) && !new URL(page.url()).searchParams.get("kind") && await page.isHidden("#hchips"), page.url());
   // a task's messages, from an opened row's keys; its chip lets it go

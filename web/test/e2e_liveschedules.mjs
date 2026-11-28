@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-// The board's folded cards and its rows on the columns' tracks against a real private terminumd
+// The board's folded cards and its responsive card rows against a real private terminumd
 // (terminum-kanban.md AC-159, terminum-dispatcher.md AC-138), and schedules (terminum-schedules.md AC-160 to
 // AC-164): `node web/test/e2e_live.mjs schedules chromium`.
 import { existsSync, readFileSync } from "node:fs";
@@ -12,7 +12,7 @@ export async function liveFolded(page, live) {
   const shot = (name) => live.shots && page.screenshot({ path: `${live.shots}${live.shots.endsWith("-") ? "" : "/"}${name}.png` });
   const made = async (title, severity = "P2") => (await j("/api/tasks", "POST", { title, severity, body: "**text** of it" })).id;
   const a = await made("Folded first task with a title long enough to be cut at the line's end", "P1"), b = await made("Folded second");
-  // three agents and one more: a row of four on the columns' tracks, the fifth starts the next
+  // five agents fill responsive rows, followed by their add tile
   const ids = [];
   for (const n of ["Grid one", "Grid two", "Grid three", "Grid four", "Grid five"]) ids.push((await j("/api/task-agents", "POST", { project: "default", name: n, kind: "claude", command: "claude" })).id);
   await open("?project=default");                  // its tasks' project: one an earlier suite chose is remembered
@@ -50,28 +50,25 @@ export async function liveFolded(page, live) {
   await j(`/api/tasks/${a}`, "PATCH", { title: "Folded first, renamed again" });
   check("AC-159 shown whole stays so as the columns are read again", await until(async () => (await page.textContent(`${card(a)} .ctitle`)) === "Folded first, renamed again") && await shown(`${card(a)} .cfoot`));
 
-  // AC-138: from 1500 px of board an agent a track wide (six tracks), four a row, the add tile after the last; under it
-  // one row that scrolls, an agent 240 px wide (terminum-kanban.md AC-105's tracks); on a phone one a row in the
-  // sheet #poolline opens (terminum-kanban.md AC-105)
-  // the tracks start after Task Management's rail and its gap (terminum-kanban.md AC-203)
-  const phone = await page.isVisible("#poolline");   // a phone's layout: its line stands for the pool (boardphone.css)
+  // AC-138: agents fill wrapping rows; a phone keeps one card per row in its sheet.
+  const phone = await page.isVisible("#poolline");
   if (phone) await page.click("#poolline");
-  const { tracks, left } = await page.evaluate(() => { const b = document.getElementById("board"), cs = getComputedStyle(b), rail = document.getElementById("railboard").getBoundingClientRect();
-    const w = b.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight) - rail.width - 8;
-    return { tracks: b.clientWidth >= 1500 ? (w - 5 * 8) / 6 : 0, left: Math.round(rail.right + 8) }; });
-  const agents = await page.evaluate(() => [...document.querySelectorAll(".agents .agentcard")].map((c) => { const r = c.getBoundingClientRect(); return [Math.round(r.x), Math.round(r.width), Math.round(r.y)]; }));
-  const add = await box("#addagent");
-  if (tracks) {
-    const aligned = agents.slice(0, 4).every(([x, w], i) => Math.abs(x - (left + i * (tracks + 8))) <= 1 && Math.abs(w - tracks) <= 1);
-    check("AC-138 agents stand a track wide, four a row", aligned && agents[4][2] > agents[0][2] && Math.abs(agents[4][0] - left) <= 1, JSON.stringify({ tracks, left, agents }));
-    check("AC-138 AC-203 the add tile stands right after the last agent", add.y === agents[4][2] && Math.abs(add.x - (agents[4][0] + agents[4][1] + 8)) <= 1, JSON.stringify({ add, agents }));
-  } else if (phone) {
-    const sheet = await box("#pool");
-    check("AC-138 on a phone the agents stand one a row in the pool's sheet", agents.length >= 5 && agents.every(([x, w, y], i) =>
-      Math.abs(x - agents[0][0]) <= 1 && Math.abs(w - agents[0][1]) <= 1 && x >= sheet.x && x + w <= sheet.x + sheet.w && (i === 0 || y > agents[i - 1][2])), JSON.stringify({ sheet, agents }));
+  const geometry = await page.$eval("#agentbar .trackitems", (list) => {
+    const box = (e) => { const r = e.getBoundingClientRect(); return { x: r.left, r: r.right, y: Math.round(r.top), w: r.width }; };
+    return { list: box(list), agents: [...list.querySelectorAll(".agentcard")].map(box), add: box(list.querySelector(".addtile")), overflow: list.scrollWidth > list.clientWidth + 1 };
+  });
+  const { agents, list, add } = geometry;
+  check("AC-138 cards stay within their section without horizontal scrolling", agents.length >= 5 && !geometry.overflow
+    && agents.every((c) => c.x >= list.x - 1 && c.r <= list.r + 1), JSON.stringify(geometry));
+  if (phone) {
+    check("AC-138 on a phone the agents stand one a row in the pool's sheet", agents.every((c, i) => Math.abs(c.w - list.w) <= 1
+      && (i === 0 || c.y > agents[i - 1].y)), JSON.stringify(geometry));
   } else {
-    check("AC-138 under 1500 px of board one row of agents that scrolls, each 240 px, from the board's edge",
-      agents.every(([, w, y]) => y === agents[0][2] && w === 240) && Math.abs(agents[0][0] - left) <= 1, JSON.stringify({ left, agents }));
+    // columns of one width: every row but the last reaches the section's edge, a short last row keeps that width
+    const rows = [...new Set(agents.map((c) => c.y))], last = agents.at(-1);
+    check("AC-138 cards stand in columns of one width, each full row filling the available width, the add tile after the last card",
+      agents.every((c) => Math.abs(c.w - agents[0].w) <= 1) && rows.slice(0, -1).every((y) => Math.abs(agents.filter((c) => c.y === y).at(-1).r - list.r) <= 1)
+      && (add.y > last.y || (add.y === last.y && add.x > last.r)), JSON.stringify(geometry));
   }
   await shot("agents");
   if (phone) {
@@ -255,15 +252,15 @@ export async function liveSchedules(page, live) {
   }
   const afterCancel = (await j("/api/schedules")).schedules.find((s) => s.id === saved.id);
   check("AC-182 Cancel runs nothing", !afterCancel.last, JSON.stringify({ schedule: saved.key, last: afterCancel.last }));
-  intoStore(live.app, `UPDATE schedules SET cron = '*/1 * * * *' WHERE id = '${saved.id}'`);
+  // Keep the routine quiet through geometry; each intended firing below enables it explicitly.
   await page.focus(run);
   await tabKey(page);
   r = await ring(page, "#newschedule");
   check("AC-163 AC-203 Tab from the last routine reaches its add tile and rings it", r.focused && r.lit, JSON.stringify(r));
   await page.evaluate(() => document.activeElement?.blur());
   const w = await page.evaluate((s) => Math.round(document.querySelector(s).getBoundingClientRect().width), sched);
-  const agentW = await page.evaluate(() => Math.round(document.querySelector("#agentbar .agentcard").getBoundingClientRect().width));
-  if (!(await page.isVisible("#poolline"))) check("AC-163 a card as wide as an agent: a track, or 240 px under 1500 px of board", Math.abs(w - agentW) <= 1, `${w} ${agentW}`);
+  const sectionW = await page.$eval("#schedbar .trackitems", (e) => e.clientWidth);
+  check("AC-163 a routine fits its responsive section", w > 0 && w <= sectionW, `${w} ${sectionW}`);
   const owl = `#agentbar .agentcard[data-agent="${agent}"]`;
   check("AC-161 its agent shows the kept slot", await until(async () => (await page.$$(`${owl} .agkept`)).length === 1 && /1\/2/.test(await page.textContent(owl))), await page.textContent(owl));
   // more agents than a few rows: the bars scroll, the columns stay
@@ -282,8 +279,36 @@ export async function liveSchedules(page, live) {
   for (const a of (await j("/api/tasks/meta")).agents.filter((a) => a.project === project && a.id !== agent)) {
     removed.push([a.id, (await j(`/api/task-agents/${a.id}`, "DELETE")).code]);
   }
-  while (await page.locator("#asks .x").count()) await page.locator("#asks .x").first().click();
-  const bars = async () => {
+  const dismissAsks = async () => {
+    while (await page.locator("#asks .x").count()) {
+      // Closing hides optimistically: only its successful write makes a reload safe.
+      const seen = page.waitForResponse(r => /\/api\/(?:tasks|reports)\/[^/]+\/seen$/.test(r.url()) && r.request().method() === "POST");
+      await page.locator("#asks .x").first().click();
+      if (!(await seen).ok()) throw new Error("The fixture's waiting line was not marked seen");
+    }
+  };
+  // AC-163: a slow close must finish before the layout's reload, even after its line hides.
+  const ask = (await j("/api/tasks", "POST", { title: "Layout fixture waiting line", project })).id;
+  await j(`/api/tasks/${ask}`, "PATCH", { status: "FAILED" });
+  // A human's own move raises no line: model Dispatcher's move in this private store (AC-117).
+  intoStore(live.app, `UPDATE events SET author = 'dispatcher' WHERE kind = 'move'
+    AND task = (SELECT id FROM tasks WHERE slug = '${ask}');`);
+  await j(`/api/tasks/${ask}/comments`, "POST", { text: "Layout fixture: Dispatcher failed this task." });
+  await page.waitForSelector(`#asks [data-task="${ask}"]`);
+  const closing = await hold(page, `**/api/tasks/${ask}/seen`, "POST");
+  let cleared = false;
+  const clearing = dismissAsks().then(() => { cleared = true; }).catch(error => error);
+  try {
+    const sent = await until(() => closing.sent() > 0);
+    await nap(slack(1200));
+    check("AC-163 the fixture waits for the held close after its line hides", sent && !cleared && !(await page.locator(`#asks [data-task="${ask}"]`).count()));
+  } finally {
+    closing.release();
+    try { const error = await clearing; if (error) throw error; } finally { await closing.end(); }
+  }
+  await j(`/api/tasks/${ask}/archive`, "POST", { on: true });
+  let readings = 0;
+  const bars = async (tasks) => {
     await page.reload();
     await page.waitForSelector(sched);
     await page.waitForSelector(owl);
@@ -304,40 +329,54 @@ export async function liveSchedules(page, live) {
         overflow: column.scrollHeight > column.clientHeight + 1 };
     });
     let last = await read();
+    readings++;
     const stable = await until(async () => {
       await nap(150);   // the first poll must wait too: two immediate reads can precede an async redraw
       const now = await read(), same = JSON.stringify(now) === JSON.stringify(last);
       last = now;
-      return same;
+      return same && now.agents === 1 && now.schedules === 1 && now.asks === 0 && now.tasks === tasks;
     });
     check("AC-163 the layout fixture settles with whole cards and only its own agent", stable && last.whole && last.agents === 1
       && last.schedules === 1 && last.asks === 0 && removed.every(([, code]) => code === 200), JSON.stringify(last));
     return last;
   };
-  const over = await bars(), many = [];
+  const over = await bars(0), many = [];
   check("AC-163 the comparison starts over empty columns", over.tasks === 0 && !over.overflow, JSON.stringify(over));
   for (let i = 0; i < 40; i++) many.push((await j("/api/tasks", "POST", { title: `Long column ${i}`, project })).id);
-  const overLong = await bars();
+  // AC-163: repeated geometry while the long column is held is not a settled fixture.
+  const columns = await hold(page, /\/api\/tasks\?[^#]*status=TODO(?:&|$)/, "GET");
+  const before = readings;
+  let overLong;
+  const measuring = bars(many.length).then(value => { overLong = value; }).catch(error => error);
+  try {
+    const sent = await until(() => columns.sent() > 0 && readings > before);
+    await nap(slack(1200));
+    check("AC-163 the fixture waits for its held long column", sent && overLong === undefined);
+  } finally {
+    columns.release();
+    try { const error = await measuring; if (error) throw error; } finally { await columns.end(); }
+  }
   check("AC-163 the long column contains all 40 tasks and scrolls", overLong.tasks === many.length && overLong.overflow, JSON.stringify(overLong));
   check("AC-163 long columns take no room from the agents and the schedules over them", overLong.heights.every((h, i) => h >= over.heights[i] - 1)
     && overLong.heights[1] > 60, JSON.stringify({ over: over.heights, overLong: overLong.heights }));
   await shot("schedules-long");
   for (const id of many) await j(`/api/tasks/${id}/archive`, "POST", { on: true });
 
-  // AC-162: due, fired on the fake agent, its task DONE with its result
+  // AC-162: due, fired on the fake agent, its result a report in the Inbox and its task DONE (terminum-reports.md AC-272)
+  const reportOf = async (task) => (await j("/api/reports")).reports.find((r) => r.source.task === task);
   let s, task;
   for (let firing = 0; firing < 2; firing++) {
     // AC-163: exercise the next firing with a finished predecessor, without relying on a minute boundary.
     s = (await j("/api/schedules")).schedules.find((x) => x.title === "Nightly deps check");
     if (s.last) {
       intoStore(live.app, `UPDATE schedules SET cron = '0 0 1 1 *' WHERE id = '${s.id}'`);
-      check("AC-163 the previous firing is DONE and its session closed before the next is due", await until(async () => {
+      check("AC-163 AC-272 the previous firing is DONE with its report, its session closed before the next is due", await until(async () => {
         const t = await j(`/api/tasks/${s.last.task}`);
-        return t.status === "DONE" && t.session?.closed;
+        return t.status === "DONE" && t.session?.closed && !!await reportOf(s.last.task);
       }, 45000), s.last.task);
     }
     intoStore(live.app, `UPDATE schedules SET cron = '*/1 * * * *', last_due = last_due - 3600 WHERE id = '${s.id}'`);
-    // A real minute may already have fired while the layout fixture ran: only a new task proves this firing.
+    // Only a new task proves this firing, rather than a preceding run already recorded.
     check("AC-162 due, it makes a task and runs it on its agent", await until(async () => {
       task = (await j("/api/schedules")).schedules.find((x) => x.id === s.id)?.last?.task;
       return task && task !== s.last?.task;
@@ -345,7 +384,9 @@ export async function liveSchedules(page, live) {
     check("AC-183 a firing's run keeps Dispatcher and the schedule", await until(() => startOf(live.app, task) === "dispatcher schedule", 15000), startOf(live.app, task));
     intoStore(live.app, `UPDATE schedules SET cron = '0 0 1 1 *' WHERE id = '${s.id}'`);   // no second firing a minute on, under the checks below
     check("AC-162 its task says a schedule made it, and was never in TODO", /^S_[A-Z][A-Z0-9]*-\d+$/.test(task) && !(await j(`/api/tasks/${task}`)).history.some((e) => /TODO/.test(e.text ?? "")), task);
-    check("AC-162 the agent gives its result: DONE", await until(async () => (await j(`/api/tasks/${task}`)).status === "DONE", 20000), JSON.stringify((await j(`/api/tasks/${task}`)).history?.map((e) => e.text)));
+    check("AC-162 AC-272 the agent gives its result: its task is DONE and its result a report in the Inbox, never WAIT FOR HUMAN", await until(async () => { const r = await j(`/api/tasks/${task}`); return r.status === "DONE" && !!await reportOf(task); }, 20000), JSON.stringify((await j(`/api/tasks/${task}`)).history?.map((e) => e.text)));
+    // AC-272: no report supersedes another: the previous firing's stays unread beside it
+    if (s.last) check("AC-272 the previous firing's report stays, unread", (await reportOf(s.last.task))?.read === false, s.last.task);
     const t = await j(`/api/tasks/${task}`);
     check("AC-162 its history says the schedule and its due time", t.history.some((e) => /^Dispatcher made it from schedule SCH-\d+, due \w{3} \d+ \w{3} \d\d:\d\d\.$/.test(e.text ?? "")), JSON.stringify(t.history.map((e) => e.text)));
     check("AC-163 its window names the schedule", t.schedule?.key === s.key);
@@ -404,6 +445,26 @@ export async function liveSchedules(page, live) {
   check("AC-164 the head has its key pressed", await page.getAttribute('.mpages a[href="/scheduled/"]', "aria-current") === "page");
   await shot("scheduled-page");
 
+  // AC-270: a reply to the firing's report goes on in its task's conversation, as a human's RUN does, through the gate
+  const replied = await reportOf(task);
+  const sentReply = await j(`/api/reports/${replied.id}/reply`, "POST", { text: "Which of them break the build? FINISHES" });
+  check("AC-270 a reply to a routine's report goes on in its task's conversation", sentReply.code === 200 && sentReply.task === task, JSON.stringify(sentReply));
+  // a second reply while the first one's run starts is refused by RUN, and leaves nothing on the task (AC-270)
+  const second = await j(`/api/reports/${replied.id}/reply`, "POST", { text: "And the minor ones?" });
+  check("AC-270 a reply refused by RUN says why", second.code === 400 && !!second.error, JSON.stringify(second));
+  check("AC-270 the reply stands below the report, and its task got the fixed words with it", await until(async () => {
+    const [r, t] = [await j(`/api/reports/${replied.id}`), await j(`/api/tasks/${task}`)];
+    return r.notes?.some((n) => n.kind === "reply" && n.text === "Which of them break the build? FINISHES")
+      && t.history.some((e) => e.kind === "comment" && e.text?.startsWith(`${task}: the human replied to your report ${replied.id}. Answer below it`) && e.text.endsWith("Which of them break the build? FINISHES"));
+  }, 20000), JSON.stringify((await j(`/api/tasks/${task}`)).history?.slice(-4).map((e) => e.text)));
+  // …its run starts, then ends and its session closes as any finished run's, so what follows finds the routine as before (AC-125)
+  check("AC-270 the reply starts its task's run again", await until(async () => (await j(`/api/tasks/${task}`)).history.some((e) => /moved it from DONE to IN PROGRESS/.test(e.text ?? "")
+    && e.at >= (sentReply.at ?? 0)), 20000) || (await j(`/api/tasks/${task}`)).status === "IN PROGRESS", (await j(`/api/tasks/${task}`)).status);
+  check("AC-270 the reply's run ends with no second report of its result", await until(async () => { const t = await j(`/api/tasks/${task}`); return t.status === "DONE" && t.session?.closed
+    && t.history.filter((e) => /to DONE/.test(e.text ?? "")).length >= 2
+    && t.history.filter((e) => e.kind === "comment" && e.text?.startsWith(`${task}: the human replied`)).length === 1
+    && (await j("/api/reports")).reports.filter((r) => r.source.task === task).length === 1; }, 45000), JSON.stringify((await j(`/api/tasks/${task}`)).history.slice(-6).map((e) => e.text)));
+
   // AC-161: an agent running schedules is not deleted; a schedule deleted leaves its tasks
   const kept = await j(`/api/task-agents/${agent}`, "DELETE");
   check("AC-161 an agent with schedules is not deleted", kept.code === 400 && /runs schedules SCH-\d+: give them another agent first\./.test(kept.error ?? ""), JSON.stringify(kept));
@@ -420,7 +481,8 @@ export async function liveSchedules(page, live) {
   await deleteProject();
   check("AC-160 deleting a project names its schedule and keeps it", await until(async () => await page.textContent("#toast") === `Nightly has schedules ${s.key}: move or delete them first.`)
     && (await j("/api/tasks/meta")).projects.some((p) => p.id === project), await page.textContent("#toast"));
-  check("AC-160 deleted, its tasks stay", (await j(`/api/schedules/${s.id}`, "DELETE")).code === 200 && (await j(`/api/tasks/${task}`)).status === "DONE");
+  const gone = await j(`/api/schedules/${s.id}`, "DELETE"), stays = await j(`/api/tasks/${task}`);
+  check("AC-160 deleted, its tasks stay", gone.code === 200 && stays.status === "DONE", JSON.stringify({ gone, status: stays.status }));
   await deleteProject();
   check("AC-160 a deleted schedule no longer blocks deleting its project", await until(async () => !(await j("/api/tasks/meta")).projects.some((p) => p.id === project))
     && (await j(`/api/tasks/${task}`)).project === "default" && (await j("/api/tasks/meta")).agents.find((a) => a.id === agent)?.project === "default");

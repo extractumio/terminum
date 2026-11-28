@@ -8,7 +8,7 @@
   link [<path>]   share the primary checkout's local files with the tree at <path> (default:
       this one): symlinks to its .toolchain, local.mk, CLAUDE.local.md, project-memory and
       .claude/settings.local.json; clones (copy-on-write where the disk can) of ui/node_modules
-      when the lockfiles match and of terminumd/target's release and debug dependencies' builds
+      when the lockfiles match and of idle release and debug dependency builds in terminumd/target
   list            every worktree: branch, uncommitted files, commits not in origin/main,
       processes working in it
   remove <slug|path> [--discard]
@@ -32,7 +32,8 @@ import subprocess
 import sys
 import time
 
-from process_cwd import directories, InspectionError
+import cargo_profile
+from process_cwd import directories, InspectionError, within
 
 KINDS = ("feat", "fix", "test", "docs", "chore")
 SLUG = re.compile(r"^[a-z0-9][a-z0-9-]{0,40}$")
@@ -203,7 +204,7 @@ OWN_BUILDS = ("terminumd", "libterminumd", "terminusd")   # the crate's own: the
 def clone_builds(source, target):
     """A cargo profile's folder with its dependencies' builds only: the crate's own are most of a debug
     folder's files (tens of thousands) and the tree rebuilds them anyway."""
-    target.mkdir(parents=True)
+    target.mkdir(parents=True, exist_ok=True)
     if not all(clone(source / sub, target / sub) for sub in ("build", ".fingerprint") if (source / sub).is_dir()):
         return False
     deps = [str(p) for p in (source / "deps").iterdir() if not p.name.startswith(OWN_BUILDS)] if (source / "deps").is_dir() else []
@@ -257,18 +258,37 @@ def link_modules(tree, primary):
     return "cloned ui/node_modules"
 
 
+def clone_profile(source, target):
+    """`clone_builds` under the source profile's locks: "cloned", "busy" (a build holds them) or "no clone"."""
+    with cargo_profile.try_lock(source) as held:
+        if not held:
+            return "busy"
+        return "cloned" if clone_builds(source, target) else "no clone"
+
+
 def link_target(tree, primary):
-    target = tree / "terminumd/target"
+    source, target = primary / "terminumd/target", tree / "terminumd/target"
     if target.exists():
         return "kept own terminumd/target"
-    profiles = [p for p in ("release", "debug") if (primary / "terminumd/target" / p).is_dir()]
-    if not profiles:
-        return "terminumd/target: cargo builds it (the primary has no build)"
-    for profile in profiles:
-        if not clone_builds(primary / "terminumd/target" / profile, target / profile):
+    cloned, notes = [], []
+    for profile in ("release", "debug"):
+        folder = source / profile
+        if not folder.is_dir():
+            continue
+        copied = clone_profile(folder, target / profile)
+        if copied == "busy":
+            notes.append(f"cargo builds {profile} in this tree (the primary's {profile} profile is busy)")
+            continue
+        if copied == "no clone":
             shutil.rmtree(target, ignore_errors=True)
-            return "terminumd/target: no clone on this disk; cargo builds it"
-    return f"cloned terminumd/target/{{{','.join(profiles)}}} (their dependencies' builds; terminumd itself rebuilds)"
+            notes.append("terminumd/target: no clone on this disk; cargo builds it")
+            return "; ".join(notes)
+        cloned.append(profile)
+    if cloned:
+        notes.insert(0, f"cloned terminumd/target/{{{','.join(cloned)}}} (their dependencies' builds; terminumd itself rebuilds)")
+        if failed := cargo_profile.mark_cache(target):
+            notes.append(f"terminumd/target: not excluded from Time Machine: {failed}")
+    return "; ".join(notes) or "terminumd/target: cargo builds it (the primary has no build)"
 
 
 def add(slug, kind="feat", base="origin/main", cwd="."):
@@ -303,8 +323,7 @@ def working_in(tree, snapshot=None):
     """{pid: command} of the processes whose current folder is in `tree`, this one excepted."""
     tree = str(Path(tree).resolve())
     snapshot = directories() if snapshot is None else snapshot
-    return {pid: command for pid, (command, folder) in snapshot.items()
-            if pid != os.getpid() and (folder == tree or folder.startswith(tree + os.sep))}
+    return {pid: command for pid, (command, folder) in snapshot.items() if pid != os.getpid() and within(folder, tree)}
 
 
 def merged(rev, cwd):

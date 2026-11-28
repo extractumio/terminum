@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial */
 /* Where the columns stand wider than a phone (terminum-kanban.md AC-105; kanbanpanel.js): TODO a column of its own,
-   the others in a panel beside it, one at a time under their tabs, its cards a grid. The board's tracks are the
-   agents' (kanban.css .tracks): six from 1500 px of board (TODO two, the panel's cards four columns), three from
+   the others in a panel beside it, one at a time under their tabs, its cards a grid. The board has
+   six tracks from 1500 px of board (TODO two, the panel's cards four columns), three from
    1100 (TODO one, the cards two); under 1100 px (a tablet's portrait) TODO stands over the panel, as tall as its cards
    up to 40% of the board, both the board's width, the cards two columns. After kanban.css; a phone's one column at
    a time, a phone on its side's too (a touch screen 500 px high or less): kanban.css. */

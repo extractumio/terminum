@@ -31,6 +31,8 @@ terminum is built this way: every `Integrate TERM-nnn` commit here went through 
 - **Schedules:** tasks by the clock or a cron line, each with an agent and a time budget.
 - **Managers:** a project's own session runs, answers and stops its tasks: one agent leads the
   others.
+- **[Project Supervisor](docs/USAGE.md#project-supervisor)** (opt-in) measures project health,
+  raises incidents through one critical line and brings decisions to a weekly review.
 
 ### Asked for decisions, shown everything
 
@@ -137,6 +139,7 @@ This takes the machine's tailnet name; to give terminum a name of its own, see
 - [The guide](docs/USAGE.md): every command, feature, remote host and setting.
 - [Architecture](docs/ARCHITECTURE.md): every part on one diagram.
 - [Set it up with a coding agent](skills/terminum-setup/SKILL.md): a skill that installs, checks and repairs terminum for you.
+- [Onboard a project](docs/USAGE.md#onboard-a-project): "onboard my project" in a session configures its agents, routines and Supervisor.
 - [SECURITY.md](SECURITY.md): the threat model.
 - [All the docs](docs/README.md): specs, contributing, releases.
 

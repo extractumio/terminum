@@ -7,14 +7,19 @@ use std::sync::OnceLock;
 
 use serde_json::Value;
 
+use crate::roles::{Role, supervisor::START_ARGS};
+use crate::supervisor::Level;
+
 use super::mcp_search::{Doc, Index};
 
 /// The areas, in the order search_tools lists them, each with what it holds.
-pub const AREAS: [(&str, &str); 4] = [
+pub const AREAS: [(&str, &str); 6] = [
     ("plan", "this session's steps, current step, ETA"),
     ("tasks", "list, read, create, change priority, parent or text, archive, take, move, ask the human, finish"),
+    ("reports", "for the human's Inbox: create, append, attach, read, list"),
     ("comments", "on a task"),
     ("files", "on a task: attach, get"),
+    ("supervisor", "this project’s case, signals, metrics and finding"),
 ];
 
 pub struct Card {
@@ -45,8 +50,8 @@ pub const CARDS: &[Card] = &[
         example: r#"{"id": "TERM-12"}"# },
     Card { name: "move_task", area: "tasks", keywords: "move a task to a column, change its status, in progress, wait for a human, escalate, blocked, give up, failed, postpone, put back to todo",
         example: r#"{"id": "TERM-12", "to": "WAIT FOR HUMAN"}"# },
-    Card { name: "ask_human", area: "tasks", keywords: "ask the human, ask the user, a question, need a decision, clarify, which option, wait for an answer, human in the loop, blocked on a choice",
-        example: r#"{"id": "TERM-12", "questions": "Why you are needed: dropping API v1 breaks two clients, and only you know if they may break.\nRecommended:\n1. Keep v1 a month: they move by then. Other options: drop it now.\nDetails: TERM-12 removes API v1; v2 is done on a branch. Two clients still call v1; dropping it breaks them today."}"# },
+    Card { name: "ask_human", area: "tasks", keywords: "ask the human, ask the user, a question, need a human, need a decision, clarify, which option, wait for an answer, human in the loop, blocked on a choice",
+        example: r#"{"id": "TERM-12", "questions": "Why you are needed: dropping API v1 breaks two clients, and only you know if they may break.\nRecommended:\n1. Keep v1 a month: they move by then. Other options: drop it now.\nDetails: TERM-12 removes API v1; v2 is done on a branch. Two clients still call v1; dropping it breaks them today.", "kind": "strategic", "options": [{"id": "keep", "label": "Keep v1 a month"}, {"id": "drop", "label": "Drop v1 now"}], "recommended": "keep"}"# },
     Card { name: "wait_for_task", area: "tasks", keywords: "wait until a blocker is done, blocked by a ticket, depends on, dependency, needs its change first, prerequisite not done, resume me when it lands, hold until",
         example: r#"{"id": "TERM-12", "on": "TERM-9", "why": "TERM-12 reads the store column TERM-9 adds; it goes on once TERM-9 lands."}"# },
     Card { name: "add_comment", area: "comments", keywords: "comment on a task, leave a note, reply, remark, say something on a ticket",
@@ -56,9 +61,9 @@ pub const CARDS: &[Card] = &[
     Card { name: "get_file", area: "files", keywords: "get a task's file, download an attachment, open an attached document, its path",
         example: r#"{"task": "TERM-12", "name": "report.md"}"# },
     Card { name: "finish_task", area: "tasks", keywords: "finish my task, mark it done, complete, close, resolve, report the result, wrap up",
-        example: r#"{"id": "TERM-12", "result": "Fixed in tasks/ops.rs; cargo test tasks passes; nothing left."}"# },
+        example: r###"{"id": "TERM-12", "result": "## Outcome\nDone, merged.\n\n## Done\nFixed in tasks/ops.rs ..."}"### },
     Card { name: "integrate", area: "tasks", keywords: "land, merge my work, integrate, ship, publish to main, push, queue for integration, make land, deliver the commit",
-        example: r#"{"id": "TERM-12", "result": "Outcome: Done ..."}"# },
+        example: r###"{"id": "TERM-12", "result": "## Outcome\nDone ..."}"### },
     Card { name: "withdraw_integration", area: "tasks", keywords: "take out of the integration queue, cancel the landing, withdraw, unqueue, stop integrating",
         example: r#"{"id": "TERM-12"}"# },
     Card { name: "integration_status", area: "tasks", keywords: "integration queue, landing queue, my place in the queue, batch, what is being checked, merge queue status",
@@ -71,20 +76,51 @@ pub const CARDS: &[Card] = &[
         example: r#"{"commit": "9c1d0aa"}"# },
     Card { name: "dispatch_task", area: "tasks", keywords: "start a task on an agent, dispatch, Auto-Dispatcher's round, pick the next tasks, fill a free slot",
         example: r#"{"id": "TERM-12", "why": "RICE 8×2×0.8÷1 = 12.8; tasks/ops.rs moves; a small fix many sessions hit"}"# },
+    Card { name: crate::supervisor::design_gates::BRIEF, area: "tasks", keywords: "request design first architecture review migration rollback brief",
+        example: r#"{"id":"API-12","design_note":"Version the settings document.","migration":"Read both versions.","rollback":"Keep writing the old version until verification.","paths":"store/settings.json"}"# },
+    Card { name: crate::supervisor::design_gates::RECORD, area: "tasks", keywords: "record design review architecture critic verdict rejected advice",
+        example: r#"{"id":"API-12","role":"architecture","verdict":"approved","compatibility":"Both readers accept the old form.","rejected_advice":"None"}"# },
+    Card { name: "create_report", area: "reports", keywords: "report to the human, write a report, a review, an audit, an answer to read, deliverable, summary, findings, results, inbox, notify, critical failure",
+        example: r###"{"task": "TERM-12", "title": "Dependency audit", "summary": "2 outdated packages, none vulnerable", "body": "## Findings\n..."}"### },
+    Card { name: "append_to_report", area: "reports", keywords: "add to a report, answer a reply below a report, comment on a report, follow up in the same report",
+        example: r#"{"id": "R_TERM-7", "text": "Both break the build: ..."}"# },
+    Card { name: "attach_report_file", area: "reports", keywords: "attach a file to a report, a chart, a log, a table, an artifact for the human to read",
+        example: r#"{"id": "R_TERM-7", "path": "/Users/alex/project/audit.csv"}"# },
+    Card { name: "get_report", area: "reports", keywords: "read a report, the human's reply below it, its follow-ups",
+        example: r#"{"id": "R_TERM-7"}"# },
+    Card { name: "list_reports", area: "reports", keywords: "list reports, the inbox, unread reports, what the human has not read",
+        example: r#"{"unread": "yes", "limit": "10"}"# },
+    Card { name: "update_report", area: "reports", keywords: "edit a report, correct a report, change its title or body, mark critical or not",
+        example: r#"{"id": "R_TERM-7", "critical": "no"}"# },
+    Card { name: "delete_report", area: "reports", keywords: "delete a report, remove from the inbox, withdraw a report",
+        example: r#"{"id": "R_TERM-7"}"# },
 ];
 
-/// The cards a role finds: a worker the catalog's own, a manager those and its own (AC-174).
-pub fn cards(manager: bool) -> impl Iterator<Item = &'static Card> {
-    CARDS.iter().chain(super::mcp_manager::CARDS.iter().filter(move |_| manager))
+/// The cards a role finds (AC-174, AC-231).
+pub fn cards(role: Role) -> impl Iterator<Item = &'static Card> {
+    all_cards().filter(move |c| role.allows(c.name))
 }
 
 /// The areas a role is told of.
-pub fn areas(manager: bool) -> impl Iterator<Item = &'static (&'static str, &'static str)> {
-    AREAS.iter().chain(super::mcp_manager::AREAS.iter().filter(move |_| manager))
+pub fn areas(role: Role) -> impl Iterator<Item = (&'static str, &'static str)> {
+    let supervisor = role.is_supervisor();
+    AREAS.iter().chain(&super::mcp_manager::AREAS).filter_map(move |&(area, what)| {
+        cards(role).any(|c| c.area == area).then_some((area, if supervisor {
+            match area {
+                "tasks" => "this project's tasks",
+                "runs" => "this project's runs",
+                _ => what,
+            }
+        } else { what }))
+    })
+}
+
+fn all_cards() -> impl Iterator<Item = &'static Card> {
+    CARDS.iter().chain(&super::mcp_manager::CARDS).chain(super::mcp_supervisor::CARDS)
 }
 
 pub fn card(name: &str) -> Option<&'static Card> {
-    cards(true).find(|c| c.name == name)
+    all_cards().find(|c| c.name == name)
 }
 
 /// Whether `name` is a manager's tool: a worker neither finds nor runs it.
@@ -98,6 +134,7 @@ pub fn definitions() -> &'static [Value] {
     DEFS.get_or_init(|| {
         let mut all = super::mcp::catalog();
         all.extend(super::mcp_manager::tools());
+        all.extend(super::mcp_supervisor::tools());
         all
     })
 }
@@ -106,12 +143,57 @@ pub fn definition(name: &str) -> Option<&'static Value> {
     definitions().iter().find(|d| d["name"] == name)
 }
 
+/// The Operator's start shares the tool name with the manager, but has a narrower contract.
+pub fn definition_for(role: Role, name: &str) -> Option<&'static Value> {
+    let d = definition(name).filter(|_| role.allows(name))?;
+    if role == Role::Supervisor(Some(Level::Operator)) && name == "run_task" {
+        static START: OnceLock<Value> = OnceLock::new();
+        return Some(START.get_or_init(|| {
+            let mut start = d.clone();
+            start["description"] = serde_json::json!("Starts a free task in this project on the named pool agent. Dispatcher supplies a fixed prompt with the task ID.");
+            let schema = &mut start["inputSchema"];
+            if let Some(props) = schema["properties"].as_object_mut() {
+                props.retain(|name, _| START_ARGS.contains(&name.as_str()));
+            }
+            schema["required"] = serde_json::json!(START_ARGS);
+            schema["additionalProperties"] = serde_json::json!(false);
+            start
+        }));
+    }
+    if role == Role::Supervisor(Some(Level::Operator)) && name == "stop_task" {
+        static STOP: OnceLock<Value> = OnceLock::new();
+        return Some(STOP.get_or_init(super::mcp_supervisor::stop_tool));
+    }
+    Some(d)
+}
+
+pub fn example(role: Role, c: &Card) -> &'static str {
+    match (role, c.name) {
+        (Role::Supervisor(_), "run_task") => r#"{"id": "TERM-12", "agent": "Reviewer"}"#,
+        (Role::Supervisor(_), "stop_task") => r#"{"id":"API-12","signal":"fingerprint","reason":"Cost exceeded the bound."}"#,
+        _ => c.example,
+    }
+}
+
 /// A role's search index: a tool's name, its keywords, its area and text, its arguments' names.
-pub fn index(manager: bool) -> &'static Index {
-    static INDEXES: [OnceLock<Index>; 2] = [OnceLock::new(), OnceLock::new()];
-    INDEXES[manager as usize].get_or_init(|| {
-        let docs: Vec<(String, String, &Card)> = cards(manager).filter_map(|c| {
-            let d = definition(c.name)?;
+pub fn index(role: Role) -> &'static Index {
+    static INDEXES: [OnceLock<Index>; 11] = [const { OnceLock::new() }; 11];
+    let slot = match role {
+        Role::Worker => 0,
+        Role::Manager => 1,
+        Role::Supervisor(Some(Level::Observer)) => 2,
+        Role::Supervisor(Some(Level::Advisor)) => 3,
+        Role::Supervisor(Some(Level::Operator)) => 4,
+        Role::Supervisor(None) | Role::Reflection(false) | Role::Audit(false) | Role::DesignReview(false) => 5,
+        Role::DesignReview(true) => 9,
+        Role::Reflection(true) => 8,
+        Role::Audit(true) => 10,
+        Role::Token { manager: false } => 6,
+        Role::Token { manager: true } => 7,
+    };
+    INDEXES[slot].get_or_init(|| {
+        let docs: Vec<(String, String, &Card)> = cards(role).filter_map(|c| {
+            let d = definition_for(role, c.name)?;
             let args: Vec<&str> = d["inputSchema"]["properties"].as_object().map(|p| p.keys().map(String::as_str).collect()).unwrap_or_default();
             Some((format!("{} {}", d["title"].as_str().unwrap_or(""), d["description"].as_str().unwrap_or("")), args.join(" "), c))
         }).collect();

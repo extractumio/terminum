@@ -52,11 +52,12 @@ fn codex_entries_are_added_once_and_removed_leaving_others() {
 #[test]
 fn claudes_plugin_runs_context_carriers_in_the_foreground() {
     let v = claude_hooks("/x/terminum hook claude");
-    for e in ["SessionStart", "PreToolUse", "PermissionRequest", "Notification", "Stop", "StopFailure", "SubagentStart", "SubagentStop", "SessionEnd"] {
+    // AC-218: the compaction sensor runs with the background lifecycle hooks.
+    for e in ["SessionStart", "PreToolUse", "PermissionRequest", "Notification", "Stop", "StopFailure", "SubagentStart", "SubagentStop", "PreCompact", "SessionEnd"] {
         let h = &v["hooks"][e][0]["hooks"][0];
         assert_eq!((h["command"].as_str(), h["async"].as_bool()), (Some("/x/terminum hook claude"), Some(true)), "{e}");
     }
-    assert_eq!(v["hooks"].as_object().unwrap().len(), 13);
+    assert_eq!(v["hooks"].as_object().unwrap().len(), 14);
     // the reminder's carrier: Claude Code delivers no async hook's output (AC-97)
     assert_eq!(v["hooks"]["PostToolBatch"], json!([{"hooks": [{"type": "command", "command": "/x/terminum hook claude", "timeout": 2}]}]));
     assert_eq!(v["hooks"]["UserPromptSubmit"], json!([{"hooks": [{"type": "command", "command": "/x/terminum hook claude --prompt-context", "timeout": 2}]}]));
@@ -94,6 +95,9 @@ fn install_status_and_remove_with_codex_and_a_stub_claude() {
     assert!(calls.contains("plugin install terminum@terminum-local --scope user"), "{calls}");
     let plugin: Value = serde_json::from_str(&std::fs::read_to_string(ctx.root.join("hooks/claude/plugins/terminum/hooks/hooks.json")).unwrap()).unwrap();
     assert_eq!(plugin["hooks"]["Stop"][0]["hooks"][0]["command"], agentsetup::command(&ctx, "claude"));
+    for (path, text) in agentsetup::SKILLS {
+        assert_eq!(std::fs::read_to_string(ctx.root.join("hooks/claude/plugins/terminum").join(path)).unwrap(), text, "{path} ships in the plugin (AC-283)");
+    }
     let v: Value = serde_json::from_str(&std::fs::read_to_string(codex.join("hooks.json")).unwrap()).unwrap();
     assert_eq!(v["hooks"]["Stop"].as_array().unwrap().len(), 2);
     assert_eq!(mode(&codex.join("hooks.json")) & 0o777, 0o640, "Codex's file keeps its permissions");
@@ -290,4 +294,20 @@ fn a_file_changed_since_it_was_read_is_not_replaced() {
     assert!(agentsetup::replace_checked(&home.path("none.toml"), Some("x"), "new").is_err(), "gone since it was read");
     agentsetup::replace_checked(&conf, Some("model = \"y\"\n"), "new").unwrap();
     assert_eq!(std::fs::read_to_string(&conf).unwrap(), "new");
+}
+
+/// terminum-agents.md AC-283: every terminum tool the onboarding skill names is a tool a manager runs.
+#[test]
+fn ac283_the_onboarding_skill_names_only_its_manager_s_tools() {
+    use crate::roles::Role;
+    let (_, skill) = agentsetup::SKILLS[0];
+    assert!(skill.starts_with("---\nname: terminum-onboard\ndescription: "), "the skill's front matter");
+    let named: std::collections::BTreeSet<&str> = skill.split('`').filter_map(|s| s.split([' ', '(']).next())
+        .filter(|w| crate::cli::mcp_catalog::definition(w).is_some()).collect();
+    for tool in ["get_project_setup", "update_project_setup", "set_supervisor_charter", "list_agents", "create_agent", "create_schedule"] {
+        assert!(named.contains(tool), "{tool} in the skill: {named:?}");
+    }
+    for tool in &named {
+        assert!(Role::Manager.allows(tool), "{tool}: a manager's");
+    }
 }

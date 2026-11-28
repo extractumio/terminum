@@ -5,7 +5,7 @@ import { el, iconButton, projectInk, read, write } from "./listparts.js";
 import { $, SEVERITIES, button } from "./kanbanutil.js";
 import { icon } from "./icons.js";
 
-const CHOSEN = "board.project";
+export const CHOSEN = "board.project";
 const toggled = (list, id, on) => (on ? [...list, id] : list.filter((x) => x !== id));
 const tick = (checked, onChange) => {
   const c = document.createElement("input");

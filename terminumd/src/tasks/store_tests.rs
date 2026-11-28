@@ -376,13 +376,20 @@ fn ac147_an_older_store_s_dispatcher_messages_take_their_tasks_from_the_input_lo
 fn ac195_a_write_that_waited_for_its_turn_names_its_caller_and_is_kept() {
     let s = std::sync::Arc::new(Store::open(fresh("store-slow")));
     let (held, go) = std::sync::mpsc::channel();
-    // another call's transaction, held 150 ms
-    let holder = { let s = s.clone(); std::thread::spawn(move || { let turn = s.state.lock(); held.send(()).unwrap(); std::thread::sleep(Duration::from_millis(150)); drop(turn) }) };
-    go.recv().unwrap();
+    // Queue the request while another call holds the store. Its caller may be scheduled after the lock is released.
+    let holder = {
+        let s = s.clone();
+        std::thread::spawn(move || {
+            let _turn = s.state.lock();
+            held.send(Instant::now()).unwrap();
+            std::thread::sleep(Duration::from_millis(150));
+        })
+    };
+    let asked = go.recv().unwrap();
     // the store's opening, slow on a loaded machine, may have said a line: its throttle would hold back the one looked for
     s.slow.reset();
     let (lines, guard) = crate::testutil::logs();
-    let made = s.with(|tx| crate::tasks::ops::create(tx, HUMAN, crate::tasks::ops::NewTask { title: "waited".into(), ..Default::default() }, 1));
+    let made = s.with_from(Location::caller(), asked, |tx| crate::tasks::ops::create(tx, HUMAN, crate::tasks::ops::NewTask { title: "waited".into(), ..Default::default() }, 1));
     drop(guard);
     holder.join().unwrap();
     assert!(made.is_ok(), "a write waits its turn, never refused: {made:?}");
@@ -436,4 +443,34 @@ fn ac198_upgrading_running_verifies_assigns_distinct_persistent_attempts() {
     upgrade(&mut conn, &path, &MIGRATIONS).unwrap();
     drop(conn);
     assert_eq!(read(&Connection::open(path).unwrap()), runs, "upgrade and restart retain active attempts");
+}
+
+#[test]
+fn ac230_upgrading_keeps_old_question_and_free_text_answer_events() {
+    use crate::tasks::ops;
+    use serde_json::json;
+    let path = fresh("tasks-before-choices");
+    let mut conn = Connection::open(&path).unwrap();
+    upgrade(&mut conn, &path, &MIGRATIONS[..45]).unwrap();
+    let tx = conn.transaction().unwrap();
+    let (key, id) = ("old-question", "TERM-1");
+    tx.execute("INSERT INTO tasks (id, slug, number, project, title, body, status, severity, rank, owner, created_at, updated_at)
+        VALUES (?1, ?2, 1, 'default', 'Old question', '', 'WAIT FOR HUMAN', 'P2', 0, 'human', 1, 3)", (key, id)).unwrap();
+    let question = ops::log(&tx, key, DISPATCHER, "comment", "Which version?", Some(&json!({"questions":true})), 2).unwrap();
+    let answer = ops::log(&tx, key, HUMAN, "comment", "Version 2", None, 4).unwrap();
+    tx.commit().unwrap();
+    drop(conn);
+    let s = Store::open(path.clone());
+    assert_eq!(s.problem(), None);
+    assert!(path.with_file_name("kanban.sqlite.bak-45").exists());
+    s.with(|tx| {
+        let history = ops::history(tx, id)?;
+        let e = history.as_array().unwrap();
+        assert!(e.iter().any(|e| e["id"] == question && e["questions"] == json!(true) && e.get("question").is_none()));
+        assert!(e.iter().any(|e| e["id"] == answer && e.get("choice").is_none()));
+        assert_eq!(ops::answers(tx, id)?.unwrap(), ["Version 2"]);
+        let index: i64 = tx.query_row("SELECT count(*) FROM sqlite_schema WHERE name = 'events_question_choice'", [], |r| r.get(0)).map_err(ops::sql)?;
+        assert_eq!(index, 1);
+        Ok(())
+    }).unwrap();
 }

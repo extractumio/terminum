@@ -9,7 +9,7 @@ import { boardUrl } from "./tasklink.js";
 /** In the switcher's order: `id` its address (`/<id>/`), `label` on its key, `title` what it holds (the key's tooltip). */
 const SECTIONS = [
   { id: "sessions", label: "Sessions", icon: "square-terminal", title: "Terminals and their coding agents" },
-  { id: "kanban", label: "Kanban", icon: "board", title: "Tasks and their sessions" },
+  { id: "kanban", label: "Kanban", icon: "board", title: "Tasks and their sessions", pages: ["supervisor"] },
   { id: "dashboard", label: "Dashboard", icon: "chart-line", title: "How much you drive sessions" },
   { id: "history", label: "Messages", icon: "messages-square", title: "What you sent, and what schedules ran", pages: ["scheduled"] },
 ];

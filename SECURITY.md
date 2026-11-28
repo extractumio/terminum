@@ -99,12 +99,26 @@ Three things hold everywhere below:
 
 - **Typing**: only in a pane it started and marked, at that agent's empty box, and only what the
   typing gate of `terminum-dispatcher.md` §9 lists: task IDs with fixed words; the prompt of a
-  human's RUN, whose window shows it first; a schedule's; a project's manager's; the integration
+  human's RUN, with the human comments saved since its previous run on a continuation (AC-122) and, on a fresh start, the humans' and the project's manager's comments, each said to be whose (AC-209); a schedule's; a project's manager's; the integration
   queue's own words; your first prompt in + Session's box, once, into the pane that request
-  started (`terminum-dispatcher.md` AC-204). A task's words never reach the shell an agent leaves. **Left**: in one
+  started (`terminum-dispatcher.md` AC-204); your reply to a report made in a task's Dispatcher run, as a RUN of
+  that task in that run's conversation, never a fresh or grouped start, in fixed words naming the task and the
+  report by their IDs with your text (`terminum-reports.md` AC-270): an agent's report text is never typed, and any
+  other report (a session you opened, a manager's, the Supervisor's, an incident's, a digest) gets no reply field.
+  One exception to "a pane it started": your Answer or Continue with Recommended on a task whose agent asked
+  from a session you opened types once fixed words with the task's own ID into that pane, only while it holds
+  the agent conversation that asked (a pane number tmux gives again after a restart gets nothing), no run's mark
+  on it but its + Session's own, Claude Code or Codex in front with its turn's end recorded by its
+  hooks and an empty box, outside tmux modes; your text is never typed: the
+  agent reads it as a comment by `get_task` (`terminum-dispatcher.md` AC-285). A task's words never reach the shell an agent leaves. **Left**: in one
   session of several tasks an agent-written task can still sway the others once read.
 - **Closing and ending**: it closes only such a pane, its agent idle, and at a task's time budget
   signals what runs under it by pid and start time, its shell spared, never by name or pattern.
+- **Give up** (`terminum-dispatcher.md` AC-138): your confirmation releases the run, then sends Esc
+  only to its marked pane with Claude Code or Codex in front, outside tmux modes. One fixed task-ID
+  instruction asks it to stop its background work and subagents and end its turn, through the gate
+  at an empty box. The conversation, shell, window and queued commits stay. Unreachable agents
+  receive no terminal input; the durable cancellation notice answers their next task-tool call.
 - **Auto-Dispatch** (AC-170), off until you turn it on for a project, starts tasks no human looked
   at, an agent's own too: **an agent that writes tasks can have them run by another, with that
   one's permissions, and those can write more.** What bounds it: its starts in 24 hours (as made:
@@ -128,8 +142,14 @@ Three things hold everywhere below:
 The session + Session starts for a project, and a session you open in a project, is its manager
 (`terminum-agents.md` AC-174, AC-179, AC-180 and §9 Security). By its tools alone, with no window
 shown to you first, it starts tasks on the pool's agents, changes those agents and their commands,
-makes schedules, and pastes into and closes the project's other sessions.
+makes schedules, and pastes into and closes the project's other sessions. It also changes the
+project's ID letters, language, task template, agents at once and memory limits, and, while the
+Supervisor is off and its charter is empty or the manager's own unsaved draft, writes that charter
+(AC-283, `terminum-supervisor.md` AC-284); Auto-Dispatcher, integration, the folder, the
+Supervisor's switch, level and tiers stay yours.
 
+- **So** a charter drafted from the repository's files, which anyone with a commit may have written,
+  is marked in the Supervisor tab until you Save it: read it before Enabled.
 - **So** what a manager's agent reads (a task, a comment, a file, a web page, a session's screen)
   is one tool call from a command of its choosing, run with an agent's permissions, a bypassing
   one's too; its client asks about `execute_tool` once, not for each tool behind it. **Start a
@@ -150,6 +170,66 @@ forced, never a tag. It moves your project's folder only by a fast-forward, and 
 is empty there. **Left**: a check runs the queued code as you, and the check is the
 candidate's own, so a task can change what checks it: **read the batches and the published
 history.**
+
+### Project Supervisor
+
+The Supervisor is off per project until the owner enables it. Discovery and each call use
+the project's current level. terminumd binds the role to its own pane record and checks
+local process ancestry both when a caller names that pane and when it names a different
+pane; while a Supervisor pane is marked, a call whose process the system does not name is refused. A disabled or replaced generation keeps the pane's role with its tools inactive.
+Only the signed-in owner's settings can change the level. Project imports preserve it.
+Tokens keep their own roles.
+
+Observer can list and read its project's tasks. Advisor can also add comments and ask on
+a task linked to its pane; a round never creates a task, terminumd's governor does. Operator can also list runs, read the
+project dashboard, promote a queued task, give up a run and start a free task on a
+named project agent. Dispatcher supplies the start prompt from the task IDs and fixed
+words. Give up frees the slot and leaves the window. Every level refuses terminal
+input, session closure, transcript and attachment access, pool and schedule management,
+token operations and protected settings. The critical line delivers incidents at every
+level. Round and Talk registration and the evidence, budget and hold tools follow their
+own acceptance cases (`terminum-supervisor.md` AC-231, AC-232, AC-234, AC-235, AC-237–239,
+AC-244, AC-245, AC-258).
+
+- **Rounds and Talk**: Dispatcher writes a fixed case-file ID prompt to the marked round
+  pane, through its existing typing gate. Talk requires the human's press and pastes its
+  fixed ID prompt once into the pane the press started. Task text stays in bounded data
+  fields in the case file. The round reports through typed tools. Outside prose goes
+  only to a tool-free reader, whose closed categories and counts can inform a marked
+  task. Auto-Dispatcher excludes that task until a human moves it
+  (`terminum-supervisor.md` AC-234, AC-244, AC-262).
+- **Command channels**: saving in the signed-in Supervisor tab authorizes the ordered
+  executables to send fixed incident notices. The owner-wide settings stay out of
+  project imports and exports. terminumd starts the absolute executable directly.
+  Fixed templates on standard input contain incident IDs, levels, counts and an optional
+  link built from the owner's HTTPS origin. Task or comment text, home paths and
+  credentials stay out of the template. The child starts in `/` with `PATH=/usr/bin:/bin`
+  and `LANG=C`. Its output is discarded. Each attempt has a five-second deadline and
+  terminumd ends the process group it started. Incident actions require the signed-in
+  page. A manual test sends fixed test text. A weekly check passes `--check` and fixed
+  check text, with the wrapper responsible for the silent check. A claimed send can be
+  lost if terminumd exits before the command runs. A failed delivery produces a local
+  incident and tries the next command. Quiet hours defer ordinary automatic notices
+  (`terminum-supervisor.md` AC-227–229, AC-263).
+- **Probe commands**: the owner confirms the displayed command. Probe metric output is
+  bounded and checked. Import leaves command candidates inactive until confirmation.
+  Export includes commands and secrets only when the owner selects them. The export
+  holds those values in plain text (`terminum-supervisor.md` AC-220, AC-260).
+- **Outside feedback** uses a separately configured, approved probe. Its bounded
+  output reaches a local reader with no tools, model endpoint, or session. The reader
+  returns fixed categories and a count. The reference combines an owner-saved HTTPS
+  base with a positive integer. Terminum does not fetch it. Raw prose stays out of
+  retained probe data, tasks, comments, case files, and signals. The task's outside mark
+  blocks automated starts by Auto-Dispatcher or the Supervisor until a human moves it
+  (`terminum-supervisor.md` AC-262).
+- **Left**: a round's agent keeps its pool command's permissions, with AC-156's risk of a
+  bypassing command (`terminum-dispatcher.md` §9), so choose agents without bypass for the
+  Supervisor's tiers. An Operator can start a task whose text or comments it wrote, so the
+  worker it starts reads the Supervisor's words with its own pool command's permissions:
+  set Advisor to keep every start a human's. A process running as the same user can change the local store, tmux
+  or the commands the owner configured. The scoped tools bound model actions through terminumd.
+  An owner-configured command runs with that user's OS access and can launch processes that leave its group. Keep the private charter,
+  register, case files, ledger and baselines out of tracked files.
 
 ### Idle agents' exit
 

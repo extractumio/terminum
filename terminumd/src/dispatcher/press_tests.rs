@@ -2,7 +2,7 @@
 //! How a press goes on (AC-122, AC-138), and what goes with several tasks.
 
 use super::*;
-use crate::dispatcher::api::has_stray;
+use crate::dispatcher::gate::has_stray;
 use crate::tmux::PaneState;
 use crate::dispatcher::runs;
 use crate::tasks::agents::inline_words;
@@ -180,11 +180,13 @@ fn ac157_the_prompt_says_how_to_ask_a_human() {
     store_of("api-ask").with(|tx| {
         let a = made(tx, "Fix it", "the text");
         let prompt = prompt_of(tx, std::slice::from_ref(&a), None)?;
-        assert!(prompt.ends_with(&format!("When it is done, call {FINISH} with the result. {ASK}")), "{prompt}");
+        assert!(prompt.ends_with(&format!("When it is done, call {FINISH} with the result. {REPORT} {ASK}")), "{prompt}");
         assert!(ASK.contains("ask_human") && ASK.contains("the answer you recommend") && ASK.contains("end your turn"));
         assert!(ASK.contains("a cause that can be removed") && ASK.contains("FAILED is only for a task that cannot be done at all"), "a removable cause waits for a human (AC-157)");
         // the human reads why first, the default next, the whole issue last: the shape ask_human checks
         for words in [ASK, ASK_TOGETHER] {
+            assert!(words.contains("kind to operational") && words.contains("strategic") && words.contains("options as [{id, label}]")
+                && words.contains("recommended as one of those IDs"), "AC-230 each RUN tells the agent how to give choices");
             let at: Vec<usize> = crate::tasks::closeout::QUESTIONS.iter().map(|name| words.find(&format!("\"{name}:\"")).expect(name)).collect();
             assert!(at.is_sorted(), "its parts in order: {words}");
             assert!(words.contains("a person who has not followed this task") && words.contains("one sentence") && words.contains("one paragraph"), "{words}");
@@ -242,7 +244,7 @@ fn ac166_the_prompt_closes_the_task_out_in_the_project_s_language() {
     use crate::tasks::closeout;
     store_of("api-closeout").with(|tx| {
         let a = made(tx, "Fix it", "the text");
-        let finish = format!("When it is done, call {FINISH} with the result. {ASK}");
+        let finish = format!("When it is done, call {FINISH} with the result. {REPORT} {ASK}");
         let prompt = prompt_of(tx, std::slice::from_ref(&a), None)?;
         assert!(prompt.ends_with(&format!("{}\n\n{finish}", closeout::words("English", FINISH, false))), "{prompt}");
         let rev = facts(tx, std::slice::from_ref(&a), None)?.rev();

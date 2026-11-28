@@ -65,6 +65,27 @@ pub async fn in_pane(peer: Peer, server: &crate::tmux::Server, pane: &str) -> bo
     }
 }
 
+/// A live round also requires the pane's current tmux run mark and its agent still in front.
+pub(crate) async fn in_run(peer: Peer, server: &crate::tmux::Server, pane: &str, run: &str) -> bool {
+    in_mark(peer, server, pane, "@terminum-run", run).await
+}
+
+pub(crate) async fn in_integration(peer: Peer, server: &crate::tmux::Server, pane: &str, mark: &str) -> bool {
+    in_mark(peer, server, pane, "@terminum-integration", mark).await
+}
+
+async fn in_mark(peer: Peer, server: &crate::tmux::Server, pane: &str, variable: &str, expected: &str) -> bool {
+    let Some(pid) = peer.0 else { return false };
+    let line = format!("display -p -t {pane} '#{{{variable}}}\t#{{@terminum-exit}}\t#{{pane_pid}}'");
+    let rows = server.run(line).await.unwrap_or_default();
+    let roots = rows.iter().filter_map(|row| {
+        let mut fields = row.split('\t');
+        if fields.next()? != expected || !fields.next()?.is_empty() { return None; }
+        fields.next()?.parse().ok()
+    }).collect::<Vec<_>>();
+    !roots.is_empty() && under(pid, roots).await
+}
+
 /// Whether the call comes from under any pane of this Mac's tmux servers terminum shows.
 pub async fn in_any_pane(app: &Shared, peer: Peer) -> bool {
     let Some(pid) = peer.0 else { return false };
@@ -73,4 +94,16 @@ pub async fn in_any_pane(app: &Shared, peer: Peer) -> bool {
         roots.extend(pane_pids(&server, None).await);
     }
     under(pid, roots).await
+}
+
+/// A marked pane must not inherit worker tools by naming a different pane (AC-231).
+pub(crate) async fn in_marked_pane(app: &Shared, peer: Peer, keys: &[String]) -> bool {
+    let Some(pid) = peer.0 else { return false };
+    let mut roots = Vec::new();
+    for key in keys {
+        if let Some((server, pane)) = app.tmux.resolve(key) && server.is_local() {
+            roots.extend(pane_pids(&server, Some(&pane)).await);
+        }
+    }
+    !roots.is_empty() && under(pid, roots).await
 }

@@ -52,7 +52,13 @@ pub fn set_parent(tx: &Transaction, author: &str, id: &str, parent: Option<&str>
 /// The subtasks of `key` still to do, in the order they were made: not DONE, and on the board. They go with their
 /// main task's RUN (terminum-dispatcher.md AC-185).
 pub fn to_do(tx: &Transaction, key: &str) -> Result<Vec<super::ops::Task>, String> {
-    Ok(super::query::subtasks(tx, key)?.into_iter().filter(|t| t.status != "DONE" && t.archived_at.is_none()).collect())
+    let mut out = Vec::new();
+    for t in super::query::subtasks(tx, key)? {
+        if t.status != "DONE" && t.archived_at.is_none() {
+            out.push(t);
+        }
+    }
+    Ok(out)
 }
 
 /// Archived ones too: a subtask taken off the board still makes its parent a parent.

@@ -86,18 +86,29 @@ async fn ac179_a_manager_runs_and_stops_only_its_project_s_tasks() {
     let (app, task) = app("roles-run");
     let far = app.tasks.with(|tx| Ok(task_in(tx, "web", "another project's"))).unwrap();
     assert_eq!(call(&app, BOSS, "run_task", json!({"id": far, "agent": "Opus"})).await.unwrap_err(), format!("{far} is outside your project."));
-    assert_eq!(call(&app, BOSS, "stop_task", json!({"id": far})).await.unwrap_err(), format!("{far} is outside your project."));
+    assert_eq!(call(&app, BOSS, "stop_task", json!({"id": far, "why": "postponed"})).await.unwrap_err(), format!("{far} is outside your project."));
     let no_agent = call(&app, BOSS, "run_task", json!({"id": task, "agent": "Nobody"})).await.unwrap_err();
     assert_eq!(no_agent, "Your project's pool has no agent \"Nobody\": Opus.");
     // what runs in its project, a worker's run and its own session
     let runs = call(&app, BOSS, "list_runs", json!({})).await.unwrap();
     assert!(runs.starts_with(DATA) && runs.contains(&format!("\"tasks\":[\"{task}\"]")) && runs.contains("\"kind\":\"session\""), "{runs}");
-    // stop: the task fails, its run is let go, and the history names the manager
-    let stopped = call(&app, BOSS, "stop_task", json!({"id": task})).await.unwrap();
-    assert_eq!(stopped, format!("Stopped: {task}. Its window stays; its slot is free."));
-    let (status, history) = app.tasks.with(|tx| Ok((ops::get(tx, &task)?.status, ops::history(tx, &task)?.to_string()))).unwrap();
-    assert_eq!(status, "FAILED");
-    assert!(history.contains("Opus · manager stopped it."), "{history}");
+    // stop: no why, or one too long, is refused and nothing changes
+    assert_eq!(call(&app, BOSS, "stop_task", json!({"id": task})).await.unwrap_err(), "why is required");
+    let long = "x".repeat(crate::tasks::attrs::REASON_MOST + 1);
+    assert_eq!(call(&app, BOSS, "stop_task", json!({"id": task, "why": long})).await.unwrap_err(), "why: at most 1000 characters.");
+    assert_eq!(app.tasks.with(|tx| Ok(ops::get(tx, &task)?.status)).unwrap(), "TODO", "still as it was: its run holds it");
+    app.tasks.with(|tx| ops::move_to(tx, HUMAN, &task, "IN PROGRESS", 3)).unwrap();
+    // stop: a postponement, never a failure: back to TODO, the why the manager's comment, the history naming the
+    // manager and no human's Give up
+    let stopped = call(&app, BOSS, "stop_task", json!({"id": task, "why": "Postponed: the owner moved it to a later epic."})).await.unwrap();
+    assert_eq!(stopped, format!("Stopped: {task}. It waits in TODO; its slot is free. Its window stays, and an agent still working there goes on: close_session ends it."));
+    let (status, history) = app.tasks.with(|tx| Ok((ops::get(tx, &task)?.status, ops::history(tx, &task)?))).unwrap();
+    assert_eq!(status, "TODO");
+    let said = |kind: &str, text: &str| history.as_array().unwrap().iter().any(|e| e["kind"] == kind && e["text"] == text);
+    assert!(said("why", "Opus · manager stopped it.") && said("why", crate::dispatcher::runs::STOPPED), "{history}");
+    assert!(said("comment", "Postponed: the owner moved it to a later epic."), "{history}");
+    assert!(!history.to_string().contains(crate::dispatcher::runs::GAVE_UP) && !history.to_string().contains("FAILED"), "no human gave up, nothing failed: {history}");
+    assert!(app.tasks.with(|tx| Ok(runs::holding(tx, &ops::key_of(tx, &task)?)?.is_none())).unwrap(), "its run is let go");
 }
 
 #[tokio::test]
@@ -175,6 +186,13 @@ async fn ac181_a_token_is_kept_as_its_hash_and_names_its_role_and_project() {
     assert_eq!(by(&worker, "list_agents", json!({})).await.unwrap_err(), not_yours("list_agents"));
     for own in ["take_task", "ask_human", "dispatch_task", "update_session_plan"] {
         assert_eq!(by(&worker, own, json!({"id": task})).await.unwrap_err(), format!("{own} is a session's own: a token has no session."));
+    }
+    // AC-251: review evidence needs an attributed local pane, including for manager tokens.
+    for token in [&worker, &manager] {
+        for tool in [crate::supervisor::design_gates::BRIEF, crate::supervisor::design_gates::RECORD] {
+            assert_eq!(by(token, tool, json!({"id": task})).await.unwrap_err(),
+                format!("{tool} is a session's own: a token has no session."));
+        }
     }
     by(&worker, "add_comment", json!({"id": task, "text": "from ci"})).await.unwrap();
     assert!(app.tasks.with(|tx| ops::history(tx, &task)).unwrap().to_string().contains("\"author_name\":\"token · ci\""), "what it writes carries its name");
@@ -262,4 +280,70 @@ async fn ac174_a_session_the_human_opened_in_a_project_is_its_manager() {
     app.tasks.with(|tx| app.dispatcher.read_runs(tx).map(drop)).unwrap();
     mark(&app, &mut groups);
     assert_eq!(groups[0]["items"], json!([{"id": PLAIN, "manager": true}, {"id": WORKER}, {"id": DEFAULTS}]), "its row has the crown");
+}
+
+#[tokio::test]
+async fn ac231_supervisor_marks_follow_only_restored_panes() {
+    let (app, _) = app("supervisor-restore");
+    let restored = "tmux:local:t:%11";
+    let prefix = "tmux:local:t:";
+    app.tasks.with(|tx| {
+        tx.execute("INSERT INTO project_supervisor (project, enabled, generation, enabled_at) VALUES ('api', 1, 1, 1)", []).map_err(sql)?;
+        tx.execute("INSERT INTO supervisor_panes (pane_key, project, generation) VALUES (?1, 'api', 1), (?2, 'api', 1)", [BOSS, WORKER]).map_err(sql)?;
+        assert_eq!(supervisor::marked(tx, BOSS)?.unwrap().role, Role::Supervisor(Some(crate::supervisor::Level::Operator)));
+        assert!(ordinary_manager(tx, BOSS)?.is_some());
+        assert!(manages(tx, BOSS)?.is_none(), "a stored mark wins over a previously issued manager role");
+        crate::tasks::projects::links_restored(tx, prefix, &[("%1".into(), "%11".into())], 1)?;
+        assert!(supervisor::marked(tx, BOSS)?.is_none());
+        assert!(supervisor::marked(tx, WORKER)?.is_none());
+        assert_eq!(supervisor::marked(tx, restored)?.unwrap().role, Role::Supervisor(None));
+        assert!(manages(tx, restored)?.is_none(), "matching a restored pane cannot restore its authority");
+        crate::tasks::projects::links_dropped(tx, prefix, 2)?;
+        assert!(supervisor::marked(tx, restored)?.is_none(), "a new tmux server may reuse the pane ID");
+        Ok(())
+    }).unwrap();
+}
+
+/// The catalog's tools every session has, beside MANAGER_TOOLS.
+fn session_tools() -> impl Iterator<Item = &'static str> {
+    ["update_session_plan", "get_session_plan"].into_iter().chain(crate::tasks::tools::NAMES)
+}
+
+/// terminum-supervisor.md AC-231, AC-232 and terminum-reports.md AC-280: each level's tools, its report tools among them.
+#[test]
+fn ac231_ac232_each_level_allows_exactly_its_list_of_the_catalog() {
+    use crate::supervisor::Level::{Advisor, Observer, Operator};
+    // reports by level (terminum-reports.md AC-280): read, then write, then change and delete
+    let observer = ["list_tasks", "get_task", "get_report", "list_reports"].into_iter()
+        .chain(crate::supervisor::round_tools::NAMES.iter().copied()).collect::<Vec<_>>();
+    let advisor = ["add_comment", "ask_human", "create_report", "append_to_report", "attach_report_file"].into_iter()
+        .chain(crate::supervisor::round_tools::ADVISOR.iter().copied()).collect::<Vec<_>>();
+    let operator = ["run_task", "promote_queued_task", "stop_task", "list_runs", "get_dashboard", "update_report", "delete_report"];
+    let expected = [(Observer, observer.len()), (Advisor, observer.len() + advisor.len()), (Operator, observer.len() + advisor.len() + operator.len())];
+    for (level, count) in expected {
+        let wanted: Vec<&str> = observer.iter().chain(advisor.iter().filter(|_| level != Observer))
+            .chain(operator.iter().filter(|_| level == Operator)).copied().collect();
+        let allowed: Vec<&str> = session_tools().chain(MANAGER_TOOLS).chain(crate::supervisor::round_tools::NAMES.iter().copied())
+            .chain(crate::supervisor::round_tools::ADVISOR.iter().copied()).filter(|t| Role::Supervisor(Some(level)).allows(t)).collect();
+        assert_eq!(allowed.len(), count, "{level:?}: {allowed:?}");
+        assert!(wanted.iter().all(|t| allowed.contains(t)), "{level:?}: {allowed:?}");
+    }
+    for never in ["send_to_session", "close_session", "create_agent", "update_agent", "delete_agent", "create_schedule", "update_schedule",
+        "delete_schedule", "run_schedule", "get_session", "get_file", "attach_file", "create_task", "update_task", "integrate", "dispatch_task", "probe"] {
+        assert!(!Role::Supervisor(Some(Operator)).allows(never), "{never} at Operator");
+    }
+    assert!(session_tools().chain(MANAGER_TOOLS).all(|t| !Role::Supervisor(None).allows(t)), "an inactive mark allows nothing");
+    let managers = crate::reports::tools::MANAGERS;
+    assert!(session_tools().all(|t| Role::Worker.allows(t) != managers.contains(&t)) && MANAGER_TOOLS.iter().all(|t| !Role::Worker.allows(t)), "a worker's reach: no report's change or delete");
+    assert!(session_tools().chain(MANAGER_TOOLS).all(|t| Role::Manager.allows(t)), "a manager's reach");
+    assert!(crate::supervisor::round_tools::NAMES.iter().chain(crate::supervisor::round_tools::ADVISOR).all(|t| !Role::Worker.allows(t) && !Role::Manager.allows(t)));
+}
+
+#[test]
+fn ac231_an_unknown_local_peer_is_refused_while_a_supervisor_pane_is_marked() {
+    let marks = vec![BOSS.to_string()];
+    assert!(supervisor::unjudged(Some(peer::Peer(None)), &marks), "it could be a process under the Supervisor's pane");
+    assert!(!supervisor::unjudged(Some(peer::Peer(Some(42))), &marks), "a known peer is judged by its ancestry");
+    assert!(!supervisor::unjudged(Some(peer::Peer(None)), &[]), "with no Supervisor pane, as before");
+    assert!(!supervisor::unjudged(None, &marks), "a host's link names no local process");
 }

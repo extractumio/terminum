@@ -52,6 +52,7 @@ mod plans;
 mod process;
 mod raw_body;
 mod remote;
+mod reports;
 mod lastlines;
 mod links;
 mod restore;
@@ -66,6 +67,8 @@ mod settings;
 mod sock;
 mod slow;
 mod dispatcher;
+#[allow(dead_code, reason = "Some Supervisor modes and standalone engine calls are reserved for later stages.")]
+mod supervisor;
 mod tasks;
 mod termtext;
 #[cfg(test)]
@@ -147,6 +150,7 @@ fn build_app(cfg: Config, env: &Env, looks: looks::Looks, link: Link, socket: &s
         tasks,
         task_lines: Default::default(),
         dispatcher: Default::default(),
+        supervisor: Default::default(),
         task_marks,
         unread: Mutex::new(page::unread::Marks::load(&dir)),
         turns: Default::default(),
@@ -286,6 +290,12 @@ async fn serve() {
     webaccess::apply(&app);
     tokio::spawn(manager::run(app.clone()));
     tokio::spawn(dispatcher::walking(app.clone()));
+    tokio::spawn(reports::sweeping(app.clone()));
+    tokio::spawn(dispatcher::supervisor_rounds::watch(app.clone()));
+    tokio::spawn(supervisor::runtime::collect(app.clone()));
+    tokio::spawn(supervisor::runtime::watch(app.clone()));
+    tokio::spawn(supervisor::probes::run(app.clone()));
+    tokio::spawn(supervisor::line::run(app.clone()));
     tokio::spawn(integrate::run(app.clone()));
     tokio::spawn(idle_exit::run(app.clone()));   // idle agents' exit (AC-153)
     tokio::spawn(inputs::ticking(app.clone()));

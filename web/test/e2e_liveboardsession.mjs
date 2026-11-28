@@ -77,6 +77,8 @@ export async function liveBoardSessions(page, opts) {
   check("AC-134 and shows it", await until(() => page.evaluate((k) => document.querySelector("#sessions .item.on")?.dataset.id === k, key)));
   check("AC-134 Kanban still in the list's head", await page.isVisible(KANBAN));
   check("AC-135 from a session of Billing, Kanban opens Billing's board", await until(async () => await page.getAttribute(KANBAN, "href") === `/kanban/?project=${project}`), await page.getAttribute(KANBAN, "href"));
+  const boardKey = `#sessions section.project[data-pid="${project}"] > h2 .boardkey`;   // a project's header: its tasks on the board (AC-92)
+  check("AC-92 Billing's header has a board key to Billing's board", await page.getAttribute(boardKey, "href") === `/kanban/?project=${project}`, await page.getAttribute(boardKey, "href"));
   await page.evaluate(() => history.back());
   const home = await until(() => new URL(page.url()).pathname === "/kanban/", 3000);
   check("AC-134 Back again returns to the board", home, page.url());
@@ -105,6 +107,7 @@ export async function liveBoardSessions(page, opts) {
   const listed = () => page.evaluate(() => [...document.querySelectorAll("#sessions .item")].map((e) => e.dataset.id));
   check("AC-135 Billing's session stands beside Billing", await until(async () => (await listed()).includes(key)), (await listed()).join());
   check("AC-135 in the list's own group, in its color", await page.isVisible(`#sessions section.project[data-pid="${project}"] .item[data-id="${key}"]`));
+  check("AC-92 on the board showing Billing alone, its header has no board key", !(await page.$(boardKey)));
   check("AC-135 a session in no project does not", !(await listed()).includes(other), (await listed()).join());
   await page.goto(`${base}/kanban/?project=${empty}`);
   check("AC-135 a project with no session says so", await until(async () => /No sessions here/.test(await page.textContent("#sessions")), 4000), await page.textContent("#sessions"));
@@ -116,6 +119,7 @@ export async function liveBoardSessions(page, opts) {
   await page.click('#fproject button:has-text("All projects")');
   check("AC-135 All projects clears it", await until(() => !new URL(page.url()).searchParams.has("project")), page.url());
   check("AC-135 and the column holds the whole list", await until(async () => (await listed()).includes(other)));
+  check("AC-92 with All projects, Billing's header has its board key", await until(async () => await page.getAttribute(boardKey, "href").catch(() => null) === `/kanban/?project=${project}`));
   await inProjects('.projrow button:has-text("Default")');
   await page.goto(`${base}/kanban/`);
   check("AC-135 this browser remembers the project", await until(() => new URL(page.url()).searchParams.get("project") === "default"), page.url());

@@ -20,6 +20,7 @@ use crate::listing_sort::{self, Sort};
 
 pub const PAGE_MAX: usize = 500;
 const READ_WAIT: Duration = Duration::from_secs(15);
+const DIRTY_REREADS: usize = 1;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Kind {
@@ -69,9 +70,26 @@ type Filtered = (String, bool, Sort, Arc<Vec<u32>>);
 
 type ReadResult = Result<Arc<Listing>, String>;
 
+#[derive(Clone)]
+struct Pending {
+    rx: watch::Receiver<Option<ReadResult>>,
+    fallback: Option<Arc<Listing>>,
+}
+
+impl Pending {
+    async fn wait(mut self) -> Option<ReadResult> {
+        match tokio::time::timeout(READ_WAIT, self.rx.wait_for(Option::is_some)).await {
+            Ok(Ok(result)) => result.clone(),
+            _ => self.fallback.map(Ok),
+        }
+    }
+}
+
 enum Slot {
-    Loading(watch::Receiver<Option<ReadResult>>, Arc<AtomicBool>),
-    Done(ReadResult, Instant),
+    Loading(Pending, Arc<AtomicBool>),
+    /// No timestamp for a dirty completion. A later request rereads and can use it
+    /// if the new read is still running when the request's wait expires.
+    Done(ReadResult, Option<Instant>),
 }
 
 const ERROR_TTL: Duration = Duration::from_secs(1);
@@ -203,14 +221,14 @@ impl Cache {
         Arc::new(Cache { slots: Mutex::new(HashMap::new()), generation: AtomicU64::new(1), max_bytes })
     }
 
-    /// Folder changed: forget it, so the next request waits for a fresh read. (Serving the
-    /// old rows meanwhile would race the fs-change event the panel reacts to.)
+    /// Folder changed: the next request waits for a fresh read. Keep a dirty completion
+    /// as a fallback in case it finished between the panel's polls.
     pub fn invalidate(self: &Arc<Self>, path: &Path) {
         let mut slots = self.slots.lock();
         match slots.get(path) {
             Some((Slot::Loading(_, dirty), _)) => dirty.store(true, AO::Relaxed),
-            Some((Slot::Done(..), _)) => { slots.remove(path); }
-            None => {}
+            Some((Slot::Done(_, Some(_)), _)) => { slots.remove(path); }
+            _ => {}
         }
     }
 
@@ -219,11 +237,12 @@ impl Cache {
     }
 
     fn slot_bytes(path: &Path, slot: &Slot) -> usize {
-        path.as_os_str().len() + std::mem::size_of::<(PathBuf, Slot, Instant)>() + match slot {
-            Slot::Done(Ok(l), _) => l.resident_bytes(),
-            Slot::Done(Err(e), _) => e.len(),
-            Slot::Loading(..) => 0,
-        }
+        let retained = match slot {
+            Slot::Done(Ok(listing), _) => listing.resident_bytes(),
+            Slot::Done(Err(error), _) => error.len(),
+            Slot::Loading(pending, _) => pending.fallback.as_ref().map_or(0, |listing| listing.resident_bytes()),
+        };
+        path.as_os_str().len() + std::mem::size_of::<(PathBuf, Slot, Instant)>() + retained
     }
 
     pub fn stats(&self) -> (usize, usize) {
@@ -231,39 +250,54 @@ impl Cache {
         (Self::bytes(&slots), slots.len())
     }
 
-    fn start_read(self: &Arc<Self>, path: PathBuf) -> watch::Receiver<Option<ReadResult>> {
-        let (tx, rx) = watch::channel(None);
-        let dirty = Arc::new(AtomicBool::new(false));
-        {
+    fn start_read(self: &Arc<Self>, path: PathBuf) -> Pending {
+        let (tx, pending, dirty) = {
             let mut slots = self.slots.lock();
-            if let Some((Slot::Loading(rx, _), _)) = slots.get(&path) { return rx.clone() }
-            slots.insert(path.clone(), (Slot::Loading(rx.clone(), dirty.clone()), Instant::now()));
-        }
+            let fallback = match slots.get(&path) {
+                Some((Slot::Loading(pending, _), _)) => return pending.clone(),
+                Some((Slot::Done(Ok(listing), None), _)) => Some(listing.clone()),
+                _ => None,
+            };
+            let (tx, rx) = watch::channel(None);
+            let dirty = Arc::new(AtomicBool::new(false));
+            let pending = Pending { rx, fallback };
+            slots.insert(path.clone(), (Slot::Loading(pending.clone(), dirty.clone()), Instant::now()));
+            (tx, pending, dirty)
+        };
         let me = self.clone();
-        tokio::task::spawn_blocking(move || loop {
-            let t0 = Instant::now();
-            let generation = me.generation.fetch_add(1, AO::Relaxed);
-            // a panic must not leave the slot "loading" forever
-            let res: ReadResult = std::panic::catch_unwind(|| read_dir_sorted(&path, generation))
-                .unwrap_or_else(|_| Err("internal error while reading the folder".into()))
-                .map(Arc::new);
-            match &res {
-                Ok(l) => tracing::info!(event = "ls.done", path = %path.display(), entries = l.entries.len(), ms = t0.elapsed().as_millis() as u64),
-                Err(e) => tracing::info!(event = "ls.error", path = %path.display(), error = %e),
+        tokio::task::spawn_blocking(move || {
+            let mut rereads_left = DIRTY_REREADS;
+            loop {
+                let t0 = Instant::now();
+                let generation = me.generation.fetch_add(1, AO::Relaxed);
+                // a panic must not leave the slot "loading" forever
+                let res: ReadResult = std::panic::catch_unwind(|| read_dir_sorted(&path, generation))
+                    .unwrap_or_else(|_| Err("internal error while reading the folder".into()))
+                    .map(Arc::new);
+                match &res {
+                    Ok(l) => tracing::info!(event = "ls.done", path = %path.display(), entries = l.entries.len(), ms = t0.elapsed().as_millis() as u64),
+                    Err(e) => tracing::info!(event = "ls.error", path = %path.display(), error = %e),
+                }
+                if me.finish_read(&path, &dirty, &tx, res, &mut rereads_left) { break }
             }
-            if !me.finish_read(&path, &dirty, &tx, res) { continue }
             me.evict();
-            break;
         });
-        rx
+        pending
     }
 
-    /// Invalidation and publication share the slot lock: every waiter gets the reread.
-    fn finish_read(&self, path: &Path, dirty: &AtomicBool, tx: &watch::Sender<Option<ReadResult>>, res: ReadResult) -> bool {
+    /// Invalidation and publication share the slot lock. Retry once, then complete all waiters.
+    fn finish_read(&self, path: &Path, dirty: &AtomicBool, tx: &watch::Sender<Option<ReadResult>>, res: ReadResult, rereads_left: &mut usize) -> bool {
         let mut slots = self.slots.lock();
-        if dirty.swap(false, AO::Relaxed) { return false }
-        slots.insert(path.to_path_buf(), (Slot::Done(res.clone(), Instant::now()), Instant::now()));
+        let changed = dirty.swap(false, AO::Relaxed);
+        if changed && *rereads_left > 0 {
+            *rereads_left -= 1;
+            return false;
+        }
+        let now = Instant::now();
+        let previous = slots.insert(path.to_path_buf(), (Slot::Done(res.clone(), (!changed).then_some(now)), now));
         let _ = tx.send(Some(res));
+        drop(slots);
+        drop(previous);
         true
     }
 
@@ -294,14 +328,15 @@ impl Cache {
                 Some((slot, used)) => {
                     *used = Instant::now();
                     match slot {
-                        Slot::Done(r, at) => Some(Ok((r.clone(), *at))),
-                        Slot::Loading(rx, _) => Some(Err(rx.clone())),
+                        Slot::Done(r, Some(at)) => Some(Ok((r.clone(), *at))),
+                        Slot::Done(_, None) => None,
+                        Slot::Loading(pending, _) => Some(Err(pending.clone())),
                     }
                 }
                 None => None,
             }
         };
-        let rx = match hit {
+        match hit {
             Some(Ok((r, at))) => {
                 // errors are retried after a second (a folder may come back after a checkout);
                 // listings are re-validated by the folder's mtime (FSEvents also invalidates)
@@ -315,16 +350,11 @@ impl Cache {
                 if !stale {
                     return Some(r);
                 }
-                self.start_read(path.to_path_buf())
             }
-            Some(Err(rx)) => rx,
-            None => self.start_read(path.to_path_buf()),
-        };
-        let mut rx = rx;
-        match tokio::time::timeout(READ_WAIT, rx.wait_for(|v| v.is_some())).await {
-            Ok(Ok(v)) => v.clone(),
-            _ => None, // still reading
+            Some(Err(pending)) => return pending.wait().await,
+            None => {}
         }
+        self.start_read(path.to_path_buf()).wait().await
     }
 
     #[allow(clippy::too_many_arguments)]

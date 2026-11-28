@@ -7,8 +7,13 @@ The one exception to ending nothing by a pattern (CLAUDE.md §6). Nothing younge
 so a run of another session is safe:
 - the one test helper that outlives its test, TEST_HELPER, with no parent (ppid 1): ended by its
   pid with SIGTERM, its command read again just before; one that stays is named, never SIGKILLed;
+- a tmux server of a `tm-*` name, older than OLD_S, whose every socket lay in a test's folder and is gone
+  with it, so nothing reaches it but its pid: ended by its pid with SIGTERM, as that helper (every tmux
+  server has parent 1); one whose socket went from elsewhere (a /tmp cleaner) is only named;
 - a dead `tm-*` socket of tmux (a connection refused): removed;
-- a folder of this user with a prefix tests use, nothing in it recent or held open: removed.
+- a folder of this user with a prefix tests use, nothing in it recent or held open: removed;
+- the files Docker Desktop's VM still holds from old bind mounts, over vm_files.MAX or uncountable: its caches
+  dropped (vm_files.py), which ends nothing.
 Named only, since either can be someone's work: a live tmux server on a `tm-*` socket, and any
 other test binary or terminumd of a build folder with no parent."""
 import os
@@ -22,8 +27,15 @@ import sys
 import tempfile
 import time
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from process_cwd import InspectionError, socket_paths  # noqa: E402
+import vm_files  # noqa: E402
+
 OLD_S = 6 * 3600
 TEST_HELPER = re.compile(r"/\S*/terminumd/target/(?:debug|release)/deps/terminumd-[0-9a-f]{16} --exact cli::tests::fake_terminumd( |$)")
+# a test's own socket name by -L (testrun's `own`: tm-test-live-<pid>), never the user's `-L terminum`;
+# the names are not known here, so not testrun.own_server_pids
+TEST_TMUX = re.compile(r"(?:\S*/)?tmux(?: \S+)*? -L tm-")
 BUILD_OUTPUT = re.compile(r"/\S*/terminumd/target/(?:debug|release)/(?:terminumd|deps/terminumd-[0-9a-f]{16})( |$)")
 # what tests name their folders; test_leftovers.py fails on a test's prefix missing here
 FOLDER_PREFIXES = ("tm-", "tma-", "tmb-", "tme-", "tmh-", "tmi-", "tml-", "tmln-", "tmlo-", "tmlp-", "tmlw-",
@@ -39,18 +51,50 @@ def age_s(etime):
     return seconds + int(days or 0) * 86400
 
 
+def test_folder_name(name):
+    """Whether `name` is named as tests name their folders (check_step.py's tmc.*, a test's tml-*)."""
+    return name.startswith(FOLDER_PREFIXES) and name not in FOLDER_PREFIXES
+
+
+def in_test_folder(path):
+    """Whether `path` lies in a test's folder."""
+    return any(test_folder_name(part) for part in Path(path).parts[:-1])
+
+
+def orphans(ps_text):
+    """(pid, command) of each process with no parent (ppid 1) older than OLD_S."""
+    for line in ps_text.splitlines():
+        fields = line.split(None, 3)
+        if len(fields) == 4 and fields[0].isdigit() and fields[1] == "1" and age_s(fields[2]) >= OLD_S:
+            yield int(fields[0]), fields[3]
+
+
 def strays(ps_text):
     """(pid, command, whether to end it) of each process no test run owns any more."""
     found = []
-    for line in ps_text.splitlines():
-        fields = line.split(None, 3)
-        if len(fields) < 4 or not fields[0].isdigit() or fields[1] != "1" or age_s(fields[2]) < OLD_S:
-            continue
-        command = fields[3]
+    for pid, command in orphans(ps_text):
         if TEST_HELPER.match(command):
-            found.append((int(fields[0]), command, True))
+            found.append((pid, command, True))
         elif BUILD_OUTPUT.match(command):
-            found.append((int(fields[0]), command, False))
+            found.append((pid, command, False))
+    return found
+
+
+def lost_servers(ps_text, bound):
+    """(pid, command, whether to end it) of each old test tmux server with no parent: ended only when
+    every socket it bound (`bound()`: (pid, path) of this user's processes; None when unknown, asked only
+    when there is such a server)
+    lay in a test's folder and is gone; one still reachable is a live socket's, said there."""
+    servers = [(pid, command) for pid, command in orphans(ps_text) if TEST_TMUX.match(command)]
+    paths = {}
+    for pid, path in (bound() or []) if servers else []:
+        paths.setdefault(pid, []).append(path)
+    found = []
+    for pid, command in servers:
+        if pid not in paths:
+            found.append((pid, command, False))
+        elif not any(os.path.lexists(path) for path in paths[pid]):
+            found.append((pid, command, all(in_test_folder(path) for path in paths[pid])))
     return found
 
 
@@ -127,7 +171,7 @@ def folders(roots, now, held):
         except OSError:
             continue
         for entry in entries:
-            if not entry.name.startswith(FOLDER_PREFIXES) or entry.name in FOLDER_PREFIXES:
+            if not test_folder_name(entry.name):
                 continue
             try:
                 info = entry.stat(follow_symlinks=False)
@@ -148,7 +192,14 @@ def main(argv):
     socket_folder = Path(os.environ.get("TMUX_TMPDIR", "/tmp")) / f"tmux-{os.getuid()}"
     roots = sorted({Path(tempfile.gettempdir()).resolve(), Path("/tmp").resolve()})
     stuck = 0
-    for pid, command, ours in strays(processes()):
+    ps_text = processes()
+
+    def bound():
+        try:
+            return socket_paths()
+        except InspectionError as error:
+            print(f"{error}: no tmux server is ended")
+    for pid, command, ours in strays(ps_text) + lost_servers(ps_text, bound):
         if ours and ending:
             gone = end(pid, command)
             stuck += not gone
@@ -158,6 +209,10 @@ def main(argv):
     dead, live = sockets(socket_folder, now)
     for path in live:
         print(f"named only, a live tmux server: {path.name} (tmux -L {path.name} kill-server if it is yours)")
+    # first, so a test folder Docker's VM held from a bind mount is no longer open when the folders are judged
+    vm_over = vm_files.report(ending, ps_text=ps_text)
+    if ending:   # a plain look says it, as of the folders, and exits 0
+        stuck += vm_over
     held = open_paths()
     if held is None:
         print("lsof says nothing of what is open: every test folder stays")

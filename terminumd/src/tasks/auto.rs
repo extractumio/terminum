@@ -44,6 +44,7 @@ pub struct Setting {
     pub day_most: i64,
     /// how tasks are picked: AGENT, a round of the picking agent, or ORDER, down the board with no agent
     pub mode: String,
+    pub supervisor_tasks: bool,
 }
 
 /// The two ways of picking.
@@ -67,22 +68,28 @@ pub const PASSED: i64 = DAY;
 /// The longest wait, in minutes: a day.
 pub const WAIT_MOST: i64 = 24 * 60;
 
-const SETTING: &str = "SELECT auto_agent, auto_default, auto_off_why, auto_on_at, id, auto_on, auto_severities, auto_wait_minutes, auto_day_most, auto_mode FROM projects";
+const SETTING: &str = "SELECT auto_agent, auto_default, auto_off_why, auto_on_at, id, auto_on, auto_severities, auto_wait_minutes, auto_day_most, auto_mode, auto_supervisor FROM projects";
 
 fn setting_of(r: &rusqlite::Row) -> rusqlite::Result<(String, Setting)> {
     let severities: String = r.get(6)?;
     Ok((r.get(4)?, Setting { agent: r.get(0)?, default: r.get(1)?, off_why: r.get(2)?, on_at: r.get(3)?, on: r.get(5)?,
-        severities: serde_json::from_str(&severities).unwrap_or_default(), wait: r.get(7)?, day_most: r.get(8)?, mode: r.get(9)? }))
+        severities: serde_json::from_str(&severities).unwrap_or_default(), wait: r.get(7)?, day_most: r.get(8)?, mode: r.get(9)?, supervisor_tasks: r.get(10)? }))
 }
 
 pub fn setting(tx: &Transaction, project: &str) -> Result<Setting, String> {
     tx.query_row(&format!("{SETTING} WHERE id = ?1"), [project], setting_of).map(|(_, s)| s).map_err(sql)
 }
 
+/// Whether a new run picked by priority and saved order can still start for this project.
+pub fn order_on(tx: &Transaction, project: &str) -> Result<bool, String> {
+    tx.query_row("SELECT EXISTS(SELECT 1 FROM projects WHERE id = ?1 AND auto_on = 1 AND auto_mode = ?2)",
+        (project, ORDER), |r| r.get(0)).map_err(sql)
+}
+
 impl Setting {
     /// What the board shows of it: its switch, the picking agent, the default one, what it takes, why it is off.
     pub fn shown(&self) -> Value {
-        json!({"on": self.on, "agent": self.agent, "default": self.default, "severities": self.severities, "wait_minutes": self.wait, "day_most": self.day_most, "mode": self.mode, "off_why": self.off_why})
+        json!({"on": self.on, "agent": self.agent, "default": self.default, "severities": self.severities, "wait_minutes": self.wait, "day_most": self.day_most, "mode": self.mode, "supervisor_tasks": self.supervisor_tasks, "off_why": self.off_why})
     }
 
     /// This setting with what a human's `body` changes: a field it does not hold stays, so the board's switch sends
@@ -106,6 +113,9 @@ impl Setting {
         }
         if let Some(mode) = body.get("mode") {
             s.mode = mode.as_str().filter(|m| [AGENT, ORDER].contains(m)).ok_or(format!("mode: {AGENT} or {ORDER}"))?.to_string();
+        }
+        if let Some(allow) = body.get("supervisor_tasks") {
+            s.supervisor_tasks = allow.as_bool().ok_or("Supervisor tasks: true or false")?;
         }
         if let Some(most) = body.get("day_most") {
             s.day_most = most.as_i64().filter(|n| (1..=DAY_MOST).contains(n)).ok_or(format!("Tasks a day: 1 to {DAY_MOST}"))?;
@@ -133,9 +143,9 @@ pub fn all(tx: &Transaction) -> Result<Vec<(String, Setting)>, String> {
 /// The projects a walk looks at: those it is on for, and those with a round still on the board, which leaves it when
 /// it ended though the setting is off. The one whose last round is oldest first: projects that share agents take
 /// the free slots in turn.
-pub fn due_for(tx: &Transaction) -> Result<Vec<(String, Setting)>, String> {
-    rows(tx, &format!("{SETTING} WHERE auto_on = 1 OR EXISTS (SELECT 1 FROM auto_rounds r JOIN tasks t ON t.id = r.task WHERE r.project = projects.id AND t.archived_at IS NULL)
-        ORDER BY COALESCE((SELECT max(r.at) FROM auto_rounds r WHERE r.project = projects.id), 0), place"), [], setting_of)
+pub fn due_for(tx: &Transaction) -> Result<Vec<String>, String> {
+    rows(tx, "SELECT id FROM projects WHERE auto_on = 1 OR EXISTS (SELECT 1 FROM auto_rounds r JOIN tasks t ON t.id = r.task WHERE r.project = projects.id AND t.archived_at IS NULL)
+        ORDER BY COALESCE((SELECT max(r.at) FROM auto_rounds r WHERE r.project = projects.id), 0), place", [], |r| r.get(0))
 }
 
 /// An agent of `project`'s pool, or none.
@@ -164,8 +174,8 @@ pub fn set(tx: &Transaction, project: &str, new: &Setting, at: i64) -> Result<()
     }
     let was = setting(tx, project)?;
     let on_at = if new.on && !was.on { at } else { was.on_at };
-    tx.execute("UPDATE projects SET auto_on = ?2, auto_agent = ?3, auto_default = ?4, auto_off_why = CASE WHEN ?2 THEN NULL ELSE auto_off_why END, auto_on_at = ?5, auto_severities = ?6, auto_wait_minutes = ?7, auto_day_most = ?8, auto_mode = ?9 WHERE id = ?1",
-        (project, new.on, agent, default, on_at, json!(new.severities).to_string(), new.wait, new.day_most, &new.mode)).map(drop).map_err(sql)
+    tx.execute("UPDATE projects SET auto_on = ?2, auto_agent = ?3, auto_default = ?4, auto_off_why = CASE WHEN ?2 THEN NULL ELSE auto_off_why END, auto_on_at = ?5, auto_severities = ?6, auto_wait_minutes = ?7, auto_day_most = ?8, auto_mode = ?9, auto_supervisor = ?10 WHERE id = ?1",
+        (project, new.on, agent, default, on_at, json!(new.severities).to_string(), new.wait, new.day_most, &new.mode, new.supervisor_tasks)).map(drop).map_err(sql)
 }
 
 /// It turns itself off for `project`, saying why: only a human turns it on again. Its agents stay chosen.
@@ -321,9 +331,22 @@ pub struct Candidate {
 ///
 /// In priority and saved order; CANDIDATES_MOST at most are looked at for an agent with room. `only`: that task alone, by its ID.
 pub fn candidates(tx: &Transaction, project: &str, s: &Setting, now: i64, only: Option<&str>) -> Result<Vec<Candidate>, String> {
+    candidates_with_breaker(tx, project, s, now, only, false)
+}
+
+pub(crate) fn breaker_candidates(tx: &Transaction, project: &str, s: &Setting, now: i64) -> Result<Vec<Candidate>, String> {
+    candidates_with_breaker(tx, project, s, now, None, true)
+}
+
+fn candidates_with_breaker(tx: &Transaction, project: &str, s: &Setting, now: i64, only: Option<&str>,
+    broken: bool) -> Result<Vec<Candidate>, String>
+{
     let scale = crate::dispatcher::scale();
     let found: Vec<Candidate> = rows(tx, "WITH passed AS MATERIALIZED (SELECT g.value AS slug, max(r.at) AS at FROM auto_rounds r JOIN tasks rt ON rt.id = r.task, json_each(r.candidates) g
                    WHERE r.project = ?1 AND r.at >= ?7 AND rt.status = 'DONE' AND (SELECT count(*) FROM auto_starts f WHERE f.round = r.task) < r.slots GROUP BY g.value),
+                 blocked_marks AS MATERIALIZED (SELECT m.task FROM supervisor_auto_marks m JOIN tasks t ON t.id = m.task
+                   WHERE t.project = ?1 AND NOT (?8 AND m.eligible)),
+                 broken_fixes AS MATERIALIZED (SELECT task FROM supervisor_blocked_fixes WHERE project = ?1),
                  to_do AS (SELECT id, parent, status, severity, session_key FROM tasks WHERE parent IS NOT NULL AND archived_at IS NULL AND status <> 'DONE'),
                  c AS (SELECT t.slug, t.id, t.severity, t.rank, a.id AS agent,
                    COALESCE((SELECT max(e.at) FROM events e WHERE e.task IN (SELECT t.id UNION ALL SELECT k.id FROM to_do k WHERE k.parent = t.id)
@@ -334,16 +357,20 @@ pub fn candidates(tx: &Transaction, project: &str, s: &Setting, now: i64, only: 
                  WHERE t.project = ?1 AND t.status = 'TODO' AND t.archived_at IS NULL AND t.session_key IS NULL AND (?3 IS NULL OR t.slug = ?3)
                    AND (t.severity IN (SELECT value FROM json_each(?5))
                      OR EXISTS (SELECT 1 FROM to_do k WHERE k.parent = t.id AND k.severity IN (SELECT value FROM json_each(?5))))
+                   AND t.id NOT IN (SELECT task FROM blocked_marks)
+                   AND (t.id IN (SELECT task FROM broken_fixes) OR EXISTS (
+                     SELECT 1 FROM to_do k JOIN broken_fixes f ON f.task = k.id WHERE k.parent = t.id)) = ?9
                    AND NOT EXISTS (SELECT 1 FROM run_waits w WHERE w.task = t.id) AND NOT EXISTS (SELECT 1 FROM auto_rounds r WHERE r.task = t.id)
                    AND NOT EXISTS (SELECT 1 FROM schedule_fires f WHERE f.task = t.id)
+                   AND NOT EXISTS (SELECT 1 FROM supervisor_incidents i WHERE i.task = t.id)
                    AND NOT EXISTS (SELECT 1 FROM tasks p WHERE p.id = t.parent AND p.archived_at IS NULL AND p.status <> 'DONE')
                    AND NOT EXISTS (SELECT 1 FROM to_do k WHERE k.parent = t.id
-                     AND (k.status <> 'TODO' OR k.session_key IS NOT NULL OR EXISTS (SELECT 1 FROM run_waits w WHERE w.task = k.id))))
+                     AND (k.status <> 'TODO' OR k.session_key IS NOT NULL OR k.id IN (SELECT task FROM blocked_marks) OR EXISTS (SELECT 1 FROM run_waits w WHERE w.task = k.id))))
                  SELECT c.slug, c.id, c.agent, c.changed FROM c WHERE c.changed <= ?6
                    AND NOT EXISTS (SELECT 1 FROM auto_starts s WHERE s.task = c.id AND s.at > c.by_human)
                    AND NOT EXISTS (SELECT 1 FROM passed p WHERE p.slug = c.slug AND p.at >= c.by_human)
                  ORDER BY c.severity, c.rank LIMIT ?4",
-        (project, &s.default, only, (CANDIDATES_MOST * 2) as i64, json!(s.severities).to_string(), now - s.wait * 60 / scale, if s.by_order() { i64::MAX } else { (now - PASSED / scale + 1).max(s.on_at) }),
+        (project, &s.default, only, (CANDIDATES_MOST * 2) as i64, json!(s.severities).to_string(), now - s.wait * 60 / scale, if s.by_order() { i64::MAX } else { (now - PASSED / scale + 1).max(s.on_at) }, s.supervisor_tasks, broken),
         |r| Ok(Candidate { id: r.get(0)?, key: r.get(1)?, agent: r.get(2)?, changed: r.get(3)? }))?;
     let mut out = Vec::new();
     for c in found {
@@ -378,10 +405,18 @@ async fn set_auto(State(app): State<Shared>, Path(project): Path<String>, Json(b
         if let Some(why) = was.off_why.as_ref().filter(|why| body["off_why"].as_str() != Some(why)) {
             return Err(format!("It turned itself off meanwhile: {why} Read why, then turn it on again."));
         }
-        set(tx, &project, &was.with(&body)?, ops::now()).map(|()| json!({"ok": true}))
+        let at = ops::now();
+        let next = was.with(&body)?;
+        set(tx, &project, &next, at)?;
+        if next.on {
+            use crate::supervisor::holds::{Kind, board_release};
+            board_release(tx, &project, Kind::PauseDispatch, "", super::store::HUMAN, at)?;
+        }
+        Ok(json!({"ok": true}))
     }).await;
     if done.is_ok() {
         app.dispatcher.soon();
+        app.supervisor.incident_changed();
     }
     told_projects(&app, done)
 }

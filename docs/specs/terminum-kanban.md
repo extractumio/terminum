@@ -16,7 +16,7 @@ A snapshot of what terminum must do, not a record of how it came to be: git hold
 
 **Who it affects.** One person running many Claude Code and Codex sessions from a Mac or a phone; later a team sharing a central store.
 
-**Expected outcome.** `/kanban/` shows tasks in TODO, IN PROGRESS, WAIT FOR HUMAN, INTEGRATION (where a project's integration is on), FAILED and DONE, filtered by several projects, severity and owner. A task has a Markdown text, comments, files, an owner, a severity P0…P3, a project and at most one session. Agents and Dispatcher move tasks; a human moves one only by running it (AC-107). Tasks live in one local database file with no service to run.
+**Expected outcome.** `/kanban/` shows tasks in TODO, IN PROGRESS, WAIT FOR HUMAN, INTEGRATION (where a project's integration is on), FAILED and DONE, filtered by several projects, severity and owner. A task has a Markdown text, comments, files, an owner, a severity P0…P3, a project and at most one session. Agents and Dispatcher move tasks; a human moves one only by running it, or a report read to DONE (AC-107). Tasks live in one local database file with no service to run.
 
 **Scenario.** Alex drops a screenshot into the new-task window, writes "Fix the retry loop", picks P1 and presses Create: API-12 stands on top of the P1 cards in TODO. RUN (`terminum-dispatcher.md` AC-121) starts an agent on it. An hour later the board's tab counts one card in WAIT FOR HUMAN; Alex comments and presses RUN, and the agent goes on.
 
@@ -57,7 +57,7 @@ Open questions: none.
 | AC-105 | [MUST / P0] | `/kanban/` shows TODO as a column of its own and the other columns (IN PROGRESS, WAIT FOR HUMAN, INTEGRATION where a shown project's integration is on: `terminum-integration.md` AC-193, FAILED, DONE) one at a time in a panel beside it under their tabs, each tab with its count, WAIT FOR HUMAN's and FAILED's pulsing while they hold tasks; each column sorted by recent updates or by priority then recent updates, chosen by a segmented control of two icons before its count and remembered per project in this browser; a tablet's head is one row; `/sessions/` is the session list, `/` leads to it; a phone shows one column at a time. |
 | AC-159 | [MUST / P0] | TODO and DONE show each card as one line, its ID, severity, title and its state's dot; a press shows one whole, folding the one before; the other columns show cards whole. |
 | AC-106 | [MUST / P0] | A window makes a task (title, Markdown with preview, files dropped or pasted, project, severity, owner, parent), in TODO unless said; a draft survives closing; a selection in a terminal can start one. |
-| AC-107 | [MUST / P0] | A human moves a task only by running it (terminum-dispatcher.md AC-138); agents and Dispatcher move it; every change is kept in the task's history with who and when. |
+| AC-107 | [MUST / P0] | A human moves a task only by running it (terminum-dispatcher.md AC-138), agents and Dispatcher move it; every change is kept in the task's history with who and when. |
 | AC-108 | [MUST / P0] | A task holds Markdown comments with files, by humans, agents and Dispatcher; a human's comment is kept by SAVE or goes with RUN. |
 | AC-109 | [MUST / P0] | Files up to 100 MB each stay with their task: images shown, other files downloaded, nothing run; a human can purge a file or a text. |
 | AC-110 | [MUST / P0] | The session list and the board share projects; a project needs no session, its last session closing leaves it; Default holds what has no project and is no real project; deleting a project moves its sessions and tasks to Default. |
@@ -70,13 +70,14 @@ Open questions: none.
 | AC-154 | [SHOULD / P1] | An agent grooms its project's board with `update_task`: the severity, parent and AC-199's details of any task it reaches, a human's with its reason; the title and text of an agents' task; such a task archived with its reason; an agent's change of title, type or severity never sets a bug below P2. |
 | AC-199 | [SHOULD / P1] | A task has a type (Feature, Bug, Debt, Story) shown as its title's first word, an external link, a target, and the tasks of its project that block it and that follow it, each with its reason: set in a folded Details part of the new-task and task windows, the new-task window's Type beside its Severity, none chosen until picked (lists by + with a search and ×, never typed IDs) and by `create_task`, `update_task` and `link_task`. |
 | AC-116 | [SHOULD / P1] | A bookmark or reminder becomes a TODO task in one small window (severity, project, session), its text linking its session, the board not opened; the record goes once the task is kept. |
-| AC-117 | [MUST / P0] | WAIT FOR HUMAN and FAILED raise the banner of waiting agents and counts of cards on the Kanban tab, yellow and red, the same in every browser: terminumd keeps which lines a human closed or saw; so does a task returned from integration with no live agent (`terminum-integration.md` AC-192). |
+| AC-117 | [MUST / P0] | WAIT FOR HUMAN and FAILED raise the banner of waiting agents and counts of cards on the Kanban tab, yellow and red, the same in every browser: terminumd keeps which lines a human closed or saw; so does a task returned from integration with no live agent (`terminum-integration.md` AC-192), and a critical report until it is read (`terminum-reports.md` AC-271); a report not critical raises none. |
 | AC-118 | [SHOULD / P1] | Archive hides a task from the board and can return it; DONE archives itself after 2 days; each project has an Archived list. |
+| AC-282 | [SHOULD / P1] | A window whose last action is done closes: Run (the comment written goes with it, ⌘⇧↩) and Archive close a task's window; where the user goes on there, it stays. |
 | AC-119 | [MUST / P0] | One SQLite file holds tasks and projects; writes are atomic; authors and roles name users, so a central store can follow; an unreadable file is set aside and said, never overwritten. |
 | AC-136 | [MUST / P0] | A card says what became of its session's agent: working, waiting, failed with why, stopped with its task open, gone; the task's history says so once; nothing moves by it unless Dispatcher started the session. |
 | AC-133 | [MUST / P0] | The board's flow survives what people and machines do: the last drop stands, a move shows at once and a refused one goes back; a late answer never stands over a newer; what is typed is never lost by a slip, a refusal or a change by another. |
 | AC-134 | [MUST / P0] | A card with a live session carries that session's own row from the session list: bar in the project's color, pulsing while its agent works, plan, what it does now, every state; a press opens that session. |
-| AC-135 | [MUST / P0] | The board's head chooses the project; left of the columns stands the session page's own list, as wide as there, with its menus and its head, without its foot; it hides and shows; a press opens a session. |
+| AC-135 | [MUST / P0] | The board's head chooses the project; left of the columns stands the session page's own list, as wide as there, with its menus and its head, without its foot, the Inbox above its Sessions (`terminum-reports.md` AC-267); it hides and shows; a press opens a session. |
 | AC-139 | [MUST / P0] | New project…, the last row of the project's menu, makes an empty project on its server, in a window with its name, its full folder path, a picker for it and Agents at once; a project's pencil, or the board's cog with that project shown alone, opens the same window, with its pool's keys and Auto-Dispatch beside. |
 | AC-120 | [SHOULD / P1] | An agent on a remote host sees and works with its whole project through the Mac's link. |
 | AC-148 | [MUST / P0] | A task's ID is its project's letters and the project's own count (TERM-7), "S_" before them for a task a schedule made (S_TERM-8), "I_" for a batch's integration task (`terminum-integration.md` AC-194): the letters come from the project's folder and can be set; every ID a task had, and its key's start, still find it. |
@@ -113,7 +114,7 @@ Scenario: AC-105 happy path — TODO and the panel
   And the shown column's sort keys stand at the end of the tabs' row; its cards fill the panel as a grid, the cards of a row as tall as its tallest, their foot and session at its bottom
   When the user presses DONE's tab
   Then the panel shows DONE's cards, and this browser shows DONE first next time; when INTEGRATION's tab goes, the panel shows IN PROGRESS
-  And the board has tracks: six from 1500 px of board, TODO two of them, the panel's cards four columns, an agent a track (terminum-dispatcher.md AC-138); three from 1100 px, TODO one, the cards two; under 1100 px TODO stands over the panel, as tall as its cards up to 40% of the board, the cards two columns
+  And the board has tracks: six from 1500 px of board, TODO two of them, the panel's cards four columns; three from 1100 px, TODO one, the cards two; under 1100 px TODO stands over the panel, as tall as its cards up to 40% of the board, the cards two columns
   And TODO's head and the tabs' row stand on one line, their cards start on one line, and every left edge is the gutter's or a track's
 
 Scenario: AC-105 edge — a tablet
@@ -294,7 +295,7 @@ Scenario: AC-107 failure — refused
 Scenario: AC-108 happy path — a human's comment
   Given API-12 with the window open
   When the user writes Markdown under Comment, drops log.txt and presses SAVE
-  Then the comment and file are kept and the status does not change; a working agent of its linked open session hears of it at its next tool call, never its words (terminum-dispatcher.md AC-209)
+  Then the comment and file are kept and the status does not change; a working agent of its linked open session is told of it as terminum-dispatcher.md AC-209 says, never its words
   And the window stays open, its field empty, the comment in its conversation
   When the user writes "Use the v2 API" and presses RUN
   Then the comment is kept and terminum-dispatcher.md AC-122 goes on with it
@@ -345,6 +346,12 @@ Scenario: AC-109 edge — files stay with the task
 Scenario: AC-109 failure — too large
   When a file is over 100 MB
   Then it is refused with "shot.mov is over 100 MB" and the rest of the window is kept
+
+Scenario: AC-109 failure — a file cannot be read
+  When GET or HEAD asks for a file whose row or bytes are missing
+  Then terminumd answers 404
+  When the store lookup, file open, initial byte read or metadata read fails for another reason
+  Then terminumd answers 500, with its error message on GET, and a draft keeps the file and its link (AC-106, AC-108)
 
 Scenario: AC-109 failure — a purge or a keep cut short
   When a purge fails (the store refuses it) or terminumd stops halfway through one or through keeping a file
@@ -843,6 +850,31 @@ Scenario: AC-118 failure — not written
   Then the task stays on the board and a toast says terminumd's message
 ```
 
+### AC-282 — A window closes after its last action [SHOULD / P1]
+
+```gherkin
+Scenario: AC-282 happy path — answer and run in one
+  Given a task in WAIT FOR HUMAN, its window open, an answer written in its comment field
+  When the user presses Run, or ⌘⇧↩ (Ctrl+Shift+Enter), with the focus still in the field
+  Then the answer is sent with the run, as RUN sends a comment (terminum-dispatcher.md AC-122), and the window closes
+  And ⌘↩ instead keeps the comment alone (Save), the window open
+  And for its agent's question Answer stands in Run's place and takes ⌘⇧↩ (terminum-dispatcher.md AC-285)
+
+Scenario: AC-282 happy path — Archive
+  When the user presses Archive, or ⌘⇧A, in a task's window
+  Then the task is archived (AC-118) and its window closes
+  When the user presses Bring back in an archived task's window
+  Then it is back on the board and its window stays
+
+Scenario: AC-282 happy path — where the user goes on
+  Then these keep their window open: Save, a question's choice, Stop waiting, Give up (the human comments or runs it again next), a task's text saved, a report's reply (its agent's answer comes below it, terminum-reports.md AC-270), a report marked read
+  And these close it, as they did: RUN's Run, a new task's Create and Run, + Session's Start, a report's Delete
+
+Scenario: AC-282 failure — refused
+  When terminumd refuses the run or the archive
+  Then the window stays open with what was written, and says terminumd's words
+```
+
 ### AC-119 — The store [MUST / P0]
 
 ```gherkin
@@ -1219,6 +1251,15 @@ Scenario: AC-149 happy path — a conversation
   Then comments and history read oldest first, the comment field after the last of them; no key turns the order
   And a comment is a card with a bar inside its left edge and its author's name in the color of its kind: a human's cornflower blue; an agent's and Dispatcher's muted and near each other (teal, slate); an agent's questions for the human in the waiting color, marked "asks you" (terminum-dispatcher.md AC-157)
   And a comment says its author, when it was written and "edited <when>" once changed (AC-108): today's time alone ("10:16"), another day's with its date ("Nov 12, 10:16"), the whole date and time in its title
+
+Scenario: AC-149 happy path — a comment's label lines read as sections
+  Given an agent's result "Outcome: attention\nSummary: 12 integrations landed.\nDetails:\nNew features:\n- API-21: told at its next call.\nChanged / fixed:\n- API-16: one tool.\nFor the human: nothing", or its questions "Why you are needed: …\nRecommended:\n1. RUN it again.\nDetails: …"
+  When the user reads that comment
+  Then each line that starts with a short label (a capital, up to 4 words, then ":" and words; alone on its line, up to 6) starts a block of its own, never joined to the line or the list item before it
+  And a label alone on its line is the heading of what follows, without its colon; a label before words is their lead, in the muted strong color
+  And Outcome's first word is a status box as its column's: ok and done DONE's, attention and partly WAIT FOR HUMAN's, failed FAILED's
+  And the comment's lines keep a readable measure (76 characters at most), its list items a little apart, in Chromium and WebKit, wide and on a phone, a dark and a light theme
+  But fenced code, indented lines, an author's own bold and a sentence with a colon after its fifth word stay as written; a task's text keeps plain Markdown; raw HTML stays off
   And a line of history is one muted line between the cards: its time, then its words, its author named once; a screen quoted in it (between ``` lines) is shown as the terminal drew it, scrolling in a box of its own
   And a task opened is shown from its start
 
@@ -1226,6 +1267,7 @@ Scenario: AC-149 happy path — what the human reacts to stands first
   Given API-12 waits for its human: WAIT FOR HUMAN with its agent's questions, DONE with its agent's last comment (its result), or FAILED with the last comment of its agent or Dispatcher (why)
   When the user opens its window
   Then that comment stands first under its heading (Asks you, Result, Why it failed), the comment field right under it (for questions: "Your answer…"), the window's keys at its foot
+  And a report the task made is no comment to react to: it is read in the Inbox, and the window lists it under its dates (terminum-reports.md AC-273)
   And then the task itself, then the rest of the conversation newest first under "Earlier", then its subtasks
   When it has no such comment, or stands in TODO or IN PROGRESS
   Then it reads as a conversation, above
@@ -1293,7 +1335,8 @@ Scenario: AC-203 happy path — a rail folds its section
   And a folded pool takes no dropped task: the user folded it
 
 Scenario: AC-203 happy path — add tiles
-  Then each block's last item is a 44 px [+] tile as tall as its cards, right after the last one ("Add agent", "Add routine"); a full row of four puts it on the next row; no add key stands elsewhere
+  Then each block's last item is a 44 px [+] tile as tall as its cards, right after the last one ("Add agent", "Add routine"); when the row has no room for it, it wraps onto the next row; no add key stands elsewhere
+  And each row of cards fills its section, adjusting and wrapping with the browser (terminum-dispatcher.md AC-138, terminum-schedules.md AC-163); a task selection's hint stands on its own full-width row under the pool, taking no room when no tasks are chosen
 
 Scenario: AC-203 edge — a phone
   Given a phone (AC-105: the pool and the routines in the sheet behind one line)
@@ -1437,7 +1480,7 @@ Depends on: nothing more.
 - [x] AC-106 — `web/test/e2e_liveboard.mjs`, `web/test/e2e_tasktext.mjs` (one text editor), `web/test/e2e_liveboardpool.mjs`, `web/test/e2e_newtask.mjs` (unspecified agent, explicit choice, removal and refusal), `web/test/e2e_livenotes.mjs` (New task from selection), `cargo test tasks::ops`
 - [x] AC-107 — `cargo test tasks::ops`, `web/test/e2e_liveboard.mjs`
 - [x] AC-108 — `cargo test tasks::ops`, `web/test/e2e_liveboard.mjs`
-- [x] AC-109 — `cargo test tasks::files` (a failed purge, a stop's leftovers), `cargo test tasks::tools`, `web/test/e2e_liveboard.mjs`
+- [x] AC-109 — `cargo test tasks::files` (a failed purge, a stop's leftovers), `cargo test tasks::fileapi` (GET and HEAD errors), `cargo test tasks::tools`, `web/test/e2e_liveboard.mjs` (draft restoration during a read failure)
 - [x] AC-110 — `cargo test page::projects`, `scripts/e2e_core.py`, `web/test/e2e_projects.mjs`, `web/test/e2e_livelistplace.mjs`, `web/test/e2e_liveboard.mjs`
 - [x] AC-111 — `cargo test tasks::ops`, `web/test/e2e_liveboard.mjs`, Find in TODO's head in `web/test/e2e_boardpanel.mjs`, a phone's in its head in `web/test/e2e_boardphone.mjs`
 - [x] AC-112 — `cargo test tasks::ops`, `cargo test tasks::family`, `web/test/e2e_liveboardtasks.mjs`, `web/test/e2e_liveboardids.mjs`
@@ -1446,6 +1489,7 @@ Depends on: nothing more.
 - [x] AC-116 — `web/test/e2e_livenotes.mjs` (Convert to task from the list and the bar, Cancel, a refusal, Create, pressed twice, two tabs at once, the link to its line; `node web/test/e2e_live.mjs notes`)
 - [x] AC-117 — `cargo test tasks::marks`, `web/test/e2e_livedispatcher.mjs`, `web/test/e2e_tasklines.mjs`, `web/test/e2e_bannerproj.mjs` (its project), `web/test/e2e_askfold.mjs` (the counters), `web/test/e2e_boardphone.mjs` (the board's counters, their pulse)
 - [x] AC-118 — `cargo test tasks::archiving`, `web/test/e2e_liveboardtasks.mjs`
+- [x] AC-282 — `web/test/e2e_dlgkeys.mjs` (⌘⇧↩ sends and runs, Archive closes, a refused one stays), `web/test/e2e_liveboardpool.mjs` (the real page: ⌘⇧A archives and closes the window, Bring back keeps it)
 - [x] AC-119 — `cargo test tasks::store`
 - [x] AC-136 — `cargo test tasks::tell` (fresh settlement with and without background work, a new prompt), `web/test/e2e_liveboardedge.mjs`, `web/test/e2e_livebackground.mjs` (monitor-only Stop, work ending, immediate failure), `web/test/cardstate.test.mjs` (its background work)
 - [x] AC-133 — `web/test/e2e_taskclose.mjs` (pending reads after ×, Esc and Back; a deliberate reopen; a Save press under a refresh), `web/test/e2e_liveclose.mjs` (a real subtask read held while its parent's window closes, a real change under a Save press, two quick field changes with the first answer held, a refused one going back, a text saved under a comment's edit; `node web/test/e2e_live.mjs boardtasks`), `web/test/e2e_liveboardedge.mjs`, `web/test/e2e_liveboard.mjs`, `web/test/e2e_liveboardbusy.mjs` (a file that lands late; alone: `node web/test/e2e_live.mjs boardpool`) (`node web/test/e2e_live.mjs board` also measures §9's budgets on AS-112's tasks: `liveBoardScale`)
@@ -1453,7 +1497,7 @@ Depends on: nothing more.
 - [x] AC-139 — `cargo test page::projects`, `cargo test tasks::folder`, `web/test/e2e_liveboardagents.mjs` (a 200-character folder, the picker up, in, Cancel and Choose), `web/test/e2e_boardtype.mjs` (the cog with one project and with several, six tabs inside a phone)
 - [x] AC-135 — `web/test/e2e_liveboardsession.mjs`, `web/test/e2e_liveboard.mjs`
 - [x] AC-148 — `cargo test tasks::slugs`, `cargo test tasks::store` (an older store), `web/test/e2e_liveboardids.mjs`
-- [x] AC-149 — `web/test/e2e_liveboardids.mjs`, `web/test/e2e_taskwin.mjs` (the parts, the kinds' bars, what leads, a change while open)
+- [x] AC-149 — `web/test/e2e_liveboardids.mjs`, `web/test/e2e_taskwin.mjs` (the parts, the kinds' bars, what leads, a change while open), `ui/test/said.test.mjs` and `web/test/e2e_said.mjs` (label lines as sections)
 - [x] AC-150 — `web/test/e2e_livenotes.mjs` (counted, listed, the task window on the session page), `cargo test tasks::ops` (a restore, a server started anew)
 - [x] AC-203 — `web/test/e2e_boardrail.mjs` (`node web/test/e2e_all.mjs webBoardRail`: 1900 px and a phone), the rails' column and a tablet's in `web/test/e2e_boardpanel.mjs`, Routines' strip in `web/test/e2e_liveschedules.mjs`
 - [x] AC-120 — `cargo test tasks::tools` (pages, a host's file), `scripts/e2e_remote_agents.py` (get_file on a host, with files off), `scripts/e2e_remote_sshd_agents.py`

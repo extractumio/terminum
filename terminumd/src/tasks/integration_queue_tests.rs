@@ -47,7 +47,7 @@ fn repo(name: &str) -> Repo {
         ops::move_to(tx, DISPATCHER, &t.id, "IN PROGRESS", 2)?;
         Ok(t.id)
     }).unwrap();
-    let who = Who { key: KEY.into(), agent: "claude".into(), title: "api".into(), project: Some("api".into()), dir: Some(tree.to_str().unwrap().into()) };
+    let who = Who { conversation: None, key: KEY.into(), agent: "claude".into(), title: "api".into(), project: Some("api".into()), dir: Some(tree.to_str().unwrap().into()), supervisor: false };
     Repo { s, who, id, tree }
 }
 
@@ -128,6 +128,23 @@ fn ac187_any_move_out_of_integration_leaves_the_queue_and_none_puts_a_task_in() 
     assert!(r.s.with(|tx| queue_of(tx, "api")).unwrap().is_empty(), "no entry left behind its task");
     assert_eq!(r.s.with(|tx| ops::move_to(tx, HUMAN, &r.id, INTEGRATION, 4)).unwrap_err(), format!("{} goes to INTEGRATION only by integrate: it queues its commit.", r.id));
     assert_eq!(call(&r, "move_task", json!({"id": r.id, "to": "INTEGRATION"})).unwrap_err(), format!("{} goes to INTEGRATION only by integrate: it queues its commit.", r.id));
+}
+
+#[test]
+fn ac187_an_agent_s_question_wait_or_move_never_takes_its_queued_task_out() {
+    let r = repo("iq-stays");
+    call(&r, "integrate", json!({"id": r.id, "result": result()})).unwrap();
+    let words = format!("{0} is queued for integration: the queue holds it and goes on with it by itself, also while it waits behind a red target, finishes it with its result when it lands, and tells you how it ends; nothing here needs a human. End your turn. To take it out on purpose, call execute_tool(\"withdraw_integration\", {{\"id\": \"{0}\"}}).", r.id);
+    let asked = "Why you are needed: x.\nRecommended:\n1. y.\nDetails: z.";
+    assert_eq!(call(&r, "ask_human", json!({"id": r.id, "questions": asked})).unwrap_err(), words);
+    assert_eq!(call(&r, "wait_for_task", json!({"id": r.id, "on": "API-9", "why": "x"})).unwrap_err(), words);
+    assert_eq!(call(&r, "finish_task", json!({"id": r.id, "result": result()})).unwrap_err(), words, "its result comes with its landing");
+    for to in ["IN PROGRESS", "TODO", "WAIT FOR HUMAN", "FAILED"] {
+        assert_eq!(call(&r, "move_task", json!({"id": r.id, "to": to})).unwrap_err(), words, "{to}");
+    }
+    assert_eq!(status(&r), INTEGRATION, "still queued");
+    assert_eq!(r.s.with(|tx| queue_of(tx, "api")).unwrap().len(), 1);
+    assert!(call(&r, "withdraw_integration", json!({"id": r.id})).is_ok(), "taken out on purpose");
 }
 
 #[test]

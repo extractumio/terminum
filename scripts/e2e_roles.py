@@ -23,6 +23,7 @@ from e2e_ws import BIN, Terminumd, check, summary, tmux_on, wait_for, wait_layou
 from e2e_remote import api  # noqa: E402
 from testrun import free_port, own, short_tmp  # noqa: E402
 from role_queue_checks import queue_promotion  # noqa: E402
+from role_supervisor_checks import ac231_supervisor_tools_pane_and_token  # noqa: E402
 
 FAKE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fake_agent.py")
 PORT, SOCKET = free_port(), own("tm-test-rol")
@@ -139,6 +140,9 @@ def main():
         check("AC-181 a program outside a pane runs a manager's tool with a manager's token", rc == 0 and '"name":"Fake"' in out, err or out)
         rc, out, err = cli("tool", "list_agents", token=low)
         check("AC-181 a worker's token is refused it", rc == 1 and 'No tool is named "list_agents"' in err, err or out)
+        rc, out, err = cli("tools", token=low)
+        check("AC-181 a worker's token discovers the worker catalog",
+              rc == 0 and "call as a worker" in out and "list_tasks" in out and "list_agents" not in out, err)
         rc, out, err = cli("tool", "list_tasks", token=low)
         check("AC-181 and reads its project's tasks", rc == 0 and out.startswith("A task's text"), err or out)
         rc, out, err = cli("tool", "list_tasks")
@@ -166,11 +170,21 @@ def main():
               done == "DONE" and mine.startswith(f"The project's manager ran task {task}") and "The project's manager's message: keep it short" in mine and "The human" not in mine.split("\n\n")[0], (done, prompts))
         history = json.dumps(call(f"/api/tasks/{task}")[1], ensure_ascii=False)
         check("AC-179 its message is kept on the task under the manager's name", "keep it short" in history and "Shell · manager" in history, [e for e in call(f"/api/tasks/{task}")[1]["history"] if e["kind"] == "comment"])
+        before = call(f"/api/tasks/{task}")[1]
+        out, rc = typed(boss, tool("run_task", id=task, agent="Fake", fresh="yes", queue="yes", comment="Do it again"))
+        check("AC-179 a stale manager cannot reopen DONE, even with fresh and queue", rc == "1" and f"{task} is DONE" in out and 'reopen "yes"' in out, out)
+        after = call(f"/api/tasks/{task}")[1]
+        fields = ("status", "history", "updated_at", "owner")
+        check("AC-179 refusal leaves the DONE card, session and history unchanged", all(after[field] == before[field] for field in fields) and after["session"]["key"] == before["session"]["key"], after)
+        out, rc = typed(boss, tool("run_task", id=task, agent="Fake", fresh="yes", reopen="yes"), 40)
+        check("AC-179 explicit reopen starts a new worker session", rc == "0" and f"{task} runs on Fake" in out, out)
+        reopened = wait_for(lambda: call(f"/api/tasks/{task}")[1], lambda card: card["status"] == "DONE" and card["session"]["key"] != before["session"]["key"], 30, 0.3, last=True)
+        check("AC-179 explicitly reopened work completes in its new private pane", reopened and reopened["status"] == "DONE" and reopened["session"]["key"] != before["session"]["key"], reopened)
         out, rc = typed(boss, tool("list_runs"))
         check("AC-179 list_runs shows the project's runs", rc == "0" and '"kind":"session"' in out, out)
 
         # AC-169: explicit queue promotion, through the manager's real pane, preserves a P0 conversation.
-        queue_promotion(t, call, typed, tool, boss, plain, project, FAKE)
+        waiting = queue_promotion(t, call, typed, tool, boss, plain, project, FAKE)
 
         # the project's sessions: read, typed into, closed; never its own, another manager's, another project's
         out, rc = typed(boss, tool("list_sessions"))
@@ -210,13 +224,42 @@ def main():
               and scheds[0]["author_name"] == "Shell · manager", (out, scheds))
         out, rc = typed(boss, tool("run_schedule", schedule="SCH-1"), 40)
         check("AC-182 run_schedule makes the schedule's task and starts it now", rc == "0" and "SCH-1 ran now: its task S_" in out, out)
-        ran = wait_for(lambda: call("/api/schedules")[1]["schedules"][0]["last"], lambda last: last and last["status"] == "DONE", 30, 0.3, last=True)
-        check("AC-182 its task runs to its end on the schedule's agent, the cadence as it was", ran and ran["status"] == "DONE" and call("/api/schedules")[1]["schedules"][0]["cron"] == "0 3 * * *", ran)
+        # a schedule's result is a report in the Inbox, its task DONE (terminum-reports.md AC-272)
+        ran = wait_for(lambda: call("/api/schedules")[1]["schedules"][0], lambda s: s["last"] and s["last"]["status"] == "DONE" and s["report"], 30, 0.3, last=True)
+        check("AC-182 AC-272 its task runs to its end on the schedule's agent, DONE, its result a report, the cadence as it was", ran and ran["last"]["status"] == "DONE" and ran["report"] and ran["cron"] == "0 3 * * *", ran)
         # its last run's session holds the one slot: the task waits, and once that session is a minute quiet
         # (terminum-dispatcher.md AC-141) it is closed for it and the task runs (terminum-schedules.md AC-161)
         st, said = call(f"/api/schedules/{scheds[0]['id']}/run", "POST", {})
         check("AC-182 Run now on its card does the same for a human", st == 200 and said.get("task", "").startswith("S_"), said)
         wait_for(lambda: call("/api/schedules")[1]["schedules"][0]["last"], lambda last: last and last["task"] == said.get("task") and last["status"] == "DONE", 150, 0.5)
+
+        # onboarding: the setup read and write and the charter, a manager's alone (AC-283, AC-284)
+        out, rc = typed(boss, tool("get_project_setup"))
+        check("AC-283 get_project_setup names the gaps and who closes them", rc == "0" and '"gaps"' in out and "you: set_supervisor_charter" in out
+              and "Supervisor tab: Level, then Enabled" in out, out)
+        out, rc = typed(plain, tool("get_project_setup"))
+        check("AC-283 a worker finds no setup tool", rc == "1" and 'No tool is named "get_project_setup"' in out, out)
+        # the letters stay: later checks find their tasks by ID (a rename is cargo test roles::setup's)
+        out, rc = typed(boss, tool("update_project_setup", agents_at_once="3"))
+        shown, _ = typed(boss, tool("get_project_setup"))
+        check("AC-283 update_project_setup sets agents at once as the window would", rc == "0" and "Changed: agents at once." in out
+              and '"agents_at_once":3' in shown, (out, shown))
+        out, rc = typed(boss, tool("update_project_setup", agents_at_once=""))
+        shown, _ = typed(boss, tool("get_project_setup"))
+        check("AC-283 an empty agents_at_once goes back to no limit", rc == "0" and '"agents_at_once":null' in shown, (out, shown))
+        out, rc = typed(boss, tool("update_project_setup", auto="on"))
+        check("AC-283 Auto-Dispatcher is no field of a manager's", rc == "1" and "auto: not a setup field" in out, out)
+        revision = call(f"/api/task-projects/{project}/supervisor/settings")[1]["revision"]
+        charter = json.dumps({"mission": "A managed fixture.", "users": ["Its tests"]})
+        out, rc = typed(boss, tool("set_supervisor_charter", revision=str(revision), charter=charter))
+        saved = call(f"/api/task-projects/{project}/supervisor/settings")[1]
+        check("AC-284 set_supervisor_charter saves the charter while the Supervisor is off", rc == "0" and saved["revision"] == revision + 1
+              and saved["settings"]["charter"]["mission"] == "A managed fixture.", (out, saved["settings"]["charter"]))
+        supervisor_page = t.page(secret)
+        try:
+            ac231_supervisor_tools_pane_and_token(t, call, typed, tool, tmux, supervisor_page, project, work, boss, plain, cli, waiting, token)
+        finally:
+            supervisor_page.close()
         log = t.log()
         check("AC-174 each manager's call is a line of the log, with no argument", "manager.tool" in open(t.log_path).read() and "keep it short" not in open(t.log_path).read(), log[-300:])
     finally:

@@ -45,16 +45,23 @@ pub struct Schedule {
     pub created_at: i64,
     pub updated_at: i64,
     pub deleted_at: Option<i64>,
+    #[serde(skip)]
+    pub supervisor_review: bool,
+    #[serde(skip)]
+    pub supervisor_audit: bool,
 }
 
 const SELECT: &str = "SELECT s.id, s.number, s.project, s.title, s.body, s.severity, s.agent_id, s.cron, s.once_at, s.budget_seconds, s.paused, s.paused_why,
-    s.last_due, u.name, s.created_at, s.updated_at, s.deleted_at, u.kind = 'agent' FROM schedules s JOIN users u ON u.id = s.author";
+    s.last_due, u.name, s.created_at, s.updated_at, s.deleted_at, u.kind = 'agent',
+    (SELECT audit FROM supervisor_scheduled_reviews v WHERE v.schedule = s.id AND v.project = s.project)
+    FROM schedules s JOIN users u ON u.id = s.author";
 
 fn of_row(r: &Row) -> rusqlite::Result<Schedule> {
+    let audit: Option<bool> = r.get(18)?;
     Ok(Schedule {
         id: r.get(0)?, key: format!("SCH-{}", r.get::<_, i64>(1)?), project: r.get(2)?, title: r.get(3)?, body: r.get(4)?, severity: r.get(5)?,
         agent: r.get(6)?, cron: r.get(7)?, once_at: r.get(8)?, budget_seconds: r.get(9)?, paused: r.get::<_, i64>(10)? != 0, paused_why: r.get(11)?,
-        last_due: r.get(12)?, author_name: r.get(13)?, created_at: r.get(14)?, updated_at: r.get(15)?, deleted_at: r.get(16)?, by_manager: r.get(17)?,
+        last_due: r.get(12)?, author_name: r.get(13)?, created_at: r.get(14)?, updated_at: r.get(15)?, deleted_at: r.get(16)?, by_manager: r.get(17)?, supervisor_review: audit.is_some(), supervisor_audit: audit == Some(true),
     })
 }
 
@@ -166,7 +173,7 @@ impl Given {
         Schedule {
             id: String::new(), key: "SCH-?".into(), project: self.project.clone(), title: self.title.clone(), body: self.body.clone(), severity: self.severity.clone(),
             agent: self.agent.clone(), cron: self.cron.clone(), once_at: self.once_at, budget_seconds: self.budget_seconds, paused: self.paused, paused_why: None,
-            last_due: 0, author_name: String::new(), by_manager: false, created_at: 0, updated_at: 0, deleted_at: None,
+            last_due: 0, author_name: String::new(), by_manager: false, created_at: 0, updated_at: 0, deleted_at: None, supervisor_review: false, supervisor_audit: false,
         }
     }
 }
@@ -182,7 +189,8 @@ fn check_when(when: &When, now: i64) -> Result<(), String> {
 
 /// The keys of the schedules keeping a slot of `agent`, `but` one not counted.
 pub fn kept_on(tx: &Transaction, agent: &str, but: Option<&str>) -> Result<Vec<String>, String> {
-    rows(tx, "SELECT 'SCH-' || number FROM schedules WHERE agent_id = ?1 AND paused = 0 AND deleted_at IS NULL AND id IS NOT ?2 ORDER BY number",
+    rows(tx, "SELECT 'SCH-' || number FROM schedules WHERE agent_id = ?1 AND paused = 0 AND deleted_at IS NULL AND id IS NOT ?2
+        AND NOT EXISTS (SELECT 1 FROM supervisor_scheduled_reviews v WHERE v.schedule = schedules.id) ORDER BY number",
          (agent, but), |r| r.get(0))
 }
 
@@ -193,16 +201,18 @@ pub struct Kept {
     pub slots: i64,
     pub schedules: usize,
     pub integration: bool,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub supervisor: bool,
 }
 
 impl Kept {
     fn of(schedules: usize, integration: bool) -> Kept {
-        Kept { slots: slots_for(schedules), schedules, integration }
+        Kept { slots: slots_for(schedules), schedules, integration, supervisor: false }
     }
 
     /// Every slot it keeps.
     pub fn total(&self) -> i64 {
-        self.slots + i64::from(self.integration)
+        self.slots + i64::from(self.integration) + i64::from(self.supervisor)
     }
 
     /// How they stand among the holders of a full agent: "2 kept for 3 schedules; 1 kept for integration".
@@ -214,6 +224,7 @@ impl Kept {
         if self.integration {
             out.push("1 kept for integration".to_string());
         }
+        if self.supervisor { out.push("1 kept for Supervisor work".into()); }
         out
     }
 }
@@ -230,13 +241,27 @@ fn plural(n: impl Into<i64>) -> &'static str {
 /// The slots each agent keeps, by agent.
 pub fn kept_by_agent(tx: &Transaction) -> Result<std::collections::BTreeMap<String, Kept>, String> {
     let mut by = std::collections::BTreeMap::<String, Kept>::new();
-    for (agent, n) in rows(tx, "SELECT agent_id, count(*) FROM schedules WHERE paused = 0 AND deleted_at IS NULL GROUP BY agent_id", [], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))? {
+    for (agent, n) in rows(tx, "SELECT agent_id, count(*) FROM schedules WHERE paused = 0 AND deleted_at IS NULL
+        AND NOT EXISTS (SELECT 1 FROM supervisor_scheduled_reviews v WHERE v.schedule = schedules.id) GROUP BY agent_id", [], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))? {
         by.insert(agent, Kept::of(n as usize, false));
     }
     // a project's integration agent keeps one slot for a red batch, however many projects name it (terminum-integration.md AC-194)
     for agent in rows(tx, "SELECT DISTINCT agent FROM project_integration WHERE is_on = 1 AND agent IS NOT NULL", [], |r| r.get::<_, String>(0))? {
         by.entry(agent).or_default().integration = true;
     }
+    for (agent, at_once) in rows(tx, "SELECT DISTINCT a.id, a.at_once FROM project_supervisor p
+        JOIN projects j ON j.id = p.project AND j.host IS NULL
+        JOIN supervisor_settings s USING (project) JOIN agents a ON a.project = p.project
+        WHERE p.enabled = 1 AND a.id IN (json_extract(s.pack, '$.tiers.small'),
+            json_extract(s.pack, '$.tiers.medium'), json_extract(s.pack, '$.tiers.strong'), json_extract(s.pack, '$.tiers.independent'))
+        UNION SELECT r.agent_id, NULL FROM supervisor_rounds q JOIN runs r ON r.id = q.run WHERE q.ended_at IS NULL
+        UNION SELECT s.agent_id, NULL FROM schedules s JOIN supervisor_scheduled_reviews v ON v.schedule = s.id
+            WHERE s.deleted_at IS NULL AND s.paused = 0",
+        [], |r| Ok((r.get::<_, String>(0)?, r.get::<_, Option<i64>>(1)?)))? {
+        let kept = by.entry(agent).or_default();
+        kept.supervisor |= at_once.is_none_or(|at_once| kept.total() < at_once);
+    }
+    by.retain(|_, kept| kept.total() > 0);
     Ok(by)
 }
 
@@ -245,10 +270,14 @@ pub(super) fn integrates(tx: &Transaction, agent: &str) -> Result<bool, String> 
     Ok(tx.query_row("SELECT 1 FROM project_integration WHERE is_on = 1 AND agent = ?1", [agent], |_| Ok(())).optional().map_err(sql)?.is_some())
 }
 
-/// What the agent keeps for schedules `keys` and integration: "Opus reviewer keeps 1 slot for 2 schedules:
-/// SCH-1, SCH-2, and 1 for integration", and how many slots that is.
-pub(super) fn kept_words(name: &str, keys: &[String], integration: bool) -> (String, i64) {
-    let k = Kept::of(keys.len(), integration);
+/// Whether this agent has a slot kept for Supervisor investigations.
+pub(super) fn supervises(tx: &Transaction, agent: &str) -> Result<bool, String> {
+    Ok(kept_by_agent(tx)?.get(agent).is_some_and(|kept| kept.supervisor))
+}
+
+/// Where the agent keeps its slots, and their total.
+pub(super) fn kept_words(name: &str, keys: &[String], integration: bool, supervisor: bool) -> (String, i64) {
+    let k = Kept { supervisor, ..Kept::of(keys.len(), integration) };
     let mut parts = Vec::new();
     if k.slots > 0 {
         parts.push(format!("{} slot{} for {} schedule{}: {}", k.slots, plural(k.slots), keys.len(), plural(keys.len() as i64), keys.join(", ")));
@@ -256,18 +285,23 @@ pub(super) fn kept_words(name: &str, keys: &[String], integration: bool) -> (Str
     if k.integration {
         parts.push(if parts.is_empty() { "1 slot for integration" } else { "1 for integration" }.to_string());
     }
+    if k.supervisor {
+        parts.push(if parts.is_empty() { "1 slot for Supervisor work" } else { "1 for Supervisor work" }.into());
+    }
     (format!("{name} keeps {}", parts.join(", and ")), k.total())
 }
 
 /// The slots it would keep fit its agent's at once, unless it is paused (AC-161): ceil(N / 2) with it among N, and
 /// integration's.
-fn check_slot(tx: &Transaction, given: &Given, id: Option<&str>) -> Result<(), String> {
+fn check_slot(tx: &Transaction, given: &Given, id: Option<&str>, review: bool) -> Result<(), String> {
     let a = agents::chosen(tx, &given.agent, &given.project)?;
     let kept = kept_on(tx, &a.id, id)?;
     let integration = integrates(tx, &a.id)?;
-    let with = Kept::of(kept.len() + 1, integration).total();
+    let supervisor = supervises(tx, &a.id)?;
+    let with = Kept { supervisor: supervisor || review,
+        ..Kept::of(kept.len() + usize::from(!review), integration) }.total();
     if !given.paused && with > a.at_once {
-        let (words, _) = kept_words(&a.name, &kept, integration);
+        let (words, _) = kept_words(&a.name, &kept, integration, supervisor);
         let this = match id {
             Some(id) => by_id(tx, id)?.key,
             None => "this one".to_string(),
@@ -322,11 +356,19 @@ pub fn on_cards(tx: &Transaction, keys: &[&str]) -> Result<std::collections::Has
 
 /// Keeps a new one by `author`. Its id and key.
 pub fn add(tx: &Transaction, author: &str, given: &Given, now: i64) -> Result<(String, String), String> {
+    add_with(tx, author, given, now, false)
+}
+
+pub(crate) fn add_review(tx: &Transaction, given: &Given, now: i64) -> Result<(String, String), String> {
+    add_with(tx, super::store::HUMAN, given, now, true)
+}
+
+fn add_with(tx: &Transaction, author: &str, given: &Given, now: i64, review: bool) -> Result<(String, String), String> {
     let count: i64 = tx.query_row("SELECT count(*) FROM schedules WHERE deleted_at IS NULL", [], |r| r.get(0)).map_err(sql)?;
     if count >= MOST {
         return Err(format!("A store keeps {MOST} schedules: delete one first."));
     }
-    check_slot(tx, given, None)?;
+    check_slot(tx, given, None, review)?;
     let id = crate::auth::crypto::random_hex::<8>();
     let number: i64 = tx.query_row("SELECT coalesce(max(number), 0) + 1 FROM schedules", [], |r| r.get(0)).map_err(sql)?;
     tx.execute("INSERT INTO schedules (id, number, project, title, body, severity, agent_id, cron, once_at, budget_seconds, paused, last_due, author, created_at, updated_at)
@@ -339,7 +381,15 @@ pub fn add(tx: &Transaction, author: &str, given: &Given, now: i64) -> Result<(S
 /// paused by this save, so a task of it waiting for room is called off.
 pub fn change(tx: &Transaction, author: &str, id: &str, given: &Given, now: i64) -> Result<bool, String> {
     let was = by_id(tx, id)?;
-    check_slot(tx, given, Some(id))?;
+    if was.supervisor_audit && (was.project != given.project || was.agent != given.agent
+        || given.cron.as_deref() != Some(crate::supervisor::audit::CRON))
+    {
+        return Err("The quarterly audit uses its own project, independent agent and calendar quarter cadence.".into());
+    }
+    if was.supervisor_review && (was.project != given.project || given.cron.is_none()) {
+        return Err("A Supervisor review stays in its project and needs a recurring cadence.".into());
+    }
+    check_slot(tx, given, Some(id), was.supervisor_review)?;
     tx.execute("UPDATE schedules SET project = ?2, title = ?3, body = ?4, severity = ?5, agent_id = ?6, cron = ?7, once_at = ?8, budget_seconds = ?9, paused = ?10,
                 paused_why = CASE WHEN ?10 = 0 THEN NULL ELSE paused_why END, last_due = ?11, author = ?12, updated_at = ?11 WHERE id = ?1",
                rusqlite::params![id, given.project, given.title, given.body, given.severity, given.agent, given.cron, given.once_at, given.budget_seconds, given.paused as i64, now, author]).map_err(sql)?;
@@ -360,7 +410,7 @@ pub fn pause(tx: &Transaction, id: &str, why: &str, now: i64) -> Result<(), Stri
 /// What the board shows of each schedule (AC-163): its next runs, its cadence in words, its last task, why that
 /// one did not start, and the firings skipped since it.
 pub fn listed(tx: &Transaction, now: i64) -> Result<Vec<Value>, String> {
-    let mut out = Vec::new();
+    let (mut out, reports) = (Vec::new(), crate::reports::inbox::by_schedule(tx)?);
     for s in all(tx)? {
         let next = match (s.when(), s.paused) {
             (Ok(when), false) => when.upcoming(now, 3),
@@ -375,6 +425,10 @@ pub fn listed(tx: &Transaction, now: i64) -> Result<Vec<Value>, String> {
         v["next"] = json!(next);
         v["last"] = json!(last.map(|t| json!({"task": t.id, "status": t.status})));
         v["skipped"] = json!(skipped);
+        // its last report and how many of its reports are unread, in place of a waiting report (terminum-reports.md AC-272)
+        let report = reports.get(&s.id);
+        v["report"] = json!(report.map(|(id, at, _)| json!({"id": id, "at": at})));
+        v["unread"] = json!(report.map_or(0, |r| r.2));
         v["failed_why"] = json!(never_started(tx, &s)?.map(|(_, why)| why));
         out.push(v);
     }

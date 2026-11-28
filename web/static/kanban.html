@@ -19,7 +19,9 @@
 <link rel="stylesheet" href="tmux.css">
 <link rel="stylesheet" href="projects.css">
 <link rel="stylesheet" href="listdrag.css">
+<link rel="stylesheet" href="inbox.css">
 <link rel="stylesheet" href="kanban.css">
+<link rel="stylesheet" href="supervisor.css">
 <link rel="stylesheet" href="controls.css">
 <link rel="stylesheet" href="askfold.css">
 <link rel="stylesheet" href="boardphone.css">
@@ -115,6 +117,7 @@
   </aside>
   <div id="scrim"></div>
   <dialog id="rowmenu" class="box" role="menu" aria-label="Session"></dialog>
+  <dialog id="reportmenu" class="box" role="menu" aria-label="Report"></dialog>
   <dialog id="cardmenu" class="box" role="menu" aria-label="Task"></dialog>
   <section id="main">
 <header id="bar" class="wavebar">
@@ -138,7 +141,7 @@
   <!-- The lines of #asks folded into two counters where the buttons float (terminum-kanban.md AC-117, askfold.js); a phone's Find key (AC-105). -->
   <div id="askcount" hidden><button class="askn failed" data-kind="failed" type="button" aria-expanded="false" aria-controls="asks" hidden></button><button class="askn waiting" data-kind="waiting" type="button" aria-expanded="false" aria-controls="asks" hidden></button></div>
   <button id="findkey" class="icon" type="button" aria-expanded="false" aria-controls="filters" title="Find and filters" aria-label="Find and filters"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:18px"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></svg></button>
-  <div id="boardacts"><span id="autokeys" role="group" aria-label="Auto-Dispatch"><button id="autoswitch" class="textkey" type="button" role="switch" aria-checked="false"><span class="word">Auto-Dispatch</span><span id="autostate">OFF</span><span class="track" aria-hidden="true"></span></button></span><button id="projectcog" class="icon" type="button" title="The project's settings" aria-label="The project's settings" aria-haspopup="dialog"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915"/><circle cx="12" cy="12" r="3"/></svg></button></div>
+  <div id="boardacts"><span id="autokeys" role="group" aria-label="Auto-Dispatch"><button id="autoswitch" class="textkey" type="button" role="switch" aria-checked="false"><span class="word">Auto-Dispatch</span><span id="autostate">OFF</span><span class="track" aria-hidden="true"></span></button></span><button id="keyhelpbtn" class="icon" type="button" title="Keyboard shortcuts (⌘/, Ctrl+/ elsewhere)" aria-label="Keyboard shortcuts"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/><path d="M10 8h.01"/><path d="M12 12h.01"/><path d="M14 8h.01"/><path d="M16 12h.01"/><path d="M18 8h.01"/><path d="M6 8h.01"/><path d="M7 16h10"/><path d="M8 12h.01"/></svg></button><button id="projectcog" class="icon" type="button" title="The project's settings" aria-label="The project's settings" aria-haspopup="dialog"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915"/><circle cx="12" cy="12" r="3"/></svg></button></div>
 </header>
 <div id="boardbanner" class="banner" role="status" hidden></div>
 <div id="asks" aria-live="polite" hidden></div>
@@ -146,15 +149,16 @@
      by theirs (kanbanrail.js), folded to one strip with their add key; Task Management's is a plain head. -->
 <div id="pool"><section id="agentbar" class="railed" aria-labelledby="railpool"><h2 class="rail"><button id="railpool" class="railkey" type="button" aria-expanded="true" aria-controls="agentgrid"><svg class="lu chev" viewBox="0 0 24 24" aria-hidden="true" style="--s:12px"><path d="m6 9 6 6 6-6"/></svg><span class="railword">Agent Pool</span><span class="railsum"></span></button><button class="railadd icon" type="button" aria-label="Add agent" title="Add an agent to a project's pool" hidden><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M5 12h14"/><path d="M12 5v14"/></svg></button></h2>
 <!-- + Session on an agent's card with a first prompt (terminum-dispatcher.md AC-204; kanbansessbox.js): a dock under the pool, not a dialog, so task cards can be dragged onto it -->
-<form id="sesscompose" class="sessdock" aria-labelledby="sesshead" hidden>
+<form id="sesscompose" class="sessdock" data-keyscope aria-labelledby="sesshead" hidden>
   <div class="sesshead"><h3 id="sesshead">+ Session on <span id="sessagent"></span></h3><button id="sessclose" class="icon x" type="button" title="Close, keep the text (Esc)" aria-label="Close"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
   <div class="xbox"><textarea id="sesstext" class="field taskmd droparea" rows="3" aria-label="Its first prompt" placeholder="What should it do? Paste or drop files; drop tasks to name them."></textarea></div>
   <ul id="sessfiles" class="filelist"></ul>
   <p id="sesserror" class="error" role="alert" hidden></p>
-  <div class="sessfoot"><button id="sessadd" class="textkey" type="button">Add files…</button><input id="sessfile" type="file" multiple hidden>
+  <div class="sessfoot" data-keyrow><button id="sessadd" class="textkey" type="button">Add files…</button><input id="sessfile" type="file" multiple hidden>
     <span class="hint">Drop tasks or files here · ⌘Enter starts</span>
     <button id="sessdiscard" class="textkey danger" type="button" hidden>Discard</button><button id="sessstart" class="textkey primary" type="submit" title="Start the session; with no text nothing is typed">Start</button></div>
-</form></section>
+</form>
+<p id="sessdone" class="sessdone" role="status" hidden><span></span><button class="icon x" type="button" title="Close" aria-label="Close"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:13px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></p></section>
 <section id="schedbar" class="railed" aria-labelledby="railsched"><h2 class="rail"><button id="railsched" class="railkey" type="button" aria-expanded="false" aria-controls="schedgrid"><svg class="lu chev" viewBox="0 0 24 24" aria-hidden="true" style="--s:12px"><path d="m6 9 6 6 6-6"/></svg><span class="railword">Routines</span><span class="railsum"></span></button><button class="railadd icon" type="button" aria-label="Add routine" title="Add a routine: a task that runs on a cadence on one agent" hidden><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M5 12h14"/><path d="M12 5v14"/></svg></button></h2></section></div>
 <div id="colswitch" class="seg" role="tablist" aria-label="Columns"></div>
 <button id="poolline" class="textkey" type="button" aria-haspopup="dialog" aria-controls="pool" title="Auto-Dispatch, the agents and the routines"></button>
@@ -221,7 +225,7 @@
       <button id="newadd" type="button">Add files…</button>
       <button id="newdiscard" type="button" class="danger">Discard</button>
       <button id="newcreate" type="button" class="fromright">Create</button>
-      <button id="newrun" type="button" class="primary" title="Create it and start it on the agent chosen">Run</button>
+      <button id="newrun" type="button" class="primary" data-key="Enter" title="Create it and start it on the agent chosen">Run</button>
     </div>
   </form>
 </dialog>
@@ -300,7 +304,7 @@
   <form method="dialog" id="projectform">
     <div class="dhead"><h2 id="projecthead">New project</h2><button class="icon x" type="button" title="Close (Esc)" aria-label="Close"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
     <div id="projecttabs" class="seg projtabs" role="tablist" aria-label="The project's settings">
-      <button id="projecttabgeneral" type="button" role="tab" data-tab="general" aria-selected="true">General</button><button id="projecttabagents" type="button" role="tab" data-tab="agents" aria-selected="false">Agents</button><button id="projecttabauto" type="button" role="tab" data-tab="auto" aria-selected="false">Auto-Dispatch</button><button id="projectintegration" type="button" role="tab" data-tab="integration" aria-selected="false">Integration</button><button id="projectlimits" type="button" role="tab" data-tab="limits" aria-selected="false">Memory limits</button><button id="projectarchived" type="button" role="tab" data-tab="archived" aria-selected="false">Archived</button>
+      <button id="projecttabgeneral" type="button" role="tab" data-tab="general" aria-selected="true">General</button><button id="projecttabagents" type="button" role="tab" data-tab="agents" aria-selected="false">Agents</button><button id="projecttabauto" type="button" role="tab" data-tab="auto" aria-selected="false">Auto-Dispatch</button><button id="projectintegration" type="button" role="tab" data-tab="integration" aria-selected="false">Integration</button><button id="projectsupervisor" type="button" role="tab" data-tab="supervisor" aria-selected="false" aria-controls="supervisorpanel">Supervisor</button><button id="projectlimits" type="button" role="tab" data-tab="limits" aria-selected="false">Memory limits</button><button id="projectarchived" type="button" role="tab" data-tab="archived" aria-selected="false">Archived</button>
     </div>
     <section class="projpanel" data-tab="general" role="tabpanel">
     <div id="projectfields">
@@ -345,6 +349,7 @@
         <label class="fieldrow">Wait in TODO before it is taken, minutes <input id="autowait" class="field" type="number" min="0" max="1440" step="1" inputmode="numeric"><span class="colempty">0 to 1440.</span></label>
         <label class="fieldrow">Most tasks it starts in 24 hours <input id="automost" class="field" type="number" min="1" max="1000" step="1" inputmode="numeric"><span id="autoday" class="colempty"></span></label>
       </div>
+      <label class="fieldrow checkrow">Include Supervisor tasks <input id="autosupervisor" type="checkbox"></label>
       <dl id="autorules">
         <dt>What it takes</dt><dd>TODO tasks of the severities ticked that nobody runs, made, moved or edited no later than the wait ago: one still being written is left; a comment does not start the wait anew. A task it started once it starts again only after you move or edit it. A task with subtasks still to do waits for them.</dd>
         <dt>In what order</dt><dd class="byorder">P0 first, then saved task order, each task while its agent has a free slot. The columns' display sort does not change which task starts. No agent reads the tasks: one whose text does not say what to do starts all the same. A task runs on the agent named in its window, else on the default one.</dd><dd class="byagent">P0 first, then saved task order, independent of the columns' display sort. A round, one more session of the picking agent that takes no slot, is given the first few tasks for each free slot; it reads them, scores them by RICE (reach, impact, confidence, effort) and starts the best; one round at a time over all projects, the project that waited longest first. What it leaves with a slot still free is passed over for a day, unless you move or edit it, and the next round gets the tasks below; after a round that started nothing it rests half an hour, unless a task is made or changed. A task runs on the agent named in its window, else on the default one.</dd>
@@ -384,6 +389,17 @@
       </div>
       <p id="integrationerror" role="alert" hidden></p>
     </section>
+    <section id="supervisorpanel" class="projpanel supervisor" data-tab="supervisor" role="tabpanel" aria-labelledby="projectsupervisor" hidden>
+      <div class="sv-actions">
+        <label class="fieldrow checkrow sv-touch">Enabled <input id="supervisoron" role="switch" type="checkbox" disabled></label>
+        <a id="supervisorscreen" class="textkey">Open Supervisor screen</a>
+      </div>
+      <div class="sv-actions"><p id="supervisorscan" class="colempty" role="status"></p>
+        <button id="supervisorrefresh" class="textkey" type="button" hidden>Refresh scan</button></div>
+      <p id="supervisorswitcherror" role="alert" hidden></p>
+      <p id="supervisorsaveerror" role="alert" hidden></p>
+      <div id="supervisorsettings"></div>
+    </section>
     <section id="limitspanel" class="projpanel" data-tab="limits" role="tabpanel" hidden>
       <p id="limitstext" class="colempty">terminum adds up the memory of the agent's processes every 30 s. Two readings in a row over Warn tell the agent; over End its tasks fail and it is ended. Nothing stops a process between readings: this is a watch, not a limit the system holds.</p>
       <p id="limitsfor" class="colempty"></p>
@@ -407,6 +423,7 @@
       <button id="projectok" type="button" class="primary">Create</button>
       <button id="autook" type="button" hidden class="primary">Save</button>
       <button id="integrationok" type="button" hidden class="primary">Save</button>
+      <button id="supervisorok" type="button" hidden class="primary">Save</button>
       <button id="limitsok" type="button" hidden class="primary">Save</button>
     </div>
   </form>

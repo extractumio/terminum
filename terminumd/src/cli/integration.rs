@@ -10,7 +10,7 @@ use serde_json::{json, Value};
 use super::tool::{ask, caller, Caller};
 use super::Ctx;
 
-pub const USAGE: &str = "usage: terminum integration queue <ID> --result-file <path> [--commit <sha>] [--wait] | wait <ID> | status [<ID>]";
+pub const USAGE: &str = "usage: terminum integration queue <ID> --result-file <path> [--commit <sha>] [--wait] | wait <ID> | status [<ID>] | verify-review";
 /// How often a waiting command asks.
 const BEAT: Duration = Duration::from_secs(5);
 /// How long a waiting command bears terminumd gone: a project's After may restart it.
@@ -22,8 +22,20 @@ pub fn run(ctx: &Ctx, rest: &[String]) -> Result<i32, String> {
         [w, id] if w == "wait" => wait(ctx, &caller(ctx)?, id),
         [s] if s == "status" => status(ctx, None),
         [s, id] if s == "status" => status(ctx, Some(id)),
+        [v] if v == "verify-review" => verify_review(ctx),
         _ => Err(USAGE.into()),
     }
+}
+
+fn verify_review(ctx: &Ctx) -> Result<i32, String> {
+    let required = |k| ctx.var(k).ok_or("Run verify-review inside the project's integration Verify stage.");
+    let body = json!({"task":required("TM_INTEGRATION_TASK")?,
+        "sha":required("TM_INTEGRATION_SHA")?,"pane":required("TMUX_PANE")?});
+    let result = super::commands::checked(ctx, "POST", "/integration/verify-review", Some(body))?;
+    if result["pass"] == true { return Ok(0); }
+    let message = result["message"].as_str().ok_or("Verify did not return a result.")?;
+    eprintln!("{message}");
+    Ok(crate::supervisor::verify_review::MISSING_EXIT)
 }
 
 /// `queue <ID> --result-file <path> [--commit <sha>] [--wait]`: integrate's answer; with --wait, wait's end.

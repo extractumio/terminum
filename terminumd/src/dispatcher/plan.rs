@@ -81,6 +81,10 @@ pub enum Act {
     Say(String),
     /// Asks the agent for its result, through the gate: once a quiet stop, NUDGES a run at most.
     Nudge,
+    /// One request per subagent that reached the first silence threshold (AC-127).
+    SubagentTell(Vec<String>),
+    /// A watchdog failure was written; show its reason (AC-127).
+    SubagentFailed(String),
     /// Gives the agent the last warning: seconds left of the budget (AC-126).
     Warn(i64),
     /// Ends the agent: the task was moved first, so its end counts for nothing (AC-123).
@@ -114,7 +118,7 @@ pub fn warn_due(run: &Run) -> bool {
 
 /// The task fails first, so the end Dispatcher causes counts for nothing; then the agent ends. Ending until it is
 /// done: a restart does it again, new work or Give up calls it off (AC-126).
-fn end_failed(run: &mut Run, acts: &mut Vec<Act>, words: String) {
+pub(super) fn end_failed(run: &mut Run, acts: &mut Vec<Act>, words: String) {
     run.state = Phase::Ending;
     acts.push(Act::Move { to: "FAILED", words });
     acts.push(Act::End);

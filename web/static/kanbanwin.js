@@ -7,13 +7,15 @@
 import { askConfirm, choose, oneAtATime } from "./dialogs.js";
 import { batchPart } from "./kanbanbatch.js";
 import { el, iconButton, read, write } from "./listparts.js";
-import { $, SEVERITIES, agentChip, agentsOf, api, button, download, fillSelect, guardQueuedRun, knownAgent, onFiles, onSend, madeChanged, renderInto, row, say, sessionOptions, statusTag, upload, withFileLink, withoutFileLinks, goneFiles, goneSaid, FILE_GONE, writePreview } from "./kanbanutil.js";
+import { $, SEVERITIES, agentChip, agentsOf, api, button, download, fillSelect, guardQueuedRun, knownAgent, onFiles, onSend, madeChanged, renderInto, row, say, sessionOptions, statusTag, upload, withFileLink, withoutFileLinks, goneFiles, goneSaid, sayRefused, writePreview } from "./kanbanutil.js";
 import { taskBoxes } from "./taskboxes.js";
 import { activity, editor } from "./kanbanactivity.js";
+import { answerKeys } from "./kanbananswer.js";
 import { family } from "./kanbansubs.js";
 import { expandable } from "./expand.js";
 import { waitWords } from "./cardstate.js";
 import { detailsPane } from "./taskattrs.js";
+import { openReport } from "./reportlink.js";
 
 // a text or a comment being edited; one saved or cancelled is off (refresh) and holds nothing
 const EDITS = ".tasktext textarea:not(:disabled), .markdown textarea:not(:disabled)";
@@ -287,7 +289,7 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
     if (!n.area.value.trim()) return;
     try {
       await api(`/api/tasks/${t.id}/comments`, { method: "POST", body: { text: n.area.value, files: n.dropped() } });
-    } catch (e) { if (e.message !== FILE_GONE || !await n.prune()) say(e.message); return; }   // a file let go meanwhile: named, the rest kept
+    } catch (e) { await sayRefused(e, n.prune); return; }   // a file let go meanwhile: named, the rest kept
     n.sent();
   }
 
@@ -299,8 +301,9 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
     try { await commentWork(() => work(current)); } finally {
       await refresh(false, true);                  // the action held any task changes it heard while busy
       note?.wait();
-      if (current() && box.contains(focused) && focused.isConnected && !focused.matches(":disabled")
-        && (document.activeElement === document.body || document.activeElement === box)) focused.focus({ preventScroll: true });
+      const restore = focused?.matches(".question-choices button") ? body.querySelector(".choice-saved") ?? focused : focused;
+      if (current() && box.contains(restore) && restore.isConnected && !restore.matches(":disabled")
+        && (document.activeElement === document.body || document.activeElement === box)) restore.focus({ preventScroll: true });
     }
   }
 
@@ -312,7 +315,7 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
     return commentAction(n, async (current) => {
       try {
         if (await runs.open([t], { words: n.area.value, files: n.dropped(), current, scratch, prefer: t.runs_on, atOnce: !scratch }) !== true) return;
-      } catch (e) { if (e.message !== FILE_GONE || !await n.prune()) say(e.message); return; }
+      } catch (e) { await sayRefused(e, n.prune); return; }
       n.sent();
       if (current()) await tryClose();
     });
@@ -333,6 +336,7 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
     if (commentId !== t.id) {
       commentSave = button("fromright", "Save");
       commentRun = button(null, "Run");
+      commentRun.dataset.key = "Enter";          // ⌘⇧↩: the comment written goes with it, and the window closes (AC-282)
       for (const key of [commentSave, commentRun]) key.addEventListener("click", flushKeys); // before its action handler
       commentId = t.id;
     }
@@ -340,13 +344,20 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
     const busy = t.waits || (t.run_holds && t.status === "IN PROGRESS"), on = firstOn(t);
     save.classList.toggle("primary", Boolean(busy));
     save.onclick = () => commentAction(n, () => keepComment(n, t));
-    run.classList.toggle("primary", !busy);
+    // its agent's question waits: Answer stands for Run, Continue with Recommended beside Archive (terminum-dispatcher.md AC-285)
+    const asked = t.asked ? answerKeys(t, n, { act: commentAction, runs, tryClose, refresh }) : null;
+    // its label written only when it changes: a redraw under a held key would lose WebKit's click (AC-122)
+    const label = asked ? "Answer" : "Run";
+    if (run.textContent !== label) run.textContent = label;
     run.onclick = () => runTask(t);
+    asked?.bind(run);
     n.keys = [save, run];
     n.wait = () => {
       const waiting = n.uploads > 0 || Boolean(box.dataset.busy);
       save.disabled = waiting || !n.area.value.trim();
-      run.title = on ? `Run it on ${on}, with this comment` : "Run it with this comment";
+      if (asked) return asked.wait(run, waiting);
+      const said = n.area.value.trim() ? "Send this comment and run it" : "Run it";
+      run.title = `${on ? `On ${on}: ` : ""}${said}; the window closes`;
       guardQueuedRun(run, t.waits);
       run.disabled ||= waiting;
     };
@@ -358,13 +369,16 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
     // a RUN waiting for its agent's room is called off by this; the task stays where it is (AC-158)
     const stopWaiting = waitWords(t) ? button(null, "Stop waiting", () => api(`/api/tasks/${t.wait_task ?? t.id}/leave-queue`, { method: "POST" }).then(() => refresh(), (e) => say(e.message))) : null;
     if (stopWaiting) stopWaiting.title = `${waitWords(t)}: call it off, ${t.waits_for ? "Dispatcher will not go on with it" : "nothing starts"}`;
-    // a task nobody needs leaves the board by this (AC-118); it stands where it stood when it comes back
-    const shelve = button(null, t.archived_at ? "Bring back" : "Archive", () => api(`/api/tasks/${t.id}/archive`, { method: "POST", body: { on: !t.archived_at } }).then(() => refresh(), (e) => say(e.message)));
+    // a task nobody needs leaves the board by this (AC-118), and its window closes: nothing is left to do there
+    // (AC-282); refused, it stays and says why. It stands where it stood when it comes back, its window open.
+    const shelve = asked?.archive ?? button(null, t.archived_at ? "Bring back" : "Archive", () => api(`/api/tasks/${t.id}/archive`, { method: "POST", body: { on: !t.archived_at } })
+      .then(async () => { if (t.archived_at || shown?.id !== t.id || !await tryClose()) refresh(); }, (e) => say(e.message)));
+    run.classList.toggle("primary", !busy);
     // its keys at the window's foot, in sight while the task scrolls above them
     const acts = $("taskacts"), paint = () => {
       for (const key of [...acts.children]) if (key !== save && key !== run) key.remove();
       if (save.parentNode !== acts) acts.append(save);
-      save.before(...[t.run_holds ? null : shelve, stopWaiting, giveUp].filter(Boolean));
+      save.before(...[t.run_holds ? null : shelve, asked?.recommended, stopWaiting, giveUp].filter(Boolean));
       if (save.nextElementSibling !== run) save.after(run);
     };
     // A pressed footer key keeps its place until the click or cancellation.
@@ -386,8 +400,11 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
     // made by a schedule: its name, a press opening its window (terminum-schedules.md AC-163)
     const from = t.schedule ? el("p", "taskfrom") : null;
     if (from) from.append("From schedule ", button("linklike", `${t.schedule.key}: ${t.schedule.title}`, () => openSchedule(t.schedule.key)));
+    // its reports, each opening in the Inbox's pane (terminum-reports.md AC-273)
+    const reports = t.reports?.length ? el("p", "taskfrom") : null;
+    reports?.append("Reports: ", ...t.reports.flatMap((id, i) => [i ? ", " : "", button("linklike", id, () => { $("taskbox").close(); openReport(id); })]));
     const when = el("div", "taskwhen");
-    when.append(...[stamps, from].filter(Boolean));
+    when.append(...[stamps, from, reports].filter(Boolean));
     const details = detailsPane({ v: { ...t, ...t.lists }, self: t.id, project: () => t.project, open: attrsOpen, onToggle: (o) => { attrsOpen = o; }, openTask,
       set: (field, value) => patch(t.id, { [field]: value }),
       link: (list, task, reason) => patch(t.id, { link: { list, task, reason } }),
@@ -404,7 +421,12 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
     drawn = JSON.stringify(t);
     $("tasktitle").textContent = `${t.id} ${t.title}`;
     const scroll = body.scrollTop, n = noteFor(t.id), kin = family(t, { openTask, newSubtask, patch, send });
-    const { lead, rest } = activity(t, { refresh, confirmed, leads });
+    const pickChoice = (question, option) => commentAction(n, async () => {
+      try {
+        await api(`/api/tasks/${t.id}/comments/${question}/choice`, { method: "POST", body: { option } });
+      } catch (e) { say(e.message); }
+    });
+    const { lead, rest } = activity(t, { refresh, confirmed, pickChoice, leads });
     leads = Boolean(lead);
     n.area.placeholder = `${lead && t.status === "WAIT FOR HUMAN" ? "Your answer" : "Comment"}, Markdown. Drop or paste files here.`;
     // the comment being written stays where it is, never taken out: its focus, cursor and files on their way stay too

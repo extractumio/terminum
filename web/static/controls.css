@@ -31,22 +31,22 @@
 :is(.textkey[aria-expanded="true"], .pick[open] > .textkey) { background-color: var(--key-fill-hover); box-shadow: var(--m-well); }
 .pick.on > .textkey, .textkey[aria-pressed="true"] { --kf: color-mix(in srgb, var(--accent) 22%, var(--chrome-2)); }
 .textkey[aria-pressed="true"] { --kc: var(--t-fg); box-shadow: var(--m-well); }   /* a toggle that is on stays sunk, as the header's */
-/* disabled: faded, flat, never pressed */
-:where(button):disabled { opacity: var(--key-disabled); cursor: default; filter: none; }
-:where(button):disabled:active { box-shadow: var(--m-edge-ctl); }
+/* disabled: faded, flat, never pressed; an inert key at work (aria-busy) says so in its words, not faded */
+:where(button):is(:disabled, [aria-disabled="true"]:not([aria-busy="true"])) { opacity: var(--key-disabled); cursor: default; filter: none; }
+:where(button):is(:disabled, [aria-disabled="true"]):active { box-shadow: var(--m-edge-ctl); }
 
 /* ---- icon keys: every icon-only button is a key of its own, square ---- */
-:is(.icon, .grp h2 :is(.attach, .import, .new, .hostbtn, .clone), .grp li > .clone, #rename, .mkdel, .mkmake, #asks .x, .banner .x, .stepper button) {
+:is(.icon, .grp h2 .acts > *, .grp li > .clone, #rename, .mkdel, .mkmake, #asks .x, .banner .x, .stepper button) {
   flex: none; width: var(--ik, var(--icon-key)); height: var(--ik, var(--icon-key)); padding: 0; display: grid; place-items: center;
   border-radius: var(--key-r); color: var(--icon-ink); background-color: var(--key-fill); background-image: var(--m-matte);
   box-shadow: var(--m-edge-ctl); }
 @media (hover: hover) {
-  :is(.icon, .grp h2 :is(.attach, .import, .new, .hostbtn, .clone), .grp li > .clone, #rename, .mkdel, .mkmake, #asks .x, .banner .x, .stepper button):not(:disabled):hover {
+  :is(.icon, .grp h2 .acts > *, .grp li > .clone, #rename, .mkdel, .mkmake, #asks .x, .banner .x, .stepper button):not(:disabled):hover {
     color: var(--t-fg); background-color: var(--key-fill-hover); }
 }
-:is(.icon, .grp h2 :is(.attach, .import, .new, .hostbtn, .clone), .grp li > .clone, #rename, .mkdel, .mkmake, #asks .x, .banner .x, .stepper button):is([aria-pressed="true"], [aria-expanded="true"]) {
+:is(.icon, .grp h2 .acts > *, .grp li > .clone, #rename, .mkdel, .mkmake, #asks .x, .banner .x, .stepper button):is([aria-pressed="true"], [aria-expanded="true"]) {
   color: var(--t-fg); background-color: var(--key-fill-hover); box-shadow: var(--m-well); }
-:is(.icon, .grp h2 :is(.attach, .import, .new, .hostbtn, .clone), .grp li > .clone, #rename, .mkdel, .mkmake, #asks .x, .banner .x, .stepper button):active:not(:disabled) {
+:is(.icon, .grp h2 .acts > *, .grp li > .clone, #rename, .mkdel, .mkmake, #asks .x, .banner .x, .stepper button):active:not(:disabled) {
   box-shadow: var(--m-well); }
 /* the session list's filter folded on a computer (style.css): an icon key until it opens */
 @media (min-width: 861px) {
@@ -58,7 +58,7 @@
 /* a thin bar's small ones (the quick shell's, a name's pencil, a bookmark row's), the session list's (--ik: its size,
    so no selector's weight decides it) */
 :is(#quick .qbar .icon, #rename, .mkdel, .mkmake) { --ik: var(--icon-key-sm); }
-:is(.grp h2 :is(.attach, .import, .new, .hostbtn, .clone), .grp li > .clone) { --ik: var(--icon-key-list); }
+:is(.grp h2 .acts > *, .grp li > .clone) { --ik: var(--icon-key-list); }
 /* icon keys side by side keep their distance */
 :is(#tools, .grp h2 .acts, #findbox, .mbnav, .qbar, .dhead, #renamebox, .stepper) { gap: var(--icon-gap); }
 
@@ -96,7 +96,7 @@
 :is(.field, .search) :focus-visible { outline: none; }   /* a wrapper field (.search, .lead) is lit for its input */
 
 /* ---- panes and dialogs: their edges and a shadow that shades what is around them ---- */
-:is(#menu, #hostmenu, #rowmenu, #cardmenu, #updmenu, #findbox, #markbar, .footform, .pick > .box) {   /* the floating buttons' windows: View's (panewin.css) */
+:is(#menu, #hostmenu, #rowmenu, #cardmenu, #reportmenu, #updmenu, #findbox, #markbar, .footform, .pick > .box) {   /* the floating buttons' windows: View's (panewin.css) */
   box-shadow: var(--pane-shadow); }
 dialog.dlg, #marksdlg { box-shadow: var(--dialog-shadow); }
 dialog::backdrop, #panescrim { background: var(--scrim); }
@@ -152,7 +152,8 @@ dialog.dlg > form { display: flex; flex-direction: column; gap: var(--sp-2); }
   .sections a { height: 40px; min-width: 44px; }   /* a section: a finger's */
   .sections a[aria-current] { flex: 1 1 auto; }   /* the shown one takes the row's rest */
   #planpane button { min-height: 44px; min-width: 44px; }   /* the Plan pane (planpane.css) */
-  .item .plpct { padding: 12px 6px; margin: -12px 0; }   /* the row's percent: a finger's height, the row's own kept */
+  .item .plpct { position: relative; }   /* the row's percent: a finger's height around its words, the row's own kept */
+  .item .plpct::after { content: ""; position: absolute; inset: -12px -6px; }
 }
 
 /* a box's left bar: a box set apart by what it holds (a comment, an agent's questions, the plan's Now) carries
@@ -220,3 +221,21 @@ input[type="radio"] { appearance: none; -webkit-appearance: none; flex: none; di
 .pick > .box { position: absolute; z-index: 20; top: calc(100% + var(--sp-1)); left: 0; min-width: 190px; max-height: 50dvh; overflow: auto; box-shadow: var(--shadow-far); }
 /* a project's color as a dot */
 .pdot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--proj); }
+
+/* a window's button keys (dlgkeys.js, terminum.md AC-281): the letter underlined, Run's ⌘⇧↩ after its label, not
+   in its name; none on a touch screen alone */
+u.dkey { text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 2px; }
+button[data-keyhint]::after { content: attr(data-keyhint) / ""; margin-left: 6px; font-size: var(--fs-micro); font-weight: 400; opacity: .7; }
+@media (hover: none) and (pointer: coarse) {
+  u.dkey { text-decoration: none; }
+  button[data-keyhint]::after { display: none; }
+}
+/* the board's key to the help: a keyboard's, never in a phone's or a tablet's head (AC-105) */
+@media (max-width: 860px), (pointer: coarse) { #boardacts > #keyhelpbtn { display: none; } }
+/* the keys' help (keyhelp.js) */
+table.keyhelp { width: 100%; border-collapse: collapse; margin: 0 0 14px; font-size: var(--fs-row); }
+table.keyhelp caption { text-align: left; font-weight: 600; padding: 4px 0 6px; }
+table.keyhelp td { padding: 3px 0; vertical-align: baseline; }
+table.keyhelp td.keys { width: 11em; padding-right: 12px; white-space: nowrap; }
+table.keyhelp kbd { font: var(--fs-small) ui-monospace, Menlo, monospace; background: var(--surface-4); border-radius: var(--r-xs); padding: 1px 6px; }
+table.keyhelp .nokey { color: var(--muted-text); }

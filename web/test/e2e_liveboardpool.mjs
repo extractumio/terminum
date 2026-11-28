@@ -185,9 +185,11 @@ export async function agentPool(page, opts, pressAt) {
   await cardInSight(page, shelved, 5000);
   await pressCard(page, shelved);
   await page.waitForSelector("#taskbox[open]");
-  await page.click('#taskacts button:has-text("Archive")');
-  check("AC-118 Archive turns its key to Bring back", await until(() => page.isVisible('#taskacts button:has-text("Bring back")'), 2000));
-  await page.click("#taskclose");
+  // by its key, the focus in the comment field: Archive is ⌘⇧A (Ctrl+Shift+A off a Mac), and nothing is left to do in the window (AC-281, AC-282)
+  check("AC-281 live: Archive's letter underlined", await until(() => page.locator("#taskacts").getByRole("button", { name: "Archive", exact: true }).locator("u.dkey").textContent().then((t) => t === "A", () => false), 2000));
+  await page.focus(".newcomment textarea");
+  await page.keyboard.press("ControlOrMeta+Shift+KeyA");
+  check("AC-282 live: Archive archives and closes the task's window", await until(async () => !await page.isVisible("#taskbox") && !!(await j(`/api/tasks/${shelved}`)).archived_at, 3000));
   check("AC-118 an archived task leaves the board", await until(async () => !(await page.$(card(shelved)))));
   await page.click("#farchived");
   check("AC-118 Archived shows it, in the address", await until(async () => { await showColumnOf(page, shelved); return page.isVisible(card(shelved)); }) && new URL(page.url()).searchParams.get("archived") === "1", page.url());
@@ -198,7 +200,7 @@ export async function agentPool(page, opts, pressAt) {
   // with no such key the route brings it back, so what follows still runs
   if (back) await page.click('#taskacts button:has-text("Bring back")');
   else await j(`/api/tasks/${shelved}/archive`, "POST", { on: false });
-  await until(() => page.isVisible('#taskacts button:has-text("Archive")'));
+  check("AC-282 live: Bring back keeps the window open", await until(() => page.isVisible('#taskacts button:has-text("Archive")')) && await page.isVisible("#taskbox"));
   await page.click("#taskclose");
   await page.waitForFunction(() => /^\/kanban\/$/.test(location.pathname));
   await page.click("#farchived");
@@ -299,7 +301,8 @@ export async function agentPool(page, opts, pressAt) {
   check("AC-204 the card's + Session opens the dock under the pool, its box in focus", await until(() => page.isVisible("#sesscompose")) && await page.evaluate(() => document.activeElement?.id === "sesstext"));
   await page.fill("#sesstext", "AC204 first prompt, typed once");
   await page.click("#sessstart");
-  check("AC-204 Start opens the session", await until(() => /\/sessions\//.test(page.url()), 30000), page.url());
+  check("AC-204 a start that went in keeps the board, a line under the pool linking the session",
+    await until(() => page.isVisible('#sessdone a[href^="/sessions/"]'), 30000) && /\/kanban\//.test(page.url()), page.url());
   const typed = async () => ((await j("/api/messages?q=AC204")).items ?? []).filter((i) => i.text.includes("AC204 first prompt, typed once")).length;
   check("AC-204 its prompt went in once, and only once", await until(async () => (await typed()) === 1, 20000) && (await nap(3000), (await typed()) === 1), String(await typed()));
   let prompted;

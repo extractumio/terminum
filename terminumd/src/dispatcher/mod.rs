@@ -3,7 +3,11 @@
 //! session on a human's RUN, watches it by hooks' events and a walk on a fixed beat, moves the task
 //! as the session lives, and closes what it started. All its clocks and facts are in the store.
 
+#[cfg(test)]
+mod timing_tests;
+
 mod acts;
+mod answer;
 pub(crate) mod after;
 pub mod auto;
 pub mod fire;
@@ -11,12 +15,14 @@ pub mod api;
 mod goes_on;
 pub(crate) mod letgo;
 mod press;
+mod recent;
 mod carry;
 mod places;
 mod firstprompt;
 mod queue;
 mod resume;
 mod gate;
+pub(crate) mod giveup;
 mod hooks;
 pub mod plan;
 pub mod pool;
@@ -29,11 +35,14 @@ pub mod screen;
 pub mod subscriptions;
 pub(crate) mod start;
 mod walk;
+pub(crate) mod supervisor_rounds;
+pub(crate) mod supervisor_talk;
 pub mod waits;
 
 use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
 
+use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
 
 use parking_lot::Mutex;
@@ -74,7 +83,7 @@ pub struct Dispatcher {
     active: Mutex<HashSet<String>>,
     /// panes with a live run: the others' hook events cost nothing here; changed only with the store's lock
     /// held, so a walk's read and a window's opening each see the other whole
-    panes: Mutex<HashSet<String>>,
+    panes: Mutex<HashMap<String, LivePane>>,
     /// those of them a + Session's run holds: their sessions are their projects' managers, which the list's rows
     /// say (terminum-agents.md AC-174); and whether they changed since the list was last asked to be read again
     managers: Mutex<HashSet<String>>,
@@ -87,6 +96,12 @@ pub struct Dispatcher {
     starting: Mutex<HashSet<String>>,
     /// runs whose End is under way (acts.rs)
     ending: Mutex<HashSet<String>>,
+    /// Tasks and runs with a Run press preparing or delivering a prompt.
+    pressing: Mutex<HashSet<String>>,
+    /// runs with deferred walk actions still in flight
+    deferred: Mutex<HashSet<String>>,
+    /// restart recovery releases or reserves a project's slots in turn (AC-205)
+    restart_recovery: Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
     /// a walk is due now (a session ended)
     soon: Notify,
     /// what a walk or a hook learned of each pane it watches
@@ -103,6 +118,11 @@ pub struct Dispatcher {
     asking: usageask::Asking,
 }
 
+struct LivePane {
+    run: String,
+    project: String,
+}
+
 /// What is known of a watched pane beyond the store; a restart learns it anew.
 #[derive(Default)]
 struct PaneWatch {
@@ -114,10 +134,19 @@ struct PaneWatch {
     agent_missed: bool,
     /// its subagents as its hooks said (AC-127); bounded: a hook's fields are data
     subs: HashMap<String, Sub>,
+    /// When the watchdog saw this run stop working (AC-127).
+    subs_paused_at: Option<Instant>,
     /// the tokens of its last turn's end; null: not known (AC-129)
     tokens: Option<serde_json::Value>,
     /// the last line pages were told of it: a host read less often keeps it
     line: Option<serde_json::Value>,
+}
+
+impl PaneWatch {
+    fn clear_subagents(&mut self) {
+        self.subs.clear();
+        self.subs_paused_at = None;
+    }
 }
 
 /// A subagent as its hooks said.
@@ -165,7 +194,23 @@ impl Dispatcher {
     }
 
     pub fn has_run(&self, key: &str) -> bool {
-        self.panes.lock().contains(key)
+        self.panes.lock().contains_key(key)
+    }
+
+    /// The project of a pane Dispatcher currently holds.
+    pub(crate) fn pane_project(&self, key: &str) -> Option<String> {
+        self.panes.lock().get(key).map(|pane| pane.project.clone())
+    }
+
+    fn track_pane(&self, key: &str, run: &str, project: &str) {
+        self.panes.lock().insert(key.to_owned(), LivePane { run: run.to_owned(), project: project.to_owned() });
+    }
+
+    fn release_pane(&self, key: &str, run: &str) {
+        let mut panes = self.panes.lock();
+        if panes.get(key).is_some_and(|pane| pane.run == run) {
+            panes.remove(key);
+        }
     }
 
     /// Whether pane `key`'s session is its project's manager, as the last read of the runs says: for what a
@@ -180,19 +225,22 @@ impl Dispatcher {
     }
 
     /// Pane `key` holds `run` from now on, in the transaction that says so (AC-131).
-    fn pane_opened(&self, tx: &rusqlite::Transaction, run: &str, key: &str) -> Result<runs::Run, String> {
+    fn pane_opened(&self, tx: &rusqlite::Transaction, run: &str, key: &str) -> Result<(runs::Run, bool), String> {
         let r = runs::change(tx, run, |r| r.pane_key = Some(key.to_string()))?;
-        self.panes.lock().insert(key.to_string());
+        let released = crate::supervisor::holds::run_launched(tx, run, ops::now())?;
+        self.track_pane(key, &r.id, &r.project);
         if r.manages() && self.managers.lock().insert(key.to_string()) {
             self.managers_changed.store(true, std::sync::atomic::Ordering::Relaxed);
         }
-        Ok(r)
+        Ok((r, released))
     }
 
     /// The runs a walk goes by, and the panes they hold, in one transaction (AC-131).
     pub(crate) fn read_runs(&self, tx: &rusqlite::Transaction) -> Result<Vec<runs::Run>, String> {
         let all = runs::live(tx)?;
-        *self.panes.lock() = all.iter().filter_map(|r| r.pane_key.clone()).collect();
+        *self.panes.lock() = all.iter().filter_map(|r| {
+            r.pane_key.clone().map(|key| (key, LivePane { run: r.id.clone(), project: r.project.clone() }))
+        }).collect();
         self.hold_managers(crate::roles::managers(tx, &all)?);
         Ok(all)
     }
@@ -224,7 +272,7 @@ impl Dispatcher {
         let mut watch = self.watch.lock();
         let pane = watch.entry(key.to_string()).or_default();
         if ev["event"] == "SessionStart" {
-            pane.subs.clear();
+            pane.clear_subagents();
         }
         let Some(id) = ev["sub"].as_str().filter(|id| id.len() <= 100 && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')) else { return };
         if ev["event"] == "SubagentStop" {
@@ -309,11 +357,12 @@ pub fn close_after() -> i64 {
 }
 
 /// Moves one task and says why, as Dispatcher; one already there says nothing.
-/// Dispatcher never fails a task whose commit is queued: its session's end, failure or Give up is not its commit's,
-/// which lands as any (terminum-integration.md AC-187); a batch's integration task is in no queue and moves as any.
+/// Dispatcher never fails nor stops a task whose commit is queued: its session's end, failure, Give up or a manager's
+/// stop is not its commit's, which lands as any (terminum-integration.md AC-187); a batch's integration task is in no
+/// queue and moves as any.
 fn move_one(tx: &rusqlite::Transaction, id: &str, to: &str, words: &str) -> Result<(), String> {
     let t = ops::get(tx, id)?;
-    if t.status == to || (to == "FAILED" && t.status == ops::INTEGRATION && crate::tasks::integration_queue::entry_of(tx, &t.key)?.is_some()) {
+    if t.status == to || (matches!(to, "FAILED" | "TODO") && t.status == ops::INTEGRATION && crate::tasks::integration_queue::entry_of(tx, &t.key)?.is_some()) {
         return Ok(());
     }
     let at = ops::now();
@@ -363,6 +412,17 @@ fn told_all(app: &crate::app::Shared, run: &runs::Run) {
 
 #[cfg(test)]
 mod typed_tests {
+    #[test]
+    fn ac218_hook_scope_drops_a_released_run_without_erasing_its_replacement() {
+        let dispatcher = super::Dispatcher::default();
+        dispatcher.track_pane("pane", "old", "api");
+        dispatcher.release_pane("pane", "old");
+        assert_eq!(dispatcher.pane_project("pane"), None);
+        dispatcher.track_pane("pane", "new", "web");
+        dispatcher.release_pane("pane", "old");
+        assert_eq!(dispatcher.pane_project("pane").as_deref(), Some("web"));
+    }
+
     /// A prompt Dispatcher typed is its message (AC-147) and still its own for the gate (§9), once.
     #[tokio::test]
     async fn ac147_a_prompt_dispatcher_typed_is_told_apart_and_left_for_its_gate() {

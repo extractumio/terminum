@@ -6,7 +6,7 @@
 import { el, iconButton } from "./listparts.js";
 import { api, button, fillSelect, statusTag } from "./kanbanutil.js";
 
-const TYPES = ["Feature", "Bug", "Debt", "Story"];
+export const TYPES = ["Feature", "Bug", "Debt", "Story"];
 export const LISTS = [["blocked_by", "Blocked by", "Why it waits for it"], ["follow_ups", "Follow-ups", "Why it follows"]];
 /** Found tasks a search shows at most. */
 const FOUND_MOST = 12;

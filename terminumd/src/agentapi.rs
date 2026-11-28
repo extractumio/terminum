@@ -40,6 +40,7 @@ pub async fn agent(State(app): State<Shared>, seen: axum::http::Extensions, Json
     let peer = seen.get::<axum::extract::ConnectInfo<Peer>>().map_or(Peer(None), |c| c.0);
     // a program outside a pane names itself by a token (AC-181): on this Mac's socket alone, never a host's link
     if body["token"].is_string() {
+        if let Err(why) = roles::check_token_peer(&app, peer).await { return answer(&why, true); }
         // a session of terminum is its pane's session, whatever token its environment holds
         if roles::peer::in_any_pane(&app, peer).await {
             tracing::warn!(event = "tokens.used_in_pane");
@@ -57,10 +58,13 @@ pub async fn agent_on(app: Shared, server: Option<std::sync::Arc<crate::tmux::se
     let pane = body["pane"].as_str().unwrap_or("");
     let Some(server) = server.filter(|s| s.session_of(pane).is_some()) else { return answer(NOT_IN_PANE, true) };
     let key = server.key(pane);
-    if body["tool"] == "probe" {
-        // `terminum mcp` asks at initialize whether to offer its tools here, and which (AC-174)
-        let manager = crate::tasks::api::store(&app, move |tx| Ok(roles::manages(tx, &key)?.is_some())).await.unwrap_or(false);
-        return Json(json!({"text": "terminum knows this pane.", "error": false, "role": roles::name(manager)}));
+    let probe = body["tool"] == "probe";
+    let (role, mark) = match roles::pane_caller(&app, &server, pane, local, probe).await {
+        Ok(caller) => caller,
+        Err(why) => return answer(&why, true),
+    };
+    if probe {
+        return Json(json!({"text": "terminum knows this pane.", "error": false, "role": role.name(), "level": role.level()}));
     }
     let hooked = app.hooks.session(&key);
     let asked: Option<String> = body["session"].as_str().map(|s| crate::termtext::clean(s, false).chars().take(100).collect());
@@ -69,6 +73,20 @@ pub async fn agent_on(app: Shared, server: Option<std::sync::Arc<crate::tmux::se
     let (hooks, session) = (hooked.is_some(), main.or(asked));
     let caller = Caller { agent: hooked.map_or(crate::plans::UNKNOWN, |(a, _)| a).to_string(), session, key, hooks, other };
     let (tool, args) = (body["tool"].as_str().unwrap_or("").to_string(), body["args"].clone());
+    if let Some(mark) = mark {
+        let role = mark.role.name();
+        let mut reply = said(roles::supervisor::run(&app, &caller.key, caller.other, mark, tool, args).await);
+        reply.0["role"] = json!(role);
+        return reply;
+    }
+    if tool == crate::supervisor::review::TOOL {
+        if caller.other || (if let Some(peer) = local { !roles::peer::in_pane(peer, &server, pane).await } else { false }) {
+            return answer("The weekly review context belongs to its session or the project's manager.", true);
+        }
+        let key = caller.key;
+        return said(crate::http::off(move || app.tasks.snapshot(crate::tasks::store::SCHEMA_VERSION, |tx|
+            crate::supervisor::review::context(tx, &key).map(|value| value.to_string()))).await);
+    }
     if roles::MANAGER_TOOLS.contains(&tool.as_str()) {
         // a manager's tool (AC-174, AC-178): its pane's own record decides, and the call comes from under that pane
         let from_pane = match local {
@@ -76,6 +94,11 @@ pub async fn agent_on(app: Shared, server: Option<std::sync::Arc<crate::tmux::se
             None => true,
         };
         return said(roles::in_pane(&app, &caller.key, from_pane, caller.other, &tool, &args).await);
+    }
+    if matches!(tool.as_str(), crate::supervisor::design_gates::BRIEF | crate::supervisor::design_gates::RECORD)
+        && (caller.other || local.is_none_or(|peer| peer.0.is_none()) || !roles::peer::in_pane(local.unwrap(), &server, pane).await)
+    {
+        return answer("Design evidence must come from this local session's main agent.", true);
     }
     if crate::tasks::tools::NAMES.contains(&tool.as_str()) {
         return task_tool(&app, &caller, tool, args).await;
@@ -104,12 +127,19 @@ async fn task_tool(app: &Shared, caller: &Caller, tool: String, args: Value) -> 
         title: row["title"].as_str().filter(|t| !t.is_empty()).unwrap_or("session").to_string(),
         project: app.projects.lock().of(&caller.key).map(|p| p.id.clone()),
         dir: if host.is_none() { dir } else { None },
+        supervisor: false,
+        // the pane's own conversation, never a subagent's (terminum-dispatcher.md AC-285)
+        conversation: caller.session.clone().filter(|_| !caller.other),
     };
     said(task_tool_of(app, who, host, caller.other, tool, args).await)
 }
 
 /// A task tool for `who`: a pane's session, or a token's caller (`host`: the pane's, when it is on one).
 pub async fn task_tool_of(app: &Shared, who: crate::tasks::tools::Who, host: Option<String>, other: bool, tool: String, args: Value) -> Result<String, String> {
+    if let Some(id) = args["id"].as_str().or(args["task"].as_str()) {
+        let (pane, id) = (who.key.clone(), id.to_string());
+        crate::tasks::api::store(app, move |tx| crate::dispatcher::giveup::check_tool(tx, &pane, &id)).await?;
+    }
     if tool == "dispatch_task" && other {
         return Err(OTHER_SESSION_DISPATCH.into());
     }
@@ -123,9 +153,14 @@ pub async fn task_tool_of(app: &Shared, who: crate::tasks::tools::Who, host: Opt
     let open_most = app.looks.settings.read().agent_open_tasks;
     let a = app.clone();
     let from = who.key.clone();
+    // a report made or changed, a routine's result among them: every Inbox reads again (terminum-reports.md AC-267)
+    let reported = crate::reports::tools::NAMES.contains(&tool.as_str()) || tool == "finish_task";
     let (text, changed, noted) = crate::http::off(move || crate::tasks::tools::run_with(&a.tasks, &a.cfg.dir, &who, &tool, &args, open_most)).await?;
     for task in &changed {
         crate::tasks::api::told(app, task);
+    }
+    if reported {
+        crate::reports::changed(app);
     }
     // a comment's task's session hears of it, unless its own agent wrote it (terminum-dispatcher.md AC-209)
     if let Some((task, event)) = noted {

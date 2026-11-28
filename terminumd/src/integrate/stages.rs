@@ -10,12 +10,13 @@ use std::path::Path;
 
 use rusqlite::Transaction;
 
-use super::engine::{place, window, worktree, Place, Window, OVER};
+use super::engine::{how_ended, place, window, worktree, Place, Window};
 use super::git;
-use super::red_target;
+use super::{red_recheck, red_target};
 use super::retry_notes;
 use super::runner::Runner;
 use super::store::{self as bs, Left};
+use crate::supervisor::verify_review;
 use crate::tasks::integration;
 use crate::tasks::ops::{self, sql};
 use crate::tasks::store::{Store, DISPATCHER};
@@ -26,15 +27,25 @@ use crate::tasks::store::{Store, DISPATCHER};
 pub const VERIFY_MOST: usize = 3;
 
 /// Prepare and Verify as one window that says which failed: Prepare's 2 stays 2 (a conflict), any other failure of
-/// either is 1 (a red check), whatever the line's own tool makes of its status (make turns each into 2). Each line
-/// stands on lines of its own, so nothing it holds (a `#`, a quote) reaches the frame; lines hold no line ends.
+/// either is 1 (a red check). Verify preserves the design-review status for a matching typed failure.
+/// Each line stands on lines of its own, so nothing it holds (a `#`, a quote) reaches the frame; lines hold no line ends.
 pub(crate) fn line_of(prepare: &str, verify: &str) -> String {
+    stages_line(prepare, verify, false)
+}
+
+const OWN_VERIFY_GREEN: i32 = 78;
+const OWN_VERIFY_RED: i32 = 79;
+
+fn stages_line(prepare: &str, verify: &str, own: bool) -> String {
     let mut parts = Vec::new();
     if !prepare.is_empty() {
         parts.push(format!("(\n{prepare}\n) || {{ s=$?; [ \"$s\" -eq 2 ] && exit 2; exit 1; }}"));
     }
     if !verify.is_empty() {
-        parts.push(format!("(\n{verify}\n) || exit 1"));
+        let code = verify_review::MISSING_EXIT;
+        let red = if own { OWN_VERIFY_RED } else { 1 };
+        parts.push(format!("(\n{verify}\n) || {{ s=$?; [ \"$s\" -eq {code} ] && exit {code}; exit {red}; }}"));
+        if own { parts.push(format!("exit {OWN_VERIFY_GREEN}")); }
     }
     parts.join("\n")
 }
@@ -61,18 +72,18 @@ pub(super) struct Run {
 
 /// One beat: ended windows judged, windows of tasks gone ended, new ones started; one read of the store.
 pub fn verify_step(store: &Store, runner: &dyn Runner, home: &Path, now: i64) -> Result<(), String> {
-    let (runs, next) = store.with(|tx| {
+    let (runs, next, looks) = store.with(|tx| {
         red_target::release(tx, now)?;
-        let runs = ops::rows(tx, "SELECT v.task, t.slug, t.number, v.project, v.commit_sha, v.pane, v.started,
-                EXISTS (SELECT 1 FROM integration_entries e WHERE e.task = v.task AND e.commit_sha = v.commit_sha AND e.stage = 'verifying'),
+        let runs = ops::rows(tx, &format!("SELECT v.task, t.slug, t.number, v.project, v.commit_sha, v.pane, v.started,
+                EXISTS (SELECT 1 FROM integration_entries e WHERE e.task = v.task AND e.commit_sha = v.commit_sha AND e.stage = 'verifying') OR {},
                 coalesce(i.check_minutes, 90), v.attempt, v.target_sha, v.steps, v.red_attempt
-            FROM integration_verifies v JOIN tasks t ON t.id = v.task LEFT JOIN project_integration i ON i.project = v.project ORDER BY v.started", [],
+            FROM integration_verifies v JOIN tasks t ON t.id = v.task LEFT JOIN project_integration i ON i.project = v.project ORDER BY v.started", red_recheck::WANTED), [],
             |r| Ok(Run { task: r.get(0)?, id: r.get(1)?, number: r.get(2)?, project: r.get(3)?, commit: r.get(4)?, pane: r.get(5)?, started: r.get(6)?, wanted: r.get(7)?,
                          minutes: r.get(8)?, attempt: r.get(9)?, target: r.get(10)?, steps: r.get::<_, String>(11)?.split_whitespace().map(String::from).collect(), red_attempt: r.get(12)? }))?;
         let next: Vec<(String, String, String)> = ops::rows(tx, "SELECT e.task, e.project, e.commit_sha FROM integration_entries e JOIN project_integration i ON i.project = e.project
             WHERE e.stage = 'verifying' AND i.is_on = 1 AND NOT EXISTS (SELECT 1 FROM integration_verifies v WHERE v.task = e.task) ORDER BY e.queued_at LIMIT ?1",
             [VERIFY_MOST as i64], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
-        Ok((runs, next))
+        Ok((runs, next, red_recheck::due(tx, now)?))
     })?;
     let mut running = 0;
     for run in &runs {
@@ -86,6 +97,8 @@ pub fn verify_step(store: &Store, runner: &dyn Runner, home: &Path, now: i64) ->
             running += 1;
         }
     }
+    // a red target run again by itself frees the tasks held behind it (AC-198): before new tasks' Verifies
+    running += red_recheck::start_due(store, runner, home, looks, VERIFY_MOST.saturating_sub(running), now)?;
     for (task, project, commit) in next.into_iter().take(VERIFY_MOST.saturating_sub(running)) {
         start(store, runner, home, &task, &project, &commit, now)?;
     }
@@ -102,8 +115,9 @@ fn follow(store: &Store, runner: &dyn Runner, home: &Path, run: &Run, now: i64) 
     let log = integration::verify_log_in(home, &run.project, run.number, &run.attempt);
     let code = match window(runner, pane, &log, now - run.started > run.minutes * 60) {
         Window::Running => return Ok(true),
-        // lost with its window: the run on the target started again, the task's own forgotten, so the next beat starts it again
-        Window::Lost if run.target.is_some() && red_target::start(store, runner, home, run, &run.steps, &run.red_attempt, now)? => return Ok(true),
+        // lost with its window: the run on the target started again, the task's own forgotten, so the next beat starts it
+        // again; a red target's own run is forgotten, and its next look starts it again
+        Window::Lost if run.target.is_some() && run.red_attempt != red_recheck::RECHECK && red_target::start(store, runner, home, run, &run.steps, &run.red_attempt, now)? => return Ok(true),
         Window::Lost => {
             finish(store, home, run)?;
             return Ok(false);
@@ -114,16 +128,26 @@ fn follow(store: &Store, runner: &dyn Runner, home: &Path, run: &Run, now: i64) 
     // the run on the target: its notes are the target's, its failed steps what is red there
     if let Some(target) = &run.target {
         let red = retry_notes::failed(&tree);
-        store.with(|tx| red_target::judge(tx, home, run, target, code, red, now))?;
+        store.with(|tx| if run.red_attempt == red_recheck::RECHECK { red_recheck::judge(tx, home, run, target, code, now) } else { red_target::judge(tx, home, run, target, code, red, now) })?;
         finish(store, home, run)?;
         return Ok(false);
     }
+    // Keep each own Verify outcome even when its failing steps will be checked on the target.
+    let verified = match code { OWN_VERIFY_GREEN => Some(true), OWN_VERIFY_RED => Some(false), _ => None };
+    let code = match verified { Some(true) => 0, Some(false) => 1, None => code };
     // read before the tree moves to the target
     let failed = (code == 1).then(|| retry_notes::failed(&tree)).flatten();
     let notes = retry_notes::read(&tree);
     let skipped = retry_notes::skipped(&tree).filter(|_| code == 0);
     let (id, log) = (&run.id, log.display());
     store.with(|tx| {
+        if let Some(passed) = verified {
+            tx.execute("INSERT OR IGNORE INTO integration_verify_results (attempt, project, task, commit_sha, passed, at, agent)
+                SELECT ?1, e.project, e.task, e.commit_sha, ?5, ?6,
+                    CASE WHEN e.author GLOB 'agent:pool:*' THEN substr(e.author, length('agent:pool:') + 1) END
+                FROM integration_entries e WHERE e.project = ?2 AND e.task = ?3 AND e.commit_sha = ?4",
+                (&run.attempt, &run.project, &run.task, &run.commit, passed, now)).map_err(sql)?;
+        }
         if let Some(notes) = &notes {
             ops::notice(tx, DISPATCHER, id, &format!("{id}'s Verify has retry diagnostics (AC-197).\nCheck output (data):\n{notes}"), serde_json::json!({"retry": "verify"}), now)?;
         }
@@ -149,18 +173,14 @@ fn follow(store: &Store, runner: &dyn Runner, home: &Path, run: &Run, now: i64) 
             // Prepare's 2 is a conflict with the target; any other failure a red check (§9)
             2 => bs::give_back(tx, &run.task, &format!("{id} returned: conflict: its Prepare or Verify ended with status 2. Its log: {log}"), Left::Conflict, now),
             code => {
-                bs::not_again(tx, &run.task, &run.commit, now)?;
-                bs::give_back(tx, &run.task, &format!("{id} returned: red check: its Prepare or Verify {}. Its log: {log}", how(code, run.minutes)), Left::Red, now)
+                let missing = verify_review::missed(tx, &run.task, &run.attempt)? && code == verify_review::MISSING_EXIT;
+                if !missing { bs::not_again(tx, &run.task, &run.commit, now)?; }
+                bs::give_back(tx, &run.task, &format!("{id} returned: red check: its Prepare or Verify {}. Its log: {log}", how_ended(code, run.minutes)), Left::Red, now)
             }
         }
     })?;
     finish(store, home, run)?;
     Ok(false)
-}
-
-/// How a Verify's window ended, in its notices' words (§9).
-pub(super) fn how(code: i32, minutes: i64) -> String {
-    if code == OVER { format!("ran over {minutes} minutes") } else { format!("ended with status {code}") }
 }
 
 /// What Prepare and Verify get (§9): the task, the commit they run on, the target and the tree.
@@ -177,7 +197,7 @@ fn ready(tx: &Transaction, task: &str) -> Result<(), String> {
 /// A task's tree made at its commit and its Prepare and Verify started there; one that cannot start goes back.
 fn start(store: &Store, runner: &dyn Runner, home: &Path, task: &str, project: &str, commit: &str, now: i64) -> Result<(), String> {
     let p = place(store, home, project)?;
-    let line = line_of(&p.s.prepare, &p.s.verify);
+    let line = stages_line(&p.s.prepare, &p.s.verify, true);
     if line.is_empty() {
         return store.with(|tx| ready(tx, task));   // the settings changed since it was queued
     }
@@ -220,7 +240,10 @@ fn finish(store: &Store, home: &Path, run: &Run) -> Result<(), String> {
     if tree.exists() {
         return store.with(|tx| tx.execute("UPDATE integration_verifies SET pane = NULL WHERE task = ?1", [&run.task]).map(drop).map_err(sql));
     }
-    store.with(|tx| tx.execute("DELETE FROM integration_verifies WHERE task = ?1", [&run.task]).map(drop).map_err(sql))
+    store.with(|tx| {
+        verify_review::missed(tx, &run.task, &run.attempt)?;
+        tx.execute("DELETE FROM integration_verifies WHERE task = ?1", [&run.task]).map(drop).map_err(sql)
+    })
 }
 
 #[cfg(test)]

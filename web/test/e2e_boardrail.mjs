@@ -5,7 +5,7 @@
 // remembered on a reload; each block's add tile right after its last card; Task Management's rail a plain head; a
 // phone's sheet names the two flat. terminum-schedules.md AC-163: "Routines" in the board's words.
 import { check, runningIn, until } from "./check.mjs";
-import { fakeBoard, ORIGIN, openPage, PHONE } from "./fake.mjs";
+import { fakeBoard, ORIGIN, openPage, PHONE, shot, THEME } from "./fake.mjs";
 
 const META = { projects: [{ id: "pa", name: "API", color: 0, dir: "/w/api" }], users: [], sessions: [], hosts: [], last_agents: {},
   agents: [{ id: "a1", project: "pa", name: "Opus reviewer", kind: "claude", color: 0, line: "claude", at_once: 3 },
@@ -14,11 +14,11 @@ const SCHED = [1, 2, 3].map((n) => ({ id: `s${n}`, key: `SCH-${n}`, project: "pa
   words: "every day", next: [2000000000 - n], next_words: [`today 0${n}:00`], paused: false }));
 const BIG = { viewport: { width: 1900, height: 1000 } };
 
-async function board(browser, device, schedules = SCHED) {
+async function board(browser, device, schedules = SCHED, meta = META, tasks = []) {
   const f = await openPage(browser, { device, url: "/kanban/?project=pa" });
-  await fakeBoard(f.page, { meta: () => META, tasks: () => [], counts: {}, schedules });
+  await fakeBoard(f.page, { meta: () => meta, tasks: (status) => status === "TODO" ? tasks : [], counts: { TODO: tasks.length }, schedules });
   await f.page.goto(`${ORIGIN}/kanban/?project=pa`);
-  await f.page.waitForSelector("#agentbar .agentcard", { state: "attached" });
+  await f.page.waitForSelector(meta.agents.length ? "#agentbar .agentcard" : "#addagent", { state: "attached" });
   return f;
 }
 
@@ -30,7 +30,7 @@ const look = (page) => page.evaluate(() => {
       key: !!r?.querySelector("button.railkey"), chev: !!r?.querySelector(".chev"), cursor: cs?.cursor }; });
   const tiles = (sec) => { const items = all(`${sec} .trackitems > *`).filter((e) => e.offsetWidth), last = items.at(-1), card = items.at(-2);
     return { last: last?.id, n: items.length, tile: box(last), card: box(card) }; };
-  return { rails, page: getComputedStyle(document.body).backgroundColor, card: getComputedStyle(q("#agentbar .agentcard")).backgroundColor, body: parseFloat(getComputedStyle(q(".colhead")).fontSize),
+  return { rails, page: getComputedStyle(document.body).backgroundColor, card: q("#agentbar .agentcard") && getComputedStyle(q("#agentbar .agentcard")).backgroundColor, body: parseFloat(getComputedStyle(q(".colhead")).fontSize),
     pool: tiles("#agentbar"), sched: tiles("#schedbar"), folded: ["#agentbar", "#schedbar"].map((s) => ({ folded: q(s).classList.contains("folded"), h: box(q(`${s} > .rail`))?.h,
       expanded: q(`${s} .railkey`).getAttribute("aria-expanded"), sum: q(`${s} .railsum`).textContent, plus: !!q(`${s} .railadd`)?.offsetWidth, body: !!q(`${s} .tracks`)?.offsetWidth })),
     words: document.body.innerText };
@@ -84,12 +84,42 @@ export async function webBoardRail(browser, name) {
   await f.close();
 
   // no routine: the strip says none, its + opens New routine
-  f = await board(browser, BIG, []);
+  f = await board(browser, BIG, [], { ...META, agents: [] });
   ({ page } = f);
   await until(async () => (await look(page)).folded[1].sum === "none");
   await page.click("#schedbar .railadd");
   check(`AC-163 ${at} no routine, folded: "Routines none", its + opens New routine`,
     await until(() => page.isVisible("#schedbox[open]")) && await page.textContent("#schedhead") === "New routine", await page.textContent("#schedhead"));
+  await page.keyboard.press("Escape");
+  await page.click("#railsched");
+  const empty = () => page.evaluate(() => ["agentbar", "schedbar"].map((id) => {
+    const list = document.querySelector(`#${id} .trackitems`), add = list.querySelector(".addtile").getBoundingClientRect(), text = list.querySelector(".colempty").getBoundingClientRect();
+    return { cards: list.querySelectorAll(".item").length, add: add.width, text: text.width, fits: list.scrollWidth <= list.clientWidth + 1 };
+  }));
+  for (const width of [1900, 390]) {
+    await page.setViewportSize({ width, height: width === 390 ? 844 : 1000 });
+    if (width === 390) await page.click("#poolline");
+    const g = await empty();
+    check(`AC-138 AC-163 AC-203 ${name} ${width}px: empty sections keep their fixed add tile and empty message within the row`,
+      g.every((s) => !s.cards && s.add === 44 && s.text > 0 && s.fits), JSON.stringify(g));
+  }
+  await f.close();
+
+  // nine routines at 1400 px: four columns, a short last row keeping their width; a long title on two lines, whole in its tooltip
+  const LONG = "Reminder: decide on the Supervisor's tier agents before the weekly review and the quarterly audit, then tell the team";
+  const NINE = Array.from({ length: 9 }, (_, i) => ({ ...SCHED[0], id: `s${i + 1}`, key: `SCH-${i + 1}`, title: i === 6 ? LONG : `Routine ${i + 1}`, next: [2000000000 - i] }));
+  f = await board(browser, { viewport: { width: 1400, height: 1000 } }, NINE);
+  ({ page } = f);
+  await page.click("#railsched");
+  await until(async () => (await look(page)).folded[1].body);
+  const grid = await page.evaluate(() => { const cards = [...document.querySelectorAll("#schedbar .trackitems > .item")], long = cards[6].querySelector(".ctitle");
+    const lh = parseFloat(getComputedStyle(long).lineHeight), r = long.getBoundingClientRect();
+    return { widths: [...new Set(cards.map((c) => Math.round(c.getBoundingClientRect().width)))], rows: new Set(cards.map((c) => Math.round(c.getBoundingClientRect().top))).size,
+      lines: Math.round(r.height / lh), cut: long.scrollHeight > long.clientHeight, tip: long.title, inside: r.right <= cards[6].getBoundingClientRect().right }; });
+  check(`AC-138 AC-163 (${name} 1400×1000) nine routines wrap into rows of one card width, the short last row's too`,
+    grid.widths.length === 1 && grid.widths[0] >= 240 && grid.rows === 3, JSON.stringify(grid));
+  check(`AC-163 (${name} 1400×1000) a long title takes two lines inside its card, then is cut, whole in its tooltip`,
+    grid.lines === 2 && grid.cut && grid.tip === LONG && grid.inside, JSON.stringify(grid));
   await f.close();
 
   at = `(${name} 390×844)`;
@@ -104,6 +134,88 @@ export async function webBoardRail(browser, name) {
     phone[0].h === 44 && phone[0].flat && phone[1].h === 44 && phone[1].flat && phone[2].w <= 1 && phone[2].text === "Task Management", JSON.stringify(phone));
   await page.click("#railsched");
   check(`AC-203 ${at} its fold works in the sheet`, await until(() => page.evaluate(() => document.getElementById("railsched").getAttribute("aria-expanded") === "true")), "");
+  await shot(page, `boardrail-${name}-phone`);
   check(`no page error ${at}`, f.errors.length === 0, f.errors.join("; "));
   await f.close();
+  await responsive(browser, name);
+}
+
+/** AC-138, AC-163, AC-203: live resizing wraps both sections and fills each row. */
+async function responsive(browser, name) {
+  for (const n of [1, 5, 7]) {
+    const meta = { ...META, agents: Array.from({ length: n }, (_, i) => ({ ...META.agents[0], id: `a${i + 1}`, name: `Agent ${i + 1} with a long label that must fit` })) };
+    const schedules = Array.from({ length: n }, (_, i) => ({ ...SCHED[0], id: `s${i + 1}`, key: `SCH-${i + 1}` }));
+    const tasks = [{ id: "API-1", title: "Task to select", project: "pa", status: "TODO", severity: "P2", updated_at: 1, parent: null }];
+    const f = await board(browser, BIG, schedules, meta, tasks), { page } = f;
+    try {
+      await page.click("#railsched");
+      const counts = [];
+      for (const width of [1900, 1400, 1000, 700, 1900]) {
+        runningIn(`${name} ${width}px ${n} cards`);
+        await page.setViewportSize({ width, height: 1000 });
+        const sections = await page.evaluate(() => ["agentbar", "schedbar"].map((id) => {
+          const tracks = document.querySelector(`#${id} .tracks`), list = tracks.querySelector(".trackitems");
+          const box = (e) => { const r = e.getBoundingClientRect(); return { l: r.left, r: r.right, t: Math.round(r.top), b: r.bottom, w: r.width, h: r.height }; };
+          const cards = [...list.querySelectorAll(".item")].map(box), add = box(list.querySelector(".addtile"));
+          const rows = [...new Set(cards.map((c) => c.t))];
+          return { id, list: box(list), cards, add, rows, first: cards.filter((c) => c.t === cards[0].t).length,
+            overflow: tracks.scrollWidth > tracks.clientWidth + 1, side: tracks.querySelector(".trackside")?.getBoundingClientRect().height ?? 0 };
+        }));
+        for (const g of sections) {
+          // every row starts at the left edge, every row but the last (the add tile's) ends at the right; every card one width
+          const filled = g.rows.every((t) => {
+            const row = [...g.cards, g.add].filter((c) => c.t === t);
+            return Math.abs(row[0].l - g.list.l) <= 1 && (t === Math.round(g.add.t) || Math.abs(row.at(-1).r - g.list.r) <= 1);
+          });
+          check(`AC-138 AC-163 ${name} ${g.id}: ${n} cards at ${width}px fill rows in columns of one width without horizontal overflow`,
+            g.cards.length === n && filled && !g.overflow && !g.side && g.cards.every((c) => c.w >= 239 && Math.abs(c.w - g.cards[0].w) <= 1 && c.r <= g.list.r + 1), JSON.stringify(g));
+          const last = g.cards.at(-1);
+          check(`AC-203 ${g.id}: fixed add tile follows the last card at ${width}px`, Math.round(g.add.w) === 44 && (g.add.t === last.t
+            ? Math.abs(g.add.l - last.r - 8) <= 1 && Math.abs(g.add.h - last.h) <= 1
+            : g.add.t >= last.b && Math.abs(g.add.l - g.list.l) <= 1), JSON.stringify(g));
+        }
+        counts.push(sections.map((g) => g.first));
+        if (n === 5) await shot(page, `boardrail-${name}-${width}-dark`);
+      }
+      check(`AC-138 AC-163 ${name}: shrinking moves cards to later rows and growing restores both sections`,
+        counts[0].every((c, i) => counts[4][i] === c && (n === 1 || counts[3][i] < c))
+        && counts.slice(1, 4).every((row, k) => row.every((c, i) => c <= counts[k][i])), JSON.stringify(counts));
+      if (n === 5) {
+        await page.click('.card[data-id="API-1"] .ctitle', { modifiers: ["Meta"] });
+        check("AC-203 selection hint occupies its own full-width row under the pool", await until(() => page.$eval(".trackside", (e) => {
+          const r = e.getBoundingClientRect(), list = e.previousElementSibling.getBoundingClientRect();
+          return r.height > 0 && r.top >= list.bottom && Math.abs(r.width - list.width) <= 1 && /1 chosen/.test(e.textContent);
+        })));
+        await page.keyboard.press("Escape");
+        check("AC-203 clearing selection removes the hint's row", await until(() => page.$eval(".trackside", (e) => !e.getBoundingClientRect().height)));
+        await phoneRows(page, name, "dark");
+        await page.setViewportSize({ width: 1900, height: 1000 });
+        meta.theme = { ...THEME, bg: "#ffffff", fg: "#1f2328", dark: false };
+        await page.reload();
+        await page.waitForSelector("#agentbar .agentcard");
+        await shot(page, `boardrail-${name}-wide-light`);
+        await page.setViewportSize({ width: 1400, height: 900 });
+        await shot(page, `boardrail-${name}-tablet-light`);
+        await phoneRows(page, name, "light");
+      }
+      check("responsive cards: no page error", f.errors.length === 0, f.errors.join("; "));
+    } finally { await f.close(); }
+  }
+}
+
+/** A crowded phone sheet keeps both sections whole, without fixed flex heights or overlap. */
+async function phoneRows(page, name, theme) {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.click("#poolline");
+  const sections = await page.evaluate(() => ["agentbar", "schedbar"].map((id) => {
+    const box = (e) => { const r = e.getBoundingClientRect(); return { l: r.left, r: r.right, t: r.top, b: r.bottom, w: r.width, h: r.height }; };
+    const section = document.getElementById(id), list = section.querySelector(".trackitems");
+    return { section: box(section), list: box(list), cards: [...list.querySelectorAll(".item")].map(box) };
+  }));
+  check(`AC-138 AC-163 ${name} ${theme}: five cards per section fit one per phone row without overlap`, sections.every((g) => g.cards.length === 5
+    && g.cards.every((c, i) => Math.abs(c.w - g.list.w) <= 1 && c.h < 200 && c.b <= g.section.b + 1 && (i === 0 || c.t >= g.cards[i - 1].b)))
+    && sections[1].section.t >= sections[0].section.b, JSON.stringify(sections));
+  await shot(page, `boardrail-${name}-phone-five-${theme}`);
+  await page.locator("#schedbar .schedcard").last().scrollIntoViewIfNeeded();
+  await shot(page, `boardrail-${name}-phone-routines-${theme}`);
 }

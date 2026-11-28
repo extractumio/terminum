@@ -94,7 +94,7 @@ Open questions:
 | AC-19 | [SHOULD / P1] | The user customizes the page with a stylesheet of their own (`custom.css`) and settings in `settings.json`, with the page reloading when they change and refusing nothing silently. |
 | AC-20 | [SHOULD / P1] | terminumd stays within its budgets: under 60 MB with 60 panes and two pages, under 0.5 % CPU idle, a key echoed in 25 ms median on the Mac, a frame encoded in 3 ms; the page under 150 MB with 10,000 lines. |
 | AC-88 | [SHOULD / P1] | On a computer the user opens a quick shell for the shown pane, below it or on its left, in the pane's folder: a terminal of its own taking a third of the view, resized by dragging its edge and closed with its ×; it stays with its pane until closed. |
-| AC-92 | [SHOULD / P1] | The user groups sessions into named projects, each in a color of its own far from the others, listed first with a [+] that opens a window in the project's folder, reordered by dragging; every page shows the same. |
+| AC-92 | [SHOULD / P1] | The user groups sessions into named projects, each in a color of its own far from the others, listed first with a [+] that opens a window in the project's folder and a key that opens its tasks on the board, reordered by dragging; every page shows the same. |
 | AC-100 | [NICE TO HAVE / later] | A row's menu shows the pane's diagnostics to copy into a bug report: terminum's build, the browser and its window, the row as listed and tmux's own fields of the pane (size, cursor, alternate screen, mouse modes, history, command, folder); no screen lines, history or sign-in. |
 | AC-101 | [NICE TO HAVE / later] | On a computer the session list shows a tip of the day, quiet, with Next, × until tomorrow and Turn off, and Settings turns tips on and off (on for a new browser). |
 | AC-89 | [SHOULD / P1] | The user attaches a session of their own tmux on this Mac or on a host by its name ("Attach tmux sessions", offered after Add host): it is listed and used like terminum's own sessions, is never started or closed by terminum, is sized as any pane while a page in sight shows it and gets tmux's own size back after, and shows while it does not run as a group that says so. |
@@ -107,6 +107,7 @@ Open questions:
 | AC-172 | [SHOULD / P1] | The Dashboard's Costs tab shows what the sessions Dispatcher started spent: dollars at list prices and tokens by agent, project and model, a task's cost, and each agent's use against its limits. |
 | AC-173 | [SHOULD / P1] | Every dialog has the size its use needs: one to type in or to read takes 80% of the width and height of the window it opens over (the dialog under it, the terminal, else the browser's window), its text field taking the rest; a question or a form stays as tall as its content; each kind between a floor and a ceiling; every dialog's buttons stay in sight at its foot while its content scrolls. |
 | AC-184 | [SHOULD / P1] | Every box to read or type in a text (a task's, a comment's, a schedule's, a prompt, a quoted screen or selection, Paste, Ask, a bookmark's note) has a key in its bottom-right corner that shows it over the whole window; the key or Esc gives it back, with what was typed, its window still open. |
+| AC-281 | [SHOULD / P1] | In the window on top (a dialog, a task's window, + Session, a report) each footer button presses with ⌘⇧ and a letter of its label (Ctrl+Shift off a Mac), its letter underlined; Run with ⌘⇧↩; Cancel with Esc; one rule gives the letters, never one a browser, the system or a text field keeps; ⌘/ (Ctrl+/) shows the keys; with no such window every key goes where it went. |
 | AC-175 | [SHOULD / P1] | What the user does in a page is counted by the clock minute and kept in the tasks' store's `user_interaction`, for the Dashboard's active time and engagement: presses, keys, the wheel's and a finger's scrolls, drags, the pointer's moves, the seconds a page was in front; how many and where (the page or frame, the id of a pressed control of the page), never which key, what text or what position. |
 | AC-176 | [SHOULD / P1] | The Dashboard's Tasks tab shows who does the work on tasks: the operations the human decided (a task made, edited, moved, commented on, put under another, run, archived) beside the agents' and Dispatcher's, over time, by operation, and each task's split. |
 | AC-195 | [MUST / P0] | The board, Dispatcher and tmux's handling wait for one another only where they share a resource, the tasks' store's turn or a tmux server's bulk client; the log names who waited for whom (`store.slow`, `tmux.slow`, `runtime.lag`), and `scripts/bench_busy.py` measures the board, a card's edit and a key's echo beside a build-like load. |
@@ -121,8 +122,8 @@ Scenario: AC-01 happy path — sessions, windows and panes
   And window 1 is split into panes %3 (running claude) and %4 (zsh)
   When the page opens
   Then the list shows group "main" with row "1 api", its second line "~/work/api" with "claude" at its right edge (host and folder first, then the titles; what runs there on the right), and, under it shifted in, "%4" as "~/work/api … zsh", then "2 docs"
-  And group "notes" below it, each group with its count in words ("2 sessions": its rows, not the panes and quick shells under them), the counts of all groups in one column whatever buttons follow, with a pointer ending where the rows' programs end ("claude"); a header's buttons (copy, import, [+], ⋯) show while the pointer is over it, in the count's place, or while the keyboard's focus or their menu is there (a touch screen, which has no hover, keeps them, the count before them); each row with its Clone (AC-07)
-  And the header names the shown pane under its title in one line: its folder with a Copy button (the full path, "/Users/alex/work/api"; a toast says it), then tmux's target "main:1", then what runs there (a host first, "claude", the profile, its titles); on a phone or a touch screen the Copy stands in a 44 px column of its own at the title block's right (left of ✎), its 44 × 44 target across both lines and inside the header, the title and the folder ending before it, so a tap on the title is the title's and one on the Files tab opens Files; in a window 860 px wide or narrower a tap on the title slides the header's buttons off to its sides and shows the session's full name and its full path (a host's as "host:/path") in their place for 3 s, wrapped, the header's height kept (a long one goes on below it on the header's fill), then all slides back (a tap on them: at once; showing another session: at once; the list drawn again, a title changed: they stay, kept current; Reduce Motion: no slide); ☰ opens the list there; the titles give way first, then the folder, down to a few letters each; on a computer the title, ✎ and the Plan button stand on the line of the header's keys (Terminal, Keyboard, Files, View, ⋯), as tall as they and centred with them and with the session list's and docked Files' heads, the folder line under it; there the mark, the title and the folder line start 7 px right of where the terminal's text does, the folder's bar in the gutter before them and the agent's state after the title, and the session list's first group starts level with the terminal's top
+  And group "notes" below it, each group with its count in words ("2 sessions": its rows, not the panes and quick shells under them), the counts of all groups in one column whatever buttons follow, with a pointer ending where the rows' programs end ("claude"); a header's buttons (copy, import, [+], a project's board key, ⋯) show while the pointer is over it, in the count's place, or while the keyboard's focus or their menu is there (a touch screen, which has no hover, keeps them, the count before them); each row with its Clone (AC-07)
+  And the header names the shown pane under its title in one line: its folder with a Copy button (the full path, "/Users/alex/work/api"; a toast says it), then tmux's target "main:1", then what runs there (a host first, "claude", the profile, its titles); on a phone or a touch screen the Copy stands in a 44 px column of its own at the title block's right (left of ✎), its 44 × 44 target across both lines and inside the header, the title and the folder ending before it, so a tap on the title is the title's and one on the Files tab opens Files; in a window 860 px wide or narrower a tap on the title slides the header's buttons off to its sides and shows the session's full name and its full path (a host's as "host:/path") in their place for 3 s, wrapped, the header's height kept (a long one goes on below it on the header's fill), then all slides back (a tap on them: at once; showing another session: at once; the list drawn again, a title changed: they stay, kept current; Reduce Motion: no slide); ☰ opens the list there; the titles give way first, then the folder, down to a few letters each; on a computer the title, ✎ and the Plan button stand on the line of the header's keys (Terminal, Keyboard, Files, View, ⋯), as tall as they and centred with them and with the session list's and docked Files' heads, the folder line under it; there the mark, the title and the folder line start 7 px right of where the terminal's text does, the folder's bar in the gutter before them and the agent's state after the title, and the session list's first block, the Sessions (the Inbox is the board's alone, `terminum-reports.md` AC-267), starts level with the terminal's top
   And a row's window number names, on hover, the host the window runs on: "This machine" here, the host's name on a host
   And each group has a copy button (its title the command) that copies how another terminal attaches to that session: "tmux -L terminum attach -t '=main'" (a host's group: its session's name "terminum" beside the host's, and "ssh -t <recipe> -- <destination> "tmux attach -t '=terminum'""); the target is quoted, as zsh (macOS's shell) reads a word starting with "=" as a program's path
   And a window the user named (automatic-rename off) shows that name; one tmux names after its program shows the pane's title, else its program; status marks of coding agents (✳ ✻ ✶ ◐ ⏺) are stripped
@@ -131,6 +132,11 @@ Scenario: AC-01 happy path — what runs in a pane
   Then a row's line under its title names Claude Code's program "claude", never its version
   And a subagent Claude Code runs in its own pane shows the name it was started with, its command's --agent-name ("simplify-altitude"), not its pane's title, which only says its type ("✳ general-purpose", the same for all of them): the type stays on the line under it; a window the user named keeps that name, and another program started with the same flag shows its own title
   And each row, before its title, and the header, before the shown pane's title, show Claude Code's mark, Codex's mark, OpenCode's mark (their owners' trademarks, outside terminum's licenses: NOTICE) or the terminal icon (`docs/UI-GUIDELINES.md`); a build without the marks' files shows the terminal icon for them
+Scenario: AC-01 happy path — a row's right side
+  Given rows with a plan ("60%"), a program ("claude"), a state's mark, a manager's crown and subagents ("12")
+  Then the percent on the title's line and the program on the line under it end at one edge, in every row, on a phone too
+  And the marks stand in a column of fixed cells, each on its text line's middle: the crown, then the state, on the title's line; the bot under the crown, its count under the state, on the line under it; a kind of mark in the same cell in every row, none past the column
+  And a list with no crown and no subagents keeps the state's cell alone, the titles keeping that room
 Scenario: AC-01 happy path — a folder's color
   Given rows in ~/work/api, ~/work/web, ~/notes and two in ~/tools, and a row in ~/work/api/db
   Then the bar left of each row (and of the header's title), at one place in every row, is a pastel color of its folder: rows in the same folder (on the same host) share it, folders not inside one another get hues as far apart as their count allows
@@ -267,6 +273,14 @@ Scenario: AC-03 edge — Shift+Insert and Ctrl+Insert
   Then the browser pastes (copies) as with ⌘V (⌘C): the page's paste and copy take it, as xterm and Windows do
   But with Settings' "Shift+Insert and Ctrl+Insert paste and copy" off (on by default, kept in this browser) the pane gets ESC[2;2~ (ESC[2;5~); ⇧⌃Insert and ⌥Insert always go to the pane
   But on a Mac a PC keyboard's Insert is Help (the browser's e.key) and nothing changes: ⌘C and ⌘V copy and paste
+Scenario: AC-03 edge — Ctrl+Shift+V and Ctrl+Shift+C
+  Given a Linux or Windows browser showing a terminal pane
+  When the user presses Ctrl+Shift+V or selects terminal text and presses Ctrl+Shift+C
+  Then the browser's paste event supplies the text or the terminal selection is copied
+  And Ctrl+V and Ctrl+C still go to the pane as ^V and ^C
+  But with Settings' "Ctrl+Shift+V and Ctrl+Shift+C paste and copy" off, the shifted keys also go to the pane as ^V and ^C
+  And the switch is kept in this browser, off by default on Apple devices
+  And the shortcut leaves other fields alone and does not match with Meta or Alt held
 Scenario: AC-03 edge — Shift+Enter and Ctrl+Enter
   When the user presses ⇧↩ or ⌃↩ (a key or the hot key)
   Then terminumd sends "send-keys S-Enter" or "C-Enter": a program that asked for extended keys (Claude Code) gets ESC[13;2u or ESC[13;5u and makes a new line, a shell gets Enter (AS-10)
@@ -727,6 +741,7 @@ Scenario: AC-92 happy path — a project
   And every other group (a tmux session's, a host's) is tinted too, its name kept in the list's color: in a hue at least 60° from the part's above it and from a project's right under it, so neighbors never run together
   And projects and tmux groups stand in one order, every page's, kept by terminumd in the store: Move to the Top, Up, Down, to the Bottom and a drag by the header go past either kind; a new project stands after the last project, a new group at the end; before the first move the projects stand first and the groups as this browser last kept them; a move under a filter leaves the parts it hides in their places; a rename keeps the group's place, also when tmux refuses the name
   And a project's header and a tmux group's have the same New Window button, a plain [+], the first of their buttons, the same size, words and act (a window after its last session, in its folder, as the menu's New Window; a group with no session: a new window in that tmux session)
+  And a project's header has a board key after its [+], the board's columns icon, its words "<name>'s tasks on the board": a link to the board on that project, "/kanban/?project=<id>" (terminum-kanban.md AC-135), so ⌘-click opens it in a tab; the board's own list draws it unless that project is the only one the board shows
   And left of the name, after the chevron, a 4 px dot in its color says a project (a tag on what the user gathered) and a thin >_ in the name's color a tmux session, with its words on hover
   When the user adds "docs" to Group 1, or a second project
   Then "docs" joins Group 1 (a session is in one project at most: added to another, it moves); Group 2 takes the next color
@@ -736,7 +751,7 @@ Scenario: AC-92 happy path — new sessions, order, names
   When the user drags a session in it (as a row is dragged, AC-07), or picks a move in a session's menu
   Then its sessions are in that order
   When a session's coding agent takes a message (its main agent's prompt, from the user or Dispatcher: its hooks' UserPromptSubmit; never its own turns or a subagent's, AC-90)
-  Then the session goes to the top of its project, the others keeping their order, on every page within 2 s; a session in no project goes to the top of its tmux group the same way (its window put before the group's other windows, as a drag puts it, AC-07; the windows of projects' sessions keep their places), except a session the user attached by name, on this Mac or a host (AC-89), whose windows terminumd moves only on the user's drag; a split's other pane or a quick shell raises the row it stands under
+  Then the session goes to the top of its project, the others keeping their order, on every page within 2 s; a session in no project goes to the top of its tmux group the same way (its window put before the group's other windows, as a drag puts it, AC-07; the windows of projects' sessions keep their places), a session the user attached by name, on this Mac or a host (AC-89), too; a split's other pane or a quick shell raises the row it stands under
   And on the page the project's or group's rows glide to their new places (360 ms, eased out), the risen row passing over the others, never a jump, also when the list is drawn again meanwhile; with reduced motion they stand at once
   When the user picks Rename… in the project's menu (its ⋯, or a right click on its header, as a row's menu) (or double-clicks its name) and types "API" (Enter or Rename)
   Then it is named "API" (1–40 characters; another length is refused)
@@ -1109,6 +1124,44 @@ Scenario: AC-184 edge — a window over it, a phone, a board update
   And on a screen 600 px wide or narrower a text field to type in has no such key: its window covers the screen already (AC-173); a text shown to read keeps it
   And while a box in a task's window covers the window, a board update redraws nothing under it
   And prose read so stands in a column at most 920 px wide in the middle; a text field and lines take the whole width
+```
+
+### AC-281 — A window's buttons by the keyboard [SHOULD / P1]
+
+```gherkin
+Scenario: AC-281 happy path — a button by its letter
+  Given a window open on a computer: a dialog, a task's window, + Session's box, or a report in the Inbox with the focus in it
+  Then each button of its footer shows one letter of its label underlined, and Run shows ⌘⇧↩ after its label (Ctrl+Shift+Enter off a Mac), none of it in the button's name
+  When the user presses ⌘⇧ and that letter (Ctrl+Shift and the letter on Linux and Windows), in a text field of the window too
+  Then the button is pressed, as a click presses it
+  And + Session's Discard is ⌘⇧D and Start ⌘⇧S; a task's Save ⌘⇧S, Give up ⌘⇧G, Archive ⌘⇧A; Cancel is Esc and takes no letter
+  And a letter is matched as the layout types it (AZERTY's A is A), else by where it lies on the keyboard (a Russian layout)
+
+Scenario: AC-281 happy path — one rule for every window
+  Then the letters come from one rule, no list per window: the rightmost button chooses first (a window's main keys stand at its right), each its words' first letters before its others, the first free letter no other button took; a button may name its own (`data-key`), Run's is ↩
+  And a button appearing at the left of others changes none of their letters
+  And the letters given are A B D F G H L O S Y only: C E I J K M open developer tools, N P Q R T W are browser keys a page never gets or must not take (a reload loses what is typed), U is Linux's Unicode input, V X Z paste as plain text, turn a field's direction, redo; a label with no free letter has no key
+  And a window opened later gets its keys the same way
+
+Scenario: AC-281 happy path — the keys' help
+  When the user presses ⌘/ (Ctrl+/), or picks Keyboard shortcuts… in the session page's Settings menu, or the board's keyboard key
+  Then a window lists the keys of the window it opened over (each button with its key, or "no key"), every window's keys (Esc, ⌘↩ in a text field, ⌘⇧↩, ⌘⇧ and a letter, ⌘/), and the page's own keys, each with ⌘ on a Mac and Ctrl elsewhere
+  When the user presses Esc, Close, or ⌘/ again
+  Then it closes, the window under it still open
+
+Scenario: AC-281 edge — off, held, in the way
+  When the user presses the key of a disabled button, or of a window keeping something (AC-165)
+  Then nothing happens
+  When the user holds the key down
+  Then it presses once
+  When a question opens over a window (Discard what you typed?)
+  Then the keys are the question's: ⌘⇧D presses its Discard, nothing under it
+  And in a window ⌘⇧ and a free letter with no button is still the window's: nothing behind it (Quick's ⌘⇧D) acts on it; ⌘⇧Z stays redo in a field, and ⌘⇧T, ⌘⇧N, ⌘N, ⌘W, ⌘T stay the browser's
+
+Scenario: AC-281 edge — the terminal, a phone
+  Given no window open
+  Then every key goes where it went: the terminal gets ? and Ctrl+/ (^_) as typed, no help opens
+  And on a touch screen alone no letter is underlined and Run shows no key; a keyboard attached to it presses them the same way
 ```
 
 ### AC-171 — The Dashboard's System tab [SHOULD / P1]
@@ -1573,7 +1626,7 @@ All cases are shipped. What AC-195's lines may call for, each only once the inst
 
 - [x] AC-01 — web/test/e2e_tmux.mjs, `cargo test manager::tests` (a problem goes on the fast path back), web/test/e2e_rows.mjs, web/test/e2e_header.mjs, web/test/e2e_live.mjs, web/test/dircolors.test.mjs, scripts/e2e_core.py, terminumd/src/tmux/titles_tests.rs
 - [x] AC-02 — `cargo test page::hist::request_tests`, `web/test/e2e_requests.mjs`, `node web/test/e2e_live.mjs requests`, web/test/e2e_tmux.mjs, web/test/e2e_live.mjs, web/test/e2e_livejitter.mjs, web/test/e2e_livelimit.mjs, web/test/e2e_openend.mjs, scripts/e2e_core.py, terminumd/src/page/hist_tests.rs
-- [x] AC-03 — terminumd/src/tmux/keys_tests.rs, terminumd/src/page/pastefold.rs, web/test/e2e_livekeys.mjs, web/test/e2e_liveprogs.mjs, web/test/e2e_idekeys.mjs, web/test/e2e_touch.mjs, web/test/kbdtouch.test.mjs, scripts/e2e_core.py, scripts/e2e_typing_review.py
+- [x] AC-03 — terminumd/src/tmux/keys_tests.rs, terminumd/src/page/pastefold.rs, web/test/e2e_livekeys.mjs, web/test/e2e_liveprogs.mjs, web/test/e2e_idekeys.mjs, web/test/e2e_clipboardkeys.mjs, web/test/e2e_touch.mjs, web/test/kbdtouch.test.mjs, scripts/e2e_core.py, scripts/e2e_typing_review.py
 - [x] AC-04 — web/test/e2e_screen.mjs, web/test/e2e_switch.mjs, web/test/e2e_resize.mjs, web/test/e2e_livesplit.mjs, web/test/switchgate.test.mjs, scripts/e2e_sizing.py, terminumd/src/screen/rows_tests.rs
 - [x] AC-05 — web/test/e2e_screen.mjs, web/test/e2e_appscreen.mjs, web/test/e2e_codex.mjs, web/test/e2e_liveprogs.mjs, scripts/e2e_sizing.py
 - [x] AC-06 — web/test/e2e_screen.mjs, web/test/e2e_progcopy.mjs, web/test/e2e_liveclip.mjs, web/test/e2e_liveprogs.mjs, scripts/e2e_core.py
@@ -1599,6 +1652,7 @@ All cases are shipped. What AC-195's lines may call for, each only once the inst
 - [x] AC-172 — `cargo test dashboard::`, `web/test/e2e_livehistory.mjs`
 - [x] AC-173 — `web/test/e2e_dlgsize.mjs` (a form's buttons held at its foot on a short window), `web/test/e2e_taskwin.mjs` (a task's window's keys outside what scrolls), `web/test/e2e_dialogcenter.mjs`, `web/test/e2e_marks.mjs`, `web/test/e2e_ask.mjs`, `web/test/e2e_phonewin.mjs` (a phone's windows: 390 and 320 px, and the sheet a 700 px window keeps)
 - [x] AC-184 — `web/test/e2e_expand.mjs`, `web/test/e2e_taskwin.mjs`, `web/test/e2e_phonewin.mjs` (a phone's text field has no key), `web/test/e2e_sessbox.mjs` (+ Session's first prompt)
+- [x] AC-281 — `web/test/keyletters.test.mjs` (the rule, the free letters, the keys' names), `web/test/e2e_dlgkeys.mjs` (`node web/test/e2e_all.mjs webDlgKeys`: Chromium and WebKit, wide and phone, Ctrl+Shift off a Mac, the terminal's keys), `web/test/e2e_liveboardpool.mjs` (⌘⇧A on the real page); which browser keys a page may take is read from the browsers' reserved lists, not pressed in each browser by hand
 - [x] AC-175 — `cargo test interact::`, `cargo test dashboard::`, `web/test/e2e_livehistory.mjs`
 - [x] AC-176 — `cargo test dashboard::`, `web/test/e2e_livehistory.mjs`
 - [x] AC-195 — `cargo test tasks::store::tests::ac195`, `cargo test tmux::control::tests::ac195`, `cargo test slow::`; the bench by hand: `scripts/bench_busy.py`

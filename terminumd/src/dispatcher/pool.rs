@@ -83,6 +83,7 @@ fn victim<'a>(tx: &Transaction, full: &[(&[&'a Run], i64)]) -> Result<Option<&'a
 pub enum Slot {
     Schedule,
     Integration,
+    Supervisor,
 }
 
 impl Kept {
@@ -91,6 +92,7 @@ impl Kept {
         match slot {
             Slot::Schedule => self.slots,
             Slot::Integration => i64::from(self.integration),
+            Slot::Supervisor => i64::from(self.supervisor),
         }
     }
 }
@@ -177,7 +179,10 @@ impl Slots {
         });
         match free {
             Some(Slot::Integration) => Ok(None),
-            Some(Slot::Schedule) => self.check(tx, None, project, but),
+            Some(Slot::Schedule | Slot::Supervisor) => self.check(tx, None, project, but),
+            None if slot == Some(Slot::Supervisor) => Ok(Some(Full {
+                words: format!("{} has no free slot kept for Supervisor work.", agent.name), close: None,
+            })),
             None => self.check(tx, Some(agent), project, but),
         }
     }
@@ -207,7 +212,7 @@ fn kept_slot(tx: &Transaction, agent: &str, task: &str) -> Result<Option<Slot>, 
     if integration.is_some() {
         return Ok(Some(Slot::Integration));
     }
-    Ok(schedules::of_task(tx, task)?.filter(|s| s.active() && s.agent == agent).map(|_| Slot::Schedule))
+    Ok(schedules::of_task(tx, task)?.filter(|s| (s.active() || s.supervisor_review) && s.agent == agent).map(|s| if s.supervisor_review { Slot::Supervisor } else { Slot::Schedule }))
 }
 
 /// The runs standing in kept slots, of the runs `ids`: of each agent's runs of one task of its schedules not paused,
@@ -217,16 +222,25 @@ fn in_kept(tx: &Transaction, ids: &[&str], kept: &BTreeMap<String, Kept>) -> Res
     if kept.values().all(|k| k.total() == 0) {
         return Ok(HashMap::new());
     }
+    let ids = runs::listed_keys(ids);
     let scheduled: Vec<(String, String)> = rows(tx, "SELECT DISTINCT r.id, r.agent_id, r.rowid FROM runs r JOIN run_tasks rt ON rt.run = r.id JOIN schedule_fires f ON f.task = rt.task JOIN schedules s ON s.id = f.schedule
                  WHERE r.id IN (SELECT value FROM json_each(?1)) AND s.agent_id = r.agent_id AND s.paused = 0 AND s.deleted_at IS NULL
+                   AND NOT EXISTS (SELECT 1 FROM supervisor_scheduled_reviews v WHERE v.schedule = s.id)
                    AND (SELECT count(*) FROM run_tasks x WHERE x.run = r.id) = 1 ORDER BY r.rowid",
-            [runs::listed_keys(ids)], |r| Ok((r.get(0)?, r.get(1)?)))?;
+            [&ids], |r| Ok((r.get(0)?, r.get(1)?)))?;
     let integrating: Vec<(String, String)> = rows(tx, "SELECT DISTINCT r.id, r.agent_id, r.rowid FROM runs r JOIN run_tasks rt ON rt.run = r.id JOIN integration_batches b ON b.task = rt.task
                  JOIN project_integration i ON i.project = b.project WHERE r.id IN (SELECT value FROM json_each(?1)) AND i.agent = r.agent_id AND i.is_on = 1 ORDER BY r.rowid",
-            [runs::listed_keys(ids)], |r| Ok((r.get(0)?, r.get(1)?)))?;
+            [&ids], |r| Ok((r.get(0)?, r.get(1)?)))?;
+    let supervising = rows(tx, "SELECT r.id, r.agent_id FROM runs r
+        WHERE r.id IN (SELECT value FROM json_each(?1)) AND (
+          EXISTS (SELECT 1 FROM supervisor_rounds q WHERE q.run = r.id AND q.ended_at IS NULL)
+          OR EXISTS (SELECT 1 FROM supervisor_talks t WHERE t.run = r.id)
+          OR EXISTS (SELECT 1 FROM supervisor_review_runs v WHERE v.run = r.id))
+        ORDER BY r.rowid",
+        [&ids], |r| Ok((r.get(0)?, r.get(1)?)))?;
     let mut out = HashMap::new();
     let mut used: HashMap<(String, Slot), i64> = HashMap::new();
-    for (slot, found) in [(Slot::Schedule, scheduled), (Slot::Integration, integrating)] {
+    for (slot, found) in [(Slot::Schedule, scheduled), (Slot::Integration, integrating), (Slot::Supervisor, supervising)] {
         for (run, agent) in found {
             let most = kept.get(&agent).map_or(0, |k| k.of_slot(slot));
             let n = used.entry((agent.clone(), slot)).or_default();
@@ -302,8 +316,12 @@ pub fn board(tx: &Transaction) -> Result<Value, String> {
         .chain(rounds.iter().map(|r| (r, true, false))).chain(integrating.iter().map(|r| (r, false, true))) {
         let in_slot = in_kept.contains_key(&r.id);
         let (integration, ended) = (no_slot && r.status == ops::INTEGRATION, no_slot && r.status != ops::INTEGRATION);
-        of_agent.entry(&r.agent_id).or_default().push(json!({"run": r.id, "tasks": r.names(), "state": r.state, "key": r.pane_key, "project": r.project, "idle": !r.busy() && !r.ad_hoc(), "kept": in_slot,
-            "round": round, "integration": integration, "ended": ended, "list": tasks.remove(&r.id).unwrap_or_default()}));
+        let mut shown = json!({"run": r.id, "tasks": r.names(), "state": r.state, "key": r.pane_key, "project": r.project, "idle": !r.busy() && !r.ad_hoc(), "kept": in_slot,
+            "round": round, "integration": integration, "ended": ended, "list": tasks.remove(&r.id).unwrap_or_default()});
+        if in_kept.get(&r.id).is_some_and(|(_, slot)| *slot == Slot::Supervisor) {
+            shown["supervisor"] = json!(true);
+        }
+        of_agent.entry(&r.agent_id).or_default().push(shown);
         if round || no_slot {
             continue;
         }

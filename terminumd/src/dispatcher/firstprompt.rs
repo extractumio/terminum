@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 use super::press::MOST_PROMPT;
 use super::runs::{self, Phase};
 use super::screen::Screen;
-use super::{api::has_stray, gate, start, store};
+use super::{gate::{self, has_stray}, start, store};
 use crate::app::Shared;
 use crate::tasks::files;
 
@@ -42,14 +42,29 @@ pub(super) async fn asked(app: &Shared, words: Option<&str>, ids: &[String], rem
     Ok(Some(match words { Some(w) => format!("{w}\n\n{files}"), None => files }))
 }
 
+#[derive(Clone, Copy)]
+pub(super) enum Scope { Human, Supervisor }
+
+impl Scope {
+    pub(super) fn check(self, tx: &rusqlite::Transaction, run: &str) -> Result<(), String> {
+        match self {
+            Self::Human => Ok(()),
+            Self::Supervisor => crate::supervisor::rounds::check_first_prompt(tx, run),
+        }
+    }
+}
+
 /// Types `text` once into run `id`'s pane: when its box stands empty, the run is made Working first, so no watch or
 /// walk can type it again, then the gate pastes it and presses Enter. What missed, in words for the page.
-pub(super) async fn type_once(app: &Shared, id: &str, text: &str) -> Result<(), String> {
+pub(super) async fn type_once(app: &Shared, id: &str, text: &str, scope: Scope) -> Result<(), String> {
     let began = Instant::now();
     let mut empty_since: Option<Instant> = None;
     loop {
         let wanted = id.to_string();
-        let r = store(app, move |tx| runs::by_id(tx, &wanted)).await?;
+        let r = store(app, move |tx| {
+            scope.check(tx, &wanted)?;
+            runs::by_id(tx, &wanted)
+        }).await?;
         if !r.is_starting() {
             return Err("the session no longer waits for its first prompt".into());
         }
@@ -61,8 +76,17 @@ pub(super) async fn type_once(app: &Shared, id: &str, text: &str) -> Result<(), 
                 Screen::Empty => {
                     if start::ready(app, &server, &pane, &mut empty_since) {
                         let wanted = id.to_string();
-                        let now = store(app, move |tx| runs::change(tx, &wanted, |n| if n.is_starting() { n.state = Phase::Working; })).await?;
-                        return gate::deliver(app, &now, &server, &pane, text, true).await.map_err(|m| m.to_string());
+                        let now = store(app, move |tx| {
+                            scope.check(tx, &wanted)?;
+                            let mut run = runs::by_id(tx, &wanted)?;
+                            if !run.is_starting() {
+                                return Err("the session no longer waits for its first prompt".into());
+                            }
+                            run.state = Phase::Working;
+                            runs::save(tx, &run)?;
+                            Ok(run)
+                        }).await?;
+                        return gate::deliver_scoped(app, &now, &server, &pane, text, true, scope).await.map_err(|m| m.to_string());
                     }
                 }
                 Screen::Asks => return Err("the agent asks a question first: answer it, then paste the prompt".into()),

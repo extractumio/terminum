@@ -9,13 +9,16 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use parking_lot::Mutex;
-use rusqlite::{Connection, ErrorCode, Transaction, TransactionBehavior};
+use rusqlite::{Connection, ErrorCode, OpenFlags, Transaction, TransactionBehavior};
 
 use crate::slow;
 
 /// The schema's versions, oldest first: `PRAGMA user_version` says how many have run. Append only: a file's name
 /// is not its place, and a database that ran a place runs it never again.
-const MIGRATIONS: [&str; 38] = [include_str!("schema1.sql"), include_str!("schema2.sql"), include_str!("schema3.sql"), include_str!("schema4.sql"), include_str!("schema5.sql"), include_str!("schema6.sql"), include_str!("schema7.sql"), include_str!("schema8.sql"), include_str!("schema9.sql"), include_str!("schema10.sql"), include_str!("schema11.sql"), include_str!("schema12.sql"), include_str!("schema13.sql"), include_str!("schema14.sql"), include_str!("schema15.sql"), include_str!("schema16.sql"), include_str!("schema17.sql"), include_str!("schema18.sql"), include_str!("schema19.sql"), include_str!("schema20.sql"), include_str!("schema22.sql"), include_str!("schema23.sql"), include_str!("schema24.sql"), include_str!("schema21.sql"), include_str!("schema25.sql"), include_str!("schema26.sql"), include_str!("schema27.sql"), include_str!("schema28.sql"), include_str!("schema29.sql"), include_str!("schema30.sql"), include_str!("schema31.sql"), include_str!("schema32.sql"), include_str!("schema33.sql"), include_str!("schema34.sql"), include_str!("schema35.sql"), include_str!("schema36.sql"), include_str!("schema37.sql"), include_str!("schema38.sql")];
+const MIGRATIONS: [&str; 65] = [include_str!("schema1.sql"), include_str!("schema2.sql"), include_str!("schema3.sql"), include_str!("schema4.sql"), include_str!("schema5.sql"), include_str!("schema6.sql"), include_str!("schema7.sql"), include_str!("schema8.sql"), include_str!("schema9.sql"), include_str!("schema10.sql"), include_str!("schema11.sql"), include_str!("schema12.sql"), include_str!("schema13.sql"), include_str!("schema14.sql"), include_str!("schema15.sql"), include_str!("schema16.sql"), include_str!("schema17.sql"), include_str!("schema18.sql"), include_str!("schema19.sql"), include_str!("schema20.sql"), include_str!("schema22.sql"), include_str!("schema23.sql"), include_str!("schema24.sql"), include_str!("schema21.sql"), include_str!("schema25.sql"), include_str!("schema26.sql"), include_str!("schema27.sql"), include_str!("schema28.sql"), include_str!("schema29.sql"), include_str!("schema30.sql"), include_str!("schema31.sql"), include_str!("schema32.sql"), include_str!("schema33.sql"), include_str!("schema34.sql"), include_str!("schema35.sql"), include_str!("schema36.sql"), include_str!("schema37.sql"), include_str!("schema38.sql"), include_str!("schema40.sql"), include_str!("schema39.sql"), include_str!("schema41.sql"), include_str!("schema42.sql"), include_str!("schema43.sql"), include_str!("schema44.sql"), include_str!("schema45.sql"), include_str!("schema46.sql"), include_str!("schema47.sql"), include_str!("schema48.sql"), include_str!("schema49.sql"), include_str!("schema50.sql"), include_str!("schema51.sql"), include_str!("schema52.sql"), include_str!("schema53.sql"), include_str!("schema54.sql"), include_str!("schema55.sql"), include_str!("schema56.sql"), include_str!("schema57.sql"), include_str!("schema58.sql"), include_str!("schema59.sql"), include_str!("schema60.sql"), include_str!("schema61.sql"), include_str!("schema62.sql"), include_str!("schema63.sql"), include_str!("schema64.sql"), include_str!("schema65.sql")];
+
+/// Schema of the task store this binary can read.
+pub(crate) const SCHEMA_VERSION: usize = MIGRATIONS.len();
 
 /// The default project's and Dispatcher's fixed IDs, seeded by schema1.sql.
 pub const DEFAULT_PROJECT: &str = "default";
@@ -90,6 +93,10 @@ fn prepare(mut conn: Connection, path: &Path) -> rusqlite::Result<Result<Connect
     // prefixes and IDs need code to stay unique (AC-148): every start fills what a migration or a project left
     let tx = conn.transaction()?;
     if let Err(why) = super::slugs::fill(&tx) {
+        return Ok(Err(why));
+    }
+    // a report waiting in WAIT FOR HUMAN goes to the Inbox, once (terminum-reports.md AC-274)
+    if let Err(why) = crate::reports::migrate::waiting_reports(&tx) {
         return Ok(Err(why));
     }
     tx.commit()?;
@@ -201,6 +208,23 @@ impl Store {
         Ok(out)
     }
 
+
+    /// Read a consistent snapshot without taking the store's write turn or running migrations.
+    pub(crate) fn snapshot<T>(&self, version: usize, read: impl FnOnce(&Transaction) -> Result<T, String>) -> Result<T, String> {
+        Self::snapshot_path(&self.path, version, read)
+    }
+
+    /// CLI replay must never call Store::open, which can migrate or repair the database.
+    pub(crate) fn snapshot_path<T>(path: &Path, version: usize, read: impl FnOnce(&Transaction) -> Result<T, String>) -> Result<T, String> {
+        let mut conn = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY).map_err(|e| message(&e))?;
+        conn.busy_timeout(Duration::from_secs(5)).map_err(|e| message(&e))?;
+        let tx = conn.transaction().map_err(|e| message(&e))?;
+        let actual = schema_version(&tx).map_err(|e| message(&e))?;
+        if actual != version {
+            return Err(format!("The tasks' store schema is {actual}; Supervisor queries require {version}."));
+        }
+        read(&tx)
+    }
 
     /// Why it cannot be used, for the board's banner.
     #[track_caller]

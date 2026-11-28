@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 """scripts/worktree.py against a throwaway origin and primary checkout in a temporary folder."""
+import fcntl
 import os
 from pathlib import Path
 import subprocess
@@ -10,6 +11,8 @@ from unittest import mock
 
 SCRIPTS = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SCRIPTS))
+import cargo_profile  # noqa: E402
+from testrun import backup_exclusion as excluded  # noqa: E402
 import worktree  # noqa: E402
 ENV = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@example.com", "GIT_COMMITTER_NAME": "t",
        "GIT_COMMITTER_EMAIL": "t@example.com", "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_SYSTEM": os.devnull}
@@ -114,12 +117,58 @@ class Worktrees(Repo):
             self.assertFalse((path / "terminumd/target/release/terminumd").exists(), "the primary's binary")
             self.assertTrue((path / "terminumd/target/debug/deps/libdep.rlib").exists(), "a warm debug build (AC-104)")
             self.assertFalse((path / "terminumd/target/debug/deps/terminumd-0123456789abcdef").exists(), "the crate's own: rebuilt")
+            target = path / "terminumd/target"
+            self.assertEqual((target / "CACHEDIR.TAG").read_text(), cargo_profile.CACHE_TAG, "marked as cargo marks its own (AC-206)")
+            if sys.platform == "darwin":
+                self.assertEqual(excluded(target), cargo_profile.BACKUP_EXCLUDED, "out of Time Machine's backups (AC-206)")
         else:  # a disk without reflinks (ext4): make and cargo build them, nothing half made is left
             self.assertFalse(modules.exists() or (path / "terminumd/target").exists())
             self.assertIn("no clone on this disk", "\n".join(lines))
         self.assertEqual(sh(path, "git", "status", "--porcelain"), "", "links and clones are not changes")
         self.assertEqual(sh(self.primary, "git", "status", "--porcelain"), "", ".worktrees is excluded")
         self.assertIn("thing", "\n".join(worktree.listing(self.primary)))
+
+    def test_link_skips_a_busy_profile_and_clones_the_idle_one(self):  # AC-104
+        primary_target = self.primary / "terminumd/target"
+        for index, name in enumerate((".cargo-lock", ".cargo-build-lock", ".cargo-artifact-lock")):
+            with self.subTest(lock=name):
+                tree = Path(self.tmp.name) / f"verify-{index}"
+                sh(self.primary, "git", "worktree", "add", "-q", "--detach", str(tree), "origin/main")
+                with (primary_target / "release" / name).open("a") as lock:
+                    fcntl.flock(lock, fcntl.LOCK_EX)
+                    (primary_target / "release/deps/libdep.rlib").write_text("partial build")
+                    said = sh(tree, sys.executable, str(SCRIPTS / "worktree.py"), "link", ".")
+                self.assertIn("cargo builds release in this tree (the primary's release profile is busy)", said)
+                target = tree / "terminumd/target"
+                self.assertFalse((target / "release").exists())
+                if self.clones:
+                    self.assertEqual((target / "debug/deps/libdep.rlib").read_text(), "dep")
+
+    def test_link_holds_each_profile_lock_until_the_copy_finishes(self):  # AC-104
+        tree = Path(self.tmp.name) / "verify"
+        tree.mkdir()
+
+        def copy(source, destination):
+            for name in (".cargo-lock", ".cargo-build-lock", ".cargo-artifact-lock"):
+                with (source / name).open("rb") as lock, self.assertRaises(BlockingIOError):
+                    fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            destination.mkdir(parents=True)   # as clone_builds makes it
+            return True
+
+        with mock.patch.object(worktree, "clone_builds", side_effect=copy) as clone:
+            worktree.link_target(tree, self.primary)
+        self.assertEqual(clone.call_count, 2)
+
+    def test_a_target_time_machine_refuses_to_exclude_is_said(self):  # AC-206
+        tree = Path(self.tmp.name) / "verify"
+        tree.mkdir()
+        with mock.patch.object(cargo_profile, "mark_cache", return_value="denied") as mark:
+            said = worktree.link_target(tree, self.primary)
+        if self.clones:
+            mark.assert_called_once_with(tree / "terminumd/target")
+            self.assertIn("terminumd/target: not excluded from Time Machine: denied", said)
+        else:
+            mark.assert_not_called()
 
     def test_add_refuses_when_the_fetch_fails_and_makes_nothing(self):
         sh(self.primary, "git", "remote", "set-url", "origin", str(Path(self.tmp.name) / "gone.git"))

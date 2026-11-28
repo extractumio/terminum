@@ -15,6 +15,7 @@ export function runWindow({ addAgent, noFolder, done }) {
   taskBoxes();
   const box = $("runbox");
   let tasks = [], offer = null, attached = [], fresh = false, dropped = null, preferred = null, way = "run", answer = () => {}, opened = 0;
+  let answered = null;                             // the question an Answer goes on with as this RUN (terminum-dispatcher.md AC-285)
 
   const say = (text) => showError($("runerror"), text);
   const chosen = () => offer.agents.find((a) => a.id === $("runagent").value);
@@ -91,7 +92,7 @@ export function runWindow({ addAgent, noFolder, done }) {
    *  `current`: whether the caller still wants the window after its preview answers. `scratch`: a new conversation,
    *  whatever it had; `prefer`: the agent picked when none was dropped on; `atOnce`: started here, the window
    *  unopened, when nothing is left to choose (AC-122). */
-  async function open(list, { words = "", files = [], agent = null, why = "", how = agent ? "drop" : "run", current = () => true, scratch = false, prefer = null, atOnce = false } = {}) {
+  async function open(list, { words = "", files = [], agent = null, why = "", how = agent ? "drop" : "run", current = () => true, scratch = false, prefer = null, atOnce = false, answer: answering = null } = {}) {
     opened++;
     answer(false);                                 // one opened before it is answered: nothing ran from it
     answer = () => {};
@@ -99,6 +100,7 @@ export function runWindow({ addAgent, noFolder, done }) {
     dropped = agent;
     preferred = prefer;
     way = how;
+    answered = answering;
     attached = files;
     $("runmessage").value = words;
     if (!await read() || !current()) return false;
@@ -133,7 +135,7 @@ export function runWindow({ addAgent, noFolder, done }) {
     const first = fresh || offer.first, full = limit();
     const queue = toQueue || Boolean(full && !full.close);
     // going on, it is its session's agent, or the one it was dropped on (AC-138)
-    return api(`/api/tasks/${tasks[0].id}/run`, { method: "POST", body: { agent: first ? $("runagent").value : dropped, close: queue ? undefined : full?.close?.run, queue, comment: $("runmessage").value, files: attached, fresh, also: others(), prompt_rev: offer.prompt_rev, how: way } });
+    return api(`/api/tasks/${tasks[0].id}/run`, { method: "POST", body: { agent: first ? $("runagent").value : dropped, close: queue ? undefined : full?.close?.run, queue, comment: $("runmessage").value, files: attached, fresh, also: others(), prompt_rev: offer.prompt_rev, how: way, answer: answered ?? undefined } });
   }
   /** Run; `toQueue`: Add to queue beside the key that closes an idle holder. A press that finds no room where the
    *  window showed some is offered the queue here, and nothing waits before the next press (AC-169). Sent once, on

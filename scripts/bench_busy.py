@@ -7,7 +7,7 @@ it lists the board, edits a card and types keys into a shell, all at once, and p
 median and p95, with the AC-195 lines (`store.slow`, `tmux.slow`, `runtime.lag`) its terminumd wrote.
 The loops end by themselves after `--seconds` + 30 and are ended by pid on pass, fail or signal.
 
-    python3 scripts/bench_busy.py [--seconds 30] [--loops <4 x cores>] [--printers 8] [--tasks 200] [--nice 0] [--installed]
+    python3 scripts/bench_busy.py [--seconds 30] [--loops <4 x cores>] [--printers 8] [--tasks 200] [--nice 0] [--installed] [--supervisor]
 """
 import argparse
 import collections
@@ -15,6 +15,7 @@ import json
 import math
 import os
 import statistics
+import sqlite3
 import subprocess
 import sys
 import threading
@@ -128,8 +129,10 @@ def main():
     ap.add_argument("--installed", action="store_true", help="also time the installed terminumd's /health")
     ap.add_argument("--tasks", type=int, default=200)
     ap.add_argument("--nice", type=int, default=0, help="the loops' nice: 0 as a program in a terminal, 10 as a nice'd build")
+    ap.add_argument("--supervisor", action="store_true", help="enable and exercise the project Supervisor (AC-217)")
     a = ap.parse_args()
-    t = Terminumd(PORT, SOCKET, env={"TM_LOG": "warn"})
+    env = {"TM_LOG": "warn", **({"TM_TEST_HOOKS": "1"} if a.supervisor else {})}
+    t = Terminumd(PORT, SOCKET, env=env)
     busy = []
     try:
         t.start()
@@ -138,6 +141,21 @@ def main():
         call = lambda path, method="GET", body=None: api(t, secret, path, method=method,  # noqa: E731
                                                          body=json.dumps(body).encode() if body is not None else None, headers=headers)
         ids = [call("/api/tasks", "POST", {"title": f"bench card {i}", "text": "x" * 400})[1]["id"] for i in range(a.tasks)]
+        if a.supervisor:
+            for i in range(2):
+                status, card = call("/api/tasks", "POST", {"title": f"bench failure {i}"})
+                assert status == 200, status
+                status, _ = call(f"/api/tasks/{card['id']}", "PATCH", {"status": "FAILED"})
+                assert status == 200, status
+            status, _ = call("/api/task-projects/default/supervisor", "PUT", {"enabled": True})
+            assert status == 200, status
+
+        def progress():
+            with sqlite3.connect(os.path.join(t.app, "kanban.sqlite")) as db:
+                return db.execute("""SELECT cursor, last_ok, EXISTS (
+                    SELECT 1 FROM supervisor_signals WHERE project = 'default' AND detector = 'flow.failed_no_reason')
+                    FROM project_supervisor WHERE project = 'default'""").fetchone()
+
         ws = t.page(secret)
         g = ws.until(lambda m: m["t"] == "layout" and m["groups"] and m["groups"][0]["items"], 5)["groups"]
         ws.send({"t": "sub", "id": g[0]["items"][0]["id"]})
@@ -150,11 +168,21 @@ def main():
         busy = loops(a.loops, a.seconds + 30, a.nice)
         printers(SOCKET, a.printers)
         time.sleep(2)
+        before = progress() if a.supervisor else None
         phase("busy", call, ws, ids, a.seconds, a.installed)
+        if before is not None:
+            after = progress()
+            assert after[0] > before[0] and after[1] > before[1], f"Supervisor did not collect during the busy phase: {before} → {after}"
+            assert after[2], "Supervisor had no active signal to record under load"
+            print(f"Supervisor cursor advanced by {after[0] - before[0]} during the busy phase")
         logged = open(t.log_path).readlines()
         for e in LINES:
             mine = [ln for ln in logged if f'event="{e}"' in ln]
             print(f"{e}: {len(mine)} lines" + "".join("\n  " + ln.strip().split(" ", 1)[-1][:220] for ln in mine[-5:]))
+        if a.supervisor:
+            detector_slow = [ln for ln in logged if 'event="store.slow"' in ln and 'caller=src/supervisor/' in ln]
+            print(f"Supervisor store.slow: {len(detector_slow)} lines")
+            assert not detector_slow, "Supervisor held or waited for the store's write turn for at least 100 ms"
     finally:
         for p in busy:
             if p.poll() is None:

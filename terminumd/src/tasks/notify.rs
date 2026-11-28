@@ -106,7 +106,10 @@ fn of_comment(tx: &Transaction, task: &str, event: &str) -> Result<Option<(Strin
         &format!("SELECT t.slug, t.session_key, u.kind, u.name, {} FROM events e
                   JOIN users u ON u.id = e.author JOIN tasks t ON t.id = e.task WHERE e.id = ?1 AND e.task = ?2 AND e.kind = 'comment'", super::comments::BY_MANAGER),
         (event, &key), |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?))).optional().map_err(ops::sql)?;
-    Ok(found.and_then(|(id, session, kind, name, manager)| (kind != "system").then(|| session.map(|s| (id, s, by_words(&kind, manager, &name)))).flatten()))
+    let Some((id, session, kind, name, manager)) = found else { return Ok(None) };
+    if kind == "system" { return Ok(None); }
+    let session = if kind == "human" { crate::supervisor::thread::live_pane(tx, &key)?.unwrap_or(session) } else { session };
+    Ok(session.map(|s| (id, s, by_words(&kind, manager, &name))))
 }
 
 /// What a new comment's notice comes to (AC-209), its session read from the list as it stands.

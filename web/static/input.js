@@ -2,9 +2,9 @@
 // Keyboard, paste and the hot keys panel. Everything typed ends up in send(bytes).
 import { HeldDelete, WORD } from "./heldelete.js";
 import { inSelection, kbdTouch, MENU_AFTER, selectWordAt, TAP } from "./kbdtouch.js";
-import { clipboardInsert, ctrlChar, encodeKey } from "./keys.js";
+import { clipboardInsert, clipboardShift, ctrlChar, encodeKey } from "./keys.js";
 import { sendOnModEnter } from "./modenter.js";
-import { hiddenNote, selectedText, unhidden } from "./seltext.js";
+import { hiddenNote, selectedText, termRange, unhidden } from "./seltext.js";
 import { copyByCommand, copyText, keepSelectionAt } from "./touchcopy.js";
 import { composing } from "./trace.js";
 import { inWidget } from "./widgetui.js";
@@ -110,7 +110,7 @@ export class Input {
       this.type(arrow.repeat(Math.abs(by)), "slide");
     });
     k.addEventListener("keydown", (e) => {
-      if (e.isComposing) return;
+      if (e.isComposing || e.defaultPrevented) return;
       // a delete takes the kept character, and the input event sends it: a held delete repeats
       if (touchable && e.key === "Backspace" && !e.ctrlKey && !e.metaKey && !e.altKey && (k.selectionStart > 0 || k.selectionEnd > k.selectionStart)) { stopChar(); return; }
       if (e.repeat) { if (char?.code === e.code) stopChar(); }
@@ -121,7 +121,8 @@ export class Input {
           if (char === held) held.timer = setInterval(() => this.type(held.key, "keydown"), REPEAT);
         }, HOLD);
       } else stopChar();
-      let seq = this.options.insertClipboard() && clipboardInsert(e) ? null : encodeKey(e, this.options.appCursor());
+      if ((this.options.insertClipboard() && clipboardInsert(e)) || (this.options.shiftClipboard() && clipboardShift(e) === "v")) return;
+      let seq = encodeKey(e, this.options.appCursor());
       if (seq === "\x7f" && e.key === "Backspace") seq = this.backspace(e.repeat);   // held: words after a while
       const line = /^Arrow(Up|Down)$/.test(e.key) && !e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey && !this.mods.ctrl && !this.mods.alt
         ? this.options.lineMove?.(e.key === "ArrowUp" ? -1 : 1, e.repeat) ?? null : null;   // by the page's lines in an agent's input (boxnav.js)
@@ -193,13 +194,17 @@ export class Input {
       e.preventDefault();
       this.copySelection(text);
     }, true);
-    // ⌘V with the keys off the terminal's input (after a copy from the history, a click in the
-    // list): the input takes them back first, so the paste lands in the pane at its cursor and
-    // typing goes on there (Safari pastes only into a field); not under a dialog, nor in Files
+    // Copy a terminal selection even after a drag takes focus away from the input. For paste,
+    // give the input focus first so the browser's paste event lands in the pane at its cursor.
     document.addEventListener("keydown", (e) => {
-      if (!e.metaKey || e.ctrlKey || e.altKey || e.key.toLowerCase() !== "v" || field(e.target) || document.activeElement === k) return;
-      if (document.querySelector("dialog[open]") || this.term.hidden || !this.options.shown?.()) return;
-      this.focus();
+      const shifted = this.options.shiftClipboard() ? clipboardShift(e) : null;
+      const cmdPaste = e.metaKey && !e.ctrlKey && !e.altKey && e.key.toLowerCase() === "v";
+      if ((!shifted && !cmdPaste) || field(e.target) || this.term.hidden || !this.options.shown?.() || document.querySelector("dialog[open]")) return;
+      if (shifted === "c") {
+        const text = e.repeat ? null : selectedText(this.term);
+        if (text || e.target === k || (e.repeat && termRange(this.term))) e.preventDefault();
+        if (text) this.copySelection(text);
+      } else if (document.activeElement !== k) this.focus();
     }, true);
     document.addEventListener("copy", () => {
       const at = document.activeElement;

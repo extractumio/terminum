@@ -33,7 +33,16 @@ async fn other(app: &Shared, boss: &Boss, args: &Value, to: &str) -> Result<(Str
         return Err(format!("That is your own session: {to} another one."));
     }
     let k = key.clone();
-    if store(app, move |tx| Ok(super::manages(tx, &k)?.is_some())).await? {
+    let role = store(app, move |tx| {
+        if super::supervisor::marked(tx, &k)?.is_some() {
+            return Ok(super::Role::Supervisor(None));
+        }
+        Ok(super::Role::from(super::ordinary_manager(tx, &k)?.is_some()))
+    }).await?;
+    if matches!(role, super::Role::Supervisor(_)) {
+        return Err(format!("{key} is a Supervisor session: you cannot {to} it."));
+    }
+    if role == super::Role::Manager {
         return Err(format!("{key} is a manager's session, the human's: you cannot {to} it. Read it with get_session; run_task starts a worker you can."));
     }
     Ok((key, server, pane))
@@ -49,10 +58,11 @@ fn of_project(app: &Shared, boss: &Boss, args: &Value) -> Result<(String, (Arc<S
 }
 
 pub async fn list(app: &Shared, boss: &Boss) -> Result<String, String> {
-    let (held, managers) = store(app, move |tx| {
+    let (held, managers, marked) = store(app, move |tx| {
         let live = runs::live(tx)?;
         let managers = super::managers(tx, &live)?;
-        Ok((live.into_iter().filter(|r| r.holds_slot()).filter_map(|r| r.pane_key.clone().map(|k| (k, r))).collect::<std::collections::HashMap<_, _>>(), managers))
+        let marked: std::collections::HashSet<_> = super::supervisor::marked_panes(tx)?.into_iter().collect();
+        Ok((live.into_iter().filter(|r| r.holds_slot()).filter_map(|r| r.pane_key.clone().map(|k| (k, r))).collect::<std::collections::HashMap<_, _>>(), managers, marked))
     }).await?;
     let now = crate::auth::store::unix_now();
     let layout = app.layout.read();
@@ -66,7 +76,7 @@ pub async fn list(app: &Shared, boss: &Boss) -> Result<String, String> {
             "you": *key == boss.key,
             "agent": app.hooks.session(key).map(|(agent, _)| agent),
             "working": working,
-            "role": super::name(managers.contains(key)),
+            "role": if marked.contains(key) { super::Role::Supervisor(None) } else { super::Role::from(managers.contains(key)) }.name(),
             "run": run.map(|r| json!({"tasks": r.ids, "agent": r.agent_name, "state": r.state.label(), "asked_a_human": r.asked})),
             "plan": plan.map(|d| json!({"doing": d.row.doing, "done": d.row.done, "total": d.row.total})),
         })

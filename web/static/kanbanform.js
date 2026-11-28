@@ -4,7 +4,7 @@
 import { askConfirm, oneAtATime } from "./dialogs.js";
 import { read, write } from "./listparts.js";
 import { detailsPane, LISTS, typeSelect } from "./taskattrs.js";
-import { $, agentsOf, api, AT_LIMIT, FILE_GONE, fileChips, fileMarkdown, fillAgents, fillSelect, goneFiles, goneSaid, onFiles, onlyProject, onSend, projectOptions, sessionOptions, showError, upload, withFileLink, withoutFileLinks, writePreview } from "./kanbanutil.js";
+import { $, agentsOf, api, AT_LIMIT, fileChips, fileMarkdown, fillAgents, fillSelect, goneFiles, goneSaid, onFiles, onlyProject, onSend, projectOptions, sayRefused, sessionOptions, showError, upload, withFileLink, withoutFileLinks, writePreview } from "./kanbanutil.js";
 
 const DRAFT = "tm.taskdraft";
 
@@ -157,7 +157,7 @@ export function taskForm({ getMeta, getFilter, onMade, onRun, slots }) {
       end();
       box.close();
       if (run) onRun(made, agent); else onMade(made);
-    } catch (e) { if (e.message !== FILE_GONE || !await prune()) error(e.message); $("newtitle").focus(); }   // a file let go meanwhile: named
+    } catch (e) { await sayRefused(e, prune, error); $("newtitle").focus(); }   // a file let go meanwhile: named
   });
   function create(run = false) {
     if ($("newcreate").disabled) return;           // a file on its way, or the task being made

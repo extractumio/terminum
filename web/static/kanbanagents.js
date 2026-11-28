@@ -21,7 +21,7 @@ const KINDS = ["claude", "codex"];                 // their commands are their n
  *  agent; `run(tasks, agent)`; `readings()`: each kind's subscription windows (AC-168); `openTask(id)`; `composer`: + Session's
  *  dock with a first prompt (AC-204), opened by a card's own key. */
 export function agentsSection({ getMeta, chosen, reload, refreshQueue, slots: counted, liveRow, dragging, given, run, openSession, readings, openTask, composer }) {
-  // on the columns' tracks: an agent a column wide, the add tile after the last, the hint in the fifth (kanban.css .tracks)
+  // cards fill wrapping rows, the add tile after the last, the selection hint below (kanban.css .tracks)
   const box = el("section", "agents tracks"), list = el("div", "agentlist trackitems"), side = el("div", "trackside");
   box.id = "agentgrid";
   const addKey = iconButton("addtile", "plus", "Add agent", "Add an agent to a project's pool", () => open(), 16);
@@ -91,11 +91,11 @@ export function agentsSection({ getMeta, chosen, reload, refreshQueue, slots: co
     const b = row(a);
     b.append(iconButton("agedit", "pencil", `Edit ${a.name}`, `Edit ${a.name}`, () => open(a)));
     // + Session with a prompt (AC-204): its own key, never a run of the chosen tasks
-    const sess = button("agsess", "+ Session", (e) => { e.stopPropagation(); composer.open(a); });
+    const sess = button("agsess", "", (e) => { e.stopPropagation(); composer.open(a); });   // its words: composer.mark
     sess.title = `Start a session on ${a.name} with a prompt`;
     sess.dataset.agent = a.id;
     sess.setAttribute("aria-controls", "sesscompose");
-    sess.setAttribute("aria-expanded", String(composer.shownFor() === a.id));
+    composer.mark(sess);
     b.querySelector(".agdots").append(sess);      // the card's last row, at its right
     b.addEventListener("click", (e) => {
       const tasks = given(), key = e.target.closest?.(".agdot")?.dataset.key;

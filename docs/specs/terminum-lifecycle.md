@@ -25,7 +25,7 @@ A snapshot of what terminum must do, not a record of how it came to be: git hold
 In scope:
 - One-line install, launchd and systemd, signed packages, the upgrade, rollback, restart and uninstall commands, `terminum status`, `terminum folders`.
 - What survives: terminumd's restart (AC-14), a reboot or a killed tmux (AC-15, AC-96), an upgrade or rollback (AC-16).
-- The update notice (AC-17). Tidying before a release (AC-102, AC-103). Landing a worktree (AC-104); a release's full run on a quiet machine (AC-146); a release of a pinned commit in its own tree (AC-200); the full run's passes, retry, environment and record (AC-201); the nightly full run and the weekly review (AC-202); the kept trees' build cache under a bound (AC-206).
+- The update notice (AC-17). Tidying before a release (AC-102, AC-103). Landing a worktree (AC-104); a release's full run on a quiet machine (AC-146); a release of a pinned commit in its own tree (AC-200); the full run's passes, retry, environment and record (AC-201); the nightly full run and the weekly review (AC-202); every checkout's build cache under a bound and out of backups (AC-206).
 
 Out of scope (explicit):
 - A native app (AC-11 dropped; terminum.md OQ-04). No notarization and no hardened runtime (`docs/RELEASING.md`).
@@ -64,7 +64,7 @@ Open questions: none open. Which clients exist (AC-11's drop) is terminum.md OQ-
 | AC-16 | [SHOULD / P1] | The user upgrades, rolls back and uninstalls with one command each, a new build is checked before it goes live, open pages reload themselves keeping unsaved edits, and state written by either build stays readable by both. |
 | AC-17 | [SHOULD / P1] | The user learns from the page that a newer release exists and can copy the command that installs it, skip that release, or stop the check. |
 | AC-96 | [SHOULD / P1] | After tmux restarts (a reboot, a killed server) a session's terminal begins with its last 300 lines from before the restart, and its menu opens them, the number set in settings.json. |
-| AC-102 | [SHOULD / P1] | A release starts from a machine with no leftovers of old test runs: the one test helper that outlives its test is ended, dead tmux sockets and test folders are removed, and what may be someone's work is only named; a test run itself leaves nothing, and a step of `make check` that leaves something fails. |
+| AC-102 | [SHOULD / P1] | A release starts from a machine with no leftovers of old test runs: the one test helper that outlives its test and test tmux servers whose socket is gone are ended, dead tmux sockets and test folders are removed, the files Docker Desktop's VM still holds from old bind mounts are released, and what may be someone's work is only named; a test run itself leaves nothing, and a step of `make check` that leaves something fails. |
 | AC-103 | [SHOULD / P1] | The docs keep their shape on every `make test`, and a review of what changed since the last release removes duplicates and superseded requirements before a minor release. |
 | AC-104 | [SHOULD / P1] | A finished worktree lands by itself: its targeted checks green on its own work, then a short smoke set of the basics on one platform, with no timed check, on its merge with what others landed; pushed, the primary checkout brought up to it and the tree deleted; the full test run is the release's gate, and only failing tests block a release. |
 | AC-146 | [SHOULD / P1] | A release's full run starts only on a quiet machine: it queues behind another full run, waits for the load to stay low for 3 minutes, says each minute that it waits, and after 15 minutes ends the release with "the build server is not available"; a task's timed checks wait the same way, and after 15 minutes, or at once while a full run holds its turn, are skipped and said in red, never run under the load. |
@@ -73,7 +73,7 @@ Open questions: none open. Which clients exist (AC-11's drop) is terminum.md OQ-
 | AC-200 | [SHOULD / P1] | A release promotes a commit: `make release` pins the newest commit of origin/main that passed the full run in 48 hours, or differs from one only in docs, else origin/main, or `PIN=`, and runs its full run, the Mac test runner's checks, the build and the tag in a tree of its own detached at it, by that commit's own code, while landings, Afters and installs go on; a fix for a red release lands first and is pinned. |
 | AC-201 | [SHOULD / P1] | The full run keeps a pass per step and content, shared by every tree, and runs only the steps without one, or the scan alone after a docs-only change; its steps see only an allow-listed environment; a budget over under its own load is said and judged on a quiet machine; a red step of real programs runs its red checks once more, never for a check of code changed since the last full pass or one retried in 3 of the last 7 runs, said in red, in a task and in the release notes; each run and each release leaves a line in a record. |
 | AC-202 | [SHOULD / P1] | A nightly schedule runs every rehearsal step on origin/main, even after a pass on the same content, and judges the budgets on a quiet machine. A red step makes a task naming the commits since the last full pass. A weekly schedule runs /simplify and /docs-review over what landed since its last run, with findings filed as ordinary tasks. Releases require neither schedule. |
-| AC-206 | [SHOULD / P1] | The trees kept for warm builds (the integration candidate's, `.worktrees/release`, `.worktrees/rehearse`) keep `terminumd/target` under a bound of 20 GiB, kept where a build begins there: over it, the object files no executable of the current build names go first, the current build's stay so the next build is incremental, and only a target still over is cleaned; a build running there is never cleaned under it. |
+| AC-206 | [SHOULD / P1] | Every checkout (the primary, a worktree, the integration candidate's, `.worktrees/release`, `.worktrees/rehearse`) keeps `terminumd/target` out of Time Machine and under a bound of 20 GiB, kept where a build begins there: over it, the object files no executable of the current build names go first, the current build's stay so the next build is incremental; a target still over has its build folders emptied, debug first, release and the cross-compiled ones last; a build running there is never cleaned under it. |
 
 ## 5. BDD scenarios
 
@@ -352,6 +352,20 @@ Scenario: AC-102 failure — a cleanup problem never stops a release
   When make release runs
   Then it prints "still running <pid>: …" and goes on: leftovers.py exits 1, make ignores that, the helper gets no SIGKILL and the release is not refused
 
+Scenario: AC-102 edge — the Docker VM keeps the files its containers read
+  Given containers bind-mounted folders of the checkout (a worktree's ui/node_modules, .toolchain/venv) and ended, and the folders were deleted
+  And Docker Desktop's VM process (the one holding Docker's disk) still holds 156,010 files, 156,000 of them under the checkout, over the limit of 10,000 in all
+  When the maintainer runs make leftovers
+  Then it prints "Docker's VM <pid> holds 156010 files, 156000 under the checkout (over 10000): make leftovers END=1 drops its caches" and changes nothing
+  And make leftovers END=1, make release and make rehearse drop that VM's dentry and inode caches once, before the test folders are judged, and print "Docker's VM <pid> held 156010 files, 156000 under the checkout; <n> files, <m> under the checkout now", its containers left running
+  And python3 scripts/vm_files.py --release drops them under the limit too
+  And under the limit, with no Docker VM running, or for another Virtualization.framework VM, nothing is dropped
+
+Scenario: AC-102 failure — the VM's files cannot be counted or released
+  Given lsof dies or stops short (the Mac's file table is full), or Docker does not answer
+  When make leftovers END=1 runs
+  Then a VM lsof could not list fully counts as over the limit and its caches are dropped all the same; a drop that fails prints "could not drop the Docker VM's caches: <why>", a count still over the limit or unknown makes leftovers.py exit 1, and the release goes on
+
 Scenario: AC-102 failure — the helper cannot outlive its test by long
   Given a fake terminumd of a test whose socket's folder is removed (its test's home), or that has run for five minutes
   Then it exits by itself within a second
@@ -365,6 +379,24 @@ Scenario: AC-102 happy path — a run leaves nothing
   Given a step of make check or of a landing's targeted checks, run by scripts/check_step.py with its own short folder as TMPDIR and TMUX_TMPDIR
   When the step passes, fails or gets a signal
   Then its folders, tmux servers, tmux socket files and processes have gone and that folder is removed
+
+Scenario Outline: AC-102 edge — a step's tmux server ends before its socket's folder goes
+  Given a step under scripts/check_step.py starts tmux -L tm-test-live-<pid>, whose server daemonizes out of the step's process group with its working directory outside the step's folder, its socket alone in the step's TMUX_TMPDIR
+  When the step <ends>
+  Then the guard prints "LEFT process <pid>: tmux …", ends the server and its pane's programs by their pids (SIGTERM, then SIGKILL) and only then removes the folder, and the step exits <status>
+  And no tmux -L tm-test-live-<pid> process remains, nor its pane's program that ignores SIGHUP and SIGTERM
+
+  Examples:
+    | ends                | status |
+    | passes              | 3      |
+    | fails with status 1 | 1      |
+    | gets SIGINT         | 130    |
+
+Scenario: AC-102 edge — a test's tmux server whose socket is gone is ended
+  Given a tmux server of this user on a tm-* name (-L tm-test-live-33522) with parent 1, running for 15 hours, every socket it bound gone with its run's folder (/tmp/tmc.indcv8il)
+  When make leftovers END=1 runs
+  Then it is ended by its pid with SIGTERM, its command read again just before, and printed as "ended <pid>: tmux -L tm-test-live-33522 …"
+  And one whose socket is still there, whose sockets cannot be read, or whose socket went from a folder no test names (/tmp/tmux-501) is not ended
 
 Scenario: AC-102 edge — macOS Python without os.waitid
   Given a guarded check runs on macOS under a Python that does not expose os.waitid
@@ -398,6 +430,18 @@ Scenario: AC-102 failure — a step that leaves something fails
   Given a step that passes but leaves a file in its folder, or a process in its private process group or working in that folder or a folder under it
   When it ends
   Then each is printed as "LEFT …", the process is ended by its pid (SIGTERM, then SIGKILL when it is still there 2 s later: an interactive shell ignores SIGTERM), the folder is removed and the step fails
+
+Scenario: AC-102 failure — a failed step's status survives cleanup
+  Given a step exits with a nonzero status and leaves a file in its private folder
+  When the guard reports the leftover and ownership inspection succeeds
+  Then it removes its private folder and returns the step's status
+  And a Unicode line separator in an unrelated process's working-directory name does not split a macOS inspection record
+
+Scenario: AC-102 failure — the guard's own folder cannot be removed
+  Given ownership inspection succeeds and the guard cannot remove its private folder
+  When it returns
+  Then it reports the removal error and retained path, preserves a nonzero step status and fails an otherwise successful step
+  And a root that is already absent counts as removed
 
 Scenario: AC-102 failure — working-directory inspection times out
   Given macOS working-directory inspection exceeds its 15 s deadline twice or fails
@@ -496,7 +540,7 @@ Scenario: AC-104 happy path — targeted checks green, the tree lands
   When the agent runs make land SLUG=fix-paste from the primary checkout
   Then the branch is merged with origin/main in the tree
   And the targeted checks do not run again, origin/main having changed none of the files the tree changed
-  And on the merged result scripts/check_changed.py --land runs the smoke set: the security scan, terminumd's debug build, cargo test of the critical modules, scripts/e2e_core.py (terminum's own tmux), scripts/e2e_attach.py (the user's own tmux), and the real page in Chromium at one size (signing in, the list, a pane drawn, typing, Files), with no timed check
+  And on the merged result scripts/check_changed.py --land runs the smoke set: the security scan, terminumd's debug build, cargo test of the critical modules, scripts/e2e_core.py (terminum's own tmux), scripts/e2e_attach.py (the user's own tmux), and the real page in Chromium at one size (signing in, the list, a pane drawn, typing, Files, and Dispatcher's request for a result, terminum-dispatcher.md AC-123), with no timed check
   And on green it is pushed to origin main, never forced
   And the primary checkout is fast-forwarded to it, the tree is deleted by scripts/delete_worktree.sh, and it prints "landed 4f2a91c07 on origin/main"
 
@@ -528,7 +572,13 @@ Scenario: AC-104 edge — builds leave room for others
   And a step that builds or tests terminumd with cargo (the debug build, clippy, cargo test) of a tree at work, and a landing's install, runs holding one of the machine's heavy-build slots: the cores' count / 8, at least 1, or TM_HEAVY_SLOTS
   And the smoke set of the landing in the turn holds a slot of its own, so the queue of landings never waits behind trees at work
   And a step that finds every slot held says once "slot: cargo waits for one of 2 heavy-build slots: two cargo, three debug-build" and starts when one is free; a slot is freed with its holder, however it ends
-  And scripts/worktree.py add gives a new tree copy-on-write clones of the primary checkout's debug and release dependencies' builds, so its first build compiles terminumd alone
+  And scripts/worktree.py add gives a new tree copy-on-write clones of the primary checkout's idle debug and release profiles' dependency builds, so its first build compiles terminumd alone when dependencies match
+
+Scenario: AC-104 edge — worktree linking overlaps a primary build
+  Given a fresh Verify or Check tree and a Cargo build writing the primary checkout's release profile
+  When `python3 scripts/worktree.py link .` runs in the fresh tree
+  Then it reports that Cargo will build release in the tree and clones dependency builds from the idle debug profile where the disk permits
+  And each clone holds Cargo's locks on its source profile until copying ends
 
 Scenario: AC-104 happy path — script modules run in a small process pool
   Given the scripts' unit-test modules under scripts/tests
@@ -618,6 +668,12 @@ Scenario: AC-104 edge — an imported helper is not a standalone check
   And a helper's citations alone do not count as test coverage
   And the real AC-102 runners, including e2e_attach.py, e2e_restore.py and the scripts' unit tests, remain selected
   And Python e2e runners declare a top-level if __name__ == "__main__" entry point; discovery parses their source without executing it
+
+Scenario: AC-104 edge — a runner's check modules are its own
+  Given scripts/e2e_roles.py imports scripts/role_supervisor_checks.py, which imports scripts/role_hold_checks.py, the only file citing AC-245's hold checks
+  When targeted checks select tests for a change touching AC-245, or for a change to scripts/role_hold_checks.py
+  Then they schedule python3 scripts/e2e_roles.py, and AC-245 counts as cited
+  And only scripts/*_checks.py modules count so, followed through one another; a helper shared by many runners, as scripts/e2e_ws.py, stays its own
 
 Scenario: AC-104 edge — uncommitted work
   Given the worktree holds an uncommitted file
@@ -1189,9 +1245,9 @@ Scenario: AC-202 happy path — the weekly review
   And make release asks for neither: a release ships what main has (CLAUDE.md §10)
 ```
 
-### AC-206 — The kept trees' build cache under a bound [SHOULD / P1]
+### AC-206 — Every checkout's build cache under a bound and out of backups [SHOULD / P1]
 
-The bound is `BOUND_GIB` of `scripts/target_bound.py`, 20 GiB: a kept tree's own build (debug, release, the agents' targets) is about 10 GiB. It is kept at the integration candidate's Check's start (`land.py check` in the tree `TM_INTEGRATION_TREE` names, while `TM_INTEGRATION_BATCH` is set: one batch is checked at a time, so nothing else builds there), and when `make release` or `make rehearse` moves its tree to its pin (`release_tree.py`, under the tree's own turn). Not at Cleanup: it runs in the project's folder beside the next batch's Check in that tree. By hand: `python3 scripts/target_bound.py <tree>`. The primary checkout's own target is outside this case.
+The bound is `BOUND_GIB` of `scripts/target_bound.py`, 20 GiB: a kept tree's own build (debug, release, the agents' targets) is about 10 GiB. It is kept at each `make build`, in whichever checkout it runs (the primary checkout's, as after each change and at a landing's install, and a worktree's), before cargo builds; at the integration candidate's Check's start (`land.py check` in the tree `TM_INTEGRATION_TREE` names, while `TM_INTEGRATION_BATCH` is set: one batch is checked at a time, so nothing else builds there); and when `make release` or `make rehearse` moves its tree to its pin (`release_tree.py`, under the tree's own turn). Not at Cleanup: it runs in the project's folder beside the next batch's Check in that tree. By hand: `python3 scripts/target_bound.py <tree>`. A target cargo makes carries cargo's `CACHEDIR.TAG` and, on macOS, Time Machine's exclusion (the item attribute `tmutil addexclusion` sets); a target without that tag (`scripts/worktree.py` made it by cloning the primary's builds) gets both where it is made and wherever the bound is kept, the attribute written directly (`tmutil` takes seconds a call).
 
 ```gherkin
 Scenario: AC-206 happy path — under the bound
@@ -1207,22 +1263,37 @@ Scenario: AC-206 happy path — over it, the objects no build uses go first
   And the log says "target: 31.0 GiB, over its bound of 20.0 GiB: 21.4 GiB of objects no build uses removed, 9.6 GiB left"
 
 Scenario: AC-206 edge — still over after that
-  Given the target still over its bound once those objects went
-  Then `cargo clean` empties it and the dependencies' builds are cloned from the primary checkout again, as a new tree gets them, so only terminumd's own build is cold
-  And the log's line ends "still over: cargo clean; cloned terminumd/target/{release,debug} (their dependencies' builds; terminumd itself rebuilds)"
+  Given the target still over its bound once those objects went, no build running in it
+  When the bound is kept, in the primary checkout or a worktree
+  Then its build folders are emptied one at a time until it is under: the debug ones first (target/debug, target/<triple>/debug: the folders that grow), the largest first, then the others, the largest first
+  And release and the cross-compiled folders make install packages are emptied only where emptying them can get it under, else they are kept and the line says "the rest kept: emptying it would not get it under"
+  And each is emptied under the locks held since its pruning, which stay, so a cargo starting meanwhile waits and then finds an empty folder
+  And in a worktree, an emptied folder then gets the primary checkout's idle same folder's dependencies' builds cloned back, as a new tree gets them, so only terminumd's own build is cold; whether it is under is judged before those clones, which share the primary's blocks
+  And the log's line ends "still over: debug emptied, 8.2 GiB left; debug: its dependencies' builds cloned from the primary checkout", in the primary checkout "still over: debug emptied, 8.2 GiB left"; a clone not made says "debug: the primary's is busy, cargo builds it whole" or "debug: no clone on this disk, cargo builds it whole"
 
 Scenario: AC-206 edge — a build runs in the tree
   Given cargo holds a lock of a build folder (target/debug's .cargo-lock, .cargo-build-lock or .cargo-artifact-lock) while it builds there
   When the bound is kept
-  Then that folder is left as it is, the other folders are pruned, no cargo clean runs, and the line says "a build runs in debug: left as it is"
+  Then that folder is left as it is, the other folders are pruned, none is emptied, and the line says "a build runs in debug: left as it is"
   And while it prunes a folder it holds that folder's locks, so a build starting meanwhile waits for it as for another cargo
 
 Scenario: AC-206 edge — objects it cannot judge
   Given a unit with no executable (its link failed), an executable whose debug map names no object (Linux keeps none, a stripped one), or nm failing
   Then that unit keeps all of its objects
 
+Scenario: AC-206 happy path — the primary checkout's make build
+  Given the primary checkout's terminumd/target at 37 GiB, most of it object files no executable names
+  When `make build` runs there
+  Then the bound is kept before cargo builds, as in a kept tree, and make's output carries its line
+
+Scenario: AC-206 happy path — a target cargo did not make is out of Time Machine
+  Given a terminumd/target with no CACHEDIR.TAG: `scripts/worktree.py add` cloned the primary's dependencies' builds into it
+  When the tree is made, or the bound is next kept there
+  Then that folder holds cargo's CACHEDIR.TAG and `tmutil isexcluded` says "[Excluded]" for it on macOS
+  And where the exclusion cannot be written, the tree is still made and the build goes on, the line says "not excluded from Time Machine: <the error>", and no tag is written, so the next bound tries again
+
 Scenario: AC-206 failure — the bound cannot be kept
-  When reading or removing in the target fails, or cargo clean does
+  When reading or removing in the target fails
   Then the line says "target: its bound was not kept: <the error>" and the Check, or the release, goes on
 ```
 
@@ -1419,12 +1490,12 @@ All cases are shipped; nothing is staged.
 - [x] AC-16 — `scripts/e2e_install.sh`; `ui/test/e2e_panel.mjs` (a Files panel's held reload); `cargo test cli::tests` (`install_tests`, `upgrade_tests`, `refresh_tests`, `import_tests`)
 - [x] AC-17 — `cargo test update::`; `web/test/e2e_tmux.mjs`
 - [x] AC-96 — `scripts/e2e_lastlines.py`; `cargo test lastlines` (a failed write tried again); `web/test/e2e_lastlines.mjs`
-- [x] AC-102 — `scripts/check_step.py` guards each step of `scripts/check_all.py` and `scripts/check_changed.py`; `scripts/tests/test_check_step.py`; `scripts/tests/test_check_cancel.py` (outer cancellation and guard recovery); `scripts/tests/test_child_status.py` (macOS non-reaping wait without the Python wrapper); `scripts/tests/test_process_ownership.py` (metadata only, directory boundaries and query failures on both platforms); `scripts/tests/test_leftovers.py`; `cargo test cli::tests::the_fake_terminumd_ends_when_its_home_goes`; `scripts/tests/test_testrun.py` (`WithItsFolder`)
-- [x] AC-104 — `scripts/tests/test_land.py`, `scripts/tests/test_land_install.py`, `scripts/tests/test_land_said.py`, `scripts/tests/test_heavy_slots.py`, `scripts/tests/test_test_scripts.py`, `scripts/tests/test_live_slots.py`, `scripts/tests/test_check_live_slots.py`, `scripts/tests/test_check_changed.py`, `scripts/tests/test_package.py`, `ui/test/build-sync.test.mjs`, `scripts/tests/test_release_turn.py`, `scripts/tests/test_release.py`, `scripts/tests/test_ci_mac.py`, `scripts/tests/test_ci_mac_node.py`, `scripts/tests/test_check_docker.py`, `scripts/tests/test_worktree_fresh.py`
+- [x] AC-102 — `scripts/check_step.py` guards each step of `scripts/check_all.py` and `scripts/check_changed.py`; `scripts/tests/test_check_step.py`; `scripts/tests/test_check_cancel.py` (outer cancellation and guard recovery); `scripts/tests/test_child_status.py` (macOS non-reaping wait without the Python wrapper); `scripts/tests/test_process_ownership.py` (metadata only, directory boundaries and query failures on both platforms); `scripts/tests/test_leftovers.py`; `scripts/tests/test_vm_files.py` (the VM's held files); `cargo test cli::tests::the_fake_terminumd_ends_when_its_home_goes`; `scripts/tests/test_testrun.py` (`WithItsFolder`)
+- [x] AC-104 — `scripts/tests/test_land.py`, `scripts/tests/test_land_install.py`, `scripts/tests/test_land_said.py`, `scripts/tests/test_heavy_slots.py`, `scripts/tests/test_test_scripts.py`, `scripts/tests/test_live_slots.py`, `scripts/tests/test_check_live_slots.py`, `scripts/tests/test_check_changed.py`, `scripts/tests/test_check_tests.py` (a runner's `*_checks.py` modules), `scripts/tests/test_package.py`, `ui/test/build-sync.test.mjs`, `scripts/tests/test_release_turn.py`, `scripts/tests/test_release.py`, `scripts/tests/test_ci_mac.py`, `scripts/tests/test_ci_mac_node.py`, `scripts/tests/test_check_docker.py`, `scripts/tests/test_worktree_fresh.py`, `scripts/tests/test_worktree.py` (link skips a locked source profile)
 - [x] AC-146 — `scripts/tests/test_load_gate.py`, `scripts/tests/test_release_turn.py`, `scripts/tests/test_check_changed.py`, `scripts/tests/test_check_live_slots.py`, `scripts/tests/test_access.py`, `scripts/e2e_access.py`
 - [ ] AC-200 — `scripts/tests/test_release_turn.py`, `scripts/tests/test_release_tree.py`, `scripts/tests/test_land_stages.py`, `scripts/tests/test_release.py`
 - [ ] AC-201 — `scripts/tests/test_check_all.py`, `scripts/tests/test_gate_retry.py`, `scripts/tests/test_gate_record.py`, `scripts/tests/test_e2e_ws.py`
-- [ ] AC-206 — `scripts/tests/test_target_bound.py`, `scripts/tests/test_land_stages.py`, `scripts/tests/test_release_tree.py`; on this Mac: the integration tree's next Check line and `du -sh`
+- [ ] AC-206 — `scripts/tests/test_target_bound.py`, `scripts/tests/test_worktree.py`, `scripts/tests/test_land_stages.py`, `scripts/tests/test_release_tree.py`; on this Mac: the integration tree's next Check line, the primary checkout's next `make build` line, `du -sh`, `tmutil isexcluded` of a new tree's target
 - [ ] AC-202 — the project's schedules "Nightly full run" and "Weekly review" (terminum's board), `scripts/tests/test_check_all.py` (a rehearsal runs every step with a full pass already recorded), `scripts/tests/test_gate_record.py`
 - [x] AC-197 — `scripts/tests/test_check_changed.py` (`test_ac197_*`), `cargo test integrate::retry_notes`, `cargo test integrate::stages::tests::ac197` (Verify and Check histories, cleanup, a reused tree), `cargo test integrate::retry_live_tests` (real retry commands through private tmux, Verify and Check)
 - [x] AC-103 — `scripts/tests/test_check_docs.py`; `python3 scripts/check_docs.py`

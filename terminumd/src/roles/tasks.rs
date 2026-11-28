@@ -4,7 +4,7 @@
 
 use serde_json::{json, Value};
 
-use super::{arg, in_project, opt, yes, Boss, DATA};
+use super::{arg, in_project, opt, supervisor, yes, Boss, DATA};
 use crate::app::Shared;
 use crate::dispatcher::{runs, waits};
 use crate::tasks::api::store;
@@ -40,7 +40,7 @@ pub async fn run_task(app: &Shared, boss: &Boss, args: &Value) -> Result<String,
     }).await?;
     let comment = args["comment"].as_str().map(crate::plans::rules::clean).filter(|c| !c.trim().is_empty());
     let name = agent.as_ref().map(|a| a.name.clone());
-    let done = crate::dispatcher::api::press_by_manager(app, &id, &boss.user, agent.map(|a| a.id), comment, (yes(args, "fresh"), yes(args, "queue"))).await?;
+    let done = crate::dispatcher::api::press_by_manager(app, &id, &boss.user, agent.map(|a| a.id), comment, (yes(args, "fresh"), yes(args, "queue"), yes(args, "reopen"))).await?;
     let on = name.map(|n| format!(" on {n}")).unwrap_or_default();
     Ok(if let Some(words) = done["waits"].as_str() {
         format!("{id} waits for a slot: {words}")
@@ -53,11 +53,23 @@ pub async fn run_task(app: &Shared, boss: &Boss, args: &Value) -> Result<String,
 
 /// Moves an existing press, never starts one: scope, order and history share admission's store transaction (AC-169).
 pub async fn promote_queued_task(app: &Shared, boss: &Boss, args: &Value) -> Result<String, String> {
+    promote_queued(app, boss, args, false).await
+}
+
+pub(super) async fn promote_queued(app: &Shared, boss: &Boss, args: &Value, supervised: bool) -> Result<String, String> {
     let (b, id) = (boss.clone(), arg(args, "id")?.to_string());
-    let (id, name, moved, behind) = store(app, move |tx| {
+    let result = store(app, move |tx| {
         let t = in_project(tx, &b, &id)?;
         let gone = || format!("{} waits no more: it started, or its wait was called off.", t.id);
         let w = waits::of_task(tx, &t.key)?.ok_or_else(|| format!("{} has no waiting run of its own: use a queued primary task from list_runs.", t.id))?;
+        if supervised {
+            supervisor::require(tx, &b.key, &b.project, "promote_queued_task")?;
+            crate::supervisor::task_policy::check(tx, &t, ops::now())?;
+            if w.scheduled {
+                return Err("The Supervisor cannot promote a schedule's task.".into());
+            }
+            supervisor::author(tx, &b.project)?;
+        }
         if w.project != b.project {
             return Err(format!("{}'s wait is outside your project.", t.id));
         }
@@ -68,31 +80,47 @@ pub async fn promote_queued_task(app: &Shared, boss: &Boss, args: &Value) -> Res
         let front = if w.scheduled { 0 } else { line.iter().filter(|x| x.scheduled).count() };
         let mut order: Vec<String> = line.into_iter().map(|x| x.task).collect();
         let moved = order.get(front) != Some(&t.key);
+        if moved && supervised
+            && let Some(card) = crate::supervisor::action_tasks::divert(tx, &t.project, &t.key, &t.id, Some(&b.key), "promote", ops::now())?
+        {
+            return Ok(Err(card.task));
+        }
         if moved {
             order.retain(|key| key != &t.key);
             order.insert(front, t.key.clone());
             waits::reorder(tx, &w.agent, &order)?;
-            ops::log(tx, &t.key, &b.user, "why", &format!("{} moved it to the front of {}'s queue.", b.name, a.name), None, ops::now())?;
+            let at = ops::now();
+            let event = ops::log(tx, &t.key, &b.user, "why", &format!("{} moved it to the front of {}'s queue.", b.name, a.name), None, at)?;
+            if supervised { crate::supervisor::action_tasks::record_run(tx, &t, Some(&b.key), &event, "", at)?; }
         }
-        Ok((t.id, a.name, moved, front > 0))
+        Ok(Ok((t.id, a.name, moved, front > 0)))
     }).await?;
+    let (id, name, moved, behind) = match result {
+        Ok(moved) => moved,
+        Err(card) => { crate::tasks::api::told(app, &card); return Ok(format!("Owner decision card: {card}.")); }
+    };
     if moved { crate::tasks::api::told(app, &id); }
     Ok(format!("{id} {} at the front of {name}'s queue{}. It starts when there is room.", if moved { "is now" } else { "is already" }, if behind { ", behind its schedules' tasks" } else { "" }))
 }
 
 pub async fn stop_task(app: &Shared, boss: &Boss, args: &Value) -> Result<String, String> {
     let id = arg(args, "id")?.to_string();
-    let (b, wanted) = (boss.clone(), id.clone());
-    store(app, move |tx| in_project(tx, &b, &wanted).map(drop)).await?;
-    let stopped = crate::dispatcher::letgo::gave_up(app, &id, "The project's manager").await?;
-    let (b, ids) = (boss.clone(), stopped.clone());
-    store(app, move |tx| {
-        for id in &ids {
-            ops::log(tx, &ops::key_of(tx, id)?, &b.user, "why", &format!("{} stopped it.", b.name), None, ops::now())?;
+    let why = crate::plans::rules::clean(arg(args, "why")?);
+    if why.chars().count() > crate::tasks::attrs::REASON_MOST {
+        return Err(format!("why: at most {} characters.", crate::tasks::attrs::REASON_MOST));
+    }
+    let (scope, actor) = (boss.clone(), boss.clone());
+    let stopped = crate::dispatcher::letgo::gave_up_checked(app, &id, crate::dispatcher::letgo::Giver::Manager, move |tx, wanted| {
+        in_project(tx, &scope, wanted).map(drop)
+    }, move |tx, ids| {
+        for id in ids {
+            let (key, at) = (ops::key_of(tx, id)?, ops::now());
+            ops::log(tx, &key, &actor.user, "why", &format!("{} stopped it.", actor.name), None, at)?;
+            crate::tasks::comments::comment_as(tx, &actor.user, true, id, &why, at)?;
         }
         Ok(())
     }).await?;
-    Ok(format!("Stopped: {}. Its window stays; its slot is free.", stopped.join(", ")))
+    Ok(format!("Stopped: {}. It waits in TODO; its slot is free. Its window stays, and an agent still working there goes on: close_session ends it.", stopped.join(", ")))
 }
 
 pub async fn dashboard(app: &Shared, boss: &Boss, args: &Value) -> Result<String, String> {
