@@ -148,6 +148,18 @@ export async function signIn(page) {
 
 export const results = [];
 export const check = (name, ok, extra = "") => { results.push(ok); console.log(`${ok ? "PASS" : "FAIL"} ${name}${extra ? " — " + extra : ""}`); };
+/** Records each text the toast shows from now on: another toast (the panel state's own save failing in the same
+ *  gap) can replace one within a frame, sooner than a poll sees it (AC-56). `toastShown` waits for `text` in it. */
+export const toastLog = (page) => page.evaluate(() => {
+  const el = document.getElementById("toast");
+  window.__toasts = [];
+  window.__toastLog?.disconnect();
+  window.__toastLog = new MutationObserver((records) => {
+    for (const r of records) for (const n of r.addedNodes) window.__toasts.push(n.textContent);
+  });
+  window.__toastLog.observe(el, { childList: true });
+});
+export const toastShown = (page, text, ms) => page.waitForFunction((t) => window.__toasts?.includes(t), text, { timeout: ms });
 export const within = async (name, fn, ms = 5000) => {
   const t0 = Date.now();
   try { await fn(ms); check(name, true, `${Date.now() - t0} ms`); } catch (e) { check(name, false, e.message.split("\n")[0]); }

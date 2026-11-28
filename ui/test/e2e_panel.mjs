@@ -16,9 +16,7 @@ import { manyPanels } from "./e2e_sockets.mjs";
 import { layoutTools, splitterCancel } from "./e2e_layout.mjs";
 import { panelReview } from "./e2e_panel_review.mjs";
 import { diagrams, embedTools, hostOffer, panelSort, viewerTools } from "./e2e_panel_more.mjs";
-import {
-  base, bringBack, capture, check, cleanup, clearLine, PANE_A, PANE_B, panelUrl, PORT, restartServer, results, SB, signIn, stopServer, waitFor, within, wsKey,
-} from "./e2e_harness.mjs";
+import { base, bringBack, capture, check, cleanup, clearLine, PANE_A, PANE_B, panelUrl, PORT, restartServer, results, SB, signIn, stopServer, toastLog, toastShown, waitFor, within, wsKey } from "./e2e_harness.mjs";
 import { panelMedia } from "./e2e_panel_media.mjs";
 import { panelDrop } from "./e2e_panel_drop.mjs";
 import { panelDocs } from "./e2e_panel_docs.mjs";
@@ -340,8 +338,9 @@ try {
   await page.waitForSelector(".cm-content");
   await page.click(".cm-content"); await page.keyboard.type("# gap\n");
   await stopServer();
+  await toastLog(page);
   await page.keyboard.press("ControlOrMeta+s");
-  await within("AC-56 a save during the gap says so", (ms) => page.waitForFunction(() => document.getElementById("toast").textContent === "Not saved: server restarting — save again", null, { timeout: ms }));
+  await within("AC-56 a save during the gap says so", (ms) => toastShown(page, "Not saved: server restarting — save again", ms));
   check("AC-56 … and the tab stays unsaved", !!(await page.$(".tab.active.dirty")));
   // an upgrade: the unsaved tab holds the reload back, the save lets it happen, in place
   await page.evaluate(() => { window.__before = 1; });
