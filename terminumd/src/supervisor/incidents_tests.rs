@@ -41,6 +41,10 @@ fn ac224_incident_grouping_and_clear() {
     live(NOW + 1200, vec![finding("target", 3, 2)]);
     assert_eq!(all(store).len(), 1);
     assert_eq!(events(store, first).iter().map(|e| e.kind.as_str()).collect::<Vec<_>>(), ["signal", "signal"]);
+    // AC-213: a human reads the level's word, the page its number only in a tooltip
+    assert!(events(store, first)[0].words.starts_with("Incident level. "), "{}", events(store, first)[0].words);
+    let shown = serde_json::to_value(&all(store)[0]).unwrap();
+    assert_eq!((&shown["level"], &shown["level_word"]), (&serde_json::json!(3), &serde_json::json!("Incident")));
 
     live(NOW + 3000, vec![finding("target", 3, 3)]);
     let rows = all(store);

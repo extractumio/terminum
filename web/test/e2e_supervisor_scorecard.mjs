@@ -47,7 +47,7 @@ export function scorecardFixture(DATE, LITERAL) {
   return {
     scorecard: {
       resolved: { count: 3, watching: 1, recurred: 0, rate: SMALL_RATE },
-      decisions: { right: 3, pending: 1, rate: SMALL_RATE }, by_rule: [], delays: [], calibration: [],
+      decisions: { right: 3, pending: 1, rate: SMALL_RATE }, by_rule: [], delays: [{ level: 2, level_word: "Card", sample: 4, seconds: 600 }], calibration: [],
       misses: { count: 1, sample: 2, recent: [{ source: "owner_bug", subject: "API-12",
         first_evidence_at: DATE, signal_state: "shadow" }] },
       overrides: { count: 0, rate: MISSING_RATE }, refusals: { count: 1, sample: 2 },
@@ -89,4 +89,22 @@ export async function checkScorecard(page, reports, suffix, LITERAL) {
     && await outside.getByText("downloads (count)", { exact: true }).isVisible()
     && await outside.evaluate((node) => node.getBoundingClientRect().right <= innerWidth));
   await shot(page, `supervisor-outside-scoreboard-${suffix}`);
+  await checkLevelWords(page);
+}
+
+// AC-213: a level reaches a human as terminumd's word, its number only in the tooltip
+async function checkLevelWords(page) {
+  const summary = page.locator("#signal-0 > summary");
+  const incident = page.locator("#sv-incidents [data-incident='42'] .incident-title");
+  await page.locator("#sv-scorecard summary", { hasText: "Decision and detection detail" }).click();
+  const delay = page.locator("#sv-scorecard .sv-reading", { hasText: "Time to detect ·" });
+  const shown = { signal: await summary.textContent(), signalTip: await summary.getAttribute("title"),
+    incident: await incident.textContent(), incidentTip: await incident.getAttribute("title"),
+    delay: await delay.locator("dt").textContent(), delayTip: await delay.getAttribute("title"),
+    bare: /\blevel \d/i.test(await page.locator("#sv-content").textContent()) };
+  check("AC-213 the screen shows levels as words: a signal, an incident and the time to detect, the number only in a tooltip",
+    shown.signal.startsWith("Digest level · ") && shown.signalTip.startsWith("Response level 1 of 0–3")
+    && shown.incident.endsWith("Incident 42 · Incident level") && shown.incidentTip.startsWith("Response level 3 of 0–3")
+    && shown.delay === "Time to detect · Card level" && await delay.isVisible() && shown.delayTip.startsWith("Response level 2 of 0–3")
+    && !shown.bare, JSON.stringify(shown));
 }

@@ -130,8 +130,8 @@ def shared_line(fixture, paths):
     fixture.request(high_path + "/line", "PUT", {"revision": saved["revision"], "settings": {**line, "quiet": None}})
     notices = wait_for(lambda: output.read_text().splitlines() if output.exists() else [],
                        lambda lines: len(lines) >= 2, 20, every=0.25)
-    opened = [f"Critical incident {incident} · Level {level}. Active signals: 1. Acknowledge in Terminum."
-              for incident, level in [(high, 3), (low, 2)]]
+    opened = [f"Critical incident {incident} · {word} level. Active signals: 1. Acknowledge in Terminum."
+              for incident, word in [(high, "Incident"), (low, "Card")]]
     # The collector can clear the seeded signals while the line drains.
     all_clear = {f"All-clear on incident {incident}." for incident in (low, high)}
     check("AC-263 one executable receives the higher level first, using only the fixed incident fields",

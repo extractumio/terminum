@@ -552,8 +552,8 @@ verifies at least two-thirds of three or more past firings. A verified charter b
 that wait. A detector enabled after attach starts in shadow. Turning a live rule off
 retires its live-at-attach eligibility.
 
-In **Detectors and mutes**, **P0 waiting to level 2, hours** and **Then to level 3, further
-hours** set when a P0 task waiting in TODO reaches levels 2 and 3: 24 and 24 by default,
+In **Detectors and mutes**, **P0 waiting to Card level, hours** and **Then to Incident level,
+further hours** set when a P0 task waiting in TODO reaches Card and Incident level: 24 and 24 by default,
 whole hours from 1 to 720.
 
 An enabled project checks store changes every ten seconds. It keeps queue waits, available
@@ -650,16 +650,20 @@ evidence. Use **More signals** to see older results and **Refresh** to see the
 latest investigation status. Press **Investigate now** on a signal or incident to
 request a round. Its configured tier agent needs a kept slot and room in the judgment budget.
 
-Code also requests a round for a level 2 or 3 signal, or a level 1 signal that fired
+A signal's response level, from 0 to 3, shows as its word: Record, Digest, Card or Incident
+level, the number in a tooltip. Level 3 is the strongest response, the reverse of task severities,
+where P0 is the highest (`docs/specs/terminum-supervisor.md` §9).
+
+Code also requests a round for a Card or Incident level signal, or a Digest level signal that fired
 in at least three of the past eight weeks and has no checked cause. One round can
 run per fingerprint. Unchanged repeats keep the earlier verdict. When several rounds
 wait for the same slot, higher-impact signals go first.
 
-Investigations use the small, medium and strong tiers for levels 1, 2 and 3.
-A manually requested level 0 investigation uses the small tier. Choose local
+Investigations use the small, medium and strong tiers for Digest, Card and Incident levels.
+A manually requested Record level investigation uses the small tier. Choose local
 pool agents in **Tiers**. Dispatcher starts the agent with fixed words and a case
-ID and ends it when it returns a checked finding or reaches 15 minutes. Level 2
-or 3 signals below 0.7 confidence use the time to verify the signal. Critical
+ID and ends it when it returns a checked finding or reaches 15 minutes. Card
+or Incident level signals below 0.7 confidence use the time to verify the signal. Critical
 alerts go out independently. Task and comment excerpts appear in capped data fields
 in the retained case. So does the project's matching memory: keep `project-memory/INDEX.md`
 in the project's folder, really there rather than linked from elsewhere, a table whose rows
@@ -675,8 +679,8 @@ in force. Advisor and Operator rounds can use `open_problem`, `update_problem` a
 the observation window.
 
 **Budgets** shows judgment tokens and fix dollars used and reserved in the last seven
-days. Judgment has a daily and per-round token cap and reserves room for level 2 and 3
-investigations. Token caps act when the agent reports usage. When a limit stops new
+days. Judgment has a daily and per-round token cap and reserves room for Card and Incident
+level investigations. Token caps act when the agent reports usage. When a limit stops new
 rounds, code keeps collecting signals and sending incident notices.
 
 The Supervisor funds the highest-impact eligible fixes first. At the fixes ceiling,
@@ -704,7 +708,7 @@ in the Inbox it is one report, each waiting decision a link to its task, where y
 review offers at most ten items, and leaving one alone records no verdict.
 
 The **Exception digest** on the same screen appears only with new live or
-digest-mode signals at level 1 or higher. It shows at most five measurements,
+digest-mode signals at Digest level or higher. It shows at most five measurements,
 actions and links, followed by the collector's last successful run. It needs no
 review agent.
 
@@ -754,8 +758,8 @@ incident actions remain available.
 #### Holds
 
 An Operator can stop a marked run, pause Auto-Dispatcher, pause integration, or take
-a waiting task out of integration. Each hold needs current evidence at level 2 or
-3. A detector in shadow records its proposal without changing the board.
+a waiting task out of integration. Each hold needs current evidence at Card or
+Incident level. A detector in shadow records its proposal without changing the board.
 
 The Supervisor screen shows each active hold, its signal, its reason and its undo.
 Use **RUN** for a stopped run and the corresponding switch or queue key for the
@@ -790,7 +794,7 @@ settings revision. Rules without measurable retained replay stay paused.
 Choose an **Independent** agent in the project's Supervisor settings. It must
 differ from the other tier agents. Choose a different model family if the pool
 has one available. A breaker, owner override, recurrence after a fix, recorded
-miss, wrong alert, budget overrun, decision-rate excursion or closed level 3
+miss, wrong alert, budget overrun, decision-rate excursion or closed Incident level
 incident can request an independent round. A reflection waits for its slot and
 judgment budget. The case keeps the timeline built from the store. **Independent
 reflections** shows the latest requests, results and suggested changes. The
@@ -813,7 +817,7 @@ yardsticks for the full window after landing. The score tracks recurrence after
 landing. Its incomplete count includes fixes whose observation window is still open.
 
 Terminum checks owner-created P0 and P1 Bugs, verified red target commits and
-level 3 collector watchdog pages for earlier signals on the same subject. For a
+Incident level collector watchdog pages for earlier signals on the same subject. For a
 Bug, a parent or follow-up link can identify the existing work it reports. The
 scorecard keeps the earliest supported time and whether the evidence was already
 raised, in shadow or muted. Observations start when this version receives those
@@ -856,7 +860,7 @@ delivery use the same mute rules. A full pause, protected detector, mute over
 two weeks or recent renewal needs owner approval. When the mute expires, the
 detector resumes its prior delivery. A live detector with no acted-on findings
 for eight weeks appears only in the weekly review. After sixteen weeks the review
-proposes removal for the owner to consider. T3 and level 3 detectors are exempt.
+proposes removal for the owner to consider. T3 and Incident level detectors are exempt.
 
 #### Signed-in Supervisor API
 

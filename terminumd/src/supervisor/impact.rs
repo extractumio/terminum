@@ -162,6 +162,17 @@ pub(super) fn relative_noise(series: &[Option<f64>]) -> f64 {
     if typical > 0.0 { noise / typical } else if noise > 0.0 { 1.0 } else { 0.0 }
 }
 
+/// A response level's word, the only way a level reaches a human: bare numbers read as severities P0–P3,
+/// which run the other way (§9, AC-213).
+pub(super) const fn level_word(level: u8) -> &'static str {
+    match level {
+        0 => "Record",
+        1 => "Digest",
+        2 => "Card",
+        _ => "Incident",
+    }
+}
+
 impl Scores {
     pub(super) fn response(self, repeated: bool) -> &'static str {
         match self.level() {

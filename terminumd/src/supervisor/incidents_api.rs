@@ -31,6 +31,7 @@ pub(super) struct Incident {
     pub project: String,
     project_name: String,
     level: u8,
+    level_word: &'static str,
     opened_at: i64,
     pub closed_at: Option<i64>,
     pub acknowledged_at: Option<i64>,
@@ -116,8 +117,9 @@ fn incident(row: &Row<'_>) -> rusqlite::Result<Incident> {
     };
     // AC-225: the page shows each interim hold's deadline in local time; this sentence says what follows it.
     let interim_only = !holds.is_empty() && holds.iter().all(|h| h.until.is_some());
+    let level = row.get(3)?;
     Ok(Incident {
-        id: row.get(0)?, project: row.get(1)?, project_name: row.get(2)?, level: row.get(3)?,
+        id: row.get(0)?, project: row.get(1)?, project_name: row.get(2)?, level, level_word: super::impact::level_word(level),
         opened_at: row.get(4)?, closed_at, acknowledged_at, snoozed_until: row.get(7)?, revision: row.get(8)?,
         happened: format!("{status}{measured} {count} {} recorded.{detail}", if count == 1 { "signal" } else { "signals" }),
         task: row.get(15)?,
@@ -226,10 +228,11 @@ pub(super) fn events(tx: &Transaction, id: i64, before: Option<i64>) -> Result<V
         (id, before.unwrap_or(i64::MAX), PAGE as i64 + 1), |r| {
             let kind: String = r.get(2)?;
             let level: Option<u8> = r.get(4)?;
+            let word = super::impact::level_word(level.unwrap_or(0));
             let words = match kind.as_str() {
-                "signal" | "updated" => format!("Level {}. {}", level.unwrap_or(0),
+                "signal" | "updated" => format!("{word} level. {}",
                     measurement(&r.get::<_, String>(5)?, r.get(6)?, r.get(7)?)),
-                "escalated" => format!("Level {}. A checked round escalated the signal. {}", level.unwrap_or(0),
+                "escalated" => format!("{word} level. A checked round escalated the signal. {}",
                     measurement(&r.get::<_, String>(5)?, r.get(6)?, r.get(7)?)),
                 "cleared" => "Signal cleared.".into(),
                 "all_clear" => "All-clear. Every linked signal cleared.".into(),

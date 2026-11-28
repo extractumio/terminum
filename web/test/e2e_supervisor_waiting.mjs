@@ -9,7 +9,7 @@ const puts = (calls) => calls.filter(({ method, suffix }) => method === "PUT" &&
 export async function waitingHours(page, panel, calls, suffix) {
   const group = panel.locator('details[data-section="Detectors and mutes"]');
   await group.locator(":scope > summary").click();
-  const second = group.getByLabel("P0 waiting to level 2, hours"), third = group.getByLabel("Then to level 3, further hours");
+  const second = group.getByLabel("P0 waiting to Card level, hours"), third = group.getByLabel("Then to Incident level, further hours");
   check("AC-213 the tab shows the project's P0 waiting hours", await second.inputValue() === "24" && await third.inputValue() === "24");
   const before = puts(calls);
   await second.fill("0");
@@ -17,7 +17,7 @@ export async function waitingHours(page, panel, calls, suffix) {
   const error = group.locator(".sv-field-error");
   await error.waitFor();
   check("AC-213 a P0 waiting hour out of range is refused inline before a write",
-    (await error.textContent()).startsWith("P0 waiting to level 2, hours: ") && await second.getAttribute("aria-invalid") === "true"
+    (await error.textContent()).startsWith("P0 waiting to Card level, hours: ") && await second.getAttribute("aria-invalid") === "true"
     && await second.evaluate((node) => node === document.activeElement) && puts(calls) === before);
   await shot(page, `supervisor-p0-hours-${suffix}`);
   await second.fill("1");

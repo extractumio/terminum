@@ -6,6 +6,7 @@ import { openReport, reportUrl } from "./reportlink.js";
 import { oneAtATime } from "./dialogs.js";
 import { api, button, placeChildren, showError, stamp } from "./kanbanutil.js";
 import { el, part, textKey } from "./listparts.js";
+import { levelText, levelTip } from "./supervisorfields.js";
 
 export const INCIDENTS = "/api/supervisor/incidents";
 const listeners = new Set();
@@ -132,7 +133,8 @@ export function incidentCard(initial, surface) {
   function update(next) {
     i = next;
     const snoozed = i.snoozed_until > Date.now() / 1000;
-    put(title, `${i.project_name} · Incident ${i.id} · Level ${i.level}`);
+    put(title, `${i.project_name} · Incident ${i.id} · ${levelText(i)}`);
+    levelTip(title, i);
     put(happened, i.happened);
     const holds = i.holds ?? [];
     // AC-225: an interim verification hold says by when it ends, in this device's time.

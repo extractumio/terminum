@@ -52,6 +52,8 @@ pub(crate) struct Signal {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) raised: Option<super::runaway::Raised>,
     pub level: u8,
+    /// `level`'s word for a human (AC-213).
+    pub level_word: &'static str,
     pub response: &'static str,
     pub first_seen: i64,
     pub last_seen: i64,
@@ -298,7 +300,8 @@ fn read(project: &str, r: &rusqlite::Row<'_>) -> rusqlite::Result<Signal> {
     Ok(Signal {
         fingerprint: r.get(0)?, project: project.into(), detector: r.get(1)?, subject_kind: r.get(2)?,
         subject_id: r.get(3)?, metric: r.get(4)?, evidence: decode(r, 5)?, measure: decode(r, 6)?,
-        scores, impact_basis, charter_breach, charter_never, escalated, raised, score_raises, level, response: effective.response(count > 1),
+        scores, impact_basis, charter_breach, charter_never, escalated, raised, score_raises, level,
+        level_word: super::impact::level_word(level), response: effective.response(count > 1),
         first_seen: r.get(8)?, last_seen: r.get(9)?, count, state: decode(r, 11)?,
     })
 }
