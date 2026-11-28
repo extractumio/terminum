@@ -106,7 +106,7 @@ def ac231_supervisor_tools_pane_and_token(t, call, typed, tool, tmux, page, proj
     # the report tools follow the level (terminum-reports.md AC-280)
     observer = {"list_tasks", "get_task", "get_case_file", "list_signals", "get_signal", "get_metric", "record_finding", "get_report", "list_reports"}
     advisor = observer | {"create_report", "append_to_report", "attach_report_file", "add_comment", "ask_human", "open_problem", "update_problem", "propose_rank", "propose_decision",
-                          "post_incident_answer", "replay_config_change", "propose_config_change"}
+                          "post_incident_answer", "hand_to_human", "replay_config_change", "propose_config_change"}
     hold_tools = {"hold", "release_hold"}
     operator = advisor | {"update_report", "delete_report", "run_task", "promote_queued_task", "stop_task", "list_runs", "get_dashboard"} | hold_tools
     view = call(settings)[1]

@@ -12,7 +12,9 @@ use crate::tasks::{api::store, ops::{self, now, sql}};
 use super::{config_changes, Evidence, Measure, Rule, Window, register, round_evidence, rounds, settings, signals, task_policy};
 
 pub(crate) const NAMES: &[&str] = &["get_case_file", "list_signals", "get_signal", "get_metric", "record_finding"];
-pub(crate) const ADVISOR: &[&str] = &["open_problem", "update_problem", "propose_rank", "propose_decision", "post_incident_answer", config_changes::PREVIEW, config_changes::PROPOSE];
+pub(crate) const ADVISOR: &[&str] = &["open_problem", "update_problem", "propose_rank", "propose_decision", "post_incident_answer", HAND_TO_HUMAN, config_changes::PREVIEW, config_changes::PROPOSE];
+/// A flow.stuck round's own task, whose remaining step is a human's, to WAIT FOR HUMAN with its question (AC-213).
+pub(crate) const HAND_TO_HUMAN: &str = "hand_to_human";
 
 pub(crate) fn known(tool: &str) -> bool {
     NAMES.contains(&tool) || ADVISOR.contains(&tool) || matches!(tool, super::reflection::TOOL | super::design_gates::RECORD)
@@ -100,6 +102,51 @@ pub(super) struct Finding {
     escalate: Option<super::escalations::Request>,
 }
 
+/// AC-213: the task of this round's own current flow.stuck signal goes to WAIT FOR HUMAN with the round's questions, the
+/// Supervisor's, while nobody works on it and no human or manager acted on it in 24 hours; an Answer reaches the
+/// conversation its session holds now, as AC-285 says. The task is the signal's, never the round's choice.
+async fn hand_to_human(app: &Shared, key: String, project: String, value: Value) -> Result<String, String> {
+    use super::signals::State;
+    let live = app.clone();
+    let task = store(app, move |tx| {
+        let run = run_of(tx, &key, &project, HAND_TO_HUMAN)?;
+        let at = now();
+        if let Some(extra) = value.as_object().and_then(|o| o.keys().find(|k| !matches!(k.as_str(), "questions" | "kind" | "options" | "recommended"))) {
+            return Err(format!("{HAND_TO_HUMAN} takes questions, kind, options and recommended; not {extra}: its task is the signal's."));
+        }
+        let round: bool = tx.query_row("SELECT EXISTS (SELECT 1 FROM supervisor_rounds WHERE run = ?1 AND project = ?2)",
+            (&run, &project), |r| r.get(0)).map_err(sql)?;
+        let signal = super::action_tasks::run_signal(tx, &project, &run)?
+            .filter(|s| round && s.detector == Rule::Stuck.id() && s.subject_kind == "task")
+            .ok_or("Only a flow.stuck investigation hands its own task to a human.")?;
+        if !matches!(signal.state, State::New | State::Raised | State::Recurred | State::Held) {
+            return Err("Its flow.stuck signal is no longer current.".into());
+        }
+        let slug: Option<String> = tx.query_row("SELECT coalesce(slug, CAST(number AS TEXT)) FROM tasks WHERE id = ?1",
+            [&signal.subject_id], |r| r.get(0)).optional().map_err(sql)?;
+        let task = slug.filter(|_| super::flow::still_stuck(tx, &project, &signal.subject_id, &signal.evidence).unwrap_or(false))
+            .map(|slug| ops::get(tx, &slug)).transpose()?
+            .ok_or("Its task moved, was pressed, run or written on since its signal: it stays as it is.")?;
+        let session = task.session.clone().ok_or("Its task has no session.")?;
+        let (state, agent) = super::samples::live(tx, &live, &task.key, &session, &project)?;
+        if state == super::samples::WORKED {
+            return Err(format!("Someone works on {} now: it stays as it is.", task.id));
+        }
+        // a human's or manager's action refuses it, its diagnostic kept (AC-239)
+        if let Some(why) = task_policy::record_override(tx, &task, at)? { return Ok(Err(why)); }
+        let questions = crate::plans::rules::clean(value["questions"].as_str().ok_or("questions is required.")?);
+        if let Some(why) = crate::tasks::closeout::unshaped(&task.id, &questions) { return Err(why); }
+        let asked_in = live.hooks.session(&session).map(|(_, s)| s).filter(|_| agent);
+        let author = supervisor::author(tx, &project)?;
+        let event = crate::tasks::comments::wait_in(tx, &author, &task, &questions, &value, asked_in.as_deref(), at)?;
+        super::action_tasks::comment(tx, &task, &key, &event, true, at)?;
+        Ok(Ok(task.id))
+    }).await??;
+    crate::tasks::api::told(app, &task);
+    app.supervisor.wake();
+    Ok(format!("{task} waits for the human, with your questions."))
+}
+
 fn run_of(tx: &Transaction, key: &str, project: &str, tool: &str) -> Result<String, String> {
     supervisor::require(tx, key, project, tool)?;
     tx.query_row("SELECT coalesce(m.talk, (SELECT run FROM supervisor_rounds WHERE id = m.round))
@@ -176,6 +223,9 @@ pub(crate) async fn run(app: &Shared, key: String, project: String, tool: String
         }).await?;
         crate::tasks::api::told(app, &task);
         return Ok(format!("Answered on {task}."));
+    }
+    if tool == HAND_TO_HUMAN {
+        return hand_to_human(app, key, project, value).await;
     }
     if ADVISOR.contains(&tool.as_str()) {
         return register_tool(app, key, project, tool, value).await;
@@ -331,3 +381,7 @@ fn accept(tx: &Transaction, project: &str, case: &Value, value: Value) -> Result
     }
     Ok(finding)
 }
+
+#[cfg(test)]
+#[path = "handoff_tests.rs"]
+mod handoff_tests;

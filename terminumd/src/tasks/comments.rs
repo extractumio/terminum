@@ -82,14 +82,15 @@ pub(crate) fn normalized_question(args: &Value) -> Result<Value, String> {
 
 /// Store an owner question and put its card in the ordinary waiting column.
 pub(crate) fn wait_for_owner(tx: &Transaction, by: &str, task: &super::ops::Task, text: &str, args: &Value, at: i64) -> Result<String, String> {
-    let event = structured_questions(tx, by, &task.id, text, args, at)?;
-    if task.status != "WAIT FOR HUMAN" { super::ops::move_to(tx, by, &task.id, "WAIT FOR HUMAN", at)?; }
-    Ok(event)
+    wait_in(tx, by, task, text, args, None, at)
 }
 
-pub(crate) fn structured_questions(tx: &Transaction, author: &str, id: &str, text: &str, args: &Value, at: i64) -> Result<String, String> {
+/// As `wait_for_owner`, asked in conversation `asked_in` when known, where an answer is typed (terminum-dispatcher.md AC-285).
+pub(crate) fn wait_in(tx: &Transaction, by: &str, task: &super::ops::Task, text: &str, args: &Value, asked_in: Option<&str>, at: i64) -> Result<String, String> {
     let question = super::choices::question(args)?;
-    record_question(tx, author, id, text, question.as_ref(), None, at)
+    let event = record_question(tx, by, &task.id, text, question.as_ref(), asked_in, at)?;
+    if task.status != "WAIT FOR HUMAN" { super::ops::move_to(tx, by, &task.id, "WAIT FOR HUMAN", at)?; }
+    Ok(event)
 }
 
 /// `asked_in`: the conversation that asks, an answer typed only where it still runs (terminum-dispatcher.md AC-285).

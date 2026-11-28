@@ -43,6 +43,7 @@ catalog! {
     FailedRepeat, "flow.failed_repeat", "repeated_failures", Absolute(2.0), flow::failed_repeat;
     RerunAfterDone, "flow.rerun_after_done", "reruns_after_done", Absolute(0.0), flow::rerun;
     Starved, "flow.starved", "starved_tasks", Absolute(1440.0), flow::starved;
+    Stuck, "flow.stuck", "stuck_tasks", Absolute(1440.0), flow::stuck;
     LeadTime, "flow.lead_time_shift", "lead_time_shift", change(60.0), flow::lead_time;
     BacklogGrowth, "flow.backlog_growth", "backlog_growth", Absolute(3.0), flow::backlog;
     CostOutlier, "flow.cost_outlier", "run_cost_outliers", baseline(95, 1.0), spend::outliers;
@@ -128,6 +129,7 @@ impl Rule {
         match self {
             Self::Starved | Self::UserBugAge => Some("Historical slot or priority state is unavailable."),
             Self::MainRed => Some("Red-target history keeps only the open Bug task."),
+            Self::Stuck => Some("Whether an agent works on a task is sampled only at present."),
             Self::ReportCritical | Self::UnreadReports | Self::FollowUps => Some("A report's read state keeps no history."),
             _ => None,
         }
