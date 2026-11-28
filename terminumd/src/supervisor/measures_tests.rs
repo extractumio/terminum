@@ -67,9 +67,8 @@ fn ac255_miss_from_owner_and_target_events() {
         &json!([{"table":"events","id":earlier}]).to_string(), NOW - 20);
     signal(&f, "shadow", ("task", &shadow.key), "shadow", "[]", NOW - 30);
     signal(&f, "at-the-same-time", ("target", "main"), "raised", "[]", NOW);
-    f.task("task", None, "P2", "IN PROGRESS", NOW - 100);
     f.write("INSERT INTO integration_verify_results (attempt,project,task,commit_sha,passed,at)
-        VALUES ('failed',?1,'task','sha2',0,?2)", (PROJECT, NOW - 45));
+        VALUES ('failed',?1,?3,'sha2',0,?2)", (PROJECT, NOW - 45, &raised.key));
     signal(&f, "muted", ("target", "next"), "muted",
         r#"[{"table":"integration_verify","id":"failed"}]"#, NOW - 40);
     f.store.with(|tx| {
@@ -78,9 +77,9 @@ fn ac255_miss_from_owner_and_target_events() {
         let shadow_bug = owner_bug(tx, HUMAN, "P1", Some(shadow.id))?;
         owner_bug(tx, DISPATCHER, "P0", None)?;
         owner_bug(tx, HUMAN, "P2", None)?;
-        misses::target_red(tx, PROJECT, "main", "sha1", "task", None, NOW)?;
-        misses::target_red(tx, PROJECT, "main", "sha1", "task", None, NOW + 1)?;
-        misses::target_red(tx, PROJECT, "next", "sha2", "task", None, NOW)?;
+        misses::target_red(tx, PROJECT, "main", "sha1", &raised.key, None, NOW)?;
+        misses::target_red(tx, PROJECT, "main", "sha1", &raised.key, None, NOW + 1)?;
+        misses::target_red(tx, PROJECT, "next", "sha2", &raised.key, None, NOW)?;
         misses::watchdog(tx, PROJECT, NOW, NOW - 10)?;
         let read = |source: &str, subject: &str| tx.query_row("SELECT first_evidence_at, signal_state, raised_at
             FROM supervisor_miss_checks WHERE project = ?1 AND source = ?2 AND subject_id = ?3",
