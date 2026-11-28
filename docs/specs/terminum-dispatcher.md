@@ -2130,6 +2130,12 @@ Scenario: AC-166 failure — a language that is no name
 ### AC-131 — Dispatcher itself [MUST / P0]
 
 ```gherkin
+Scenario: AC-131 failure — a hook transaction rolls back
+  Given a run has two ordered hooks waiting
+  When the store temporarily fails to commit the first hook
+  Then Dispatcher reports the failure and retries the rolled-back hook before the second
+  And a recovered transaction applies each task transition once
+
 Scenario: AC-131 happy path — one name
   Then every act above is written by the user "Dispatcher", of kind system, which cannot sign in or be chosen as an owner
 
@@ -2498,7 +2504,7 @@ Depends on `terminum-kanban.md`'s Stage 1. All three stages belong to terminum's
 - [x] AC-128 — `cargo test dispatcher`, `cargo test tasks::agents`, `web/test/e2e_livedispatcher.mjs`, its window's words and global placeholders in `web/test/e2e_liveboardagents.mjs`
 - [x] AC-129 — `cargo test cli::hooktokens` with fixtures of both agents' files, `cargo test dispatcher::usage` (a late read counts nothing), `web/test/e2e_livedispatcher.mjs`
 - [x] AC-130 — `scripts/e2e_remote_tasks.py`
-- [x] AC-131 — `cargo test dispatcher::plan` with a clock jump, `cargo test dispatcher::runs` (a phase it does not know), `web/test/e2e_livedispatcher.mjs` (Stop during downtime, screen recovery, request before failure)
+- [x] AC-131 — `ac131_failed_hook_transaction_is_reported_and_retried_before_stop` checks rollback, retry ordering and a single task transition. `cargo test dispatcher::plan` with a clock jump, `cargo test dispatcher::runs` (a phase it does not know), `web/test/e2e_livedispatcher.mjs` (Stop during downtime, screen recovery, request before failure)
 - [x] AC-140 — `cargo test tasks::agents`, `cargo test tasks::store`, `web/test/e2e_liveboardagents.mjs`, `web/test/e2e_livedispatcher.mjs`, `scripts/e2e_remote_tasks.py`
 - [x] AC-141 — `cargo test dispatcher::pool`, `cargo test dispatcher::plan`, `cargo test tasks::limits`, `web/test/e2e_liveboardpool.mjs` (an empty-box offer, a draft typed before its press, refusal preserving the pane/draft/unqueued task, then an empty-box close)
 - [x] AC-142 — `cargo test dispatcher::runs`, `cargo test dispatcher::plan`, `cargo test tasks::tools`, `web/test/e2e_liveboardagents.mjs` (the tiles: `web/test/e2e_liveboardpool.mjs`), `web/test/e2e_navsession.mjs` (the list's head key)

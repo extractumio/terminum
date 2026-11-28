@@ -226,6 +226,10 @@ pub(super) fn first_count(tx: &Transaction, project: &str, rule: Rule, at: i64) 
 }
 
 pub(super) fn counters(q: &Query<'_, '_>) -> Result<Measurements, String> {
+    let gap = q.tx.query_row("SELECT EXISTS (SELECT 1 FROM supervisor_hook_overflow
+        WHERE project = ?1 AND last_at >= ?2 AND first_at <= ?3 AND detector = ?4)",
+        (q.project, q.window.start, q.window.end, q.detector.rule.id()), |r| r.get::<_, bool>(0)).map_err(sql)?;
+    if gap { return Ok(Measurements::missing(super::sensors::INCOMPLETE)); }
     let filters = counter_events(q.detector.rule);
     let start = q.window.end - DAY + 1;
     // AC-212, AC-221: each session is ranked against every other session-day of the window, the current

@@ -24,7 +24,11 @@ pub(crate) fn routes() -> Router<Shared> {
 async fn saved_case(State(app): State<Shared>, Path((project, case)): Path<(String, String)>) -> Response {
     answer(crate::http::off(move || app.tasks.snapshot(super::SCHEMA, |tx| {
         let raw: String = tx.query_row("SELECT json_object('case', json(case_file), 'finding', json(finding),
-            'failure', failure, 'refused', refused, 'ended_at', ended_at) FROM supervisor_rounds
+            'failure', failure, 'refused', refused, 'ended_at', ended_at, 'first_usage_at', first_usage_at,
+            'final_usage_at', final_usage_at, 'delayed_usage', delayed_usage, 'budget_overrun_at', budget_overrun_at,
+            'measured_tokens', CASE WHEN first_usage_at IS NOT NULL THEN
+                (SELECT coalesce(sum(0.0 + input + output + cache_read + cache_write), 0) FROM usage WHERE usage.run = q.run)
+                END) FROM supervisor_rounds q
             WHERE id = ?1 AND project = ?2", (case, project), |r| r.get(0)).optional().map_err(sql)?
             .ok_or("No such investigation in this project.")?;
         serde_json::from_str::<Value>(&raw).map_err(|e| e.to_string())
@@ -76,6 +80,17 @@ fn active_id(tx: &Transaction, key: &str) -> Result<Option<String>, String> {
         |r| r.get(0)).optional().map_err(sql)
 }
 
+// The case captures the level and observation being judged. Rows added since then
+// can change the revision while the same fix still addresses the same episode.
+const COVERED_BY_FIX: &str = "SELECT 'Investigation ' || r.id || ' judged this signal. Fix ' || coalesce(t.slug, t.id) || ' is open.'
+    FROM supervisor_rounds r JOIN supervisor_problem_signals y USING (fingerprint)
+    JOIN supervisor_problem_tasks f ON f.problem = y.problem JOIN tasks t ON t.id = f.task
+    WHERE r.fingerprint = s.fingerprint AND r.finding IS NOT NULL AND t.project = s.project
+      AND t.archived_at IS NULL AND t.status IN ('TODO', 'IN PROGRESS', 'WAIT FOR HUMAN', 'INTEGRATION')
+      AND json_extract(r.case_file, '$.signal.last_seen') >= s.episode_raised_at
+      AND json_extract(r.case_file, '$.signal.level') >= max(json_extract(s.scores, '$.impact'),
+          json_extract(s.scores, '$.blast'), json_extract(s.scores, '$.reversibility'))";
+
 pub(super) fn status(tx: &Transaction, key: &str) -> Result<Option<String>, String> {
     let latest: Option<(String, bool, bool, bool, Option<String>)> = tx.query_row(
         "SELECT id, ended_at IS NULL, finding IS NOT NULL, signal_revision = s.revision, failure
@@ -88,10 +103,15 @@ pub(super) fn status(tx: &Transaction, key: &str) -> Result<Option<String>, Stri
     let waiting: Option<(bool, Option<String>)> = tx.query_row("SELECT owner_requested, reason
         FROM supervisor_round_requests WHERE fingerprint = ?1", [key], |r| Ok((r.get(0)?, r.get(1)?)))
         .optional().map_err(sql)?;
-    if let Some((requested, reason)) = waiting {
-        if reason.is_some() { return Ok(reason); }
-        if requested { return Ok(Some("Investigation requested.".into())); }
+    if let Some((true, reason)) = &waiting {
+        return Ok(Some(reason.clone().unwrap_or_else(|| "Investigation requested.".into())));
     }
+    if latest.as_ref().is_some_and(|(_, _, _, same, _)| !same) {
+        let covered: Option<String> = tx.query_row(&format!("SELECT ({COVERED_BY_FIX} ORDER BY r.rowid DESC, t.number LIMIT 1)
+            FROM supervisor_signals s WHERE s.fingerprint = ?1"), [key], |r| r.get(0)).map_err(sql)?;
+        if covered.is_some() { return Ok(covered); }
+    }
+    if let Some((_, Some(reason))) = waiting { return Ok(Some(reason)); }
     Ok(latest.filter(|(_, _, _, same, _)| *same).map(|(id, _, found, _, why)| match why {
         Some(why) => format!("Investigation {id} ended: {why}"),
         None if found => format!("Investigation {id} recorded its finding."),
@@ -109,7 +129,7 @@ fn check_room<'a>(settings: &'a settings::Settings, signal: &Signal) -> Result<&
 
 pub(crate) fn waiting(tx: &Transaction, at: i64, key: Option<&str>) -> Result<Vec<(String, String)>, String> {
     let week = at.div_euclid(super::WEEK);
-    let mut eligible = rows(tx, "WITH eligible AS (
+    let mut eligible = rows(tx, &format!("WITH eligible AS (
         SELECT s.project, s.fingerprint, s.first_seen,
             max(json_extract(s.scores, '$.impact'), json_extract(s.scores, '$.blast'),
                 json_extract(s.scores, '$.reversibility')) AS level,
@@ -125,15 +145,20 @@ pub(crate) fn waiting(tx: &Transaction, at: i64, key: Option<&str>) -> Result<Ve
                 FROM supervisor_settings w WHERE w.project = s.project), 0) <= ?3
             AND s.state IN ('new', 'raised', 'recurred', 'held') AND s.detector NOT IN ('self.round_failed','self.budget','self.fights')
             AND NOT EXISTS (SELECT 1 FROM supervisor_rounds r WHERE r.fingerprint = s.fingerprint
-                AND (r.signal_revision = s.revision OR (level = 1 AND r.finding IS NOT NULL)))
-            AND (level >= 2 OR (level = 1 AND s.detector = 'flow.stuck') OR (level = 1 AND NOT EXISTS (
+                AND (r.signal_revision = s.revision OR (level = 1 AND r.finding IS NOT NULL
+                    AND json_extract(r.case_file, '$.signal.last_seen') >= s.episode_raised_at)))
+            AND NOT EXISTS ({COVERED_BY_FIX})
+            AND (level >= 2 OR (level = 1 AND s.detector = 'flow.stuck') OR (level = 1
+              AND (NOT EXISTS (
                 SELECT 1 FROM supervisor_problem_signals y JOIN supervisor_problems p ON p.id = y.problem
                 WHERE y.fingerprint = s.fingerprint AND p.state IN ('confirmed','fix_in_work','watching','accepted'))
+                OR EXISTS (SELECT 1 FROM supervisor_rounds r WHERE r.fingerprint = s.fingerprint
+                    AND r.finding IS NOT NULL AND json_extract(r.case_file, '$.signal.last_seen') < s.episode_raised_at))
               AND 3 <= (
                 SELECT count(*) FROM supervisor_signal_weeks w
                 WHERE w.fingerprint = s.fingerprint AND w.week BETWEEN ?1 - 7 AND ?1)))))
         )
-        SELECT project, fingerprint FROM eligible ORDER BY impact DESC, level DESC, first_seen, fingerprint",
+        SELECT project, fingerprint FROM eligible ORDER BY impact DESC, level DESC, first_seen, fingerprint"),
         (week, key, at), |r| Ok((r.get(0)?, r.get(1)?)))?;
     eligible.extend(super::reflection::waiting(tx, at, key)?);
     if key.is_some_and(|key| !key.starts_with(design_reviews::PREFIX)) { return Ok(eligible); }
@@ -403,3 +428,7 @@ mod tests {
         std::fs::remove_dir_all(root).unwrap();
     }
 }
+
+#[cfg(test)]
+#[path = "round_admission_tests.rs"]
+mod admission_tests;

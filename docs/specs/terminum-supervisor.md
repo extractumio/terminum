@@ -468,6 +468,11 @@ Scenario: AC-218 failure — retention
   When the maintenance sweep prunes counters
   Then the expired counters are removed
 
+Scenario: AC-218 edge — hook tracking fills
+  Given a project has filled its session or tool-call tracking capacity
+  When a hook cannot be fully counted
+  Then the project retains its overflow count and the affected detector windows report incomplete evidence
+
 Scenario: AC-218 failure — hook output
   Given a hook event carries free-form output
   When the hook counts it
@@ -820,6 +825,12 @@ Scenario Outline: AC-233 happy path — qualifying triggers
     | a flow.stuck signal arrives at level 1, once per signal |
     | the owner presses Investigate on a signal or an incident |
 
+Scenario: AC-233 edge — a known cause has an open fix
+  Given a checked investigation links a fingerprint to a known cause and an open fix
+  When new evidence revises that signal within the same episode and level
+  Then no automatic round starts
+  But an owner request, a higher level or a recurrence after resolution can start another investigation
+
 Scenario: AC-233 edge — low-confidence high stakes
   Given a heuristic puts a signal at level 2 or 3 with confidence 0.5
   When code schedules verification
@@ -957,9 +968,16 @@ Scenario: AC-237 edge — degraded operation
   Then signals, pages, holds and digest continue, judgment rounds and new Supervisor tasks wait; the next owner message starts with the budget notice, and a review that cannot run becomes a decision card
 
 Scenario: AC-237 failure — round or finding fails
-  Given a round exceeds its token cap, or ends without a result
-  When code checks the round
-  Then the governor ends an overrunning round, records the failed round and raises self.round_failed or self.budget
+  Given a Claude or Codex round has a token ceiling
+  When a runtime reading crosses the ceiling
+  Then the governor records the overrun once and stops further round work
+  And a finding already checked keeps its outcome even when the first reading arrives after the finding
+
+Scenario: AC-237 edge — partial, missing and final usage
+  Given a runtime can provide cumulative readings at tool boundaries and at turn end
+  When readings arrive late, out of order or after the marked pane closes
+  Then each increase is charged once to the original round
+  And the ledger distinguishes missing or delayed measurement and retains the unmeasured reservation until final usage or budget-window expiry
 ```
 
 ### AC-238 — Fix spend [MUST / P0]
@@ -1396,6 +1414,14 @@ Scenario: AC-255 edge — earlier but suppressed
   Given the subject had an earlier signal in shadow or muted
   When the miss check runs
   Then it records its state and whether that evidence had been raised, so reflection can distinguish an absent rule from a suppressed signal
+
+Scenario: AC-255 edge — a watchdog page and an independent red build
+  Given the watchdog delivers a critical incident in the same transaction as its independent observation
+  Then the observation records timely detection
+  When a target turns red and an earlier signal names the same task
+  Then only evidence of the corresponding failed check can establish prior coverage of the red build
+  And a historical red check that kept a fingerprint without the required evidence is unverified
+  And a retained same-second critical incident supplies proof of timely watchdog delivery
 
 Scenario: AC-255 failure — absent proof
   Given there is no evidence before a new failure, or an earlier raised signal already covered the subject
@@ -1971,7 +1997,7 @@ Enable none of the runtime cases by default. The stages below list the cases in 
 - [x] AC-215 — `ac215_replay_rank_and_schema` covers the CLI ranking, repeatable output, unavailable detectors, project isolation, read-only bytes and schema refusal. `ac215_replay_counts_outside_firings_from_retained_samples` covers replay of the outside detectors from retained probe samples. `ac215_replay_reports_quality_only_in_labelled_weeks` covers judgment quality in labelled weeks, insufficient labels, labels of another project or of a firing the replay does not calculate, judgments as of `--at`, repeatable output and read-only bytes.
 - [x] AC-216 — `e2e_supervisor.py` and `ac216_project_off_is_inert_and_a_new_generation_rejects_old_work` cover the signed-in switch, its project scope and disabling during collection. `e2e_supervisor_rounds.py` checks that switch-off ends the active round and frees its slot. `ac245_hold_undo_and_switch_off` covers retained holds.
 - [x] AC-217 — `e2e_supervisor.py` checks live detection within a minute. `ac217_cursor_restart_and_rollback_with_same_time_nonmonotonic_ids` and `ac217_open_detector_snapshot_does_not_take_the_store_write_turn` cover durable order, retry and concurrent writes. `ac217_persisting_signals_write_only_what_changed` covers persisting signals and a counted one with thousands of rows. `scripts/bench_busy.py --supervisor` measures the active collector under load.
-- [x] AC-218 — `e2e_supervisor.py`, `ac218_points_and_hook_counter_retention` and `ac218_queue_growth_uses_only_the_first_available_samples` cover the sample and baseline cadence, numerical hook counts, retention and unavailable history.
+- [x] AC-218 — `e2e_supervisor.py`, `ac218_points_and_hook_counter_retention` and `ac218_queue_growth_uses_only_the_first_available_samples` cover the sample and baseline cadence, numerical hook counts, retention and unavailable history. The session and thread overflow tests check project isolation, affected windows and retry.
 - [x] AC-219 — `e2e_supervisor.py` and `ac219_independent_watchdog_reports_three_misses_once_and_honors_recovery` cover the independent failure signal, the three-beat threshold and recovery; `ac219_a_whole_process_stall_opens_no_incident_a_stuck_collector_does` covers the stalled process and the collector stuck past it. `liveIncidents` checks the signed-in incident and recovery.
 - [x] AC-220 — `ac220_export_redaction_and_import_confirmation` in `scripts/e2e_supervisor_settings.py` covers per-project defaults and export, unset imports and preview-bound command confirmation on private terminumd. The project tab is AC-222.
 - [x] AC-221 — `ac221_switch_attaches_two_projects` in `scripts/e2e_supervisor_settings.py` covers switch-only attachment, project-specific calibration and unavailable inputs. `ac221_attach_short_history_and_hold_shadow` covers the seven-day boundary and charter exception. `ac221_attach_replays_distinct_verdicts_seeds_problems_and_retires_disabled_rule` covers the collector's replay qualification, register seeds and fast off/on edits. `ac221_integration_switch_rescans_the_attachment_and_a_quiet_beat_keeps_it` covers what makes the collector scan again. `ac212_ac221_hotspot_baseline_ranks_the_projects_fixed_files` and `ac212_ac221_loop_baseline_ranks_the_projects_session_days` cover a baseline without an earlier window. `ac213_an_edited_migration_breaks_a_never_only_when_the_owner_tied_it` records a live breach on the signal that hold shadow reads.
@@ -1986,11 +2012,11 @@ Enable none of the runtime cases by default. The stages below list the cases in 
 - [x] AC-230 — `cargo test ac230` covers the old store, validation and answer records. `node web/test/e2e_all.mjs webQuestionChoices` checks wide and touch windows in Chromium and WebKit. `web/test/e2e_livedispatcher.mjs` checks the live answer and continuation.
 - [x] AC-231 — `ac231_supervisor_tools_pane_and_token` in `scripts/e2e_roles.py` checks every existing catalog tool at all three levels, pane identity, project scope and the fixed Dispatcher prompt. `ac231_supervisor_marks_follow_only_restored_panes`, `ac231_ac232_each_level_allows_exactly_its_list_of_the_catalog` and `ac231_an_unknown_local_peer_is_refused_while_a_supervisor_pane_is_marked` cover restored identity, the precise allowlists and an unknown caller. `e2e_supervisor_rounds.py` and `e2e_supervisor_comms.py` exercise the launchers' real pane marks.
 - [x] AC-232 — `scripts/e2e_roles.py` checks the owner changing a live pane's level, and `scripts/e2e_supervisor_settings.py` checks that importing preferences preserves it. `ac232_owner_sets_level_and_all_levels_page` delivers charter-breach notices to a private command at every level.
-- [x] AC-233 — `e2e_supervisor_rounds.py` covers automatic admission, the confidence gate, budget denial, deduplication and the owner's press. `ac233_waiters_use_distinct_weeks_and_impact` covers recurring signals and wait order. `supervisor::interim_tests` covers the comparison's three outcomes, the interim hold's deadline, its end after a human's comment, a failed end, a strong finding that code's recomputation does not confirm, and one it confirms, which keeps the hold.
+- [x] AC-233 — `e2e_supervisor_rounds.py` covers automatic admission, the confidence gate, budget denial, deduplication and the owner's press. `ac233_waiters_use_distinct_weeks_and_impact` covers recurring signals and wait order. The checked-cause regression covers evidence revisions, escalation, recurrence, owner requests and an archived fix. `supervisor::interim_tests` covers the comparison's three outcomes, the interim hold's deadline, its end after a human's comment, a failed end, a strong finding that code's recomputation does not confirm, and one it confirms, which keeps the hold.
 - [x] AC-234 — `e2e_supervisor_rounds.py` checks exact case access, bounded data, the project's matching indexed memory with a secret redacted and an escaping link unread, the fixed prompt, a scoped mark before the first tool call, typed results, deadlines and cleanup in private tmux. `supervisor::case_memory::tests` cover matching, ranked caps, redaction, refused names, links and hard links, and a memory folder linked out of the project.
 - [x] AC-235 — `e2e_supervisor_rounds.py` refuses a wrong number and an unresolved row, records the refusal signal, counting each refusal, and keeps the finding after the named query and evidence pass; `ac235_each_refusal_counts` proves the count.
 - [x] AC-236 — `ac236_register_rank_ruling_and_recurrence` covers measured ranking, owner rulings, scoped evidence and protected yardsticks. `ac236_a_retaken_probe_sample_keeps_an_accepted_problem_accepted` and `ac236_a_window_input_keeps_an_accepted_spend_problem_accepted` keep an accepted problem accepted across the real collector's retaken samples and new usage rows; `ac236_a_hovering_level_reading_keeps_an_accepted_problem_until_its_window_clears` keeps it accepted while a probe reading resolves and returns, and reopens it on a return after a clear window; `ac236_a_new_failed_run_reopens_an_accepted_problem` reopens it on a new failed run, and `ac236_a_repeat_counted_while_its_signal_is_held_reopens_once_it_is_active` on a repeat counted while its signal was held. The Supervisor browser check exercises the register and ruling form.
-- [x] AC-237 — `ac237_judgment_reserve_and_caps` covers the investigation reserve, shared day and round caps, and overrun signals. `ac237_exhausted_judgment_holds_back_a_due_fix_until_the_owner_raises_the_ceiling` checks that a due fix task waits at the ceiling, and `ac237_ac245_code_still_holds_a_level_three_run_once_judgment_is_exhausted` that a code hold does not. `scripts/e2e_supervisor_budget.py` spends the ceiling with a real round's usage in a private terminumd, then checks the waiting investigation, continued collection, the critical page that starts with the budget notice, the digest, the due weekly review's decision card and the next review listing that card.
+- [x] AC-237 — `dispatcher::round_usage` checks missing, partial, final, delayed and duplicate readings against the round that requested them. The private budget and reflection launch tests exercise Claude and Codex hooks. `ac237_judgment_reserve_and_caps` covers the investigation reserve, shared day and round caps, and overrun signals. `ac237_exhausted_judgment_holds_back_a_due_fix_until_the_owner_raises_the_ceiling` checks that a due fix task waits at the ceiling, and `ac237_ac245_code_still_holds_a_level_three_run_once_judgment_is_exhausted` that a code hold does not. `scripts/e2e_supervisor_budget.py` spends the ceiling with a real round's usage in a private terminumd, then checks the waiting investigation, continued collection, the critical page that starts with the budget notice, the digest, the due weekly review's decision card and the next review listing that card.
 - [ ] AC-238 — `ac238_fix_budget_and_critical_exception` covers admission order, the single decision card, a seeded charter exception and attribution by run; `ac238_at_the_fixes_ceiling_only_a_checked_breach_gets_its_fix` covers a live breach's P0 fix at the ceiling beside a level 3 by reversibility that waits on the card. `ac236_ac238_an_automatic_fix_task_names_its_measure_weeks_share_and_evidence` covers the title, measures, weeks, share, evidence links and hypothesis of a task made from a measure alone. `ac238_a_fix_task_archived_unrun_frees_its_problem_for_one_new_task` covers the return to confirmed, the one new task, the second archive's acceptance and a task done by hand or one that ran; `ac238_a_measure_alone_problem_that_claims_a_cause_is_rewritten` gives a measure-alone problem whose hypothesis claims a cause the words above.
 - [x] AC-239 — `ac239_marked_task_policy_and_override` covers marked eligibility, advisory ranks and the timed override. The role end-to-end check exercises the Supervisor tools on a private board.
 - [x] AC-240 — `ac240_decision_card_routing` verifies the finding and impact gates, a deferred routine choice and deduplication. `ac242_review_schedule_and_charter_due_once` covers the charter review date. `ac240_two_drifting_sessions_open_a_retro_card` opens one `/retro` card for two impact 0 sessions above threshold, names a session without figures as not counted, leaves one under its threshold out, asks nothing for a set inside one asked about and puts a third session on the waiting card. `ac240_one_drifting_session_waits_for_the_weekly_list` defers a single session to that week's list. `ac240_standing_rule_weighed_by_its_recurring_question` refuses a rule without a recurring question from its evidence, measures the question's askings before and after acceptance in both directions, leaves out a rule accepted with another option, and reports an unknown effect for a fresh rule and one naming no question.
@@ -2008,7 +2034,7 @@ Enable none of the runtime cases by default. The stages below list the cases in 
 - [x] AC-252 — `ac252_review_priority_budget_escalation_and_timeout` and `ac252_t3_needs_distinct_reviewers_and_the_owners_choice` cover priority, reuse, budget, time and sign-off. `scripts/e2e_supervisor_design.py` exercises the marked critic pane.
 - [x] AC-253 — `supervisor::config_tests` checks reproducible replay, versioned tune, coverage and breaker routing, shadow promotion, engine routing and one-key revert. `e2e_supervisor_reflection.py` exercises the tools through a marked round. `webSupervisor` exercises the owner key in Chromium and WebKit.
 - [x] AC-254 — `ac254_mute_authority_and_expiry` checks the reason, owner, escalation and expiration. `ac254_collector_resumes_at_mute_expiry_without_new_events` checks the detector resumes at the boundary on a private store.
-- [x] AC-255 — `ac255_miss_from_owner_and_target_events` checks typed subject matching, shadow and muted evidence, missing proof and source deduplication; `ac255_the_red_target_s_own_signal_is_not_earlier_evidence_of_it` checks that `flow.main_red` never counts as warning of its own red.
+- [x] AC-255 — `ac255_miss_from_owner_and_target_events` checks typed subject matching, shadow and muted evidence, missing proof and source deduplication; `ac255_the_red_target_s_own_signal_is_not_earlier_evidence_of_it` checks matching Verify evidence and unrelated signals on the same task. The watchdog test checks the delivering transaction and the upgrade test checks retained observations.
 - [x] AC-256 — `ac256_supervisor_scorecard_denominators` checks the seeded ledger, all metrics and the retention of measured results. `webSupervisor` checks samples and uncertainty on the screen.
 - [x] AC-257 — `ac257_sunset_age_and_exemptions` checks the eight- and sixteen-week boundaries, acted-on findings and protected scope. `webSupervisor` shows the removal proposal.
 - [x] AC-258 — `ac258_protected_state_denials` checks each level from its marked pane and with a manager token presented from that pane. Typed argument checks preserve the detector yardstick.

@@ -71,6 +71,9 @@ pub(super) fn waiting(tx: &Transaction, at: i64, key: Option<&str>) -> Result<Ve
     rows(tx, "SELECT r.project, r.fingerprint FROM supervisor_reflections r
         JOIN project_supervisor p ON p.project = r.project AND p.generation = r.generation AND p.enabled
         WHERE r.round IS NULL AND (?1 IS NULL OR r.fingerprint = ?1) AND (r.retry_at IS NULL OR r.retry_at <= ?2)
+        AND NOT (r.subject_kind = 'miss' AND EXISTS (SELECT 1 FROM supervisor_miss_checks m
+            WHERE m.project = r.project AND (m.raised_at IS NOT NULL OR m.signal_state = 'unverified')
+            AND r.subject_id = m.source || '/' || m.subject_id || '/' || m.occurrence))
         ORDER BY r.at, r.fingerprint LIMIT 16", (key, at), |r| Ok((r.get(0)?, r.get(1)?)))
 }
 

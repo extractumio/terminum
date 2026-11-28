@@ -50,6 +50,7 @@ pub fn main(agent: &str, prompt_context: bool) -> i32 {
     }
     let (Ok(input), Ok(tmux), Ok(pane)) = (serde_json::from_slice::<Value>(&kept), std::env::var("TMUX"), std::env::var("TMUX_PANE")) else { return 0 };
     if let Some(mut ev) = event(agent, &input, &tmux, &pane) && takes_pane(agent) {
+        ev["round_usage"] = json!(true);
         let prompt = prompt_context && ev["event"] == "UserPromptSubmit";
         if prompt {
             ev["prompt_context"] = json!(true);
@@ -70,10 +71,6 @@ pub fn main(agent: &str, prompt_context: bool) -> i32 {
                 let _ = super::sockhttp::call(&sinks[i], "POST", "/hook", Some(&heard), budget);
             }
         }
-        // Codex's account's windows, at each turn's end, after it has gone (terminum-dispatcher.md AC-168)
-        if agent == "codex" && ev["event"] == "Stop" && let Some(windows) = super::hooktokens::codex_windows(&input) {
-            let _ = super::sinks::post_all(&sinks, "/hook", &limits_event(&ev, &windows), BUDGET);
-        }
         // the agent's command line, once a session: when a terminumd asks, after the event has gone (AC-153)
         if remaining() > PROMPT_HEARD && answers.iter().any(|a| matches!(a, Ok((200, Some(answer))) if answer["argv"] == true)) {
             let mut said = ev.clone();
@@ -83,13 +80,13 @@ pub fn main(agent: &str, prompt_context: bool) -> i32 {
             }
             let _ = super::sinks::post_all(&sinks, "/hook", &said, remaining());
         }
-        // a task's session: the transcript is read after its turn's end has gone, so nothing waits on it
+        // Codex's final usage and account windows share the same bounded transcript read.
         let asked = answers.iter().any(|a| matches!(a, Ok((200, Some(answer))) if answer["tokens"] == true));
-        if asked && let Some(tokens) = super::hooktokens::of_event(agent, &input) {
-            let mut said = ev.clone();
-            said["event"] = json!("Tokens");
-            said["tokens"] = tokens;
-            let _ = super::sinks::post_all(&sinks, "/hook", &said, BUDGET);
+        let limits = agent == "codex" && ev["event"] == "Stop";
+        let (tokens, windows) = super::hooktokens::readings(agent, &input, asked, limits);
+        if let Some(tokens) = tokens { super::sinks::usage(&sinks, &answers, &ev, &tokens, BUDGET); }
+        if let Some(windows) = windows {
+            let _ = super::sinks::post_all(&sinks, "/hook", &limits_event(&ev, &windows), BUDGET);
         }
     }
     0

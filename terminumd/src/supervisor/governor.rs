@@ -26,6 +26,9 @@ struct Usage {
 pub(crate) struct Judgment {
     pub tokens: u64,
     pub sampled_runs: usize,
+    pub missing_rounds: usize,
+    pub partial_rounds: usize,
+    pub delayed_rounds: usize,
     pub held_tokens: u64,
     pub limit_tokens: u64,
     pub day_tokens: u64,
@@ -86,17 +89,18 @@ fn token_count(n: f64) -> u64 {
 }
 
 fn judgment_for(tx: &Transaction, project: &str, budgets: &settings::Budgets, uses: &HashMap<String, Usage>, at: i64) -> Result<Judgment, String> {
-    let rounds = rows(tx, "SELECT run, reserved_class, coalesce(token_cap, 0), ended_at
+    let rounds = rows(tx, "SELECT run, reserved_class, coalesce(token_cap, 0), ended_at, first_usage_at, final_usage_at, delayed_usage
         FROM supervisor_rounds WHERE project = ?1 AND (ended_at IS NULL OR ended_at > ?2 OR run IN
           (SELECT u.run FROM usage u JOIN runs r ON r.id = u.run WHERE r.project = ?1 AND u.at > ?2))
         UNION ALL
         SELECT q.run, 0, q.cap, CASE WHEN r.state IN ('ending','gone','closed','left') OR NOT EXISTS (SELECT 1 FROM run_tasks m WHERE m.run = q.run AND m.result = 0)
-            THEN r.last_walk END
+            THEN r.last_walk END, NULL, NULL, NULL
         FROM supervisor_review_runs q JOIN runs r ON r.id = q.run WHERE q.project = ?1
         AND (r.state NOT IN ('gone','closed','left') OR r.last_walk > ?2 OR EXISTS (
             SELECT 1 FROM usage u WHERE u.run = q.run AND u.at > ?2))",
         (project, at - WEEK), |r| Ok((r.get::<_, String>(0)?, r.get::<_, bool>(1)?,
-            r.get::<_, i64>(2)?, r.get::<_, Option<i64>>(3)?)))?;
+            r.get::<_, i64>(2)?, r.get::<_, Option<i64>>(3)?, r.get::<_, Option<i64>>(4)?,
+            r.get::<_, Option<i64>>(5)?, r.get::<_, Option<bool>>(6)?)))?;
     let floor = budgets.judgment_floor_tokens;
     let weekly_project = uses.values().map(|u| u.tokens).sum::<f64>();
     let limit = token_count(weekly_project * budgets.judgment_percent / 100.).max(floor)
@@ -104,13 +108,20 @@ fn judgment_for(tx: &Transaction, project: &str, budgets: &settings::Budgets, us
     let routine_limit = token_count(limit as f64 * (100. - budgets.investigation_reserve_percent) / 100.);
     let day_limit = budgets.daily_token_ceiling.unwrap_or(limit);
     let (mut week, mut day, mut routine, mut held, mut held_today) = (0_u64, 0_u64, 0_u64, 0_u64, 0_u64);
-    let mut sampled_runs = 0;
-    for (run, reserved, cap, ended) in rounds {
+    let (mut sampled_runs, mut missing_rounds, mut partial_rounds, mut delayed_rounds) = (0, 0, 0, 0);
+    for (run, reserved, cap, ended, first, final_read, delayed) in rounds {
         let observed = uses.get(&run);
-        sampled_runs += usize::from(observed.is_some());
+        let sampled = first.is_some() || observed.is_some();
+        sampled_runs += usize::from(sampled);
+        if delayed.is_some() && ended.is_some() {
+            missing_rounds += usize::from(!sampled);
+            partial_rounds += usize::from(sampled && final_read.is_none());
+        }
+        delayed_rounds += usize::from(delayed == Some(true));
         let spent = observed.map_or(0, |u| token_count(u.tokens));
         let daily = observed.map_or(0, |u| token_count(u.daily));
-        let awaiting_usage = observed.is_none() && ended.is_some_and(|t| t > at - WEEK);
+        let incomplete = if delayed.is_some() { final_read.is_none() } else { observed.is_none() };
+        let awaiting_usage = incomplete && ended.is_some_and(|t| t > at - WEEK);
         let remaining = if ended.is_none() || awaiting_usage { (cap as u64).saturating_sub(spent) } else { 0 };
         if ended.is_none_or(|t| t > at - DAY) {
             held_today = held_today.saturating_add(remaining);
@@ -123,7 +134,7 @@ fn judgment_for(tx: &Transaction, project: &str, budgets: &settings::Budgets, us
     let investigation_left = limit.saturating_sub(week.saturating_add(held))
         .min(day_limit.saturating_sub(day.saturating_add(held_today)));
     Ok(Judgment {
-        tokens: week, sampled_runs, held_tokens: held, limit_tokens: limit, day_tokens: day, day_limit_tokens: day_limit,
+        tokens: week, sampled_runs, missing_rounds, partial_rounds, delayed_rounds, held_tokens: held, limit_tokens: limit, day_tokens: day, day_limit_tokens: day_limit,
         routine_left: investigation_left.min(routine_limit.saturating_sub(routine)),
         investigation_left, round_limit_tokens: budgets.round_token_ceiling.unwrap_or(DEFAULT_ROUND_TOKENS).min(i64::MAX as u64),
     })
@@ -136,18 +147,23 @@ pub(super) fn admit_round(tx: &Transaction, project: &str, at: i64, important: b
 }
 
 pub(crate) fn judge_usage(tx: &Transaction, run: &str, at: i64) -> Result<(), String> {
-    let rounds = rows(tx, "SELECT q.id, q.project, q.token_cap FROM supervisor_rounds q JOIN project_supervisor p
-        ON p.project = q.project AND p.enabled = 1 AND p.generation = q.generation
-        WHERE q.run = ?1 AND q.token_cap IS NOT NULL AND q.failure IS NULL",
-        [run], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, i64>(2)?)))?;
-    for (id, project, cap) in rounds {
+    let rounds = rows(tx, "SELECT q.id, q.project, q.token_cap, q.finding IS NULL AND q.ended_at IS NULL AND q.failure IS NULL,
+        EXISTS (SELECT 1 FROM project_supervisor p WHERE p.project = q.project AND p.enabled AND p.generation = q.generation)
+        FROM supervisor_rounds q WHERE q.run = ?1 AND q.token_cap IS NOT NULL AND q.budget_overrun_at IS NULL",
+        [run], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, i64>(2)?, r.get::<_, bool>(3)?, r.get::<_, bool>(4)?)))?;
+    for (id, project, cap, working, enabled) in rounds {
         let tokens: f64 = tx.query_row("SELECT coalesce(sum(0.0 + input + output + cache_write + cache_read), 0)
             FROM usage WHERE run = ?1", [run], |r| r.get(0)).map_err(sql)?;
+        if tokens >= cap as f64 && working {
+            super::rounds::failure(tx, run, "The Supervisor round reached its token limit before a finding.", false)?;
+        }
         if tokens > cap as f64 {
-            super::rounds::failure(tx, run, "The Supervisor round exceeded its token limit.", false)?;
-            signals::diagnostic(tx, &project, "self.budget", ("round", &id, "judgment_round_tokens"),
-                &[Evidence::SupervisorRounds(id.clone())], (tokens, cap as f64), at)?;
-            super::reflection::usage_overrun(tx, &project, run, cap, tokens, at)?;
+            tx.execute("UPDATE supervisor_rounds SET budget_overrun_at = ?2 WHERE run = ?1", (run, at)).map_err(sql)?;
+            if enabled {
+                signals::diagnostic(tx, &project, "self.budget", ("round", &id, "judgment_round_tokens"),
+                    &[Evidence::SupervisorRounds(id.clone())], (tokens, cap as f64), at)?;
+                super::reflection::usage_overrun(tx, &project, run, cap, tokens, at)?;
+            }
         }
     }
     let changed = tx.execute("UPDATE supervisor_review_runs SET overrun = 1 WHERE run = ?1 AND NOT overrun

@@ -41,7 +41,7 @@ def main():
         return call("/api/task-agents", "POST", {
             "project": project, "name": name, "kind": kind, "at_once": 1,
             "command": shlex.join(["python3", "-I", str(FAKE), BIN, "--kind", kind, "--prompts", str(recorded),
-                                   "--round-log", str(log)]),
+                                   "--round-log", str(log), "--round-tokens", "200"]),
         })["id"]
 
     def configure(independent, cap):
@@ -68,9 +68,9 @@ def main():
         secret = t.signin()
         project = call("/api/task-projects", "POST", {"name": "Reflections", "dir": t.root})["id"]
         path = f"/api/task-projects/{project}/supervisor"
-        main_agent = agent(project, "Supervisor fixture", "codex", main_prompts)
-        peer = agent(project, "Same family fixture", "codex", main_prompts)
-        independent = agent(project, "Reviewer fixture", "claude", prompts)
+        main_agent = agent(project, "Supervisor fixture", "claude", main_prompts)
+        peer = agent(project, "Same family fixture", "claude", main_prompts)
+        independent = agent(project, "Reviewer fixture", "codex", prompts)
         configure(main_agent, 0)
         call(path, "PUT", {"enabled": True})
         seed("breaker", ["breaker_opened"])
@@ -100,6 +100,10 @@ def main():
         check("AC-248 every trigger starts exactly one round on the independent agent",
               len(cases) == 8 and all(row[3] == independent and row[4] > 0 and row[5] is None for row in cases)
               and not lines(main_prompts), f"{len(cases)} ended rounds")
+        readings = [call(f"{path}/rounds/{case}") for case, *_ in cases]
+        check("AC-237 Codex reflection readings reach each closed round exactly once",
+              all(row["first_usage_at"] is not None and row["final_usage_at"] is not None
+                  and not row["delayed_usage"] and row["measured_tokens"] == 200 for row in readings))
         expected = [f"Supervisor reflection case {case}. Call get_case_file with its ID. Review the code-built timeline independently. "
                     "Explain misses, noise and wrong decisions, and submit configuration changes with replay_config_change and propose_config_change. Cite their change IDs with record_reflection."
                     for case, *_ in cases]

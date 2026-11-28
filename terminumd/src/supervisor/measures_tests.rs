@@ -31,14 +31,24 @@ fn ac255_the_red_target_s_own_signal_is_not_earlier_evidence_of_it() {
     enabled(&f);
     signal(&f, "own", ("target", "main"), "raised", "[]", NOW - 600);
     f.write("UPDATE supervisor_signals SET detector = 'flow.main_red' WHERE fingerprint = 'own'", []);
-    signal(&f, "earlier", ("target", "next"), "raised", "[]", NOW - 600);
+    f.task("task", None, "P1", "IN PROGRESS", NOW - 900);
+    signal(&f, "unrelated", ("task", "task"), "raised", "[]", NOW - 800);
+    f.write("UPDATE supervisor_signals SET detector = 'product.user_bug_age' WHERE fingerprint = 'unrelated'", []);
+    f.write("INSERT INTO integration_verify_results (attempt,project,task,commit_sha,passed,at)
+        VALUES ('check',?1,'task','sha2',0,?2)", (PROJECT, NOW - 700));
+    signal(&f, "earlier", ("task", "task"), "raised",
+        r#"[{"table":"integration_verify","id":"check"}]"#, NOW - 600);
     f.store.with(|tx| {
-        misses::target_red(tx, PROJECT, "main", "sha1", "task", NOW)?;
-        misses::target_red(tx, PROJECT, "next", "sha2", "task", NOW)?;
+        misses::target_red(tx, PROJECT, "main", "sha1", "task", None, NOW)?;
+        misses::target_red(tx, PROJECT, "next", "sha2", "task", None, NOW)?;
+        misses::target_red(tx, PROJECT, "candidate", "other-sha", "task", Some("check"), NOW)?;
+        misses::target_red(tx, PROJECT, "different-attempt", "sha2", "task", Some("another-check"), NOW)?;
         let signal_of = |subject: &str| tx.query_row("SELECT signal FROM supervisor_miss_checks WHERE subject_id = ?1",
             [subject], |r| r.get::<_, Option<String>>(0)).map_err(crate::tasks::ops::sql);
         assert_eq!(signal_of("main")?, None, "flow.main_red's own signal");
         assert_eq!(signal_of("next")?.as_deref(), Some("earlier"));
+        assert_eq!(signal_of("candidate")?.as_deref(), Some("earlier"));
+        assert_eq!(signal_of("different-attempt")?, None);
         Ok(())
     }).unwrap();
 }
@@ -57,16 +67,19 @@ fn ac255_miss_from_owner_and_target_events() {
         &json!([{"table":"events","id":earlier}]).to_string(), NOW - 20);
     signal(&f, "shadow", ("task", &shadow.key), "shadow", "[]", NOW - 30);
     signal(&f, "at-the-same-time", ("target", "main"), "raised", "[]", NOW);
-    signal(&f, "muted", ("target", "next"), "muted", "[]", NOW - 40);
+    f.write("INSERT INTO integration_verify_results (attempt,project,task,commit_sha,passed,at)
+        VALUES ('failed',?1,?3,'sha2',0,?2)", (PROJECT, NOW - 45, &raised.key));
+    signal(&f, "muted", ("target", "next"), "muted",
+        r#"[{"table":"integration_verify","id":"failed"}]"#, NOW - 40);
     f.store.with(|tx| {
         let unsignaled = owner_bug(tx, HUMAN, "P1", None)?;
         let raised_bug = owner_bug(tx, HUMAN, "P0", Some(raised.id))?;
         let shadow_bug = owner_bug(tx, HUMAN, "P1", Some(shadow.id))?;
         owner_bug(tx, DISPATCHER, "P0", None)?;
         owner_bug(tx, HUMAN, "P2", None)?;
-        misses::target_red(tx, PROJECT, "main", "sha1", "task", NOW)?;
-        misses::target_red(tx, PROJECT, "main", "sha1", "task", NOW + 1)?;
-        misses::target_red(tx, PROJECT, "next", "sha2", "task", NOW)?;
+        misses::target_red(tx, PROJECT, "main", "sha1", &raised.key, None, NOW)?;
+        misses::target_red(tx, PROJECT, "main", "sha1", &raised.key, None, NOW + 1)?;
+        misses::target_red(tx, PROJECT, "next", "sha2", &raised.key, None, NOW)?;
         misses::watchdog(tx, PROJECT, NOW, NOW - 10)?;
         let read = |source: &str, subject: &str| tx.query_row("SELECT first_evidence_at, signal_state, raised_at
             FROM supervisor_miss_checks WHERE project = ?1 AND source = ?2 AND subject_id = ?3",
@@ -75,11 +88,14 @@ fn ac255_miss_from_owner_and_target_events() {
         assert_eq!(read("owner_bug", &raised_bug.key)?, (NOW-80, Some("raised".into()), Some(NOW-20)));
         assert_eq!(read("owner_bug", &shadow_bug.key)?, (NOW-30, Some("shadow".into()), None));
         assert_eq!(read("target_red", "main")?, (NOW, None, None));
-        assert_eq!(read("target_red", "next")?, (NOW-40, Some("muted".into()), None));
+        assert_eq!(read("target_red", "next")?, (NOW-45, Some("muted".into()), None));
         assert_eq!(read("watchdog", PROJECT)?, (NOW-10, None, None));
         let card = measures::read(tx, PROJECT, NOW+1, &governor::spending(tx, PROJECT, NOW+1)?)?;
         assert_eq!(card["misses"]["sample"], 6);
         assert_eq!(card["misses"]["count"], 5);
+        assert_eq!(card["misses"]["absent"], 3);
+        assert_eq!(card["misses"]["suppressed"], 2);
+        assert_eq!(card["misses"]["timely"], 1);
         assert_eq!(super::reflection::shown(tx, PROJECT)?.len(), 5);
         Ok(())
     }).unwrap();
@@ -141,7 +157,7 @@ fn ac256_supervisor_scorecard_denominators() {
     f.write("INSERT INTO supervisor_outcomes VALUES (1,1,?1,'right','fixture'),(2,0,?1,'wrong','fixture')", [as_of - 2]);
     f.event("fix", as_of - 10, HUMAN, "archive", "Archived by the owner.", None);
     f.store.with(|tx| {
-        misses::target_red(tx, PROJECT, "main", "fixture", "task", as_of)?;
+        misses::target_red(tx, PROJECT, "main", "fixture", "task", None, as_of)?;
         measures::page_dispatched(tx, PROJECT, as_of)?;
         measures::observe_resolutions(tx, PROJECT, as_of)?;
         let m = measures::read(tx, PROJECT, as_of, &spending(tx)?)?;

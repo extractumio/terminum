@@ -474,3 +474,24 @@ fn ac230_upgrading_keeps_old_question_and_free_text_answer_events() {
         Ok(())
     }).unwrap();
 }
+
+#[test]
+fn ac255_upgrade_preserves_proven_watchdog_delivery_and_marks_unverifiable_red_evidence() {
+    let path = fresh("miss-check-upgrade");
+    let mut db = Connection::open(&path).unwrap();
+    upgrade(&mut db, &path, &MIGRATIONS[..65]).unwrap();
+    db.execute_batch("INSERT INTO supervisor_incidents(id,project,subject_kind,subject_id,opened_at,last_firing_at)
+        VALUES (1,'default','project','default',30,30);
+        INSERT INTO supervisor_incident_events(incident,at,kind,actor,fingerprint,detector,level)
+        VALUES (1,30,'signal','system','watch','self.collector_dead',3);
+        INSERT INTO supervisor_miss_checks VALUES
+          ('default','watchdog','project','default','30',30,30,NULL,NULL,NULL,3),
+          ('default','watchdog','project','default','60',60,60,NULL,NULL,NULL,3),
+          ('default','target_red','target','main','abc',70,15,'age','raised',20,2);").unwrap();
+    upgrade(&mut db, &path, &MIGRATIONS).unwrap();
+    let rows: Vec<(String, Option<String>, Option<i64>)> = db.prepare("SELECT occurrence, signal_state, raised_at
+        FROM supervisor_miss_checks ORDER BY observed_at").unwrap().query_map([],
+        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).unwrap().collect::<Result<_,_>>().unwrap();
+    assert_eq!(rows, [("30".into(), Some("raised".into()), Some(30)),
+        ("60".into(), None, None), ("abc".into(), Some("unverified".into()), None)]);
+}

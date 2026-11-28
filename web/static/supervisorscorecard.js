@@ -43,11 +43,14 @@ export function drawScorecard(s) {
   const { resolved, decisions, misses, overrides, refusals, judgment, fixes, owner_load: load } = s;
   const spend = (sample, unit, value, per, missing = 0) =>
     `${sample ? value : "Unavailable"} · ${counted(sample, `measured ${unit}`)}${missing ? ` · ${missing} without complete pricing` : ""}${per ? ` · ${per} per resolution (n=${s.weekly_resolved})` : ""}`;
+  const coverage = misses.timely == null ? "" :
+    ` · ${misses.timely} timely · ${misses.suppressed} suppressed · ${misses.absent} without prior evidence` +
+    (misses.unverified ? ` · ${misses.unverified} with unverified prior evidence` : "");
   target.replaceChildren(
     part("dl", "sv-readings",
       reading("Stayed resolved", `${rate(resolved)} · ${resolved.watching} incomplete · ${resolved.recurred} recurred`),
       reading("Decisions right", `${rate({ count: decisions.right, rate: decisions.rate })} · ${decisions.pending} awaiting judgment`),
-      reading("Misses", `${counted(misses.count, "miss", "misses")} · ${counted(misses.sample, "independent observation")}`),
+      reading("Misses", `${counted(misses.count, "miss", "misses")} · ${counted(misses.sample, "independent observation")}${coverage}`),
       reading("Overridden within 24 hours", rate(overrides)),
       reading("Findings refused", `${refusals.count} refused · ${counted(refusals.sample, "submission")}`),
       reading("Owner verdicts marked useful", rate(s.usefulness)),

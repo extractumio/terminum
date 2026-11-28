@@ -110,6 +110,9 @@ function spending({ judgment, fixes }, eligible) {
   return [
     folding("Judgment · last 7 days", () => stack(
       note(`${numbers.format(judgment.tokens)} of ${numbers.format(judgment.limit_tokens)} tokens used · ${numbers.format(judgment.held_tokens)} reserved`),
+      ...(judgment.missing_rounds || judgment.partial_rounds || judgment.delayed_rounds ? [
+        note(`Ended rounds awaiting usage: ${judgment.missing_rounds} without a reading · ${judgment.partial_rounds} with partial usage. First reading after finding or closure: ${judgment.delayed_rounds}.`),
+      ] : []),
       note(`Last 24 hours: ${numbers.format(judgment.day_tokens)} of ${numbers.format(judgment.day_limit_tokens)} tokens`),
       note(`Per round: up to ${numbers.format(judgment.round_limit_tokens)} tokens`),
       note(judgment.investigation_left === 0 || judgment.round_limit_tokens === 0

@@ -41,7 +41,7 @@ pub(super) fn append(
             JOIN supervisor_review_reports p USING (task)
             WHERE p.project = ?1 AND v.at BETWEEN ?2 AND ?3 AND {}
         UNION ALL SELECT {MISSES}, observed_at, raised_at IS NOT NULL FROM supervisor_miss_checks
-            WHERE project = ?1 AND observed_at BETWEEN ?2 AND ?3
+            WHERE project = ?1 AND observed_at BETWEEN ?2 AND ?3 AND signal_state IS NOT 'unverified'
         UNION ALL SELECT {FIXES}, f.confirmed_at, {} FROM supervisor_problems p
             JOIN supervisor_fix_observations f ON f.problem = p.id
             WHERE p.project = ?1 AND f.confirmed_at BETWEEN ?2 AND ?3",

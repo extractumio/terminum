@@ -148,7 +148,8 @@ impl Section {
                 WHERE project = ?1 AND last_seen >= ?2 ORDER BY first_seen DESC, fingerprint",
             Self::Misses => "SELECT json_object('source',source,'subject_kind',subject_kind,'subject',subject_id,
                 'occurrence',occurrence,'observed_at',observed_at,'first_evidence_at',first_evidence_at,
-                'signal',signal,'state',signal_state,'raised_at',raised_at)
+                'signal',signal,'state',signal_state,'raised_at',raised_at,
+                'outcome',CASE WHEN signal_state = 'unverified' THEN 'unverified' WHEN raised_at IS NOT NULL THEN 'timely' WHEN signal IS NULL THEN 'absent' ELSE 'suppressed' END)
                 FROM supervisor_miss_checks WHERE project = ?1 AND observed_at >= ?2
                 ORDER BY observed_at DESC, source, subject_kind, subject_id, occurrence",
             Self::Register => "SELECT json_object('id',p.id,'state',p.state,'opened_at',p.opened_at,'lens',p.lens,
