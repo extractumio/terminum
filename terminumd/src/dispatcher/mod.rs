@@ -3,6 +3,9 @@
 //! session on a human's RUN, watches it by hooks' events and a walk on a fixed beat, moves the task
 //! as the session lives, and closes what it started. All its clocks and facts are in the store.
 
+#[cfg(test)]
+mod timing_tests;
+
 mod acts;
 mod answer;
 pub(crate) mod after;
@@ -339,7 +342,7 @@ pub(crate) fn same_prompt(a: &str, b: &str) -> bool {
 }
 
 /// A test's own time (§9 Times): only with a test's own app folder.
-fn of_test(name: &str) -> Option<i64> {
+pub(crate) fn of_test(name: &str) -> Option<i64> {
     std::env::var("TM_APP_DIR").ok().and_then(|_| std::env::var(name).ok()).and_then(|s| s.parse().ok()).filter(|s: &i64| *s > 0)
 }
 

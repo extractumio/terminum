@@ -43,7 +43,7 @@ echo "$1 end" >> "$ctl/runs.log"
 # the result in its sections, as integrate takes it (terminumd/src/tasks/closeout.rs SECTIONS)
 RESULT = "Outcome: Done, committed on its tree.\n" + "\n".join(f"{h}: None." for h in
     ("Done", "Checked", "Not done", "Needs a human", "New tasks", "Tasks changed", "Issues and discoveries", "Further recommendations"))
-SLOW = 150   # a step of the queue: a beat of 10 s each, a stage line's start, a batch built, checked, published
+SLOW = 150   # a step of the queue: a beat each (TM_TEST_INTEGRATION_BEAT), a stage line's start, a batch built, checked, published
 
 
 def git(folder, *args):
@@ -69,7 +69,7 @@ class World:
         git(self.repo, "fetch", "-q", "origin")
         self.cli = os.path.join(work, "bin", "terminum")
         os.makedirs(os.path.dirname(self.cli))
-        self.t = Terminumd(PORT, SOCKET, env={"TM_TEST_HOOKS": "1"})   # hooks taken as installed: Dispatcher runs the fake agent
+        self.t = Terminumd(PORT, SOCKET, env={"TM_TEST_HOOKS": "1", "TM_TEST_INTEGRATION_BEAT": "1"})   # hooks taken as installed: Dispatcher runs the fake agent
         os.symlink(os.path.realpath(BIN), self.cli)
         self.secret = self.project = self.agent = None
 

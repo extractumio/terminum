@@ -26,7 +26,7 @@ use std::time::Duration;
 use crate::app::Shared;
 use crate::tmux::server::Link;
 
-/// How often the engine looks.
+/// How often the engine looks; a test gives it a beat of its own (`TM_TEST_INTEGRATION_BEAT`, seconds).
 const BEAT: Duration = Duration::from_secs(10);
 /// How many beats between two walks over the trees in work (AC-192).
 const WALK_EVERY: u32 = 6;
@@ -41,6 +41,7 @@ pub async fn run(app: Shared) {
     // notices from the first look on reach sessions; older ones stand as comments (AC-192)
     let mut last: Option<i64> = None;
     let mut beat = 0u32;
+    let every = crate::dispatcher::of_test("TM_TEST_INTEGRATION_BEAT").map_or(BEAT, |s| Duration::from_secs(s as u64));
     loop {
         let (store, r) = (app.tasks.clone(), runner.clone());
         match tokio::task::spawn_blocking(move || engine::step(&store, r.as_ref(), &crate::config::tm_home(), crate::tasks::ops::now())).await {
@@ -55,7 +56,7 @@ pub async fn run(app: Shared) {
         beat = beat.wrapping_add(1);
         deliver(&app, &mut last).await;
         crate::page::projects::tell(&app);
-        tokio::time::sleep(BEAT).await;
+        tokio::time::sleep(every).await;
     }
 }
 
