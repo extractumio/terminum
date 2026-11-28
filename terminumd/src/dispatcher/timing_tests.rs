@@ -32,5 +32,7 @@ fn ac198_test_clock_requires_a_private_app_and_positive_seconds() {
         let output = command.output().unwrap();
         assert!(output.status.success(), "app={app}, value={value:?}: {}{}",
             String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
+        assert!(String::from_utf8_lossy(&output.stdout).contains("test result: ok. 1 passed;"),
+            "the child must run its clock assertion: {}", String::from_utf8_lossy(&output.stdout));
     }
 }
