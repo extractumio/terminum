@@ -326,8 +326,8 @@ pub(super) fn stuck(q: &Query<'_, '_>) -> Result<Measurements, String> {
 /// Task `t` IN PROGRESS in its linked session, no Dispatcher run of it there and no queued press of it (AC-213).
 fn stuck_task() -> String {
     format!("t.status = 'IN PROGRESS' AND t.archived_at IS NULL AND t.session_key IS NOT NULL
-        AND NOT EXISTS (SELECT 1 FROM run_tasks m JOIN runs r ON r.id = m.run WHERE m.task = t.id AND r.pane_key = t.session_key)
-        AND NOT ({})", waits::queued_task("t"))
+        AND NOT EXISTS (SELECT 1 FROM run_tasks m JOIN runs r ON r.id = m.run WHERE m.task = t.id AND r.pane_key = t.session_key AND {})
+        AND NOT ({})", crate::dispatcher::runs::STILL, waits::queued_task("t"))
 }
 
 /// Task `key`'s latest event up to `end`, the Supervisor's own left out.
