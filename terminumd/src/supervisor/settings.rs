@@ -221,6 +221,7 @@ pub(super) struct Settings {
     guardrails: Guardrails,
     language: Option<String>,
     pub(super) engine_board: Option<String>,
+    p0_waiting: super::waiting::Hours,
 }
 
 impl Settings {
@@ -291,6 +292,9 @@ impl Settings {
             detector.allocation = self.charter.allocation.clone();
         }
         detector.never = self.never_tied(rule).cloned();
+        if matches!(rule, Rule::Starved | Rule::UserBugAge) {
+            detector.p0_hours = self.p0_waiting;
+        }
         detector
     }
 
@@ -313,6 +317,7 @@ impl Settings {
             return Err("Use up to 32 feedback probes, each with a probe ID and an HTTPS reference base ending in a slash.".into());
         }
         self.charter.surfaces.validate()?;
+        self.p0_waiting.validate()?;
         if !self.budgets.valid() {
             return Err("Invalid Supervisor budget.".into());
         }

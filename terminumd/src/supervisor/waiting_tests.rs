@@ -124,3 +124,45 @@ fn ac213_a_waiting_p1_task_and_replay_keep_the_share_rule() {
         assert_eq!(scored(&f, rule, NOW, "p0").0, 3, "{}: the same P0 task is raised on the present", rule.id());
     }
 }
+
+#[test]
+fn ac213_the_projects_p0_waiting_hours_set_its_levels() {
+    let f = project("waiting-hours");
+    let defaults = serde_json::to_value(super::super::settings::Settings::default()).unwrap();
+    assert_eq!(defaults["p0_waiting"], json!({"level2_hours": 24.0, "level3_hours": 24.0}), "unset, a day and a further day");
+    f.save_settings(json!({"p0_waiting": {"level2_hours": 1, "level3_hours": 4}})).unwrap();
+    f.task("p0", Some("Bug"), "P0", "TODO", NOW - 3600);
+    f.task("p1", Some("Bug"), "P1", "TODO", NOW - 3600);
+    for rule in [Rule::Starved, Rule::UserBugAge] {
+        assert!(f.live(rule, NOW).detectors[0].findings.is_empty(), "{}: at one hour it does not fire", rule.id());
+        assert_eq!(scored(&f, rule, NOW + 60, "p0"), (2, raise(0, 2, OFF)), "{}: past one hour, below the detector's day", rule.id());
+        assert_eq!(scored(&f, rule, NOW + 4 * 3600 - 60, "p0").0, 2, "{}: a minute short of five hours", rule.id());
+        assert_eq!(scored(&f, rule, NOW + 4 * 3600, "p0"), (3, raise(0, 3, OFF)), "{}: five hours", rule.id());
+        let found = f.live(rule, NOW + 4 * 3600).detectors[0].findings.iter().map(|found| found.subject_id.clone()).collect::<Vec<_>>();
+        assert_eq!(found, ["p0"], "{}: a P1 task keeps the detector's own limit", rule.id());
+    }
+}
+
+#[test]
+fn ac213_a_detector_limit_below_the_p0_hours_fires_with_the_measured_share() {
+    let f = project("waiting-low-limit");
+    let limit = json!({"threshold": {"absolute": 60.0}});
+    f.save_settings(json!({"detectors": {"flow.starved": limit, "product.user_bug_age": limit}})).unwrap();
+    f.task("p0", Some("Bug"), "P0", "TODO", NOW - 2 * 3600);
+    for rule in [Rule::Starved, Rule::UserBugAge] {
+        assert_eq!(scored(&f, rule, NOW, "p0"), (0, json!([])), "{}: past the detector's hour, short of the P0 day", rule.id());
+        assert_eq!(scored(&f, rule, NOW + DAY, "p0").0, 2, "{}: past the P0 day", rule.id());
+    }
+}
+
+#[test]
+fn ac213_p0_waiting_hours_out_of_range_are_refused() {
+    let f = project("waiting-invalid");
+    for hours in [json!({"level2_hours": 0}), json!({"level3_hours": 721}), json!({"level2_hours": 1.5}), json!({"level3_hours": -2})] {
+        assert_eq!(f.save_settings(json!({"p0_waiting": hours})).unwrap_err(), "P0 waiting escalation: use whole hours from 1 to 720.", "{hours}");
+    }
+    let saved = f.store.with(|tx| super::super::settings::read(tx, PROJECT)).unwrap();
+    assert_eq!((saved.revision, serde_json::to_value(&saved.settings).unwrap()["p0_waiting"].clone()),
+        (0, json!({"level2_hours": 24.0, "level3_hours": 24.0})), "the saved settings stay as they were");
+    f.save_settings(json!({"p0_waiting": {"level2_hours": 720, "level3_hours": 1}})).unwrap();
+}

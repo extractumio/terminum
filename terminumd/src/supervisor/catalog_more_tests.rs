@@ -5,7 +5,7 @@ use serde_json::json;
 
 use super::engine_tests::{Fixture, NOW, PROJECT};
 use super::probe_arch::{Architecture, Changed};
-use super::{DAY, Evidence, evaluate, probes, settings};
+use super::{DAY, Evidence, evaluate, probes};
 
 fn run(f: &Fixture, name: &str) -> (Vec<(String, f64)>, Vec<&'static str>) {
     let evaluation = evaluate(&f.store, PROJECT, NOW, &[Fixture::detector(name)]).unwrap();
@@ -17,7 +17,7 @@ fn configured(f: &Fixture, integration: bool) {
     f.write("UPDATE projects SET dir = ?1 WHERE id = ?2", (f.path.parent().unwrap().to_str().unwrap(), PROJECT));
     f.write("INSERT INTO project_supervisor (project, enabled, generation, enabled_at) VALUES (?1, 1, 1, ?2)", (PROJECT, NOW - 9 * DAY));
     let pack = json!({"charter": {"surfaces": {"t2": ["src/store/**"], "t3": ["src/auth/**"]}}});
-    f.store.with(|tx| settings::write(tx, PROJECT, 0, serde_json::from_value(pack).unwrap(), false).map(drop)).unwrap();
+    f.save_settings(pack).unwrap();
     f.integration(integration);
 }
 

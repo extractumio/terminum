@@ -8,7 +8,7 @@ body.board-page { margin: 0; overflow: hidden; background: var(--surface-0); col
 /* left the session page's widget, right the board: the same two parts, the same line between them (style.css, layout.css);
    the widget's foot stays on the session page */
 .board-page :is(.nav-foot, #tip) { display: none; }
-.board-page #bar { flex: none; padding-left: var(--gutter); padding-right: var(--gutter); }   /* on the columns' edges */
+.board-page #bar { flex: none; z-index: 9; padding-left: var(--gutter); padding-right: var(--gutter); }   /* on the columns' edges; its lists over the report's pane (8), under the phone's list sheet (10) */
 .board-page #sessions { padding-bottom: var(--gutter); }
 /* + Session under the one project's sessions shown, a key of its own width (terminum-dispatcher.md AC-142) */
 #sessions > #adhocsession { align-self: flex-start; }
