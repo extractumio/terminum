@@ -24,7 +24,7 @@ fn ac198_test_clock_requires_a_private_app_and_positive_seconds() {
         command.args(["--exact", "dispatcher::timing_tests::ac198_test_clock_requires_a_private_app_and_positive_seconds"])
             .env(EXPECTED, expected).env_remove("TM_APP_DIR").env_remove(BEAT);
         if app {
-            command.env("TM_APP_DIR", &root);
+            command.env("TM_APP_DIR", root);
         }
         if let Some(value) = value {
             command.env(BEAT, value);
@@ -33,5 +33,4 @@ fn ac198_test_clock_requires_a_private_app_and_positive_seconds() {
         assert!(output.status.success(), "app={app}, value={value:?}: {}{}",
             String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
     }
-    std::fs::remove_dir_all(root).unwrap();
 }
