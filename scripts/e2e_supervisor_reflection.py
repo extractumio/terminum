@@ -92,7 +92,11 @@ def main():
             seed(str(i), trigger)
         configure(independent, None)
 
-        cases = wait_for(ended, lambda rows: len(rows) == 1 + len(triggers), 100, every=.25)
+        # The rounds run one after another on the one independent agent: wait while each next one ends in time,
+        # not for one deadline over all of them, which a loaded machine stretches.
+        cases = []
+        while len(cases) < 1 + len(triggers):
+            cases = wait_for(ended, lambda rows, done=len(cases): len(rows) > done, 60, every=.25)
         check("AC-248 every trigger starts exactly one round on the independent agent",
               len(cases) == 8 and all(row[3] == independent and row[4] > 0 and row[5] is None for row in cases)
               and not lines(main_prompts), f"{len(cases)} ended rounds")
