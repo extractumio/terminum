@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 
 use crate::dashboard::{self, Span};
-use crate::dispatcher::runs::GAVE_UP;
+use crate::dispatcher::runs::{GAVE_UP, HUMAN_GAVE_UP};
 use crate::tasks::{ops::{rows, sql}, store::DEFAULT_PROJECT};
 
 use super::flow::{FIRST_DONE, LAUNCH, events, one, project_events};
@@ -201,9 +201,14 @@ pub(super) fn operations(q: &Query<'_, '_>) -> Result<Measurements, String> {
     Ok(out)
 }
 
+// Incident Talk uses the same launch origin as an ordinary + Session.
+const OWNER_START: &str = "r.started_by = 'human' AND r.started_how IN ('run','drop','new','session')
+    AND NOT EXISTS (SELECT 1 FROM supervisor_talks t WHERE t.run = r.id)
+    AND NOT EXISTS (SELECT 1 FROM supervisor_review_runs v WHERE v.run = r.id)";
+
 fn owner_starts(tx: &rusqlite::Transaction, project: &str, from: i64, until: i64) -> Result<Vec<(Evidence, i64)>, String> {
     rows(tx, &format!("SELECT r.id, min(i.at) / 1000 FROM runs r JOIN inputs i ON i.run = r.id AND {LAUNCH}
-        WHERE r.project = ?1 AND r.started_by = 'human'
+        WHERE r.project = ?1 AND {OWNER_START}
         GROUP BY r.id HAVING min(i.at) BETWEEN ?2 * 1000 AND ?3 * 1000 + 999"),
         (project, from, until), |r| Ok((Evidence::Runs(r.get(0)?), r.get(1)?)))
 }
@@ -281,20 +286,80 @@ pub(super) fn churn(q: &Query<'_, '_>) -> Result<Measurements, String> {
     let [old, recent] = changes;
     let value = (recent.len() / 2) as f64;
     let baseline = (old.len() / 2) as f64;
-    let mut out = one(Reading::new("project", q.project, "priority_reversals", value, recent.into_iter().chain(old).collect(),
-        Source::Count(Unit::StrategicActs))
-        .history(vec![baseline]));
-    let starts = owner_starts(q.tx, q.project, q.window.before, q.window.end)?;
-    let stops = rows(q.tx, &format!("{events_sql} SELECT id, at FROM project_events
-        WHERE kind = 'why' AND author = 'dispatcher' AND text = ?4 AND at >= ?3"),
-        (q.project, q.window.end, q.window.before, GAVE_UP), |r| Ok((events(r.get(0)?), r.get::<_, i64>(1)?)))?;
-    // An owner's start is one of the owner's Run operations; a stop ends one Dispatcher launch.
-    for (metric, rows, unit) in [("owner_starts", starts, Unit::Operations), ("owner_stops", stops, Unit::RunEvents)] {
-        let prior = rows.iter().filter(|(_, at)| !q.window.current(*at)).count();
-        let value = (rows.len() - prior) as f64;
-        out.readings.push(Reading::new("project", q.project, metric, value, rows.into_iter().map(|(id, _)| id).collect(), Source::Count(unit)).history(vec![prior as f64]));
+    let mut out = Measurements::default();
+    let has_history: bool = q.tx.query_row(&format!("{events_sql} SELECT EXISTS (
+        SELECT 1 FROM project_events WHERE at >= ?3)"), (q.project, q.window.start - 1, q.window.before),
+        |r| r.get(0)).map_err(sql)?;
+    if has_history || matches!(q.detector.threshold, Threshold::Absolute(_)) {
+        out.readings.push(Reading::new("project", q.project, "priority_reversals", value,
+            recent.into_iter().chain(old).collect(), Source::Count(Unit::StrategicActs)).history(vec![baseline]));
+        out.complete_metrics.push("priority_reversals");
+    } else {
+        out.unavailable.push("Priority reversal baseline needs task history in the preceding window.");
     }
+    // The obsolete launch and generic release findings can clear independently of the new input.
+    out.complete_metrics.extend(["owner_starts", "owner_stops"]);
+    stopped_runs(q, &mut out)?;
     Ok(out)
+}
+
+/// A Give up belongs to a run. Dispatcher also writes its generic release reason for
+/// other callers, and a grouped run receives a copy of the human stop on each task.
+fn stopped_runs(q: &Query<'_, '_>, out: &mut Measurements) -> Result<(), String> {
+    let w = q.window;
+    let launches = format!("launches AS (
+        SELECT r.id, r.started_by, r.started_how, min(i.at) / 1000 AS at
+        FROM runs r JOIN inputs i ON i.run = r.id AND {LAUNCH}
+        WHERE r.project = ?1 GROUP BY r.id)");
+    let (prior, unknown_prior, unknown_now): (i64, bool, bool) = q.tx.query_row(&format!("WITH {launches}
+        SELECT count(*) FILTER (WHERE at < ?3),
+            count(*) FILTER (WHERE at < ?3 AND (started_by IS NULL OR started_how IS NULL)) > 0,
+            count(*) FILTER (WHERE at >= ?3 AND (started_by IS NULL OR started_how IS NULL)) > 0
+        FROM launches WHERE at BETWEEN ?2 AND ?4"), (q.project, w.before, w.start, w.end),
+        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).map_err(sql)?;
+    let relative = !matches!(q.detector.threshold, Threshold::Absolute(_));
+    let missing_baseline = relative && (prior == 0 || unknown_prior);
+    if missing_baseline {
+        out.unavailable.push("Owner stop baseline needs launches with recorded origins in the preceding window.");
+    }
+    if unknown_now {
+        out.unavailable.push("Some launches in the current window have no recorded origin.");
+    }
+    if missing_baseline || unknown_now { return Ok(()); }
+
+    let project = project_events();
+    // Older human releases have only two why rows. A cancelled wait also has a human
+    // why, but no adjacent Dispatcher release. Neither contains a stable run reference.
+    let from = if relative { w.before } else { w.start };
+    let unlinked: bool = q.tx.query_row(&format!("{project} SELECT EXISTS (
+        SELECT 1 FROM project_events h WHERE h.at >= ?3 AND h.kind = 'why' AND h.author = 'human'
+        AND h.text = ?5 AND
+        (SELECT e.kind = 'why' AND e.author = 'dispatcher' AND e.text = ?4 FROM project_events e
+         WHERE e.task = h.task AND e.seq < h.seq ORDER BY e.seq DESC LIMIT 1))"),
+        (q.project, w.end, from, GAVE_UP, HUMAN_GAVE_UP), |r| r.get(0)).map_err(sql)?;
+    if unlinked {
+        out.unavailable.push("A retained human Give up has no recorded run link.");
+        return Ok(());
+    }
+    let given_up = super::flow::run_events("given_up", "e.kind = 'gave_up' AND e.author = 'dispatcher'
+        AND json_extract(e.data, '$.run') IS NOT NULL");
+    let stops = rows(q.tx, &format!("{project}, {given_up}
+        SELECT r.id, min(e.id), min(e.at), r.started_by IS NULL OR r.started_how IS NULL
+        FROM given_up e JOIN runs r ON r.id = e.run
+        WHERE ({OWNER_START}) OR r.started_by IS NULL OR r.started_how IS NULL
+        GROUP BY r.id HAVING min(e.at) BETWEEN ?3 AND ?2"), (q.project, w.end, from),
+        |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, i64>(2)?, r.get::<_, bool>(3)?)))?;
+    if stops.iter().any(|(_, _, _, unknown)| *unknown) {
+        out.unavailable.push("A stopped run has no recorded launch origin.");
+        return Ok(());
+    }
+    let previous = stops.iter().filter(|(_, _, at, _)| !w.current(*at)).count();
+    let current = stops.len() - previous;
+    let evidence = stops.into_iter().flat_map(|(run, event, _, _)| [Evidence::Runs(run), events(event)]).collect();
+    out.readings.push(Reading::new("project", q.project, "owner_stopped_runs", current as f64, evidence,
+        Source::Count(Unit::RunEvents)).history(vec![previous as f64]));
+    out.complete_metrics.push("owner_stopped_runs");
+    Ok(())
 }
 
 pub(super) fn guard_broken(q: &Query<'_, '_>) -> Result<Measurements, String> {

@@ -436,6 +436,8 @@ pub fn card_agents(tx: &Transaction, keys: &[&str]) -> Result<HashMap<String, se
 
 /// What a task says when the human gave up on its run: no failure of its agent (tasks/auto.rs).
 pub const GAVE_UP: &str = "The human gave up on it.";
+/// The human's task history entry, including older Give ups without a run reference.
+pub const HUMAN_GAVE_UP: &str = "The human gave up on its run.";
 
 /// The human gives up on `task`'s run (AC-138): its open tasks fail, Dispatcher lets go of the window, which stays.
 pub fn give_up(tx: &Transaction, task: &str) -> Result<Run, String> {

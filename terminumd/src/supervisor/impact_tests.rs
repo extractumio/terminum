@@ -60,7 +60,7 @@ fn ac213_starved_task_and_old_bug_share_open_priority_task_days() {
 }
 
 #[test]
-fn ac213_priority_churn_sizes_strategic_acts_and_operations() {
+fn ac213_priority_churn_sizes_reversals_and_stopped_runs() {
     let f = Fixture::new("impact-churn");
     f.write("UPDATE users SET name = 'Owner' WHERE id = 'human'", []);
     f.agent("agent");
@@ -68,25 +68,35 @@ fn ac213_priority_churn_sizes_strategic_acts_and_operations() {
     for severity in ["P1", "P0", "P2", "P0", "P2"] {
         f.event("recent", NOW - 50, "human", "edit", &format!("Owner set severity {severity}"), None);
     }
+    for (run, at) in [("baseline", NOW - 5 * WEEK), ("previous-week", NOW - WEEK - DAY)] {
+        f.task(run, None, "P2", "IN PROGRESS", at);
+        f.run(run, run, "agent", at);
+    }
     for n in 0..3 {
-        f.run("recent", &format!("owner-{n}"), "agent", NOW - 40 + n);
+        let id = format!("owner-{n}");
+        f.run("recent", &id, "agent", NOW - 40 + n);
+        f.event("recent", NOW - 30 + n, "dispatcher", "gave_up", "", Some(json!({"run": id})));
     }
     let (reversals, _) = assessed(&f, "owner.priority_churn", "priority_reversals");
     assert_eq!(amount(&reversals, Unit::StrategicActs), 3.0);
     assert!(reversals.shares.iter().all(|s| s.amount <= s.total));
-    let (starts, _) = assessed(&f, "owner.priority_churn", "owner_starts");
-    assert_eq!(amount(&starts, Unit::Operations), 3.0);
+    let (stops, _) = assessed(&f, "owner.priority_churn", "owner_stopped_runs");
+    assert_eq!(amount(&stops, Unit::RunEvents), 3.0);
 }
 
 #[test]
 fn ac213_amount_beyond_its_week_total_is_said() {
     let f = Fixture::new("impact-dropped");
     f.task("given-up", None, "P2", "FAILED", NOW - DAY);
+    f.agent("agent");
+    f.run("given-up", "baseline", "agent", NOW - 5 * WEEK);
     for n in 0..3 {
-        f.event("given-up", NOW - 30 + n, "dispatcher", "why", crate::dispatcher::runs::GAVE_UP, None);
+        let run = format!("stopped-{n}");
+        f.run("given-up", &run, "agent", NOW - WEEK - DAY);
+        f.event("given-up", NOW - 30 + n, "dispatcher", "gave_up", "", Some(json!({"run": run})));
     }
     // Three Dispatcher stops, but no launch this week: the run-event total cannot hold them.
-    let (stops, impact) = assessed(&f, "owner.priority_churn", "owner_stops");
+    let (stops, impact) = assessed(&f, "owner.priority_churn", "owner_stopped_runs");
     assert!(stops.shares.is_empty());
     assert_eq!(impact, 0);
     assert!(stops.no_share.unwrap().contains("exceeded its week's project total"));
