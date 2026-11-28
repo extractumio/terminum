@@ -307,13 +307,16 @@ def install_mark(primary):
 
 
 def after_push(primary, files):
-    """In the turn, seconds: the primary checkout on the fresh origin/main; code landed on the maintainer's
-    machine (TM_LAND_INSTALL=1) marks an install, run after the turn by install_pending."""
-    stuck = update_primary(primary)
-    print("main: on the fresh origin/main" if stuck is None else f"primary checkout stays where it is: {stuck}; the push counts, "
-          "nothing installed until it follows")
-    if os.environ.get("TM_LAND_INSTALL") == "1" and has_code(files):
-        install_mark(primary).write_text(git("rev-parse", BASE, cwd=primary).stdout)
+    """In the landing and install turns: move the primary checkout to origin/main, waiting for any install.
+    Code landed with TM_LAND_INSTALL=1 marks an install, run after the landing turn by install_pending."""
+    with TreeTurn(primary, INSTALL_TURN) as turn:
+        turn.take_as(f"a landing's checkout move (pid {os.getpid()})",
+                     lambda holder: print(f"main: {holder} holds the install turn: waiting before moving the checkout", flush=True))
+        stuck = update_primary(primary)
+        print("main: on the fresh origin/main" if stuck is None else f"primary checkout stays where it is: {stuck}; the push counts, "
+              "nothing installed until it follows")
+        if os.environ.get("TM_LAND_INSTALL") == "1" and has_code(files):
+            install_mark(primary).write_text(git("rev-parse", BASE, cwd=primary).stdout)
 
 
 def make(primary, target):
@@ -360,18 +363,30 @@ def install_now(primary, run=make, say=print):
         say("install: the next landing tries again")
     elif mark.read_text() == wanted:
         mark.unlink()   # a later landing's mark stays for it
+    return installed
 
 
 def install_steps(primary, run, say):
-    """make build, install, installed in turn: whether all three passed."""
-    for target in ("build", "install", "installed"):
-        done = run(primary, target)
-        last = (done.stdout.strip().splitlines() or [""])[-1]
-        say(f"make {target}: exit {done.returncode}" + (f": {last}" if target == "installed" else ""))
-        if done.returncode:
+    """Build, install, verify; retry once only when verification fails after a clean forward checkout move."""
+    for attempt in range(2):
+        before = head(primary)
+        branch = git("branch", "--show-current", cwd=primary).stdout.strip()
+        for target in ("build", "install", "installed"):
+            done = run(primary, target)
+            last = (done.stdout.strip().splitlines() or [""])[-1]
+            say(f"make {target}: exit {done.returncode}" + (f": {last}" if target == "installed" else ""))
+            if not done.returncode:
+                continue
             print(done.stderr.strip()[-600:], file=sys.stderr)
+            if target == "installed" and attempt == 0 and head(primary) != before and not dirty_words(primary) \
+                    and branch == git("branch", "--show-current", cwd=primary).stdout.strip() \
+                    and git("merge-base", "--is-ancestor", before, "HEAD", cwd=primary, check=False).returncode == 0:
+                say("install: the primary checkout moved forward during the install: retrying once against this tree")
+                break
             return False
-    return True
+        else:
+            return True
+    return False
 
 
 def main(argv):
