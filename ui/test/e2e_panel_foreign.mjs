@@ -4,7 +4,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { base, check, cleanup, panelUrl, results, SB, signIn, waitFor, within, wsKey } from "./e2e_harness.mjs";
+import { base, check, cleanup, panelUrl, results, SB, signIn, toastLog, toastShown, waitFor, within, wsKey } from "./e2e_harness.mjs";
 import { NO_SIGNALS } from "./process-stop.mjs";
 
 const FOREIGN = { status: 200, contentType: "application/json", body: "{}" };
@@ -106,7 +106,8 @@ export async function panelForeign(context, errors) {
       return r.fulfill(FOREIGN);
     };
     await page.route("**/fb/api/file?*", foreignSave);
-    await page.keyboard.press("ControlOrMeta+s"); await said(page, "Not saved: server restarting — save again");
+    await toastLog(page);
+    await page.keyboard.press("ControlOrMeta+s"); await toastShown(page, "Not saved: server restarting — save again");
     check("AC-56 a foreign save is sent once, keeps the dirty tab and leaves disk unchanged", matches.length === 1
       && !!await page.$(".tab.active.dirty") && fs.readFileSync(`${SB}/foreign-save.txt`, "utf8") === "before\n");
     await screenshot(page, "unsaved-file");
