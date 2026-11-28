@@ -61,6 +61,11 @@ def attach(fixture, paths):
           and fixture.request(paths[1] + "/settings")["revision"] == 1)
 
 
+# A detector this fixture cannot run (no probe has a feedback reference base): a rescan leaves its signals alone,
+# where one of a detector that runs resolves them, as it found nothing, and the queued notices become all-clears.
+SEEDED_DETECTOR = "product.feedback_age"
+
+
 def seed_incident(db, project, level):
     # Synthetic incident inputs for the real queue. Insert the lower-level incident first.
     now = int(time.time())
@@ -70,9 +75,9 @@ def seed_incident(db, project, level):
         VALUES (?, 'project', 'private case fixture', ?, ?)""", (project, now, now)).lastrowid
     db.execute("""INSERT INTO supervisor_signals (fingerprint, project, detector, subject_kind,
         subject_id, metric, evidence, measure, scores, first_seen, last_seen, count, state)
-        VALUES (?, ?, 'flow.failed_no_reason', 'project', 'private case fixture', 'fixture_metric',
+        VALUES (?, ?, ?, 'project', 'private case fixture', 'fixture_metric',
           '[{"table":"inputs","id":42}]', ?, ?, ?, ?, 1, 'raised')""",
-               (fingerprint, project, json.dumps({"value": 5, "baseline": 4, "threshold": 4,
+               (fingerprint, project, SEEDED_DETECTOR, json.dumps({"value": 5, "baseline": 4, "threshold": 4,
                                                   "window_start": now - 10, "window_end": now}),
                 json.dumps({"impact": level, "blast": 0, "reversibility": 0, "confidence": 1}), now, now))
     event = db.execute("""INSERT INTO supervisor_incident_events (incident, at, kind, actor, fingerprint, level)
@@ -101,15 +106,33 @@ def probed(fixture, projects):
     wait_for(read, lambda rows: all(row and row[0] for row in rows), 60, every=0.5)
 
 
+RESCANNED = """SELECT
+    EXISTS (SELECT 1 FROM tasks WHERE project = p.project AND title = 'Supervisor incident ' || ?)
+    AND p.cursor >= coalesce((SELECT max(seq) FROM supervisor_changes WHERE project = p.project), 0)
+    FROM project_supervisor p WHERE p.project = ?"""
+
+
+def rescanned(fixture, seeded):
+    """Each incident's thread task is made and the collector has scanned the change it makes, before the quiet window
+    is lifted: the rescan that would clear a running detector's seeded signals happens in every run, not by chance."""
+    def read():
+        with closing(sqlite3.connect(fixture.db)) as db:
+            return [db.execute(RESCANNED, (incident, project)).fetchone() for project, incident in seeded]
+    wait_for(read, lambda rows: all(row and row[0] for row in rows), 60, every=0.5)
+    with closing(sqlite3.connect(fixture.db)) as db:
+        return db.execute("SELECT fingerprint, state FROM supervisor_signals WHERE fingerprint LIKE 'fixture-%'"
+                          " ORDER BY fingerprint").fetchall()
+
+
 def shared_line(fixture, paths):
     channel, output = (Path(fixture.server.root, name) for name in ("shared channel", "notices"))
     channel.write_text("#!/bin/sh\ncat >> " + shlex.quote(str(output)) + "\n")
     channel.chmod(0o700)
     low_path, high_path = paths
-    probed(fixture, [path.split("/")[-2] for path in paths])
+    projects = [path.split("/")[-2] for path in paths]
+    probed(fixture, projects)
     with closing(sqlite3.connect(fixture.db)) as db, db:
-        low, high = (seed_incident(db, path.split("/")[-2], level)
-                     for path, level in [(low_path, 2), (high_path, 3)])
+        low, high = (seed_incident(db, project, level) for project, level in zip(projects, [2, 3]))
     local = time.localtime()
     minute = local.tm_hour * 60 + local.tm_min
     line = {"channels": [str(channel)], "link_base": None, "ladder": [10, 30, 60],
@@ -121,7 +144,11 @@ def shared_line(fixture, paths):
           "changed in another tab" in fixture.request(high_path + "/line", "PUT", {
               "revision": 0, "settings": line,
           }, expected=400)["error"])
-    time.sleep(11)
+    started = time.monotonic()
+    states = rescanned(fixture, [(projects[0], low), (projects[1], high)])
+    check("AC-263 the collector's rescan after the incidents' threads leaves the seeded signals raised",
+          states == [("fixture-2", "raised"), ("fixture-3", "raised")], states)
+    time.sleep(max(0.0, 11 - (time.monotonic() - started)))
     with closing(sqlite3.connect(fixture.db)) as db:
         pending = db.execute("SELECT incident FROM supervisor_line_pending ORDER BY incident").fetchall()
     check("AC-263 the same quiet window defers both projects' notices",
@@ -132,7 +159,7 @@ def shared_line(fixture, paths):
                        lambda lines: len(lines) >= 2, 20, every=0.25)
     opened = [f"Critical incident {incident} · {word} level. Active signals: 1. Acknowledge in Terminum."
               for incident, word in [(high, "Incident"), (low, "Card")]]
-    # The collector can clear the seeded signals while the line drains.
+    # An all-clear may follow the openings, never precede them.
     all_clear = {f"All-clear on incident {incident}." for incident in (low, high)}
     check("AC-263 one executable receives the higher level first, using only the fixed incident fields",
           notices[:2] == opened and set(notices[2:]) <= all_clear, notices)
